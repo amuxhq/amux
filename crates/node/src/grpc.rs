@@ -1,7 +1,8 @@
-//! The client services, AgentService and SessionService: over a local
-//! socket, one profile's socket for clients and each agent's tools socket for
-//! its MCP server, where the socket is the caller's identity; and over a link
-//! stream for a paired daemon, whose pinned key is the caller's identity.
+//! The client services, AgentService and SessionService, over a local
+//! socket: one profile's socket for clients and each agent's tools socket for
+//! its MCP server, where the socket is the caller's identity. A paired
+//! daemon calls the same services over a link stream, answered under a
+//! paired host's rules by `PeerApi` in `edge/peer.rs` instead.
 //!
 //! Every call is a thin mapping onto the profile runtime. The service holds
 //! the runtime weakly: a connection that outlives its runtime (a restart in
@@ -34,9 +35,7 @@ use crate::blobs::BlobError;
 use crate::forward::{ForwardError, Owner};
 use crate::offers::CatalogueError;
 use crate::runtime::{AgentId, ProfileRuntime};
-use crate::serve::ServeError;
 use crate::telemetry::{self, InputShape};
-use crate::transport::{BoxedGrpcAuth, BoxedGrpcConnectInfo};
 
 /// A wire error as a gRPC status: the coarse code for generic clients, and
 /// the whole error, details included, in the status details for ours.
@@ -59,17 +58,14 @@ pub(crate) fn wire_error(code: ErrorCode, message: impl Into<String>) -> wire::E
     }
 }
 
-/// The client services for one profile. `caller` is set on an agent's
-/// tools socket: that agent is the parent of what it spawns and the sender
-/// of what it sends.
+/// The client services for one profile, on a local socket. `caller` is set
+/// on an agent's tools socket: that agent is the parent of what it spawns
+/// and the sender of what it sends. A call on another host's agent is made
+/// on that host's daemon.
 #[derive(Clone)]
 pub struct ClientApi {
     runtime: Weak<ProfileRuntime>,
     caller: Option<AgentId>,
-    /// Whether a call on another host's agent is made on that host's
-    /// daemon. Off for calls that arrived from a peer: forwarding goes one
-    /// hop, so no two hosts can pass a call back and forth.
-    forwards: bool,
     /// The client this service counts as opened when it lists the agents:
     /// set on the profile's socket, where the terminal client connects.
     opened: Option<analytics::Client>,
@@ -84,7 +80,6 @@ impl ClientApi {
         Self {
             runtime,
             caller,
-            forwards: true,
             opened: None,
         }
     }
@@ -96,10 +91,10 @@ impl ClientApi {
         self
     }
 
-    /// Whether this call is counted: a person's, made on the host where it
-    /// started, so a call forwarded to a paired host is counted once.
+    /// Whether this call is counted: a person's. A paired host's calls are
+    /// never counted, so a call forwarded to one is counted once, here.
     fn counts(&self) -> bool {
-        self.caller.is_none() && self.forwards
+        self.caller.is_none()
     }
 
     /// Records a person's accepted input, where it went.
@@ -115,66 +110,13 @@ impl ClientApi {
         }
     }
 
-    /// The service as a paired host's calls reach it over a link: as a
-    /// person's, answered only for this host's own agents and never passed
-    /// on.
-    pub(crate) fn for_peer(runtime: Weak<ProfileRuntime>) -> Self {
-        Self {
-            runtime,
-            caller: None,
-            forwards: false,
-            opened: None,
-        }
-    }
-
-    /// The paired host a call came from, or None on a local socket. Only a
-    /// link stream whose handshake presented a trusted key is served as a
-    /// peer, so a peer's call without one is a bug, and it is refused
-    /// rather than served as nobody.
-    fn peer<T>(&self, request: &Request<T>) -> Result<Option<crate::HostId>, Status> {
-        if self.forwards {
-            return Ok(None);
-        }
-        match request.extensions().get::<BoxedGrpcConnectInfo>() {
-            Some(BoxedGrpcConnectInfo {
-                auth: BoxedGrpcAuth::Trusted { peer },
-            }) => Ok(Some(*peer)),
-            _ => Err(Status::unauthenticated("the caller is not a trusted host")),
-        }
-    }
-
-    /// Whether the caller may act on `agent_id`. A paired host's call is
-    /// refused for an agent this host does not run: a replica's rows are
-    /// this host's copy of another host's, which that host serves itself,
-    /// so they are not found here rather than passed on. An agent's call is
-    /// refused, in `refusal`'s words, unless the target is its own child
-    /// (see [`Self::lineage`]).
-    async fn may_reach<T>(
-        &self,
-        request: &Request<T>,
-        agent_id: &[u8],
-        refusal: &str,
-    ) -> Result<(), Status> {
-        if self.peer(request)?.is_none() {
-            return self.lineage(&*self.runtime()?, agent_id, refusal).await;
-        }
-        match self.runtime()?.is_own(agent_id).await {
-            Ok(true) => Ok(()),
-            Ok(false) => Err(status(ServeError::NoAgent.to_wire())),
-            Err(error) => Err(status(error.to_wire())),
-        }
-    }
-
     /// The host to forward a call on `agent_id` to, when it is another
-    /// host's agent and this service forwards; `None` answers it here.
+    /// host's agent; `None` answers it here.
     async fn forward_to(
         &self,
         runtime: &ProfileRuntime,
         agent_id: &[u8],
     ) -> Result<Option<crate::HostId>, Status> {
-        if !self.forwards {
-            return Ok(None);
-        }
         match runtime.owner(agent_id).await {
             Ok(Owner::Peer(host)) => Ok(Some(host)),
             Ok(Owner::Here | Owner::Unknown) => Ok(None),
@@ -182,38 +124,8 @@ impl ClientApi {
         }
     }
 
-    /// What a provider offers on a host with no agent running: this host
-    /// answers its own, a peer's is forwarded to the peer.
-    async fn host_catalogue(
-        &self,
-        request: wire::GetCatalogueRequest,
-    ) -> Result<Response<wire::GetCatalogueResponse>, Status> {
-        let runtime = self.runtime()?;
-        let host = host_id(&request.host_id)?;
-        if host != runtime.host() {
-            if !self.forwards {
-                return Err(status(wire_error(
-                    ErrorCode::InvalidArgument,
-                    "a paired host answers only for its own providers",
-                )));
-            }
-            return forwarded(&runtime, host, request).await;
-        }
-        let provider = crate::Provider::try_from(request.provider)
-            .ok()
-            .filter(|provider| crate::offers::ASKED.contains(provider))
-            .ok_or_else(|| status(CatalogueError::NoProvider(request.provider).to_wire()))?;
-        runtime
-            .host_catalogue(provider)
-            .await
-            .map(|offered| Response::new(offered.blob))
-            .map_err(|error| status(error.to_wire()))
-    }
-
     fn runtime(&self) -> Result<Arc<ProfileRuntime>, Status> {
-        self.runtime
-            .upgrade()
-            .ok_or_else(|| Status::unavailable("the profile is no longer running"))
+        upgrade(&self.runtime)
     }
 
     /// On an agent's tools socket, every call on a named agent goes only to
@@ -248,10 +160,31 @@ impl ClientApi {
     }
 }
 
-// The verdict for an input to an agent whose host cannot be reached.
+/// The profile runtime a service answers for, while it runs.
+pub(crate) fn upgrade(runtime: &Weak<ProfileRuntime>) -> Result<Arc<ProfileRuntime>, Status> {
+    runtime
+        .upgrade()
+        .ok_or_else(|| Status::unavailable("the profile is no longer running"))
+}
+
+/// What a provider offers on this host with no agent running.
+pub(crate) async fn own_catalogue(
+    runtime: &ProfileRuntime,
+    provider: i32,
+) -> Result<Response<wire::GetCatalogueResponse>, Status> {
+    let provider = crate::Provider::try_from(provider)
+        .ok()
+        .filter(|provider| crate::offers::ASKED.contains(provider))
+        .ok_or_else(|| status(CatalogueError::NoProvider(provider).to_wire()))?;
+    runtime
+        .host_catalogue(provider)
+        .await
+        .map(|offered| Response::new(offered.blob))
+        .map_err(|error| status(error.to_wire()))
+}
 
 /// One call made on another host's daemon, answered with its answer.
-async fn forwarded<R: crate::forward::PeerRpc>(
+pub(crate) async fn forwarded<R: crate::forward::PeerRpc>(
     runtime: &ProfileRuntime,
     host: crate::HostId,
     request: R,
@@ -263,7 +196,7 @@ async fn forwarded<R: crate::forward::PeerRpc>(
         .map_err(|error| status(error.to_wire()))
 }
 
-fn agent_id(bytes: &[u8]) -> Result<AgentId, Status> {
+pub(crate) fn agent_id(bytes: &[u8]) -> Result<AgentId, Status> {
     Uuid::from_slice(bytes).map_err(|_| {
         status(wire_error(
             ErrorCode::InvalidArgument,
@@ -272,7 +205,7 @@ fn agent_id(bytes: &[u8]) -> Result<AgentId, Status> {
     })
 }
 
-fn host_id(bytes: &[u8]) -> Result<crate::HostId, Status> {
+pub(crate) fn host_id(bytes: &[u8]) -> Result<crate::HostId, Status> {
     Uuid::from_slice(bytes).map_err(|_| {
         status(wire_error(
             ErrorCode::InvalidArgument,
@@ -281,7 +214,7 @@ fn host_id(bytes: &[u8]) -> Result<crate::HostId, Status> {
     })
 }
 
-type EventStream<T> = Pin<Box<dyn Stream<Item = Result<T, Status>> + Send>>;
+pub(crate) type EventStream<T> = Pin<Box<dyn Stream<Item = Result<T, Status>> + Send>>;
 
 #[tonic::async_trait]
 impl AgentService for ClientApi {
@@ -289,14 +222,13 @@ impl AgentService for ClientApi {
 
     async fn subscribe_inventory(
         &self,
-        request: Request<wire::Empty>,
+        _request: Request<wire::Empty>,
     ) -> Result<Response<Self::SubscribeInventoryStream>, Status> {
         let runtime = self.runtime()?;
-        let subscription = match self.peer(&request)? {
-            Some(from) => runtime.peer_subscribe_inventory(from).await,
-            None => runtime.subscribe_inventory().await,
-        }
-        .map_err(|error| status(error.to_wire()))?;
+        let subscription = runtime
+            .subscribe_inventory()
+            .await
+            .map_err(|error| status(error.to_wire()))?;
         if let Some(client) = self.opened.filter(|_| self.counts()) {
             runtime.analytics().record_at_most_every(
                 telemetry::CLIENT_OPENED_EVERY,
@@ -314,12 +246,6 @@ impl AgentService for ClientApi {
         &self,
         request: Request<ResolveAgentRequest>,
     ) -> Result<Response<Agent>, Status> {
-        if self.peer(&request)?.is_some() {
-            return Err(status(wire_error(
-                ErrorCode::InvalidArgument,
-                "a paired host resolves names itself",
-            )));
-        }
         self.runtime()?
             .resolve_agent(&request.into_inner().name)
             .await
@@ -331,9 +257,6 @@ impl AgentService for ClientApi {
         &self,
         request: Request<CreateAgentRequest>,
     ) -> Result<Response<Agent>, Status> {
-        // A paired host names the parent, one of its own agents or none for
-        // the person, from its own tools-socket caller.
-        self.peer(&request)?;
         let request = request.into_inner();
         // An agent starts children as its spawn tool does, with the kind's
         // defaults: a permission mode or provider arguments are the
@@ -358,7 +281,7 @@ impl AgentService for ClientApi {
         let first = kind
             .filter(|_| request.initial_prompt.is_some())
             .map(InputShape::Prompt);
-        let on = if host == runtime.host() || !self.forwards {
+        let on = if host == runtime.host() {
             analytics::On::ThisHost
         } else {
             analytics::On::PairedHost(host)
@@ -368,9 +291,7 @@ impl AgentService for ClientApi {
             analytics::On::PairedHost(host) => runtime.spawn_on(host, request, self.caller).await,
         }
         .map_err(|error| status(error.to_wire()))?;
-        if self.forwards
-            && let Some(kind) = kind
-        {
+        if let Some(kind) = kind {
             let by = match self.caller {
                 Some(_) => analytics::By::Agent,
                 None => analytics::By::Person,
@@ -387,14 +308,14 @@ impl AgentService for ClientApi {
         &self,
         request: Request<RenameAgentRequest>,
     ) -> Result<Response<Agent>, Status> {
-        self.may_reach(
-            &request,
-            &request.get_ref().agent_id,
+        let request = request.into_inner();
+        let runtime = self.runtime()?;
+        self.lineage(
+            &runtime,
+            &request.agent_id,
             "an agent renames only its own children",
         )
         .await?;
-        let request = request.into_inner();
-        let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             return forwarded(&runtime, host, request).await;
         }
@@ -409,14 +330,14 @@ impl AgentService for ClientApi {
         &self,
         request: Request<StopAgentRequest>,
     ) -> Result<Response<wire::Empty>, Status> {
-        self.may_reach(
-            &request,
-            &request.get_ref().agent_id,
+        let request = request.into_inner();
+        let runtime = self.runtime()?;
+        self.lineage(
+            &runtime,
+            &request.agent_id,
             "an agent stops only its own children",
         )
         .await?;
-        let request = request.into_inner();
-        let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             let stopped = runtime.on_peer(host, request).await;
             return match stopped {
@@ -442,14 +363,14 @@ impl AgentService for ClientApi {
         &self,
         request: Request<ResumeAgentRequest>,
     ) -> Result<Response<Agent>, Status> {
-        self.may_reach(
-            &request,
-            &request.get_ref().agent_id,
+        let request = request.into_inner();
+        let runtime = self.runtime()?;
+        self.lineage(
+            &runtime,
+            &request.agent_id,
             "an agent resumes only its own children",
         )
         .await?;
-        let request = request.into_inner();
-        let runtime = self.runtime()?;
         let first = match &request.initial_prompt {
             Some(_) => runtime
                 .row_by_id(&request.agent_id)
@@ -479,14 +400,14 @@ impl AgentService for ClientApi {
         &self,
         request: Request<DeleteAgentRequest>,
     ) -> Result<Response<Empty>, Status> {
-        self.may_reach(
-            &request,
-            &request.get_ref().agent_id,
+        let request = request.into_inner();
+        let runtime = self.runtime()?;
+        self.lineage(
+            &runtime,
+            &request.agent_id,
             "an agent deletes only its own children",
         )
         .await?;
-        let request = request.into_inner();
-        let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             return forwarded(&runtime, host, request).await;
         }
@@ -501,22 +422,18 @@ impl AgentService for ClientApi {
         &self,
         request: Request<wire::Envelope>,
     ) -> Result<Response<SendMessageResponse>, Status> {
-        let from = self.peer(&request)?;
         let envelope = request.into_inner();
-        let runtime = self.runtime()?;
-        let sent = match from {
-            // The sending daemon stamped the sender from its own caller.
-            Some(_) => runtime.send_peer_message(envelope).await,
-            // A child's reports are its daemon's own.
-            None if matches!(envelope.body, Some(wire::envelope::Body::Report(_))) => {
-                return Err(status(wire_error(
-                    ErrorCode::InvalidArgument,
-                    "a child's reports come from its daemon, not a client",
-                )));
-            }
-            None => runtime.send_message(envelope, self.caller).await,
-        };
-        sent.map(Response::new)
+        // A child's reports are its daemon's own.
+        if matches!(envelope.body, Some(wire::envelope::Body::Report(_))) {
+            return Err(status(wire_error(
+                ErrorCode::InvalidArgument,
+                "a child's reports come from its daemon, not a client",
+            )));
+        }
+        self.runtime()?
+            .send_message(envelope, self.caller)
+            .await
+            .map(Response::new)
             .map_err(|error| status(error.to_wire()))
     }
 
@@ -524,15 +441,15 @@ impl AgentService for ClientApi {
         &self,
         request: Request<PutBlobRequest>,
     ) -> Result<Response<BlobRef>, Status> {
-        self.may_reach(
-            &request,
-            &request.get_ref().agent_id,
-            "an agent adds files only to its own children",
-        )
-        .await?;
         let request = request.into_inner();
         crate::blobs::within_limit(&request).map_err(|error| status(error.to_wire()))?;
         let runtime = self.runtime()?;
+        self.lineage(
+            &runtime,
+            &request.agent_id,
+            "an agent adds files only to its own children",
+        )
+        .await?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             return forwarded(&runtime, host, request).await;
         }
@@ -547,14 +464,14 @@ impl AgentService for ClientApi {
         &self,
         request: Request<GetBlobRequest>,
     ) -> Result<Response<GetBlobResponse>, Status> {
-        self.may_reach(
-            &request,
-            &request.get_ref().agent_id,
+        let request = request.into_inner();
+        let runtime = self.runtime()?;
+        self.lineage(
+            &runtime,
+            &request.agent_id,
             "an agent reads only its own children's files",
         )
         .await?;
-        let request = request.into_inner();
-        let runtime = self.runtime()?;
         match runtime.get_blob(request.clone()).await {
             Err(BlobError::NoBlob(_)) => {}
             read => {
@@ -583,14 +500,14 @@ impl AgentService for ClientApi {
         &self,
         request: Request<GetDiffRequest>,
     ) -> Result<Response<wire::Diff>, Status> {
-        self.may_reach(
-            &request,
-            &request.get_ref().agent_id,
+        let request = request.into_inner();
+        let runtime = self.runtime()?;
+        self.lineage(
+            &runtime,
+            &request.agent_id,
             "an agent reads only its own children's changes",
         )
         .await?;
-        let request = request.into_inner();
-        let runtime = self.runtime()?;
         // The working tree is on the agent's own host, and so is the patch.
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             return forwarded(&runtime, host, request).await;
@@ -606,26 +523,25 @@ impl AgentService for ClientApi {
         &self,
         request: Request<wire::GetCatalogueRequest>,
     ) -> Result<Response<wire::GetCatalogueResponse>, Status> {
-        self.peer(&request)?;
-        self.host_catalogue(request.into_inner()).await
+        let request = request.into_inner();
+        let runtime = self.runtime()?;
+        // What a provider offers on a host with no agent running: a peer's
+        // is asked of the peer.
+        let host = host_id(&request.host_id)?;
+        if host != runtime.host() {
+            return forwarded(&runtime, host, request).await;
+        }
+        own_catalogue(&runtime, request.provider).await
     }
 
     async fn list_repositories(
         &self,
         request: Request<ListRepositoriesRequest>,
     ) -> Result<Response<ListRepositoriesResponse>, Status> {
-        self.peer(&request)?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         let named = request.host_id.as_deref().map(host_id).transpose()?;
         if let Some(host) = named.filter(|host| *host != runtime.host()) {
-            // A peer's call is answered for the peer's own host only.
-            if !self.forwards {
-                return Err(status(wire_error(
-                    ErrorCode::InvalidArgument,
-                    "a paired host lists only its own repositories",
-                )));
-            }
             return forwarded(&runtime, host, request).await;
         }
         Ok(Response::new(
@@ -644,7 +560,6 @@ impl SessionService for ClientApi {
         &self,
         request: Request<SubscribeSessionRequest>,
     ) -> Result<Response<Self::SubscribeSessionStream>, Status> {
-        let from = self.peer(&request)?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         self.lineage(
@@ -653,22 +568,20 @@ impl SessionService for ClientApi {
             "an agent reads only its own children's chats",
         )
         .await?;
-        let subscription = match (from, &request.from) {
-            // A peer asks for a tail, like a client, or for what came after
-            // the revision its replica holds, capped.
-            (Some(from), _) => runtime.peer_subscribe_session(from, request).await,
-            (None, Some(subscribe_session_request::From::After(_))) => {
+        let tail = match request.from {
+            Some(subscribe_session_request::From::After(_)) => {
                 return Err(status(wire_error(
                     ErrorCode::InvalidArgument,
                     "a client tails; only a paired host resumes from a cursor",
                 )));
             }
-            (None, Some(subscribe_session_request::From::Tail(tail))) => {
-                runtime.subscribe_session(&request.agent_id, *tail).await
-            }
-            (None, None) => runtime.subscribe_session(&request.agent_id, 0).await,
-        }
-        .map_err(|error| status(error.to_wire()))?;
+            Some(subscribe_session_request::From::Tail(tail)) => tail,
+            None => 0,
+        };
+        let subscription = runtime
+            .subscribe_session(&request.agent_id, tail)
+            .await
+            .map_err(|error| status(error.to_wire()))?;
         let stream = futures_util::stream::unfold(subscription, |mut subscription| async move {
             let event = subscription.next().await?;
             Some((Ok(SessionEvent::clone(&event)), subscription))
@@ -680,7 +593,6 @@ impl SessionService for ClientApi {
         &self,
         request: Request<ListItemsRequest>,
     ) -> Result<Response<ListItemsResponse>, Status> {
-        let from = self.peer(&request)?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         self.lineage(
@@ -689,16 +601,14 @@ impl SessionService for ClientApi {
             "an agent reads only its own children's chats",
         )
         .await?;
-        match from {
-            Some(from) => runtime.peer_list_items(from, request).await,
-            None => runtime.list_items(&request).await,
-        }
-        .map(Response::new)
-        .map_err(|error| status(error.to_wire()))
+        runtime
+            .list_items(&request)
+            .await
+            .map(Response::new)
+            .map_err(|error| status(error.to_wire()))
     }
 
     async fn get_item(&self, request: Request<GetItemRequest>) -> Result<Response<Item>, Status> {
-        let from = self.peer(&request)?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         self.lineage(
@@ -707,26 +617,25 @@ impl SessionService for ClientApi {
             "an agent reads only its own children's chats",
         )
         .await?;
-        match from {
-            Some(from) => runtime.peer_get_item(from, request).await,
-            None => runtime.get_item(&request).await,
-        }
-        .map(Response::new)
-        .map_err(|error| status(error.to_wire()))
+        runtime
+            .get_item(&request)
+            .await
+            .map(Response::new)
+            .map_err(|error| status(error.to_wire()))
     }
 
     async fn send_input(
         &self,
         request: Request<SendInputRequest>,
     ) -> Result<Response<SendInputResponse>, Status> {
-        self.may_reach(
-            &request,
-            &request.get_ref().agent_id,
+        let request = request.into_inner();
+        let runtime = self.runtime()?;
+        self.lineage(
+            &runtime,
+            &request.agent_id,
             "an agent sends input only to its own children",
         )
         .await?;
-        let request = request.into_inner();
-        let runtime = self.runtime()?;
         let shape = request.input.as_ref().and_then(InputShape::of);
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             let forwarded = runtime.on_peer(host, request).await;
@@ -767,12 +676,6 @@ impl SessionService for ClientApi {
         &self,
         request: Request<wire::UpdateDraftRequest>,
     ) -> Result<Response<wire::Draft>, Status> {
-        if !self.forwards {
-            return Err(status(wire_error(
-                ErrorCode::InvalidArgument,
-                "a draft is kept by its client's own machine",
-            )));
-        }
         let request = request.into_inner();
         let runtime = self.runtime()?;
         self.lineage(
@@ -790,12 +693,6 @@ impl SessionService for ClientApi {
         &self,
         request: Request<wire::GetDraftRequest>,
     ) -> Result<Response<wire::Draft>, Status> {
-        if !self.forwards {
-            return Err(status(wire_error(
-                ErrorCode::InvalidArgument,
-                "a draft is kept by its client's own machine",
-            )));
-        }
         let request = request.into_inner();
         let runtime = self.runtime()?;
         self.lineage(

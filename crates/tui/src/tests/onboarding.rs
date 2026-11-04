@@ -239,7 +239,9 @@ fn a_window_opened_after_the_screen_was_left_is_not_kept() {
     let mut scene = scenes::pair();
     press(&mut scene, KeyCode::Esc);
     assert_eq!(scene.onboarding.step, SetupStep::KeepReachable);
-    scene.onboarding.pairing_opened(scenes::window(), 1_800_000_000_000);
+    scene
+        .onboarding
+        .pairing_opened(scenes::window(), 1_800_000_000_000);
     assert!(!scene.onboarding.holds_window());
     assert_eq!(scene.onboarding.renew_at(), None);
 }

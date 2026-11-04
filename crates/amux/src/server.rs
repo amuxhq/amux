@@ -150,7 +150,10 @@ fn telemetry(config: &InstallationConfig) -> node::Telemetry {
     )
 }
 
-fn telemetry_to(config: &InstallationConfig, endpoint: Option<analytics::Endpoint>) -> node::Telemetry {
+fn telemetry_to(
+    config: &InstallationConfig,
+    endpoint: Option<analytics::Endpoint>,
+) -> node::Telemetry {
     let Some(endpoint) = endpoint else {
         return node::Telemetry::Off;
     };

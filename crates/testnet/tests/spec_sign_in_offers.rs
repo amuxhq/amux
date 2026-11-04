@@ -304,7 +304,11 @@ async fn a_failed_acceptance_leaves_the_offer_to_accept_again() {
         .await
         .expect_err("no ticket, no sign-in");
     assert_eq!(refused.code(), tonic::Code::Unavailable, "{refused:?}");
-    assert_eq!(listed(&net, "laptop").await.len(), 1, "the offer still stands");
+    assert_eq!(
+        listed(&net, "laptop").await.len(),
+        1,
+        "the offer still stands"
+    );
     assert!(!signed_in(&profile_info(&net, "laptop").await));
 
     relay.refuse_tickets(false);
@@ -338,14 +342,22 @@ async fn a_ticket_for_another_host_signs_nobody_in() {
     assert_eq!(refused.code(), tonic::Code::PermissionDenied, "{refused:?}");
     assert_eq!(relay.redeemed(), vec![("cli".to_owned(), false)]);
     assert!(!signed_in(&profile_info(&net, "laptop").await));
-    assert_eq!(listed(&net, "laptop").await.len(), 1, "the offer still stands");
+    assert_eq!(
+        listed(&net, "laptop").await.len(),
+        1,
+        "the offer still stands"
+    );
 
     relay.mint_tickets_for(None);
     let profile = answer(&net, "laptop", "desk", true)
         .await
         .expect("a ticket for the laptop signs it in");
     assert!(signed_in(&profile), "{profile:?}");
-    assert_eq!(relay.tickets().len(), 2, "a fresh ticket for the second try");
+    assert_eq!(
+        relay.tickets().len(),
+        2,
+        "a fresh ticket for the second try"
+    );
     println!("another host's ticket was refused: {}", refused.message());
     net.shutdown().await.unwrap();
 }

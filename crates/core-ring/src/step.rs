@@ -46,19 +46,6 @@ pub struct Check {
     pub sentence: &'static str,
 }
 
-impl Check {
-    /// Whether `id` has the shape every check id has; the cores' lists are
-    /// tested against it, and the account service accepts nothing else.
-    pub fn is_id(id: &str) -> bool {
-        !id.is_empty()
-            && id.len() <= 64
-            && id.contains('.')
-            && id
-                .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'.')
-    }
-}
-
 impl fmt::Display for Check {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.sentence)

@@ -116,6 +116,12 @@ pub(crate) struct Installation {
     staged_logins: Mutex<Vec<(String, std::time::Instant, crate::edge::account::Login)>>,
 }
 
+impl Installation {
+    pub(crate) fn host_name(&self) -> &str {
+        &self.edge.host_name
+    }
+}
+
 /// How long a login refused for its profile's data waits to be adopted.
 const STAGED_LOGIN_LIFETIME: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 
@@ -504,8 +510,9 @@ pub async fn start(
         sweep.insert(profile, report);
         swept.push((entry, runtime));
     }
-    // A front door that answers belongs to another installation's daemon;
-    // taking its socket would strand that daemon's clients.
+    // This installation's lock is held, so a front door that answers
+    // belongs to another installation's daemon, whose config names the same
+    // socket; taking it would strand that daemon's clients.
     if let Some(path) = &installation.front_door
         && local_socket::connect(path).await.is_ok()
     {

@@ -185,7 +185,7 @@ fn auto_reports(config: &InstallationConfig) -> node::AutoReports {
 /// relays use.
 fn edge_options(config: &InstallationConfig) -> node::EdgeOptions {
     node::EdgeOptions {
-        host_name: config.host_name(),
+        host_name: config.host_name().into(),
         kinds: node::local_kinds(),
         lan: Some(node::LanOptions::default()),
         discovery: Some(node::mdns_discovery()),

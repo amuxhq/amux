@@ -171,6 +171,12 @@ impl Registry {
         self.installation.upgrade().ok_or(ProfileRefusal::Stopping)
     }
 
+    /// The name this machine goes by, which a sign-in shows on the account
+    /// service's approval page.
+    pub(crate) fn host_name(&self) -> Result<String, ProfileRefusal> {
+        Ok(wire::HostName::lossy(self.installation()?.host_name()).into_string())
+    }
+
     /// Every hosted profile, oldest first.
     pub fn list(&self) -> Result<Vec<ProfileState>, ProfileRefusal> {
         Ok(Self::listed(&*self.installation()?))

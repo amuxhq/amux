@@ -2172,7 +2172,6 @@ impl Transition<'_> {
             Job::Fsync { .. }
             | Job::WriteBlob { .. }
             | Job::CheckpointWal
-            | Job::TeardownHost { .. }
             | Job::RefreshToken { .. }
             | Job::SendPush(_) => JobResult::Done,
         })
@@ -2207,12 +2206,19 @@ impl Transition<'_> {
         let mut out = Vec::new();
         let core = Agent::<Kind>::start(&spec, resumed, self.w.now_ms, &mut out);
         self.w.specs.insert(agent_id, Dbg(spec));
+        let named = self
+            .w
+            .processes
+            .iter()
+            .rev()
+            .find(|process| process.agent == agent_id)
+            .map_or(0, |process| process.provider.named());
         let p = self.w.processes.len();
         self.w.processes.push(Process {
             host: h,
             agent: agent_id,
             core: Some(Core(core.value())),
-            provider: Provider::start(),
+            provider: Provider::start(named),
             running: true,
             conn: None,
             conns: 0,
@@ -2788,7 +2794,6 @@ fn agent_input(input: &agent_core::Input) -> &'static str {
 fn job_kind(job: &Job) -> &'static str {
     match job {
         Job::Fsync { .. } => "Fsync",
-        Job::TeardownHost { .. } => "TeardownHost",
         Job::CheckpointWal => "CheckpointWal",
         Job::WriteBlob { .. } => "WriteBlob",
         Job::RefreshToken { .. } => "RefreshToken",

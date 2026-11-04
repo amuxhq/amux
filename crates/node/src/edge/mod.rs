@@ -320,6 +320,9 @@ impl Edge {
     ) -> Result<Arc<Self>, EdgeError> {
         let runtime = Arc::downgrade(live);
         let (dir, clock, analytics) = (live.dir(), live.clock().clone(), live.analytics().clone());
+        // An embedder's name (a phone's, the system's) is made a host name
+        // here rather than refused, so a host always starts.
+        let host_name = wire::HostName::lossy(&options.host_name).into_string();
         let mut identity = crate::identity::load_or_create_device_identity_in(dir, live.profile())?;
         identity.liveness = options.liveness;
         // The core holds the trust store; the edge reads it as the core
@@ -335,7 +338,7 @@ impl Edge {
         let signed_in = account.wants_cloud();
         let local_host = LiveLocalHost::new(local_host(
             identity.host_id,
-            &options.host_name,
+            &host_name,
             Capabilities {
                 cloud_relay: false,
                 kinds: options.kinds.iter().map(|kind| *kind as i32).collect(),
@@ -364,7 +367,6 @@ impl Edge {
         let dispatcher = TunnelDispatcher::new(
             trust.clone(),
             pair_mode.clone(),
-            connections.replacing(),
             trusted_tx,
             pairing_tx,
             DEVICE_TLS_HANDSHAKE_TIMEOUT,
@@ -378,7 +380,7 @@ impl Edge {
                 PairingService::new(
                     runtime.clone(),
                     LocalPairingIdentity::from_device_identity(&identity),
-                    options.host_name.clone(),
+                    host_name.clone(),
                 ),
                 pairing_rx,
                 shutdown.subscribe(),
@@ -479,7 +481,7 @@ impl Edge {
             discovery
                 .advertise(Advertisement {
                     host_id: identity.host_id,
-                    name: options.host_name.clone(),
+                    name: host_name.clone(),
                     version: crate::PROTOCOL_VERSION,
                     addrs,
                     scope: options.discovery_scope.clone(),
@@ -500,7 +502,7 @@ impl Edge {
 
         let edge = Arc::new(Self {
             dir: dir.to_owned(),
-            host_name: options.host_name.clone(),
+            host_name,
             identity,
             trust,
             tickets,

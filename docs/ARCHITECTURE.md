@@ -92,8 +92,8 @@ per-kind body.
 The principles that follow from that picture:
 
 - **The daemon interprets nothing.** Item and snapshot bodies are bytes to
-  it. The one exception is the debug-bundle path, which links `interpret`
-  for its per-kind redactor.
+  it. A report's record of its core walks those bytes by the schema only to
+  empty them (`interpret`'s structure walker), never to read them.
 - **Commit before fan-out.** A client never sees a revision the store
   cannot serve, so catching up and going live join at one point.
 - **Full state per revision.** Items are complete every time they are sent,
@@ -123,12 +123,13 @@ The principles that follow from that picture:
   network or a random source, so a run is decided by its inputs, and a
   simulated run's inputs are decided by its seed. A failure is reported as
   the seed that produced it, and that seed alone replays it.
-- **An invariant violation produces a dump, and a dump replays.** The cheap
-  invariants are checked inside `step` in production, and a violation
+- **An invariant violation produces a report, and a report replays.** The
+  cheap invariants are checked inside `step` in production, and a violation
   emits a dump with the violation as its reason instead of carrying on. A
-  dump is, for each stage, a checkpoint and the inputs since, so replaying
-  it re-runs the stage with every property checked and stops at the step
-  that broke one.
+  report holds, for each stage, a record of a checkpoint and the inputs
+  since that keeps what the stage concluded and none of what anybody wrote,
+  so replaying it re-runs the stage with every property checked and stops
+  at the step that broke one.
 
 ## Processes
 
@@ -305,12 +306,14 @@ agents/<agent_id>/            the agent's UUID; ours, never the provider's
     codex.sock                Codex's app server, for Codex agents; removed when the agent exits
 ```
 
-A Unix socket's path must be short, and an agent directory under a deep
-root is often too long. Then a socket is bound through a link to its folder
-(`agents/<agent_id>` or its `private/`) under `$TMPDIR/amux-<uid>/`, named
-by a hash of the folder; terminal Claude's messaging socket, which Claude
-binds itself in a real directory, gets one there named the same with `.d`.
-The daemon removes both with the agent's directory.
+A Unix socket's path must be short, and a socket under a deep root is often
+too long: an agent's most of all, but the front door and a profile's `sock`
+as well. Then a socket is bound and dialled through a link to its folder
+(the root, `profiles/<profile_id>`, `agents/<agent_id>` or its `private/`)
+under `$TMPDIR/amux-<uid>/`, named by a hash of the folder; terminal
+Claude's messaging socket, which Claude binds itself in a real directory,
+gets one there named the same with `.d`. The daemon removes an agent's with
+the agent's directory.
 
 | Path | Created by | Written by | Read by | Deleted by |
 |---|---|---|---|---|
@@ -335,7 +338,7 @@ their own copies.
                               the login item `amux init` writes on macOS; ~/.config/systemd/user/amux.service
                               on Linux, and a scheduled task named amux on Windows
 $TMPDIR/amux-<uid>/<hash>, <hash>.d
-                              short socket addresses for agents whose paths are too long (see above)
+                              short addresses for sockets whose paths are too long (see above)
 
 <root>/                       the config's `root`; default ~/.local/share/amux ($XDG_DATA_HOME/amux)
   amux.sock                   the front door; on Windows a file naming the pipe the daemon listens on
@@ -554,6 +557,10 @@ nicer in several places, and Windows pays for each:
   lives on while any connection to it is open and a successor could not take
   its name
   ([`agent_dir::local_socket`](../crates/agent-dir/src/local_socket.rs)).
+  Pipe names are predictable and the pipe namespace is shared by every user,
+  where a Unix socket sits in a private folder: so each pipe is created with
+  a security descriptor that admits only the user who made it, and a client
+  refuses a pipe whose serving process runs as anyone else.
 - **Process groups.** Agents start with `CREATE_NEW_PROCESS_GROUP` and
   `DETACHED_PROCESS`; a kill ends the process tree with `taskkill /F /T`.
 - **Terminals.** Pseudo-terminals are ConPTY, through `portable-pty` in
@@ -603,7 +610,7 @@ every message a provider sends or is sent.
 |---|---|
 | [`agent-dir`](../crates/agent-dir/src/lib.rs) | The directory contract: names, the lock, local sockets, control-socket framing and the clock both sides' deadlines run on. |
 | [`journal`](../crates/journal/src/lib.rs) | Append-only journal segments: writer, reader and reclaiming. |
-| [`interpret`](../crates/interpret/src/lib.rs) | The per-kind interpreters (`claude_pty`, `claude_sdk`, `codex`), their shared core, the per-kind body redactor and the golden harness. See [interpreters](INTERPRETERS.md). |
+| [`interpret`](../crates/interpret/src/lib.rs) | The per-kind interpreters (`claude_pty`, `claude_sdk`, `codex`), their shared core, the agent's record, the structure walker a report's core record is written with, and the golden harness. See [interpreters](INTERPRETERS.md). |
 | [`agent`](../crates/agent/src/lib.rs) | The agent process (`amux internal agent <dir>`) and the tool server (`amux internal mcp <dir>`), with each provider's host in a module of its own: [`claude`](../crates/agent/src/claude.rs) (launch settings, hook forwarding, the messaging socket, session files and the version probe) and [`codex`](../crates/agent/src/codex.rs) (Codex's app server started on a socket other clients can join, its messages carried as bytes). |
 | [`git-facts`](../crates/git-facts/src/lib.rs) | An agent folder's branch, base branch and change totals, read by running git; shared by the agent process and the daemon. |
 | [`claude-protocol`](../crates/claude-protocol/src/lib.rs) | Claude Code's headless stream, transcript rows and hook payloads as types, with a tolerant decoder. See [provider crates](PROVIDER_CRATES.md). |
@@ -658,7 +665,7 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`provider-fakes`](../crates/provider-fakes/src/lib.rs) | Scripted stand-ins for the Claude and Codex binaries, playing authored scripts or recordings. |
 | [`qualification`](../crates/qualification/src/lib.rs) | Environment-dependent checks: live providers and performance baselines on enrolled machines, and the probes (`claude-probe`, `codex-probe`) that record the live lane's provider traffic and join it to the corpora beside the interpreter goldens. |
 | [`models`](../crates/models/README.md) | The protocol's promises as properties, explored by a checker over the real code. |
-| [`replay-support`](../crates/replay-support/src/lib.rs) | Replays a debug bundle through its four stages with the protocol's properties judged at every step. |
+| [`replay-support`](../crates/replay-support/src/lib.rs) | `just repro`: replays a report's records (each agent's as a made-up stream, the daemon core's, each chat's), an installation's own rings, or a relay's or supervisor's report, with the protocol's properties and the checks judged at every step. |
 | [`fake-amux`](../crates/fake-amux/src/main.rs) | A stand-in `amux` binary running the real supervisor over a scripted daemon. |
 | [`shot`](../crates/shot/README.md) | Deterministic PNG renderings of the terminal client's named states, and its storybook of whole screens. |
 | [`xtask`](../crates/xtask/src/main.rs) | Developer tasks: protobuf codegen, the protocol compatibility check, releases. |
@@ -701,7 +708,7 @@ The allowed sets encode the layering above:
 | `wire`, `settings`, `redaction`, `log-file`, `release`, `analytics`, `git-facts`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code |
 | `journal`, `store`, `agent-dir`, `attachments` | `wire` | |
 | `core-ring` | `journal` | a core's input ring, in segments named as the journal's are |
-| `interpret` | `attachments`, `claude-protocol`, `codex-protocol`, `redaction`, `wire` | the pure step and its body redactor |
+| `interpret` | `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `redaction`, `wire` | the pure step, the checks every kind's steps meet, the agent's record built from its facts ring, and the walker that writes a protocol message as its structure alone |
 | `daemon-core` | at most `core-ring`, `journal`, `store`, `wire` | holds the store, reads journals, records its inputs |
 | `relay-core` | at most `daemon-core` | built from the daemon core's link and routing state |
 | `path-core` | at most `daemon-core` | names links and reports dumps as the daemon core does |
@@ -709,7 +716,7 @@ The allowed sets encode the layering above:
 | `agent-core` | at most `core-ring`, `interpret`, `journal`, `wire` | wraps the interpreter |
 | `supervisor-core` | at most `core-ring`, `release` | reads release manifests and version stamps, and shares the cores' step budget and dump reasons from the ring's crate |
 | `agent` | `agent-core`, `agent-dir`, `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `log-file`, `pty-host`, `wire` | the agent core's driver with each provider's host inside it, and the only production crate that reads a provider |
-| `node` | `agent-dir`, `analytics`, `core-ring`, `daemon-core`, `git-facts`, `interpret`, `journal`, `log-file`, `path-core`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the dump's per-kind redactor |
+| `node` | `agent-dir`, `analytics`, `core-ring`, `daemon-core`, `git-facts`, `interpret`, `journal`, `log-file`, `path-core`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the walker that writes a report's core record as its structure |
 | `client` | `agent-dir`, `wire` | the local socket and the clock come from the contract crate |
 | `ui-state` → `wire`; `ui-view` → `attachments`, `ui-state`, `wire`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library |
 | `tui` | `attachments`, `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |
@@ -718,7 +725,7 @@ The allowed sets encode the layering above:
 | `app-ffi` | `app-embedded`, `app-runtime`, `client`, `node`, `ui-state`, `ui-view` | the C ABI over both |
 | `amux` | `agent`, `agent-dir`, `analytics`, `client`, `log-file`, `node`, `settings`, `tui`, `wire` | the one binary |
 | `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `socket-core`, `store`, `supervisor-core`, `ui-state`, `wire` | the properties, explored over the real cores, store and session state |
-| `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `redaction`, `store`, `ui-state`, `ui-view`, `wire` | replays the four stages, judging the models' properties; a debugging tool nothing links |
+| `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `provider-fakes`, `relay-core`, `store`, `supervisor-core`, `ui-state`, `wire` | replays the core's and the sessions' records, judging the models' properties; an agent's record carries no provider's words, so it replays as a stream made up from it through the real interpreter, held to the provider's types by the fakes' conformance; an installation's facts rings replay through the interpreter as they are, and the relay's and supervisor's reports through their cores; `just repro`, a debugging tool nothing links |
 | `qualification` | `node`, `provider-fakes`, `pty-host`, `redaction`, `testnet`, `wire` | the live lane and the performance workloads over the harness; its probes host terminal Claude on a pseudo-terminal of their own and sanitize what they record |
 | `xtask` | `release` | signs releases |
 | `installer` | `agent-dir`, `release`, `settings` | finds the front door from the settings, checks a download against the manifest, and waits on the local socket, without the daemon |

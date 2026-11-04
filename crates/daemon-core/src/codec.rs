@@ -74,6 +74,20 @@ pub(crate) mod content {
     }
 }
 
+/// A blob's hash as its marked hex: the hash of a person's file, which a
+/// dump writes as an alias.
+pub(crate) mod hash {
+    use super::*;
+
+    pub(crate) fn serialize<S: Serializer>(bytes: &[u8], to: S) -> Result<S::Ok, S::Error> {
+        write_opaque(Opaque::Hash, &hex(bytes), to)
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(from: D) -> Result<Vec<u8>, D::Error> {
+        unhex::<D::Error>(&String::deserialize(from)?)
+    }
+}
+
 /// Bytes the core only sizes and hands on, such as an upload's: recorded
 /// as their length, so a blob is not copied into the ring beside the file
 /// a job writes, and read back as that many zero bytes. The step depends

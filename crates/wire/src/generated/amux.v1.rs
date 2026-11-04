@@ -4075,31 +4075,26 @@ impl Provider {
         }
     }
 }
-/// Assembles a dump bundle of this host's own records into the reports
-/// directory, redacted.
+/// Assembles a dump bundle of this host's records into the reports
+/// directory: the daemon core's, each own agent's and the asking client's
+/// chats', with our own logs. Every dump carries the same parts.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DumpRequest {
-    /// Empty means every agent of the profile.
-    #[prost(bytes = "vec", repeated, tag = "1")]
-    pub agent_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-    #[prost(string, tag = "2")]
+    #[prost(string, tag = "1")]
     pub reason: ::prost::alloc::string::String,
     /// Produced on an invariant violation or panic rather than on request.
-    #[prost(bool, tag = "3")]
+    #[prost(bool, tag = "2")]
     pub automatic: bool,
-    /// The asking client's open sessions, each an encoded
-    /// amux.dump.ClientSessionHistory: the session as its trace began and every
-    /// message since, the client stage of a replay. Opaque here because only the
-    /// build that wrote it reads it; a daemon that cannot decode one leaves it
-    /// out of the bundle and says so. Unredacted as the client holds it; the
-    /// daemon redacts each through its agent's kind before it writes it into the
-    /// bundle, and passes none on to another host.
-    #[prost(bytes = "vec", repeated, tag = "4")]
+    /// The records of the chats the asking client shows, each an encoded
+    /// amux.dump.ClientSessionHistory with `structure_only` set: the session as
+    /// its trace began and every message since, with nothing anybody wrote. The
+    /// client stage of a replay. Opaque here because only the build that wrote
+    /// it reads it; the daemon leaves out one that does not decode or is not a
+    /// record, and says so, and passes none on to another host.
+    #[prost(bytes = "vec", repeated, tag = "3")]
     pub sessions: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-    #[prost(enumeration = "DumpScope", tag = "5")]
-    pub scope: i32,
     /// The id of the check that broke, for an automatic dump a check asked for.
-    #[prost(string, tag = "6")]
+    #[prost(string, tag = "4")]
     pub check: ::prost::alloc::string::String,
 }
 impl ::prost::Name for DumpRequest {
@@ -4128,8 +4123,7 @@ impl ::prost::Name for DumpResponse {
         "type.googleapis.com/amux.v1.DumpResponse".into()
     }
 }
-/// The agent process's part of a dump: its facts ring and checkpoint,
-/// already redacted.
+/// The agent process's part of a dump: its record, built when asked.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DumpPart {
     #[prost(bytes = "vec", tag = "1")]
@@ -4207,51 +4201,6 @@ impl ::prost::Name for SubmitReportResponse {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.SubmitReportResponse".into()
-    }
-}
-/// What a dump carries: what replays the stage its trigger concerns, and only
-/// what this host holds.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum DumpScope {
-    /// Everything this host holds for the named agents: `amux dump` and
-    /// Export Diagnostics.
-    Unspecified = 0,
-    /// The daemon core's checkpoint, inputs and store copy, with the own
-    /// agents' journals from its cursor on.
-    Core = 1,
-    /// One agent: its process's part, journal, row and slice.
-    Agent = 2,
-    /// One chat: the client's session and its agent's row and slice.
-    Transcript = 3,
-    /// A person's report: every row, a slice per open chat, the client's
-    /// sessions and the core's part.
-    Report = 4,
-}
-impl DumpScope {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "DUMP_SCOPE_UNSPECIFIED",
-            Self::Core => "DUMP_SCOPE_CORE",
-            Self::Agent => "DUMP_SCOPE_AGENT",
-            Self::Transcript => "DUMP_SCOPE_TRANSCRIPT",
-            Self::Report => "DUMP_SCOPE_REPORT",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "DUMP_SCOPE_UNSPECIFIED" => Some(Self::Unspecified),
-            "DUMP_SCOPE_CORE" => Some(Self::Core),
-            "DUMP_SCOPE_AGENT" => Some(Self::Agent),
-            "DUMP_SCOPE_TRANSCRIPT" => Some(Self::Transcript),
-            "DUMP_SCOPE_REPORT" => Some(Self::Report),
-            _ => None,
-        }
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -9784,6 +9733,9 @@ impl ::prost::Name for PairingAbandoned {
         "type.googleapis.com/amux.v1.PairingAbandoned".into()
     }
 }
+/// Why a pairing was refused: sent in the stream, or carried in the details
+/// of the status a refusal ends the stream with, so the other side tells
+/// refusals apart without reading their words.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PairingError {
     #[prost(enumeration = "pairing_error::Reason", tag = "1")]
@@ -9813,6 +9765,11 @@ pub mod pairing_error {
         Timeout = 4,
         UserRejected = 5,
         SelfPairing = 6,
+        /// The peer claimed a host this one already trusts under another key.
+        /// The detail is the sentence a person is shown, naming that host.
+        AlreadyPaired = 7,
+        /// Too many wrong secrets closed the window.
+        Locked = 8,
     }
     impl Reason {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -9828,6 +9785,8 @@ pub mod pairing_error {
                 Self::Timeout => "TIMEOUT",
                 Self::UserRejected => "USER_REJECTED",
                 Self::SelfPairing => "SELF_PAIRING",
+                Self::AlreadyPaired => "ALREADY_PAIRED",
+                Self::Locked => "LOCKED",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -9840,6 +9799,8 @@ pub mod pairing_error {
                 "TIMEOUT" => Some(Self::Timeout),
                 "USER_REJECTED" => Some(Self::UserRejected),
                 "SELF_PAIRING" => Some(Self::SelfPairing),
+                "ALREADY_PAIRED" => Some(Self::AlreadyPaired),
+                "LOCKED" => Some(Self::Locked),
                 _ => None,
             }
         }
@@ -11844,6 +11805,10 @@ impl ::prost::Name for CtlFrame {
 pub struct AgentDumpRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub dump_id: ::prost::alloc::vec::Vec<u8>,
+    /// The most the agent's record may take compressed: what is left of the
+    /// report's limit when the daemon asks. Zero is the report's whole limit.
+    #[prost(uint64, tag = "2")]
+    pub limit: u64,
 }
 impl ::prost::Name for AgentDumpRequest {
     const NAME: &'static str = "AgentDumpRequest";
@@ -11872,6 +11837,14 @@ pub struct DumpAsked {
     /// asked for.
     #[prost(uint32, tag = "4")]
     pub held_back: u32,
+    /// The agent's record through the step that asked, built from its facts
+    /// ring when it asked: each event and what its interpreter concluded of
+    /// it, by kind, size and aliased id, without content. What the daemon
+    /// writes as the bundle's record of the agent, even when the agent has
+    /// exited by the time the bundle is written; empty when it could not be
+    /// built, and then the daemon asks the agent for its part.
+    #[prost(bytes = "vec", tag = "5")]
+    pub record: ::prost::alloc::vec::Vec<u8>,
 }
 impl ::prost::Name for DumpAsked {
     const NAME: &'static str = "DumpAsked";

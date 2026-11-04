@@ -268,6 +268,9 @@ fn advertisement_from_service(service: &ResolvedService) -> Result<Advertisement
         .get_property_val_str("name")
         .filter(|name| !name.is_empty())
         .map_or(instance, str::to_owned);
+    let name = wire::HostName::parse(&name)
+        .map_err(|error| format!("the advertised name is no host name: {error}"))?
+        .into_string();
     // A host that names no scope is in the empty one.
     let scope = service
         .get_property_val_str("scope")

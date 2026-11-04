@@ -1127,8 +1127,6 @@ impl CoreThread {
                 let core = crate::reports::Core::Daemon;
                 runtime.check_failed(core, &check, admitted.held_back);
                 runtime.dump_unasked(
-                    wire::DumpScope::Core,
-                    Vec::new(),
                     admitted.reason,
                     crate::reports::check_id(core, &check),
                     "the daemon core",
@@ -1294,55 +1292,33 @@ impl CoreThread {
                     Self::trust_changed(runtime, uuid::Uuid::from_bytes(host.0), changed);
                 }
             }
-            ShellWork::ReplacementEnded { host } => {
-                Self::replacement_ended(runtime, uuid::Uuid::from_bytes(host.0))
-            }
             ShellWork::PairWindow { active, locked_out } => self.window.publish(active, locked_out),
             ShellWork::Pairing(event) => pairing::record(&event, runtime.analytics()),
         }
     }
 
-    /// What follows a trust change on the drive: on the connections, and
-    /// for a host forgotten, the tickets and tokens it gave this profile's
-    /// dials, which nothing would dial it with again.
+    /// What follows a trust change on the drive: for a host forgotten, the
+    /// tickets and tokens it gave this profile's dials, which nothing would
+    /// dial it with again.
     fn trust_changed(
         runtime: &ProfileRuntime,
         host: uuid::Uuid,
         changed: daemon_core::trust::TrustChanged,
     ) {
-        use daemon_core::trust::{PairingUpdate, TrustChanged};
-
-        let profile = runtime.dir();
-        let update = match changed {
-            TrustChanged::Paired(update) => update,
-            TrustChanged::Removed(_) => {
-                for kept in [crate::CLIENT_TICKETS_DIR, crate::CLIENT_TOKENS_DIR] {
-                    let path = profile.join(kept).join(host.to_string());
-                    let removed = match std::fs::metadata(&path) {
-                        Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(&path),
-                        Ok(_) => std::fs::remove_file(&path),
-                        Err(_) => Ok(()),
-                    };
-                    if let Err(error) = removed {
-                        tracing::warn!(%error, path = %path.display(), "cannot remove a forgotten host's file");
-                    }
-                }
-                return;
-            }
-            _ => return,
-        };
-        if update == PairingUpdate::ReplacedPubkey
-            && let Some(edge) = runtime.edge()
-        {
-            edge.connections().finish_host_replacement(host);
+        if !matches!(changed, daemon_core::trust::TrustChanged::Removed(_)) {
+            return;
         }
-    }
-
-    /// A key replacement that was not written: the host's connections may
-    /// open again under the key it had.
-    fn replacement_ended(runtime: &ProfileRuntime, host: uuid::Uuid) {
-        if let Some(edge) = runtime.edge() {
-            edge.connections().finish_host_replacement(host);
+        let profile = runtime.dir();
+        for kept in [crate::CLIENT_TICKETS_DIR, crate::CLIENT_TOKENS_DIR] {
+            let path = profile.join(kept).join(host.to_string());
+            let removed = match std::fs::metadata(&path) {
+                Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(&path),
+                Ok(_) => std::fs::remove_file(&path),
+                Err(_) => Ok(()),
+            };
+            if let Err(error) = removed {
+                tracing::warn!(%error, path = %path.display(), "cannot remove a forgotten host's file");
+            }
         }
     }
 
@@ -1377,17 +1353,6 @@ async fn feed(inputs: &WeakFeed, input: Input) {
 async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: WeakFeed) {
     let result = match op {
         Job::Fsync { path, bytes } => fsync(path, bytes).await,
-        Job::TeardownHost { host } => {
-            let Some(runtime) = runtime.upgrade() else {
-                return;
-            };
-            if let Some(edge) = runtime.edge() {
-                edge.connections()
-                    .teardown_host(uuid::Uuid::from_bytes(host.0))
-                    .await;
-            }
-            JobResult::Done
-        }
         Job::CheckpointWal => {
             let Some(dir) = runtime.upgrade().map(|runtime| runtime.dir().to_path_buf()) else {
                 return;

@@ -1,7 +1,6 @@
 //! The host catalogue: what each host a link or a neighbor's claim makes
-//! present said of itself in its handshake, which neighbors claim it, the
-//! hosts whose trust is being replaced, and the hosts that said they no
-//! longer trust this one.
+//! present said of itself in its handshake, which neighbors claim it, and
+//! the hosts that said they no longer trust this one.
 //!
 //! The routes these hosts make are [`crate::links`]'s and how they read is
 //! [`crate::presence`]'s; the catalogue keeps what a client is told of a
@@ -74,7 +73,6 @@ struct Claimed {
 pub struct Catalogue {
     directs: BTreeMap<HostId, Direct>,
     claims: BTreeMap<HostId, Claimed>,
-    replacing: BTreeSet<HostId>,
     /// The hosts that said they no longer trust this one, each with the
     /// count of notes at which it said so.
     revoked: BTreeMap<HostId, u64>,
@@ -140,27 +138,18 @@ impl Catalogue {
         before
     }
 
-    /// Holds what `host` said over `link`; false, holding nothing, while
-    /// the host's trust is being replaced.
-    fn direct_up(&mut self, host: HostId, said: Said, link: LinkId) -> bool {
-        if self.replacing.contains(&host) {
-            return false;
-        }
+    /// Holds what `host` said over `link`.
+    fn direct_up(&mut self, host: HostId, said: Said, link: LinkId) {
         let direct = self.directs.entry(host).or_insert_with(|| Direct {
             said: said.clone(),
             links: BTreeSet::new(),
         });
         direct.said = said;
         direct.links.insert(link);
-        true
     }
 
-    /// Holds that `relay` claims `host`, unless the host's trust is being
-    /// replaced.
+    /// Holds that `relay` claims `host`.
     fn claim_up(&mut self, relay: HostId, host: HostId, said: Said) {
-        if self.replacing.contains(&host) {
-            return;
-        }
         let claimed = self.claims.entry(host).or_insert_with(|| Claimed {
             said: said.clone(),
             relays: Vec::new(),
@@ -239,9 +228,8 @@ impl Daemon {
         if let Some(said) = said.filter(|said| said.host_id == peer.0) {
             self.remember_said(peer, said, out);
             let said = Said::from_wire(said);
-            if self.routing.catalogue.direct_up(peer, said, link)
-                && self.routing.catalogue.clear_revoked(peer)
-            {
+            self.routing.catalogue.direct_up(peer, said, link);
+            if self.routing.catalogue.clear_revoked(peer) {
                 self.revocation_cleared(peer, out);
             }
         }
@@ -346,21 +334,6 @@ impl Daemon {
         if self.routing.catalogue.clear_revoked(host) {
             self.revocation_cleared(host, out);
         }
-    }
-
-    /// The host's key is being replaced: nothing about it is held, and no
-    /// link or claim makes it present, until the replacement ends.
-    pub(crate) fn begin_replacement(&mut self, host: HostId) {
-        let catalogue = &mut self.routing.catalogue;
-        catalogue.replacing.insert(host);
-        catalogue.directs.remove(&host);
-        catalogue.claims.remove(&host);
-        catalogue.revoked.remove(&host);
-        self.touched.host_set = true;
-    }
-
-    pub(crate) fn finish_replacement(&mut self, host: HostId) {
-        self.routing.catalogue.replacing.remove(&host);
     }
 
     /// The mark came off: a trusted host is dialled and its sources open

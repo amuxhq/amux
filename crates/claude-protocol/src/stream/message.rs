@@ -132,6 +132,8 @@ wire_struct!(UserMessageReplay {
     #[serde(default="crate::absent::parent_tool_use_id",deserialize_with="required_option")] pub parent_tool_use_id: Option<String>,
     #[serde(default)] pub tool_use_result: Option<serde_json::Value>,
     #[serde(default)] pub timestamp: Option<String>,
+    /// Always true: what tells a replay from Claude's own user message.
+    #[serde(rename="isReplay",default)] pub is_replay: bool,
 });
 
 #[derive(Debug, Clone)]
@@ -215,6 +217,7 @@ wire_struct!(SystemInitMessage {
     #[serde(default="crate::absent::plugins")] pub plugins:Vec<PluginInfo>,
     #[serde(default)] pub capabilities:Option<Vec<String>>,
     #[serde(default,deserialize_with="present_nullable")] pub effort:Option<Option<String>>,
+    #[serde(default)] pub claude_code_version:Option<String>,
 });
 wire_struct!(McpServerInfo { pub name:String,pub status:String, });
 wire_struct!(PluginInfo { pub name:String,pub path:String,#[serde(default)] pub version:Option<String>, });

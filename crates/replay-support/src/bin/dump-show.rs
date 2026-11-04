@@ -1,7 +1,7 @@
 //! `dump-show BUNDLE [--agent A]`: prints a dump bundle `amux dump` wrote as
-//! text: the manifest, and per agent its inventory row, journal (in the
-//! interpreter's golden format), store slice, facts and every other file.
-//! `--agent` keeps the agents whose id starts with A or whose name is A.
+//! text: the manifest, each agent's record, each chat's record, the daemon
+//! core's record and every other file. `--agent` keeps the agents whose id
+//! starts with A.
 
 use std::path::PathBuf;
 use std::process::ExitCode;

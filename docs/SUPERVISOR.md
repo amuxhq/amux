@@ -71,16 +71,18 @@ The supervisor logs to `<data_dir>/supervisor.log`; the daemon logs to
 the config's `root`, `~/.local/share/amux` by default. Each moves its own
 standard error onto its log at start, so a panic lands there, and each log is
 capped at 8 MiB with one previous file beside it (see
-[Debugging](DEBUGGING.md#where-things-are)). A dump carries the tail of
-both.
+[Debugging](DEBUGGING.md#where-things-are)). A report carries the minute of
+both before it, at INFO and above.
 
 When the supervisor's core breaks one of its invariants it logs the reason
-and writes `<data_dir>/reports/supervisor-<unix ms>-<id>.txt`: the reason, the
-core's state when its window began, every input stepped since (at least the
-last 256) and its state now, under a header naming this build. The file
-holds what the log does (manifests, paths, exit codes, failures), no secret.
-One is written per kind of reason every ten minutes. Nothing replays it; it
-is what a step test of the supervisor core is written from by hand.
+and writes `<data_dir>/reports/supervisor-<unix ms>-<id>.json`: the reason,
+the core's state when its window began, every input stepped since (at least
+the last 256) and its state now, as JSON, with the build that wrote it. The
+file holds what the log does (manifests, paths, exit codes, failures), no
+secret. One is written per kind of reason every ten minutes. `just repro`
+replays it: the core from the window's start through every input, naming the
+first invariant broken (see
+[Debugging](DEBUGGING.md#reproducing-a-report)).
 
 ## Login items
 
@@ -266,8 +268,10 @@ update` sees as `amux.rejected` beside its own binary changing to name that
 version, it fails saying the build did not start, which version the
 supervisor put back, where the log is, and that `amux update --retry` tries
 it again. Without a supervisor it prints that updates on this install are
-deploys and does nothing. A build that trusts no release key answers every
-check with `this build trusts no release key, so it installs nothing`.
+deploys and does nothing. A build that trusts no release key for its feed
+answers every check with `this build trusts no release key for its feed, so
+it installs nothing`: a release build made by hand, and a debug build on any
+feed but a test's own on the loopback.
 
 ## Rollback
 

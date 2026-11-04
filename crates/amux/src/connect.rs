@@ -59,11 +59,11 @@ pub async fn front_door_now(config: &InstallationConfig) -> Option<Channel> {
 /// supervisor the daemon belongs to whatever service manager runs it, so
 /// the client says so and waits for it to come up.
 pub async fn front_door(config: &InstallationConfig) -> Result<Channel> {
+    let path = config.front_door();
     if let Some(channel) = front_door_now(config).await {
         return Ok(channel);
     }
-    let door = config.front_door();
-    let path = door.display();
+    let path = path.display();
     match config.supervisor {
         false => eprintln!(
             "No amux daemon is answering on {path}. This install has no supervisor, so the \

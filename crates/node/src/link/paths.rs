@@ -47,7 +47,6 @@ struct State {
     paid: bool,
     /// The forwarding links to the relay: a path to every peer.
     relays: BTreeSet<LinkId>,
-    next_nonce: u64,
 }
 
 /// One peer's machine and what the driver keeps beside it.
@@ -89,7 +88,6 @@ impl PathDriver {
                 machines: HashMap::new(),
                 paid: false,
                 relays: BTreeSet::new(),
-                next_nonce: uuid::Uuid::new_v4().as_u64_pair().0,
             }),
             wake: Arc::new(Notify::new()),
             epoch: Instant::now(),
@@ -389,7 +387,6 @@ impl PathDriver {
         let now_ms = self.now_ms();
         let mut out = Vec::new();
         while let Some(input) = queue.pop_front() {
-            let next_nonce = &mut state.next_nonce;
             let Some(machine) = state.machines.get_mut(&peer) else {
                 return;
             };
@@ -398,8 +395,11 @@ impl PathDriver {
             for output in out.drain(..) {
                 match output {
                     Output::Probe { path } => {
-                        *next_nonce = next_nonce.wrapping_add(1);
-                        let nonce = *next_nonce;
+                        // Fresh and random every time: an answer is taken
+                        // from any address, so only the nonce ties it to
+                        // this probe, and one that counted up from the last
+                        // could be guessed from it.
+                        let nonce = uuid::Uuid::new_v4().as_u64_pair().0;
                         machine.probes.insert(
                             path,
                             Probe {

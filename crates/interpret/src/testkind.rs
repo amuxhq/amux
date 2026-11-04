@@ -20,7 +20,7 @@ use wire::{
 
 use crate::{
     Carrier, Channel, Checkpoint, Effect, Emit, Event, Fact, FixtureInput, Interpreter, ItemDraft,
-    ItemView, RedactTarget, Shared, SnapshotView, Stepped, agent_message_body, agent_message_key,
+    ItemView, Shared, SnapshotView, Stepped, agent_message_body, agent_message_key,
     claude_sdk_input, human, is_status_tool, status_working_on, unknown,
 };
 
@@ -357,16 +357,20 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
         state.shared.finish(emit, body)
     }
 
-    fn redact(target: RedactTarget) -> RedactTarget {
-        target
-    }
-
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {
         state.shared.pending_messages().iter().cloned().collect()
     }
 
     fn typed_unrecorded(state: &Self::State) -> bool {
         state.shared.typed_unrecorded()
+    }
+
+    fn input_shape(input: &wire::Input) -> crate::shape::InputShape {
+        crate::shape::claude_sdk_input(&input.body)
+    }
+
+    fn structure(state: &Self::State) -> crate::shape::Structure {
+        state.shared.structure(|body| Self::item_shape(body).arm)
     }
 
     fn unknown_snapshot() -> Vec<u8> {

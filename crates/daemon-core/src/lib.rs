@@ -209,10 +209,7 @@ impl Daemon {
                 self.checkpoint_done(result, out)
             }
             Input::JobDone { job, result } => {
-                if !self.push_done(job, &result, out)
-                    && !self.blob_done(job, &result, out)
-                    && !self.trust_job_done(job, out)
-                {
+                if !self.push_done(job, &result, out) && !self.blob_done(job, &result, out) {
                     self.registry_job(job, result, out);
                 }
             }

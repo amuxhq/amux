@@ -27,7 +27,7 @@ use wire::{
     SendInputResponse, SessionEvent, SubscribeSessionRequest, send_input_response, session_event,
 };
 
-use crate::trace::{DriverEvent, DriverTrace, Ring, TraceEvent};
+use crate::trace::{DriverError, DriverEvent, DriverTrace, Ring, TraceEvent};
 
 /// Prefixes the reason of a dump a chat's transcript asked for.
 pub const TRANSCRIPT_DUMP: &str = "the client's transcript: ";
@@ -260,7 +260,7 @@ impl Inner {
                 }
                 Err(error) => self.note(DriverEvent::GetFailed {
                     key: key.clone(),
-                    error: error.to_string(),
+                    error: DriverError::from(&error),
                 }),
             }
         }
@@ -283,18 +283,17 @@ impl Inner {
             why: why.to_owned(),
         });
         let request = DumpRequest {
-            agent_ids: vec![self.agent_id.clone()],
             reason: format!("{TRANSCRIPT_DUMP}{why}"),
             automatic: true,
-            sessions: vec![cut.history(&self.agent_id).encode_to_vec()],
-            scope: wire::DumpScope::Transcript.into(),
+            // Its record as it stood at the break, which replays to it.
+            sessions: vec![cut.record(&self.agent_id).encode_to_vec()],
             check: TRANSCRIPT_CHECK.to_owned(),
         };
         let inner = self.clone();
         tokio::spawn(async move {
             if let Err(error) = inner.client.dump(request).await {
                 inner.note(DriverEvent::DumpFailed {
-                    error: error.to_string(),
+                    error: DriverError::from(&error),
                 });
             }
         });
@@ -304,6 +303,10 @@ impl Inner {
     /// oldest segment began from.
     fn history(&self) -> ClientSessionHistory {
         self.model().trace.trace().history(&self.agent_id)
+    }
+
+    fn record(&self) -> ClientSessionHistory {
+        self.model().trace.trace().record(&self.agent_id)
     }
 
     /// On screen, fetches the catalogue the newest snapshot names unless
@@ -357,8 +360,8 @@ impl Inner {
         };
         let fetched = match self.client.get_blob(request).await {
             Ok(fetched) => wire::Catalogue::decode(fetched.bytes.as_slice())
-                .map_err(|error| format!("the catalogue does not decode: {error}")),
-            Err(error) => Err(error.to_string()),
+                .map_err(|_| DriverError::Undecodable),
+            Err(error) => Err(DriverError::from(&error)),
         };
         match fetched {
             Ok(catalogue) => {
@@ -400,7 +403,7 @@ impl Inner {
     }
 
     async fn fetch_blob(self: Arc<Self>, hash: Vec<u8>) {
-        self.note(DriverEvent::Blob { hash: hash.clone() });
+        self.note(DriverEvent::Blob);
         self.apply(Msg::Blob {
             hash: hash.clone(),
             status: BlobStatus::Fetching,
@@ -758,7 +761,7 @@ impl Session {
             }
             Err(error) => {
                 self.inner.note(DriverEvent::PageFailed {
-                    error: error.to_string(),
+                    error: DriverError::from(&error),
                 });
                 if error.reason() == Some(wire::ErrorReason::HostUnreachable) {
                     Err(PageError::OriginUnreachable)
@@ -970,11 +973,17 @@ impl Session {
         self.inner.client.put_blob(request).await
     }
 
-    /// This session as a dump carries it, for a dump this client asks for:
-    /// the state its trace began from and every event since. The daemon
-    /// redacts it through the agent's kind before it writes it.
+    /// This session's whole history: the state its trace began from and
+    /// every event since, which its record is checked against. It never
+    /// goes into a dump.
     pub fn history(&self) -> ClientSessionHistory {
         self.inner.history()
+    }
+
+    /// This session's record: its history with nothing anybody wrote, as a
+    /// dump carries it (see [`ui_state::record`]).
+    pub fn record(&self) -> ClientSessionHistory {
+        self.inner.record()
     }
 }
 
@@ -1003,22 +1012,39 @@ impl DriverTrace<SessionState, Msg> {
         let traced = self
             .events
             .iter()
-            .map(|traced| ClientTraced {
-                seq: traced.seq,
-                at_ms: traced.at_ms,
-                event: Some(match &traced.event {
-                    TraceEvent::Msg(msg) => client_traced::Event::Msg(msg.to_wire()),
-                    TraceEvent::Driver(driver) => {
-                        client_traced::Event::Driver(format!("{driver:?}"))
+            .map(|traced| {
+                let (event, size) = match &traced.event {
+                    TraceEvent::Msg(msg) => {
+                        let msg = msg.to_wire();
+                        let size = msg.encoded_len();
+                        (client_traced::Event::Msg(msg), size)
                     }
-                }),
+                    TraceEvent::Driver(driver) => {
+                        let driver = format!("{driver:?}");
+                        let size = driver.len();
+                        (client_traced::Event::Driver(driver), size)
+                    }
+                };
+                ClientTraced {
+                    seq: traced.seq,
+                    at_ms: traced.at_ms,
+                    event: Some(event),
+                    size: u32::try_from(size).unwrap_or(u32::MAX),
+                }
             })
             .collect();
         ClientSessionHistory {
             agent_id: agent_id.to_vec(),
             start: Some(self.start.to_wire()),
             events: Some(ClientSessionEvents { traced }),
+            structure_only: false,
         }
+    }
+
+    /// The trace's record: its history with every body, text, name and
+    /// path emptied and each event's size kept.
+    pub fn record(&self, agent_id: &[u8]) -> ClientSessionHistory {
+        ui_state::record(self.history(agent_id))
     }
 }
 
@@ -1085,7 +1111,7 @@ async fn pump(inner: Arc<Inner>, stream: Option<EventStream<SessionEvent>>, ende
             }
             End::Closed(error) => {
                 inner.note(DriverEvent::StreamEnded {
-                    error: error.map(|error| error.to_string()),
+                    error: error.as_ref().map(DriverError::from),
                 });
                 inner.apply(Msg::Connection(Connection::Reconnecting));
                 true
@@ -1109,8 +1135,8 @@ async fn pump(inner: Arc<Inner>, stream: Option<EventStream<SessionEvent>>, ende
                     inner.apply(Msg::Connection(Connection::Live));
                     stream = Some(opened);
                 }
-                Err(RpcError::Transport(error)) => {
-                    inner.note(DriverEvent::SubscribeFailed { error });
+                Err(RpcError::Transport(_)) => {
+                    inner.note(DriverEvent::SubscribeFailed);
                     if !wait {
                         inner.apply(Msg::Connection(Connection::Reconnecting));
                     }
@@ -1118,7 +1144,7 @@ async fn pump(inner: Arc<Inner>, stream: Option<EventStream<SessionEvent>>, ende
                 }
                 Err(error) => {
                     inner.note(DriverEvent::Ended {
-                        error: error.to_string(),
+                        error: DriverError::from(&error),
                     });
                     inner.model().ended = Some(error);
                     inner.changed.send_replace(());

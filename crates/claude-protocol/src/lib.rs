@@ -10,6 +10,7 @@
 
 mod absent;
 mod decoding;
+mod probe;
 mod strictness;
 
 pub mod hooks;
@@ -18,3 +19,36 @@ pub mod stream;
 pub mod transcript;
 
 pub use decoding::{DecodeError, Drift};
+pub use probe::{Fields, is_map};
+
+/// The subtrees of a frame, by path from its root (`[]` an array's
+/// element), whose fields are the data's rather than this protocol's: a
+/// tool's input and result, a server's schema, per-model tallies, the files
+/// a snapshot names. What they hold is whatever the tool, server or person
+/// put there, so nothing in them is read as this protocol's field.
+pub const DATA_SUBTREES: &[&str] = &[
+    "message.content[].input",
+    "message.content[].content",
+    "tool_use_result",
+    "toolUseResult",
+    "modelUsage",
+    "model_usage_since_last_result",
+    "wire_tool_inputs",
+    "wireToolInputs",
+    "request.input",
+    "request.requested_schema",
+    "request.permission_suggestions",
+    "response.response",
+    "tool_input",
+    "tool_response",
+    "permission_denials[].tool_input",
+    "permission_suggestions",
+    "event.content_block.input",
+    "attachment",
+    "snapshot",
+    "requested_schema",
+];
+
+/// The maps of a frame keyed by the data, whose values this protocol
+/// types: a rate limit's windows, by a window's or a model's name.
+pub const DATA_MAPS: &[&str] = &["rate_limit_info.unifiedWindows"];

@@ -69,7 +69,6 @@ impl Daemon {
         self.notifications.jobs(&mut jobs);
         self.blobs.jobs(&mut jobs);
         self.checkpoints.jobs(&mut jobs);
-        self.trust.jobs(&mut jobs);
         let mut sessions = Vec::new();
         self.sources.sessions(&mut sessions);
         self.pending.peers.sessions(&mut sessions);
@@ -103,7 +102,7 @@ impl Daemon {
             &self.presence,
             &self.sources.canonical(&ids),
             &self.families.canonical(&ids),
-            (&self.pairing, &self.trust.canonical(&ids)),
+            (&self.pairing, &self.trust),
             (&self.answers, &self.host_set),
             &self.journals,
             &self.checkpoints.canonical(&ids),

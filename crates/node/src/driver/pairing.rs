@@ -16,7 +16,7 @@ use daemon_core::payload::{CallError, ClientRequest, PairMessage, Response, Stat
 use daemon_core::{Input, PairingId};
 use futures_util::{Stream, stream};
 use tokio::sync::{mpsc, oneshot};
-use tonic::Code;
+use wire::pairing_error::Reason;
 
 use super::calls::Delivered;
 use super::{Ask, Driver};
@@ -116,9 +116,8 @@ impl Carriers {
                 },
                 failure,
             ) => {
-                let _ = pending.send(Err(failure.unwrap_or_else(|| PairFailure {
-                    code: wire::ErrorCode::Unavailable,
-                    message: "pairing stream closed".to_owned(),
+                let _ = pending.send(Err(failure.unwrap_or_else(|| {
+                    PairFailure::new(wire::ErrorCode::Unavailable, "pairing stream closed")
                 })));
             }
             _ => {}
@@ -131,17 +130,28 @@ impl Carriers {
     }
 }
 
-/// A pairing refusal as the carrier's status says it.
+/// A pairing refusal as the carrier's status says it: its reason rides in
+/// the details as a `PairingError`, so the other side never reads the
+/// words to tell refusals apart.
 pub(crate) fn status(failure: &PairFailure) -> tonic::Status {
-    tonic::Status::new(Code::from_i32(failure.code as i32), failure.message.clone())
+    crate::grpc::status(
+        wire::Error::new(failure.code, failure.message.clone()).with_detail(&wire::PairingError {
+            reason: failure.reason as i32,
+            detail: String::new(),
+        }),
+    )
 }
 
 /// A carrier's status, as the core reads a refusal.
 pub(crate) fn failure(status: &tonic::Status) -> PairFailure {
-    PairFailure {
-        code: wire::ErrorCode::try_from(status.code() as i32).unwrap_or(wire::ErrorCode::Unknown),
-        message: status.message().to_owned(),
-    }
+    let reason = crate::net_error::from_status(status)
+        .and_then(|error| error.detail::<wire::PairingError>())
+        .map_or(Reason::Unspecified, |error| error.reason());
+    PairFailure::because(
+        wire::ErrorCode::try_from(status.code() as i32).unwrap_or(wire::ErrorCode::Unknown),
+        reason,
+        status.message(),
+    )
 }
 
 /// A failure as analytics counts it.
@@ -266,10 +276,10 @@ impl Driver {
             }
         }
         learned.await.unwrap_or_else(|_| {
-            Err(PairFailure {
-                code: wire::ErrorCode::Unavailable,
-                message: "the profile is no longer running".to_owned(),
-            })
+            Err(PairFailure::new(
+                wire::ErrorCode::Unavailable,
+                "the profile is no longer running",
+            ))
         })
     }
 }

@@ -1,9 +1,7 @@
 //! Common tonic IO wrapper for transports that do not need connect metadata.
 
-use std::collections::HashSet;
 use std::io;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -105,31 +103,5 @@ impl Connected for BoxedGrpcIo {
 
     fn connect_info(&self) -> Self::ConnectInfo {
         self.connect_info.clone()
-    }
-}
-
-/// Hosts whose key is being replaced. No stream from one is admitted until
-/// the replacement ends; the streams already open went with the host's
-/// links, which closed as it began.
-#[derive(Clone, Default)]
-pub(crate) struct Replacing(Arc<Mutex<HashSet<HostId>>>);
-
-impl Replacing {
-    pub(crate) fn begin(&self, peer: HostId) {
-        self.hosts().insert(peer);
-    }
-
-    pub(crate) fn finish(&self, peer: HostId) {
-        self.hosts().remove(&peer);
-    }
-
-    pub(crate) fn contains(&self, peer: HostId) -> bool {
-        self.hosts().contains(&peer)
-    }
-
-    fn hosts(&self) -> std::sync::MutexGuard<'_, HashSet<HostId>> {
-        self.0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }

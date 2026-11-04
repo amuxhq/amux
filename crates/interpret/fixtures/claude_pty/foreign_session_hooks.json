@@ -1,0 +1,127 @@
+{
+  "about": "Once the agent's session has started, a hook naming another session is not the agent's: anything Claude runs can reach the hooks socket, so a call, a permission request or a form claiming another session opens no ask, and a held one is let go at once.",
+  "spec": {
+    "created_at_ms": 1800000000000
+  },
+  "events": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "session_id": "s1",
+          "hook_event_name": "SessionStart",
+          "source": "startup",
+          "model": "claude-opus-5-5"
+        }
+      }
+    },
+    {
+      "tick": 1800000000010
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "transcript_path": "/t/s2.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "session_id": "s2",
+          "hook_event_name": "PreToolUse",
+          "tool_use_id": "t9",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          }
+        }
+      },
+      "expect": {
+        "asks": []
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "transcript_path": "/t/s2.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "session_id": "s2",
+          "amux_reply": 1,
+          "hook_event_name": "PermissionRequest",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          },
+          "permission_suggestions": []
+        }
+      },
+      "expect": {
+        "asks": [],
+        "effects": [
+          "hook 1 released"
+        ]
+      },
+      "note": "another conversation's hook is let go at once, so Claude shows its own dialog"
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "transcript_path": "/t/s2.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "session_id": "s2",
+          "amux_reply": 2,
+          "hook_event_name": "Elicitation",
+          "mcp_server_name": "tracker",
+          "message": "tracker needs your input",
+          "mode": "form",
+          "requested_schema": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "asks": [],
+        "effects": [
+          "hook 2 released"
+        ]
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "transcript_path": "/t/s1.jsonl",
+          "cwd": "/w",
+          "permission_mode": "default",
+          "session_id": "s1",
+          "amux_reply": 3,
+          "hook_event_name": "PermissionRequest",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ls"
+          },
+          "permission_suggestions": []
+        }
+      },
+      "note": "the agent's own session still asks"
+    }
+  ]
+}

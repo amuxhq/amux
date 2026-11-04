@@ -17,7 +17,7 @@
 //! them.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use agent_core::{
@@ -81,6 +81,10 @@ pub(crate) struct Driver<I: Interpreter> {
     dumps: DumpLimit,
     /// Dumps asked of the daemon while none was connected.
     asks: Asks,
+    /// Where a record built off the loop comes back, with its ask.
+    records: mpsc::UnboundedSender<Built>,
+    /// Records still being built.
+    building: usize,
     /// Terminal Claude's hooks waiting on the interpreter's decision.
     hook_answers: HookAnswers,
     /// Terminal clients showing Claude's own terminal.
@@ -102,11 +106,13 @@ impl Asks {
     /// Asks the connected daemon for a dump once it has the Hello, or keeps
     /// the ask until it does.
     /// `check` is `None` for a step over its budget.
+    /// `record` is the agent's record through the step that asked.
     fn ask(
         &mut self,
         daemon: Option<&Daemon>,
         admitted: core_ring::Admitted,
         check: Option<agent_core::Check>,
+        record: Vec<u8>,
     ) {
         let frame = CtlFrame {
             of: Some(ctl_frame::Of::DumpAsked(wire::DumpAsked {
@@ -114,6 +120,7 @@ impl Asks {
                 invariant: check.map_or_else(String::new, |check| check.sentence.to_owned()),
                 check: check.map_or_else(String::new, |check| check.id.to_owned()),
                 held_back: u32::try_from(admitted.held_back).unwrap_or(u32::MAX),
+                record,
             })),
         };
         match daemon {
@@ -133,6 +140,16 @@ impl Asks {
     }
 }
 
+/// A dump's ask with the agent's record, built off the loop: running the
+/// facts ring through the interpreter again takes long enough that the
+/// agent would otherwise read no provider output and take no input
+/// meanwhile.
+struct Built {
+    admitted: core_ring::Admitted,
+    check: Option<agent_core::Check>,
+    record: Vec<u8>,
+}
+
 /// Everything the driver listens to.
 struct Channels {
     provider: mpsc::Receiver<ProviderEvent>,
@@ -144,6 +161,8 @@ struct Channels {
     control: mpsc::UnboundedReceiver<attach::Control>,
     /// Jobs' results.
     jobs: mpsc::UnboundedReceiver<(JobId, JobResult)>,
+    /// Records built for dumps' asks.
+    records: mpsc::UnboundedReceiver<Built>,
 }
 
 /// A write the core asked for failed.
@@ -178,11 +197,18 @@ pub(crate) async fn run<I: Interpreter>(
     let (frames_tx, frames_rx) = mpsc::unbounded_channel();
     let (control_tx, control_rx) = mpsc::unbounded_channel();
     let (jobs_tx, jobs_rx) = mpsc::unbounded_channel();
+    let (records_tx, records_rx) = mpsc::unbounded_channel();
     let mut tasks = vec![tokio::spawn(accept(ctl, connections_tx))];
     let hook_answers = HookAnswers::default();
     if let Some(hooks) = hooks {
+        let gate = HookGate {
+            folders: crate::claude::history::config_root(&spec.provider_env).map(|config| {
+                crate::claude::history::ProjectFolders::of(&config, Path::new(&spec.cwd))
+            }),
+        };
         tasks.push(tokio::spawn(hook_payloads(
             hooks,
+            gate,
             provider_tx.clone(),
             hook_answers.clone(),
         )));
@@ -253,6 +279,8 @@ pub(crate) async fn run<I: Interpreter>(
         exit: None,
         dumps: DumpLimit::default(),
         asks: Asks::default(),
+        records: records_tx,
+        building: 0,
         hook_answers,
         watchers: 0,
     };
@@ -270,6 +298,7 @@ pub(crate) async fn run<I: Interpreter>(
         frames_tx,
         control: control_rx,
         jobs: jobs_rx,
+        records: records_rx,
     };
     let cause = driver.run(&mut channels).await;
     // The listeners live in these tasks; waiting for each to be dropped
@@ -318,6 +347,13 @@ impl<I: Interpreter> Driver<I> {
         }
         loop {
             if let Some(cause) = self.exit.take() {
+                // A record still being built goes with its ask first: on
+                // the provider's exit it is the report's only copy.
+                while self.building > 0
+                    && let Some(built) = channels.records.recv().await
+                {
+                    self.built(built);
+                }
                 return cause;
             }
             let sleep = match self.timers.values().min() {
@@ -356,6 +392,7 @@ impl<I: Interpreter> Driver<I> {
                 Some((job, result)) = channels.jobs.recv() => {
                     self.feed(Input::JobDone { job, result }).await;
                 }
+                Some(built) = channels.records.recv() => self.built(built),
                 () = sleep => self.on_timers().await,
             }
         }
@@ -627,8 +664,7 @@ impl<I: Interpreter> Driver<I> {
                     let now = now_ms(self.clock.as_ref());
                     if let Some(admitted) = limited_dump_reason(&mut self.dumps, &reason, now) {
                         eprintln!("amux agent: {}", admitted.reason);
-                        self.asks
-                            .ask(self.daemon.as_ref(), admitted, reason.check());
+                        self.record(admitted, reason.check());
                     }
                     Ok(())
                 }
@@ -643,6 +679,43 @@ impl<I: Interpreter> Driver<I> {
         Ok(())
     }
 
+    /// Builds the agent's record through the last step off the loop and
+    /// asks for the dump once it is built. The facts ring is read now, as
+    /// it holds that step's event and later steps add to it. Sent with
+    /// the ask, the record reaches the dump even when this process ends
+    /// before the daemon could ask it for its part, as it does on the
+    /// provider's exit.
+    fn record(&mut self, admitted: core_ring::Admitted, check: Option<agent_core::Check>) {
+        let facts = crate::dump::facts(&self.dir);
+        let spec = self.spec.clone();
+        let core = self.agent.summary();
+        let done = self.records.clone();
+        self.building += 1;
+        tokio::spawn(async move {
+            let (spec_kept, core_kept) = (spec.clone(), core.clone());
+            let built =
+                tokio::task::spawn_blocking(move || crate::dump::build::<I>(&spec, core, facts, 0))
+                    .await;
+            let record = built_or_failed(built, &spec_kept, core_kept);
+            let _ = done.send(Built {
+                admitted,
+                check,
+                record,
+            });
+        });
+    }
+
+    /// A record built off the loop: its dump is asked for now.
+    fn built(&mut self, built: Built) {
+        self.building = self.building.saturating_sub(1);
+        self.asks.ask(
+            self.daemon.as_ref(),
+            built.admitted,
+            built.check,
+            built.record,
+        );
+    }
+
     /// Runs a job off the step; its result comes back as an input.
     fn job(&self, id: JobId, op: AgentJob) {
         let done = self.jobs.clone();
@@ -655,15 +728,34 @@ impl<I: Interpreter> Driver<I> {
                     let _ = done.send((id, JobResult::Git(git)));
                 });
             }
-            AgentJob::DumpPart { dump_id } => {
+            AgentJob::DumpPart { dump_id, limit } => {
                 let dir = self.dir.clone();
+                let spec = self.spec.clone();
+                let core = self.agent.summary();
                 tokio::task::spawn_blocking(move || {
-                    let part = crate::dump::part::<I>(&dir, dump_id);
+                    let part = crate::dump::part::<I>(&dir, dump_id, &spec, core, limit);
                     let _ = done.send((id, JobResult::DumpPart(part)));
                 });
             }
         }
     }
+}
+
+/// The record a build came back with, or one that says the build failed
+/// and how.
+fn built_or_failed(
+    built: Result<Vec<u8>, tokio::task::JoinError>,
+    spec: &AgentSpec,
+    core: serde_json::Value,
+) -> Vec<u8> {
+    built.unwrap_or_else(|error| {
+        let why = if error.is_panic() {
+            "its build panicked"
+        } else {
+            "its build was cancelled"
+        };
+        crate::dump::failed(spec, core, why)
+    })
 }
 
 /// A write to the agent directory failed, which in practice is a full
@@ -699,14 +791,53 @@ async fn accept(mut listener: LocalListener, connections: mpsc::Sender<LocalStre
     }
 }
 
+/// What a hook payload must say before it is read as terminal Claude's.
+/// The hooks socket is reachable by anything Claude runs, so a payload is
+/// held to what Claude itself writes: a session id Claude makes (a UUID),
+/// and a transcript in Claude's projects folder for this working folder,
+/// named by that session. Whether the session is this agent's is the
+/// interpreter's to judge, since a clear moves it on.
+struct HookGate {
+    /// None when Claude's config folder is unknown: no transcript passes.
+    folders: Option<crate::claude::history::ProjectFolders>,
+}
+
+impl HookGate {
+    fn admits(&self, payload: &[u8]) -> bool {
+        let Ok(serde_json::Value::Object(fields)) = serde_json::from_slice(payload) else {
+            return false;
+        };
+        let Some(session) = fields
+            .get("session_id")
+            .and_then(serde_json::Value::as_str)
+            .filter(|session| crate::claude::history::valid_session_id(session))
+        else {
+            return false;
+        };
+        match fields
+            .get("transcript_path")
+            .and_then(serde_json::Value::as_str)
+            .filter(|path| !path.is_empty())
+        {
+            None => true,
+            Some(path) => self
+                .folders
+                .as_ref()
+                .is_some_and(|folders| folders.hold(Path::new(path), session)),
+        }
+    }
+}
+
 /// Each connection on hooks.sock carries one hook payload. The hook binary
 /// wraps the payload with the messaging socket's credentials when Claude
 /// gave it them; they go to the provider, and only the payload Claude wrote
 /// becomes a fact. Payloads are read one connection at a time, in the order
 /// Claude ran its hooks; a connection Claude waits on for a decision is
-/// held for the interpreter's answer, and any other is closed at once.
+/// held for the interpreter's answer, and any other is closed at once. A
+/// payload the gate refuses is dropped, its connection with it.
 async fn hook_payloads(
     mut listener: LocalListener,
+    gate: HookGate,
     events: mpsc::Sender<ProviderEvent>,
     answers: HookAnswers,
 ) {
@@ -717,7 +848,14 @@ async fn hook_payloads(
         }
         let (payload, messaging) =
             crate::claude::hooks::unwrap_forwarded(&bytes).unwrap_or((bytes, None));
-        let payload = answers.hold(payload, stream);
+        if !gate.admits(&payload) {
+            eprintln!("amux agent: dropped a hook payload that is not this Claude's");
+            continue;
+        }
+        let Some(payload) = answers.hold(payload, stream) else {
+            eprintln!("amux agent: dropped a hook payload past the held connections' limit");
+            continue;
+        };
         if let Some(messaging) = messaging
             && events
                 .send(ProviderEvent::Messaging(messaging))
@@ -739,6 +877,46 @@ async fn hook_payloads(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The hooks socket admits only what Claude writes: a UUID session and,
+    /// when it names one, that session's transcript in this folder's
+    /// project.
+    #[test]
+    fn the_hook_gate_admits_only_payloads_claude_could_have_written() {
+        let config = std::env::temp_dir().join(format!("amux-gate-{}", std::process::id()));
+        let work = std::env::temp_dir();
+        let gate = HookGate {
+            folders: Some(crate::claude::history::ProjectFolders::of(&config, &work)),
+        };
+        let session = "66666666-6666-6666-6666-666666666666";
+        let slug: String = std::fs::canonicalize(&work)
+            .unwrap()
+            .to_string_lossy()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect();
+        let transcript = config
+            .join("projects")
+            .join(slug)
+            .join(format!("{session}.jsonl"));
+        let payload = |session: &str, transcript: &str| {
+            serde_json::to_vec(&serde_json::json!({
+                "hook_event_name": "PreToolUse",
+                "session_id": session,
+                "transcript_path": transcript,
+            }))
+            .unwrap()
+        };
+        let ours = transcript.display().to_string();
+        assert!(gate.admits(&payload(session, &ours)));
+        assert!(gate.admits(&payload(session, "")));
+        assert!(!gate.admits(&payload("--dangerously-skip-permissions", &ours)));
+        assert!(!gate.admits(&payload(session, "/etc/passwd")));
+        assert!(!gate.admits(b"{\"hook_event_name\":\"Stop\"}"));
+        assert!(!gate.admits(b"not json"));
+        let unknown = HookGate { folders: None };
+        assert!(!unknown.admits(&payload(session, &ours)));
+    }
 
     fn daemon() -> (Daemon, mpsc::UnboundedReceiver<CtlFrame>) {
         let (frames, sent) = mpsc::unbounded_channel();
@@ -779,6 +957,7 @@ mod tests {
             Some(&connected),
             admitted("the agent core: one", 3),
             Some(ONE),
+            b"the record".to_vec(),
         );
         let first = asked(sent.try_recv().expect("asked at once"));
         assert_eq!(
@@ -786,13 +965,30 @@ mod tests {
                 first.reason.as_str(),
                 first.invariant.as_str(),
                 first.check.as_str(),
-                first.held_back
+                first.held_back,
+                first.record.as_slice(),
             ),
-            ("the agent core: one", ONE.sentence, ONE.id, 3)
+            (
+                "the agent core: one",
+                ONE.sentence,
+                ONE.id,
+                3,
+                b"the record".as_slice()
+            )
         );
 
-        asks.ask(None, admitted("the agent core: two, older", 0), Some(TWO));
-        asks.ask(None, admitted("the agent core: two", 0), Some(TWO));
+        asks.ask(
+            None,
+            admitted("the agent core: two, older", 0),
+            Some(TWO),
+            Vec::new(),
+        );
+        asks.ask(
+            None,
+            admitted("the agent core: two", 0),
+            Some(TWO),
+            Vec::new(),
+        );
         assert!(sent.try_recv().is_err(), "nothing goes with no daemon");
         // A daemon that has dialled in but not yet been sent the Hello
         // reads the Hello first.
@@ -802,6 +998,7 @@ mod tests {
             Some(&next),
             admitted("the agent core: a slow step", 0),
             None,
+            Vec::new(),
         );
         assert!(sent.try_recv().is_err(), "nothing goes before the Hello");
         next.greeted = true;
@@ -819,6 +1016,118 @@ mod tests {
         );
         asks.hello_sent(&next);
         assert!(sent.try_recv().is_err(), "each waited once");
+    }
+
+    /// A driver for headless Claude over a fresh agent directory, connected
+    /// to a daemon whose frames `sent` reads, and where records built off
+    /// the loop come back on `built`.
+    struct Fixture {
+        _dir: tempfile::TempDir,
+        driver: Driver<interpret::claude_sdk::ClaudeSdk>,
+        sent: mpsc::UnboundedReceiver<CtlFrame>,
+        built: mpsc::UnboundedReceiver<Built>,
+    }
+
+    fn fixture() -> Fixture {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = AgentSpec {
+            agent_id: b"agent".to_vec(),
+            kind: wire::Kind::ClaudeSdk as i32,
+            incarnation: 1,
+            ..AgentSpec::default()
+        };
+        let facts = dir.path().join(dir::PRIVATE).join(dir::FACTS);
+        std::fs::create_dir_all(&facts).unwrap();
+        let mut first = Vec::new();
+        let agent = Agent::start(&spec, None, 0, &mut first);
+        let ring = Ring::open(facts, 1 << 20, &agent.checkpoint()).unwrap();
+        let journal = journal::Writer::open(dir.path().join(dir::JOURNAL), 1 << 20).unwrap();
+        let (connected, sent) = daemon();
+        let (jobs, _) = mpsc::unbounded_channel();
+        let (records, built) = mpsc::unbounded_channel();
+        let driver = Driver {
+            dir: dir.path().to_owned(),
+            spec,
+            clock: Arc::new(crate::clock::ManualClock::new(0)),
+            agent,
+            journal,
+            ring,
+            pty_log: None,
+            written: None,
+            provider: None,
+            daemon: Some(connected),
+            connections: 1,
+            timers: BTreeMap::new(),
+            jobs,
+            exit: None,
+            dumps: DumpLimit::default(),
+            asks: Asks::default(),
+            records,
+            building: 0,
+            hook_answers: HookAnswers::default(),
+            watchers: 0,
+        };
+        Fixture {
+            _dir: dir,
+            driver,
+            sent,
+            built,
+        }
+    }
+
+    /// Building a record runs the facts ring through the interpreter
+    /// again: the step that asked for the dump does not wait for it, and
+    /// the dump is asked for, with the record, once it is built.
+    #[tokio::test]
+    async fn a_dumps_record_is_built_off_the_loop_and_asked_for_once_built() {
+        let Fixture {
+            _dir,
+            mut driver,
+            mut sent,
+            mut built,
+        } = fixture();
+        let slow = DumpReason::OverBudget {
+            micros: 9_000,
+            budget: core_ring::StepBudget { micros: 1_000 },
+        };
+        assert!(
+            driver
+                .execute(vec![Output::Dump { reason: slow }])
+                .await
+                .is_ok()
+        );
+        assert!(sent.try_recv().is_err(), "the step waited for the record");
+        assert_eq!(driver.building, 1);
+
+        driver.built(built.recv().await.expect("the record is built"));
+        assert_eq!(driver.building, 0);
+        let asked = asked(sent.try_recv().expect("asked once built"));
+        assert!(asked.check.is_empty(), "a slow step has no check");
+        let record: serde_json::Value = serde_json::from_slice(&asked.record).unwrap();
+        assert_eq!(record["settings"]["kind"], "KIND_CLAUDE_SDK", "{record}");
+        assert_eq!(record["segments"].as_array().map(Vec::len), Some(1));
+    }
+
+    /// A build that fails leaves a record that says so, never one that
+    /// reads as an agent that did nothing.
+    #[tokio::test]
+    async fn a_record_whose_build_failed_says_so() {
+        let spec = AgentSpec {
+            kind: wire::Kind::Codex as i32,
+            ..AgentSpec::default()
+        };
+        let panicked = tokio::task::spawn_blocking(|| -> Vec<u8> { panic!("a bug") }).await;
+        let record = built_or_failed(panicked, &spec, serde_json::json!({"mode": "running"}));
+        let record: serde_json::Value = serde_json::from_slice(&record).unwrap();
+        assert_eq!(
+            record,
+            serde_json::json!({
+                "settings": {"kind": "KIND_CODEX"},
+                "core": {"mode": "running"},
+                "segments": [],
+                "errors": ["the record could not be built: its build panicked"],
+            })
+        );
     }
 
     #[test]

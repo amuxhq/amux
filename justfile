@@ -165,6 +165,12 @@ full-debug:
 shot *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 600 cargo run --locked --quiet -p shot --bin amux-shot -- "$@"
 
+# Replay a report (its id, its prefix in the reports bucket, its file or its
+# folder), an installation folder, or a relay's or the supervisor's report
+# through every stage it carries, keeping it under target/repro/ (docs/DEBUGGING.md).
+repro WHAT *ARGS:
+    cd "{{invocation_directory()}}" && "{{justfile_directory()}}/{{bounded}}" 900 cargo run --locked --quiet --manifest-path "{{justfile_directory()}}/Cargo.toml" -p replay-support --bin repro -- "$@"
+
 # Interactive, so only the build and a capture are bounded; `just storybook
 # capture --out DIR` draws every story to text and PNG (docs/TERMINAL.md).
 # Step through the terminal client's named screens, rebuilding on save.

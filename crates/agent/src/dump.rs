@@ -1,158 +1,110 @@
-//! The agent's part of a dump: what only the agent process holds, redacted
-//! by its own interpreter before it leaves the process.
-//!
-//! The part is the facts ring's segments (the last two, which is all the
-//! ring keeps), the checkpoint at the start of each, every spec file in
-//! the directory, and the tail of the agent's own log and its provider's,
-//! each read across its `.1` and redacted as text. Each facts entry is redacted on its own and written back
-//! as a line of the same shape, so a dump reader replays the ring exactly
-//! as the agent would. A file that cannot be read is left out and named in
-//! `dump-errors`, never included unredacted.
+//! The agent's part of a dump: its record, built when the dump asks for
+//! it. The facts ring is run again through this process's interpreter,
+//! which wrote it, keeping only what the interpreter concluded: never what
+//! was said. Its own log the daemon reads from the agent directory.
 
+use std::fs;
 use std::path::Path;
-use std::{fs, io};
 
-use interpret::ring::Entry;
-use interpret::{Interpreter, RedactTarget};
-use wire::{DumpFile, DumpPart};
+use interpret::Interpreter;
+use wire::{AgentSpec, DumpFile, DumpPart};
 
 use crate::dir;
 
-/// The name of the file listing what could not be read.
-pub const DUMP_ERRORS: &str = "dump-errors";
+/// The name of the agent's record in its part.
+pub const RECORD: &str = "record";
 
-pub(crate) fn part<I: Interpreter>(dir: &Path, dump_id: Vec<u8>) -> DumpPart {
-    let mut files = Vec::new();
-    let mut errors = Vec::new();
+/// The facts ring as it stood when read: each segment's checkpoint and
+/// bytes, oldest first, and what could not be read.
+pub(crate) struct Facts {
+    segments: Vec<(Vec<u8>, Vec<u8>)>,
+    errors: Vec<String>,
+}
+
+/// Reads the facts ring under `dir`. Reading is cheap beside running the
+/// ring through the interpreter, so the agent reads it at the step a
+/// report asks at, before later steps add to the ring or rotate it.
+pub(crate) fn facts(dir: &Path) -> Facts {
     let facts = dir.join(dir::PRIVATE).join(dir::FACTS);
+    let mut errors = Vec::new();
+    let mut segments = Vec::new();
     match journal::segments(&facts) {
         Ok(starts) => {
             for start in starts {
-                let segment = journal::segment_path(&facts, start);
-                let name = format!("{}/{}", dir::FACTS, journal::segment_name(start));
-                let checkpoint_name = format!("{name}.checkpoint");
-                match fs::read(&segment) {
-                    Ok(bytes) => files.push(file(name, facts_segment::<I>(&bytes))),
-                    Err(error) => errors.push(format!("{name}: {error}")),
-                }
-                let checkpoint = core_ring::checkpoint_path(&facts, start);
-                let name = checkpoint_name;
-                match fs::read(&checkpoint) {
-                    Ok(bytes) => match I::redact(RedactTarget::Checkpoint(bytes)) {
-                        RedactTarget::Checkpoint(bytes) => files.push(file(name, bytes)),
-                        _ => errors.push(format!("{name}: redacted to another shape")),
-                    },
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                    Err(error) => errors.push(format!("{name}: {error}")),
+                let name = journal::segment_name(start);
+                let read =
+                    fs::read(core_ring::checkpoint_path(&facts, start)).and_then(|checkpoint| {
+                        Ok((checkpoint, fs::read(journal::segment_path(&facts, start))?))
+                    });
+                match read {
+                    Ok(segment) => segments.push(segment),
+                    // An io error names its kind, never the bytes.
+                    Err(error) => errors.push(format!("facts/{name}: {}", error.kind())),
                 }
             }
         }
-        Err(error) => errors.push(format!("{}: {error}", dir::FACTS)),
+        Err(error) => errors.push(format!("{}: {}", dir::FACTS, error.kind())),
     }
-    match spec_names(dir) {
-        Ok(names) => {
-            for name in names {
-                match fs::read(dir.join(&name)) {
-                    Ok(bytes) => match I::redact(RedactTarget::Spec(bytes)) {
-                        RedactTarget::Spec(bytes) => files.push(file(name, bytes)),
-                        _ => errors.push(format!("{name}: redacted to another shape")),
-                    },
-                    Err(error) => errors.push(format!("{name}: {error}")),
-                }
-            }
-        }
-        Err(error) => errors.push(format!("specs: {error}")),
-    }
-    for (name, path) in [
-        (agent_dir::AGENT_LOG, dir.join(agent_dir::AGENT_LOG)),
-        (
-            dir::PROVIDER_LOG,
-            dir.join(dir::PRIVATE).join(dir::PROVIDER_LOG),
-        ),
-    ] {
-        match log_file::tail(&path, log_file::AGENT_CAP) {
-            Ok(Some((tail, _))) => files.push(file(
-                name.to_owned(),
-                interpret::redact_text(&String::from_utf8_lossy(&tail)).into_bytes(),
-            )),
-            Ok(None) => {}
-            Err(error) => errors.push(format!("{name}: {error}")),
-        }
-    }
-    if !errors.is_empty() {
-        errors.push(String::new());
-        files.push(file(DUMP_ERRORS.to_owned(), errors.join("\n").into_bytes()));
-    }
-    DumpPart { dump_id, files }
+    Facts { segments, errors }
 }
 
-fn file(name: String, contents: Vec<u8>) -> DumpFile {
-    DumpFile { name, contents }
-}
-
-/// Every `spec.<n>` in the directory, oldest first.
-fn spec_names(dir: &Path) -> io::Result<Vec<String>> {
-    let mut specs = Vec::new();
-    for entry in fs::read_dir(dir)? {
-        let name = entry?.file_name();
-        if let Some(n) = name
-            .to_str()
-            .and_then(|name| name.strip_prefix("spec."))
-            .and_then(|n| n.parse::<u32>().ok())
-        {
-            specs.push(n);
-        }
+/// The agent's record, encoded: `facts` run through `I` from each
+/// segment's checkpoint, beside the lifecycle `core`, its oldest events
+/// left out where the whole would not fit `limit` bytes compressed, or a
+/// whole report's limit when it is zero.
+pub(crate) fn build<I: Interpreter>(
+    spec: &AgentSpec,
+    core: serde_json::Value,
+    facts: Facts,
+    limit: u64,
+) -> Vec<u8> {
+    let limit = match usize::try_from(limit) {
+        Ok(0) | Err(_) => interpret::record::LIMIT,
+        Ok(limit) => limit.min(interpret::record::LIMIT),
+    };
+    let salt = uuid::Uuid::new_v4().into_bytes();
+    let mut record = interpret::record::within::<I>(spec, salt, core, facts.segments, |record| {
+        fits(&serde_json::to_vec(record).unwrap_or_default(), limit)
+    });
+    if !facts.errors.is_empty() {
+        record["errors"] = facts.errors.into();
     }
-    specs.sort_unstable();
-    Ok(specs.into_iter().map(|n| format!("spec.{n}")).collect())
+    serde_json::to_vec(&record).unwrap_or_default()
 }
 
-/// A facts segment with every entry redacted. A line this build cannot
-/// read may hold anything, so it is replaced by a marker.
-fn facts_segment<I: Interpreter>(bytes: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(bytes.len());
-    for line in bytes.split(|byte| *byte == b'\n') {
-        if line.is_empty() {
-            continue;
-        }
-        let redacted = serde_json::from_slice::<Entry>(line)
-            .ok()
-            .and_then(redact_entry::<I>)
-            .and_then(|entry| serde_json::to_vec(&entry).ok())
-            .unwrap_or_else(|| br#"{"event":"unreadable"}"#.to_vec());
-        out.extend_from_slice(&redacted);
-        out.push(b'\n');
+/// Whether an encoded record fits `limit` once compressed, as the daemon
+/// compresses it, with room for the errors added after.
+fn fits(record: &[u8], limit: usize) -> bool {
+    const ROOM: usize = 1 << 10;
+    zstd::bulk::compress(record, 3).is_ok_and(|compressed| compressed.len() + ROOM <= limit)
+}
+
+/// The record of an agent whose record could not be built: its kind and
+/// lifecycle, and why there is nothing else, so the report says the build
+/// failed rather than showing an agent that did nothing.
+pub(crate) fn failed(spec: &AgentSpec, core: serde_json::Value, why: &str) -> Vec<u8> {
+    let record = serde_json::json!({
+        "settings": { "kind": spec.kind().as_str_name() },
+        "core": core,
+        "segments": [],
+        "errors": [format!("the record could not be built: {why}")],
+    });
+    serde_json::to_vec(&record).unwrap_or_default()
+}
+
+/// The part the daemon asked for: the record alone, within `limit`.
+pub(crate) fn part<I: Interpreter>(
+    dir: &Path,
+    dump_id: Vec<u8>,
+    spec: &AgentSpec,
+    core: serde_json::Value,
+    limit: u64,
+) -> DumpPart {
+    DumpPart {
+        dump_id,
+        files: vec![DumpFile {
+            name: RECORD.to_owned(),
+            contents: build::<I>(spec, core, facts(dir), limit),
+        }],
     }
-    out
-}
-
-fn redact_entry<I: Interpreter>(entry: Entry) -> Option<Entry> {
-    Some(match entry {
-        Entry::Fact { .. } => {
-            let interpret::Event::Fact(fact) = entry.event()? else {
-                return None;
-            };
-            match I::redact(RedactTarget::Fact(fact)) {
-                RedactTarget::Fact(fact) => Entry::of(&interpret::Event::Fact(fact)),
-                _ => return None,
-            }
-        }
-        Entry::Input { hex } => {
-            match I::redact(RedactTarget::Input(interpret::from_hex(&hex).ok()?)) {
-                RedactTarget::Input(bytes) => Entry::Input {
-                    hex: interpret::to_hex(&bytes),
-                },
-                _ => return None,
-            }
-        }
-        Entry::AgentMessage { hex } => {
-            match I::redact(RedactTarget::AgentMessage(interpret::from_hex(&hex).ok()?)) {
-                RedactTarget::AgentMessage(bytes) => Entry::AgentMessage {
-                    hex: interpret::to_hex(&bytes),
-                },
-                _ => return None,
-            }
-        }
-        other => other,
-    })
 }

@@ -12,16 +12,20 @@
 #![forbid(unsafe_code)]
 
 mod ask_item;
+pub mod checks;
 mod claude_answers;
 mod claude_common;
 pub mod claude_pty;
 pub mod claude_sdk;
 pub mod codex;
 mod golden;
+pub mod record;
 pub mod redact;
 pub mod ring;
 mod serde_pb;
+pub mod shape;
 mod shared;
+pub mod skeleton;
 pub mod unknown;
 
 #[cfg(any(test, feature = "testkind"))]
@@ -33,7 +37,7 @@ pub use golden::{
     check_invariants, claude_pty_input, claude_sdk_input, codex_input, fixture_script, render_item,
     render_steps, replay, run_golden, run_until,
 };
-pub use redact::{redact, redact_message, redact_text};
+pub use redact::{redact_text, structure_message};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 pub use serde_pb::{from_hex, to_hex};
@@ -41,7 +45,7 @@ pub use shared::{
     AMUX_TOOL_SERVER, Asks, Emit, ItemDraft, OUTPUT_CAP, OpenAsk, OpenTurn, Output, Queue,
     SEND_TOOL, STATUS_TOOL, SendOutcome, Shared, TurnCounter, agent_message_body,
     agent_message_key, human, is_attach_tool, is_send_tool, is_status_tool, output_cut,
-    sent_message, status_working_on,
+    sent_message, status_working_on, without_terminal_codes,
 };
 use wire::{AgentSpec, Envelope, Input, SendInputResponse, Step};
 
@@ -69,11 +73,6 @@ pub trait Interpreter {
     /// key, and the snapshot.
     fn reincarnate(state: Self::State, spec: &AgentSpec) -> (Self::State, Step);
 
-    /// Removes secrets from a body, a facts-ring entry or a checkpoint while
-    /// keeping its structure; the daemon calls it (through [`redact()`]) on a
-    /// store slice at dump time and the agent process on its own dump part.
-    fn redact(target: RedactTarget) -> RedactTarget;
-
     /// The snapshot body with every field at its explicit unknown.
     fn unknown_snapshot() -> Vec<u8>;
 
@@ -88,6 +87,29 @@ pub trait Interpreter {
 
     /// Reads an item body for goldens and invariants.
     fn describe_item(body: &[u8]) -> ItemView;
+
+    /// What the agent's record keeps of a provider fact.
+    fn fact_shape(fact: &Fact) -> shape::FactShape {
+        shape::fact(fact)
+    }
+
+    /// What the agent's record keeps of a person's input: its arm, and the
+    /// ask or queued input it names.
+    fn input_shape(input: &Input) -> shape::InputShape;
+
+    /// What the agent's record keeps of an item body: its arm, and whether
+    /// it can still grow.
+    fn item_shape(body: &[u8]) -> shape::ItemShape {
+        let view = Self::describe_item(body);
+        shape::ItemShape {
+            arm: view.arm,
+            complete: view.complete,
+        }
+    }
+
+    /// What the agent's record keeps of the state: what is open and
+    /// pending, by key.
+    fn structure(state: &Self::State) -> shape::Structure;
 
     /// Reads a snapshot body for goldens and invariants.
     fn describe_snapshot(body: &[u8]) -> SnapshotView;
@@ -189,6 +211,8 @@ pub enum Channel {
 pub struct Stepped {
     pub step: Step,
     pub effects: Vec<Effect>,
+    /// The first of [`checks::CHECKS`] the step broke.
+    pub broken: Option<checks::Violation>,
 }
 
 /// What the agent process does on an interpreter's behalf, in order.
@@ -260,33 +284,6 @@ pub enum Carrier {
     MessagingSocket,
     /// Headless Claude: a user message on stdin.
     Stdin,
-}
-
-/// What [`Interpreter::redact`] works on.
-#[derive(Clone, Debug, PartialEq)]
-pub enum RedactTarget {
-    /// A facts-ring entry that is a provider fact.
-    Fact(Fact),
-    /// A facts-ring entry that is an input: an encoded `wire::Input`.
-    Input(Vec<u8>),
-    /// A facts-ring entry that is an agent message: an encoded
-    /// `wire::Envelope`.
-    AgentMessage(Vec<u8>),
-    /// An encoded checkpoint of the kind's state.
-    Checkpoint(Vec<u8>),
-    /// An encoded `wire::AgentSpec`: its environment values and prompt.
-    Spec(Vec<u8>),
-    /// An encoded `wire::Step` of the kind: its items, appends and
-    /// snapshot, bodies included. A journal frame is one; so is a slice of
-    /// the store written as one step.
-    Step(Vec<u8>),
-    /// An encoded `wire::Agent`, the inventory row: its name, directory,
-    /// what it is working on and its exit cause.
-    Agent(Vec<u8>),
-    /// An encoded `wire::dump::ClientSessionHistory` of the kind: a client's
-    /// session state and the messages since, with the items, snapshots and
-    /// inputs inside them, bodies included.
-    ClientSession(Vec<u8>),
 }
 
 /// An item body as the harness and goldens read it.

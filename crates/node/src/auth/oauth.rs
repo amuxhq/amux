@@ -1,6 +1,7 @@
-//! The two OAuth 2.0 exchanges amux makes with the cloud: signing in a
-//! device (RFC 8628) and refreshing an access token (RFC 6749 §6). Both are
-//! form posts to the cloud's token service, answered in JSON.
+//! The OAuth 2.0 exchanges amux makes with the cloud: signing in a device
+//! (RFC 8628), refreshing an access token (RFC 6749 §6) and revoking a
+//! refresh token at sign-out (RFC 7009). All are form posts to the cloud's
+//! token service; the first two are answered in JSON.
 
 use std::time::{Duration, Instant, SystemTime};
 
@@ -111,6 +112,12 @@ fn refused(error: &ErrorResponse) -> OAuthError {
     OAuthError::Request(format!("{}{description}", error.error))
 }
 
+/// The device authorization request's parameter naming the machine asking,
+/// which the approval page shows so the person can tell their own sign-in
+/// from one someone else started. A service that does not know it ignores
+/// it.
+pub const DEVICE_NAME_PARAMETER: &str = "device_name";
+
 /// A device sign-in under way (RFC 8628): the code the person enters, and
 /// the page to enter it on, until [`DeviceSignIn::finish`] has the token.
 pub struct DeviceSignIn {
@@ -128,13 +135,18 @@ pub struct DeviceSignIn {
 }
 
 impl DeviceSignIn {
-    /// Asks the cloud for a device code under the CLI's OAuth client.
-    pub async fn start(cloud_url: &str) -> Result<Self, OAuthError> {
+    /// Asks the cloud for a device code under the CLI's OAuth client,
+    /// naming this machine as `device_name`.
+    pub async fn start(cloud_url: &str, device_name: &str) -> Result<Self, OAuthError> {
         let http = http_client()?;
         let details: DeviceAuthorization = match post(
             &http,
             &format!("{cloud_url}/connect/deviceauthorization"),
-            &[("client_id", CLI_CLIENT_ID), ("scope", DEVICE_SCOPES)],
+            &[
+                ("client_id", CLI_CLIENT_ID),
+                ("scope", DEVICE_SCOPES),
+                (DEVICE_NAME_PARAMETER, device_name),
+            ],
         )
         .await?
         {
@@ -227,6 +239,41 @@ pub async fn refresh_access_token(
         tier: None,
     };
     Ok((access_token, tokens.refresh_token))
+}
+
+/// Tells the cloud a refresh token is no longer wanted, so a copy taken
+/// before a sign-out stops working. The service answers success for a
+/// token it no longer knows, so only a refusal or no answer is an error.
+pub async fn revoke_refresh_token(
+    cloud_url: &str,
+    client_id: &str,
+    refresh_token: &str,
+) -> Result<(), OAuthError> {
+    let url = format!("{cloud_url}/connect/revocation");
+    let response = reqwest::ClientBuilder::new()
+        .redirect(reqwest::redirect::Policy::none())
+        // A sign-out waits on this, and goes ahead without it.
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| OAuthError::Config(e.to_string()))?
+        .post(&url)
+        .form(&[
+            ("token", refresh_token),
+            ("token_type_hint", "refresh_token"),
+            ("client_id", client_id),
+        ])
+        .send()
+        .await
+        .map_err(|e| OAuthError::Request(e.to_string()))?;
+    let status = response.status();
+    if status.is_success() {
+        return Ok(());
+    }
+    let body = response.bytes().await.unwrap_or_default();
+    Err(match serde_json::from_slice::<ErrorResponse>(&body) {
+        Ok(error) => refused(&error),
+        Err(_) => OAuthError::Request(format!("{url} answered {status}")),
+    })
 }
 
 #[cfg(test)]
@@ -322,14 +369,16 @@ mod tests {
         ])
         .await;
 
-        let started = DeviceSignIn::start(&service.url).await.unwrap();
+        let started = DeviceSignIn::start(&service.url, "Jordan's Mac")
+            .await
+            .unwrap();
         assert_eq!(started.verification_uri, "https://cloud.test/device");
         assert_eq!(started.finish().await.unwrap(), "refresh-1");
         let forms = service.forms.lock().unwrap();
         assert_eq!(forms[0].0, "/connect/deviceauthorization");
         assert_eq!(
             forms[0].1,
-            "client_id=cli&scope=openid+profile+email+offline_access+api"
+            "client_id=cli&scope=openid+profile+email+offline_access+api&device_name=Jordan%27s+Mac"
         );
         assert_eq!(forms.len(), 4);
         for (path, form) in &forms[1..] {
@@ -352,7 +401,7 @@ mod tests {
         ])
         .await;
 
-        let error = DeviceSignIn::start(&service.url)
+        let error = DeviceSignIn::start(&service.url, "desk")
             .await
             .unwrap()
             .finish()
@@ -361,6 +410,30 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "OAuth request error: access_denied: the person declined"
+        );
+    }
+
+    /// A sign-out revokes its refresh token as the client it was issued to;
+    /// a refusal is reported, not hidden.
+    #[tokio::test]
+    async fn revocation_names_the_refresh_token_and_its_client() {
+        let service = serve(vec![
+            (200, serde_json::json!({})),
+            (400, serde_json::json!({"error": "invalid_client"})),
+        ])
+        .await;
+        revoke_refresh_token(&service.url, "cli", "refresh-1")
+            .await
+            .unwrap();
+        let error = revoke_refresh_token(&service.url, "cli", "refresh-1")
+            .await
+            .unwrap_err();
+        assert_eq!(error.to_string(), "OAuth request error: invalid_client");
+        let forms = service.forms.lock().unwrap();
+        assert_eq!(forms[0].0, "/connect/revocation");
+        assert_eq!(
+            forms[0].1,
+            "token=refresh-1&token_type_hint=refresh_token&client_id=cli"
         );
     }
 

@@ -40,11 +40,12 @@ use std::time::Instant;
 
 use release::{Choice, Manifest, Release, Skip};
 pub use semver::Version;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// A timer the core asks the driver to arm. One of each at a time: arming
 /// one replaces it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum TimerId {
     /// The daemon's restart, after a backoff.
     Restart,
@@ -57,22 +58,22 @@ pub enum TimerId {
 }
 
 /// A job the driver runs; its outcome returns as [`Input::JobDone`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct JobId(pub u64);
 
 /// One daemon process the supervisor started or inherited.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct DaemonId(pub u64);
 
 /// The daemon a supervisor inherits from the one that exec'd it.
 pub const INHERITED_DAEMON: DaemonId = DaemonId(0);
 
 /// A request on the control socket, by the id the driver gave it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct AskId(pub u64);
 
 /// What the control socket asks.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Request {
     /// `amux update`: check the channel now. The build rolled back here is
     /// installed again only on `retry` (`amux update --retry`).
@@ -93,7 +94,7 @@ pub enum PrevFound {
 }
 
 /// The supervisor's timings and thresholds.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Params {
     pub check_interval_ms: u64,
     /// Starts that never activate, while prev exists, before rolling back.
@@ -133,7 +134,7 @@ pub struct Start {
 /// Everything that can happen to the supervisor, decoded by the driver.
 /// The driver feeds [`Input::Tick`] with its clock before every other
 /// input.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Input {
     /// The daemon wrote `prepared`: it migrated and looked without writing.
     Prepared {
@@ -244,7 +245,7 @@ pub enum Output {
 }
 
 /// What a job produced.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum JobResult {
     /// What the release feed listed.
     Listed(Listed),
@@ -253,7 +254,7 @@ pub enum JobResult {
 }
 
 /// The channel's word, as the driver read it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Listed {
     /// Updates are not automatic, and the look was not asked for.
     Off,
@@ -270,7 +271,7 @@ pub enum Listed {
 }
 
 /// Which file a binary is: the one this supervisor runs, or another.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 enum File {
     Mine,
     Other,
@@ -278,7 +279,7 @@ enum File {
 
 /// A binary beside the install: which file, its version when known, and
 /// whether a daemon from it has served here, so it can start.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct Build {
     file: File,
     version: Option<Version>,
@@ -287,20 +288,20 @@ struct Build {
 
 /// The binaries on disk: the one at the path, and prev while an update is
 /// being activated.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Installed {
     path: Build,
     prev: Option<Build>,
 }
 
 /// A daemon the supervisor started, and where it is in its life.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Running {
     id: DaemonId,
     phase: Phase,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 enum Phase {
     /// Started, read only until it prepares and is told `go`; stopped at
     /// the deadline.
@@ -312,7 +313,7 @@ enum Phase {
 }
 
 /// What follows a stopped daemon's exit.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 enum Then {
     /// It never activated: a failed start.
     FailedStart,
@@ -327,7 +328,7 @@ enum Then {
 
 /// A look at the feed in flight, and the `amux update` callers waiting
 /// for its answer.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct Checking {
     job: JobId,
     /// The rolled-back build may be installed again.
@@ -339,7 +340,7 @@ struct Checking {
 
 /// Restart delays: doubling from the first to the cap, starting over once
 /// a daemon has stayed up long enough.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct Backoff {
     next_ms: u64,
 }
@@ -354,7 +355,7 @@ struct Touched {
 /// Installed binaries, the running daemon and its phase, the release seen,
 /// failed starts and the rollback target. A value between steps: equal
 /// supervisors step alike.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Supervisor {
     params: Params,
     target: String,
@@ -381,6 +382,8 @@ pub struct Supervisor {
     exited: bool,
     now_ms: u64,
     next_id: u64,
+    /// Cleared at each step's end, so nothing between steps.
+    #[serde(skip)]
     touched: Touched,
 }
 

@@ -5,22 +5,23 @@
 //! the server that serves manifests, so neither can sign a manifest
 //! machines would take. A second key, the backup, is kept offline and
 //! trusted by every build beside it, so a release signed with the backup
-//! can retire a key that leaked. What is signed is what the
-//! workflow built: the key vouches for the digests GitHub published, not
-//! for the build, a trust kept deliberately and written up on the release
-//! page.
+//! can retire a key that leaked. What is signed is what the workflow built:
+//! each binary is downloaded and signed only once its attestation proves
+//! that the workflow built it at the tagged commit. The key vouches for
+//! those digests, not for the runner that built them, a trust kept
+//! deliberately and written up on the release page.
 //!
 //! A release is two acts at two times. `cut` makes the version exist: the
 //! number goes into the manifests, the commit is tagged and pushed, and the
 //! tag's workflow builds the binaries into a GitHub Release. `deploy` puts
 //! that release in front of machines: a channel and a rollout are chosen,
-//! the macOS binary is signed with Developer ID and notarized (`signing`),
-//! the binaries' checksums are signed, and the channel manifest is uploaded
-//! to the release and handed to the operator's publish script, which puts
-//! it where amux.sh serves it as `/releases/<channel>.json`. A stable
-//! deploy hands over the install scripts with it: they read that manifest.
-//! Deploying repeats against the same release (a wider rollout, preview
-//! promoted to stable); cutting does not.
+//! the binaries' digests are checked, the macOS binary is signed with
+//! Developer ID (`signing`), the digests are signed, and the channel manifest
+//! is uploaded to the release and handed to the operator's publish script,
+//! which puts it where amux.sh serves it as `/releases/<channel>.json`. A
+//! stable deploy hands over the install scripts with it: they read that
+//! manifest. Deploying repeats against the same release (a wider rollout,
+//! preview promoted to stable); cutting does not.
 //!
 //! ```text
 //! xtask release key generate        make a seed, keep it, print its public half
@@ -56,6 +57,9 @@ const ASSETS: &[(&str, &str)] = &[
     ("x86_64-pc-windows-msvc", "amux-windows-x86_64.exe"),
 ];
 const CHANNELS: &[&str] = &["stable", "preview"];
+/// The target whose binary a deploy signs with Developer ID before any
+/// manifest names it.
+const MACOS_TARGET: &str = "aarch64-apple-darwin";
 
 pub fn main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -390,19 +394,27 @@ fn options(rest: &[&str]) -> Result<Options, Box<dyn std::error::Error>> {
 }
 
 /// Puts a cut release in front of a channel: waits for the tag's workflow
-/// to have published the binaries, signs their checksums, verifies every
-/// signature against the key the workflow compiles in, uploads
-/// `<channel>.json` to the release, replacing one already there, and runs
-/// the publish script that puts it where amux.sh serves it.
+/// to have published the binaries, downloads each one and proves from its
+/// attestation that the workflow built it at the tagged commit, signs the
+/// digests of those downloads, verifies every signature against the keys
+/// the tagged workflow compiles in, uploads `<channel>.json` to the release,
+/// replacing one already there, and runs the publish script that puts it
+/// where amux.sh serves it.
+///
+/// Everything published besides the binaries, the trusted keys and the
+/// install scripts, is read from the tag rather than the working tree, so
+/// an uncommitted edit never reaches a machine.
 fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
     let options = options(rest)?;
     let version = version.strip_prefix('v').unwrap_or(version);
     semver::Version::parse(version)?;
     let tag = format!("v{version}");
+    let root = repository_root();
+    let commit = tagged_commit(&root, &tag)?;
+    let workflow = String::from_utf8(tagged_file(&root, &commit, WORKFLOW)?)?;
+    let trusted = trusted_keys(&workflow)?;
     wait_for_release(&tag)?;
 
-    let root = repository_root();
-    let trusted = trusted_keys(&std::fs::read_to_string(root.join(WORKFLOW))?)?;
     let seed = match &options.key_file {
         Some(path) => file_seed(path)?,
         None => keychain_seed()?,
@@ -410,14 +422,12 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
     let key = release::public_key(&seed);
     if !trusted.contains(&key) {
         return Err(format!(
-            "{WORKFLOW} does not list the signing seed's public half {} in \
+            "{WORKFLOW} at {tag} does not list the signing seed's public half {} in \
              {PUBLIC_KEY_VARIABLE}; the binaries would refuse this manifest",
             release::hex(&key)
         )
         .into());
     }
-
-    sign_macos(&root, &tag)?;
 
     let repository = gh(&[
         "repo",
@@ -437,26 +447,59 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
         "--output",
         "-",
     ])?;
-    let sizes = gh(&[
-        "release",
-        "view",
-        &tag,
-        "--json",
-        "assets",
-        "--jq",
-        r#".assets[] | "\(.name) \(.size)""#,
-    ])?;
+    let staging = root.join("target/release-deploy").join(&tag);
+    std::fs::create_dir_all(&staging)?;
     let mut targets = BTreeMap::new();
     for (target, asset) in ASSETS {
-        let sha256 = checksum(&checksums, asset)
-            .ok_or_else(|| format!("checksums.txt of {tag} has no line for {asset}"))?;
-        let size = asset_size(&sizes, asset)
-            .ok_or_else(|| format!("the release {tag} lists no size for {asset}"))?;
+        gh(&[
+            "release",
+            "download",
+            &tag,
+            "--pattern",
+            asset,
+            "--dir",
+            &staging.to_string_lossy(),
+            "--clobber",
+        ])?;
+        let path = staging.join(asset);
+        let check = attestation_check(&path, repository, &tag, &commit);
+        gh(&check.iter().map(String::as_str).collect::<Vec<_>>()).map_err(|error| {
+            format!("{asset} of {tag} is not attested by {WORKFLOW} at {commit}: {error}")
+        })?;
+        let bytes = std::fs::read(&path)?;
+        let sha256 = release::sha256_of(&bytes);
+        agrees_with_checksums(&checksums, asset, &sha256)
+            .map_err(|error| format!("{tag}: {error}"))?;
+        // The macOS binary machines take is a copy of the attested one signed
+        // here with Developer ID, uploaded beside it under a name of its own.
+        let (asset, bytes, sha256) = match *target {
+            MACOS_TARGET => {
+                let signed = signing::signed_copy(&path)?;
+                let bytes = std::fs::read(&signed)?;
+                let sha256 = release::sha256_of(&bytes);
+                let name = signing::signed_asset(asset, &sha256);
+                let named = staging.join(&name);
+                std::fs::rename(&signed, &named)?;
+                gh(&[
+                    "release",
+                    "upload",
+                    &tag,
+                    &named.to_string_lossy(),
+                    "--clobber",
+                ])?;
+                println!(
+                    "uploaded {name}, {asset} signed with {}",
+                    signing::DEVELOPER_ID
+                );
+                (name, bytes, sha256)
+            }
+            _ => ((*asset).to_owned(), bytes, sha256),
+        };
         let entry = Release {
             version: version.into(),
             url: format!("https://github.com/{repository}/releases/download/{tag}/{asset}"),
             sha256,
-            size,
+            size: bytes.len() as u64,
         };
         targets.insert((*target).to_owned(), entry);
     }
@@ -492,8 +535,8 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
     );
     // The installer reads the stable manifest, so it goes out with one:
     // a preview deploy changes nothing a new machine runs.
-    let installers: Vec<PathBuf> = if options.channel == "stable" {
-        INSTALL_SCRIPTS.iter().map(|path| root.join(path)).collect()
+    let installers = if options.channel == "stable" {
+        tagged_installers(&root, &commit, &staging)?
     } else {
         Vec::new()
     };
@@ -501,65 +544,89 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-/// The release's macOS binary, as every machine that takes the release
-/// receives it.
-const MACOS_ASSET: &str = "amux-macos-arm64";
+/// The commit the local tag names. The cut made that tag, so a tag moved on
+/// GitHub afterwards is not followed.
+fn tagged_commit(root: &Path, tag: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let name = format!("refs/tags/{tag}^{{commit}}");
+    git(root, &["rev-parse", "--verify", "--quiet", &name])
+        .map(|commit| commit.trim().to_owned())
+        .map_err(|_| {
+            format!(
+                "this checkout has no tag {tag}; deploy from the checkout that cut it, or fetch \
+                 the tag after checking it names the commit you cut"
+            )
+            .into()
+        })
+}
 
-/// Makes the release's macOS binary one signed with Developer ID and
-/// notarized, and its line in `checksums.txt` that binary's, before any
-/// manifest is signed over them. The binary is signed only once: a later
-/// deploy of the same release finds it signed and only checks the checksum,
-/// which also repairs a deploy stopped between the two uploads.
-fn sign_macos(root: &Path, tag: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let dir = root.join("target/release-sign").join(tag);
-    std::fs::create_dir_all(&dir)?;
-    let binary = dir.join(MACOS_ASSET);
-    let dir_arg = dir.to_string_lossy();
-    gh(&[
-        "release",
-        "download",
-        tag,
-        "--pattern",
-        MACOS_ASSET,
-        "--dir",
-        &dir_arg,
-        "--clobber",
-    ])?;
-    if signing::sign_and_notarize(&binary)? {
-        gh(&[
-            "release",
-            "upload",
-            tag,
-            &binary.to_string_lossy(),
-            "--clobber",
-        ])?;
-        println!("uploaded the signed {MACOS_ASSET} to {tag}");
+/// The bytes `path` holds at `commit`.
+pub fn tagged_file(
+    root: &Path,
+    commit: &str,
+    path: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let output = Command::new("git")
+        .args(["show", &format!("{commit}:{path}")])
+        .current_dir(root)
+        .output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "{path} is not in {commit}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
     }
-    let digest = release::sha256_of(&std::fs::read(&binary)?);
-    let checksums = gh(&[
-        "release",
-        "download",
-        tag,
-        "--pattern",
-        "checksums.txt",
-        "--output",
-        "-",
-    ])?;
-    if checksum(&checksums, MACOS_ASSET).as_deref() != Some(digest.as_str()) {
-        let rewritten = signing::with_checksum(&checksums, MACOS_ASSET, &digest)
-            .ok_or_else(|| format!("checksums.txt of {tag} has no line for {MACOS_ASSET}"))?;
-        let file = dir.join("checksums.txt");
-        std::fs::write(&file, rewritten)?;
-        gh(&[
-            "release",
-            "upload",
-            tag,
-            &file.to_string_lossy(),
-            "--clobber",
-        ])?;
-        println!("checksums.txt of {tag} now names the signed {MACOS_ASSET}");
+    Ok(output.stdout)
+}
+
+/// The install scripts as `commit` holds them, written into `dir` under
+/// their own names, which are the names amux.sh serves them by.
+pub fn tagged_installers(
+    root: &Path,
+    commit: &str,
+    dir: &Path,
+) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+    INSTALL_SCRIPTS
+        .iter()
+        .map(|script| {
+            let name = Path::new(script).file_name().expect("a script has a name");
+            let path = dir.join(name);
+            std::fs::write(&path, tagged_file(root, commit, script)?)?;
+            Ok(path)
+        })
+        .collect()
+}
+
+/// The `gh` arguments that verify `file`'s attestation: made by this
+/// repository's Release workflow on a GitHub-hosted runner, for a run of
+/// the tag at its commit.
+pub fn attestation_check(file: &Path, repository: &str, tag: &str, commit: &str) -> Vec<String> {
+    vec![
+        "attestation".into(),
+        "verify".into(),
+        file.to_string_lossy().into_owned(),
+        "--repo".into(),
+        repository.into(),
+        "--signer-workflow".into(),
+        format!("{repository}/{WORKFLOW}"),
+        "--source-ref".into(),
+        format!("refs/tags/{tag}"),
+        "--source-digest".into(),
+        commit.into(),
+        "--deny-self-hosted-runners".into(),
+    ]
+}
+
+/// Refuses a downloaded asset whose digest is not the one the release's
+/// `checksums.txt` records, since the installers check against that file.
+pub fn agrees_with_checksums(checksums: &str, asset: &str, sha256: &str) -> Result<(), String> {
+    match checksum(checksums, asset) {
+        None => Err(format!("checksums.txt has no line for {asset}")),
+        Some(recorded) if recorded != sha256 => Err(format!(
+            "checksums.txt records {recorded} for {asset}, but the download hashes to {sha256}"
+        )),
+        Some(_) => Ok(()),
     }
-    Ok(())
 }
 
 /// What `https://amux.sh/install` hands a new machine, by its shell.
@@ -640,17 +707,6 @@ fn wait_for_release(tag: &str) -> Result<(), Box<dyn std::error::Error>> {
 
 /// The hex digest `checksums.txt` records for `asset`, as `sha256sum` writes
 /// it: the digest, whitespace, the file name.
-/// The size of `asset` in a listing of `<name> <size>` lines, as `gh
-/// release view --json assets` is asked to print it.
-pub fn asset_size(listing: &str, asset: &str) -> Option<u64> {
-    listing.lines().find_map(|line| {
-        let mut words = line.split_whitespace();
-        let name = words.next()?;
-        let size = words.next()?.parse().ok()?;
-        (name == asset).then_some(size)
-    })
-}
-
 pub fn checksum(checksums: &str, asset: &str) -> Option<String> {
     checksums.lines().find_map(|line| {
         let mut words = line.split_whitespace();
@@ -740,6 +796,88 @@ mod tests {
         );
         assert!(checksum(text, "amux-windows-x86_64.exe").is_some());
         assert_eq!(checksum(text, "amux-linux-x86_64"), None);
+    }
+
+    #[test]
+    fn a_download_must_hash_to_its_checksum_line() {
+        let digest = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        let text = format!("{digest}  amux-macos-arm64\n");
+        assert!(agrees_with_checksums(&text, "amux-macos-arm64", digest).is_ok());
+        let other = "0".repeat(64);
+        assert!(agrees_with_checksums(&text, "amux-macos-arm64", &other).is_err());
+        assert!(agrees_with_checksums(&text, "amux-linux-x86_64", digest).is_err());
+    }
+
+    #[test]
+    fn the_attestation_must_come_from_the_release_workflow_at_the_tag() {
+        let commit = "0123456789abcdef0123456789abcdef01234567";
+        let args = attestation_check(Path::new("amux-linux-x86_64"), "o/r", "v1.2.3", commit);
+        let pairs: Vec<_> = args
+            .windows(2)
+            .map(|w| (w[0].as_str(), w[1].as_str()))
+            .collect();
+        assert_eq!(&args[..3], ["attestation", "verify", "amux-linux-x86_64"]);
+        for wanted in [
+            ("--repo", "o/r"),
+            ("--signer-workflow", "o/r/.github/workflows/release.yml"),
+            ("--source-ref", "refs/tags/v1.2.3"),
+            ("--source-digest", commit),
+        ] {
+            assert!(pairs.contains(&wanted), "{wanted:?} in {args:?}");
+        }
+        assert!(args.iter().any(|arg| arg == "--deny-self-hosted-runners"));
+    }
+
+    /// A deploy hands amux.sh the install scripts the tag holds, whatever the
+    /// working tree has since.
+    #[test]
+    fn a_deploy_publishes_the_tags_install_scripts() {
+        let repo = tempfile::tempdir().unwrap();
+        let root = repo.path();
+        let git = |args: &[&str]| {
+            let status = Command::new("git")
+                .args([
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(["-c", "tag.gpgsign=false", "-c", "core.hooksPath=/dev/null"])
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap();
+            assert!(status.status.success(), "git {args:?}: {status:?}");
+        };
+        git(&["init", "-q"]);
+        std::fs::create_dir_all(root.join("scripts/install")).unwrap();
+        for script in INSTALL_SCRIPTS {
+            std::fs::write(root.join(script), format!("tagged {script}\n")).unwrap();
+        }
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "v1.0.0"]);
+        git(&["tag", "v1.0.0"]);
+        for script in INSTALL_SCRIPTS {
+            std::fs::write(root.join(script), "edited since\n").unwrap();
+        }
+
+        let commit = tagged_commit(root, "v1.0.0").unwrap();
+        assert!(tagged_commit(root, "v9.9.9").is_err(), "no tag, no deploy");
+        let out = tempfile::tempdir().unwrap();
+        let installers = tagged_installers(root, &commit, out.path()).unwrap();
+        let names: Vec<_> = installers
+            .iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["install.sh", "install.ps1"]);
+        for (path, script) in installers.iter().zip(INSTALL_SCRIPTS) {
+            assert_eq!(
+                std::fs::read_to_string(path).unwrap(),
+                format!("tagged {script}\n")
+            );
+        }
     }
 
     #[test]

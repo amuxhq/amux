@@ -21,6 +21,22 @@ recipes; [Testing](TESTING.md) describes the suites they run.
 Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
 `timeout-minutes` bound.
 
+Every action from outside this repository is pinned to a full commit, with
+the version that commit carries in a comment beside it; moving to another
+version changes both, from the upstream tag dereferenced to its commit. A
+tag can be moved to other code, and a commit cannot. `dtolnay/rust-toolchain`
+publishes branches rather than releases: the jobs on the repository's
+toolchain pin the commit of its `1.98.0` branch, so a toolchain bump in
+`rust-toolchain.toml` moves that pin too, and the nightly jobs pin a commit
+of `master` and name their toolchain.
+
+Every workflow's token may only read the repository unless a job asks for
+more: the Release workflow's build jobs may sign attestations and its release
+job may write the release; the rustls bump pushes a branch and opens a pull
+request. The Release workflow restores no Rust cache: a tag's run can read
+the caches `main`'s CI jobs saved, so whatever those jobs run could otherwise
+reach a shipped binary.
+
 ### CI jobs
 
 | Job | Runner | Runs |

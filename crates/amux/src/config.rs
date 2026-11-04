@@ -27,7 +27,7 @@ pub fn get(path: &Path, key: &str) -> Result<()> {
     // The two settings that are absent until set resolve as the daemon
     // resolves them.
     let value = match key {
-        "host_name" => toml::Value::String(config.host_name()),
+        "host_name" => toml::Value::String(config.host_name().into()),
         "updates" => toml::Value::try_from(config.updates()?)?,
         _ => {
             let table = toml::Value::try_from(&config)?;

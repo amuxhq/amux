@@ -291,8 +291,8 @@ async fn download(
     staged: &Path,
     on_step: &mut impl FnMut(Step),
 ) -> Result<String, Error> {
-    let keys = release::release_keys().ok_or(Error::NoKeys)?;
     let url = config.manifest_url();
+    let keys = release::feed_keys(&url).ok_or(Error::NoKeys)?;
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(30))
         .timeout(Duration::from_secs(15 * 60))

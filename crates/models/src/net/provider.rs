@@ -60,8 +60,11 @@ pub(crate) fn is_turn_end(payload: &[u8]) -> bool {
 }
 
 impl Provider {
-    /// A provider that has just started and says it is ready.
-    pub(crate) fn start() -> Self {
+    /// A provider that has just started and says it is ready, its ids
+    /// going on from `named`, the last its session's earlier processes
+    /// named: a provider's ids are unique within its session, so a resumed
+    /// one never names an item the session already closed.
+    pub(crate) fn start(named: u64) -> Self {
         Self {
             at: 0,
             said: VecDeque::from([Said::Fact(fact(json!({"type": "ready"})))]),
@@ -69,8 +72,13 @@ impl Provider {
             prompts: VecDeque::new(),
             turn: false,
             alive: true,
-            next: 0,
+            next: named,
         }
+    }
+
+    /// The last id it named.
+    pub(crate) fn named(&self) -> u64 {
+        self.next
     }
 
     /// Whether a turn runs as the agent hears it: one is playing, or the
@@ -371,7 +379,7 @@ mod tests {
             Step::WaitFor { path: "go".into() },
             Step::TurnEnd,
         ]);
-        let mut provider = Provider::start();
+        let mut provider = Provider::start(0);
         let mut gates = BTreeSet::new();
         assert_eq!(facts(&mut provider, &script, &gates), ["ready"]);
         provider.take(

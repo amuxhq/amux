@@ -1,7 +1,68 @@
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-pub type Extensions = serde_json::Map<String, serde_json::Value>;
+/// The fields of an object this crate does not type, kept as written.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct Extensions(pub serde_json::Map<String, serde_json::Value>);
+
+impl Extensions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl std::ops::Deref for Extensions {
+    type Target = serde_json::Map<String, serde_json::Value>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Extensions {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<serde_json::Map<String, serde_json::Value>> for Extensions {
+    fn from(fields: serde_json::Map<String, serde_json::Value>) -> Self {
+        Self(fields)
+    }
+}
+
+impl FromIterator<(String, serde_json::Value)> for Extensions {
+    fn from_iter<I: IntoIterator<Item = (String, serde_json::Value)>>(fields: I) -> Self {
+        Self(fields.into_iter().collect())
+    }
+}
+
+impl IntoIterator for Extensions {
+    type Item = (String, serde_json::Value);
+    type IntoIter = serde_json::map::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Extensions {
+    type Item = (&'a String, &'a serde_json::Value);
+    type IntoIter = serde_json::map::Iter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'de> Deserialize<'de> for Extensions {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut fields = serde_json::Map::deserialize(deserializer)?;
+        crate::probe::heard(&mut fields);
+        Ok(Self(fields))
+    }
+}
 
 /// A valid protocol object whose discriminant is not known to this SDK.
 /// The complete object is retained so newer producers remain observable.

@@ -2,9 +2,11 @@
 //! window, and this client's inputs.
 
 mod history;
+mod record;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+pub use record::record;
 use wire::{Agent, HostEntry, Input, Item, Kind, QueuedInput, SessionEvent, session_event};
 
 use crate::Key;

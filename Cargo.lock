@@ -43,6 +43,7 @@ dependencies = [
  "tower",
  "uuid",
  "wire",
+ "zstd",
 ]
 
 [[package]]
@@ -97,7 +98,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "amux"
-version = "0.8.4"
+version = "0.8.5"
 dependencies = [
  "agent",
  "agent-dir",
@@ -281,6 +282,7 @@ dependencies = [
  "provider-fakes",
  "schemars",
  "serde",
+ "serde_json",
  "testnet",
  "tokio",
  "ui-runtime",
@@ -1782,6 +1784,7 @@ dependencies = [
  "chrono",
  "claude-protocol",
  "codex-protocol",
+ "core-ring",
  "prost",
  "prost-types",
  "redaction",
@@ -2105,7 +2108,7 @@ dependencies = [
 
 [[package]]
 name = "node"
-version = "0.8.4"
+version = "0.8.5"
 dependencies = [
  "agent-dir",
  "analytics",
@@ -2130,6 +2133,7 @@ dependencies = [
  "provider-fakes",
  "quinn",
  "rcgen",
+ "redaction",
  "relay-core",
  "release",
  "reqwest",
@@ -3112,16 +3116,18 @@ dependencies = [
  "models",
  "postcard",
  "prost",
+ "prost-types",
  "provider-fakes",
- "redaction",
+ "relay-core",
+ "serde",
  "serde_json",
  "store",
+ "supervisor-core",
  "tempfile",
  "testnet",
  "thiserror 2.0.20",
  "tokio",
  "ui-state",
- "ui-view",
  "uuid",
  "wire",
  "zstd",
@@ -3430,8 +3436,10 @@ dependencies = [
  "gethostname",
  "serde",
  "serde_ignored",
+ "tempfile",
  "thiserror 2.0.20",
  "toml",
+ "wire",
 ]
 
 [[package]]
@@ -3684,6 +3692,7 @@ dependencies = [
  "core-ring",
  "release",
  "semver",
+ "serde",
  "uuid",
 ]
 
@@ -4297,6 +4306,7 @@ dependencies = [
  "ui-view",
  "unicode-segmentation",
  "unicode-width 0.2.2",
+ "windows-sys 0.61.2",
  "wire",
 ]
 
@@ -4332,6 +4342,8 @@ dependencies = [
  "futures-util",
  "prost",
  "provider-fakes",
+ "replay-support",
+ "serde_json",
  "testnet",
  "thiserror 2.0.20",
  "tokio",

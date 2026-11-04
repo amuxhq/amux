@@ -18,47 +18,11 @@ use crate::Kind;
 use crate::playback::{self, Channel};
 
 /// Subtrees whose contents depend on the data (a tool's input, a server's
-/// schema, per-model tallies), compared by type only.
-fn opaque(kind: Kind) -> &'static [&'static str] {
+/// schema, per-model tallies, a turn's items), compared by type only.
+fn opaque(kind: Kind) -> [&'static [&'static str]; 2] {
     match kind {
-        Kind::ClaudeSdk | Kind::ClaudePty => &[
-            "message.content[].input",
-            "message.content[].content",
-            "tool_use_result",
-            "toolUseResult",
-            "modelUsage",
-            "model_usage_since_last_result",
-            "wire_tool_inputs",
-            "wireToolInputs",
-            "request.input",
-            "request.requested_schema",
-            "request.permission_suggestions",
-            "response.response",
-            "tool_input",
-            "tool_response",
-            "permission_suggestions",
-            "event.content_block.input",
-            "attachment",
-            "snapshot",
-        ],
-        Kind::Codex => &[
-            "params.item.commandActions",
-            "params.item.changes",
-            "params.item.arguments",
-            "params.item.result",
-            "params.item.content",
-            "params.commandActions",
-            "params.availableDecisions",
-            "params.turn.items",
-            "params.thread.turns",
-            "result.thread.turns",
-            "params.tokenUsage",
-            "params.rateLimits",
-            "params.requestedSchema",
-            "params.permissions",
-            "params._meta",
-            "result.permissions",
-        ],
+        Kind::ClaudeSdk | Kind::ClaudePty => [claude_protocol::DATA_SUBTREES, &[]],
+        Kind::Codex => [codex_protocol::DATA_SUBTREES, codex_protocol::ITEM_LISTS],
     }
 }
 
@@ -74,7 +38,7 @@ pub fn signature(kind: Kind, value: &Value) -> BTreeSet<String> {
     out
 }
 
-fn walk(opaque: &[&str], value: &Value, path: String, out: &mut BTreeSet<String>) {
+fn walk(opaque: [&[&str]; 2], value: &Value, path: String, out: &mut BTreeSet<String>) {
     let kind = match value {
         Value::Null => "null",
         Value::Bool(_) => "bool",
@@ -85,7 +49,7 @@ fn walk(opaque: &[&str], value: &Value, path: String, out: &mut BTreeSet<String>
     };
     if !path.is_empty() {
         out.insert(format!("{path}:{kind}"));
-        if opaque.contains(&path.as_str()) {
+        if opaque.iter().any(|list| list.contains(&path.as_str())) {
             return;
         }
     }

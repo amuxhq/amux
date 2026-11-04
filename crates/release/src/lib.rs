@@ -37,27 +37,53 @@ use uuid::Uuid;
 /// The target triple this binary was built for; manifests are keyed by it.
 pub const TARGET: &str = env!("AMUX_TARGET");
 
-/// The public half of the key debug builds trust when the build names no
-/// release key. Its private half is in the test suites; no release build
-/// trusts it.
+/// The public half of the key debug builds trust for a test feed when the
+/// build names no release key. Its private half is in the test suites; no
+/// release build trusts it.
 pub const TEST_RELEASE_KEY: [u8; 32] = [
     0x48, 0x9e, 0xa5, 0x33, 0xf0, 0x7a, 0x72, 0xdb, 0x76, 0xa9, 0x9c, 0xf4, 0x7b, 0xf4, 0x00, 0x8f,
     0xcc, 0xee, 0x4b, 0x8f, 0x20, 0x05, 0xb4, 0xcc, 0xa0, 0x83, 0x5d, 0xf1, 0x04, 0xa4, 0x7e, 0xa9,
 ];
 
-/// The keys a release may be signed with, compiled in from
+/// The keys a manifest read from `manifest_url` may be signed with, or None
+/// when this build installs nothing from there. Compiled in from
 /// `AMUX_RELEASE_PUBLIC_KEYS` (comma-separated, 64 hex digits each) at build
 /// time: the key releases are signed with and the backup kept offline. A
-/// release build without them never installs anything; a debug build
-/// without them trusts [`TEST_RELEASE_KEY`].
-pub fn release_keys() -> Option<Vec<[u8; 32]>> {
+/// release build without them never installs anything. A debug build
+/// without them trusts [`TEST_RELEASE_KEY`], and only from a feed on this
+/// machine's loopback, where the test suites serve theirs: the test key's
+/// private half is committed, so trusting it from amux.sh would let anyone
+/// able to write there sign what every development build installs.
+pub fn feed_keys(manifest_url: &str) -> Option<Vec<[u8; 32]>> {
     match option_env!("AMUX_RELEASE_PUBLIC_KEYS") {
         Some(list) => Some(parse_keys(list).expect(
             "AMUX_RELEASE_PUBLIC_KEYS is comma-separated keys of 64 hex digits at build time",
         )),
-        None if cfg!(debug_assertions) => Some(vec![TEST_RELEASE_KEY]),
+        None if cfg!(debug_assertions) && is_loopback(manifest_url) => Some(vec![TEST_RELEASE_KEY]),
         None => None,
     }
+}
+
+/// Whether `url` names a host on this machine's loopback.
+fn is_loopback(url: &str) -> bool {
+    let Some((_, rest)) = url.split_once("://") else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    let host = match host.strip_prefix('[') {
+        Some(bracketed) => match bracketed.split_once(']') {
+            Some((inside, _)) => inside,
+            None => return false,
+        },
+        None => host.split(':').next().unwrap_or_default(),
+    };
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
 }
 
 /// Whether this is a published build: optimised and built by the release
@@ -330,4 +356,45 @@ pub fn parse_hex<const N: usize>(text: &str) -> Option<[u8; N]> {
         out[i] = hex_digit(pair[0])? << 4 | hex_digit(pair[1])?;
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_loopback_feed_is_a_test_feed() {
+        for url in [
+            "http://127.0.0.1:4000/releases/stable.json",
+            "http://localhost/stable.json",
+            "http://[::1]:9/stable.json",
+        ] {
+            assert!(is_loopback(url), "{url}");
+        }
+        for url in [
+            "https://amux.sh/releases/stable.json",
+            "http://10.0.0.1/stable.json",
+            "http://localhost.amux.sh/stable.json",
+            "http://127.0.0.1@amux.sh/stable.json",
+            "not a url",
+        ] {
+            assert!(!is_loopback(url), "{url}");
+        }
+    }
+
+    /// A development build follows no feed but a test's own: the test key
+    /// that build trusts is public.
+    #[test]
+    fn a_development_build_trusts_nothing_from_amux_sh() {
+        if option_env!("AMUX_RELEASE_PUBLIC_KEYS").is_some() {
+            return;
+        }
+        assert_eq!(feed_keys("https://amux.sh/releases/stable.json"), None);
+        if cfg!(debug_assertions) {
+            assert_eq!(
+                feed_keys("http://127.0.0.1:9/stable.json"),
+                Some(vec![TEST_RELEASE_KEY])
+            );
+        }
+    }
 }

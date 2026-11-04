@@ -264,7 +264,7 @@ impl InstallationService for FrontDoor {
             "" => settings::DEFAULT_CLOUD_URL.to_owned(),
             url => url.trim_end_matches('/').to_owned(),
         };
-        let device = DeviceSignIn::start(&cloud_url)
+        let device = DeviceSignIn::start(&cloud_url, &self.registry.host_name()?)
             .await
             .map_err(|error| failed(ErrorCode::Unavailable, error.to_string()))?;
         let code = SignInEvent {

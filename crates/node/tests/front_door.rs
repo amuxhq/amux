@@ -313,3 +313,61 @@ async fn poll_once<F: std::future::Future + Unpin>(future: &mut F) -> std::task:
     std::future::poll_fn(|cx| std::task::Poll::Ready(std::pin::Pin::new(&mut *future).poll(cx)))
         .await
 }
+
+/// A pairing code's addresses may name some other machine's listener, as
+/// another machine on the joiner's network at the same private address
+/// would be: its refusal for having no pairing window open is a miss for
+/// that address alone, and the pairing goes on to the host at the next.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_listener_with_no_pairing_window_at_one_address_does_not_fail_the_pairing() {
+    let start = |install: &Install| {
+        let mut options = install.options("boot-1", quiet_launch());
+        options.edge = node::EdgeOptions {
+            lan: Some(node::LanOptions {
+                bind: "127.0.0.1:0".parse().unwrap(),
+                socket: None,
+            }),
+            dial: true,
+            ..Default::default()
+        };
+        node::start(options, None)
+    };
+    let (joiner, offerer, other) = (Install::new(), Install::new(), Install::new());
+    let joiner_daemon = start(&joiner).await.unwrap();
+    let offerer_daemon = start(&offerer).await.unwrap();
+    let other_daemon = start(&other).await.unwrap();
+    let joiner_edge = runtime(&joiner_daemon, &joiner).edge().unwrap();
+    let offerer_edge = runtime(&offerer_daemon, &offerer).edge().unwrap();
+    let other_edge = runtime(&other_daemon, &other).edge().unwrap();
+
+    let window = offerer_edge
+        .start_pairing(StartPairingRequest {
+            method: Some(start_pairing_request::Method::Pin(Empty {})),
+            ttl_seconds: None,
+        })
+        .await
+        .unwrap();
+    let Some(wire::pairing_window::Secret::Pin(pin)) = window.secret else {
+        panic!("a PIN window has a PIN");
+    };
+    let pending = joiner_edge
+        .begin_pair(wire::BeginPairRequest {
+            host_id: offerer_edge.host_id().as_bytes().to_vec(),
+            secret: Some(wire::begin_pair_request::Secret::Pin(pin)),
+            addrs: vec![
+                other_edge.lan_addr().unwrap().to_string(),
+                offerer_edge.lan_addr().unwrap().to_string(),
+            ],
+        })
+        .await
+        .expect("the host at the second address is paired with");
+    assert_eq!(
+        pending.peer.map(|peer| peer.host_id),
+        Some(offerer_edge.host_id().as_bytes().to_vec())
+    );
+
+    drop((joiner_edge, offerer_edge, other_edge));
+    for daemon in [joiner_daemon, offerer_daemon, other_daemon] {
+        daemon.shutdown().await.unwrap();
+    }
+}

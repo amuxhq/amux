@@ -21,6 +21,8 @@ wire = { workspace = true }
 [dev-dependencies]
 async-trait = { workspace = true }
 provider-fakes = { workspace = true }
+replay-support = { workspace = true }
+serde_json = { workspace = true }
 testnet = { workspace = true }
 
 [[test]]

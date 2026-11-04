@@ -723,7 +723,7 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     // A dump carries the fleet and the open chat.
     let reason = c("asked for in a test");
     // SAFETY: the runtime is live; the string lives for the call.
-    phone.started(unsafe { amux_profile_dump(phone.profile, reason.as_ptr(), false) });
+    phone.started(unsafe { amux_profile_dump(phone.profile, reason.as_ptr()) });
     let dumped = phone.result();
     let bundle = std::path::PathBuf::from(dumped["Ok"].as_str().expect("a bundle"));
     assert!(bundle.join("client/fleet/state.txt").is_file());

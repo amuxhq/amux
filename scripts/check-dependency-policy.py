@@ -9,7 +9,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_LOCAL = {
     "wire": set(),
-    "settings": set(),
+    # A host's name is wire's type, built where the configured one is read.
+    "settings": {"wire"},
     # The typed events a device may send and their uploader: a leaf, so the
     # daemon, the phone bridge and the CLI share one definition.
     "analytics": set(),
@@ -23,8 +24,10 @@ ALLOWED_LOCAL = {
     # Reads an agent folder's branch and change totals by running git; the
     # agent process and the daemon share it.
     "git-facts": set(),
-    # The pure per-kind step, and the per-kind body redactor beside it.
-    "interpret": {"attachments", "claude-protocol", "codex-protocol", "redaction", "wire"},
+    # The pure per-kind step, and the per-kind body redactor beside it;
+    # core-ring for the check type its every-step checks report as, and for
+    # reading the facts ring an agent's record is built from.
+    "interpret": {"attachments", "claude-protocol", "codex-protocol", "core-ring", "redaction", "wire"},
     # The agent process: its lock, journal and sockets, the interpreter,
     # and the provider hosts, each in a module of its own (`claude`, `codex`).
     "agent": {
@@ -40,8 +43,9 @@ ALLOWED_LOCAL = {
     # never the agent crate, so the phone can host a runtime without a
     # provider in its graph.
     # interpret only for the dump path's per-kind redactor: the one stated
-    # exception to "the daemon interprets nothing".
-    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
+    # exception to "the daemon interprets nothing". redaction for the table
+    # a dump writes the core's part by, as its structure alone.
+    "node": {"agent-dir", "analytics", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "redaction", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
     "amux": {"agent", "agent-dir", "analytics", "client", "log-file", "node", "settings", "tui", "wire"},
     # The release manifest the tool signs and the daemon verifies, and the
     # version stamp a release tool can rewrite in a built binary; the xtask
@@ -153,14 +157,18 @@ SUPPORT_ALLOWED_LOCAL = {
     # its storybook, whose chats are recorded sessions replayed through the
     # interpreters.
     "shot": {"interpret", "settings", "tui", "ui-state", "ui-view", "wire"},
-    # Replays a dump bundle's stages with the models' properties judged at
-    # every step: facts through the interpreter (the journal for
-    # comparison), the daemon core from its checkpoint over its store,
-    # records through the session model, state through the views. A
-    # debugging tool: nothing links it.
+    # Replays a report's records with the models' properties judged at every
+    # step: the daemon core from its checkpoint over its store, and each
+    # chat's record through the session model. A debugging tool: nothing
+    # links it. An agent's record, which carries no provider's words,
+    # replays as a stream made up from it through the real interpreter, held
+    # to the provider's own types through the fakes' conformance; on the
+    # machine that wrote it, the facts ring replays through the interpreter
+    # as it is. The relay's and the supervisor's reports replay through
+    # their cores.
     "replay-support": {
-        "core-ring", "daemon-core", "interpret", "journal", "models", "redaction", "store",
-        "ui-state", "ui-view", "wire",
+        "core-ring", "daemon-core", "interpret", "journal", "models", "provider-fakes",
+        "relay-core", "store", "supervisor-core", "ui-state", "wire",
     },
     # The protocol's properties, explored over the real code: the store, the
     # journal and the message types, each state-machine core, and the

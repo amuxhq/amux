@@ -1,14 +1,10 @@
 //! A dump bundle a real daemon wrote for a real agent on the fake Claude
-//! SDK provider (two turns, thinking and streamed text), replayed through
-//! its three pure stages.
+//! SDK provider (two turns, thinking and streamed text), opened as the
+//! records it carries.
 
-use std::path::Path;
-
-use replay_support::bundle::{AgentDump, Bundle, final_texts};
+use prost::Message as _;
+use replay_support::bundle::Bundle;
 use replay_support::replay::{Stage, Verdict};
-use replay_support::show;
-use ui_view::RowKind;
-use wire::Kind;
 
 use crate::support;
 
@@ -18,96 +14,41 @@ fn bundle() -> (support::Dumped, Bundle) {
     (dumped, bundle)
 }
 
+/// The bundle holds the core's record with the journal its inputs read,
+/// and the agent's record as its process built it: the session's events
+/// by kind and what the interpreter concluded, both turns' ends among
+/// them.
 #[test]
-fn the_facts_replay_through_the_interpreter_to_what_the_journal_holds() {
-    let (_dumped, bundle) = bundle();
-    let [agent] = bundle.agents.as_slice() else {
-        panic!("one agent in the bundle");
-    };
-    assert_eq!(agent.row.kind(), Kind::ClaudeSdk);
-    let replayed = agent.replay_facts().expect("the facts replay");
-    assert!(!replayed.is_empty());
-    // The ring starts after the interpreter's first frame, which it wrote
-    // before any fact: everything after it comes back from the facts alone.
-    let journaled = final_texts(&agent.journal[1..]);
-    let from_facts = final_texts(&replayed);
-    assert_eq!(from_facts, journaled);
+fn a_bundle_opens_as_the_cores_record_and_the_agents() {
+    let (dumped, bundle) = bundle();
+    let core = bundle.core.as_ref().expect("the core's record");
+    let agent = uuid::Uuid::parse_str(&dumped.agent()).unwrap().into_bytes();
     assert!(
-        from_facts.values().any(|text| text == "second answer more"),
-        "{from_facts:#?}"
+        core.journals
+            .get(&daemon_core::AgentId(agent))
+            .is_some_and(|segments| !segments.is_empty()),
+        "the agent's journal from the checkpoint's cursor"
     );
-    // As the goldens render it, with redaction placeholders set aside: the
-    // facts and the journal are redacted apart.
-    let snapshot = |steps: &[wire::Step]| {
-        let snapshot = steps.iter().rev().find_map(|step| step.snapshot.clone());
-        let step = wire::Step {
-            snapshot: Some(snapshot.expect("a snapshot")),
-            ..wire::Step::default()
-        };
-        show::render_steps(Kind::ClaudeSdk, 0, &[step])
-            .map(|text| support::placeholders_aside(&text))
+    let [record] = &bundle.agents[..] else {
+        panic!("{} agent records", bundle.agents.len());
     };
-    assert_eq!(
-        snapshot(&replayed),
-        snapshot(&agent.journal),
-        "the replay ends in the journal's snapshot"
-    );
+    assert_eq!(record.id, dumped.agent());
+    assert_eq!(record.record["settings"]["kind"], "KIND_CLAUDE_SDK");
+    let turn_ends = record.record["segments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|segment| segment["events"].as_array().unwrap())
+        .filter(|event| !event["step"]["turn_end"].is_null())
+        .count();
+    assert_eq!(turn_ends, 2, "{}", record.record);
 }
 
-#[test]
-fn the_store_slice_replays_through_the_session_model_and_the_views() {
-    let (_dumped, bundle) = bundle();
-    let agent = &bundle.agents[0];
-    let state = agent.session();
-    assert!(state.caught_up());
-    assert!(state.has_snapshot());
-    let held: Vec<&str> = state
-        .transcript()
-        .iter()
-        .map(|held| held.item.key.as_str())
-        .collect();
-    let stored: Vec<&str> = agent
-        .store
-        .as_ref()
-        .expect("the bundle carries a slice")
-        .items
-        .iter()
-        .map(|item| item.key.as_str())
-        .collect();
-    assert_eq!(held, stored, "every stored row is held, in order");
-
-    let rows = AgentDump::rows(&state);
-    let ids: Vec<&str> = rows.iter().map(|row| row.id.as_str()).collect();
-    assert_eq!(ids, held, "one row per item, keyed by it");
-    let prose: Vec<&str> = rows
-        .iter()
-        .filter(|row| matches!(row.kind, RowKind::Prose { .. }))
-        .map(|row| row.id.as_str())
-        .collect();
-    assert!(!prose.is_empty());
-    for key in prose {
-        assert!(
-            state
-                .transcript()
-                .get(key)
-                .unwrap()
-                .item
-                .text
-                .ends_with("more"),
-            "{key}"
-        );
-    }
-    for row in &rows {
-        println!("{:>3} {:<44} {:?}", row.order, row.id, row.kind);
-    }
-}
-
-/// A report is uploaded with its dump packed into one compressed
+/// A report is sent with its dump packed into one compressed
 /// `wire.DumpPart`; the downloaded file opens as the directory it was packed
 /// from.
 #[test]
 fn a_packed_dump_opens_as_the_bundle_it_was_packed_from() {
-    use prost::Message as _;
     let (dumped, bundle) = bundle();
     let dir = dumped.path();
     let mut files = Vec::new();
@@ -144,35 +85,51 @@ fn a_packed_dump_opens_as_the_bundle_it_was_packed_from() {
     for named in [archive.as_path(), report.path()] {
         let opened = Bundle::open(named).expect("the packed dump opens");
         assert_eq!(opened.agents.len(), bundle.agents.len());
-        assert_eq!(opened.agents[0].journal, bundle.agents[0].journal);
+        assert_eq!(opened.agents[0].record, bundle.agents[0].record);
+        assert_eq!(
+            opened.core.as_ref().unwrap().journals,
+            bundle.core.as_ref().unwrap().journals
+        );
     }
 }
 
-/// A dump whose scope carries no store slice (a daemon core's, or a report
-/// with no chat open) has nothing for the session and views stages, and
-/// says so rather than holding over nothing.
+/// A dump from the command line shows no chat, so the session stage has
+/// nothing to replay and says so rather than holding over nothing.
 #[test]
-fn a_dump_without_slices_has_no_session_or_views_stage() {
-    fn copy(from: &Path, to: &Path) {
-        std::fs::create_dir_all(to).unwrap();
-        for entry in std::fs::read_dir(from).unwrap() {
-            let path = entry.unwrap().path();
-            let into = to.join(path.file_name().unwrap());
-            if path.is_dir() {
-                copy(&path, &into);
-            } else if path.file_name().is_some_and(|name| name != "store.pb") {
-                std::fs::copy(&path, &into).unwrap();
-            }
-        }
+fn a_dump_with_no_chat_on_screen_has_no_session_stage() {
+    let (_dumped, bundle) = bundle();
+    let verdicts = bundle.replay_all().unwrap();
+    let session = verdicts
+        .iter()
+        .find(|verdict| verdict.stage == Stage::Session)
+        .unwrap();
+    assert!(matches!(session.verdict, Verdict::Absent(_)), "{session}");
+}
+
+/// An archive is unpacked only up to a limit far past any report's, so one
+/// that inflates past it is refused before it is held whole.
+#[test]
+fn an_archive_that_unpacks_past_the_limit_is_refused() {
+    use std::io::Write as _;
+
+    use replay_support::bundle::{UNPACKED_LIMIT, unpacked_at_most};
+
+    let packed = zstd::bulk::compress(&[0; 4096], 3).unwrap();
+    assert_eq!(unpacked_at_most(&packed, 4096).unwrap().len(), 4096);
+    let refused = unpacked_at_most(&packed, 4095).unwrap_err();
+    assert!(refused.contains("past 4095 bytes"), "{refused}");
+
+    let report = tempfile::tempdir().unwrap();
+    let archive = report.path().join("dump.pb.zst");
+    let mut encoder =
+        zstd::stream::Encoder::new(std::fs::File::create(&archive).unwrap(), 3).unwrap();
+    let chunk = vec![0; 1 << 20];
+    for _ in 0..=(UNPACKED_LIMIT >> 20) {
+        encoder.write_all(&chunk).unwrap();
     }
-    let dir = tempfile::tempdir().unwrap();
-    copy(support::healthy().path(), dir.path());
-    let verdicts = Bundle::open(dir.path()).unwrap().replay_all().unwrap();
-    for stage in [Stage::Session, Stage::Views] {
-        let verdict = verdicts
-            .iter()
-            .find(|verdict| verdict.stage == stage)
-            .unwrap();
-        assert!(matches!(verdict.verdict, Verdict::Absent(_)), "{verdict}");
-    }
+    encoder.finish().unwrap();
+    let Err(refused) = Bundle::open(&archive) else {
+        panic!("an archive past the limit opens");
+    };
+    assert!(refused.to_string().contains("unpacks past"), "{refused}");
 }

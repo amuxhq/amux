@@ -12,6 +12,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use tonic::transport::Channel;
 use uuid::Uuid;
 use wire::installation_service_client::InstallationServiceClient;
+use wire::pairing_error::Reason as PairingReason;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
     BeginPairRequest, Empty, HostEntry, HostRef, PairingIdentity, PairingWindow, PendingPair,
@@ -251,6 +252,13 @@ fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
                 .map(|identity| identity.name.as_str())
                 .unwrap_or_default();
             lines.push(format!("Pairing PIN: {}", spaced(pin)));
+            // Pairing gives the other device this machine's agents, so the
+            // person is told what the PIN grants where they read it.
+            lines.push(
+                "Whoever enters this PIN can run agents on this machine as you. Enter it only \
+                 on your own devices."
+                    .to_owned(),
+            );
             lines.push(String::new());
             lines.push(format!(
                 "On the phone: choose {} and enter the PIN, or run `amux pair --qr` here to scan \
@@ -274,6 +282,11 @@ fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
             let payload = pair_link(started, secret)?;
             lines.push(terminal_qr(&payload)?);
             lines.push("Scan it with the phone's camera.".to_owned());
+            lines.push(
+                "Whoever scans this code can run agents on this machine as you. Scan it only \
+                 with your own devices."
+                    .to_owned(),
+            );
             if link {
                 lines.push(format!("Pairing link: {payload}"));
             }
@@ -421,22 +434,36 @@ async fn confirm(mut admin: Admin, pairing: BeginPairRequest) -> Result<()> {
 /// window read the same on the wire, so a guesser learns nothing, and so
 /// the words name both.
 fn refused(status: tonic::Status) -> anyhow::Error {
-    if status.code() == tonic::Code::PermissionDenied && status.message() == "PAIRING_LOCKED" {
-        return anyhow!(
-            "the other host closed its pairing window after too many wrong PINs; \
-             run `amux pair` there again for a new PIN"
-        );
-    }
-    if status.code() == tonic::Code::PermissionDenied && status.message() == "INVALID_PIN" {
-        return anyhow!(
-            "the PIN did not match, or the other host's pairing window has closed; \
-             check the PIN it shows and try again"
-        );
+    match pairing_reason(&status) {
+        Some(PairingReason::Locked) => {
+            return anyhow!(
+                "the other host closed its pairing window after too many wrong PINs; \
+                 run `amux pair` there again for a new PIN"
+            );
+        }
+        Some(PairingReason::InvalidPin) => {
+            return anyhow!(
+                "the PIN did not match, or the other host's pairing window has closed; \
+                 check the PIN it shows and try again"
+            );
+        }
+        _ => {}
     }
     if client::RpcError::from(status.clone()).reason() == Some(wire::ErrorReason::PaymentRequired) {
         return anyhow!("{}", needs_pro("the other host"));
     }
     plain(status)
+}
+
+/// The typed reason a pairing refusal carries in its details, which is
+/// what tells refusals apart: never their words.
+fn pairing_reason(status: &tonic::Status) -> Option<PairingReason> {
+    match client::RpcError::from(status.clone()) {
+        client::RpcError::Refused(error) => error
+            .detail::<wire::PairingError>()
+            .map(|error| error.reason()),
+        client::RpcError::Transport(_) => None,
+    }
 }
 
 /// Why a host only the relay reaches cannot be paired on the free plan,
@@ -734,7 +761,7 @@ pub async fn unpair(mut admin: Admin, peer: &str, force: bool) -> Result<()> {
 }
 
 /// Signs a profile in: the account service's device sign-in in the
-/// browser, then the daemon binds the profile with the refresh token it
+/// browser, naming this machine on its approval page, then the daemon binds the profile with the refresh token it
 /// gave. A profile that already has agents or paired hosts is adopted only
 /// when the person says so.
 pub async fn login(mut door: Door, profile: Option<&wire::Profile>, cloud_url: &str) -> Result<()> {
@@ -805,9 +832,23 @@ pub async fn logout(mut admin: Admin, profile: &wire::Profile) -> Result<()> {
 mod tests {
     use super::*;
 
+    /// A pairing refusal as the daemon sends it: its typed reason in the
+    /// details, beside words that are not read.
+    fn pairing_refusal(reason: PairingReason, words: &str) -> tonic::Status {
+        node::status(
+            wire::Error::new(wire::ErrorCode::PermissionDenied, words).with_detail(
+                &wire::PairingError {
+                    reason: reason as i32,
+                    detail: String::new(),
+                },
+            ),
+        )
+    }
+
     #[test]
     fn a_wrong_pin_is_refused_in_words() {
-        let refusal = refused(tonic::Status::permission_denied("INVALID_PIN")).to_string();
+        let refusal =
+            refused(pairing_refusal(PairingReason::InvalidPin, "INVALID_PIN")).to_string();
         assert_eq!(
             refusal,
             "the PIN did not match, or the other host's pairing window has closed; \
@@ -815,12 +856,18 @@ mod tests {
         );
         assert!(!refusal.contains("INVALID_PIN"));
         // Locked out after too many wrong PINs: said so, with the way on.
-        let locked = refused(tonic::Status::permission_denied("PAIRING_LOCKED")).to_string();
+        let locked =
+            refused(pairing_refusal(PairingReason::Locked, "whatever it says")).to_string();
         assert!(
             locked.contains("too many wrong PINs") && locked.contains("amux pair"),
             "{locked}"
         );
-        // Any other refusal reads as it did.
+        // Told apart by the reason alone: the old words with no reason
+        // are any other refusal, which reads as it did.
+        assert_eq!(
+            refused(tonic::Status::permission_denied("PAIRING_LOCKED")).to_string(),
+            "PAIRING_LOCKED"
+        );
         assert_eq!(
             refused(tonic::Status::permission_denied("not allowed")).to_string(),
             "not allowed"
@@ -884,6 +931,9 @@ mod tests {
             invitation(&started, false).unwrap(),
             vec![
                 "Pairing PIN: 482 913".to_owned(),
+                "Whoever enters this PIN can run agents on this machine as you. Enter it only \
+                 on your own devices."
+                    .to_owned(),
                 String::new(),
                 "On the phone: choose den mac and enter the PIN, or run `amux pair --qr` here \
                  to scan instead."

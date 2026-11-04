@@ -469,13 +469,12 @@ public final class Profile: @unchecked Sendable {
         await runtime.refreshEntitlement(id)
     }
 
-    /// Writes a dump of this profile with the fleet's and every open chat's
-    /// part, and answers the bundle's directory. For a report it is the
-    /// narrower dump that reproduces what the screen showed; otherwise all
-    /// this phone holds.
-    public func dump(reason: String, forReport: Bool) async -> Result<String, RuntimeFailure> {
+    /// Writes a dump of this profile with the fleet's part and the record
+    /// of every chat on screen, and answers the bundle's directory: the
+    /// same bundle whether it is shared or sent with a report.
+    public func dump(reason: String) async -> Result<String, RuntimeFailure> {
         await act(String.self) { live in
-            reason.withCString { amux_profile_dump(live, $0, forReport) }
+            reason.withCString { amux_profile_dump(live, $0) }
         }
     }
 

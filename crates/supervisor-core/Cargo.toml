@@ -10,4 +10,5 @@ publish = false
 core-ring = { workspace = true }
 release = { workspace = true }
 semver = { workspace = true }
+serde = { workspace = true }
 uuid = { workspace = true }

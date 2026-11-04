@@ -6,8 +6,7 @@ use std::process::Command;
 use gethostname::gethostname;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-
-const MAX_HOST_NAME_BYTES: usize = 256;
+pub use wire::HostName;
 
 fn xdg_dir(env_var: &str, default_suffix: &str) -> PathBuf {
     if let Ok(value) = std::env::var(env_var) {
@@ -67,13 +66,15 @@ fn system_host_name() -> String {
 /// The name a host goes by when the config names none: the Mac's Computer
 /// Name where there is one, otherwise the system hostname without its mDNS
 /// `.local` suffix. On a Mac this runs a subprocess, so the daemon resolves
-/// it once at start.
-pub fn default_host_name() -> String {
+/// it once at start. A system name that is no host name (a long one, say)
+/// is made the nearest one rather than refused: a host must start with no
+/// configuration.
+pub fn default_host_name() -> HostName {
     #[cfg(target_os = "macos")]
     if let Some(name) = macos_computer_name() {
-        return name;
+        return HostName::lossy(&name);
     }
-    system_host_name()
+    HostName::lossy(&system_host_name())
 }
 
 #[cfg(target_os = "macos")]
@@ -97,17 +98,9 @@ fn fallback_host_name(host_name: &str) -> String {
         .to_string()
 }
 
-/// Apply the validation shared by persisted settings and setup prompts.
-pub fn validate_host_name(host_name: &str) -> Result<(), ConfigError> {
-    if host_name.is_empty() {
-        return Err(ConfigError::Invalid("host_name must not be empty".into()));
-    }
-    if host_name.len() > MAX_HOST_NAME_BYTES {
-        return Err(ConfigError::Invalid(format!(
-            "host_name must be at most {MAX_HOST_NAME_BYTES} bytes"
-        )));
-    }
-    Ok(())
+/// The host name a configured `host_name` is, or why it is none.
+pub fn validate_host_name(host_name: &str) -> Result<HostName, ConfigError> {
+    HostName::parse(host_name).map_err(|error| ConfigError::Invalid(format!("host_name: {error}")))
 }
 
 /// The front door's file name in the root.
@@ -493,7 +486,7 @@ impl InstallationConfig {
     pub fn validate(&self) -> Result<(), ConfigError> {
         self.updates()?;
         match &self.host_name {
-            Some(host_name) => validate_host_name(host_name),
+            Some(host_name) => validate_host_name(host_name).map(drop),
             None => Ok(()),
         }
     }
@@ -509,9 +502,13 @@ impl InstallationConfig {
     }
 
     /// The name this host goes by: the configured one, else
-    /// [`default_host_name`].
-    pub fn host_name(&self) -> String {
-        self.host_name.clone().unwrap_or_else(default_host_name)
+    /// [`default_host_name`]. A configured name [`Self::validate`] refuses
+    /// is taken as the nearest host name to it.
+    pub fn host_name(&self) -> HostName {
+        match &self.host_name {
+            Some(host_name) => HostName::lossy(host_name),
+            None => default_host_name(),
+        }
     }
 
     /// The configured channel as the manifests name it.
@@ -590,6 +587,28 @@ mod tests {
 
     fn installation(text: &str) -> Result<InstallationConfig, ConfigError> {
         InstallationConfig::from_toml(text)
+    }
+
+    /// The front door sits in the root the file names, resolved beside the
+    /// file like the root itself.
+    #[test]
+    fn the_front_door_is_in_the_configured_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "root = \"install\"\n").unwrap();
+        let config = InstallationConfig::from_file(&path).unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap().join("install");
+        assert_eq!(config.root, root);
+        assert_eq!(config.front_door(), root.join("amux.sock"));
+    }
+
+    /// With no file at all, the front door is in the default root.
+    #[test]
+    fn the_default_front_door_is_in_the_data_dir() {
+        assert_eq!(
+            InstallationConfig::default().front_door(),
+            default_data_dir().join("amux.sock")
+        );
     }
 
     #[test]
@@ -728,7 +747,7 @@ mod tests {
     #[test]
     fn validate_accepts_long_host_name() {
         let config = InstallationConfig {
-            host_name: Some("a".repeat(MAX_HOST_NAME_BYTES)),
+            host_name: Some("a".repeat(wire::MAX_HOST_NAME_CHARS)),
             ..InstallationConfig::default()
         };
         assert!(config.validate().is_ok());
@@ -737,7 +756,7 @@ mod tests {
     #[test]
     fn validate_rejects_oversized_host_name() {
         let config = InstallationConfig {
-            host_name: Some("a".repeat(MAX_HOST_NAME_BYTES + 1)),
+            host_name: Some("a".repeat(wire::MAX_HOST_NAME_CHARS + 1)),
             ..InstallationConfig::default()
         };
         let err = config.validate().unwrap_err();
@@ -745,8 +764,23 @@ mod tests {
     }
 
     #[test]
+    fn validate_rejects_a_host_name_with_control_characters() {
+        let config = InstallationConfig {
+            host_name: Some("desk\u{1b}]52;c;aGk=\u{7}".to_owned()),
+            ..InstallationConfig::default()
+        };
+        let err = config.validate().unwrap_err();
+        assert!(err.to_string().contains("control"), "{err}");
+    }
+
+    #[test]
     fn an_unnamed_host_goes_by_a_default_name() {
-        assert!(!InstallationConfig::default().host_name().is_empty());
+        assert!(
+            !InstallationConfig::default()
+                .host_name()
+                .as_str()
+                .is_empty()
+        );
     }
 
     #[test]

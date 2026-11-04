@@ -87,7 +87,8 @@ itself: in its own process group, with stdin and stdout closed and stderr
 appended to `agent.log`, so neither the daemon's terminal nor its death
 reaches the agent. The agent holds `agent.log` and `private/provider.log`
 to 1 MiB each, checking every 30 seconds and moving a log past its cap to
-`<name>.1`; a dump carries the tail of both.
+`<name>.1`; a report carries the minute of `agent.log` before it, at INFO and above, and never
+`provider.log`, which is the provider's own output.
 
 `agent::run` then:
 
@@ -199,7 +200,7 @@ final boundary at all gets one with `ENDED_UNEXPECTEDLY` when the next
 incarnation starts; that step carries no `incarnation_end`, since the row
 already says how the earlier incarnation ended.
 
-A dump request is answered in every mode, since a draining agent is often the
+A request for its record is answered in every mode, since a draining agent is often the
 one someone wants to look at.
 
 Nothing a person does in a chat stops the process. A chat's interrupt is the
@@ -252,12 +253,12 @@ version integer, and a frame a reader does not know is ignored.
 | `nudge` | agent → daemon | The journal grew. Sent after every step that wrote bytes; an empty step writes nothing and sends nothing |
 | `input` | daemon → agent | A person's `Input` (a prompt, an answer, an interrupt, a setting, …), its body as the client encoded it |
 | `agent_message` | daemon → agent | An `Envelope` with the sender the daemon set; the recipient's interpreter picks the carrier |
-| `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's part of a dump bundle, answered in any mode |
+| `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's record for a report, answered in any mode |
 | `rename` | daemon → agent | `Rename { name }`: a Codex agent's thread takes the agent's new name, so Codex's own app shows what amux does; other kinds have nothing to rename |
 | `stop` | daemon → agent | `Stop { kill }`: without `kill`, cancel the turn the provider's own way and exit; with it, kill everything below the provider and its process group at once (the daemon's escalation past the stop deadline) |
 | `children` | daemon → agent | `Children { children }`: the agents directly below this one that are live, on every host its daemon knows of, each with its incarnation, sent when the agent connects with any and whenever the list changes; a one-shot agent waits for each incarnation's last report |
-| `dump` | agent → daemon | `DumpPart`, answering a dump request |
-| `dump_asked` | agent → daemon | `DumpAsked { reason, invariant }`: the agent's core asked for a dump (the invariant it broke, or none for a step over its budget). The daemon writes a bundle of this agent, its part gathered as for any dump, after a limit of its own per kind; one asked with no daemon connected waits, the newest of each kind, and goes right after the next `hello` |
+| `dump` | agent → daemon | `DumpPart` holding the agent's record, answering a dump request |
+| `dump_asked` | agent → daemon | `DumpAsked { reason, invariant, record }`: the agent's core asked for a report (the invariant it broke, or none for a step over its budget), with its record built then. The daemon writes the one report, with that record for this agent, after a limit of its own per kind; one asked with no daemon connected waits, the newest of each kind, and goes right after the next `hello` |
 | `reply` | agent → daemon | `Verdict { id, verdict }`: the interpreter's verdict on an input, keyed by its input id, which the daemon relays as the `SendInput` reply; or on an agent message, keyed by its envelope id, which settles the message's delivery |
 
 Within one step the order is fixed: blobs the step refers to are written
@@ -344,7 +345,7 @@ Claude is started through `pty_host::spawn` with the spec's arguments plus:
   `Stop`, `SubagentStop`, `Elicitation`, `MessageDisplay` and
   `PostModelSwitch`, the two that wait for a decision with a timeout of
   seven days, accepts messages from other sessions at once, and allows amux's own tools
-  and reading the agent's `blobs/` folder (where the files a person attaches
+  (all but `attach`, which asks like any read) and reading the agent's `blobs/` folder (where the files a person attaches
   are) without asking. Headless Claude gets the same settings.
 - `--mcp-config` naming amux's tool server (see [the tool server](#the-tool-server)).
 - `--messaging-socket-path private/messaging.sock`.
@@ -516,10 +517,10 @@ starts with re-emits every open item in full. A ring that cannot be read
 starts over from nothing. [Checkpoints](INTERPRETERS.md#checkpoints) covers
 what an interpreter must keep.
 
-The agent's part of a dump is these segments, their checkpoints and every
-spec file, each redacted by the kind's interpreter before it leaves the
-process (`dump.rs`). A file that cannot be read is named in `dump-errors`,
-never included unredacted. See [debugging](DEBUGGING.md).
+The agent's part of a report is its record: these segments run again
+through the kind's interpreter from their checkpoints, keeping what it
+concluded and none of what was said (`dump.rs`). The segments themselves
+never leave the machine. See [the agent's record](DEBUGGING.md#the-agents-record).
 
 ## Hooks and the transcript
 
@@ -541,15 +542,22 @@ A hook reaches the agent like this:
 3. The command always exits 0, even when it could not deliver: Claude reads a
    hook's exit code as a verdict, and 2 would block the action.
 4. The agent reads one connection at a time, in the order Claude ran its
-   hooks. Messaging credentials go to the provider, which uses them to hand
-   agent messages to Claude; the payload Claude wrote becomes a hook fact,
-   which the interpreter decodes with `claude_protocol::hooks`.
+   hooks. Anything Claude runs can reach the socket, so a payload is held to
+   what Claude writes, and dropped otherwise: its `session_id` is a UUID,
+   and a `transcript_path` it names is that session's `<id>.jsonl` in
+   Claude's project folder for the working folder or a sibling git
+   worktree. Messaging credentials go to the provider, which uses them to
+   hand agent messages to Claude; the payload Claude wrote becomes a hook
+   fact, which the interpreter decodes with `claude_protocol::hooks`. Once a
+   session has started, the interpreter ignores any hook but a
+   `SessionStart` that names another session.
 5. A `PermissionRequest` or `Elicitation` connection is held open: Claude
    waits on it for amux's decision. The agent numbers it and adds the
    number to the payload as `amux_reply`; the interpreter's answer
    (`Effect::HookAnswer`) is written on the connection with that number,
    which then closes. An empty answer closes it with no decision, so Claude
-   carries on with its own dialog. Every other connection is closed as soon
+   carries on with its own dialog. At most 64 are held at once; a payload
+   past that is dropped. Every other connection is closed as soon
    as it is read, so Claude waits on it no longer than the delivery takes.
    If the agent goes away, the connection closes, and Claude falls back to
    its own dialog as it does for an empty answer.

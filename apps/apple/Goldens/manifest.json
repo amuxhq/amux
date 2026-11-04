@@ -537,6 +537,10 @@
       "shows": "An invitation link that did not work."
     },
     {
+      "id": "pair.code-already-paired",
+      "shows": "A code the machine refused in words for the person: it is already paired and has to be unpaired first."
+    },
+    {
       "id": "settings.two-accounts",
       "shows": "Settings with two accounts, the selected one's relay and actions, this phone and help."
     },

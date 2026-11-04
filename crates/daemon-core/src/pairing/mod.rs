@@ -52,7 +52,6 @@ pub const MAX_PENDING: usize = 32;
 pub const QR_SECRET_LEN: usize = 32;
 const HOST_ID_LEN: usize = 16;
 const PUBKEY_LEN: usize = 32;
-const MAX_NAME_BYTES: usize = 256;
 
 /// How a window's secret is delivered.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -124,35 +123,65 @@ pub struct PairingEvent {
     pub outcome: Outcome,
 }
 
-/// Why a pairing conversation or call ended unpaired, in the words the
-/// other side and the person are told.
+/// Why a pairing conversation or call ended unpaired: its code and reason,
+/// which both sides tell refusals apart by, and the words the person is
+/// told.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PairFailure {
     /// The carrier's status code.
     #[serde(with = "codec::numbered")]
     pub code: ErrorCode,
+    #[serde(with = "codec::numbered")]
+    pub reason: Reason,
     pub message: String,
 }
 
 impl PairFailure {
-    fn new(code: ErrorCode, message: impl Into<String>) -> PairFailure {
+    /// A refusal its code alone tells apart.
+    pub fn new(code: ErrorCode, message: impl Into<String>) -> PairFailure {
+        PairFailure::because(code, Reason::Unspecified, message)
+    }
+
+    pub fn because(code: ErrorCode, reason: Reason, message: impl Into<String>) -> PairFailure {
         PairFailure {
             code,
+            reason,
             message: message.into(),
         }
     }
 
     /// Every refusal a guessing peer could learn from reads the same.
     pub fn invalid_pin() -> PairFailure {
-        PairFailure::new(ErrorCode::PermissionDenied, "INVALID_PIN")
+        PairFailure::because(
+            ErrorCode::PermissionDenied,
+            Reason::InvalidPin,
+            "INVALID_PIN",
+        )
     }
 
     fn locked() -> PairFailure {
-        PairFailure::new(ErrorCode::PermissionDenied, "PAIRING_LOCKED")
+        PairFailure::because(
+            ErrorCode::PermissionDenied,
+            Reason::Locked,
+            "PAIRING_LOCKED",
+        )
+    }
+
+    /// Both sides of the pairing are this host.
+    pub fn self_pairing() -> PairFailure {
+        PairFailure::because(
+            ErrorCode::InvalidArgument,
+            Reason::SelfPairing,
+            "SELF_PAIRING",
+        )
     }
 
     fn timeout() -> PairFailure {
-        PairFailure::new(ErrorCode::DeadlineExceeded, "PAIRING_TIMEOUT")
+        PairFailure::because(
+            ErrorCode::DeadlineExceeded,
+            Reason::Timeout,
+            "PAIRING_TIMEOUT",
+        )
     }
 
     fn closed() -> PairFailure {
@@ -160,33 +189,43 @@ impl PairFailure {
     }
 
     fn violation(detail: &str) -> PairFailure {
-        PairFailure::new(
+        PairFailure::because(
             ErrorCode::InvalidArgument,
+            Reason::ProtocolViolation,
             format!("PROTOCOL_VIOLATION: {detail}"),
+        )
+    }
+
+    /// A peer that proved the secret claimed a host this one already
+    /// trusts under another key: never a silent replacement, which would
+    /// cut the real host off and show the newcomer under its name.
+    fn already_paired(name: &str) -> PairFailure {
+        PairFailure::because(
+            ErrorCode::AlreadyExists,
+            Reason::AlreadyPaired,
+            format!("Already paired with {name}. Unpair it first."),
         )
     }
 
     /// The refusal a person is shown: every one a guessing peer could
     /// learn from reads as a wrong secret, but a host that cannot be
-    /// reached, a self pairing and a lockout say so.
+    /// reached, a self pairing, a lockout and a host already paired under
+    /// another key (said only once the secret was proved) say so.
     pub fn opaque(self) -> PairFailure {
-        match self.code {
-            ErrorCode::Unavailable | ErrorCode::Internal => self,
-            ErrorCode::InvalidArgument if self.message.contains("SELF_PAIRING") => self,
-            ErrorCode::PermissionDenied if self.message == "PAIRING_LOCKED" => self,
+        match (self.reason, self.code) {
+            (Reason::SelfPairing | Reason::Locked, _) => self,
+            (_, ErrorCode::Unavailable | ErrorCode::Internal | ErrorCode::AlreadyExists) => self,
             _ => PairFailure::invalid_pin(),
         }
     }
 
     /// How analytics counts this refusal.
     pub fn counted(&self) -> Failure {
-        match self.code {
-            ErrorCode::PermissionDenied => Failure::WrongSecret,
-            ErrorCode::InvalidArgument if self.message.contains("SELF_PAIRING") => {
-                Failure::SelfPairing
-            }
-            ErrorCode::Unavailable => Failure::Unreachable,
-            ErrorCode::DeadlineExceeded => Failure::TimedOut,
+        match (self.code, self.reason) {
+            (ErrorCode::PermissionDenied, _) => Failure::WrongSecret,
+            (_, Reason::SelfPairing) => Failure::SelfPairing,
+            (ErrorCode::Unavailable, _) => Failure::Unreachable,
+            (ErrorCode::DeadlineExceeded, _) => Failure::TimedOut,
             _ => Failure::Other,
         }
     }
@@ -197,20 +236,25 @@ impl PairFailure {
         if matches!(reason, Reason::InvalidPin | Reason::NotInPairingMode) {
             return PairFailure::invalid_pin();
         }
+        // Its detail is already the sentence the person is shown.
+        if reason == Reason::AlreadyPaired {
+            return PairFailure::because(ErrorCode::AlreadyExists, reason, error.detail.clone());
+        }
         let code = match reason {
             Reason::NotInPairingMode => ErrorCode::FailedPrecondition,
-            Reason::InvalidPin => ErrorCode::PermissionDenied,
+            Reason::InvalidPin | Reason::Locked => ErrorCode::PermissionDenied,
             Reason::ProtocolViolation | Reason::SelfPairing | Reason::Unspecified => {
                 ErrorCode::InvalidArgument
             }
             Reason::Timeout => ErrorCode::DeadlineExceeded,
             Reason::UserRejected => ErrorCode::Cancelled,
+            Reason::AlreadyPaired => ErrorCode::AlreadyExists,
         };
         let label = reason.as_str_name();
         if error.detail.is_empty() {
-            PairFailure::new(code, label)
+            PairFailure::because(code, reason, label)
         } else {
-            PairFailure::new(code, format!("{label}: {}", error.detail))
+            PairFailure::because(code, reason, format!("{label}: {}", error.detail))
         }
     }
 
@@ -218,6 +262,7 @@ impl PairFailure {
     fn from_trust(error: &TrustError) -> PairFailure {
         match error {
             TrustError::DuplicatePubkey(_) => PairFailure::violation("pubkey is already trusted"),
+            TrustError::PairedUnderAnotherKey { name, .. } => PairFailure::already_paired(name),
             other => PairFailure::new(ErrorCode::Internal, other.to_string()),
         }
     }
@@ -381,11 +426,12 @@ fn error(reason: Reason, detail: &str) -> PairMessage {
 fn failure_words(reason: Reason, detail: &str) -> String {
     match reason {
         Reason::InvalidPin => "invalid PIN".to_owned(),
+        Reason::Locked => "pairing locked".to_owned(),
         Reason::SelfPairing => "self pairing is not allowed".to_owned(),
         Reason::NotInPairingMode => "not in pairing mode".to_owned(),
         Reason::Timeout => "pairing timed out".to_owned(),
         Reason::UserRejected => "pairing rejected by peer".to_owned(),
-        Reason::ProtocolViolation => detail.to_owned(),
+        Reason::ProtocolViolation | Reason::AlreadyPaired => detail.to_owned(),
         Reason::Unspecified => "pairing failed".to_owned(),
     }
 }
@@ -398,8 +444,8 @@ pub fn validate_identity(identity: &wire::PairingIdentity) -> Result<HostId, &'s
     if identity.pubkey.len() != PUBKEY_LEN {
         return Err("pubkey must be 32 bytes");
     }
-    if identity.name.len() > MAX_NAME_BYTES {
-        return Err("name is too long");
+    if wire::HostName::parse(&identity.name).is_err() {
+        return Err("name is not a host name");
     }
     Ok(HostId::from_slice(&identity.host_id).expect("16 bytes"))
 }
@@ -988,6 +1034,15 @@ impl Daemon {
                         out,
                     );
                 }
+                if let Some(refusal) = self.paired_under_another_key(host, &peer) {
+                    return self.responder_refuses(
+                        session,
+                        method,
+                        Reason::AlreadyPaired,
+                        &refusal.message,
+                        out,
+                    );
+                }
                 self.responder_commits(session, host, peer, reachability, out);
             }
             (_, _) => {
@@ -1231,11 +1286,7 @@ impl Daemon {
                     }
                 };
                 if is_self(&initiate.local, &peer) {
-                    return self.initiator_fails(
-                        session,
-                        PairFailure::new(ErrorCode::InvalidArgument, "SELF_PAIRING"),
-                        out,
-                    );
+                    return self.initiator_fails(session, PairFailure::self_pairing(), out);
                 }
                 self.pending(session, &initiate, keys, host, peer, out);
             }
@@ -1280,16 +1331,15 @@ impl Daemon {
         if initiate.expect.is_some_and(|expected| expected != host) {
             return self.initiator_fails(session, PairFailure::invalid_pin(), out);
         }
-        // A machine discovery found that already has a key here must
-        // present that key: a stranger answering at its address does not
-        // replace it.
-        if initiate.found
-            && self
-                .trust()
-                .pubkey_for_host(Uuid::from_bytes(host.0))
-                .is_some_and(|pinned| pinned != peer.pubkey.as_slice())
-        {
-            return self.initiator_fails(session, PairFailure::invalid_pin(), out);
+        if let Some(refusal) = self.paired_under_another_key(host, &peer) {
+            // A machine discovery found must present the key it has here:
+            // a stranger answering at its address is told nothing more
+            // than a wrong secret would tell it.
+            let refusal = match initiate.found {
+                true => PairFailure::invalid_pin(),
+                false => refusal,
+            };
+            return self.initiator_fails(session, refusal, out);
         }
         let now = self.now_ms() as i64;
         if peer.expires_at_ms <= now {
@@ -1333,6 +1383,18 @@ impl Daemon {
                 sealed,
             },
         );
+    }
+
+    /// The refusal for a peer that names a host this one trusts under
+    /// another key. Pairing never replaces a key: the person unpairs the
+    /// old host first.
+    fn paired_under_another_key(
+        &self,
+        host: HostId,
+        peer: &wire::PairingIdentity,
+    ) -> Option<PairFailure> {
+        let entry = self.trust().entry(Uuid::from_bytes(host.0))?;
+        (entry.pubkey != peer.pubkey).then(|| PairFailure::already_paired(&entry.name))
     }
 
     fn forget_pending(&mut self, session: PairingId) {
@@ -1472,10 +1534,13 @@ impl Daemon {
         if is_self(&local, &peer) {
             return out.push(Output::EndCall {
                 call,
-                status: Status::Failed(CallError::Pairing(PairFailure::new(
-                    ErrorCode::InvalidArgument,
-                    "SELF_PAIRING",
-                ))),
+                status: Status::Failed(CallError::Pairing(PairFailure::self_pairing())),
+            });
+        }
+        if let Some(refusal) = self.paired_under_another_key(host, &peer) {
+            return out.push(Output::EndCall {
+                call,
+                status: Status::Failed(CallError::Pairing(refusal)),
             });
         }
         let role = if reachability.is_some() {

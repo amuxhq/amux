@@ -180,9 +180,11 @@ impl CloudLinkServer {
     /// in production always has one; a test that never reads a dump passes
     /// None, and such a dump is then only logged.
     pub fn new(identity: RelayIdentity, reports: Option<std::path::PathBuf>) -> Self {
+        // Every host refuses a handshake naming a host by what is no host
+        // name, the relay's own included.
         let local_host = LiveLocalHost::new(local_host(
             identity.host_id,
-            &identity.name,
+            wire::HostName::lossy(&identity.name).as_str(),
             Capabilities {
                 cloud_relay: true,
                 kinds: Vec::new(),

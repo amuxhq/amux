@@ -394,31 +394,16 @@ impl AppRuntime {
         }
     }
 
-    /// Writes a dump of the profile, with every open session for the daemon
-    /// to redact and write and the fleet's part, and returns the bundle's
-    /// directory. One for a person's report carries what reproduces this
-    /// device's screen; one to export carries everything the device holds.
-    pub async fn dump(&self, reason: &str, for_report: bool) -> Result<PathBuf, RpcError> {
-        let sessions = self
-            .fleet
-            .sessions()
-            .iter()
-            .map(|session| session.history().encode_to_vec())
-            .collect();
+    /// Writes a dump with the fleet's part and the record of every chat
+    /// on screen, and returns the bundle's directory: the same bundle
+    /// whether it is then saved or sent.
+    pub async fn dump(&self, reason: &str) -> Result<PathBuf, RpcError> {
         let response = self
             .client
             .dump(DumpRequest {
-                agent_ids: Vec::new(),
                 reason: reason.to_owned(),
-                automatic: false,
-                sessions,
-                scope: if for_report {
-                    wire::DumpScope::Report
-                } else {
-                    wire::DumpScope::Unspecified
-                }
-                .into(),
-                check: String::new(),
+                sessions: self.fleet.on_screen_records(),
+                ..DumpRequest::default()
             })
             .await?;
         let bundle = PathBuf::from(response.report_path);

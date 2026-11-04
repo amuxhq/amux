@@ -55,8 +55,8 @@
 - [QA](QA.md) — adversarial testing by agents: running `just qa`, what a run leaves behind, and turning findings
   into tests.
 - [Performance](PERFORMANCE.md) — the perf lane, the flood, budgets and baselines.
-- [Debugging](DEBUGGING.md) — dumps, the facts ring and checkpoints, `amux dump`, the reports directory,
-  redaction and replay.
+- [Debugging](DEBUGGING.md) — the one debug report and its two destinations, the facts ring and
+  checkpoints, `amux dump`, the reports directory, records and replay.
 - [Parameters](PARAMETERS.md) — every tunable value with its starting point, its basis and where it is set.
 
 ## Operations

@@ -613,7 +613,8 @@ The pushed tag starts the Release workflow
 ([`.github/workflows/release.yml`](../.github/workflows/release.yml)). It
 runs `just release-check -- --target <triple>` for three targets, splits
 each binary's symbols from it with
-[`scripts/release-symbols.sh`](../scripts/release-symbols.sh), and
+[`scripts/release-symbols.sh`](../scripts/release-symbols.sh), attests each
+stripped binary (below, [The release key](#the-release-key)), and
 publishes a GitHub Release with the three stripped binaries, their symbols,
 a `checksums.txt` of the binaries' SHA-256 sums, and notes GitHub generates
 from the commits:
@@ -735,7 +736,7 @@ them:
 | Build | Keys it trusts |
 | --- | --- |
 | `AMUX_RELEASE_PUBLIC_KEYS` set | Those keys |
-| Debug build without it | `TEST_RELEASE_KEY`, whose private half lives in the test suites |
+| Debug build without it | `TEST_RELEASE_KEY`, whose private half lives in the test suites, and only for a feed on the loopback; from amux.sh or any other host, none |
 | Release build without it | None. It restarts its daemon but installs nothing, and `amux update` says so. |
 
 The Release workflow sets it to the release key and its backup, so every
@@ -771,15 +772,17 @@ let `security` read the item. Answer the second with **Allow**, never
 **Always Allow**, which would add `security` to the item's readers for good.
 
 What the key does not vouch for is the build itself. The binaries are
-built by the Release workflow on GitHub's runners, and `just deploy`
-signs the digests that workflow published, so a runner or release
-storage compromised between the build and the deploy gets its binary
-signed. That is the trust kept deliberately: the window is the one
-release being cut, the deploy is an act someone runs by hand, and the
-alternative is building every target on the release Mac. Should that
-window ever need closing, GitHub's artifact attestations would let the
-deploy prove each asset came from the workflow at the tagged commit
-before signing it, leaving only a compromised runner.
+built by the Release workflow on GitHub's runners, and each build job
+attests its binary as soon as it is built: GitHub signs a provenance
+statement for the binary's digest with that run's identity, naming the
+workflow, the tag and the commit. `just deploy` downloads every binary,
+verifies its attestation and signs only the digest it computed itself, so
+someone who can edit the GitHub release, and swaps a binary and its
+checksum before the deploy, gets nothing signed. What is left trusted is
+the runner and what runs in the build job: a compromised runner attests
+its own binary. That is kept deliberately; the alternative is building
+every target on the release Mac. The build job restores no Rust cache, so
+the CI jobs that save caches on `main` cannot reach it that way.
 
 `just release-key generate` makes a seed from the system's randomness,
 makes the keychain when there is none (asking for its new password), stores
@@ -818,12 +821,18 @@ just deploy 0.8.0 --channel preview     # the preview channel
 just deploy 0.8.0 --rollout 10          # stable, a tenth of the machines; later --rollout 100
 ```
 
-`xtask release deploy` waits until the tagged GitHub Release holds
-`checksums.txt` (the workflow may still be building after a cut; it gives
-up after 45 minutes), signs the macOS binary with Developer ID (below),
-reads the checksums, signs each target's hash with
-the keychain's seed (or the backup's, with `--key-file PATH`), verifies the
-signature against the keys the workflow compiles in, writes the channel's manifest with each entry's URL pointing
+`xtask release deploy` reads the trusted keys from the Release workflow as
+the local tag `v<version>` holds it, waits until the tagged GitHub Release
+holds `checksums.txt` (the workflow may still be building after a cut; it
+gives up after 45 minutes), downloads each binary into
+`target/release-deploy/v<version>/`, and refuses one whose attestation does
+not verify (`gh attestation verify`, requiring the Release workflow, the
+tag's ref and the local tag's commit, on a GitHub-hosted runner) or whose
+SHA-256 is not the one `checksums.txt` records. It signs a copy of the
+macOS binary with Developer ID (below), then signs each target's hash and
+size, as it computed them, with the keychain's seed (or the
+backup's, with `--key-file PATH`), verifies the signature against the
+tag's keys, writes the channel's manifest with each entry's URL pointing
 at the release's own asset (a copy stays in `target/release-manifests/`),
 and uploads `<channel>.json` to that same release, replacing one already
 there. So:
@@ -842,47 +851,32 @@ the workflow can sign.
 ### Signing the macOS binary
 
 The workflow builds `amux-macos-arm64` with only the linker's ad-hoc
-signature, and no signing secret goes to GitHub. Before any manifest is
-signed, the deploy downloads that binary into `target/release-sign/<tag>/`,
-signs it with the Developer ID Application certificate in the login keychain
-under the hardened runtime and a secure timestamp, with the stable
-identifier `sh.amux.cli`, and has Apple notarize it with the App Store
-Connect API key (`xcrun notarytool submit --wait`, giving up after two
-hours; a rejection prints Apple's log). Only an accepted binary is uploaded
-back to the release, replacing the workflow's, and `checksums.txt` is
-rewritten with its hash, so the manifest signs the binary machines will
-receive. A bare executable cannot carry a stapled ticket: Gatekeeper looks
-the ticket up online the first time a quarantined download runs.
+signature, and no signing secret goes to GitHub. Once that binary's
+attestation verifies, the deploy signs a copy of it with the Developer ID
+Application certificate in the login keychain, under the hardened runtime
+and a secure timestamp, with the stable identifier `sh.amux.cli`, and
+uploads the copy to the release as `amux-macos-arm64-<first 12 hex digits of
+its SHA-256>`. The manifest's macOS entry names that copy; the workflow's
+binary stays on the release as it was attested.
 
-What it buys: macOS names amux in its login-item list, privacy grants keyed
-to its identity survive updates, and a copy downloaded with a browser opens.
-Updates are trusted through the release key either way.
+What it buys: one code identity across releases, so the privacy grants
+macOS keys to it (an agent reading Documents, say) survive updates, and
+amux's login item is named for its developer. Updates are trusted through
+the release key either way.
 
-A binary already signed with Developer ID is left alone, so a second deploy
-of the same release (a wider rollout, preview promoted to stable) signs
-nothing and only checks that `checksums.txt` names it, which also repairs a
-deploy stopped between the two uploads.
+The copy is not notarized. Notarization matters only to a file a browser
+downloaded and marked as such, and neither the install script nor the
+supervisor downloads that way; a binary taken from the release page in a
+browser asks for "Open Anyway" once.
 
-Signing replaces the release's macOS binary, and a channel's manifest names
-a binary by its hash. A release deployed to a channel before deploys signed
-(any release up to 0.8.x) that is then deployed with signing leaves the
-other channel's manifest naming the unsigned binary, which no longer exists,
-so Macs on that channel refuse the update: deploy such a release to every
-channel that carries it.
+Every deploy signs a fresh copy, since the signature's timestamp makes no
+two alike, and names it by its digest, so a wider rollout or a promotion to
+stable never replaces a file another channel's manifest names.
 
-The release Mac needs, beside the release key:
-
-- A Developer ID Application certificate with its private key in the login
-  keychain. It is chosen by its type, never by its full name, which carries
-  the Team ID. The first `codesign` use asks for the key; answer Allow, never
-  Always Allow.
-- The App Store Connect key's identifiers in the login keychain under the
-  service `amux-appstoreconnect` (accounts `key-id` and `issuer-id`) and the
-  key at `~/.appstoreconnect/private_keys/AuthKey_<key id>.p8`, the same items
-  the iPhone release reads ([One-time operator setup](#one-time-operator-setup)).
-
-A team's first notarizations can take hours; `xcrun notarytool history`
-lists them.
+The release Mac needs, beside the release key, a Developer ID Application
+certificate with its private key in the login keychain. It is chosen by its
+type, never by its full name, which carries the Team ID. The first
+`codesign` use asks for the key; answer Allow, never Always Allow.
 
 ### What amux.sh serves
 
@@ -905,8 +899,8 @@ which case a supervised machine's hourly check finds nothing and
 `https://amux.sh/install` is the same arrangement. The scripts are
 [`scripts/install/install.sh`](../scripts/install/install.sh) and
 [`install.ps1`](../scripts/install/install.ps1); every stable deploy hands
-them to the publish script beside the manifest, from the checkout the deploy
-runs in, and amux.sh answers `/install` with the one for the caller's shell:
+them to the publish script beside the manifest, as the release's tag holds
+them (whatever the checkout has since), and amux.sh answers `/install` with the one for the caller's shell:
 
 ```sh
 curl -fsSL https://amux.sh/install | sh      # macOS, Linux

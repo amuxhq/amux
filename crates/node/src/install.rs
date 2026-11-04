@@ -246,7 +246,7 @@ mod tests {
             }
             options.open(&path).unwrap().set_modified(at).unwrap();
         }
-        let text = dir.path().join("relay-1-ab.txt");
+        let text = dir.path().join("relay-1-ab.json");
         fs::write(&text, b"window").unwrap();
         fs::create_dir(dir.path().join(".dump-99")).unwrap();
 
@@ -258,7 +258,7 @@ mod tests {
         left.sort();
         assert_eq!(left.len(), REPORTS_KEPT + 1, "{left:?}");
         assert!(left.contains(&".dump-99".to_owned()));
-        assert!(left.contains(&"relay-1-ab.txt".to_owned()));
+        assert!(left.contains(&"relay-1-ab.json".to_owned()));
         // The three oldest bundles went.
         for gone in ["dump-00", "dump-01", "dump-02"] {
             assert!(!left.contains(&gone.to_owned()), "{left:?}");

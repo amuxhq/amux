@@ -160,7 +160,7 @@ final class Composition {
         let dump: () -> Task<Result<URL, PartAbsent>, Never>? = { [weak runtime] in
             guard let running = runtime?.profile else { return nil }
             return Task {
-                switch await running.dump(reason: "report", forReport: true) {
+                switch await running.dump(reason: "report") {
                 case .success(let directory): .success(URL(fileURLWithPath: directory))
                 case .failure(let why): .failure(PartAbsent(why.description))
                 }

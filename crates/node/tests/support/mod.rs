@@ -332,3 +332,44 @@ pub fn text(text: &str) -> Step {
         chunks: vec![text.to_owned()],
     }
 }
+
+/// What this process logs: everything at the level the daemon logs at by
+/// default, and the driver's debug lines, which tests count. Installed
+/// once for the whole binary: a subscriber set per test would race the
+/// others' callsites.
+pub fn captured_log() -> &'static Arc<std::sync::Mutex<Vec<u8>>> {
+    static LOG: std::sync::OnceLock<Arc<std::sync::Mutex<Vec<u8>>>> = std::sync::OnceLock::new();
+    LOG.get_or_init(|| {
+        use tracing_subscriber::layer::{Layer as _, SubscriberExt as _};
+        use tracing_subscriber::util::SubscriberInitExt as _;
+
+        let log = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let writer = log.clone();
+        let filter = tracing_subscriber::filter::Targets::new()
+            .with_default(tracing::Level::INFO)
+            .with_target("node::driver", tracing::Level::DEBUG);
+        tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_ansi(false)
+                    .with_writer(move || Captured(writer.clone()))
+                    .with_filter(filter),
+            )
+            .try_init()
+            .expect("the only subscriber this binary installs");
+        log
+    })
+}
+
+struct Captured(Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for Captured {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}

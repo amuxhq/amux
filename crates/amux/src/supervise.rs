@@ -10,13 +10,14 @@ pub use node::SUPERVISOR_LOG;
 use node::supervisor::{Inherited, Params, SuperviseOptions, UpdatePolicy, UpdateSource};
 use settings::{InstallationConfig, Updates};
 
-/// What the config says the supervisor may install. A build without
-/// release keys installs nothing.
+/// What the config says the supervisor may install. A build that trusts no
+/// release key for the configured feed installs nothing.
 fn policy(config: &InstallationConfig) -> Result<UpdatePolicy> {
     let auto = config.updates()? == Updates::Auto;
-    let source = node::release::release_keys().map(|keys| UpdateSource {
+    let manifest_url = config.manifest_url();
+    let source = node::release::feed_keys(&manifest_url).map(|keys| UpdateSource {
         channel: config.channel_name().to_owned(),
-        manifest_url: config.manifest_url(),
+        manifest_url,
         keys,
     });
     Ok(UpdatePolicy { auto, source })
@@ -39,7 +40,7 @@ pub fn run(
     let started = policy(config)?;
     if started.source.is_none() {
         tracing::warn!(
-            "this build trusts no release key: it restarts the daemon but installs nothing"
+            "this build trusts no release key for its feed: it restarts the daemon but installs nothing"
         );
     }
     // The config is read again before every check, so `amux config

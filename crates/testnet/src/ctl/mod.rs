@@ -274,6 +274,10 @@ pub struct HostArgs {
     /// A script file every agent a client creates on it plays (fake hosts).
     #[arg(long)]
     pub script: Option<PathBuf>,
+    /// Leave it a new installation, which the terminal client walks
+    /// through setting up; otherwise it is one set up long ago.
+    #[arg(long)]
+    pub first_run: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -555,7 +559,11 @@ fn run(folder: &Folder, command: Command) -> Result<Outcome, String> {
             if let Some(script) = host.script {
                 decl["script"] = read_json(&script)?;
             }
-            ack(folder.call(json!({"AddHost": {"host": decl}}))?)
+            let added = folder.call(json!({"AddHost": {"host": decl}}))?;
+            if !host.first_run {
+                folder.call(json!({"SetUp": {"host": host.name}}))?;
+            }
+            ack(added)
         }
         Command::Host(HostCommand::Remove { name }) => {
             ack(folder.call(json!({"RemoveHost": {"host": name}}))?)

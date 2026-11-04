@@ -227,6 +227,16 @@ impl InstallationService for FrontDoor {
         _request: Request<Empty>,
     ) -> Result<Response<wire::Settings>, Status> {
         let installation = self.registry.installation()?;
+        // A change made beside the daemon, by `amux config` or an editor,
+        // is in force for the client asking now, not only at the next poll.
+        let reread = installation.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Some(config) = reread.settings.reread() {
+                reread.apply(&config);
+            }
+        })
+        .await
+        .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
         let settings = &installation.settings;
         Ok(Response::new(crate::host_settings::to_wire(
             &settings.current(),

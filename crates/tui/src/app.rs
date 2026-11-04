@@ -564,9 +564,7 @@ impl App {
             AppEvent::Desk(event) => self.desk_event(event),
             AppEvent::Folders { host, answer } => {
                 self.folders_asked.remove(&host);
-                if let Some(setup) = self.home.open_setup() {
-                    setup.take_folders(&host, &answer);
-                }
+                self.home.take_folders(&host, &answer);
                 self.host_folders.insert(host, answer);
             }
             AppEvent::Restore {
@@ -1464,7 +1462,9 @@ impl App {
         }
         let host = setup.host.clone();
         if let Some(answer) = self.host_folders.get(&host) {
-            setup.take_folders(&host, answer);
+            // Offered at once; asked again, as projects may have changed.
+            let answer = answer.clone();
+            self.home.take_folders(&host, &answer);
         }
         if !self.folders_asked.insert(host.clone()) {
             return;
@@ -1474,7 +1474,8 @@ impl App {
             let answer = client
                 .list_repositories(wire::ListRepositoriesRequest {
                     query: None,
-                    limit: 0,
+                    // As many as the host offers; it caps the answer.
+                    limit: u32::MAX,
                     host_id: Some(host.clone()),
                 })
                 .await

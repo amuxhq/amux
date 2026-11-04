@@ -382,7 +382,8 @@ answers them and `UpdateSettings` changes the fields it sets, leaving the
 rest alone, and answers the settings it leaves. The config file stays where
 they live, so `amux config` and a client see the same values; a change is
 in force at once, and one made to the file beside the daemon within
-seconds.
+seconds, or as soon as a client asks `GetSettings`, which reads a changed
+file first.
 
 | `Settings` field | What it is |
 | --- | --- |

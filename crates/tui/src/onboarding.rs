@@ -93,6 +93,10 @@ struct Pairing {
     status: Option<wire::PairingStatus>,
     /// A fresh window was asked for: the old one closing is not an end.
     renewing: bool,
+    /// A window was seen open since the step showed. The watch's first
+    /// status can be the last window's outcome, a pairing made long ago,
+    /// which is not this one.
+    seen_open: bool,
     /// Why no window opened.
     failed: Option<String>,
 }
@@ -428,6 +432,7 @@ impl Onboarding {
             status: None,
             renewing: false,
             failed: None,
+            seen_open: self.pairing.seen_open,
         };
     }
 
@@ -444,6 +449,11 @@ impl Onboarding {
         fleet: &FleetState,
     ) -> Vec<SetupEffect> {
         if self.step != SetupStep::PairPhone {
+            return Vec::new();
+        }
+        if status.active {
+            self.pairing.seen_open = true;
+        } else if !self.pairing.seen_open {
             return Vec::new();
         }
         if !status.active

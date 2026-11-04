@@ -1,0 +1,34 @@
+
+  amux
+
+  + New Agent
+  ○ Finish setting up (1)
+
+
+  ▾ Live 1 ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+  › ○ first-agent  Claude · /tmp/journey/aj-xxxxxxxx/net/desk/work                                     [x]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  There it is: first-agent

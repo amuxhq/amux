@@ -159,6 +159,32 @@ fn the_window_is_renewed_before_it_ends_and_not_while_a_phone_joins() {
 }
 
 #[test]
+fn a_pairing_made_before_the_window_opened_is_not_this_one() {
+    let mut scene = scenes::pair();
+    let fleet = scenes::fleet(true);
+    let earlier = wire::PairingStatus {
+        active: false,
+        locked_out: false,
+        joining: false,
+        paired: Some(wire::Peer {
+            host_id: b"phone".to_vec(),
+            name: PHONE.into(),
+            ..Default::default()
+        }),
+    };
+    assert_eq!(scene.onboarding.pairing_status(earlier.clone(), &fleet), []);
+    assert_eq!(scene.onboarding.step, SetupStep::PairPhone);
+    let open = wire::PairingStatus {
+        active: true,
+        ..Default::default()
+    };
+    assert_eq!(scene.onboarding.pairing_status(open, &fleet), []);
+    let effects = scene.onboarding.pairing_status(earlier, &fleet);
+    assert_eq!(effects[0], SetupEffect::ClosePairing, "{effects:?}");
+    assert_eq!(scene.onboarding.step, SetupStep::KeepReachable);
+}
+
+#[test]
 fn the_machine_is_renamed_from_the_pairing_screen() {
     let mut scene = scenes::pair_rename();
     let drawn = screen(&mut scene, 110, 34);
@@ -668,6 +694,12 @@ fn the_picker_offers_the_hosts_projects_then_its_recent_folders() {
         setup.folder_choices(),
         ["/src/here", "/src/app", "/src/lib", "/src/recent"],
         "the folder the client started in, then the projects, then recent ones"
+    );
+    // A folder the host lists keeps its place among the others.
+    setup.pick(crate::setup::Item::Folder, "/src/lib");
+    assert_eq!(
+        setup.folder_choices(),
+        ["/src/app", "/src/lib", "/src/recent"]
     );
     // On another host the folder is the first that host offers.
     setup.pick(crate::setup::Item::Host, "6c6170746f70");

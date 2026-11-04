@@ -1,0 +1,34 @@
+
+  Help improve amux                                                                          setting up amux
+
+  Tell us how amux is used and when it goes wrong, so we can fix what matters.
+
+  › [ ] Send usage counts
+    [ ] Send a report automatically when something goes wrong
+
+  Never your prompts, code, or file names.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  enter continue   space change   esc later

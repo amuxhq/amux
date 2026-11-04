@@ -385,6 +385,21 @@ impl Home {
         Some(self.draft.setup.get_or_insert_with(|| place.setup()))
     }
 
+    /// The folders `host` offers, for the new agent being set up there,
+    /// and its form's empty folder field.
+    pub fn take_folders(&mut self, host: &[u8], answer: &wire::ListRepositoriesResponse) {
+        if !self.draft.open {
+            return;
+        }
+        let Some(setup) = self.draft.setup.as_mut() else {
+            return;
+        };
+        setup.take_folders(host, answer);
+        if let Some(form) = self.draft.form.as_mut() {
+            form.folders_arrived(setup);
+        }
+    }
+
     /// The hosts modal, from a chat's `<leader> h`.
     pub fn open_hosts(&mut self) {
         self.draft.open = false;

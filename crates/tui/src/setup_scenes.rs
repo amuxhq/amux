@@ -223,7 +223,7 @@ fn paired_peer() -> wire::Peer {
 
 /// Paired: "Keep it connected", both choices on.
 pub fn paired() -> SetupScene {
-    let mut scene = pair();
+    let mut scene = pairing();
     scene.fleet = fleet(true);
     let fleet = scene.fleet.clone();
     let _ = scene.onboarding.pairing_status(

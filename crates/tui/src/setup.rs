@@ -474,24 +474,15 @@ impl Setup {
     /// agents ran lately, with the folder chosen now first when it is
     /// neither.
     pub fn folder_choices(&self) -> Vec<String> {
-        let mut folders: Vec<String> = Some(self.folder.clone())
-            .filter(|current| !current.is_empty())
-            .into_iter()
-            .collect();
-        if let Some((host, offered)) = &self.folders
-            && *host == self.host
-        {
-            for folder in offered {
-                if !folders.contains(folder) {
-                    folders.push(folder.clone());
-                }
-            }
-            // The current folder leads only when the host does not list
-            // it; listed, it keeps its place among the projects.
-            if offered.contains(&self.folder) {
-                folders.remove(0);
-            }
+        let offered: &[String] = match &self.folders {
+            Some((host, offered)) if *host == self.host => offered,
+            _ => &[],
+        };
+        let mut folders = Vec::new();
+        if !self.folder.is_empty() && !offered.contains(&self.folder) {
+            folders.push(self.folder.clone());
         }
+        folders.extend(offered.iter().cloned());
         folders
     }
 
@@ -1198,6 +1189,14 @@ impl Form {
             typing: true,
             name,
             folder,
+        }
+    }
+
+    /// The chosen host said which folders it offers: an empty folder
+    /// field takes the one the setup filled from them.
+    pub fn folders_arrived(&mut self, setup: &Setup) {
+        if self.folder.is_empty() && !setup.folder.is_empty() {
+            self.folder.set(&setup.shown(&setup.folder), Vec::new());
         }
     }
 

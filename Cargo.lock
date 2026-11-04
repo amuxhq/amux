@@ -3813,6 +3813,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "settings",
  "sha2",
  "shot",
  "store",

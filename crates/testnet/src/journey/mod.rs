@@ -161,6 +161,11 @@ pub(crate) struct Story {
     /// The topology the phone runs the story against, where it differs.
     #[serde(default)]
     pub phone_topology: Option<String>,
+    /// Every host a new installation, which the terminal client walks
+    /// through setting up; otherwise each was set up long ago and the
+    /// client opens on home.
+    #[serde(default)]
+    pub first_run: bool,
 }
 
 #[derive(Deserialize)]

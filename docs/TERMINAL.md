@@ -624,7 +624,7 @@ only with all of its callers:
 | PNG renderings of the components | [`crates/shot`](../crates/shot/README.md) | `just shot -- render --out DIR` |
 | The storybook: exactly the terminal stories of `tests/stories.json`, in its order, each drawing at every size in both palettes | `crates/shot/src/stories.rs` | `just test-crate shot` |
 | Raw attach, the CLI and the binary against real daemons | `crates/amux/tests/` | `just test-crate amux` |
-| Journeys through the real terminal client: deciding asks and plans, the queue, sending, the composer's states, starting and managing agents, attachments and review, reaching hosts, recovering, reporting a problem | `journeys/`, `crates/testnet/src/journey` | `just journey terminal <name>` |
+| Journeys through the real terminal client: deciding asks and plans, the queue, sending, the composer's states, starting and managing agents, attachments and review, reaching hosts, recovering, reporting a problem, a first run set up from pairing to the first agent | `journeys/`, `crates/testnet/src/journey` | `just journey terminal <name>` |
 
 [TESTING.md](TESTING.md) places these in the suite catalogue.
 

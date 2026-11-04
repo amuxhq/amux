@@ -283,11 +283,15 @@ why.
 A journey starts at a real user entry point, crosses the production path and observes the outcome.
 `journeys/manifest.json` declares each story once: its id, the clients that enact it (`terminal`, `phone` or
 `system`), the topology it is served on (and `phone_topology` where the phone's differs), and its claim. The
-terminal and the phone enact the same story each in their own way.
+terminal and the phone enact the same story each in their own way. The terminal driver starts every host as an
+installation set up long ago (setting up dismissed, the analytics notice shown), so its client opens on home;
+a story marked `first_run` keeps them new.
 
 The shared stories are `reach-host`, `conversation-decision-claude-pty`, `conversation-decision-claude-sdk`,
 `conversation-decision-codex`, `leave-and-recover`, `manage-agent`, `attachment-or-review` and `keep-authority`.
-The phone has its own besides (`account-sign-in`, `purchase-restore`, `report`, `accessibility`,
+The terminal has `first-run` of its own: a first `amux` walked through setting up, another machine pairing
+with the PIN it shows, a browser sign-in at the net's account service, quitting half way and resuming. The
+phone has its own besides (`account-sign-in`, `purchase-restore`, `report`, `accessibility`,
 `local-network`, `push-wake`, `resume`; `just ios journey -- --native` runs them), and `survive-daemon` is the
 system journey on the built binaries. `resume` launches one installation three times (the first launch ever, a
 relaunch, and a launch after a machine restarted) and keeps each launch's link log in

@@ -19,7 +19,20 @@ use wire::inventory_event::Of;
 
 use crate::profiles::ProfileId;
 use crate::runtime::ProfileRuntime;
+#[cfg(not(target_os = "ios"))]
 use crate::supervisor::KeepAwake;
+
+/// A phone keeps nothing awake: it runs no agents of its own, and iOS
+/// decides when it sleeps.
+#[cfg(target_os = "ios")]
+struct KeepAwake;
+
+#[cfg(target_os = "ios")]
+impl KeepAwake {
+    fn while_working() -> Self {
+        KeepAwake
+    }
+}
 
 /// How long a profile whose inventory stream ended waits before opening it
 /// again: it ends when the profile falls behind or stops.

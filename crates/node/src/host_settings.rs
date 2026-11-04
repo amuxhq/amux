@@ -16,7 +16,25 @@ use settings::edit::Change;
 use settings::{ChatInSetting, ClaudeKindSetting, ConfigError, InstallationConfig};
 use wire::{ErrorCode, UpdateSettingsRequest};
 
+#[cfg(not(target_os = "ios"))]
 use crate::supervisor::login::StartAtLogin;
+
+/// A phone runs no supervisor, so nothing there is started at login and no
+/// login item can be named.
+#[cfg(target_os = "ios")]
+#[derive(Clone, Debug)]
+pub enum StartAtLogin {}
+
+#[cfg(target_os = "ios")]
+impl StartAtLogin {
+    fn is_on(&self) -> bool {
+        match *self {}
+    }
+
+    fn set(&self, _on: bool) -> std::io::Result<()> {
+        match *self {}
+    }
+}
 
 /// Where an installation's settings live.
 #[derive(Clone, Debug, Default)]

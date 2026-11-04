@@ -120,11 +120,16 @@ fn remove_finished(
         }
         all
     };
+    // A live parent may still message its finished children back to work,
+    // so they wait for it. A parent that is only kept (exited, never
+    // settled, or pinned and idle) does not hold its settled children: a
+    // long-lived agent's one-shot children settle as they finish, and they
+    // would otherwise never be reclaimed.
     let protected = |row: &AgentRow| {
         row.parent
             .as_ref()
             .and_then(|parent| by_ref.get(parent))
-            .is_some_and(|parent| is_kept(parent))
+            .is_some_and(|parent| parent.lifecycle == wire::Lifecycle::Live as i32)
     };
     let mut candidates = rows
         .iter()

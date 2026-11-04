@@ -478,7 +478,7 @@ private struct ChatPage: View {
             if present { listed = true } else if listed { router.close(.conversation(agent)) }
         }
         .onChange(of: model?.frame?.ended != nil) { _, ended in
-            if ended { router.pop() }
+            if ended { router.close(.conversation(agent)) }
         }
         // Dictation stops when the chat ends it (a send, an edit, the
         // composer going away), when the page leaves, and in the background.

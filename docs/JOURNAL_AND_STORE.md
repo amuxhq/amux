@@ -509,9 +509,11 @@ the profile's own budget:
 1. Remove settled agents that have exited whole, least recent activity first.
    An agent the person has not settled is never removed whole, live or not:
    an exited one they never looked at stays in their fleet. A settled child
-   whose parent is live or not settled is skipped, because its parent can
-   still send to it; a parent goes together with its descendants, and one
-   with a descendant still kept stays.
+   whose parent is live is skipped, because its parent can still send to
+   it; under an exited parent it goes, even one the person kept, so a
+   long-lived agent's finished one-shot children are reclaimed. A parent
+   goes together with its descendants, and one with a descendant still kept
+   stays.
 2. If still over, trim the other agents in rounds: each round takes the
    largest and deletes its oldest rows until about one chunk of bytes is
    gone, then measures again. No agent is taken below its newest K rows.

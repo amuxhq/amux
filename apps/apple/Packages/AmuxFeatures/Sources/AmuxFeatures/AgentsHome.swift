@@ -785,7 +785,9 @@ public struct AgentsHome: View {
     /// waits `offerPatience`: a reopened app reads every machine unreached
     /// until it has dialled them, and an offer made then would be wrong.
     private var offer: Offer? {
-        if signedIn { return model.heldAway.map(Offer.subscribe) }
+        // Once the account pays, the machine held away is reached through
+        // the relay as soon as it answers; there is nothing left to buy.
+        if signedIn { return hosts.account?.pro == true ? nil : model.heldAway.map(Offer.subscribe) }
         return signInOffer
     }
 

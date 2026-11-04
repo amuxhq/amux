@@ -425,6 +425,22 @@ fn retention_never_removes_an_exited_agent_the_person_has_not_settled() {
 }
 
 #[test]
+fn retention_frees_the_settled_children_of_a_parent_the_person_kept() {
+    let mut store = fresh();
+    // The parent exited and was never settled; its one-shot child finished
+    // and settled itself.
+    let parent = own("long-lived");
+    add(&mut store, &parent, 1, 900, false, None);
+    let mut row = store.agent(&parent).unwrap().unwrap();
+    row.filing = wire::Filing::Active as i32;
+    store.put_agent(&row).unwrap();
+    add(&mut store, &own("finished-child"), 3, 2, false, Some(&parent));
+    let sweep = store.sweep_own(0, ROW, 1).unwrap();
+    assert_eq!(sweep.removed, [own("finished-child")]);
+    assert!(store.agent(&parent).unwrap().is_some());
+}
+
+#[test]
 fn retention_keeps_a_live_parents_exited_children_and_frees_an_exited_parents() {
     let mut store = fresh();
     // A parent on another host whose replica row says live protects its

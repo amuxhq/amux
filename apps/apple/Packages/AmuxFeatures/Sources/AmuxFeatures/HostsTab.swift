@@ -169,7 +169,7 @@ public struct HostsTab: View {
     /// subscription that reaches it, as the Agents list offers it.
     private var callouts: [Callout<HostsAction>] {
         var callouts = pairing
-        if model.account != nil, let away = model.awayHost {
+        if let account = model.account, account.pro != true, let away = model.awayHost {
             callouts.append(Callout(
                 id: "subscribe", glyph: "person.slash",
                 title: String(localized: "\(away.name) is away"),

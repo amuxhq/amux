@@ -518,18 +518,23 @@ to one. The complete control vocabulary is:
 - `SignInOfferMade`, `SignInOfferAnswer` and `SignInTicket`: one-tap sign-in
   between paired hosts, only ever on a link between the two. A signed-in host
   whose person offered a peer its account (`ProfileAdminService.OfferSignIn`)
-  keeps that offer in memory until the peer answers it, signs in, or is
-  unpaired, and sends `SignInOfferMade` (the account's email and name, and
+  keeps that offer in memory until the peer dismisses it, a link from the
+  peer says it is signed in, or the peer is unpaired, and sends `SignInOfferMade` (the account's email and name, and
   the account service it is at) on each link to the peer whose handshake says
   the peer is signed out (`Host.account_signed_in`). The peer shows it to its
   clients (`SubscribeSignInOffers`) while it is signed out; its person answers
   with `AnswerSignInOffer`, which sends `SignInOfferAnswer`. Declining ends the
-  offer. Accepting makes the offerer ask the account service for a one-time
+  offer; a peer that declined answers any later offer from that host, such as
+  one that crossed its answer on a fresh link, by declining again rather than
+  showing it, until it restarts. Accepting makes the offerer ask the account service for a one-time
   ticket bound to the peer's host id (`POST /api/sign-in-tickets`) and answer
   `SignInTicket` with it, or with the status of why it could not; the peer
   redeems the ticket at once under its own sign-in client and binds the
-  profile the offer reached. An acceptance with no offer standing is answered
-  with `FAILED_PRECONDITION`.
+  profile the offer reached. Accepting ends nothing by itself: the offer
+  stands on both hosts until the peer is signed in, so an acceptance that
+  failed anywhere (the account service, the link, the redemption) can be made
+  again. An acceptance with no offer standing is answered with
+  `FAILED_PRECONDITION`, and the peer drops that offer.
 - `LinkClose`: an immediate close with a reason and optional error.
 
 After the handshake a receiver ignores a control message it does not know,

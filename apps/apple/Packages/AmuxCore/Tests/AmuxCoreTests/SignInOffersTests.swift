@@ -101,6 +101,21 @@ final class SignInOffersTests: XCTestCase {
         XCTAssertNil(offers.failure)
     }
 
+    /// An acceptance that failed some other way stays said while the
+    /// daemon keeps the offer listed, so the sheet asking it stays up with
+    /// the reason and can be accepted again.
+    func testAFailedAcceptanceStaysSaidWhileTheOfferStands() {
+        let offers = SignInOffers()
+        offers.listed([offer(desk, "desk")])
+        offers.answers(desk.bytes)
+        offers.answered(.failure(RuntimeFailure("the account service answered 503")), from: desk.bytes)
+        offers.listed([offer(desk, "desk")])
+        XCTAssertEqual(offers.failure, .refused("the account service answered 503"))
+        XCTAssertEqual(offers.prompt(hosts: HostsStore()), .offered(offer(desk, "desk")))
+        offers.answers(desk.bytes)
+        XCTAssertNil(offers.failure, "accepting again puts the reason away")
+    }
+
     func testAnAcceptedOfferLeavesNothingToSay() {
         let offers = SignInOffers()
         offers.listed([offer(desk, "desk")])

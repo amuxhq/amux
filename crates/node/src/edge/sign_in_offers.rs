@@ -4,13 +4,19 @@
 //! with a signed-in one is offered that account rather than made to sign
 //! in again. The signed-in side's person consents for one peer
 //! ([`Edge::offer_sign_in`]); that offer stands here, in memory, until the
-//! peer answers it, signs in some other way, or is unpaired, and goes to
-//! the peer on each link it opens while its handshake says it is signed
-//! out. The peer's person sees the account's email and answers; accepting
-//! asks the offerer for a ticket, which the offerer mints from the account
-//! service for the peer's host id and sends back over the same encrypted
-//! link. The peer redeems it at once for its own tokens under its own
-//! sign-in client and binds the profile the offer reached.
+//! peer dismisses it, a link from the peer says it is signed in, or the
+//! peer is unpaired, and goes to the peer on each link it opens while its
+//! handshake says it is signed out. The peer's person sees the account's
+//! email and answers; accepting asks the offerer for a ticket, which the
+//! offerer mints from the account service for the peer's host id and sends
+//! back over the same encrypted link. The peer redeems it at once for its
+//! own tokens under its own sign-in client and binds the profile the offer
+//! reached.
+//!
+//! Accepting ends nothing by itself: the offer stands on both sides until
+//! the peer is signed in, so an acceptance that fails anywhere along the
+//! way (the account service, the link, the redemption) leaves the person
+//! an offer to accept again.
 //!
 //! An offer is no token: it carries the account's name and where it lives,
 //! and only the person accepting turns it into a ticket, which the account
@@ -63,8 +69,11 @@ struct State {
     /// The offers peers made this profile, with the account service each
     /// names.
     received: BTreeMap<HostId, (wire::SignInOffer, String)>,
-    /// Dismissals given while the offering peer had no link up.
-    unsent: HashSet<HostId>,
+    /// The peers whose offer this profile's person dismissed. Their offers
+    /// are answered with the dismissal again rather than shown: one that
+    /// was standing when the dismissal could not be sent arrives on the
+    /// next link, and one already in flight crosses the dismissal.
+    dismissed: HashSet<HostId>,
     /// Acceptances waiting for the offering peer's ticket.
     awaiting: HashMap<HostId, oneshot::Sender<wire::SignInTicket>>,
 }
@@ -89,6 +98,10 @@ impl State {
         self.open(peer)
             .any(|link| link.out.try_send(message.clone()).is_ok())
     }
+}
+
+fn dismissal() -> Body {
+    Body::SignInAnswer(wire::SignInOfferAnswer { accept: false })
 }
 
 fn ticket_error(code: wire::ErrorCode, message: &str) -> Body {
@@ -137,8 +150,8 @@ impl Edge {
     }
 
     /// The person consents to offering `host` this profile's account. The
-    /// offer stands until the peer answers, signs in or is unpaired, and is
-    /// sent now on a link that says the peer is signed out.
+    /// offer stands until the peer dismisses it, signs in or is unpaired,
+    /// and is sent now on a link that says the peer is signed out.
     pub fn offer_sign_in(&self, host: HostId) -> Result<(), Status> {
         let Some(frame) = self.offer_frame() else {
             return Err(Status::failed_precondition(
@@ -187,12 +200,6 @@ impl Edge {
         {
             state.send(peer, frame);
         }
-        if state.unsent.remove(&peer) {
-            state.send(
-                peer,
-                Body::SignInAnswer(wire::SignInOfferAnswer { accept: false }),
-            );
-        }
     }
 
     /// A sign-in frame a paired peer sent on its link.
@@ -211,7 +218,7 @@ impl Edge {
     }
 
     /// A peer offered this profile its account: shown to clients while this
-    /// profile is signed out.
+    /// profile is signed out, unless its person dismissed that peer's offer.
     fn offered(&self, peer: HostId, made: wire::SignInOfferMade) {
         if self.account.wants_cloud() {
             return;
@@ -232,15 +239,27 @@ impl Edge {
         };
         let offers = self.offers();
         let mut state = offers.state.lock().unwrap();
-        state.unsent.remove(&peer);
+        if state.dismissed.contains(&peer) {
+            state.send(peer, dismissal());
+            return;
+        }
         state.received.insert(peer, (offer, made.cloud_url));
         offers.publish(&state);
     }
 
     /// The peer answered this profile's offer: a dismissal ends it, an
-    /// acceptance asks the account service for a ticket for the peer.
+    /// acceptance asks the account service for a ticket for the peer and
+    /// leaves the offer standing, so a failure on the way can be answered
+    /// by accepting again.
     fn answered(self: &Arc<Self>, peer: HostId, accept: bool) {
-        let stood = self.offers().state.lock().unwrap().standing.remove(&peer);
+        let stood = {
+            let mut state = self.offers().state.lock().unwrap();
+            if accept {
+                state.standing.contains(&peer)
+            } else {
+                state.standing.remove(&peer)
+            }
+        };
         if !stood {
             if accept {
                 self.offers().state.lock().unwrap().send(
@@ -341,7 +360,8 @@ impl Edge {
         self.offers().received.borrow().clone()
     }
 
-    /// The person turned `host`'s offer down: the offer ends there too.
+    /// The person turned `host`'s offer down: the offer ends there too, now
+    /// if a link is up and otherwise when `host` next offers it.
     pub(crate) fn dismiss_sign_in_offer(&self, host: HostId) -> Result<(), Status> {
         let offers = self.offers();
         let mut state = offers.state.lock().unwrap();
@@ -351,14 +371,8 @@ impl Edge {
             )));
         }
         offers.publish(&state);
-        let sent = state.send(
-            host,
-            Body::SignInAnswer(wire::SignInOfferAnswer { accept: false }),
-        );
-        // Said on its next link, so it does not offer again there.
-        if !sent {
-            state.unsent.insert(host);
-        }
+        state.dismissed.insert(host);
+        state.send(host, dismissal());
         drop(state);
         self.analytics.record(analytics::Event::SignInOffer {
             role: analytics::OfferRole::Receiver,
@@ -368,7 +382,10 @@ impl Edge {
     }
 
     /// The person accepted `host`'s offer: the ticket the offerer minted for
-    /// this host, and the account service to redeem it at.
+    /// this host, and the account service to redeem it at. The offer stays
+    /// listed until the profile is signed in, so a failure here or in the
+    /// redemption leaves it to accept again; it goes only when the offerer
+    /// says it no longer stands.
     pub(crate) async fn take_sign_in_ticket(
         &self,
         host: HostId,
@@ -381,11 +398,17 @@ impl Edge {
         let offers = self.offers();
         let (ticket, cloud_url) = {
             let mut state = offers.state.lock().unwrap();
-            let Some(offer) = state.received.remove(&host) else {
+            let Some((offer, cloud_url)) = state.received.get(&host).cloned() else {
                 return Err(Status::not_found(format!(
                     "{host} made this profile no offer"
                 )));
             };
+            if state.awaiting.contains_key(&host) {
+                return Err(Status::aborted(format!(
+                    "{} is already being asked for a ticket",
+                    offer.host_name
+                )));
+            }
             let (tx, rx) = oneshot::channel();
             state.awaiting.insert(host, tx);
             let asked = state.send(
@@ -394,15 +417,12 @@ impl Edge {
             );
             if !asked {
                 state.awaiting.remove(&host);
-                let name = offer.0.host_name.clone();
-                // Still offered: the person can accept once the peer is back.
-                state.received.insert(host, offer);
                 return Err(Status::unavailable(format!(
-                    "{name} is not connected; open amux there and try again"
+                    "{} is not connected; open amux there and try again",
+                    offer.host_name
                 )));
             }
-            offers.publish(&state);
-            (rx, offer.1)
+            (rx, cloud_url)
         };
         self.analytics.record(analytics::Event::SignInOffer {
             role: analytics::OfferRole::Receiver,
@@ -421,10 +441,17 @@ impl Edge {
         };
         match ticket.outcome {
             Some(wire::sign_in_ticket::Outcome::Ticket(ticket)) => Ok((ticket, cloud_url)),
-            Some(wire::sign_in_ticket::Outcome::Error(error)) => Err(Status::new(
-                tonic::Code::from_i32(error.code),
-                error.message,
-            )),
+            Some(wire::sign_in_ticket::Outcome::Error(error)) => {
+                let code = tonic::Code::from_i32(error.code);
+                // The offerer keeps no offer for this host any more (it
+                // restarted, or signed out): there is nothing to accept again.
+                if code == tonic::Code::FailedPrecondition {
+                    let mut state = offers.state.lock().unwrap();
+                    state.received.remove(&host);
+                    offers.publish(&state);
+                }
+                Err(Status::new(code, error.message))
+            }
             None => Err(Status::unavailable(
                 "the offering device sent an empty ticket",
             )),
@@ -437,7 +464,7 @@ impl Edge {
         let mut state = offers.state.lock().unwrap();
         state.standing.remove(&host);
         state.received.remove(&host);
-        state.unsent.remove(&host);
+        state.dismissed.remove(&host);
         state.links.remove(&host);
         offers.publish(&state);
     }
@@ -450,7 +477,7 @@ impl Edge {
         let mut state = offers.state.lock().unwrap();
         if self.account.wants_cloud() {
             state.received.clear();
-            state.unsent.clear();
+            state.dismissed.clear();
         } else {
             state.standing.clear();
         }

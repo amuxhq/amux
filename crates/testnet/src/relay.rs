@@ -94,6 +94,9 @@ struct CloudState {
     /// The host every ticket is minted for from now on, whatever the
     /// offerer named, when a story sets one.
     tickets_for: Option<String>,
+    /// Whether ticket requests are turned down, as an account service that
+    /// is having trouble answers them.
+    refusing_tickets: bool,
 }
 
 /// A one-time sign-in ticket: the account it signs in to, the host it was
@@ -421,6 +424,12 @@ impl Relay {
         self.cloud.state.lock().unwrap().tickets_for = host_id.map(str::to_owned);
     }
 
+    /// Turns every sign-in ticket request down from now on, as an account
+    /// service having trouble does; `false` mints them again.
+    pub fn refuse_tickets(&self, refusing: bool) {
+        self.cloud.state.lock().unwrap().refusing_tickets = refusing;
+    }
+
     /// Mints a ticket for `account` and `host_id` as the account service
     /// would for one of that account's devices: for a story that hands a
     /// host a ticket minted for another.
@@ -697,6 +706,9 @@ impl Cloud {
                 None => status(401, serde_json::json!({})),
             },
             "/api/sign-in-tickets" => match bearer.filter(|account| self.signed_in(account)) {
+                Some(_) if self.state.lock().unwrap().refusing_tickets => {
+                    status(503, serde_json::json!({ "error": "unavailable" }))
+                }
                 Some(account) => {
                     let host = serde_json::from_slice::<serde_json::Value>(&body)
                         .ok()

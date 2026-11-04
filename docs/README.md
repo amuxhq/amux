@@ -44,6 +44,8 @@
 - [Embedding](EMBEDDED.md) — app-runtime, app-embedded, app-ffi, the generated Swift types and the seams.
 - [iPhone copy](IOS_COPY.md) — the rules the app's words follow and the lint that holds them.
 - [Cloud](CLOUD.md) — what the app and daemon ask of amux.sh.
+- [Writing a client](WRITING_A_CLIENT.md) — for third parties: finding and installing amux, profiles,
+  sign-in and the fleet over the local sockets.
 
 ## Verifying
 

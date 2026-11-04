@@ -21,12 +21,12 @@ every command goes through `just ios <recipe>` (`just --list ios`).
 
 | Component | Owns |
 | --- | --- |
-| `AmuxCore` | The Swift side of the bridge (`Runtime`, `Profile`, `Chat`), the observable stores screens read (`RuntimeCoordinator`, `StoreBundle`, `ChatModel`, `FleetStore`, `HostsStore`, `AccountRegistry`), the account service and App Store adapters, local-network discovery, report assembly and signposts |
+| `AmuxCore` | The Swift side of the bridge (`Runtime`, `Profile`, `Chat`), the observable stores screens read (`RuntimeCoordinator`, `StoreBundle`, `ChatModel`, `FleetStore`, `HostsStore`, `AccountRegistry`), the account service and App Store adapters, web sign-in, local-network discovery, report assembly and signposts; builds for macOS too, for the [Mac app](MAC.md) |
 | `AmuxCore/AmuxValues` | Swift mirrors of every value the bridge carries, generated from the Rust definitions; never edited by hand |
 | `AmuxCore/LaunchClock` | The one piece of C in the app: an image initialiser that marks the end of dynamic loading for the cold-start split |
 | `AmuxDesign` | Light and dark tokens, bundled faces, type scaling, glass, motion and thumb-target geometry |
 | `AmuxFeatures` | The screens, as functions of the state and actions they are handed, plus the registered UIKit leaves |
-| `AmuxShell` | Tabs (Agents, Hosts) and the Settings sheet, routes, deep links, web sign-in and speech dictation |
+| `AmuxShell` | Tabs (Agents, Hosts) and the Settings sheet, routes, deep links and speech dictation |
 | `AmuxTestSupport` | The driving door's protocol and the scripted account, App Store and chat stand-ins |
 | `apps/apple/Amux` | The app target: entry point, `Composition` (which assembles every store and service), report capture, and under `Debug/` the door server and the component catalogue |
 

@@ -35,7 +35,12 @@ Two rules run through all of it:
 The base is `https://amux.sh`. The phone is the registered client `mobile`,
 with the one redirect `amux://callback` and no secret. The scopes asked for
 are `openid profile email offline_access api`; `offline_access` is what makes
-sign-in happen once rather than hourly. On a desktop the daemon runs the
+sign-in happen once rather than hourly. The Mac app signs in the same way as
+the registered client `desktop`, with the one redirect
+`sh.amux.desktop://callback`, so the account page and analytics tell a Mac
+from a phone; its authentication session catches the redirect itself, so no
+app registers the scheme. Both apps hand the refresh token to the daemon with
+`BindProfile`, naming the client it was issued to. On a desktop the daemon runs the
 device flow as the client `cli` with the same scopes, for `amux login` and for
 any client that calls `InstallationService.SignIn`.
 
@@ -332,8 +337,9 @@ of it is visible in any copy of the app anyway:
 
 - The App Store product identifiers, `amux_pro_monthly` and
   `amux_pro_yearly`, in `apps/apple/Packages/AmuxCore/Sources/AmuxCore/Store.swift`.
-- The base URL, the client identifier `mobile`, the redirect
-  `amux://callback` and the scopes, in `CloudEndpoint.production` in
+- The base URL, the client identifiers `mobile` and `desktop`, their
+  redirects `amux://callback` and `sh.amux.desktop://callback` and the
+  scopes, in `CloudEndpoint.production` and `CloudEndpoint.desktop` in
   `AmuxCloud.swift`.
 - No entitlement identifier. What an account may do is `pro`, and nothing in
   the app is matched against a constant to decide it.

@@ -15,7 +15,8 @@ the [wire](WIRE.md), the [link protocol](PROTOCOL.md),
 amux runs coding agents of several kinds (Claude Code in a terminal,
 headless Claude Code over its stream-JSON interface, Codex over its app
 server) on one or more machines, and shows them to clients that are equal
-peers: the terminal client, the iPhone app, and any desktop app to come.
+peers: the terminal client, the iPhone app, the Mac app, and clients
+others write.
 Machines pair with each other, update independently, crash independently,
 and reach each other directly, over SSH or through a relay.
 
@@ -198,7 +199,7 @@ addresses change. See [embedding](EMBEDDED.md).
 
 | Caller | Where | What it speaks |
 |---|---|---|
-| CLI and terminal client | the front door (`amux.sock` in the per-user runtime directory), then the profile's `profiles/<id>/sock` | `InstallationService` on the front door; `AgentService`, `SessionService` and `ProfileAdminService` on the profile socket |
+| CLI, terminal client, Mac app and any [other client](WRITING_A_CLIENT.md) | the front door (`<root>/amux.sock`), then the profile's `profiles/<id>/sock` | `InstallationService` on the front door; `AgentService`, `SessionService` and `ProfileAdminService` on the profile socket |
 | phone UI | in process, through [`client::InProcess`](../crates/client/src/lib.rs) | the same `AgentService` and `SessionService` calls |
 | paired daemon | a link stream, after a pinned mutual-TLS handshake | `AgentService` and `SessionService`, answered only for this host's own agents |
 | an agent's tool server | `agents/<id>/tools.sock`, which the daemon listens on for that agent alone | `AgentService` and `SessionService`; the socket it arrived on is the caller's identity |
@@ -551,8 +552,7 @@ nicer in several places, and Windows pays for each:
   profile socket and the front door are named pipes. Each bind makes a fresh
   pipe and writes its name into the file at the socket's path, because a pipe
   lives on while any connection to it is open and a successor could not take
-  its name; a path already in the pipe namespace, like the front door's
-  default, is that pipe
+  its name
   ([`agent_dir::local_socket`](../crates/agent-dir/src/local_socket.rs)).
 - **Process groups.** Agents start with `CREATE_NEW_PROCESS_GROUP` and
   `DETACHED_PROCESS`; a kill ends the process tree with `taskkill /F /T`.

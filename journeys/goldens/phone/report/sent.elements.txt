@@ -3,7 +3,7 @@ home |  | ready | 0,234,402,557
 home.row.<desk-work> | desk-work, Idle, desk, /private/tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,234,370,64
 home.row.<desk-work>.age.volatile | <volatile>
 home.newAgent | New Agent |  | 350,66,27,36
-home.accounts | Switch account |  | 20,66,36,36
+home.accounts | Switch account | ada | 20,66,36,36
 report.screen |  | sent | 0,62,402,778
 report.sent | Report sent | report-1 | 0,116,402,74
 report.cancel | Close |  | 20,66,40,36
@@ -12,7 +12,7 @@ report.cancel | Close |  | 20,66,40,36
  | Report a Problem |  | 131,73,140,21
  | desk-work, Idle, desk, /private/tmp/amux-phone-journey/net/desk/work, <age> |  | 0,234,402,64
  | Agents |  | 16,127,116,42
- | Switch account |  | 20,66,36,36
+ | Switch account | ada | 20,66,36,36
  | New Agent |  | 350,66,27,36
  | Search |  | 55,187,53,20
  | All |  | 16,236,123,32

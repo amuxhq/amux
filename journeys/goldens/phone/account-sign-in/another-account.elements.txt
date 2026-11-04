@@ -24,7 +24,7 @@ you.help.caption |  |  | 16,1068,310,32
 you.close | Close |  | 342,82,40,36
  | desk-work, desk is offline, Reached through the relay., desk, /private/tmp/amux-phone-journey/net/desk/work, <age> |  | 0,234,402,65
  | Agents |  | 16,127,116,42
- | Switch account |  | 20,66,36,36
+ | Switch account | ada | 20,66,36,36
  | Search |  | 55,187,53,20
  | All |  | 16,236,123,32
  | All |  | 69,243,17,18

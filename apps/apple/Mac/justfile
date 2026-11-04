@@ -29,6 +29,17 @@ build: rust
         -configuration Debug -destination 'platform=macOS,arch=arm64' \
         -derivedDataPath {{derived}} -quiet build
 
+# Walks setting up through the app's own model against a scratch daemon and
+# draws every screen and the Settings window into target/mac-onboarding/,
+# light and dark. The screens are drawn into windows never put on screen, in
+# the test runner rather than the app, so nothing shows on the desktop.
+# Draw the Mac app's setting-up screens offscreen.
+shots: rust
+    {{bounded}} 900 cargo build --locked -p amux --bin amux
+    {{bounded}} 300 sh -c 'cd apps/apple/Mac && xcodegen generate --spec project.yml --quiet'
+    {{bounded}} 1200 xcodebuild -project apps/apple/Mac/AmuxMac.xcodeproj -scheme AmuxMac \
+        -destination 'platform=macOS,arch=arm64' -derivedDataPath {{derived}} -quiet test
+
 # Runs the built app in the foreground against this checkout's installation
 # (AMUX_CONFIG, as wt sets it), starting the checkout's daemon first so the
 # app attaches rather than installs.

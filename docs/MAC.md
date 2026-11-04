@@ -9,9 +9,38 @@ attaches to the daemon behind `<root>/amux.sock`, and from then on every
 profile, sign-in and agent it shows is the daemon's. Quitting it, or deleting
 it, leaves amux running.
 
-Its screens are a placeholder until the desktop gets a design of its own. The
-window today shows the path every desktop client takes: install, attach, sign
-in, switch profiles, list a profile's agents.
+The window shows the path every desktop client takes: install, attach, set
+the Mac up, sign in, switch profiles, list a profile's agents. Apart from
+setting up and Settings, its screens are a placeholder until the desktop gets
+a design of its own.
+
+## Setting up
+
+A profile whose setting up has steps still needed opens on them, in the order
+the daemon keeps and the terminal shows, at the first one not done; a launch
+part way through resumes there. Every step a screen shows is answered `shown`,
+and Escape or Later skips it. The first screen carries the analytics notice
+and answers `notice_shown`; when no step is needed, the main window carries it
+instead.
+
+| Screen | What it does |
+| --- | --- |
+| Connect your iPhone | The Mac's name, with Rename to change it at once; a QR code the app draws for the window's link; "2. Enter 418 207 in the app"; then "Your iPhone is pairing…" as a phone joins, and a lockout with a new code after wrong PINs. The window is renewed before it ends unless a phone is joining, and closed when the screen leaves or the app quits. |
+| Keep it connected | "Paired with <phone> ✓" once a phone paired, then start at login and keep awake, both ticked, applied on Continue. |
+| Reach it from anywhere | Sign In runs `WebSignIn`. "Also sign in <phone>" is ticked when the phone just paired is signed out; after the sign-in the Mac offers it the account and opens the account service's offer page. When a paired machine offers its account instead, the screen asks "Sign in as <email> (from <machine>)?". |
+| Projects | The repositories Claude Code and Codex ran in lately, ticked, and Add a Folder. |
+| Help improve amux | Usage counts and automatic reports. |
+| Try starting an agent from your phone | Waits for an agent a phone starts here, then lands on the agent list with it selected. |
+
+Steps left skipped show as "Finish Setting Up (n)" above the agent list,
+which walks them again or, dismissed, stops offering them.
+
+## Settings
+
+Settings (⌘,) holds the Mac's name, start at login (on an install with a
+supervisor), keep awake, the project list, usage counts, automatic reports
+and the account. Every change is applied at once through `UpdateSettings`,
+so `amux config` and the terminal see it as soon as it is made.
 
 ## What it shares
 
@@ -38,6 +67,11 @@ generated values (`AmuxValues`), which build for macOS as well as iOS:
 
 - `Runtime.checkForUpdate(_:)` looks for a newer version of the app itself
   ([Updates](#updates)).
+- The setting-up calls: the installation's settings, project suggestions, a
+  profile's steps and their answers, a pairing window and its status, and a
+  web sign-in link (`crates/app-ffi/README.md`). An attached runtime names
+  itself `mac` to the daemon, which counts the app opening and each step as
+  the Mac's.
 
 Screens, navigation and layout are the desktop's own; nothing from
 `AmuxFeatures` or `AmuxShell` is linked.
@@ -61,6 +95,18 @@ macOS 26, with the hardened runtime and without the sandbox: it reaches amux's
 sockets under `~/.amux` and installs amux into `~/.amux/bin`. Development
 builds are signed ad hoc and carry the checkout's debug `amux`; release
 builds carry none ([Releases](#releases)).
+
+```sh
+just mac shots   # draw every setting-up screen and Settings offscreen
+```
+
+`just mac shots` runs the app's tests, which compile the app's sources
+without its entry point and never put a window on screen: one walks setting
+up against a scratch daemon of its own, drawing each screen in the dark and
+light appearances into `target/mac-onboarding/` (reading the pairing QR code
+back as the daemon's link), and one installs the app's `amux` into a scratch
+home and checks it runs without a login item. The sidebar's material does
+not draw offscreen, so the main window's sidebar is blank in its picture.
 
 `AMUX_CONFIG` names the installation the app attaches to, as it does for every
 amux command, so in a worktree `just mac run` attaches to that tree's daemon.
@@ -138,4 +184,5 @@ staged rollout for the Mac app.
 
 ## Not yet
 
-- The app's real screens, its copy in the string catalogue, and tests.
+- The app's real screens beyond setting up and Settings, and its copy in the
+  string catalogue.

@@ -305,6 +305,26 @@ impl EmbeddedRuntime {
         }
     }
 
+    /// Whether the app has shown the analytics notice on this installation;
+    /// nothing recorded is sent until it has.
+    pub fn notice_shown(&self) -> Result<bool, EmbeddedError> {
+        Ok(self.registry.onboarding(None)?.notice_shown)
+    }
+
+    /// The app put the analytics notice in front of the person: what was
+    /// recorded meanwhile may go from now on. Kept in the installation's
+    /// state, so it is said once.
+    pub fn mark_notice_shown(&self) -> Result<(), EmbeddedError> {
+        use wire::answer_onboarding_request::Answer;
+        self.registry
+            .answer_onboarding(&wire::AnswerOnboardingRequest {
+                answer: Some(Answer::NoticeShown(wire::Empty {})),
+                surface: wire::Surface::Phone as i32,
+                ..Default::default()
+            })?;
+        Ok(())
+    }
+
     /// Sends what is waiting, as the app leaves the screen and may be
     /// suspended.
     pub async fn flush_analytics(&self) {

@@ -63,6 +63,10 @@ final class Composition {
         }
     }
     private static let autoReportsKey = "autoReports"
+    /// Whether the person has read why amux looks at this network, which the
+    /// browser waits for: iOS asks the first time it starts. A driven launch
+    /// says it as an argument, as a person who read it once would have.
+    private static let localNetworkKey = "localNetworkExplained"
     /// Notifications as iOS has them, read at launch and whenever the app
     /// comes back to the front, since they are changed in the system's
     /// settings. None in a build that does not offer them.
@@ -136,6 +140,8 @@ final class Composition {
         let runtime = RuntimeCoordinator(
             registry: accounts, support: AppFiles.support, deviceName: UIDevice.current.name,
             signedOut: StoreBundle(account: AccountId("signed-out")), options: options,
+            localNetworkExplained: UserDefaults.standard.bool(forKey: Self.localNetworkKey),
+            keepExplained: { UserDefaults.standard.set($0, forKey: Composition.localNetworkKey) },
             networkWatch: SystemNetworkWatch())
         self.runtime = runtime
         // Only the system may look at the network a phone is on, so the
@@ -179,7 +185,7 @@ final class Composition {
         // Starting the runtime reads this phone's own store before it dials,
         // so the first frame has rows and needs no network.
         runtime.start()
-        discovery.start()
+        runtime.browse()
         settleOutstandingPurchases()
         readNotifications()
         Signposts.emit(.compositionBuilt)
@@ -291,6 +297,14 @@ final class Composition {
             Task { await exportDump() }
         case .checkSubscription:
             Task { await subscription.look() }
+        case .lookOnNetwork:
+            runtime.explainLocalNetwork()
+        case .usageNoticeDrawn(let place):
+            runtime.usageNoticeDrawn(place)
+        case .putAwayUsageNotice:
+            runtime.putAwayUsageNotice()
+        case .signInOfferShown(let role):
+            runtime.record(.signInOfferShown(role: role))
         }
     }
 

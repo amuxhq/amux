@@ -127,7 +127,7 @@ public struct NewAgent: View {
                 if !chips.isEmpty { recent }
             }
             if model.listing == .unavailable {
-                Explain("\(machineName) could not list its repositories. Choose where its agents work, or type a path.")
+                Explain("\(machineName) could not list its projects. Choose where its agents work, or type a path.")
                     .identified("new-agent.directory.unavailable")
             }
         }
@@ -186,10 +186,11 @@ public struct NewAgent: View {
             value: model.directory, enabled: model.machine != nil)
     }
 
-    /// The other directories this machine was used in recently — the chosen one
-    /// is in the row above and is not repeated as a chip.
+    /// The other directories this machine was used in recently, then its
+    /// projects — the chosen one is in the row above and is not repeated as
+    /// a chip.
     private var chips: [Directory] {
-        model.recent.filter { $0.path != model.directory }.prefix(4).map { $0 }
+        model.likely.filter { $0.path != model.directory }.prefix(4).map { $0 }
     }
 
     private var recent: some View {
@@ -501,7 +502,7 @@ public struct NewAgentDirectories: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(design.inkMuted.color)
-                TextField("Search repositories", text: Binding(
+                TextField("Search folders", text: Binding(
                     get: { model.query },
                     set: { typed in
                         model.query = typed
@@ -516,17 +517,44 @@ public struct NewAgentDirectories: View {
             .padding(.horizontal, 12)
             .frame(minHeight: 40)
             .background(Capsule().fill(design.sunken.color))
-            .identified("new-agent.search", label: "Search repositories", value: model.query)
+            .identified("new-agent.search", label: "Search folders", value: model.query)
         }
     }
 
+    /// The host's projects first, as its person chose and ordered them,
+    /// then where its agents worked lately; a search lists what matches
+    /// either in their place.
     @ViewBuilder
     private var listing: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !model.recent.isEmpty && model.query.isEmpty {
-                SectionHead(title: "Recent")
-                RowGroup(items: model.recent) { project in
-                    row(project, recent: true)
+            if model.searching {
+                if !model.found.isEmpty {
+                    SectionHead(title: "Found")
+                    RowGroup(items: model.found) { project in
+                        row(project, recent: false)
+                    }
+                } else if model.listing != .asking {
+                    Explain("No matching folders on this host.")
+                        .identified("new-agent.browse.none")
+                }
+            } else {
+                if !model.projects.isEmpty {
+                    SectionHead(title: "Projects")
+                    RowGroup(items: model.projects) { project in
+                        row(project, recent: false)
+                    }
+                }
+                if !model.recent.isEmpty {
+                    SectionHead(title: "Recent")
+                    RowGroup(items: model.recent) { project in
+                        row(project, recent: true)
+                    }
+                }
+                if model.listing == .ready && model.projects.isEmpty && model.recent.isEmpty {
+                    // Projects are the host's own setting, chosen where amux
+                    // runs; this phone only reads them.
+                    Explain("Add projects in amux on this host, or type a path.")
+                        .identified("new-agent.browse.none")
                 }
             }
             switch model.listing {
@@ -534,28 +562,12 @@ public struct NewAgentDirectories: View {
                 Explain("Reading this host’s projects…")
                     .identified("new-agent.browse.reading")
             case .unavailable:
-                Explain("This host could not list its repositories.")
+                Explain("This host could not list its projects.")
                     .identified("new-agent.browse.unavailable")
             case .none, .ready:
-                if !model.found.isEmpty {
-                    SectionHead(title: model.query.isEmpty ? "Repositories" : "Found")
-                    RowGroup(items: model.found) { project in
-                        row(project, recent: false)
-                    }
-                } else if model.listing == .ready {
-                    Explain(nothing)
-                        .identified("new-agent.browse.none")
-                }
+                EmptyView()
             }
         }
-    }
-
-    /// What "no repositories" means here: only useful beside where the machine
-    /// looked, which is the roots it reported.
-    private var nothing: String {
-        guard model.query.isEmpty else { return "No matching repositories on this host." }
-        guard !model.roots.isEmpty else { return "This host listed no repositories." }
-        return "No repositories under \(model.roots.joined(separator: ", "))."
     }
 
     private func row(_ project: Directory, recent: Bool) -> some View {

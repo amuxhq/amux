@@ -38,6 +38,11 @@ FORBIDDEN_APIS = (
 )
 # The one service this app may look for, and the sentence the system shows
 # when it asks. A declaration for anything else is scope nobody agreed to.
+# The domains whose links open the app: amux.sh's pairing page, which the QR
+# code a host shows is. Without the entitlement the system opens the page in
+# the browser instead, and a phone with the app installed is sent to the App
+# Store for an app it already has.
+ASSOCIATED_DOMAINS = ["applinks:amux.sh"]
 BONJOUR_SERVICES = ["_amux._udp"]
 LOCAL_NETWORK_PURPOSE = ("amux finds hosts on your network so this phone can "
                          "pair and connect to them directly.")
@@ -133,6 +138,9 @@ def bundle_violations(info: dict, entitlements: dict, settings: dict,
     failures = icon_violations(info, bundle) + resource_violations(bundle)
     if "aps-environment" in entitlements:
         failures.append("push entitlement: aps-environment")
+    domains = entitlements.get("com.apple.developer.associated-domains")
+    if domains != ASSOCIATED_DOMAINS:
+        failures.append(f"associated domains must be {ASSOCIATED_DOMAINS}, not {domains}")
     # Required as well as bounded. Without the declaration iOS answers the
     # app's browser with nothing, and a phone on the same network as a machine
     # reports finding none — which looks like an empty network, not a bundle

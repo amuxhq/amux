@@ -13,7 +13,7 @@ final class HostsWordingTests: XCTestCase {
     ) -> HostView {
         HostView(
             hostId: studio.bytes, name: "studio", local: false, trusted: true, candidate: false,
-            reach: reach, addrs: addrs, relayOnly: false, current: true, providers: [], lastDialError: nil,
+            reach: reach, addrs: addrs, relayOnly: false, pairingOpen: false, current: true, providers: [], claudeKind: nil, lastDialError: nil,
             platform: platform, signedIn: nil, through: nil, version: nil)
     }
 
@@ -98,13 +98,13 @@ final class HostsWordingTests: XCTestCase {
         XCTAssertNil(page([host(reach: .offline(.revoked))]).meaning(host(reach: .offline(.revoked))))
     }
 
-    private func candidate(addrs: [String] = [], relayOnly: Bool = false, through: String? = nil)
-        -> HostView
-    {
+    private func candidate(
+        addrs: [String] = [], relayOnly: Bool = false, through: String? = nil, open: Bool = false
+    ) -> HostView {
         HostView(
             hostId: studio.bytes, name: "nova", local: false, trusted: false, candidate: true,
-            reach: .online(.unspecified), addrs: addrs, relayOnly: relayOnly, current: false,
-            providers: [], lastDialError: nil, platform: .linux, signedIn: nil, through: through,
+            reach: .online(.unspecified), addrs: addrs, relayOnly: relayOnly, pairingOpen: open, current: false,
+            providers: [], claudeKind: nil, lastDialError: nil, platform: .linux, signedIn: nil, through: through,
             version: nil)
     }
 
@@ -112,9 +112,28 @@ final class HostsWordingTests: XCTestCase {
     /// only one the relay alone reaches on the free plan is sold a
     /// subscription in place of a pairing.
     func testAPairingCardSaysHowTheMachineIsReachedAndSellsOnlyWhatPairsIt() {
+        // Nearby with no pairing window: no keypad, only where to start.
         let nearby = PairOffer(candidate(addrs: ["10.0.0.9:7"]), pro: false)
         XCTAssertEqual(nearby.title, "nova is nearby")
+        XCTAssertEqual(nearby.detail, "Open amux on nova to pair")
+        XCTAssertNil(nearby.button)
+        XCTAssertTrue(nearby.waiting)
         XCTAssertFalse(nearby.subscribe)
+        XCTAssertEqual(nearby.identifier("hosts", "nova"), "hosts.found.nova")
+
+        // Nearby with its window open: a code typed now works.
+        let open = PairOffer(candidate(addrs: ["10.0.0.9:7"], open: true), pro: false)
+        XCTAssertEqual(open.title, "Pair with nova?")
+        XCTAssertEqual(open.detail, "Enter the code amux shows there")
+        XCTAssertEqual(open.button, "Pair")
+        XCTAssertFalse(open.waiting)
+        XCTAssertEqual(open.identifier("hosts", "nova"), "hosts.pair.nova")
+
+        // Only its own advertisement says a window is open: one the relay
+        // announces is offered the keypad as before.
+        let announced = PairOffer(candidate(relayOnly: true, open: true), pro: true)
+        XCTAssertEqual(announced.title, "nova is online")
+        XCTAssertFalse(announced.waiting)
 
         let through = PairOffer(candidate(through: "studio"), pro: false)
         XCTAssertEqual(through.title, "nova is online")
@@ -127,6 +146,7 @@ final class HostsWordingTests: XCTestCase {
         XCTAssertEqual(free.detail, "Pro pairs it from anywhere")
         XCTAssertEqual(free.button, "Subscribe")
         XCTAssertTrue(free.subscribe)
+        XCTAssertEqual(free.identifier("home", "nova"), "home.subscribe.nova")
 
         let paid = PairOffer(candidate(relayOnly: true), pro: true)
         XCTAssertEqual(paid.button, "Pair")

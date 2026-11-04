@@ -105,6 +105,11 @@ runtime's; the app tells it what only the app knows.
 what is waiting too. `amux_runtime_set_auto_reports(rt, on)` follows the
 app's Send Automatic Reports setting (first value `StartConfig.auto_reports`):
 whether a report a check takes is sent to the account on its own.
+`amux_runtime_notice_shown(rt)` reads whether this installation has shown its
+person the analytics notice, and `amux_runtime_mark_notice_shown(rt)` records
+that it has; until then the runtime holds every count. Both answer false on an
+attached runtime, whose daemon keeps the notice with the computer's own
+onboarding.
 `amux_runtime_feed(rt, input_json, &error)` feeds the
 app's life as a `Lifecycle`: `"Foreground"` says the app came to the front,
 counted at most once an hour; `"Background"` sends what is waiting, for a
@@ -179,9 +184,11 @@ link: reaches and authenticates the machine, answering its name and
 fingerprint), `amux_profile_confirm_pair` and `amux_profile_abandon_pair`
 (the person's decision), `amux_profile_offer_sign_in` (offers a paired
 machine, by host id, this profile's account) and
-`amux_profile_answer_sign_in_offer` (a `SignInAnswer`: accepting signs the
-profile in to the offered account and answers its `ProfileView`; declining
-ends the offer), `amux_profile_unpair`, `amux_profile_roster` (this
+`amux_profile_answer_sign_in_offer` (a `SignInAnswer`, answering a
+`SignInOfferOutcome`: `SignedIn` with the profile's `ProfileView` once it is
+signed in to the offered account, `Declined` once the offer ended, or
+`Unreachable` when the machine that offered could not be reached, whose offer
+stands while it keeps it), `amux_profile_unpair`, `amux_profile_roster` (this
 device's identity in the profile and the machines it trusts),
 `amux_profile_create_agent`, `amux_profile_directories`,
 `amux_profile_agent_act` (rename, stop, delete), `amux_profile_dump` (the one dump, saved or sent) and

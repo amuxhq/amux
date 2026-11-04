@@ -3831,18 +3831,22 @@ public struct HostView: Codable, Hashable, Sendable {
     /// The providers the host has said it can run, and whether each is
     /// signed in there.
     public var providers: [ProviderSignIn]
+    /// Which Claude a new agent on it runs, as its settings resolve it;
+    /// None until it has said.
+    public var claudeKind: Kind?
     public var lastDialError: String?
     /// The operating system it runs, when it said.
     public var platform: Platform?
-    /// For this device: whether it is signed in to the account its profile
-    /// is bound to; None while it was never bound.
+    /// Whether it is signed in to an account: for this device, the account
+    /// its profile is bound to, None while it was never bound; for another
+    /// host, as its link handshake said, None until it has said.
     public var signedIn: Bool?
     /// For a candidate no address reaches: the paired host announcing it,
     /// which carries a pairing on any plan.
     public var through: String?
     public var version: String?
 
-    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, addrs: [String], relayOnly: Bool, pairingOpen: Bool, current: Bool, providers: [ProviderSignIn], lastDialError: String?, platform: Platform?, signedIn: Bool?, through: String?, version: String?) {
+    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, addrs: [String], relayOnly: Bool, pairingOpen: Bool, current: Bool, providers: [ProviderSignIn], claudeKind: Kind?, lastDialError: String?, platform: Platform?, signedIn: Bool?, through: String?, version: String?) {
         self.hostId = hostId
         self.name = name
         self.local = local
@@ -3854,6 +3858,7 @@ public struct HostView: Codable, Hashable, Sendable {
         self.pairingOpen = pairingOpen
         self.current = current
         self.providers = providers
+        self.claudeKind = claudeKind
         self.lastDialError = lastDialError
         self.platform = platform
         self.signedIn = signedIn
@@ -3873,6 +3878,7 @@ public struct HostView: Codable, Hashable, Sendable {
         case pairingOpen = "pairing_open"
         case current
         case providers
+        case claudeKind = "claude_kind"
         case lastDialError = "last_dial_error"
         case platform
         case signedIn = "signed_in"
@@ -6545,6 +6551,62 @@ public struct SignInAnswer: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case hostId = "host_id"
         case accept
+    }
+}
+
+/// What answering a paired machine's offer of its account came to.
+public enum SignInOfferOutcome: Codable, Hashable, Sendable {
+    /// Accepted: this device's profile is signed in to the account now.
+    case signedIn(ProfileView)
+    /// Declined: the offer is gone, here and on the machine that made it.
+    case declined
+    /// Accepted while the machine that offered could not be reached, or it
+    /// went away before it answered. An offer that still stands stays
+    /// listed, and accepting it again once that machine is back can work.
+    case unreachable
+
+    private enum Tag: String, CodingKey {
+        case signedIn = "SignedIn"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "Declined": self = .declined
+            case "Unreachable": self = .unreachable
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no SignInOfferOutcome is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a SignInOfferOutcome names exactly one variant"))
+        }
+        switch _tag {
+        case .signedIn:
+            self = .signedIn(try _container.decode(ProfileView.self, forKey: .signedIn))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .signedIn(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .signedIn)
+        case .declined:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Declined")
+        case .unreachable:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Unreachable")
+        }
     }
 }
 

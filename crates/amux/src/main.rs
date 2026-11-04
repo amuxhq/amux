@@ -191,12 +191,6 @@ enum Command {
     /// Say whether amux is running, which version, and each profile's
     /// account.
     Status,
-    /// Set up this install: whether amux starts at login.
-    Init {
-        /// Start amux at login, or not; asked when omitted.
-        #[arg(long, value_enum)]
-        login_item: Option<YesNo>,
-    },
     /// Install the channel's release now.
     Update {
         /// Install it even if it was rolled back here.
@@ -304,12 +298,6 @@ enum Internal {
     SshPair,
     /// A peer's link over SSH, joined to the profile's link socket.
     SshLink,
-}
-
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-enum YesNo {
-    Yes,
-    No,
 }
 
 #[derive(Debug, Subcommand)]
@@ -426,14 +414,6 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
         let config = connect::load_config(config_path.as_deref())?;
         let profile = profile.as_deref();
         match command {
-            Command::Init { login_item } => {
-                setup::init(
-                    &config,
-                    config_path.as_deref(),
-                    login_item.map(|answer| matches!(answer, YesNo::Yes)),
-                )
-                .await
-            }
             Command::Update { retry } => setup::update(&config, retry).await,
             Command::Uninstall { yes, delete_data } => {
                 setup::uninstall(&config, config_path.as_deref(), yes, delete_data).await
@@ -542,8 +522,10 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                         prompt,
                         args,
                     } => {
+                        let selected = connect::profile(&config, profile).await?;
                         verbs::create(
                             &mut client,
+                            &selected.id,
                             &config,
                             verbs::Create {
                                 agent,
@@ -674,7 +656,6 @@ mod tests {
                 "logout",
                 "profile",
                 "status",
-                "init",
                 "update",
                 "uninstall",
                 "config",

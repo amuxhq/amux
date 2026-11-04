@@ -906,7 +906,6 @@ pub unsafe extern "C" fn amux_install(
             .map_err(|error| error.to_string())?;
         let options = installer::Options {
             bundled: options.bundled,
-            login_item: options.login_item,
             config: options.config,
         };
         let outcome = runtime

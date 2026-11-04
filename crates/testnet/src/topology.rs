@@ -89,8 +89,8 @@ pub struct HostDecl {
     /// What agents a client starts on this host play; none plays nothing.
     #[serde(default)]
     pub script: Option<Script>,
-    /// Git repositories the net makes under the host's one repository
-    /// root, by path below it; none leaves the host without a root.
+    /// Git repositories the net makes in the host's directory, by path
+    /// below it; each is one of the host's projects.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub repositories: Vec<String>,
     /// Files committed when the repositories are made, by path below the

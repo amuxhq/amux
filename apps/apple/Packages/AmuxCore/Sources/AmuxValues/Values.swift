@@ -3993,19 +3993,15 @@ public struct InstallOptions: Codable, Hashable, Sendable {
     public var bundled: String?
     /// The installation's config file; none is the default one.
     public var config: String?
-    /// Whether a fresh install starts at login.
-    public var loginItem: Bool?
 
-    public init(bundled: String?, config: String?, loginItem: Bool?) {
+    public init(bundled: String?, config: String?) {
         self.bundled = bundled
         self.config = config
-        self.loginItem = loginItem
     }
 
     private enum CodingKeys: String, CodingKey {
         case bundled
         case config
-        case loginItem = "login_item"
     }
 }
 

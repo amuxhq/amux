@@ -11,11 +11,12 @@
 //! 3. Otherwise it installs a copy the client bundled, or downloads the
 //!    channel's build and checks it against the signed manifest, places it
 //!    under a lock so two clients installing at once cannot interleave,
-//!    runs `amux init`, and starts it.
+//!    and starts it.
 //!
 //! Then it waits for the front door. Nothing here writes amux's config or
-//! its login item: the binary does that itself, through `amux init`, and
-//! `amux uninstall` is the only way amux is removed.
+//! a login item: whether amux starts at login is the person's choice, made
+//! through the daemon's settings once it answers, and `amux uninstall` is
+//! the only way amux is removed.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -38,30 +39,17 @@ const ARTIFACT_LIMIT: u64 = 512 << 20;
 const POLL: Duration = Duration::from_millis(100);
 
 /// What a client asks of [`ensure`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Options {
     /// A copy of the `amux` binary shipped with the client, installed when
     /// amux is missing. Without one the channel's build is downloaded. The
     /// supervisor moves an installed copy to the channel's current build
     /// within the hour and never downgrades.
     pub bundled: Option<PathBuf>,
-    /// Whether a fresh install starts at login. Asked of nobody: a client
-    /// with a person in front of it asks them before calling.
-    pub login_item: bool,
     /// The installation's config file; `None` is the default one
     /// (`~/.config/amux/config.toml`), which is what every client should
     /// use outside tests.
     pub config: Option<PathBuf>,
-}
-
-impl Default for Options {
-    fn default() -> Self {
-        Self {
-            bundled: None,
-            login_item: true,
-            config: None,
-        }
-    }
 }
 
 /// What [`ensure`] found or did.
@@ -199,10 +187,6 @@ pub async fn ensure(options: &Options, mut on_step: impl FnMut(Step)) -> Result<
         args.extend(words.iter().map(OsString::from));
         args
     };
-    if installed.is_some() {
-        let answer = if options.login_item { "yes" } else { "no" };
-        run(&binary, &with_config(&["init", "--login-item", answer])).await?;
-    }
     // Starts the supervisor (or, without one, the daemon) unless the login
     // item already has; a running one is left alone.
     if !answering(&door).await {

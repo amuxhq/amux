@@ -22,7 +22,8 @@ generated values (`AmuxValues`), which build for macOS as well as iOS:
   at once when the daemon answers, starts an installed amux that is stopped,
   and otherwise installs the copy the app carries in `Contents/Helpers/amux`
   (or, without one, the stable channel's build, checked against the signed
-  manifest) with a login item, and starts it.
+  manifest), and starts it. It adds no login item: whether amux starts at
+  login is the `start_at_login` setting, which the person chooses.
 - `Runtime.attach(_:profilesMoved:)` answers the same `Runtime` the phone's
   `Runtime.start` does, over the daemon's sockets. Calls only an installation
   hosted in the app can answer (offering pairing from this device, its roster,

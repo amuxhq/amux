@@ -47,19 +47,20 @@ impl LocalPairingIdentity {
 pub(crate) struct PairingService {
     runtime: Weak<ProfileRuntime>,
     local_identity: LocalPairingIdentity,
-    host_name: String,
+    /// Read at each pairing: the name may change while the host runs.
+    local_host: crate::routing::LiveLocalHost,
 }
 
 impl PairingService {
     pub(crate) fn new(
         runtime: Weak<ProfileRuntime>,
         local_identity: LocalPairingIdentity,
-        host_name: String,
+        local_host: crate::routing::LiveLocalHost,
     ) -> Self {
         Self {
             runtime,
             local_identity,
-            host_name,
+            local_host,
         }
     }
 }
@@ -79,7 +80,7 @@ impl wire::pairing_service_server::PairingService for PairingService {
         let replies = runtime
             .driver()
             .respond(
-                self.local_identity.named(&self.host_name),
+                self.local_identity.named(&self.local_host.name()),
                 reachability,
                 request.into_inner(),
             )

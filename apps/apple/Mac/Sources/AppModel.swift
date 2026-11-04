@@ -76,8 +76,7 @@ final class AppModel {
                 let installed = try await Runtime.install(InstallOptions(
                     bundled: FileManager.default.isExecutableFile(atPath: bundled.path)
                         ? bundled.path : nil,
-                    config: nil,
-                    loginItem: true))
+                    config: nil))
                 Self.log.notice("amux: \(String(describing: installed), privacy: .public)")
             }
             phase = .attaching

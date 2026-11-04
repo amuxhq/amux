@@ -81,9 +81,6 @@ pub struct InstallOptions {
     /// none downloads the stable channel's build.
     #[serde(default)]
     pub bundled: Option<PathBuf>,
-    /// Whether a fresh install starts at login.
-    #[serde(default = "yes")]
-    pub login_item: bool,
     /// The installation's config file; none is the default one.
     #[serde(default)]
     pub config: Option<PathBuf>,

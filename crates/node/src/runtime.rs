@@ -109,8 +109,12 @@ pub struct Launch {
     pub replica_budget_bytes: u64,
     /// The bytes replica blob files may hold.
     pub replica_blob_budget_bytes: u64,
-    /// Where the host looks for Git repositories to offer new agents.
-    pub repository_roots: Vec<PathBuf>,
+    /// The folders the host offers new agents first, as its person chose
+    /// them (`projects`).
+    pub projects: Vec<PathBuf>,
+    /// Which Claude a new agent on this host runs, as the host publishes it
+    /// to every client.
+    pub claude_kind: wire::Kind,
     /// How old the host's copy of what a provider offers may grow before
     /// it is asked again.
     pub catalogue_max_age_ms: i64,
@@ -162,7 +166,8 @@ impl Default for Launch {
             retention_interval_ms: 10 * 60_000,
             replica_budget_bytes: REPLICA_BUDGET_BYTES,
             replica_blob_budget_bytes: REPLICA_BLOB_BUDGET_BYTES,
-            repository_roots: Vec::new(),
+            projects: Vec::new(),
+            claude_kind: wire::Kind::ClaudeSdk,
             catalogue_max_age_ms: 30 * 60_000,
             catalogue_recheck_ms: 60_000,
             step_budget: daemon_core::StepBudget::DAEMON,
@@ -794,6 +799,11 @@ impl ProfileRuntime {
         self.launch.lock().unwrap().clone()
     }
 
+    /// Which Claude a new agent here runs, as the host publishes it.
+    pub(crate) fn launch_claude_kind(&self) -> wire::Kind {
+        self.launch.lock().unwrap().claude_kind
+    }
+
     /// The settings the profile's core reads, without the rest of
     /// [`Launch`].
     pub(crate) fn core_settings(&self) -> daemon_core::Settings {
@@ -922,7 +932,7 @@ impl ProfileRuntime {
         };
         let kind = agent.kind();
         if let Some(edge) = self.edge() {
-            self.runs_kind(&edge.capabilities(), edge.host_name(), kind)?;
+            self.runs_kind(&edge.capabilities(), &edge.host_name(), kind)?;
         }
         let resolved = spec::resolve(agent);
         let mut request = request;
@@ -997,7 +1007,7 @@ impl ProfileRuntime {
         query: Option<String>,
         limit: u32,
     ) -> wire::ListRepositoriesResponse {
-        let roots = self.launch().repository_roots;
+        let projects = self.launch().projects;
         let recent = self
             .driver()
             .read(|store| store.recent_directories())
@@ -1010,7 +1020,7 @@ impl ProfileRuntime {
             })
             .unwrap_or_default();
         tokio::task::spawn_blocking(move || {
-            crate::repositories::list(&roots, &recent, query.as_deref(), limit)
+            crate::repositories::list(&projects, &recent, query.as_deref(), limit)
         })
         .await
         .expect("listing repositories does not panic")

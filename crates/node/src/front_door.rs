@@ -226,14 +226,34 @@ impl InstallationService for FrontDoor {
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<wire::Settings>, Status> {
-        Err(Status::unimplemented("settings"))
+        let installation = self.registry.installation()?;
+        let settings = &installation.settings;
+        Ok(Response::new(crate::host_settings::to_wire(
+            &settings.current(),
+            &installation.host_name(),
+            settings.supervised(),
+        )))
     }
 
     async fn update_settings(
         &self,
-        _request: Request<wire::UpdateSettingsRequest>,
+        request: Request<wire::UpdateSettingsRequest>,
     ) -> Result<Response<wire::Settings>, Status> {
-        Err(Status::unimplemented("settings"))
+        let installation = self.registry.installation()?;
+        let request = request.into_inner();
+        let config = {
+            let installation = installation.clone();
+            tokio::task::spawn_blocking(move || installation.settings.update(&request))
+                .await
+                .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?
+                .map_err(|error| status(error.to_wire()))?
+        };
+        installation.apply(&config);
+        Ok(Response::new(crate::host_settings::to_wire(
+            &config,
+            &installation.host_name(),
+            installation.settings.supervised(),
+        )))
     }
 
     async fn subscribe_onboarding(

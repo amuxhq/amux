@@ -50,6 +50,8 @@ pub struct StartOptions {
     pub analytics: Telemetry,
     /// Whether the dumps a check asks for are sent to the account service.
     pub auto_reports: crate::reports::AutoReports,
+    /// Where the everyday settings live, which the front door serves.
+    pub settings: crate::host_settings::SettingsOptions,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -102,7 +104,11 @@ pub(crate) struct Installation {
     daemon_log: Option<PathBuf>,
     supervisor_log: Option<PathBuf>,
     auto_reports: crate::reports::AutoReports,
-    edge: EdgeOptions,
+    /// What each profile's edge starts with; its name follows the settings.
+    edge: Mutex<EdgeOptions>,
+    /// The settings as last applied.
+    applied: Mutex<settings::InstallationConfig>,
+    pub(crate) settings: crate::host_settings::HostSettings,
     pub(crate) hosted: Mutex<BTreeMap<ProfileId, Hosted>>,
     /// One change to the profile set at a time: create, rename, delete.
     pub(crate) profile_changes: tokio::sync::Mutex<()>,
@@ -117,9 +123,79 @@ pub(crate) struct Installation {
 }
 
 impl Installation {
-    pub(crate) fn host_name(&self) -> &str {
-        &self.edge.host_name
+    pub(crate) fn host_name(&self) -> String {
+        self.edge.lock().unwrap().host_name.clone()
     }
+
+    /// Puts what changed in the settings into force: every profile's
+    /// projects, Claude kind and name. Only what changed since they were
+    /// last applied moves, so what an embedder gave a host at start stands
+    /// until the person changes that setting.
+    pub(crate) fn apply(&self, config: &settings::InstallationConfig) {
+        let (projects, kind, renamed) = {
+            let mut last = self.applied.lock().unwrap();
+            let projects = (last.projects != config.projects).then(|| config.projects());
+            let kind = (crate::host_settings::claude_kind(&last)
+                != crate::host_settings::claude_kind(config))
+            .then(|| crate::host_settings::claude_kind(config));
+            let renamed = (last.host_name != config.host_name).then(|| {
+                let name = config.host_name().into_string();
+                self.edge.lock().unwrap().host_name.clone_from(&name);
+                name
+            });
+            *last = config.clone();
+            (projects, kind, renamed)
+        };
+        if projects.is_none() && kind.is_none() && renamed.is_none() {
+            return;
+        }
+        let runtimes: Vec<Arc<ProfileRuntime>> = self
+            .hosted
+            .lock()
+            .unwrap()
+            .values()
+            .map(|hosted| hosted.runtime.clone())
+            .collect();
+        for runtime in runtimes {
+            let mut launch = runtime.launch();
+            if let Some(projects) = &projects {
+                launch.projects.clone_from(projects);
+            }
+            if let Some(kind) = kind {
+                launch.claude_kind = kind;
+            }
+            runtime.set_launch(launch);
+            if let (Some(name), Some(edge)) = (&renamed, runtime.edge()) {
+                edge.rename(name);
+            }
+            runtime.tell_own_host();
+        }
+        if renamed.is_some() {
+            self.publish();
+        }
+    }
+}
+
+/// How often the daemon looks at the config file for a change made beside
+/// it, by `amux config` or an editor: such a change is in force within it.
+const SETTINGS_POLL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Applies each change to the config file made beside the daemon until the
+/// installation goes.
+fn follow_settings(installation: std::sync::Weak<Installation>) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut every = tokio::time::interval(SETTINGS_POLL);
+        every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            every.tick().await;
+            let Some(installation) = installation.upgrade() else {
+                return;
+            };
+            if let Some(config) = installation.settings.reread() {
+                installation.apply(&config);
+            }
+        }
+    })
 }
 
 /// How long a login refused for its profile's data waits to be adopted.
@@ -219,8 +295,9 @@ impl Installation {
         entry: ProfileEntry,
     ) -> Result<(), StartError> {
         runtime.start_background();
+        let options = self.edge.lock().unwrap().clone();
         let edge = runtime
-            .start_edge(&self.edge)
+            .start_edge(&options)
             .await
             .map_err(|error| StartError::Edge {
                 profile: entry.id,
@@ -407,6 +484,8 @@ pub struct Daemon {
     sweep: BTreeMap<ProfileId, SweepReport>,
     supervisor: Option<ActivationPipe>,
     front_door: Option<JoinHandle<()>>,
+    /// Applies changes made to the config file beside the daemon.
+    following: JoinHandle<()>,
     // Dropped last: the lock outlives everything that writes under it.
     lock: Option<InstallationLock>,
 }
@@ -416,6 +495,7 @@ impl Drop for Daemon {
     /// and the installation stays dirty, but no task of this run goes on
     /// writing once its lock is released.
     fn drop(&mut self) {
+        self.following.abort();
         if let Some(front_door) = self.front_door.take() {
             front_door.abort();
         }
@@ -445,6 +525,7 @@ pub async fn start(
         edge,
         analytics: telemetry,
         auto_reports,
+        settings,
     } = options;
     let lock = InstallationLock::acquire(&data_dir)?;
     let boot_id = match boot_id {
@@ -467,7 +548,9 @@ pub async fn start(
         daemon_log,
         supervisor_log,
         auto_reports,
-        edge,
+        edge: Mutex::new(edge),
+        applied: Mutex::new(settings.initial.clone()),
+        settings: crate::host_settings::HostSettings::new(settings),
         hosted: Mutex::new(BTreeMap::new()),
         profile_changes: tokio::sync::Mutex::new(()),
         moved: watch::Sender::new(()),
@@ -537,6 +620,7 @@ pub async fn start(
         }
     }
 
+    let following = follow_settings(Arc::downgrade(&installation));
     Ok(Daemon {
         installation,
         generation,
@@ -544,6 +628,7 @@ pub async fn start(
         sweep,
         supervisor,
         front_door,
+        following,
         lock: Some(lock),
     })
 }

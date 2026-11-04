@@ -154,7 +154,7 @@ impl Edge {
     pub fn device_identity(&self) -> DeviceIdentity {
         DeviceIdentity {
             host_id: self.host_id().as_bytes().to_vec(),
-            name: self.host_name.clone(),
+            name: self.host_name(),
             pubkey: self.public_key().to_vec(),
         }
     }
@@ -207,7 +207,7 @@ impl Edge {
                 expires_at_ms: 0,
                 host_id: self.host_id().as_bytes().to_vec(),
                 pubkey: self.public_key().to_vec(),
-                name: self.host_name.clone(),
+                name: self.host_name(),
             }),
             ttl_seconds: ttl.as_secs(),
             addrs: self
@@ -312,7 +312,7 @@ impl Edge {
             .await
             .ok_or_else(|| Status::unavailable("the profile is stopping"))?;
         let local =
-            LocalPairingIdentity::from_device_identity(&self.identity).named(&self.host_name);
+            LocalPairingIdentity::from_device_identity(&self.identity).named(&self.host_name());
         let initiate = |found: bool, reachability: Option<Reachability>| Initiate {
             local: local.clone(),
             secret: secret.clone(),
@@ -494,7 +494,7 @@ impl Edge {
             .transpose()?;
         self.ask(ClientRequest::PairOverSsh {
             local: LocalPairingIdentity::from_device_identity(&self.identity)
-                .named(&self.host_name),
+                .named(&self.host_name()),
             peer: identity,
             reachability,
         })

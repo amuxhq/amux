@@ -24,7 +24,9 @@ amux --config path/to.toml  # with another installation config (or AMUX_CONFIG)
 ```
 
 `amux` connects to the selected profile's local socket with the gRPC client, opens home, and draws. If the daemon
-is not running, start it with `amux server start` (see [SUPERVISOR.md](SUPERVISOR.md)).
+is not running it starts it first, as every verb does: the supervisor on a desktop install, which starts the
+daemon, and then waits for it (see [SUPERVISOR.md](SUPERVISOR.md)). On a server whose service manager runs the
+daemon it starts nothing and waits.
 
 The client redraws only when something changed: a key, a change from the fleet or the open chat, or a finished
 task. It ticks on a clock only while something on screen moves with time: every 250 ms while the open agent is
@@ -519,11 +521,10 @@ these; the entries amux and service managers run are hidden from it and listed a
 | `amux login` | Signs the profile in to an amux account so its hosts reach each other through the relay. |
 | `amux logout` | Signs the profile out; its agents and paired hosts stay. |
 | `amux profile ls\|new [label]\|rename <profile> <name>\|rm <profile>` | Lists and manages the installation's profiles. |
-| `amux status` | Says whether amux is running and under what, its version and this command's, how updates arrive, each profile's account and relay link, telemetry, and the config file's path. Starts nothing; exits 0 when the daemon answers and 3 when it does not. |
-| `amux init` | Sets up this install, including whether amux starts at login (`--login-item yes\|no`, asked on a terminal when omitted; without a terminal it asks nothing and adds nothing). |
+| `amux status` | Says whether amux is running and under what, its version and this command's, how updates arrive, whether it starts at login, each profile's account and relay link, telemetry, and the config file's path. Starts nothing; exits 0 when the daemon answers and 3 when it does not. |
 | `amux uninstall` | Stops this machine's running agents (asking first on a terminal; `--yes` without one), removes this installation's login item, stops amux, and deletes `~/.amux/bin/amux` and the PATH lines the install script added; with `--delete-data`, the installation's root and config file too. An installation named by `--config` keeps the installed binary, which serves the default one. |
 | `amux update` | Asks the supervisor to install the channel's release now and says whether it started; `--retry` installs it even if it was rolled back here. |
-| `amux config get\|set\|unset <key>` | Reads a setting (its default when the file does not set it), sets one, or removes one so its default applies. A key is dotted (`ui.chat_in`, `new_agent.claude.model`); a value is read as TOML where it is one and as a string otherwise. A write changes that key alone, comments and layout kept, and only when the file still reads after it. |
+| `amux config get\|set\|unset <key>` | Reads a setting (its default when the file does not set it), sets one, or removes one so its default applies. A key is dotted (`ui.chat_in`, `new_agent.claude.model`); a value is read as TOML where it is one and as a string otherwise. A write changes that key alone, comments and layout kept, and only when the file still reads after it; a running amux takes it up within seconds, and `start_at_login` writes or removes the login item at once. An unknown key is answered with the everyday settings; the deployment ones (`supervisor`, `updates`, `releases_url`, `discovery.scope`, `root`, `agent.*`) are still accepted. |
 | `amux config edit\|path` | Opens the config file in `$VISUAL` or `$EDITOR` and checks it after, or prints where it is. |
 | `amux server start` | Starts amux detached from the terminal: the supervisor where the install has one, the daemon otherwise. |
 | `amux server stop` | Stops amux cleanly, the supervisor first where one runs; agents keep running. |

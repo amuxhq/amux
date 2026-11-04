@@ -19,6 +19,7 @@ mod peer_service;
 mod push;
 mod registry;
 mod resumption;
+mod settings;
 mod single_daemon;
 mod supervisor;
 mod worktree;

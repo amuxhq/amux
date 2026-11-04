@@ -182,8 +182,8 @@ impl NetAgent {
     }
 }
 
-/// The one repository root of a host that declares repositories, in its
-/// directory.
+/// Where a host's declared repositories are made, in its directory; each
+/// is one of the host's projects.
 const REPOSITORIES: &str = "repositories";
 
 /// Everything a host is on disk and in process.
@@ -1615,9 +1615,12 @@ impl Net {
             launch.agent.facts_ring_mib = mib;
         }
         launch.core.stop_deadline_ms = 15_000;
-        if !own.decl.repositories.is_empty() {
-            launch.repository_roots = vec![own.dir.join(REPOSITORIES)];
-        }
+        launch.projects = own
+            .decl
+            .repositories
+            .iter()
+            .map(|repository| own.dir.join(REPOSITORIES).join(repository))
+            .collect();
         if let Some(k) = own.decl.tail_rows {
             launch.core.tail_rows = k;
         }
@@ -1783,10 +1786,12 @@ impl Net {
         if decl.runs_as_process() {
             text.push_str(&format!("releases_url = {:?}\n", self.feed_url()));
             if !decl.repositories.is_empty() {
-                text.push_str(&format!(
-                    "repository_roots = [{}]\n",
-                    quoted(&dir.join(REPOSITORIES))
-                ));
+                let projects: Vec<String> = decl
+                    .repositories
+                    .iter()
+                    .map(|repository| quoted(&dir.join(REPOSITORIES).join(repository)))
+                    .collect();
+                text.push_str(&format!("projects = [{}]\n", projects.join(", ")));
             }
             let scope = decl
                 .scope
@@ -1908,6 +1913,7 @@ impl Net {
         }
         let handed = edge.lan.as_ref().is_some_and(|lan| lan.socket.is_some());
         let options = node::StartOptions {
+            settings: Default::default(),
             data_dir: host.info.data_dir.clone(),
             boot_id: Some(format!("boot-{}", host.boot)),
             launch: self.launch(&host.info, None),

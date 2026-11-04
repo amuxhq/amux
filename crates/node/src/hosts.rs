@@ -3,7 +3,7 @@
 //! host's name, capabilities and whether its rows are current. The core is
 //! told this host's own entry as the shell describes it, whenever what it
 //! is made of moves: the edge starting, signing in or out, a provider's
-//! offer read again.
+//! offer read again, the settings changing its name or its Claude kind.
 
 use wire::HostEntry;
 
@@ -21,7 +21,7 @@ impl ProfileRuntime {
                 host_id: self.host().as_bytes().to_vec(),
                 name: edge
                     .as_ref()
-                    .map(|edge| edge.host_name().to_owned())
+                    .map(|edge| edge.host_name())
                     .unwrap_or_default(),
                 version: crate::version().to_owned(),
                 capabilities: edge.as_ref().map(|edge| edge.capabilities()),
@@ -36,7 +36,7 @@ impl ProfileRuntime {
                 )),
                 current: true,
             })),
-            ..HostEntry::default()
+            claude_kind: self.launch_claude_kind() as i32,
         }
     }
 

@@ -29,10 +29,12 @@ things; neither is a remote control for the other.
 ## Running amux on a computer
 
 `amux server start` starts amux in the background and `amux server stop`
-stops it. On a desktop install you rarely need either: `amux init` asks
-once whether amux should start when you log in, and any `amux` command that
-finds amux stopped starts it and waits for it. `amux status` says whether
-it is running, which version, and each profile's account.
+stops it. On a desktop install you rarely need either: bare `amux` and any
+other `amux` command that finds amux stopped start it and wait for it, and
+the first run asks whether amux should also start when you log in
+(`amux config set start_at_login true` says yes later). `amux status` says
+whether it is running, which version, whether it starts at login, and each
+profile's account.
 
 There, amux runs under a small supervisor (`amux supervise`) that restarts
 it if it ever crashes and installs releases as they come out. `amux update`

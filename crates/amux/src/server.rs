@@ -64,13 +64,14 @@ pub(crate) fn log_to_stderr() {
 }
 
 /// What agents start with: this binary as the canonical install path, the
-/// installation's agent settings and where it looks for repositories.
+/// installation's agent settings, its projects and which Claude it runs.
 fn launch(config: &InstallationConfig) -> Result<Launch> {
     let install_path = std::env::current_exe().context("finding the amux binary")?;
     Ok(Launch {
         install_path,
         agent: config.agent,
-        repository_roots: config.repository_roots.clone(),
+        projects: config.projects(),
+        claude_kind: node::claude_kind(config),
         ..Launch::default()
     })
 }
@@ -103,6 +104,7 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
             edge: edge_options(config),
             analytics: telemetry(config),
             auto_reports: auto_reports(config),
+            settings: settings(config),
         };
         let pipe = pipe
             .map(node::InheritedPipe::into_pipe)
@@ -178,6 +180,30 @@ fn auto_reports(config: &InstallationConfig) -> node::AutoReports {
     node::AutoReports::new(Arc::new(move || {
         InstallationConfig::from_file(&path).is_ok_and(|config| config.auto_reports)
     }))
+}
+
+/// Where the everyday settings live: the config file, written in place
+/// when there is none yet, and the login item `start_at_login` keeps when
+/// a supervisor runs this install.
+fn settings(config: &InstallationConfig) -> node::SettingsOptions {
+    let file = config
+        .path
+        .clone()
+        .unwrap_or_else(InstallationConfig::default_path);
+    let named = Some(file.as_path()).filter(|file| *file != InstallationConfig::default_path());
+    let login = config
+        .supervisor
+        .then(|| node::supervisor::login::StartAtLogin::here(&config.root, named))
+        .and_then(|login| {
+            login
+                .inspect_err(|error| tracing::warn!(%error, "no login item can be kept"))
+                .ok()
+        });
+    node::SettingsOptions {
+        file: Some(file),
+        initial: config.clone(),
+        login,
+    }
 }
 
 /// What each profile serves on the network: a LAN listener, discovery in

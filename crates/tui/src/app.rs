@@ -1677,6 +1677,7 @@ fn sibling_setup(
         local_host: local_host.to_vec(),
         worktree: false,
         defaults: defaults.clone(),
+        host_claude_kind: wire::Kind::Unspecified,
     }
 }
 

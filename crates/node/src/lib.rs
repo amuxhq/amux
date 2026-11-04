@@ -25,6 +25,8 @@ mod front_door;
 pub use front_door::{FrontDoor, info as profile_info};
 mod generation;
 mod grpc;
+mod host_settings;
+pub use host_settings::{SettingsOptions, claude_kind};
 mod hosts;
 mod identity;
 mod install;

@@ -790,7 +790,7 @@ impl Home {
                     self.draft.starting = true;
                     self.draft.error = None;
                     vec![FleetEffect::Start {
-                        setup: Box::new(setup.clone()),
+                        setup: setup.started(fleet),
                         text: String::new(),
                         attachments: Vec::new(),
                         open: true,
@@ -854,7 +854,7 @@ impl Home {
                 self.draft.starting = true;
                 self.draft.error = None;
                 return vec![FleetEffect::Start {
-                    setup: Box::new(setup),
+                    setup: setup.started(fleet),
                     text: self.draft.editor.text().trim_end().to_owned(),
                     attachments: self.draft.editor.attachments().to_vec(),
                     open: !ctrl,
@@ -955,7 +955,7 @@ impl Home {
                         self.draft.starting = true;
                         self.draft.error = None;
                         return vec![FleetEffect::Start {
-                            setup: Box::new(setup.clone()),
+                            setup: setup.started(fleet),
                             text: String::new(),
                             attachments: Vec::new(),
                             open: true,

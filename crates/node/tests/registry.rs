@@ -1445,28 +1445,31 @@ fn listing(
     })
 }
 
-/// Where a host offers to start an agent: the directories its agents ran
-/// in, newest first and still after the agents are deleted, then the Git
-/// repositories under its roots. A paired host naming it gets the same
-/// answer through it; once it no longer trusts that host, nothing.
+/// Where a host offers to start an agent: its projects, in the order its
+/// person chose them, then the directories its agents ran in, newest first
+/// and still after the agents are deleted. A paired host naming it gets the
+/// same answer through it; once it no longer trusts that host, nothing.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_hosts() {
+async fn a_host_lists_its_projects_and_where_its_agents_ran_for_trusted_hosts() {
     use wire::agent_service_server::AgentService as _;
 
     let desk = Install::new();
-    let roots = desk.path("code");
-    for repository in ["amux", "notes", "nested/deep/site", "amux/vendor/lib"] {
-        std::fs::create_dir_all(roots.join(repository).join(".git")).unwrap();
+    let code = desk.path("code");
+    for project in ["site", "amux", "amux-review"] {
+        std::fs::create_dir_all(code.join(project)).unwrap();
     }
-    // A worktree's .git is a file.
-    std::fs::create_dir_all(roots.join("amux-review")).unwrap();
-    std::fs::write(roots.join("amux-review/.git"), "gitdir: ../amux/.git\n").unwrap();
-    std::fs::create_dir_all(roots.join("plain")).unwrap();
     let (older, newer) = (desk.work.join("older"), desk.work.join("newer"));
     std::fs::create_dir_all(&older).unwrap();
     std::fs::create_dir_all(&newer).unwrap();
     let mut launch = desk.launch("idle", Vec::new());
-    launch.repository_roots = vec![roots.clone(), desk.path("missing")];
+    launch.projects = vec![
+        code.join("site"),
+        code.join("amux"),
+        desk.path("missing"),
+        code.join("amux-review"),
+        // A project an agent also ran in is listed once, as a project.
+        newer.clone(),
+    ];
     let desk_daemon = desk.start("boot-1", launch).await;
     let desk_runtime = runtime(&desk_daemon, &desk);
     let first = id_of(
@@ -1475,7 +1478,7 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
             .await
             .unwrap(),
     );
-    // A forced delay: the listing orders repositories by the agents'
+    // A forced delay: the listing orders recent folders by the agents'
     // creation times, which the clock stamps in milliseconds.
     tokio::time::sleep(Duration::from_millis(5)).await;
     desk_runtime
@@ -1492,26 +1495,24 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
         .into_inner();
     println!("local listing: {local:#?}");
     assert_eq!(
-        names(&local.recent),
-        ["newer", "older"],
-        "newest first, deleted agents too"
-    );
-    assert!(local.recent[0].last_used_ms > local.recent[1].last_used_ms);
-    assert_eq!(
-        local.recent[0].path,
-        newer.canonicalize().unwrap().to_str().unwrap()
-    );
-    // Nothing inside a repository is searched, and plain directories are
-    // not repositories.
-    assert_eq!(
         names(&local.projects),
-        ["amux", "amux-review", "site", "notes"]
+        ["site", "amux", "amux-review", "newer"],
+        "as chosen, gone ones left out"
     );
     assert!(
         local
             .projects
             .iter()
             .all(|entry| entry.last_used_ms.is_none())
+    );
+    assert_eq!(
+        names(&local.recent),
+        ["older"],
+        "deleted agents' folders too, projects once"
+    );
+    assert_eq!(
+        local.recent[0].path,
+        older.canonicalize().unwrap().to_str().unwrap()
     );
 
     let found = person
@@ -1526,12 +1527,8 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(names(&capped.recent), ["newer", "older"]);
-    assert_eq!(
-        names(&capped.projects),
-        ["amux"],
-        "the limit counts both lists"
-    );
+    assert_eq!(names(&capped.projects), ["site", "amux", "amux-review"]);
+    assert!(capped.recent.is_empty(), "the limit counts both lists");
 
     // A paired laptop asks the desk by its host id.
     let laptop = Install::new();

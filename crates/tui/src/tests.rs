@@ -2589,6 +2589,35 @@ fn a_known_ground_tints_the_highlight_instead_of_marking_it() {
     assert_eq!(buffer[(W / 2, 0)].bg, ratatui::style::Color::Reset);
 }
 
+/// A new Claude agent runs the kind its host publishes, whatever this
+/// terminal chats in, so every client starts the same Claude there.
+#[test]
+fn a_new_claude_runs_the_kind_its_host_publishes() {
+    let mut fleet = home_fleet();
+    let mut studio = wire::HostEntry::trusted_host(
+        b"a",
+        "studio",
+        wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+    );
+    studio.claude_kind = Kind::ClaudePty as i32;
+    inventory(&mut fleet, wire::inventory_event::Of::Host(studio));
+    let mut home = new_home();
+    home.key(&fleet, key(KeyCode::Char('n')));
+    home_screen(&mut home, &fleet, theme());
+    for c in "fix it".chars() {
+        home.key(&fleet, key(KeyCode::Char(c)));
+    }
+    let effects = home.key(&fleet, KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL));
+    let [FleetEffect::Start { setup, .. }] = effects.as_slice() else {
+        panic!("{effects:?}");
+    };
+    assert_eq!(setup.kind(), Kind::ClaudePty);
+    assert!(matches!(
+        setup.request(b"id".to_vec(), None).agent,
+        Some(wire::create_agent_request::Agent::ClaudePty(_))
+    ));
+}
+
 #[test]
 fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
     let fleet = home_fleet();

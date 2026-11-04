@@ -49,7 +49,6 @@ impl Home {
     fn options(&self, bundled: Option<PathBuf>) -> Options {
         Options {
             bundled,
-            login_item: false,
             config: Some(self.config.clone()),
         }
     }

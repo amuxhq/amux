@@ -12,8 +12,8 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use settings::{InstallationConfig, installation_keys};
-use toml_edit::{DocumentMut, Item};
+use settings::edit::{edit as edited_text, typed};
+use settings::{InstallationConfig, installation_keys, is_deployment_key};
 
 /// `amux config get`: the value in effect, the default when the file does
 /// not set it.
@@ -48,7 +48,7 @@ pub fn get(path: &Path, key: &str) -> Result<()> {
 /// read with.
 pub fn set(path: &Path, key: &str, raw: &str) -> Result<()> {
     known(key)?;
-    let document = read(path)?;
+    let text = read(path)?;
     // As TOML first, then as the string it is when that is refused: a host
     // named `true` is still a name.
     let mut candidates = Vec::new();
@@ -58,14 +58,11 @@ pub fn set(path: &Path, key: &str, raw: &str) -> Result<()> {
     candidates.push(toml_edit::Value::from(raw));
     let mut first_refusal = None;
     for value in candidates {
-        let mut edited = document.clone();
-        *slot(&mut edited, key) = toml_edit::value(value.clone());
-        match InstallationConfig::from_toml(&edited.to_string())
-            .and_then(|config| config.validate().map(|()| config))
-        {
-            Ok(_) => {
+        match edited_text(&text, &[(key, Some(value.clone()))]) {
+            Ok((edited, _)) => {
                 write(path, &edited)?;
                 println!("{key} = {}", value.to_string().trim());
+                applied(path, key)?;
                 if let Some(note) = note(key) {
                     println!("{note}");
                 }
@@ -95,24 +92,28 @@ pub fn set(path: &Path, key: &str, raw: &str) -> Result<()> {
 /// `amux config unset`: removes one key, so its default applies.
 pub fn unset(path: &Path, key: &str) -> Result<()> {
     known(key)?;
-    let mut document = read(path)?;
-    let (parents, last) = match key.rsplit_once('.') {
-        Some((parents, last)) => (parents.split('.').collect::<Vec<_>>(), last),
-        None => (Vec::new(), key),
-    };
-    let table = parents
-        .iter()
-        .try_fold(document.as_item_mut(), |item, part| item.get_mut(part))
-        .and_then(Item::as_table_like_mut);
-    if table.and_then(|table| table.remove(last)).is_none() {
+    let text = read(path)?;
+    if !settings::edit::is_set(&text, key) {
         println!(
             "{key} is not set in {}; its default applies.",
             path.display()
         );
         return Ok(());
     }
-    write(path, &document)?;
+    let (edited, _) = edited_text(&text, &[(key, None)])?;
+    write(path, &edited)?;
     println!("{key} is no longer set; its default applies.");
+    applied(path, key)?;
+    Ok(())
+}
+
+/// What a key does beyond the file the moment it is written: the login
+/// item follows `start_at_login` whether or not amux is running.
+fn applied(path: &Path, key: &str) -> Result<()> {
+    if key == "start_at_login" {
+        let config = InstallationConfig::from_file(path)?;
+        crate::setup::start_at_login(&config, Some(path))?;
+    }
     Ok(())
 }
 
@@ -157,55 +158,39 @@ pub fn edit(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Every key is accepted, but an unknown one is answered with the everyday
+/// ones only: how amux is deployed is for whoever deploys it, who knows the
+/// keys from the parameters page.
 fn known(key: &str) -> Result<()> {
     let keys = installation_keys();
     if keys.iter().any(|known| known == key) {
         return Ok(());
     }
+    let everyday: Vec<&str> = keys
+        .iter()
+        .map(String::as_str)
+        .filter(|key| !is_deployment_key(key))
+        .collect();
     bail!(
         "{key} is not a setting; the settings are {}",
-        keys.join(", ")
+        everyday.join(", ")
     )
 }
 
-/// The value `raw` is as TOML, if it is one.
-fn typed(raw: &str) -> Option<toml_edit::Value> {
-    let document = format!("value = {raw}").parse::<DocumentMut>().ok()?;
-    document.get("value")?.as_value().cloned()
-}
-
-/// The key's place in the document, its tables made where they are missing
-/// as the sections a person writes (`[new_agent.claude]`), not inline.
-fn slot<'a>(document: &'a mut DocumentMut, key: &str) -> &'a mut Item {
-    let mut item = document.as_item_mut();
-    let mut parts = key.split('.').peekable();
-    while let Some(part) = parts.next() {
-        if parts.peek().is_some() && item.get(part).is_none() {
-            let mut table = toml_edit::Table::new();
-            table.set_implicit(true);
-            item[part] = Item::Table(table);
-        }
-        item = &mut item[part];
-    }
-    item
-}
-
-fn read(path: &Path) -> Result<DocumentMut> {
+fn read(path: &Path) -> Result<String> {
     match std::fs::read_to_string(path) {
-        Ok(text) => text
-            .parse()
-            .with_context(|| format!("reading {}", path.display())),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(DocumentMut::new()),
+        Ok(text) => Ok(text),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
         Err(error) => Err(error).with_context(|| format!("reading {}", path.display())),
     }
 }
 
-fn write(path: &Path, document: &DocumentMut) -> Result<()> {
+fn write(path: &Path, text: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating {}", parent.display()))?;
     }
-    node::write_durably(path, document.to_string().as_bytes())
+    node::write_durably(path, text.as_bytes())
         .with_context(|| format!("writing {}", path.display()))
 }
 
@@ -221,11 +206,11 @@ fn note(key: &str) -> Option<&'static str> {
              starts sending when it next starts.",
         ),
         "auto_reports" => Some(
-            "A running daemon follows it from its next dump. Reports go to the account each \
-             profile is signed in to, and hold what agents were told and said, redacted of \
-             secrets.",
+            "A running daemon follows it from its next report. Reports go to the account each \
+             profile is signed in to, and hold the records of what amux's parts concluded and \
+             amux's own masked logs, never what anybody wrote.",
         ),
-        "supervisor" | "updates" | "root" | "host_name" => {
+        "supervisor" | "updates" | "root" => {
             Some("amux uses it from its next start: `amux server stop`, then any amux command.")
         }
         _ => None,
@@ -284,9 +269,15 @@ mod tests {
         let error = set(&path, "theme", "dark").unwrap_err().to_string();
         assert!(error.contains("theme is not a setting"), "{error}");
         assert!(error.contains("ui.theme"), "{error}");
+        assert!(
+            !error.contains("releases_url") && !error.contains("agent.grace_secs"),
+            "the deployment keys stay out of the everyday list: {error}"
+        );
+        // They are still settings.
+        set(&path, "agent.grace_secs", "60").unwrap();
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
-            "channel = \"stable\"\n"
+            "channel = \"stable\"\n[agent]\ngrace_secs = 60\n"
         );
     }
 

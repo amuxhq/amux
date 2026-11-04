@@ -1,5 +1,5 @@
-//! The CLI around the supervisor, driving the real binary: `amux init`
-//! declining a login item, stop going to the owner in both install cells, a
+//! The CLI around the supervisor, driving the real binary: the login item
+//! `start_at_login` keeps, stop going to the owner in both install cells, a
 //! client starting the supervisor only where the install has one, the sleep
 //! assertion, `amux update` and `amux config channel`.
 
@@ -281,15 +281,42 @@ async fn the_supervisor_holds_the_sleep_assertion_under_keep_awake() {
     assert!(assertions_of(pid).is_empty());
 }
 
+/// Where a login item for `install` would be, under its test home.
+fn login_item(install: &Install) -> PathBuf {
+    let home = install.root.path().join("home");
+    if cfg!(target_os = "macos") {
+        home.join("Library/LaunchAgents/sh.amux.supervise.plist")
+    } else {
+        home.join(".config/systemd/user/amux.service")
+    }
+}
+
+/// `start_at_login` writes the login item for the next login and removes
+/// it, with amux stopped; an install without a supervisor has none.
+#[cfg_attr(
+    not(target_os = "macos"),
+    ignore = "registering the systemd unit needs a user session"
+)]
 #[test]
-fn init_adds_no_login_item_when_declined_or_without_a_supervisor() {
+fn start_at_login_writes_and_removes_the_login_item() {
     let install = Install::new(true, "");
-    let declined = install.amux(&["init", "--login-item", "no"]);
-    assert!(stdout(&declined).contains("No login item"));
-    assert!(!install.root.path().join("home").exists());
+    let on = install.amux(&["config", "set", "start_at_login", "true"]);
+    assert!(
+        stdout(&on).contains("amux starts at login"),
+        "{}",
+        stdout(&on)
+    );
+    let item = std::fs::read_to_string(login_item(&install)).unwrap();
+    assert!(item.contains("supervise") && item.contains(&*install.data.to_string_lossy()));
+    assert!(
+        install.supervisor_pid().is_none(),
+        "the item waits for the next login"
+    );
+    install.amux(&["config", "set", "start_at_login", "false"]);
+    assert!(!login_item(&install).exists());
 
     let without = Install::new(false, "");
-    let output = without.amux(&["init", "--login-item", "yes"]);
+    let output = without.amux(&["config", "set", "start_at_login", "true"]);
     assert!(
         stdout(&output).contains("no login item to add"),
         "{}",

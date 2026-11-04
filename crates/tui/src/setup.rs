@@ -20,7 +20,7 @@ use settings::{ChatInSetting, NewAgentDefaults, NewAgentSettings};
 use ui_state::FleetState;
 use ui_view::{Changeable, NewAgentChoices, NewAgentPick, Reach, SettingChange, SettingsView};
 use wire::{
-    ClaudeCreateConfig, CodexCreateConfig, CreateAgentRequest, Kind, PromptSubmission,
+    ClaudeCreateConfig, CodexCreateConfig, CreateAgentRequest, HostEntry, Kind, PromptSubmission,
     create_agent_request,
 };
 
@@ -141,6 +141,9 @@ pub struct Setup {
     pub worktree: bool,
     /// What each agent starts with, for when the agent changes.
     pub defaults: NewAgentSettings,
+    /// Which Claude the chosen host says a new agent runs there, taken as
+    /// the agent starts; unspecified follows where the person chats.
+    pub host_claude_kind: Kind,
 }
 
 impl Setup {
@@ -166,6 +169,7 @@ impl Setup {
             local_host: local_host.to_vec(),
             worktree: false,
             defaults: defaults.clone(),
+            host_claude_kind: Kind::Unspecified,
         };
         setup.start_from_defaults();
         setup
@@ -247,9 +251,22 @@ impl Setup {
         self.mode = next.mode;
     }
 
-    /// What runs it, as the request names it.
+    /// What runs it, as the request names it: for Claude, the kind its
+    /// host publishes, so every client starts the same Claude there.
     pub fn kind(&self) -> Kind {
-        self.agent.kind(self.chat_in)
+        match (self.agent, self.host_claude_kind) {
+            (Agent::Claude, kind @ (Kind::ClaudeSdk | Kind::ClaudePty)) => kind,
+            _ => self.agent.kind(self.chat_in),
+        }
+    }
+
+    /// The setup as it starts: with the Claude kind its host publishes now.
+    pub fn started(&self, fleet: &FleetState) -> Box<Setup> {
+        let mut setup = self.clone();
+        setup.host_claude_kind = fleet
+            .host(&self.host)
+            .map_or(Kind::Unspecified, HostEntry::claude_kind);
+        Box::new(setup)
     }
 
     /// The composer's edge, in groups: its name, what runs it, where, and

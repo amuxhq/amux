@@ -271,7 +271,6 @@ pub enum EdgeError {
 /// One profile's network edge.
 pub struct Edge {
     dir: PathBuf,
-    host_name: String,
     identity: DeviceIdentity,
     trust: SharedTrustStore,
     /// The session tickets this profile issues, kept across restarts.
@@ -287,6 +286,8 @@ pub struct Edge {
     found: Arc<FoundHosts>,
     scope: String,
     lan_addr: Option<SocketAddr>,
+    /// What discovery advertises, said again when the host's name changes.
+    advertised: Mutex<Option<Advertisement>>,
     quic_endpoint: LinkEndpoint,
     account: Arc<Account>,
     cloud_options: CloudOptions,
@@ -380,7 +381,7 @@ impl Edge {
                 PairingService::new(
                     runtime.clone(),
                     LocalPairingIdentity::from_device_identity(&identity),
-                    host_name.clone(),
+                    local_host.clone(),
                 ),
                 pairing_rx,
                 shutdown.subscribe(),
@@ -472,21 +473,24 @@ impl Edge {
             first_flights: first_flights.clone(),
         });
         // A handed set is advertised nowhere: this edge has no advertiser.
+        let mut advertised = None;
         if let Some(addr) = lan_addr.filter(|_| !handed) {
             let addrs = if addr.ip().is_unspecified() {
                 local_pairing_addrs(addr.port())
             } else {
                 vec![addr]
             };
+            let advertisement = Advertisement {
+                host_id: identity.host_id,
+                name: host_name.clone(),
+                version: crate::PROTOCOL_VERSION,
+                addrs,
+                scope: options.discovery_scope.clone(),
+            };
             discovery
-                .advertise(Advertisement {
-                    host_id: identity.host_id,
-                    name: host_name.clone(),
-                    version: crate::PROTOCOL_VERSION,
-                    addrs,
-                    scope: options.discovery_scope.clone(),
-                })
+                .advertise(advertisement.clone())
                 .map_err(|error| EdgeError::Discovery(error.to_string()))?;
+            advertised = Some(advertisement);
         }
         tasks.push(reachability.spawn_dial_on_found(discovery.browse()));
         discovery.requery();
@@ -502,7 +506,6 @@ impl Edge {
 
         let edge = Arc::new(Self {
             dir: dir.to_owned(),
-            host_name,
             identity,
             trust,
             tickets,
@@ -517,6 +520,7 @@ impl Edge {
             found,
             scope: options.discovery_scope.clone(),
             lan_addr,
+            advertised: Mutex::new(advertised),
             quic_endpoint,
             account,
             cloud_options: options.cloud.clone(),
@@ -569,8 +573,27 @@ impl Edge {
         self.identity.public_key()
     }
 
-    pub fn host_name(&self) -> &str {
-        &self.host_name
+    pub fn host_name(&self) -> String {
+        self.local_host.name()
+    }
+
+    /// The person renamed this machine: discovery, new links and pairings
+    /// say the new name from now on. A host already paired keeps the name
+    /// it paired with until it pairs again.
+    pub(crate) fn rename(&self, name: &str) {
+        let name = wire::HostName::lossy(name).into_string();
+        self.local_host.set_name(&name);
+        let advertisement = {
+            let mut advertised = self.advertised.lock().unwrap();
+            let Some(advertisement) = advertised.as_mut() else {
+                return;
+            };
+            advertisement.name = name;
+            advertisement.clone()
+        };
+        if let Err(error) = self.discovery.advertise(advertisement) {
+            tracing::warn!(%error, "advertising the new name");
+        }
     }
 
     /// What this host's handshake says it can do.

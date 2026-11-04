@@ -2154,6 +2154,8 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-util",
+ "toml",
+ "toml_edit",
  "tonic",
  "tower",
  "tracing",
@@ -3440,6 +3442,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "toml",
+ "toml_edit",
  "wire",
 ]
 

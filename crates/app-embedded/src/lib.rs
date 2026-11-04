@@ -206,6 +206,7 @@ impl EmbeddedRuntime {
             },
         };
         let options = StartOptions {
+            settings: Default::default(),
             data_dir: config.data_dir.clone(),
             // The phone has no boot id to read; each start is its own boot.
             boot_id: Some(uuid::Uuid::new_v4().to_string()),

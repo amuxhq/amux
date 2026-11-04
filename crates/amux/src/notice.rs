@@ -1,8 +1,9 @@
 //! The analytics notice, which a person sees once before amux sends
-//! anything. The first command that would have something sent prints it to
-//! standard error and records it as shown, so the installation's events,
-//! held until then, start going.
+//! anything. The first command a person runs in a terminal that would have
+//! something sent prints it to standard error and records it as shown, so
+//! the installation's events, held until then, start going.
 
+use std::io::IsTerminal as _;
 use std::path::Path;
 use std::time::Duration;
 
@@ -15,7 +16,15 @@ const ANSWER_WITHIN: Duration = Duration::from_secs(2);
 /// Prints the notice when this installation would send usage counts and no
 /// client has shown it yet, and records it as shown. Never stops the
 /// command: a config that does not read is the command's to report.
+///
+/// Only a standard error that is a terminal counts as shown: a program
+/// running amux with its output captured (the Mac app's installer starts
+/// `amux server start` that way and drops what it says) is no person
+/// reading it, and the client that started it shows the notice itself.
 pub fn once(config_path: Option<&Path>) {
+    if !std::io::stderr().is_terminal() {
+        return;
+    }
     let path = config_path
         .map(Path::to_owned)
         .unwrap_or_else(InstallationConfig::default_path);

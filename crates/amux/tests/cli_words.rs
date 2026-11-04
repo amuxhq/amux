@@ -8,6 +8,7 @@ use std::process::Stdio;
 
 use provider_fakes::Step;
 use support::desk::{Desk, LONG_GRACE_SECS, say};
+use support::term::Term;
 use support::{created_id, line_of, until};
 use tokio::io::AsyncWriteExt as _;
 
@@ -103,15 +104,32 @@ async fn pairing_to_an_address_nobody_answers_does_not_blame_this_hosts_daemon()
     );
 }
 
-/// The first command that would have usage counts sent prints the notice
-/// once, on standard error, and records it shown: in the installation's
-/// file with no daemon running, through the daemon with one.
+/// The first command a person runs in a terminal that would have usage
+/// counts sent prints the notice once, on standard error, and records it
+/// shown: in the installation's file with no daemon running, through the
+/// daemon with one. A command whose output a program captures, as the Mac
+/// app's installer captures `amux server start`, neither prints nor records
+/// it: nobody read it.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_first_command_prints_the_analytics_notice_once() {
-    async fn said(desk: &Desk, args: &[&str]) -> String {
+    const SENDS: [(&str, &str); 1] = [("AMUX_ANALYTICS_URL", "http://127.0.0.1:9/")];
+    async fn in_a_terminal(desk: &Desk, args: &[&str]) -> String {
+        Term::run_with(
+            desk,
+            &desk.amux_path(),
+            args,
+            24,
+            200,
+            &SENDS,
+            &["DO_NOT_TRACK"],
+        )
+        .exits()
+        .await
+    }
+    async fn captured(desk: &Desk, args: &[&str]) -> String {
         let mut command = desk.command(args);
         command
-            .env("AMUX_ANALYTICS_URL", "http://127.0.0.1:9/")
+            .env(SENDS[0].0, SENDS[0].1)
             .env_remove("DO_NOT_TRACK");
         let output = tokio::time::timeout(support::PATIENCE, command.output())
             .await
@@ -121,12 +139,18 @@ async fn the_first_command_prints_the_analytics_notice_once() {
     }
 
     let alone = desk(Vec::new());
-    let first = said(&alone, &["status"]).await;
-    say(format!("$ amux status\n  {first}"));
+    let unread = captured(&alone, &["config", "get", "telemetry"]).await;
+    assert!(!unread.contains(analytics::NOTICE), "{unread}");
+    assert!(
+        !node::notice_shown_in(&alone.data),
+        "output a program captured is no notice shown"
+    );
+    let first = in_a_terminal(&alone, &["config", "get", "telemetry"]).await;
+    say(format!("$ amux config get telemetry\n  {first}"));
     assert!(first.contains(analytics::NOTICE), "{first}");
     assert!(first.contains(analytics::NOTICE_URL), "{first}");
     assert!(node::notice_shown_in(&alone.data));
-    let again = said(&alone, &["status"]).await;
+    let again = in_a_terminal(&alone, &["config", "get", "telemetry"]).await;
     assert!(!again.contains(analytics::NOTICE), "{again}");
 
     let served = desk(Vec::new());
@@ -135,9 +159,9 @@ async fn the_first_command_prints_the_analytics_notice_once() {
         !node::notice_shown_in(&served.data),
         "a build that sends nothing says nothing"
     );
-    let first = said(&served, &["ls"]).await;
+    let first = in_a_terminal(&served, &["ls"]).await;
     assert!(first.contains(analytics::NOTICE), "{first}");
     assert!(node::notice_shown_in(&served.data), "the daemon wrote it");
-    let again = said(&served, &["ls"]).await;
+    let again = in_a_terminal(&served, &["ls"]).await;
     assert!(!again.contains(analytics::NOTICE), "{again}");
 }

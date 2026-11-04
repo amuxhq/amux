@@ -240,7 +240,7 @@ async fn a_client_starts_the_supervisor_only_where_the_install_has_one() {
     ignore = "only macOS holds a sleep assertion"
 )]
 #[tokio::test(flavor = "multi_thread")]
-async fn the_supervisor_holds_the_sleep_assertion_under_keep_awake() {
+async fn the_supervisor_holds_the_power_sleep_assertion_under_keep_awake() {
     fn assertions_of(pid: u32) -> Vec<String> {
         let output = Command::new("pmset")
             .args(["-g", "assertions"])
@@ -259,16 +259,45 @@ async fn the_supervisor_holds_the_sleep_assertion_under_keep_awake() {
     let awake = Install::new(true, "keep_awake = true\n");
     awake.amux(&["server", "start"]);
     let pid = awake.supervisor_pid().unwrap();
-    let held = assertions_of(pid);
+    until_within(
+        "the supervisor to hold the assertion for power",
+        PATIENCE,
+        || {
+            let held = assertions_of(pid);
+            async move {
+                held.iter()
+                    .any(|line| line.contains("PreventSystemSleep"))
+                    .then_some(())
+                    .ok_or(format!("{held:?}"))
+            }
+        },
+    )
+    .await
+    .unwrap();
+    // The one battery honours is the daemon's, and only while an agent
+    // works.
     assert!(
-        held.iter().any(|line| line.contains("PreventSystemSleep")),
-        "{held:?}"
-    );
-    assert!(
-        held.iter()
+        !assertions_of(pid)
+            .iter()
             .any(|line| line.contains("PreventUserIdleSystemSleep")),
-        "{held:?}"
+        "{:?}",
+        assertions_of(pid)
     );
+    // Turned off, it lets go without a restart.
+    awake.amux(&["config", "set", "keep_awake", "false"]);
+    until_within("the supervisor to let go", PATIENCE, || {
+        let held = assertions_of(pid);
+        async move { held.is_empty().then_some(()).ok_or(format!("{held:?}")) }
+    })
+    .await
+    .unwrap();
+    awake.amux(&["config", "set", "keep_awake", "true"]);
+    until_within("the supervisor to hold it again", PATIENCE, || {
+        let held = assertions_of(pid);
+        async move { (!held.is_empty()).then_some(()).ok_or(format!("{held:?}")) }
+    })
+    .await
+    .unwrap();
     awake.amux(&["server", "stop"]);
     assert!(
         assertions_of(pid).is_empty(),

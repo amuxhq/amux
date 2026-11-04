@@ -181,3 +181,70 @@ async fn a_paired_host_learns_the_claude_kind_a_host_publishes() {
     desk_daemon.shutdown().await.unwrap();
     laptop_daemon.shutdown().await.unwrap();
 }
+
+/// Under `keep_awake` the daemon keeps the machine awake while one of its
+/// agents works and lets it sleep once none does; turning the setting off
+/// lets it sleep at once.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_daemon_keeps_the_machine_awake_while_an_agent_works() {
+    let install = Install::new();
+    let gate = install.path("gate");
+    let file = install.path("config.toml");
+    std::fs::write(&file, "keep_awake = true\n").unwrap();
+    let mut options = install.options("boot-1", install.launch("held", vec![wait_for(&gate)]));
+    options.settings = node::SettingsOptions {
+        file: Some(file.clone()),
+        initial: settings::InstallationConfig::from_file(&file).unwrap(),
+        login: None,
+    };
+    let daemon = node::start(options, None).await.unwrap();
+    let runtime = runtime(&daemon, &install);
+    assert!(!daemon.keeps_awake(), "no agent works yet");
+
+    let agent = runtime
+        .spawn(create(&install.work, "busy", Some("hold on")), None)
+        .await
+        .unwrap();
+    let awake = |want: bool| {
+        let daemon = &daemon;
+        move || {
+            let now = daemon.keeps_awake();
+            async move {
+                (now == want)
+                    .then_some(())
+                    .ok_or_else(|| format!("keeps awake: {now}"))
+            }
+        }
+    };
+    until("the working agent to keep the machine awake", awake(true))
+        .await
+        .unwrap();
+    daemon
+        .front_door()
+        .update_settings(Request::new(UpdateSettingsRequest {
+            keep_awake: Some(false),
+            ..UpdateSettingsRequest::default()
+        }))
+        .await
+        .unwrap();
+    assert!(!daemon.keeps_awake(), "off lets it sleep at once");
+    daemon
+        .front_door()
+        .update_settings(Request::new(UpdateSettingsRequest {
+            keep_awake: Some(true),
+            ..UpdateSettingsRequest::default()
+        }))
+        .await
+        .unwrap();
+    assert!(daemon.keeps_awake());
+
+    std::fs::write(&gate, "").unwrap();
+    until("the finished turn to let the machine sleep", awake(false))
+        .await
+        .unwrap();
+
+    let id = uuid::Uuid::from_slice(&agent.agent_id).unwrap();
+    let _ = runtime.kill_agent(id).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}

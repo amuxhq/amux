@@ -108,6 +108,8 @@ pub(crate) struct Installation {
     edge: Mutex<EdgeOptions>,
     /// The settings as last applied.
     applied: Mutex<settings::InstallationConfig>,
+    /// Whether an agent works while `keep_awake` is on.
+    pub(crate) awake: Arc<crate::awake::Awake>,
     pub(crate) settings: crate::host_settings::HostSettings,
     pub(crate) hosted: Mutex<BTreeMap<ProfileId, Hosted>>,
     /// One change to the profile set at a time: create, rename, delete.
@@ -146,6 +148,7 @@ impl Installation {
             *last = config.clone();
             (projects, kind, renamed)
         };
+        self.awake.keep_awake(config.keep_awake);
         if projects.is_none() && kind.is_none() && renamed.is_none() {
             return;
         }
@@ -207,15 +210,21 @@ pub(crate) struct Hosted {
     socket: Option<JoinHandle<()>>,
     /// Republishes the profile when its cloud link's state moves.
     observer: Option<JoinHandle<()>>,
+    /// Tells the installation whether one of its agents is working.
+    working: Option<JoinHandle<()>>,
 }
 
 impl Drop for Hosted {
     fn drop(&mut self) {
-        if let Some(socket) = self.socket.take() {
-            socket.abort();
-        }
-        if let Some(observer) = self.observer.take() {
-            observer.abort();
+        for task in [
+            self.socket.take(),
+            self.observer.take(),
+            self.working.take(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            task.abort();
         }
     }
 }
@@ -324,6 +333,11 @@ impl Installation {
             })
         };
         let socket = self.bind(&runtime)?;
+        let working = crate::awake::follow(
+            Arc::downgrade(&runtime),
+            entry.id,
+            Arc::downgrade(&self.awake),
+        );
         self.hosted.lock().unwrap().insert(
             entry.id,
             Hosted {
@@ -331,6 +345,7 @@ impl Installation {
                 entry,
                 socket,
                 observer: Some(observer),
+                working: Some(working),
             },
         );
         self.publish();
@@ -486,6 +501,9 @@ pub struct Daemon {
     front_door: Option<JoinHandle<()>>,
     /// Applies changes made to the config file beside the daemon.
     following: JoinHandle<()>,
+    /// Holds the machine awake while an agent works, on a supervised
+    /// install.
+    awake: Option<JoinHandle<()>>,
     // Dropped last: the lock outlives everything that writes under it.
     lock: Option<InstallationLock>,
 }
@@ -496,6 +514,9 @@ impl Drop for Daemon {
     /// writing once its lock is released.
     fn drop(&mut self) {
         self.following.abort();
+        if let Some(awake) = self.awake.take() {
+            awake.abort();
+        }
         if let Some(front_door) = self.front_door.take() {
             front_door.abort();
         }
@@ -550,6 +571,7 @@ pub async fn start(
         auto_reports,
         edge: Mutex::new(edge),
         applied: Mutex::new(settings.initial.clone()),
+        awake: Arc::new(crate::awake::Awake::new(settings.initial.keep_awake)),
         settings: crate::host_settings::HostSettings::new(settings),
         hosted: Mutex::new(BTreeMap::new()),
         profile_changes: tokio::sync::Mutex::new(()),
@@ -621,6 +643,10 @@ pub async fn start(
     }
 
     let following = follow_settings(Arc::downgrade(&installation));
+    let awake = installation
+        .settings
+        .supervised()
+        .then(|| installation.awake.hold());
     Ok(Daemon {
         installation,
         generation,
@@ -629,6 +655,7 @@ pub async fn start(
         supervisor,
         front_door,
         following,
+        awake,
         lock: Some(lock),
     })
 }
@@ -706,6 +733,13 @@ impl Daemon {
     /// the signal to shut down.
     pub fn take_supervisor(&mut self) -> Option<ActivationPipe> {
         self.supervisor.take()
+    }
+
+    /// Whether the daemon keeps the machine awake now: `keep_awake` is on
+    /// and one of its agents is working. Only a supervised install takes
+    /// the system's assertion for it.
+    pub fn keeps_awake(&self) -> bool {
+        self.installation.awake.wanted()
     }
 
     /// What sends the analytics waiting, when this installation uploads.

@@ -116,6 +116,38 @@ pub struct UpdatePolicy {
 
 pub type UpdatesFn = Arc<dyn Fn() -> UpdatePolicy + Send + Sync>;
 
+pub type KeepAwakeFn = Arc<dyn Fn() -> bool + Send + Sync>;
+
+/// How often the supervisor reads `keep_awake` again: a change is in force
+/// within it.
+pub const KEEP_AWAKE_POLL: Duration = Duration::from_secs(2);
+
+/// Holds the machine awake on power while `keep_awake` says to, until the
+/// task is aborted, reading it every [`KEEP_AWAKE_POLL`].
+fn keep_awake_on_power(keep_awake: KeepAwakeFn) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut held: Option<KeepAwake> = None;
+        let mut every = tokio::time::interval(KEEP_AWAKE_POLL);
+        every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            every.tick().await;
+            let wanted = keep_awake();
+            if wanted != held.is_some() {
+                held = wanted.then(KeepAwake::on_power);
+            }
+        }
+    })
+}
+
+/// Aborts the task when dropped, releasing what it holds.
+struct Aborting(tokio::task::JoinHandle<()>);
+
+impl Drop for Aborting {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 /// Where releases come from.
 #[derive(Clone, Debug)]
 pub struct UpdateSource {
@@ -141,8 +173,9 @@ pub struct SuperviseOptions {
     pub running: Version,
     pub target: String,
     pub updates: UpdatesFn,
-    /// Whether to hold the machine's sleep assertion (`keep_awake`).
-    pub keep_awake: bool,
+    /// Whether to keep the machine awake while it is on power
+    /// (`keep_awake`), read again as it changes.
+    pub keep_awake: KeepAwakeFn,
     pub clock: Arc<dyn Clock>,
     pub params: Params,
     /// What the supervisor that exec'd this one handed over.
@@ -184,7 +217,7 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
         params,
         inherited,
     } = options;
-    let _awake = keep_awake.then(KeepAwake::hold);
+    let _awake = Aborting(keep_awake_on_power(keep_awake));
     let lock = match inherited.and_then(|inherited| inherited.lock) {
         Some(fd) => SupervisorLock::inherit(fd, &data_dir)?,
         None => SupervisorLock::acquire(&data_dir, inherited.is_some())?,

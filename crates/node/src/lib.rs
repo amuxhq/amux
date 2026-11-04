@@ -12,6 +12,7 @@
 
 mod activation;
 mod auth;
+mod awake;
 mod blobs;
 mod connection;
 mod daemon;

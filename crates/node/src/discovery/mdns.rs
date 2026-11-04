@@ -294,12 +294,14 @@ fn advertisement_from_service(service: &ResolvedService) -> Result<Advertisement
     addrs.sort();
     addrs.dedup();
 
+    let pairing_open = service.get_property_val_str(super::PAIRING_OPEN) == Some("1");
     Ok(Advertisement {
         host_id,
         name,
         version,
         addrs,
         scope,
+        pairing_open,
     })
 }
 

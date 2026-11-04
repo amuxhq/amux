@@ -70,19 +70,25 @@ impl Host {
     }
 
     fn open_window(&mut self, method: WindowMethod, ttl_ms: u64) -> Vec<u8> {
+        match self.open(method, ttl_ms) {
+            WindowSecret::Pin(pin) => pin.into_bytes(),
+            WindowSecret::Qr(secret) => secret,
+            WindowSecret::PinAndQr { .. } => panic!("open a combined window with `open`"),
+        }
+    }
+
+    fn open(&mut self, method: WindowMethod, ttl_ms: u64) -> WindowSecret {
         self.call(1, ClientRequest::StartPairing { method, ttl_ms });
         let out = self.take();
-        match out.iter().find_map(|output| match output {
-            Output::Answer {
-                response: Response::PairingWindow(secret),
-                ..
-            } => Some(secret.clone()),
-            _ => None,
-        }) {
-            Some(WindowSecret::Pin(pin)) => pin.into_bytes(),
-            Some(WindowSecret::Qr(secret)) => secret,
-            None => panic!("expected a window, got {out:?}"),
-        }
+        out.iter()
+            .find_map(|output| match output {
+                Output::Answer {
+                    response: Response::PairingWindow(secret),
+                    ..
+                } => Some(secret.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("expected a window, got {out:?}"))
     }
 
     fn respond(&mut self) {
@@ -96,6 +102,10 @@ impl Host {
     }
 
     fn initiate(&mut self, secret: &[u8]) {
+        self.initiate_with(secret, Method::Pin);
+    }
+
+    fn initiate_with(&mut self, secret: &[u8], method: Method) {
         self.step(Input::PairingOpened {
             session: SESSION,
             opened: Opened::Initiator(Box::new(Initiate {
@@ -104,7 +114,7 @@ impl Host {
                 expect: None,
                 found: false,
                 reachability: Some(Reachability::Cloud),
-                method: Method::Pin,
+                method,
             })),
         });
     }
@@ -183,6 +193,144 @@ fn call_ended(out: &[Output], call: u64) -> Option<Status> {
         } if *ended == CallId(call) => Some(status.clone()),
         _ => None,
     })
+}
+
+fn statuses(out: &[Output]) -> Vec<WindowStatus> {
+    out.iter()
+        .filter_map(|output| match output {
+            Output::Shell(ShellWork::PairWindow(status)) => Some(status.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Runs one joiner through a window with `secret` until it confirms: what
+/// the offerer said along the way.
+fn pair_through(offerer: &mut Host, secret: &[u8], method: Method) -> (Host, Vec<Output>) {
+    let mut joiner = Host::new(JOINER);
+    offerer.respond();
+    joiner.initiate_with(secret, method);
+    let (mut offered, said) = converse(offerer, &mut joiner);
+    if let Some(token) = pending_token(&said) {
+        joiner.call(9, ClientRequest::ConfirmPair { token });
+        offered.extend(converse(offerer, &mut joiner).0);
+    }
+    (joiner, offered)
+}
+
+#[test]
+fn a_combined_window_pairs_by_its_pin() {
+    let mut offerer = Host::new(OFFERER);
+    let WindowSecret::PinAndQr { pin, qr } = offerer.open(WindowMethod::PinOrQr, 5 * MINUTE) else {
+        panic!("a combined window answers both secrets");
+    };
+    assert_eq!(pin.len(), 6);
+    assert_eq!(qr.len(), QR_SECRET_LEN);
+    let (joiner, said) = pair_through(&mut offerer, pin.as_bytes(), Method::Pin);
+    assert!(joiner.trusts(OFFERER) && offerer.trusts(JOINER));
+    assert!(
+        events(&said).iter().any(|event| event.method == Method::Pin
+            && matches!(event.outcome, Outcome::Succeeded { .. }))
+    );
+    assert!(!offerer.daemon.pairing().active(), "one pairing uses it up");
+}
+
+#[test]
+fn a_combined_window_pairs_by_its_qr_secret() {
+    let mut offerer = Host::new(OFFERER);
+    let WindowSecret::PinAndQr { qr, .. } = offerer.open(WindowMethod::PinOrQr, 5 * MINUTE) else {
+        panic!("a combined window answers both secrets");
+    };
+    let (joiner, said) = pair_through(&mut offerer, &qr, Method::Qr);
+    assert!(joiner.trusts(OFFERER) && offerer.trusts(JOINER));
+    assert!(
+        events(&said).iter().any(|event| event.method == Method::Qr
+            && matches!(event.outcome, Outcome::Succeeded { .. }))
+    );
+}
+
+/// The joiner names the kind of secret it holds, never the secret: a QR
+/// secret presented as a PIN is held to the PIN, and fails like any wrong
+/// one, against the window's one budget.
+#[test]
+fn a_combined_window_holds_each_attempt_to_the_secret_it_names() {
+    let mut offerer = Host::new(OFFERER);
+    let WindowSecret::PinAndQr { pin, qr } = offerer.open(WindowMethod::PinOrQr, 5 * MINUTE) else {
+        panic!("a combined window answers both secrets");
+    };
+    let (joiner, _) = pair_through(&mut offerer, &qr, Method::Pin);
+    assert!(!joiner.trusts(OFFERER));
+    let (joiner, _) = pair_through(&mut offerer, pin.as_bytes(), Method::Qr);
+    assert!(!joiner.trusts(OFFERER));
+    for _ in 2..ATTEMPT_LIMIT {
+        pair_through(&mut offerer, b"000000", Method::Pin);
+    }
+    assert!(offerer.daemon.pairing().locked_out());
+}
+
+#[test]
+fn the_window_says_when_a_joiner_is_confirming_and_whom_it_paired() {
+    let mut offerer = Host::new(OFFERER);
+    let pin = offerer.open_window(WindowMethod::Pin, 5 * MINUTE);
+    let mut joiner = Host::new(JOINER);
+    offerer.respond();
+    joiner.initiate(&pin);
+    let (offered, said) = converse(&mut offerer, &mut joiner);
+    assert_eq!(
+        statuses(&offered).last(),
+        Some(&WindowStatus {
+            active: true,
+            joining: true,
+            ..WindowStatus::default()
+        }),
+        "the secret is proven while the joiner's person confirms"
+    );
+    joiner.call(
+        9,
+        ClientRequest::ConfirmPair {
+            token: pending_token(&said).unwrap(),
+        },
+    );
+    let (offered, _) = converse(&mut offerer, &mut joiner);
+    let paired = PairedPeer {
+        host: HostId([JOINER; 16]),
+        name: format!("host {JOINER}"),
+        pubkey: vec![JOINER; 32],
+    };
+    assert_eq!(
+        statuses(&offered).last(),
+        Some(&WindowStatus {
+            paired: Some(paired.clone()),
+            ..WindowStatus::default()
+        })
+    );
+    assert_eq!(offerer.daemon.pairing().status().paired, Some(paired));
+    offerer.open_window(WindowMethod::Pin, MINUTE);
+    assert_eq!(
+        offerer.daemon.pairing().status().paired,
+        None,
+        "a new window starts afresh"
+    );
+}
+
+#[test]
+fn a_joiner_that_abandons_is_no_longer_joining() {
+    let mut offerer = Host::new(OFFERER);
+    let pin = offerer.open_window(WindowMethod::Pin, 5 * MINUTE);
+    let mut joiner = Host::new(JOINER);
+    offerer.respond();
+    joiner.initiate(&pin);
+    let (_, said) = converse(&mut offerer, &mut joiner);
+    assert!(offerer.daemon.pairing().joining());
+    joiner.call(
+        9,
+        ClientRequest::AbandonPair {
+            token: pending_token(&said).unwrap(),
+        },
+    );
+    converse(&mut offerer, &mut joiner);
+    assert!(!offerer.daemon.pairing().joining());
+    assert!(offerer.daemon.pairing().active());
 }
 
 fn events(out: &[Output]) -> Vec<PairingEvent> {

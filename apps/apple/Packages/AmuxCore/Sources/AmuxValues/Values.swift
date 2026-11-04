@@ -2603,22 +2603,19 @@ public struct DiffLine: Codable, Hashable, Sendable {
 }
 
 /// What a host offers to start an agent in: where agents ran lately and the
-/// repositories under its roots.
+/// projects its person chose.
 public struct Directories: Codable, Hashable, Sendable {
     public var recent: [Directory]
-    public var repositories: [Directory]
-    public var roots: [String]
+    public var projects: [Directory]
 
-    public init(recent: [Directory], repositories: [Directory], roots: [String]) {
+    public init(recent: [Directory], projects: [Directory]) {
         self.recent = recent
-        self.repositories = repositories
-        self.roots = roots
+        self.projects = projects
     }
 
     private enum CodingKeys: String, CodingKey {
         case recent
-        case repositories
-        case roots
+        case projects
     }
 }
 
@@ -3719,13 +3716,16 @@ public struct Found: Codable, Hashable, Sendable {
     /// Resolved addresses as `ip:port`, IPv6 in brackets.
     public var addrs: [String]
     public var scope: String
+    /// Its TXT record carries `pair=1`: a pairing window is open on it.
+    public var pairingOpen: Bool?
 
-    public init(hostId: [UInt8], name: String, version: UInt32, addrs: [String], scope: String) {
+    public init(hostId: [UInt8], name: String, version: UInt32, addrs: [String], scope: String, pairingOpen: Bool?) {
         self.hostId = hostId
         self.name = name
         self.version = version
         self.addrs = addrs
         self.scope = scope
+        self.pairingOpen = pairingOpen
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -3734,6 +3734,7 @@ public struct Found: Codable, Hashable, Sendable {
         case version
         case addrs
         case scope
+        case pairingOpen = "pairing_open"
     }
 }
 
@@ -3820,6 +3821,9 @@ public struct HostView: Codable, Hashable, Sendable {
     /// For a candidate: only the cloud relay reaches it, which carries a
     /// pairing only on a paid plan.
     public var relayOnly: Bool
+    /// For a candidate: its network advertisement says a pairing window is
+    /// open on it, so a PIN can work now.
+    public var pairingOpen: Bool
     /// This device's copy of the host's agents has caught up with the host
     /// on a live stream: what the fleet shows for it is what it lists now.
     /// Always true for this device.
@@ -3838,7 +3842,7 @@ public struct HostView: Codable, Hashable, Sendable {
     public var through: String?
     public var version: String?
 
-    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, addrs: [String], relayOnly: Bool, current: Bool, providers: [ProviderSignIn], lastDialError: String?, platform: Platform?, signedIn: Bool?, through: String?, version: String?) {
+    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, addrs: [String], relayOnly: Bool, pairingOpen: Bool, current: Bool, providers: [ProviderSignIn], lastDialError: String?, platform: Platform?, signedIn: Bool?, through: String?, version: String?) {
         self.hostId = hostId
         self.name = name
         self.local = local
@@ -3847,6 +3851,7 @@ public struct HostView: Codable, Hashable, Sendable {
         self.reach = reach
         self.addrs = addrs
         self.relayOnly = relayOnly
+        self.pairingOpen = pairingOpen
         self.current = current
         self.providers = providers
         self.lastDialError = lastDialError
@@ -3865,6 +3870,7 @@ public struct HostView: Codable, Hashable, Sendable {
         case reach
         case addrs
         case relayOnly = "relay_only"
+        case pairingOpen = "pairing_open"
         case current
         case providers
         case lastDialError = "last_dial_error"

@@ -386,6 +386,7 @@ fn found(desk: node::HostId, addrs: Vec<String>) -> app_runtime::values::Found {
         version: node::PROTOCOL_VERSION,
         addrs,
         scope: String::new(),
+        pairing_open: false,
     }
 }
 

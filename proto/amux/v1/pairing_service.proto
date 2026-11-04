@@ -18,6 +18,16 @@ message PairMessage {
     PairingComplete pairing_complete = 5;
     PairingAbandoned pairing_abandoned = 6;
   }
+  // Set on the joining side's first message: which kind of secret it
+  // presents, so a window that takes either a PIN or a QR secret runs the
+  // exchange with that one. A window with one secret ignores it.
+  PairingSecretKind secret_kind = 7;
+}
+
+enum PairingSecretKind {
+  PAIRING_SECRET_KIND_UNSPECIFIED = 0;
+  PAIRING_SECRET_KIND_PIN = 1;
+  PAIRING_SECRET_KIND_QR = 2;
 }
 
 message PairingComplete {}

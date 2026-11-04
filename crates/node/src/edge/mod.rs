@@ -284,6 +284,8 @@ pub struct Edge {
     pair_mode: Arc<crate::driver::pairing::PairWindow>,
     reachability: ReachabilityLinkConnector,
     discovery: Arc<dyn Discovery>,
+    /// What this host advertises on the local network, when it does.
+    advert: Arc<Mutex<Option<Advertisement>>>,
     found: Arc<FoundHosts>,
     scope: String,
     lan_addr: Option<SocketAddr>,
@@ -472,21 +474,25 @@ impl Edge {
             first_flights: first_flights.clone(),
         });
         // A handed set is advertised nowhere: this edge has no advertiser.
+        let mut advert = None;
         if let Some(addr) = lan_addr.filter(|_| !handed) {
             let addrs = if addr.ip().is_unspecified() {
                 local_pairing_addrs(addr.port())
             } else {
                 vec![addr]
             };
+            let advertised = Advertisement {
+                host_id: identity.host_id,
+                name: host_name.clone(),
+                version: crate::PROTOCOL_VERSION,
+                addrs,
+                scope: options.discovery_scope.clone(),
+                pairing_open: pair_mode.is_active(),
+            };
             discovery
-                .advertise(Advertisement {
-                    host_id: identity.host_id,
-                    name: host_name.clone(),
-                    version: crate::PROTOCOL_VERSION,
-                    addrs,
-                    scope: options.discovery_scope.clone(),
-                })
+                .advertise(advertised.clone())
                 .map_err(|error| EdgeError::Discovery(error.to_string()))?;
+            advert = Some(advertised);
         }
         tasks.push(reachability.spawn_dial_on_found(discovery.browse()));
         discovery.requery();
@@ -514,6 +520,7 @@ impl Edge {
             pair_mode,
             reachability,
             discovery,
+            advert: Arc::new(Mutex::new(advert)),
             found,
             scope: options.discovery_scope.clone(),
             lan_addr,
@@ -601,6 +608,28 @@ impl Edge {
             Some(addr) => vec![addr],
             None => Vec::new(),
         }
+    }
+
+    /// Advertises again with the pairing window open or closed, so a phone
+    /// browsing nearby knows whether a PIN can work. The registration may
+    /// block on the system's responder, so it runs off the caller's task;
+    /// each run advertises the latest state, so a quick open and close
+    /// settle on the last.
+    pub(crate) fn advertise_pairing(&self, open: bool) {
+        let (advert, discovery) = (self.advert.clone(), self.discovery.clone());
+        if let Some(current) = advert.lock().unwrap().as_mut() {
+            current.pairing_open = open;
+        } else {
+            return;
+        }
+        tokio::task::spawn_blocking(move || {
+            let advert = advert.lock().unwrap();
+            if let Some(current) = advert.as_ref()
+                && let Err(error) = discovery.advertise(current.clone())
+            {
+                tracing::warn!(%error, open, "could not advertise the pairing window");
+            }
+        });
     }
 
     pub fn discovery_scope(&self) -> &str {
@@ -1065,6 +1094,8 @@ impl Edge {
     }
 
     pub(crate) async fn stop(&self, reason: wire::LinkCloseReason) {
+        // Nothing advertises again once the record is withdrawn.
+        self.advert.lock().unwrap().take();
         self.discovery.withdraw();
         self.reachability.stop_dialling();
         stop_step("saying goodbye on every link");
@@ -1095,6 +1126,7 @@ impl Edge {
 
 impl Drop for Edge {
     fn drop(&mut self) {
+        self.advert.lock().unwrap().take();
         self.discovery.withdraw();
         self.shutdown.send_replace(true);
         for task in self.tasks.lock().unwrap().drain(..) {

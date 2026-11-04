@@ -6,8 +6,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::HostId;
 
-/// What a pairing link starts with; the rest is the invitation, base64.
+/// What the app's own pairing link starts with; the rest is the
+/// invitation, base64.
 pub const PAIR_LINK: &str = "amux://pair?payload=";
+
+/// The path of the cloud's pairing page. The invitation follows it after
+/// `#`, so it never reaches the server: a phone with the app opens the link
+/// in the app, and one without is sent to the App Store.
+const PAIR_PAGE: &str = "/p#";
 
 const QR_SECRET_LEN: usize = 32;
 
@@ -24,7 +30,7 @@ pub struct QrPairingPayload {
 
 #[derive(Debug, thiserror::Error)]
 pub enum QrPairingError {
-    #[error("a pairing link starts with {PAIR_LINK}")]
+    #[error("a pairing link is https://<cloud>/p#<invitation> or starts with {PAIR_LINK}")]
     NotALink,
     #[error("the pairing link's payload is not base64: {0}")]
     Base64(#[from] base64::DecodeError),
@@ -75,7 +81,7 @@ pub fn encode_qr_pairing_invitation(
     Ok(serde_json::to_string(&payload)?)
 }
 
-/// The link a QR code shows for an invitation.
+/// The app's own link for an invitation: `amux://pair?payload=…`.
 pub fn pair_link(invitation_json: &str) -> String {
     format!(
         "{PAIR_LINK}{}",
@@ -83,12 +89,31 @@ pub fn pair_link(invitation_json: &str) -> String {
     )
 }
 
-/// The invitation a pairing link carries.
+/// The link a QR code shows for an invitation: the cloud's pairing page,
+/// `https://amux.sh/p#…`, so a phone's camera opens it whether or not the
+/// app is installed yet.
+pub fn qr_link(cloud_url: &str, invitation_json: &str) -> String {
+    format!(
+        "{}{PAIR_PAGE}{}",
+        cloud_url.trim_end_matches('/'),
+        URL_SAFE_NO_PAD.encode(invitation_json.as_bytes())
+    )
+}
+
+/// The invitation a pairing link carries: the cloud page's link, whatever
+/// cloud it names, or the app's own.
 pub fn parse_pair_link(link: &str) -> Result<QrPairingPayload, QrPairingError> {
-    let encoded = link
-        .trim()
-        .strip_prefix(PAIR_LINK)
-        .ok_or(QrPairingError::NotALink)?;
+    let link = link.trim();
+    let encoded = match link.strip_prefix(PAIR_LINK) {
+        Some(encoded) => encoded,
+        None => link
+            .strip_prefix("https://")
+            .or_else(|| link.strip_prefix("http://"))
+            .and_then(|rest| rest.split_once('/'))
+            .and_then(|(host, path)| (!host.is_empty()).then_some(path))
+            .and_then(|path| path.strip_prefix(&PAIR_PAGE[1..]))
+            .ok_or(QrPairingError::NotALink)?,
+    };
     let json = URL_SAFE_NO_PAD.decode(encoded)?;
     let json = std::str::from_utf8(&json).map_err(|_| QrPairingError::NotText)?;
     parse_qr_pairing_payload(json)
@@ -150,6 +175,34 @@ mod tests {
         assert_eq!(parsed.cloud_url.as_deref(), Some("https://relay.example"));
         assert_eq!(parsed.addrs, vec!["192.0.2.4:9001".parse().unwrap()]);
         assert_eq!(parsed.secret, vec![9; 32]);
+    }
+
+    #[test]
+    fn both_forms_of_a_pairing_link_carry_the_invitation() {
+        let invitation =
+            encode_qr_pairing_invitation(HostId::from_u128(1), &[], None, &[9; 32]).unwrap();
+        let web = qr_link("https://amux.sh/", &invitation);
+        assert!(web.starts_with("https://amux.sh/p#"), "{web}");
+        assert!(!web.contains('='), "no padding: {web}");
+        for link in [
+            web,
+            pair_link(&invitation),
+            qr_link("http://127.0.0.1:9", &invitation),
+        ] {
+            let parsed = parse_pair_link(&link).unwrap();
+            assert_eq!(parsed.host_id, HostId::from_u128(1));
+            assert_eq!(parsed.secret, vec![9; 32]);
+        }
+        for link in [
+            "https://amux.sh/get#abc",
+            "https:///p#abc",
+            "amux://pairing?payload=abc",
+        ] {
+            assert!(matches!(
+                parse_pair_link(link),
+                Err(QrPairingError::NotALink)
+            ));
+        }
     }
 
     #[test]

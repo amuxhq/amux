@@ -37,7 +37,7 @@ pub use phone::Phone;
 use sha2::{Digest, Sha256};
 use wire::{
     BeginPairRequest, Empty, HostRef, StartPairingRequest, begin_pair_request, host_ref,
-    pairing_window, start_pairing_request,
+    start_pairing_request,
 };
 
 /// What a test or a driving build changes about the network edge.
@@ -493,27 +493,12 @@ impl EmbeddedRuntime {
                 ttl_seconds: None,
             })
             .await?;
-        let Some(pairing_window::Secret::QrSecret(secret)) = &started.secret else {
+        if started.qr_link.is_empty() {
             return Err(EmbeddedError::Relay(
                 "pairing mode opened without a link secret".into(),
             ));
-        };
-        let host = node::HostId::from_slice(
-            &started
-                .identity
-                .as_ref()
-                .map(|identity| identity.host_id.clone())
-                .unwrap_or_default(),
-        )
-        .map_err(|_| EmbeddedError::NoProfile(profile))?;
-        let addrs: Vec<SocketAddr> = started
-            .addrs
-            .iter()
-            .filter_map(|addr| addr.parse().ok())
-            .collect();
-        let invitation =
-            node::encode_qr_pairing_invitation(host, &addrs, started.cloud_url.as_deref(), secret)?;
-        Ok(node::pair_link(&invitation))
+        }
+        Ok(started.qr_link)
     }
 
     /// Trusts the machine an attempt reached.
@@ -574,6 +559,7 @@ impl EmbeddedRuntime {
                         .filter_map(|addr| addr.parse().ok())
                         .collect(),
                     scope: found.scope,
+                    pairing_open: found.pairing_open,
                 })
             })
             .collect();

@@ -88,9 +88,13 @@ relay cannot read.
 ## Chapter 0: Discovery
 
 A listening profile advertises `_amux._udp` through DNS-SD. Its SRV record
-names the ephemeral or configured QUIC port; its TXT record carries three
-properties: `v` (the protocol version), `hid` (the host id, hyphenated) and
-`scope` (the discovery scope). Resolving it produces a name and socket-address
+names the ephemeral or configured QUIC port; its TXT record carries `v` (the
+protocol version), `hid` (the host id, hyphenated), `name` (the host's own
+name, which a renamed instance such as "desk (2)" does not change), `scope`
+(the discovery scope) and, only while a pairing window is open, `pair=1`. The
+host advertises again whenever its window opens or closes, so a phone that
+finds it knows whether a PIN can work now: a found candidate carries the flag
+as `Candidate.pairing_open`. Resolving it produces a name and socket-address
 dial hints. Browsing is a standing subscription: a goodbye or TTL expiry
 removes a result, while a fresh resolution updates its addresses. On iOS the
 app browses with `NWBrowser` and feeds the results in; `node` itself does
@@ -135,10 +139,15 @@ process. None of them is ever a peer call.
 ## Chapter 2: Pairing
 
 PIN and QR pairing use one SPAKE2 exchange. The PIN is six digits. The QR
-contains JSON `{host_id, secret, addrs, cloud_url?}` inside an
-`amux://pair?payload=...` deep link (URL-safe base64, no padding); `secret` is
-a one-shot 256-bit value and `addrs` let pairing work when multicast is
-unavailable. A found advertisement, a typed address, the QR addresses, SSH, or
+contains JSON `{host_id, secret, addrs, cloud_url?}`, URL-safe base64 with no
+padding, after the `#` of the cloud's pairing page,
+`https://<cloud>/p#<payload>`: the profile's cloud, amux.sh when it has none.
+The daemon composes that link (`PairingWindow.qr_link`) for every window with
+a QR secret. The payload is a fragment, so it never reaches the server: a
+phone with the app opens the link in the app, and one without lands on the
+page, which sends it to the App Store. Phones also accept the app's own
+`amux://pair?payload=...` link. `secret` is a one-shot 256-bit value and
+`addrs` let pairing work when multicast is unavailable. A found advertisement, a typed address, the QR addresses, SSH, or
 a neighbor that forwards can all lead to the same exchange. Direct candidates
 are tried with a two-second QUIC dial each, so a silent address does not
 prevent trying the next one. After them, each neighbor announcing the other
@@ -154,7 +163,11 @@ messages B to A then A to B. Both sides hash the big-endian
 `amux-pair-spake2-v1` derives confirmation keys (`kc/A`, `kc/B`) and
 ChaCha20-Poly1305 keys (`aead/A→B`, `aead/B→A`). The sealed identity contains
 the public key and a host name, with direction and transcript in the
-additional authenticated data. `PairingComplete` commits both stores.
+additional authenticated data. `PairingComplete` commits both stores. The
+joiner's first message names the kind of secret it presents
+(`PairMessage.secret_kind`, a PIN or a QR secret), never the secret, so a
+window that takes both runs the exchange against that one; a window with one
+secret ignores it.
 Every secret failure is the same opaque `INVALID_PIN`. A side that ends the
 stream with a refusal sends a status whose details carry a `PairingError`
 naming its reason (`INVALID_PIN`, `LOCKED` once too many wrong secrets closed
@@ -176,7 +189,10 @@ anonymous channel to `PairingService`. SPAKE2 authenticates that exchange and
 creates the pins later channel handshakes check. A window lasts the length
 its `StartPairing` names, five minutes when it names none, and never more
 than 90 days, whatever its method. PIN and QR windows are one-shot and allow
-five attempts. A demo PIN window holds a PIN the operator chose
+five attempts. A `pin_or_qr` window, the one a first run opens, holds a fresh
+PIN and a fresh QR secret at once (`PairingWindow.pin_and_qr`): either pairs,
+one pairing uses both up, and every attempt counts against its one budget of
+five. A demo PIN window holds a PIN the operator chose
 (`amux pair --demo`) and is reusable: success does not consume it and failed
 attempts do not close it. A window lives in the daemon's memory, so none
 survives a restart, and a start run again afterwards opens a fresh one.
@@ -195,7 +211,12 @@ reason `HOST_UNREACHABLE`, naming what it tried, never `UNAVAILABLE`, which
 means this daemon is not answering.
 Neither trust store changes during this phase. The profile's pairing
 administration holds the open stream behind the single-use token until that
-expiry, and holds at most 32 at once. The token is a local capability, not a
+expiry, and holds at most 32 at once. While a joiner holds the window's secret
+proven and its person confirms, the window's `PairingStatus.joining` is set;
+once the pairing commits, `PairingStatus.paired` names the peer the window
+trusted until another window opens. `WatchPairing` streams the status now and
+on every change, so a screen showing the code moves to "pairing…" and then
+"paired" without polling. The token is a local capability, not a
 trust decision a client could recreate from the identity fields it displays.
 `ConfirmPair` sends the initiator's sealed identity, waits for the responder's
 trust commit, stores the peer and dials it. A `ConfirmPair` or `AbandonPair`
@@ -770,7 +791,8 @@ door (`crates/node/src/front_door.rs`) converts.
 `ProfileAdminService`, on each profile's own socket, is that profile's
 administration, so none of its calls names a profile: it signs the profile
 out (`SignOut`); opens, reports and cancels pairing
-windows (`StartPairing`, `GetPairingStatus`, `CancelPairing`); runs the
+windows (`StartPairing`, `GetPairingStatus`, `WatchPairing`,
+`CancelPairing`); runs the
 initiator's side of pairing (`BeginPair`, `ConfirmPair`, `AbandonPair`);
 reports this device's identity; records a peer an SSH exchange
 authenticated (`TrustSshPeer`); lists and unpairs peers; and

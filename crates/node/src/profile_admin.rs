@@ -56,7 +56,10 @@ impl ProfileAdminService for ProfileAdmin {
         &self,
         _request: Request<wire::Empty>,
     ) -> Result<Response<Self::WatchPairingStream>, Status> {
-        Err(Status::unimplemented("watching pairing"))
+        use futures_util::StreamExt as _;
+        Ok(Response::new(Box::pin(
+            self.edge()?.watch_pairing().map(Ok),
+        )))
     }
 
     async fn offer_sign_in(
@@ -102,12 +105,7 @@ impl ProfileAdminService for ProfileAdmin {
         &self,
         _request: Request<wire::Empty>,
     ) -> Result<Response<PairingStatus>, Status> {
-        let edge = self.edge()?;
-        Ok(Response::new(PairingStatus {
-            active: edge.pairing_active(),
-            locked_out: edge.pairing_locked_out(),
-            ..PairingStatus::default()
-        }))
+        Ok(Response::new(self.edge()?.pairing_status()))
     }
 
     async fn cancel_pairing(

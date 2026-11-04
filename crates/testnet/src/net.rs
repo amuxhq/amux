@@ -2486,6 +2486,7 @@ impl Net {
                 .scope
                 .clone()
                 .unwrap_or_else(|| self.topology.scope.clone()),
+            pairing_open: false,
         });
     }
 

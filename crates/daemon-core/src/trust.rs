@@ -735,7 +735,10 @@ impl Daemon {
                     status: Status::Failed(CallError::Trust(error)),
                 }),
             },
-            Some(Waiter::Pairing(session)) => self.pairing_committed(session, result, out),
+            Some(Waiter::Pairing(session)) => {
+                self.pairing_committed(session, result, out);
+                self.publish_status(out);
+            }
             Some(Waiter::Ssh { call, host, role }) => {
                 self.ssh_committed(call, host, role, result, out)
             }

@@ -39,6 +39,8 @@ pub struct Candidate {
     pub host: HostId,
     pub name: String,
     pub addrs: Vec<String>,
+    /// Its advertisement says a pairing window is open on it.
+    pub pairing_open: bool,
 }
 
 /// What the providers on a trusted host offer, as its own entry said.
@@ -247,6 +249,7 @@ impl Daemon {
                 }),
                 standing: Some(Standing::Candidate(wire::Candidate {
                     addrs: candidate.addrs.clone(),
+                    pairing_open: candidate.pairing_open,
                     ..wire::Candidate::default()
                 })),
                 ..HostEntry::default()

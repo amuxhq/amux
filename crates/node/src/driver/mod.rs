@@ -1292,7 +1292,14 @@ impl CoreThread {
                     Self::trust_changed(runtime, uuid::Uuid::from_bytes(host.0), changed);
                 }
             }
-            ShellWork::PairWindow { active, locked_out } => self.window.publish(active, locked_out),
+            ShellWork::PairWindow(status) => {
+                let open = status.active;
+                if self.window.publish(status)
+                    && let Some(edge) = runtime.edge()
+                {
+                    edge.advertise_pairing(open);
+                }
+            }
             ShellWork::Pairing(event) => pairing::record(&event, runtime.analytics()),
         }
     }

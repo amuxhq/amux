@@ -459,6 +459,9 @@ pub struct HostView {
     /// For a candidate: only the cloud relay reaches it, which carries a
     /// pairing only on a paid plan.
     pub relay_only: bool,
+    /// For a candidate: its network advertisement says a pairing window is
+    /// open on it, so a PIN can work now.
+    pub pairing_open: bool,
     /// For this device: whether it is signed in to the account its profile
     /// is bound to; None while it was never bound.
     pub signed_in: Option<bool>,
@@ -687,6 +690,9 @@ pub struct Found {
     /// Resolved addresses as `ip:port`, IPv6 in brackets.
     pub addrs: Vec<String>,
     pub scope: String,
+    /// Its TXT record carries `pair=1`: a pairing window is open on it.
+    #[serde(default)]
+    pub pairing_open: bool,
 }
 
 /// One of this device's profiles, one per account it signed in to, and the

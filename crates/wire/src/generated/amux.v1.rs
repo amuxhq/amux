@@ -10602,6 +10602,11 @@ pub mod installation_service_server {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PairMessage {
+    /// Set on the joining side's first message: which kind of secret it
+    /// presents, so a window that takes either a PIN or a QR secret runs the
+    /// exchange with that one. A window with one secret ignores it.
+    #[prost(enumeration = "PairingSecretKind", tag = "7")]
+    pub secret_kind: i32,
     #[prost(oneof = "pair_message::Body", tags = "1, 2, 3, 4, 5, 6")]
     pub body: ::core::option::Option<pair_message::Body>,
 }
@@ -10760,6 +10765,35 @@ impl ::prost::Name for PairingIdentity {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.PairingIdentity".into()
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum PairingSecretKind {
+    Unspecified = 0,
+    Pin = 1,
+    Qr = 2,
+}
+impl PairingSecretKind {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "PAIRING_SECRET_KIND_UNSPECIFIED",
+            Self::Pin => "PAIRING_SECRET_KIND_PIN",
+            Self::Qr => "PAIRING_SECRET_KIND_QR",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "PAIRING_SECRET_KIND_UNSPECIFIED" => Some(Self::Unspecified),
+            "PAIRING_SECRET_KIND_PIN" => Some(Self::Pin),
+            "PAIRING_SECRET_KIND_QR" => Some(Self::Qr),
+            _ => None,
+        }
     }
 }
 /// Generated client implementations.

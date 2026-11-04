@@ -513,7 +513,7 @@ mod tests {
         let uploader = start(&server, open(), accounts());
         Analytics::new(UNBOUND, uploader.sink()).record(Event::Installed);
         Analytics::new(BOUND, uploader.sink()).record(Event::SignedIn {
-            via: crate::Via::Browser,
+            via: crate::SignInVia::Browser,
         });
         uploader.flush(Duration::from_secs(5)).await;
         let requests = server.requests();
@@ -543,7 +543,7 @@ mod tests {
             Endpoint::Fixed("http://localhost:5000".into()),
         );
         Analytics::new(BOUND, uploader.sink()).record(Event::SignedIn {
-            via: crate::Via::Browser,
+            via: crate::SignInVia::Browser,
         });
         uploader.flush(Duration::from_secs(5)).await;
         let requests = server.requests();
@@ -587,7 +587,7 @@ mod tests {
         server.answer_next(&[Posted::Unauthorized]);
         let uploader = start(&server, open(), accounts());
         Analytics::new(BOUND, uploader.sink()).record(Event::SignedIn {
-            via: crate::Via::Browser,
+            via: crate::SignInVia::Browser,
         });
         uploader.flush(Duration::from_secs(5)).await;
         let requests = server.requests();

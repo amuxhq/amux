@@ -8,10 +8,10 @@
 //! ends it as [`Output::PairEnded`] says.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use daemon_core::pairing::{Failure, Initiate, Opened, PairFailure, PairingEvent};
+use daemon_core::pairing::{Failure, Initiate, Opened, PairFailure, PairingEvent, WindowStatus};
 use daemon_core::payload::{CallError, ClientRequest, PairMessage, Response, Status};
 use daemon_core::{Input, PairingId};
 use futures_util::{Stream, stream};
@@ -22,28 +22,66 @@ use super::calls::Delivered;
 use super::{Ask, Driver};
 use crate::trust::{Reachability, SharedTrustStore};
 
-/// Whether the pairing window is open, and whether too many wrong secrets
-/// closed the last one, as the core last said: what the pre-trust
-/// handshake reads before a stream reaches the core.
-#[derive(Debug, Default)]
+/// The pairing window as the core last said: what the pre-trust handshake
+/// reads before a stream reaches the core, what the discovery advertisement
+/// follows, and what people watching the window are told.
+#[derive(Debug)]
 pub struct PairWindow {
-    active: AtomicBool,
-    locked_out: AtomicBool,
+    status: tokio::sync::watch::Sender<WindowStatus>,
+}
+
+impl Default for PairWindow {
+    fn default() -> Self {
+        PairWindow {
+            status: tokio::sync::watch::Sender::new(WindowStatus::default()),
+        }
+    }
 }
 
 impl PairWindow {
     pub(crate) fn is_active(&self) -> bool {
-        self.active.load(Ordering::Acquire)
+        self.status.borrow().active
     }
 
     pub(crate) fn is_locked_out(&self) -> bool {
-        self.locked_out.load(Ordering::Acquire)
+        self.status.borrow().locked_out
     }
 
-    /// Takes the core's word on the window.
-    pub(crate) fn publish(&self, active: bool, locked_out: bool) {
-        self.active.store(active, Ordering::Release);
-        self.locked_out.store(locked_out, Ordering::Release);
+    /// The window now.
+    pub(crate) fn status(&self) -> WindowStatus {
+        self.status.borrow().clone()
+    }
+
+    /// The window now and on every change.
+    pub(crate) fn watch(&self) -> tokio::sync::watch::Receiver<WindowStatus> {
+        self.status.subscribe()
+    }
+
+    /// Takes the core's word on the window: whether it opened or closed.
+    pub(crate) fn publish(&self, status: WindowStatus) -> bool {
+        let mut moved = false;
+        self.status.send_if_modified(|current| {
+            moved = current.active != status.active;
+            let changed = *current != status;
+            *current = status;
+            changed
+        });
+        moved
+    }
+}
+
+/// The window as the wire says it.
+pub(crate) fn status_to_wire(status: &WindowStatus) -> wire::PairingStatus {
+    wire::PairingStatus {
+        active: status.active,
+        locked_out: status.locked_out,
+        joining: status.joining,
+        paired: status.paired.as_ref().map(|peer| wire::Peer {
+            host_id: peer.host.0.to_vec(),
+            name: peer.name.clone(),
+            pubkey: peer.pubkey.clone(),
+            ssh_target: None,
+        }),
     }
 }
 

@@ -233,6 +233,9 @@ impl AppRuntime {
                     .and_then(|candidate| candidate.through_paired().next())
                     .map(|through| through.name.clone()),
                 relay_only: host.candidate().is_some_and(wire::Candidate::relay_only),
+                pairing_open: host
+                    .candidate()
+                    .is_some_and(|candidate| candidate.pairing_open),
                 signed_in: host.account_signed_in(),
                 current: host.current(),
                 providers: host

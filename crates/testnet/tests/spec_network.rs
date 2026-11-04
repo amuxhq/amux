@@ -629,6 +629,7 @@ fn advert(net: &Net, host: &str, addr: std::net::SocketAddr, scope: &str) -> Adv
         version: wire::PROTOCOL_VERSION,
         addrs: vec![addr],
         scope: scope.to_owned(),
+        pairing_open: false,
     }
 }
 

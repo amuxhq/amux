@@ -2,9 +2,11 @@
   "host_id": "6d7a4b1e-3c2f-4a58-9b0d-1e2f3a4b5c6d",
   "version": 4,
   "scope": "worktree-a",
+  "pairing_open": true,
   "txt": {
     "hid": "6d7a4b1e-3c2f-4a58-9b0d-1e2f3a4b5c6d",
     "name": "Studio",
+    "pair": "1",
     "scope": "worktree-a",
     "v": "4"
   }

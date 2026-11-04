@@ -28,8 +28,8 @@ pub const SERVICE_TYPE: &str = "_amux._udp.local.";
 
 /// The TXT properties an advertisement carries. Everything that publishes one
 /// writes these, so a browser reads the same record whoever put it up.
-pub fn txt_properties(advert: &Advertisement) -> [(&'static str, String); 4] {
-    [
+pub fn txt_properties(advert: &Advertisement) -> Vec<(&'static str, String)> {
+    let mut properties = vec![
         ("v", advert.version.to_string()),
         // Hyphenated: the iPhone app parses this with Foundation's
         // `UUID(uuidString:)`, which rejects the 32-digit simple form.
@@ -40,8 +40,17 @@ pub fn txt_properties(advert: &Advertisement) -> [(&'static str, String); 4] {
         // if it were the second of two.
         ("name", advert.name.clone()),
         ("scope", advert.scope.clone()),
-    ]
+    ];
+    // Only while a window is open, so a phone that finds the host offers a
+    // PIN pad that can succeed, and otherwise says to open amux there.
+    if advert.pairing_open {
+        properties.push((PAIRING_OPEN, "1".to_owned()));
+    }
+    properties
 }
+
+/// The TXT property present while a pairing window is open.
+pub const PAIRING_OPEN: &str = "pair";
 
 /// A monotonic pause longer than this is treated as a system wake.
 pub const WAKE_GAP: Duration = Duration::from_secs(30);
@@ -85,6 +94,8 @@ pub struct Advertisement {
     /// scope equals its own, matched exactly: real machines leave it empty,
     /// and a worktree or a test network sets its own so the two never meet.
     pub scope: String,
+    /// A pairing window is open on the host.
+    pub pairing_open: bool,
 }
 
 /// An update from a standing discovery subscription.

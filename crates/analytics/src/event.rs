@@ -80,33 +80,6 @@ tokens! {
 }
 
 tokens! {
-    /// Which side of a one-tap sign-in this device was: the signed-in one
-    /// offering its account, or the paired one asked to take it.
-    OfferRole {
-        Offerer => "offerer",
-        Receiver => "receiver",
-    }
-}
-
-tokens! {
-    /// What became of a one-tap sign-in offer.
-    OfferOutcome {
-        Shown => "shown",
-        Accepted => "accepted",
-        Dismissed => "dismissed",
-    }
-}
-
-tokens! {
-    /// How a profile came to be signed in: through the account's page in
-    /// a browser, or by a paired device offering its account.
-    Via {
-        Browser => "browser",
-        PairedDevice => "paired_device",
-    }
-}
-
-tokens! {
     /// Who asked for an agent: a person, or another agent through its tools.
     By {
         Person => "person",
@@ -159,6 +132,37 @@ tokens! {
         /// Pairing a host with itself.
         SelfPairing => "self_pairing",
         Other => "other",
+    }
+}
+
+tokens! {
+    /// How a profile came to sign in.
+    SignInVia {
+        /// Through the account service's own pages, in a browser.
+        Browser => "browser",
+        /// A paired device signed in to the account offered it, and this
+        /// profile accepted.
+        PairedDevice => "paired_device",
+    }
+}
+
+tokens! {
+    /// Which side of a one-tap sign-in this profile was.
+    OfferRole {
+        /// Signed in, it offered a paired device its account.
+        Offerer => "offerer",
+        /// Signed out, it was offered a paired device's account.
+        Receiver => "receiver",
+    }
+}
+
+tokens! {
+    /// What became of a one-tap sign-in offer.
+    OfferOutcome {
+        /// A client put the offer in front of its person.
+        Shown => "shown",
+        Accepted => "accepted",
+        Dismissed => "dismissed",
     }
 }
 
@@ -390,7 +394,7 @@ pub enum Event {
         reason: PairingFailure,
     },
     SignedIn {
-        via: Via,
+        via: SignInVia,
     },
     SignInFailed {
         reason: SignInFailure,
@@ -663,7 +667,9 @@ impl Event {
                 method: Method::Pin,
                 reason: PairingFailure::WrongSecret,
             },
-            Event::SignedIn { via: Via::Browser },
+            Event::SignedIn {
+                via: SignInVia::PairedDevice,
+            },
             Event::SignInFailed {
                 reason: SignInFailure::Rejected,
             },

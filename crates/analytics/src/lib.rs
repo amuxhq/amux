@@ -27,7 +27,7 @@ pub use context::{
 pub use event::{
     Ask, By, CheckCause, CheckCore, CheckId, CheckIn, Client, Counts, Event, Interval, Kind,
     Method, OfferOutcome, OfferRole, On, PairingFailure, PaywallFrom, Recorded, RelayCarrier, Role,
-    Route, SignInFailure, Step, StepOutcome, Tier, Token, Via,
+    Route, SignInFailure, SignInVia, Step, StepOutcome, Tier, Token,
 };
 
 /// The public page saying what amux sends and how to turn it off, which the
@@ -232,7 +232,7 @@ mod tests {
                 "pairing_failed",
                 json!({"role": "offerer", "method": "pin", "reason": "wrong_secret"}),
             ),
-            ("signed_in", json!({"via": "browser"})),
+            ("signed_in", json!({"via": "paired_device"})),
             ("sign_in_failed", json!({"reason": "rejected"})),
             ("signed_out", json!({})),
             ("relay_refused", json!({})),

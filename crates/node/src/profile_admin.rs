@@ -36,6 +36,12 @@ impl ProfileAdmin {
     }
 }
 
+/// The paired host a call names.
+fn host(bytes: &[u8]) -> Result<uuid::Uuid, Status> {
+    uuid::Uuid::from_slice(bytes)
+        .map_err(|_| failed(ErrorCode::InvalidArgument, "host_id names no host"))
+}
+
 /// A pairing's token, which `BeginPair` handed out: never empty.
 fn token(token: &[u8]) -> Result<&[u8], Status> {
     if token.is_empty() {
@@ -56,28 +62,58 @@ impl ProfileAdminService for ProfileAdmin {
         &self,
         _request: Request<wire::Empty>,
     ) -> Result<Response<Self::WatchPairingStream>, Status> {
-        Err(Status::unimplemented("watching pairing"))
+        use futures_util::StreamExt as _;
+        Ok(Response::new(Box::pin(
+            self.edge()?.watch_pairing().map(Ok),
+        )))
     }
 
     async fn offer_sign_in(
         &self,
-        _request: Request<wire::OfferSignInRequest>,
+        request: Request<wire::OfferSignInRequest>,
     ) -> Result<Response<wire::Empty>, Status> {
-        Err(Status::unimplemented("offering sign-in"))
+        let host = host(&request.into_inner().host_id)?;
+        self.edge()?.offer_sign_in(host)?;
+        Ok(Response::new(wire::Empty {}))
     }
 
     async fn subscribe_sign_in_offers(
         &self,
         _request: Request<wire::Empty>,
     ) -> Result<Response<Self::SubscribeSignInOffersStream>, Status> {
-        Err(Status::unimplemented("sign-in offers"))
+        use futures_util::StreamExt as _;
+        Ok(Response::new(Box::pin(
+            self.edge()?.watch_sign_in_offers().map(Ok),
+        )))
     }
 
     async fn answer_sign_in_offer(
         &self,
-        _request: Request<wire::AnswerSignInOfferRequest>,
+        request: Request<wire::AnswerSignInOfferRequest>,
     ) -> Result<Response<wire::Profile>, Status> {
-        Err(Status::unimplemented("answering a sign-in offer"))
+        let request = request.into_inner();
+        let host = host(&request.host_id)?;
+        let edge = self.edge()?;
+        if !request.accept {
+            edge.dismiss_sign_in_offer(host)?;
+            let state = self
+                .registry
+                .list()?
+                .into_iter()
+                .find(|state| state.id == self.profile)
+                .ok_or_else(|| failed(ErrorCode::NotFound, "the profile is gone"))?;
+            return Ok(Response::new(info(state)));
+        }
+        let (ticket, cloud_url) = edge.take_sign_in_ticket(host).await?;
+        let state = crate::edge::sign_in_offers::redeem_and_bind(
+            &self.registry,
+            self.profile,
+            &edge,
+            ticket,
+            cloud_url,
+        )
+        .await?;
+        Ok(Response::new(info(state)))
     }
 
     async fn sign_out(
@@ -102,12 +138,7 @@ impl ProfileAdminService for ProfileAdmin {
         &self,
         _request: Request<wire::Empty>,
     ) -> Result<Response<PairingStatus>, Status> {
-        let edge = self.edge()?;
-        Ok(Response::new(PairingStatus {
-            active: edge.pairing_active(),
-            locked_out: edge.pairing_locked_out(),
-            ..PairingStatus::default()
-        }))
+        Ok(Response::new(self.edge()?.pairing_status()))
     }
 
     async fn cancel_pairing(

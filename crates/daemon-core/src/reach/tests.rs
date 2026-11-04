@@ -176,6 +176,7 @@ fn found(daemon: &mut Daemon, host: HostId, addrs: &[&str]) -> Vec<Output> {
                 host,
                 name: "found".into(),
                 addrs: addrs.iter().map(|addr| (*addr).to_owned()).collect(),
+                pairing_open: false,
             }],
         },
     )

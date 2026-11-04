@@ -71,7 +71,7 @@ pub use net::{
 pub use observe::{
     InventoryObserver, Observer, ObserverOf, PATIENCE, Stuck, holds_for, until, until_within,
 };
-pub use relay::{CREDENTIAL_TTL, RELAY_HOST, Received, Relay};
+pub use relay::{CREDENTIAL_TTL, RELAY_HOST, Received, Relay, Ticket};
 pub use router::{Router, RouterKind};
 pub use sim::{SimNet, SimOptions};
 pub use topology::{

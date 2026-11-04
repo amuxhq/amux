@@ -337,12 +337,17 @@ fn a_host_discovery_finds_and_the_relay_announces_is_one_nearby_candidate() {
                 host: NAS,
                 name: "nas".into(),
                 addrs: vec!["192.168.1.9:4000".into()],
+                pairing_open: true,
             }],
         },
     );
     linked(&mut daemon, 1, RELAY, CarrierKind::Relay, &[NAS]);
     let nas = candidate(&daemon, NAS);
     assert_eq!(nas.addrs, vec!["192.168.1.9:4000".to_owned()]);
+    assert!(
+        nas.pairing_open,
+        "its advertisement's open window rides along"
+    );
     assert_eq!(announcers(&nas), vec![(RELAY, true)]);
     assert!(nas.nearby() && !nas.relay_only());
     assert_eq!(entry(&daemon, NAS).name(), "nas");

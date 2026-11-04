@@ -133,6 +133,34 @@ at. A failed sign-in in one leaves the others working. Profiles keep amux's
 own state apart; they do not sandbox the agents, which run as your user
 with your user's access to the machine.
 
+### Signing in a paired device
+
+The relay joins only devices on the same account, so a phone paired with a
+signed-in computer would otherwise have to sign in a second time before it
+could reach that computer from anywhere. Instead the signed-in side can
+offer the paired device its account, and the person there accepts with one
+tap:
+
+1. On the signed-in device, its person chooses to offer the paired device
+   the account (the first run does this for the phone it just paired, with
+   a box already ticked). That choice is the account owner's consent; no
+   paired device is offered an account without it.
+2. The offer waits on the signed-in device, in memory, and goes to the paired
+   device over their encrypted link whenever that device connects and says
+   it is signed out. A device already signed in is offered nothing.
+3. The paired device shows "Sign in as *email*?" with the account's email
+   and the offering machine's name.
+4. Accepting asks the offering device for a ticket. It asks amux.sh for one
+   bound to the paired device's host id, valid once and for a minute, and
+   sends it back over the link; the paired device trades it at once for
+   sign-in tokens of its own, under its own sign-in client, and signs in the
+   profile the offer reached.
+5. Dismissing ends the offer; it is not made again unless someone offers
+   again.
+
+It works in either direction: a phone signed in first can offer the
+computer it paired with.
+
 On the phone, each account you sign in to is a profile of the phone's own
 amux. Signing out keeps the account listed with Sign In beside it, and the
 machines on your network stay reachable. Removing an account from the phone
@@ -295,6 +323,13 @@ in** beside it wherever the relay was the way to it.
   a friend"), no central authority that can vouch for a host, no tokens
   that stand in for pairing. Each absence is a class of attack that cannot
   happen.
+- **An offered sign-in is not a token standing in for pairing.** It travels
+  only between devices already paired, over their pinned link, and what it
+  hands over is an account: a route through the relay and the account's
+  machine names, never trust in another machine. The ticket behind it is
+  bound to one host id, works once, and lives for a minute, so a copy is
+  worth nothing elsewhere. The offering person consents for one device, and
+  the receiving person sees whose account it is before accepting.
 - **Revocation is local.** Unpairing takes effect on your machine the moment
   you do it.
 

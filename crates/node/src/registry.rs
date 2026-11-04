@@ -357,6 +357,16 @@ impl Registry {
     /// picks the profile already bound to that account, else one that
     /// holds nothing, else a new one.
     pub async fn bind(&self, sign_in: SignIn) -> Result<ProfileState, ProfileRefusal> {
+        self.bind_via(sign_in, analytics::SignInVia::Browser).await
+    }
+
+    /// Binds as [`Registry::bind`] does, counting the sign-in as having
+    /// come `via` that way.
+    pub(crate) async fn bind_via(
+        &self,
+        sign_in: SignIn,
+        via: analytics::SignInVia,
+    ) -> Result<ProfileState, ProfileRefusal> {
         let installation = self.installation()?;
         let named = sign_in.profile;
         let bound = account::bind(&installation, sign_in).await;
@@ -376,9 +386,7 @@ impl Registry {
             .or_else(|| installation.first_analytics());
         if let Some(analytics) = analytics {
             analytics.record(match &bound {
-                Ok(_) => analytics::Event::SignedIn {
-                    via: analytics::Via::Browser,
-                },
+                Ok(_) => analytics::Event::SignedIn { via },
                 Err(refusal) => analytics::Event::SignInFailed {
                     reason: refusal.sign_in_failure(),
                 },

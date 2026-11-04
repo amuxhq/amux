@@ -43,7 +43,8 @@ use app_embedded::{
     UsageEvent,
 };
 use app_runtime::values::{
-    AgentAct, ChatAct, ChatDelta, Draft, FleetDelta, Found, FrozenReview, NewAgent,
+    AgentAct, ChatAct, ChatDelta, Draft, FleetDelta, Found, FrozenReview, NewAgent, SignInAnswer,
+    SignInOfferView,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
 use node::SourcePolicy;
@@ -111,6 +112,15 @@ pub struct AmuxProfile {
     shared: Arc<Shared>,
     app: Arc<AppRuntime>,
     tail: u32,
+    /// Hands the app the sign-in offers paired machines make this profile,
+    /// while the profile is open.
+    offers: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for AmuxProfile {
+    fn drop(&mut self) {
+        self.offers.abort();
+    }
 }
 
 /// One open chat.
@@ -219,6 +229,8 @@ struct Waiting {
     profiles: Option<Vec<ProfileView>>,
     /// The fleets (chat 0) and chats that moved.
     moved: BTreeSet<(u64, u64)>,
+    /// Each open profile's sign-in offers, by fleet, when they moved.
+    offers: std::collections::BTreeMap<u64, Vec<SignInOfferView>>,
     answers: Vec<Answer>,
 }
 
@@ -230,8 +242,17 @@ struct Stepped {
     profiles: Option<Vec<ProfileView>>,
     fleets: Vec<FleetMoved>,
     chats: Vec<ChatMoved>,
+    /// The open profiles whose sign-in offers moved, each with every offer
+    /// it holds now: an offer gone is missing from its list.
+    sign_in_offers: Vec<SignInOffersMoved>,
     /// The acts that ended since the last step, after what they moved.
     answers: Vec<Answer>,
+}
+
+#[derive(Serialize)]
+struct SignInOffersMoved {
+    fleet: u64,
+    offers: Vec<SignInOfferView>,
 }
 
 #[derive(Serialize)]
@@ -279,6 +300,11 @@ impl Outbox {
         let mut stepped = Stepped {
             profiles: waiting.profiles,
             answers: waiting.answers,
+            sign_in_offers: waiting
+                .offers
+                .into_iter()
+                .map(|(fleet, offers)| SignInOffersMoved { fleet, offers })
+                .collect(),
             ..Stepped::default()
         };
         for (fleet, chat) in waiting.moved {
@@ -303,6 +329,13 @@ impl Outbox {
             }
         }
         stepped
+    }
+
+    /// Hands the app a profile's sign-in offers in the next step.
+    fn post_offers(&self, fleet: u64, offers: Vec<SignInOfferView>) {
+        self.post(|waiting| {
+            waiting.offers.insert(fleet, offers);
+        });
     }
 
     /// Names a fleet (chat 0) or chat in the next step.
@@ -525,12 +558,28 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
     shared
         .outbox
         .opened(fleet, 0, View::Fleet(Arc::downgrade(&app)));
+    let (watching, posting) = (app.client().clone(), shared.outbox.clone());
+    let offers = shared.phone.handle().spawn(async move {
+        use futures_util::StreamExt as _;
+        // A runtime that serves no offers (an older daemon) has none to
+        // hand over.
+        let Ok(mut moves) = watching.subscribe_sign_in_offers().await else {
+            return;
+        };
+        while let Some(Ok(now)) = moves.next().await {
+            posting.post_offers(
+                fleet,
+                now.offers.iter().map(SignInOfferView::from).collect(),
+            );
+        }
+    });
     Ok(Box::new(AmuxProfile {
         profile,
         fleet,
         shared,
         app,
         tail: runtime.tail,
+        offers,
     }))
 }
 
@@ -1791,6 +1840,74 @@ pub unsafe extern "C" fn amux_profile_begin_pair(
                 return Answered::Err("the request is not a PairRequest".into());
             };
             Answered::from(embedded.begin_pair(id, &request).await)
+        })
+    })
+}
+
+/// Offers the paired machine whose host id `host_id` names, as a JSON byte
+/// array, this profile's account: the phone signed in first offers the
+/// computer it paired with. The ticket answers `{"Ok": null}` or
+/// `{"Err": ..}`; the offer stands until that machine answers it.
+///
+/// # Safety
+/// `profile` is from `amux_profile_open`; `host_id` is a NUL-terminated
+/// string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_profile_offer_sign_in(
+    profile: *const AmuxProfile,
+    host_id: *const c_char,
+) -> u64 {
+    guard(0, || {
+        // SAFETY: the caller's contract.
+        let Some(profile) = (unsafe { live_profile(profile) }) else {
+            return 0;
+        };
+        // SAFETY: the caller's contract.
+        let host_id: Option<Vec<u8>> = unsafe { parse(host_id) };
+        let client = profile.app.client().clone();
+        profile.act(async move {
+            let Some(host_id) = host_id else {
+                return Answered::Err("the host id is not a byte array".into());
+            };
+            Answered::from(client.offer_sign_in(host_id).await)
+        })
+    })
+}
+
+/// Answers a paired machine's offer of its account, a `SignInAnswer` as
+/// JSON. Accepting signs this profile in to that account; the ticket
+/// answers `{"Ok": ProfileView}`, and the profile list moves with it.
+/// Declining ends the offer and answers the profile as it stands.
+///
+/// # Safety
+/// `profile` is from `amux_profile_open`; `answer` is a NUL-terminated
+/// string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_profile_answer_sign_in_offer(
+    profile: *const AmuxProfile,
+    answer: *const c_char,
+) -> u64 {
+    guard(0, || {
+        // SAFETY: the caller's contract.
+        let Some(profile) = (unsafe { live_profile(profile) }) else {
+            return 0;
+        };
+        // SAFETY: the caller's contract.
+        let answer: Option<SignInAnswer> = unsafe { parse(answer) };
+        let client = profile.app.client().clone();
+        profile.act(async move {
+            let Some(answer) = answer else {
+                return Answered::Err("the answer is not a SignInAnswer".into());
+            };
+            Answered::from(
+                client
+                    .answer_sign_in_offer(wire::AnswerSignInOfferRequest {
+                        host_id: answer.host_id,
+                        accept: answer.accept,
+                    })
+                    .await
+                    .map(|profile| ProfileView::from(&profile)),
+            )
         })
     })
 }

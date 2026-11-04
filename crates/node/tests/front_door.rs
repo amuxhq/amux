@@ -22,10 +22,14 @@ const DEFAULT_TTL_SECONDS: u64 = 5 * 60;
 /// The longest any window may last: a demo window is a standing secret.
 const MAX_TTL_SECONDS: u64 = 90 * 86_400;
 
-fn methods() -> [(&'static str, start_pairing_request::Method); 3] {
+fn methods() -> [(&'static str, start_pairing_request::Method); 4] {
     [
         ("pin", start_pairing_request::Method::Pin(Empty {})),
         ("qr", start_pairing_request::Method::Qr(Empty {})),
+        (
+            "pin_or_qr",
+            start_pairing_request::Method::PinOrQr(Empty {}),
+        ),
         (
             "demo",
             start_pairing_request::Method::DemoPin("246810".to_owned()),

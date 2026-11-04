@@ -456,6 +456,9 @@ pub struct HostView {
     /// For a candidate: only the cloud relay reaches it, which carries a
     /// pairing only on a paid plan.
     pub relay_only: bool,
+    /// For a candidate: its network advertisement says a pairing window is
+    /// open on it, so a PIN can work now.
+    pub pairing_open: bool,
     /// For this device: whether it is signed in to the account its profile
     /// is bound to; None while it was never bound.
     pub signed_in: Option<bool>,
@@ -618,6 +621,52 @@ pub enum UsageEvent {
     PaywallViewed { from: PaywallFrom },
     /// A purchase began with the App Store.
     PurchaseStarted { interval: BillingInterval },
+    /// A one-tap sign-in offer was put in front of the person: on the
+    /// signed-out side the offer itself, on the signed-in side the choice
+    /// to offer a paired device the account.
+    SignInOfferShown { role: OfferRole },
+}
+
+/// Which side of a one-tap sign-in this device is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OfferRole {
+    /// Signed in, offering a paired device its account.
+    Offerer,
+    /// Signed out, offered a paired device's account.
+    Receiver,
+}
+
+/// A paired machine's offer of its account to this device's profile: shown
+/// with the account's email, so the person knows whose account it is.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SignInOfferView {
+    /// The machine that offered.
+    pub host_id: Vec<u8>,
+    pub host_name: String,
+    pub email: String,
+    pub account_name: String,
+}
+
+impl From<&wire::SignInOffer> for SignInOfferView {
+    fn from(offer: &wire::SignInOffer) -> Self {
+        SignInOfferView {
+            host_id: offer.host_id.clone(),
+            host_name: offer.host_name.clone(),
+            email: offer.email.clone(),
+            account_name: offer.account_name.clone(),
+        }
+    }
+}
+
+/// The person's answer to a paired machine's offer of its account.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SignInAnswer {
+    /// The machine that offered.
+    pub host_id: Vec<u8>,
+    /// Accepting signs this device's profile in to the account; declining
+    /// ends the offer.
+    pub accept: bool,
 }
 
 /// The tab the subscription page was opened from.
@@ -684,6 +733,9 @@ pub struct Found {
     /// Resolved addresses as `ip:port`, IPv6 in brackets.
     pub addrs: Vec<String>,
     pub scope: String,
+    /// Its TXT record carries `pair=1`: a pairing window is open on it.
+    #[serde(default)]
+    pub pairing_open: bool,
 }
 
 /// One of this device's profiles, one per account it signed in to, and the

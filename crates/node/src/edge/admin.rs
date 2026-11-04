@@ -174,9 +174,7 @@ impl Edge {
             Method::Pin(_) => ("pin", WindowMethod::Pin),
             Method::Qr(_) => ("qr", WindowMethod::Qr),
             Method::DemoPin(pin) => ("demo", WindowMethod::Demo(pin)),
-            Method::PinOrQr(_) => {
-                return Err(Status::unimplemented("a window for a PIN or a QR secret"));
-            }
+            Method::PinOrQr(_) => ("pin_or_qr", WindowMethod::PinOrQr),
         };
         let opened = self
             .ask(ClientRequest::StartPairing {
@@ -187,6 +185,9 @@ impl Edge {
         let secret = match opened {
             Some(Response::PairingWindow(WindowSecret::Pin(pin))) => Secret::Pin(pin),
             Some(Response::PairingWindow(WindowSecret::Qr(secret))) => Secret::QrSecret(secret),
+            Some(Response::PairingWindow(WindowSecret::PinAndQr { pin, qr })) => {
+                Secret::PinAndQr(wire::PinAndQr { pin, qr_secret: qr })
+            }
             other => return Err(Status::internal(format!("the core opened {other:?}"))),
         };
         if label == "demo" {
@@ -195,6 +196,8 @@ impl Edge {
                 "demo pairing active: a reusable fixed PIN pairs any device that presents it"
             );
         }
+        // A window that takes either secret counts as a PIN window: the
+        // pairing that follows says which one was used.
         self.analytics.record(analytics::Event::PairingStarted {
             role: analytics::Role::Offerer,
             method: match label {
@@ -202,6 +205,25 @@ impl Edge {
                 _ => analytics::Method::Pin,
             },
         });
+        let addrs = self.pairing_addrs();
+        let cloud_url = self
+            .account
+            .service()
+            .filter(|_| self.account.wants_cloud())
+            .map(|service| service.as_str().to_owned());
+        let qr_link = match &secret {
+            Secret::QrSecret(qr) | Secret::PinAndQr(wire::PinAndQr { qr_secret: qr, .. }) => {
+                let invitation = crate::pairing::qr::encode_qr_pairing_invitation(
+                    self.host_id(),
+                    &addrs,
+                    cloud_url.as_deref(),
+                    qr,
+                )
+                .map_err(|error| Status::internal(error.to_string()))?;
+                crate::pairing::qr::qr_link(&self.pairing_page_cloud(), &invitation)
+            }
+            Secret::Pin(_) => String::new(),
+        };
         Ok(PairingWindow {
             identity: Some(PairingIdentity {
                 expires_at_ms: 0,
@@ -210,19 +232,37 @@ impl Edge {
                 name: self.host_name(),
             }),
             ttl_seconds: ttl.as_secs(),
-            addrs: self
-                .pairing_addrs()
-                .into_iter()
-                .map(|addr| addr.to_string())
-                .collect(),
-            cloud_url: self
-                .account
-                .service()
-                .filter(|_| self.account.wants_cloud())
-                .map(|service| service.as_str().to_owned()),
+            addrs: addrs.into_iter().map(|addr| addr.to_string()).collect(),
+            cloud_url,
             secret: Some(secret),
-            qr_link: String::new(),
+            qr_link,
         })
+    }
+
+    /// The cloud whose pairing page a QR link opens: the profile's, signed
+    /// in or not, else amux.sh.
+    fn pairing_page_cloud(&self) -> String {
+        self.account.service().map_or_else(
+            || settings::DEFAULT_CLOUD_URL.to_owned(),
+            |service| service.as_str().to_owned(),
+        )
+    }
+
+    /// The pairing window now and on every change, as the wire says it.
+    pub fn watch_pairing(&self) -> impl futures_util::Stream<Item = wire::PairingStatus> + use<> {
+        let watched = self.pair_mode.watch();
+        futures_util::stream::unfold((watched, true), |(mut watched, first)| async move {
+            if !first && watched.changed().await.is_err() {
+                return None;
+            }
+            let status = pairing::status_to_wire(&watched.borrow_and_update());
+            Some((status, (watched, false)))
+        })
+    }
+
+    /// The pairing window now, as the wire says it.
+    pub fn pairing_status(&self) -> wire::PairingStatus {
+        pairing::status_to_wire(&self.pair_mode.status())
     }
 
     pub fn pairing_active(&self) -> bool {
@@ -568,6 +608,7 @@ impl Edge {
             other => return Err(Status::internal(format!("the core unpaired {other:?}"))),
         };
         self.connections.close_host_access(host).await;
+        self.forget_sign_in_offers(host);
         Ok(peer_entry_to_wire(host, &removed))
     }
 
@@ -580,12 +621,14 @@ impl Edge {
     ) -> std::io::Result<()> {
         self.stop_cloud().await;
         self.account.bind(record, access).await?;
+        self.account_moved_for_offers();
         self.start_cloud().await;
         Ok(())
     }
 
     pub(crate) async fn sign_out(&self) -> std::io::Result<()> {
         self.account.sign_out().await?;
+        self.account_moved_for_offers();
         self.stop_cloud().await;
         Ok(())
     }

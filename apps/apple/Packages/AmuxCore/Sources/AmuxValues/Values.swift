@@ -2603,22 +2603,19 @@ public struct DiffLine: Codable, Hashable, Sendable {
 }
 
 /// What a host offers to start an agent in: where agents ran lately and the
-/// repositories under its roots.
+/// projects its person chose.
 public struct Directories: Codable, Hashable, Sendable {
     public var recent: [Directory]
-    public var repositories: [Directory]
-    public var roots: [String]
+    public var projects: [Directory]
 
-    public init(recent: [Directory], repositories: [Directory], roots: [String]) {
+    public init(recent: [Directory], projects: [Directory]) {
         self.recent = recent
-        self.repositories = repositories
-        self.roots = roots
+        self.projects = projects
     }
 
     private enum CodingKeys: String, CodingKey {
         case recent
-        case repositories
-        case roots
+        case projects
     }
 }
 
@@ -3719,13 +3716,16 @@ public struct Found: Codable, Hashable, Sendable {
     /// Resolved addresses as `ip:port`, IPv6 in brackets.
     public var addrs: [String]
     public var scope: String
+    /// Its TXT record carries `pair=1`: a pairing window is open on it.
+    public var pairingOpen: Bool?
 
-    public init(hostId: [UInt8], name: String, version: UInt32, addrs: [String], scope: String) {
+    public init(hostId: [UInt8], name: String, version: UInt32, addrs: [String], scope: String, pairingOpen: Bool?) {
         self.hostId = hostId
         self.name = name
         self.version = version
         self.addrs = addrs
         self.scope = scope
+        self.pairingOpen = pairingOpen
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -3734,6 +3734,7 @@ public struct Found: Codable, Hashable, Sendable {
         case version
         case addrs
         case scope
+        case pairingOpen = "pairing_open"
     }
 }
 
@@ -3820,6 +3821,9 @@ public struct HostView: Codable, Hashable, Sendable {
     /// For a candidate: only the cloud relay reaches it, which carries a
     /// pairing only on a paid plan.
     public var relayOnly: Bool
+    /// For a candidate: its network advertisement says a pairing window is
+    /// open on it, so a PIN can work now.
+    public var pairingOpen: Bool
     /// This device's copy of the host's agents has caught up with the host
     /// on a live stream: what the fleet shows for it is what it lists now.
     /// Always true for this device.
@@ -3838,7 +3842,7 @@ public struct HostView: Codable, Hashable, Sendable {
     public var through: String?
     public var version: String?
 
-    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, addrs: [String], relayOnly: Bool, current: Bool, providers: [ProviderSignIn], lastDialError: String?, platform: Platform?, signedIn: Bool?, through: String?, version: String?) {
+    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, addrs: [String], relayOnly: Bool, pairingOpen: Bool, current: Bool, providers: [ProviderSignIn], lastDialError: String?, platform: Platform?, signedIn: Bool?, through: String?, version: String?) {
         self.hostId = hostId
         self.name = name
         self.local = local
@@ -3847,6 +3851,7 @@ public struct HostView: Codable, Hashable, Sendable {
         self.reach = reach
         self.addrs = addrs
         self.relayOnly = relayOnly
+        self.pairingOpen = pairingOpen
         self.current = current
         self.providers = providers
         self.lastDialError = lastDialError
@@ -3865,6 +3870,7 @@ public struct HostView: Codable, Hashable, Sendable {
         case reach
         case addrs
         case relayOnly = "relay_only"
+        case pairingOpen = "pairing_open"
         case current
         case providers
         case lastDialError = "last_dial_error"
@@ -4460,6 +4466,14 @@ public enum NewAgentPick: Codable, Hashable, Sendable {
             try _container.encode(_value, forKey: .mode)
         }
     }
+}
+
+/// Which side of a one-tap sign-in this device is.
+public enum OfferRole: String, Codable, Hashable, Sendable, CaseIterable {
+    /// Signed in, offering a paired device its account.
+    case offerer = "offerer"
+    /// Signed out, offered a paired device's account.
+    case receiver = "receiver"
 }
 
 /// A command or skill the provider offers this session, typed as a prompt
@@ -6515,6 +6529,49 @@ public struct SettingsView: Codable, Hashable, Sendable {
     }
 }
 
+/// The person's answer to a paired machine's offer of its account.
+public struct SignInAnswer: Codable, Hashable, Sendable {
+    /// The machine that offered.
+    public var hostId: [UInt8]
+    /// Accepting signs this device's profile in to the account; declining
+    /// ends the offer.
+    public var accept: Bool
+
+    public init(hostId: [UInt8], accept: Bool) {
+        self.hostId = hostId
+        self.accept = accept
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case hostId = "host_id"
+        case accept
+    }
+}
+
+/// A paired machine's offer of its account to this device's profile: shown
+/// with the account's email, so the person knows whose account it is.
+public struct SignInOfferView: Codable, Hashable, Sendable {
+    /// The machine that offered.
+    public var hostId: [UInt8]
+    public var hostName: String
+    public var email: String
+    public var accountName: String
+
+    public init(hostId: [UInt8], hostName: String, email: String, accountName: String) {
+        self.hostId = hostId
+        self.hostName = hostName
+        self.email = email
+        self.accountName = accountName
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case hostId = "host_id"
+        case hostName = "host_name"
+        case email
+        case accountName = "account_name"
+    }
+}
+
 public enum SignInState: String, Codable, Hashable, Sendable, CaseIterable {
     case unknown = "Unknown"
     case signedIn = "SignedIn"
@@ -6799,10 +6856,15 @@ public enum UsageEvent: Codable, Hashable, Sendable {
     case paywallViewed(from: PaywallFrom)
     /// A purchase began with the App Store.
     case purchaseStarted(interval: BillingInterval)
+    /// A one-tap sign-in offer was put in front of the person: on the
+    /// signed-out side the offer itself, on the signed-in side the choice
+    /// to offer a paired device the account.
+    case signInOfferShown(role: OfferRole)
 
     private enum Tag: String, CodingKey {
         case paywallViewed = "PaywallViewed"
         case purchaseStarted = "PurchaseStarted"
+        case signInOfferShown = "SignInOfferShown"
     }
 
     private enum PaywallViewedKeys: String, CodingKey {
@@ -6811,6 +6873,10 @@ public enum UsageEvent: Codable, Hashable, Sendable {
 
     private enum PurchaseStartedKeys: String, CodingKey {
         case interval
+    }
+
+    private enum SignInOfferShownKeys: String, CodingKey {
+        case role
     }
 
     public init(from decoder: any Decoder) throws {
@@ -6832,6 +6898,11 @@ public enum UsageEvent: Codable, Hashable, Sendable {
                 keyedBy: PurchaseStartedKeys.self, forKey: .purchaseStarted)
             self = .purchaseStarted(
                 interval: try _fields.decode(BillingInterval.self, forKey: .interval))
+        case .signInOfferShown:
+            let _fields = try _container.nestedContainer(
+                keyedBy: SignInOfferShownKeys.self, forKey: .signInOfferShown)
+            self = .signInOfferShown(
+                role: try _fields.decode(OfferRole.self, forKey: .role))
         }
     }
 
@@ -6845,6 +6916,10 @@ public enum UsageEvent: Codable, Hashable, Sendable {
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: PurchaseStartedKeys.self, forKey: .purchaseStarted)
             try _fields.encode(interval, forKey: .interval)
+        case .signInOfferShown(let role):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: SignInOfferShownKeys.self, forKey: .signInOfferShown)
+            try _fields.encode(role, forKey: .role)
         }
     }
 }

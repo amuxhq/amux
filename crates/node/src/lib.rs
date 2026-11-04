@@ -64,6 +64,7 @@ mod window;
 mod worktree;
 
 pub use activation::{ActivationError, ActivationPipe, InheritedPipe, PIPE_ENV, PREPARED};
+pub use auth::oauth::CLI_CLIENT_ID;
 pub use blobs::{BlobError, PATCH_MIME};
 pub use daemon::{Daemon, STOP_TARGET, StartError, StartOptions, start};
 pub use daemon_core::names::word_pairs;
@@ -94,7 +95,9 @@ pub use install::{
 pub use link::{Cursor, PeerClient, TRUST_REVOKED, forwarder, framed, link_log, paths, socket};
 pub use offers::{HostCatalogue, PROVIDERS, Provider};
 pub use outbox::{DrainReport, HttpSender, NoopSender, Push, PushFuture, PushSender};
-pub use pairing::qr::{QrPairingError, encode_qr_pairing_invitation, pair_link, parse_pair_link};
+pub use pairing::qr::{
+    PAIR_LINK, QrPairingError, encode_qr_pairing_invitation, pair_link, parse_pair_link, qr_link,
+};
 #[cfg(unix)]
 pub use pairing::ssh::relay_stdio_to_unix_socket;
 pub use pairing::ssh::{exchange_over_ssh, read_ssh_identity, ssh_stdio, write_ssh_identity};

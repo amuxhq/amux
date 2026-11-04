@@ -124,6 +124,9 @@ message RefreshCredential {}
 message SignInOfferMade {
   string email = 1;
   string account_name = 2;
+  // The account service the account is at, which the peer redeems the
+  // ticket with: a peer that was never signed in knows none.
+  string cloud_url = 3;
 }
 
 // The peer's person answered the offer: accepting asks for a ticket,

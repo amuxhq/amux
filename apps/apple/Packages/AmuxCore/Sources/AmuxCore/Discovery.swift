@@ -187,6 +187,11 @@ public final class LocalDiscovery {
         let claim: Claim
         let routes: [NWEndpoint]
         let attempt: Int
+        /// Whether its record says a pairing window is open on it. Kept
+        /// apart from the claim: a window opening or closing is the same
+        /// machine at the same address, so it is handed over without
+        /// resolving the machine again.
+        var pairing: Bool
         var next = 0
         var abandon: (@MainActor () -> Void)?
     }
@@ -218,15 +223,20 @@ public final class LocalDiscovery {
                 host: claimed.host, name: name, version: claimed.version, scope: claimed.scope)
             if let current = tracked[sighting.endpoint],
                current.claim == claim, current.routes == sighting.routes {
+                tracked[sighting.endpoint]?.pairing = claimed.pairing
+                found[sighting.endpoint]?.pairingOpen = claimed.pairing
                 continue
             }
             tracked[sighting.endpoint]?.abandon?()
             if found[sighting.endpoint]?.hostId != claim.host.bytes {
                 found.removeValue(forKey: sighting.endpoint)
+            } else {
+                found[sighting.endpoint]?.pairingOpen = claimed.pairing
             }
             attempts += 1
             tracked[sighting.endpoint] = Tracked(
-                claim: claim, routes: sighting.routes, attempt: attempts)
+                claim: claim, routes: sighting.routes, attempt: attempts,
+                pairing: claimed.pairing)
             tryNextRoute(of: sighting.endpoint)
         }
         handOver(Array(found.values))
@@ -264,7 +274,8 @@ public final class LocalDiscovery {
             self.tracked[endpoint]?.abandon = nil
             self.found[endpoint] = Found(
                 hostId: entry.claim.host.bytes, name: entry.claim.name,
-                version: entry.claim.version, addrs: [address], scope: entry.claim.scope)
+                version: entry.claim.version, addrs: [address], scope: entry.claim.scope,
+                pairingOpen: entry.pairing)
             self.handOver(Array(self.found.values))
         }
         if tracked[endpoint]?.attempt == attempt, tracked[endpoint]?.next == entry.next {
@@ -358,14 +369,18 @@ public final class LocalDiscovery {
     /// The machine's name is the record's own, where it carries one: a
     /// responder that meets a second "desk" on the network renames this
     /// instance "desk (2)", which is not what the machine is called.
+    ///
+    /// `pair=1` says a pairing window is open on the machine, so a code
+    /// typed now can work; without it the person is told to open amux there
+    /// rather than handed a keypad that can only fail.
     nonisolated static func claim(
         from record: NWTXTRecord
-    ) -> (host: HostId, version: UInt32, scope: String, name: String?)? {
+    ) -> (host: HostId, version: UInt32, scope: String, name: String?, pairing: Bool)? {
         guard let hid = record["hid"], let host = HostId(hid),
               let claimed = record["v"], let version = UInt32(claimed)
         else { return nil }
         let name = record["name"].flatMap { $0.isEmpty ? nil : $0 }
-        return (host, version, record["scope"] ?? "", name)
+        return (host, version, record["scope"] ?? "", name, record["pair"] == "1")
     }
 
     /// The instance name a Bonjour endpoint carries: the machine's own,

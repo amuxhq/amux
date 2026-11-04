@@ -1,4 +1,4 @@
-shell |  | hosts | 0,62,402,778
+shell |  | agents | 0,62,402,778
 pair-confirm |  | desk | 0,132,402,708
 pair-confirm.title |  | Pair with desk? | 16,148,179,32
 pair-confirm.name |  | desk | 16,180,113,26
@@ -7,8 +7,15 @@ pair-confirm.fingerprint | <volatile>
 pair-confirm.trust | Pair |  | 16,726,370,44
 pair-confirm.abandon | Not Now |  | 16,780,370,44
 pair.close | Close |  | 20,82,40,36
- | desk is nearby, Pair it to see its agents here, Pair |  | 16,180,370,60
- | Hosts |  | 16,127,93,42
+ | Pair your first host |  | 16,204,214,32
+ | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
+ | Pair with desk?, Enter the code amux shows there, Pair |  | 16,305,370,60
+ | Have an amux account? |  | 16,389,164,18
+ | Sign In |  | 184,376,48,44
+ | amux sends usage counts, never content. Once you sign in, they’re linked to your account. Share Usage in Settings turns them off. |  | 16,431,359,48
+ | Details |  | 16,467,43,44
+ | Switch account |  | 24,66,29,36
+ | Agents |  | 16,127,116,42
  | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
  | Hosts |  | 197,795,94,54
@@ -26,5 +33,5 @@ pair.close | Close |  | 20,82,40,36
  | Close |  | 20,82,40,36
  | Pair desk |  | 165,82,73,21
  | On this network |  | 159,103,84,14
- | Agents |  | 111,795,94,54
- | Hosts | selected | 197,795,94,54
+ | Agents | selected | 111,795,94,54
+ | Hosts |  | 197,795,94,54

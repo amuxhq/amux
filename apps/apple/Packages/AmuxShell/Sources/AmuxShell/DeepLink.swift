@@ -64,17 +64,40 @@ extension PairingInvitation {
     /// The scheme the CLI's pairing links use.
     public static let scheme = "amux"
 
+    /// The path of the cloud's pairing page, whose fragment carries the
+    /// invitation: `https://amux.sh/p#<payload>`.
+    public static let page = "/p"
+
     /// Reads a pairing link, or refuses it.
+    ///
+    /// Two shapes carry the same invitation. The QR code a host shows is the
+    /// cloud's page, `https://<cloud>/p#<payload>`, so a phone without the
+    /// app lands on the page that sends it to the App Store; with the app
+    /// installed the system hands the link straight here. The invitation
+    /// sits after the `#`, which a browser never sends, so the page never
+    /// sees it. A self-hosted cloud's page is read the same way: whichever
+    /// cloud the host names, the payload is the host's own. The app's own
+    /// `amux://pair?payload=<payload>` is the other.
     ///
     /// Everything about the link is checked here rather than on the page it
     /// leads to: a malformed invitation must not become a confirmation screen
     /// that cannot say who it is confirming.
     public init?(link url: URL) {
-        guard url.scheme == Self.scheme, url.host == "pair",
-            let payload = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?.first(where: { $0.name == "payload" })?.value
-        else { return nil }
-        self.init(payload: payload)
+        switch url.scheme {
+        case Self.scheme:
+            guard url.host == "pair",
+                let payload = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                    .queryItems?.first(where: { $0.name == "payload" })?.value
+            else { return nil }
+            self.init(payload: payload)
+        case "https", "http":
+            guard let host = url.host, !host.isEmpty, url.path == Self.page,
+                let payload = url.fragment, !payload.isEmpty
+            else { return nil }
+            self.init(payload: payload)
+        default:
+            return nil
+        }
     }
 
     /// Reads the payload the `amux pair --qr` link carries: the JSON the host

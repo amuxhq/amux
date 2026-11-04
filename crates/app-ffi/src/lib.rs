@@ -44,7 +44,7 @@ use app_embedded::{
 };
 use app_runtime::values::{
     AgentAct, ChatAct, ChatDelta, Draft, FleetDelta, Found, FrozenReview, NewAgent, SignInAnswer,
-    SignInOfferView,
+    SignInOfferOutcome, SignInOfferView,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
 use node::SourcePolicy;
@@ -1686,6 +1686,43 @@ pub unsafe extern "C" fn amux_runtime_record(
     });
 }
 
+/// Whether the app has shown the analytics notice on the installation it
+/// hosts: until it has, nothing recorded is sent. Reads at once. An
+/// attached runtime answers false: the daemon it attaches to keeps its own
+/// notice, answered through that daemon.
+///
+/// # Safety
+/// `runtime` is from `amux_runtime_start`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_runtime_notice_shown(runtime: *const AmuxRuntime) -> bool {
+    guard(false, || {
+        // SAFETY: the caller's contract.
+        unsafe { live_runtime(runtime) }
+            .and_then(|runtime| runtime.embedded().cloned())
+            .is_some_and(|embedded| embedded.notice_shown().unwrap_or(false))
+    })
+}
+
+/// The app has put the analytics notice in front of the person: what was
+/// recorded meanwhile may be sent from now on. Kept in the installation's
+/// state, so it is said once; false when it could not be kept, or the
+/// runtime is attached.
+///
+/// # Safety
+/// `runtime` is from `amux_runtime_start`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_runtime_mark_notice_shown(runtime: *const AmuxRuntime) -> bool {
+    guard(false, || {
+        // SAFETY: the caller's contract.
+        let Some(embedded) =
+            unsafe { live_runtime(runtime) }.and_then(|runtime| runtime.embedded().cloned())
+        else {
+            return false;
+        };
+        embedded.mark_notice_shown().is_ok()
+    })
+}
+
 // --- one profile ---------------------------------------------------------
 
 /// Opens a profile's fleet, by the profile's id; blocks, stepping the
@@ -1875,9 +1912,12 @@ pub unsafe extern "C" fn amux_profile_offer_sign_in(
 }
 
 /// Answers a paired machine's offer of its account, a `SignInAnswer` as
-/// JSON. Accepting signs this profile in to that account; the ticket
-/// answers `{"Ok": ProfileView}`, and the profile list moves with it.
-/// Declining ends the offer and answers the profile as it stands.
+/// JSON. The ticket answers `{"Ok": SignInOfferOutcome}`: accepting signs
+/// this profile in to that account and answers it signed in, with the
+/// profile list moving too; declining ends the offer; accepting while the
+/// offering machine cannot be reached answers that, and the offer stays in
+/// the profile's list for as long as it still stands. Any other refusal is
+/// `{"Err": ..}`.
 ///
 /// # Safety
 /// `profile` is from `amux_profile_open`; `answer` is a NUL-terminated
@@ -1899,15 +1939,24 @@ pub unsafe extern "C" fn amux_profile_answer_sign_in_offer(
             let Some(answer) = answer else {
                 return Answered::Err("the answer is not a SignInAnswer".into());
             };
-            Answered::from(
-                client
-                    .answer_sign_in_offer(wire::AnswerSignInOfferRequest {
-                        host_id: answer.host_id,
-                        accept: answer.accept,
-                    })
-                    .await
-                    .map(|profile| ProfileView::from(&profile)),
-            )
+            let answered = client
+                .answer_sign_in_offer(wire::AnswerSignInOfferRequest {
+                    host_id: answer.host_id,
+                    accept: answer.accept,
+                })
+                .await;
+            match answered {
+                Ok(profile) if answer.accept => {
+                    Answered::Ok(SignInOfferOutcome::SignedIn(ProfileView::from(&profile)))
+                }
+                Ok(_) => Answered::Ok(SignInOfferOutcome::Declined),
+                // Said apart from every other refusal: the person's next
+                // step is on the other machine, not on this one.
+                Err(error) if error.code() == Some(wire::ErrorCode::Unavailable) => {
+                    Answered::Ok(SignInOfferOutcome::Unreachable)
+                }
+                Err(error) => Answered::Err(error.to_string()),
+            }
         })
     })
 }

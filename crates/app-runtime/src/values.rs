@@ -459,9 +459,13 @@ pub struct HostView {
     /// For a candidate: its network advertisement says a pairing window is
     /// open on it, so a PIN can work now.
     pub pairing_open: bool,
-    /// For this device: whether it is signed in to the account its profile
-    /// is bound to; None while it was never bound.
+    /// Whether it is signed in to an account: for this device, the account
+    /// its profile is bound to, None while it was never bound; for another
+    /// host, as its link handshake said, None until it has said.
     pub signed_in: Option<bool>,
+    /// Which Claude a new agent on it runs, as its settings resolve it;
+    /// None until it has said.
+    pub claude_kind: Option<Kind>,
     /// This device's copy of the host's agents has caught up with the host
     /// on a live stream: what the fleet shows for it is what it lists now.
     /// Always true for this device.
@@ -667,6 +671,19 @@ pub struct SignInAnswer {
     /// Accepting signs this device's profile in to the account; declining
     /// ends the offer.
     pub accept: bool,
+}
+
+/// What answering a paired machine's offer of its account came to.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum SignInOfferOutcome {
+    /// Accepted: this device's profile is signed in to the account now.
+    SignedIn(ProfileView),
+    /// Declined: the offer is gone, here and on the machine that made it.
+    Declined,
+    /// Accepted while the machine that offered could not be reached, or it
+    /// went away before it answered. An offer that still stands stays
+    /// listed, and accepting it again once that machine is back can work.
+    Unreachable,
 }
 
 /// The tab the subscription page was opened from.

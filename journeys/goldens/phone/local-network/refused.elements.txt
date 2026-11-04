@@ -1,13 +1,13 @@
 shell |  | hosts | 0,62,402,778
 home |  | signed-out | 0,174,402,617
 hosts |  |  | 0,174,402,617
-hosts.localNetwork.refused |  | amux can’t see this network | 17,204,368,151
-hosts.localNetwork.settings | Open Settings |  | 17,311,141,44
-hosts.empty.howToPair |  |  | 17,373,360,37
- | amux can’t see this network |  | 17,204,329,32
- | Nobody let amux look at the network this phone is on, so no host on it can be found. Turn on Local Network for amux in Settings. |  | 17,246,368,55
- | Open Settings |  | 17,311,141,44
- | Run amux pair on a host on this network, or scan the code from amux pair --qr with the camera. |  | 17,373,360,37
+hosts.localNetwork.refused |  | amux can’t see this network | 16,204,368,151
+hosts.localNetwork.settings | Open Settings |  | 16,311,141,44
+hosts.empty.howToPair |  |  | 16,373,370,37
+ | amux can’t see this network |  | 16,204,329,32
+ | Nobody let amux look at the network this phone is on, so no host on it can be found. Turn on Local Network for amux in Settings. |  | 16,246,368,55
+ | Open Settings |  | 16,311,141,44
+ | Open amux on a host on this network to pair it, or scan the code it shows with the Camera app. |  | 16,373,370,37
  | Hosts |  | 16,127,93,42
  | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12

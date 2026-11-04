@@ -237,6 +237,8 @@ impl AppRuntime {
                     .candidate()
                     .is_some_and(|candidate| candidate.pairing_open),
                 signed_in: host.account_signed_in(),
+                claude_kind: Some(host.claude_kind())
+                    .filter(|kind| *kind != wire::Kind::Unspecified),
                 current: host.current(),
                 providers: host
                     .providers

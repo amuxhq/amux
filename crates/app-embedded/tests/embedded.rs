@@ -324,6 +324,16 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
         "{hosts:?}"
     );
     assert!(hosts.iter().any(|host| host.local && host.name == "phone"));
+    // The desk says which Claude a new agent there runs, so the phone starts
+    // the same kind its person would; the phone runs none.
+    let listed = hosts.iter().find(|host| host.name == "desk").unwrap();
+    assert!(
+        matches!(
+            listed.claude_kind,
+            Some(wire::Kind::ClaudeSdk | wire::Kind::ClaudePty)
+        ),
+        "{listed:?}"
+    );
 
     // Leaving the foreground closes every session, the open chat's
     // included; returning reopens each, and the chat carries on.

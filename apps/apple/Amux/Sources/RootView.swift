@@ -55,7 +55,14 @@ struct RootView: View {
             // photographed in the other one.
             .modifier(ReportTools(composition: composition))
             .preferredColorScheme(composition.appearance?.colorScheme)
+            // The app's own links, and amux.sh's pairing page as a universal
+            // link, whether it starts the app or finds it running: the system
+            // hands a universal link over as a browsing activity, and SwiftUI
+            // passes it to whichever of these two the scene takes it with.
             .onOpenURL { composition.router.open($0) }
+            .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                if let url = activity.webpageURL { composition.router.open(url) }
+            }
             .onAppear { Signposts.emitWhenPresented(.shellPresented) }
     }
 }
@@ -90,6 +97,7 @@ private struct ComposedShell: View {
                 autoReports: composition.autoReports,
                 notifications: composition.notifications,
                 offerNotifications: composition.offerNotifications,
+                usageNotice: composition.runtime.usageNotice,
                 report: { composition.beginReport() },
                 actions: { composition.handle($0) }
             )

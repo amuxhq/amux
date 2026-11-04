@@ -64,11 +64,56 @@ final class DeepLinkTests: XCTestCase {
         XCTAssertEqual(invitation.description, "invitation from 3a1f9d2c-0000-4000-8000-000000000001")
     }
 
+    /// The QR code a host shows is the cloud's pairing page with the
+    /// invitation after the `#`: the same offer as the app's own link, read
+    /// the same way, from amux.sh or a self-hosted cloud.
+    func testTheCloudsPairingPageReadsAsTheSameOffer() throws {
+        let payload = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "payload" })?.value)
+        let app = try XCTUnwrap(PairingInvitation(link: link))
+        for text in [
+            "https://amux.sh/p#\(payload)",
+            "https://cloud.example.com/p#\(payload)",
+            "http://localhost:8080/p#\(payload)",
+        ] {
+            let page = try XCTUnwrap(PairingInvitation(link: URL(string: text)!), text)
+            XCTAssertEqual(page, app, text)
+            // The runtime is handed the app's own link either way.
+            XCTAssertEqual(page.link, link.absoluteString, text)
+        }
+        // The same invitation anywhere but the pairing page is no link.
+        for text in [
+            "https://amux.sh/get#\(payload)",
+            "https://amux.sh/p/extra#\(payload)",
+            "https://amux.sh/#\(payload)",
+            "ftp://amux.sh/p#\(payload)",
+        ] {
+            XCTAssertNil(PairingInvitation(link: URL(string: text)!), text)
+        }
+    }
+
+    /// A universal link reaches the router the way the app's own link does,
+    /// whether it started the app or found it running.
+    func testTheCloudsPairingPageRaisesTheSameSheet() throws {
+        let payload = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "payload" })?.value)
+        let router = Router()
+        let invitation = try XCTUnwrap(router.open(URL(string: "https://amux.sh/p#\(payload)")!))
+        XCTAssertEqual(router.pairing, .link(invitation))
+        XCTAssertEqual(router.path, [])
+    }
+
     func testALinkThatCannotBeReadIsRefusedRatherThanShown() {
         let router = Router()
         for text in [
-            // Not this app's scheme.
+            // The cloud's other pages, which carry no invitation.
             "https://amux.sh/pair?payload=abc",
+            // The pairing page with no invitation after its `#`.
+            "https://amux.sh/p",
+            "https://amux.sh/p#",
+            // The pairing page with something that is not an invitation.
+            "https://amux.sh/p#eyJoZWxsbyI6IndvcmxkIn0",
+            "https://amux.sh/p?payload=eyJoZWxsbyI6IndvcmxkIn0",
             // This app's scheme, nothing it knows how to do.
             "amux://unknown",
             // A sign-in callback: the sign-in's own browser session takes it.

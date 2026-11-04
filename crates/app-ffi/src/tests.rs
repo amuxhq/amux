@@ -920,6 +920,55 @@ fn the_profile_registry_through_the_c_abi() {
     assert!(phone.result()["Err"].is_string());
 }
 
+/// The analytics notice through the C functions: a fresh installation has
+/// shown none, so it sends nothing; marking it is kept by the installation,
+/// in its own state, and answers the same from then on.
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+)]
+fn the_analytics_notice_is_read_and_kept_through_the_c_abi() {
+    let phone = Phone::start();
+    // SAFETY: the runtime is live.
+    assert!(!unsafe { amux_runtime_notice_shown(phone.runtime) });
+    // SAFETY: as above.
+    assert!(unsafe { amux_runtime_mark_notice_shown(phone.runtime) });
+    // SAFETY: as above.
+    assert!(unsafe { amux_runtime_notice_shown(phone.runtime) });
+    // SAFETY: as above; marking again changes nothing.
+    assert!(unsafe { amux_runtime_mark_notice_shown(phone.runtime) });
+    assert!(node::notice_shown_in(&phone.dir.path().join("data")));
+    // A handle that is not live reads as nothing shown and keeps nothing.
+    // SAFETY: null is a handle the library refuses.
+    assert!(!unsafe { amux_runtime_notice_shown(std::ptr::null()) });
+    // SAFETY: as above.
+    assert!(!unsafe { amux_runtime_mark_notice_shown(std::ptr::null()) });
+}
+
+/// Answering an offer of an account no machine made is a refusal, not a
+/// machine out of reach: only an offerer that cannot be reached is said
+/// apart, since the person's next step is on that machine.
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+)]
+fn answering_an_offer_nobody_made_is_refused_through_the_c_abi() {
+    let phone = Phone::start();
+    for accept in [true, false] {
+        let answer = c(&json!({"host_id": vec![7u8; 16], "accept": accept}).to_string());
+        // SAFETY: the profile is open; the string lives for the call.
+        phone.started(unsafe { amux_profile_answer_sign_in_offer(phone.profile, answer.as_ptr()) });
+        let answered = phone.result();
+        assert!(answered["Err"].is_string(), "accept {accept}: {answered}");
+    }
+    let nonsense = c("not an answer");
+    // SAFETY: as above.
+    phone.started(unsafe { amux_profile_answer_sign_in_offer(phone.profile, nonsense.as_ptr()) });
+    assert!(phone.result()["Err"].is_string());
+}
+
 #[test]
 #[cfg_attr(
     miri,

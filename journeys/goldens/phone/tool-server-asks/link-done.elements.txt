@@ -15,8 +15,8 @@ chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
 chat.more | More |  | 350,66,28,36
 chat.back | Back |  | 20,66,40,36
-chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
-chat.title | linker | linker | 80,66,152,36
+chat.header | /p/t/a/n/d/work · desk | live | 80,66,165,36
+chat.title | linker | linker | 80,66,165,36
  | Attach |  | 23,779,44,44
  | gpt-fake |  | 71,779,144,44
  | Dictate |  | 287,779,44,44
@@ -29,5 +29,5 @@ chat.title | linker | linker | 80,66,152,36
  | I'll read the dashboards another way. |  | 16,362,370,20
  | Worked <t> |  | 16,389,62,16
  | Back |  | 20,66,40,36
- | linker, /t/a/n/d/work · desk |  | 80,66,152,36
+ | linker, /p/t/a/n/d/work · desk |  | 80,66,165,36
  | More |  | 350,66,28,36

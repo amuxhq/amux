@@ -347,8 +347,8 @@ final class PhoneDecisionsTests: XCTestCase {
         let hosts = HostsStore()
         hosts.show([HostView(
             hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false,
-            reach: .offline(.revoked), addrs: ["127.0.0.1:55186"], relayOnly: false, current: false, providers: [],
-            lastDialError: "127.0.0.1:55186: code: 'The service is currently unavailable', message: \"connection lost\"",
+            reach: .offline(.revoked), addrs: ["127.0.0.1:55186"], relayOnly: false, pairingOpen: false, current: false, providers: [],
+            claudeKind: nil, lastDialError: "127.0.0.1:55186: code: 'The service is currently unavailable', message: \"connection lost\"",
             platform: .macos, signedIn: nil, through: nil, version: nil)])
         var asked: [HostPageAction] = []
         try host(HostPage(model: hosts, host: desk) { asked.append($0) })
@@ -414,7 +414,7 @@ final class PhoneDecisionsTests: XCTestCase {
         func view(_ reach: Reach) -> HostView {
             HostView(
                 hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false, reach: reach,
-                addrs: [], relayOnly: false, current: true, providers: [], lastDialError: nil, platform: .macos,
+                addrs: [], relayOnly: false, pairingOpen: false, current: true, providers: [], claudeKind: nil, lastDialError: nil, platform: .macos,
                 signedIn: nil, through: nil, version: nil)
         }
         let hosts = HostsStore()

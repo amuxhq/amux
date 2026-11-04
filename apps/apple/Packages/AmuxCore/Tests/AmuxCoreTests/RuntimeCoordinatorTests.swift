@@ -95,7 +95,7 @@ final class RuntimeCoordinatorTests: XCTestCase {
         }
         runtime.discovered([Found(
             hostId: HostId(UUID()).bytes, name: "elsewhere", version: 1, addrs: ["127.0.0.1:9"],
-            scope: "another-scope")])
+            scope: "another-scope", pairingOpen: false)])
         guard case .success(let trusting) = await runtime.trusting(HostId(UUID())),
               trusting.isEmpty else {
             return XCTFail("a profile trusts a machine nobody paired")

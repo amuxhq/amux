@@ -300,6 +300,20 @@ public final class Runtime: @unchecked Sendable {
         }
     }
 
+    /// Whether the analytics notice has been shown on this installation:
+    /// nothing recorded is sent until it has.
+    public var noticeShown: Bool {
+        call(false) { amux_runtime_notice_shown($0) }
+    }
+
+    /// The analytics notice is in front of the person: what was recorded
+    /// meanwhile may be sent from now on. Kept by the installation, so it is
+    /// said once; false when it could not be kept.
+    @discardableResult
+    public func markNoticeShown() -> Bool {
+        call(false) { amux_runtime_mark_notice_shown($0) }
+    }
+
     // MARK: - Profiles
 
     /// Opens a profile's fleet; blocks, on the core queue, until it has
@@ -341,6 +355,9 @@ public final class Runtime: @unchecked Sendable {
 public enum Moved: Sendable {
     case fleet(FleetDelta)
     case chat(ChatDelta)
+    /// Every offer of an account the profile's paired machines make it now:
+    /// an offer gone is missing from the list.
+    case signInOffers([SignInOfferView])
 }
 
 /// One profile's fleet and chats, open while it is on screen.
@@ -462,6 +479,27 @@ public final class Profile: @unchecked Sendable {
         let token = Bridge.json(pending.token)
         return await act(Nothing.self) { live in
             token.withCString { amux_profile_abandon_pair(live, $0) }
+        }
+    }
+
+    /// Offers a paired machine this profile's account: the person on this
+    /// phone consents for that machine. The offer stands until the machine
+    /// answers it.
+    public func offerSignIn(to host: HostId) async -> Result<Nothing, RuntimeFailure> {
+        let host = Bridge.json(host.bytes)
+        return await act(Nothing.self) { live in
+            host.withCString { amux_profile_offer_sign_in(live, $0) }
+        }
+    }
+
+    /// Answers a paired machine's offer of its account: accepting signs this
+    /// profile in to it, declining ends the offer.
+    public func answerSignInOffer(
+        from host: [UInt8], accept: Bool
+    ) async -> Result<SignInOfferOutcome, RuntimeFailure> {
+        let answer = Bridge.json(SignInAnswer(hostId: host, accept: accept))
+        return await act(SignInOfferOutcome.self) { live in
+            answer.withCString { amux_profile_answer_sign_in_offer(live, $0) }
         }
     }
 
@@ -727,7 +765,8 @@ final class CoreLoop: @unchecked Sendable {
         }
         // Queued on the main actor before any answer resumes its waiter
         // there, so an act is answered after what it moved is in place.
-        if stepped.profiles != nil || !stepped.fleets.isEmpty || !stepped.chats.isEmpty {
+        if stepped.profiles != nil || !stepped.fleets.isEmpty || !stepped.chats.isEmpty
+            || !stepped.signInOffers.isEmpty {
             DispatchQueue.main.async { [self] in
                 MainActor.assumeIsolated {
                     // Read here, not on the queue: a fleet closed since the
@@ -737,6 +776,9 @@ final class CoreLoop: @unchecked Sendable {
                     }
                     for moved in stepped.chats {
                         lock.withLock { moves[moved.fleet] }?(.chat(moved.delta))
+                    }
+                    for moved in stepped.signInOffers {
+                        lock.withLock { moves[moved.fleet] }?(.signInOffers(moved.offers))
                     }
                     if let profiles = stepped.profiles { profilesMoved(profiles) }
                 }
@@ -764,10 +806,21 @@ final class CoreLoop: @unchecked Sendable {
             let json: String
         }
 
+        struct OffersMoved: Decodable, Sendable {
+            let fleet: UInt64
+            let offers: [SignInOfferView]
+        }
+
         let profiles: [ProfileView]?
         let fleets: [FleetMoved]
         let chats: [ChatMoved]
+        let signInOffers: [OffersMoved]
         let answers: [Answer]
+
+        private enum CodingKeys: String, CodingKey {
+            case profiles, fleets, chats, answers
+            case signInOffers = "sign_in_offers"
+        }
     }
 
     private final class Done<T>: @unchecked Sendable {

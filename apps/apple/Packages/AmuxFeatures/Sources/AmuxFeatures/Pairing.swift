@@ -36,14 +36,10 @@ public struct PairingHint: View {
     public init() {}
 
     public var body: some View {
-        Text("Run \(command("amux pair")) on a host on this network, or scan the code from \(command("amux pair --qr")) with the camera.")
+        Text("Open amux on a host on this network to pair it, or scan the code it shows with the Camera app.")
             .designFont(.detail, design)
             .foregroundStyle(design.inkMuted.color)
             .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func command(_ text: String) -> Text {
-        Text(verbatim: text).font(design.font(.monoSmall))
     }
 }
 
@@ -275,12 +271,21 @@ public struct PairByCode: View {
         return String(localized: "Pair \(machine.name)")
     }
 
+    /// A machine whose pairing window raised this sheet is asked about by
+    /// name: the phone opened it, so it says what it is offering.
+    private var headline: String {
+        guard let machine = model.machine, machine.windowOpen else {
+            return String(localized: "Enter the code")
+        }
+        return String(localized: "Pair with \(machine.name)?")
+    }
+
     private var heading: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Enter the code")
+            Text(headline)
                 .designFont(.screenTitle, design)
                 .foregroundStyle(design.ink.color)
-                .identified("pin.title", value: "Enter the code")
+                .identified("pin.title", value: headline)
             instruction
                 .designFont(.body, design)
                 .foregroundStyle(design.inkMuted.color)
@@ -297,6 +302,7 @@ public struct PairByCode: View {
     private var instruction: Text {
         let command = Text(verbatim: "amux pair").font(design.font(.monoSmall))
         guard let machine = model.machine else { return Text("Run \(command) on the host to get one.") }
+        if machine.windowOpen { return Text("Enter the code amux shows on \(machine.name).") }
         return Text("Run \(command) on \(machine.name) to get one.")
     }
 

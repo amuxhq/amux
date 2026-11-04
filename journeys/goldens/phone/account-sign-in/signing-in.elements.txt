@@ -21,12 +21,14 @@ you.close | Close |  | 342,82,40,36
  | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
  | Looking on this network… |  | 36,305,174,18
  | 1 |  | 25,351,5,16
- | On your computer, install amux from amux.sh. |  | 52,348,231,39
- | Send Link |  | 52,400,106,44
- | 2 |  | 24,464,7,16
- | Run amux pair --qr on it and scan the code with the Camera app. |  | 52,461,325,39
- | Have an amux account? |  | 16,537,164,18
- | Signing in… |  | 184,537,96,18
+ | Get amux on your computer. |  | 52,348,208,20
+ | Send Link |  | 52,380,106,44
+ | 2 |  | 24,444,7,16
+ | Open amux there, and this phone offers to pair. |  | 52,441,292,39
+ | Have an amux account? |  | 16,518,164,18
+ | Signing in… |  | 184,518,96,18
+ | amux sends usage counts, never content. Once you sign in, they’re linked to your account. Share Usage in Settings turns them off. |  | 16,573,359,48
+ | Details |  | 16,608,43,44
  | Agents |  | 16,127,116,42
  | Switch account |  | 24,66,29,36
  | Agents |  | 111,795,94,54

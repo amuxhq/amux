@@ -7,11 +7,10 @@ import XCTest
 final class NewAgentTests: XCTestCase {
     private let listed = Directories(
         recent: [Directory(path: "/src/amux", name: "amux")],
-        repositories: [
-            Directory(path: "/src/amux", name: "amux"),
+        projects: [
+            Directory(path: "/src/web", name: "web"),
             Directory(path: "/src/relay", name: "relay"),
-        ],
-        roots: ["/src"])
+        ])
 
     func testTheMostRecentDirectoryIsPrefilledAndNamedNewOnItsHost() {
         let store = NewAgentStore()
@@ -58,13 +57,67 @@ final class NewAgentTests: XCTestCase {
         XCTAssertEqual(store.listing, .none)
     }
 
-    func testCodexStartsCodexAndClaudeStartsTheSdkDriver() {
+    func testCodexStartsCodexAndClaudeStartsTheSdkDriverOnAHostThatHasNotSaid() {
         let store = NewAgentStore()
         store.open(on: Cards.desk)
         store.choose(directory: "/src/x")
         XCTAssertEqual(store.request?.kind, .claudeSdk)
         store.choose(provider: .codex)
         XCTAssertEqual(store.request?.kind, .codex)
+    }
+
+    /// A host whose person chose terminal Claude starts terminal Claude
+    /// from the phone too, so an agent is the same kind wherever it was
+    /// started; Codex is Codex on any host.
+    func testClaudeStartsAsTheKindTheHostSays() {
+        let store = NewAgentStore()
+        store.open(on: Cards.desk)
+        store.choose(directory: "/src/x")
+        store.machineStarts(claude: .claudePty)
+        XCTAssertEqual(store.request?.kind, .claudePty)
+        store.machineStarts(claude: .claudeSdk)
+        XCTAssertEqual(store.request?.kind, .claudeSdk)
+        store.machineStarts(claude: .claudePty)
+        store.choose(provider: .codex)
+        XCTAssertEqual(store.request?.kind, .codex)
+        store.point(at: HostId(UUID()))
+        store.choose(directory: "/src/x")
+        store.choose(provider: .claude)
+        XCTAssertEqual(store.request?.kind, .claudeSdk, "another host has not said yet")
+    }
+
+    /// The chooser lists the host's projects, in its person's order, then
+    /// where agents worked lately; a project is not listed twice.
+    func testProjectsComeBeforeRecentFoldersAndAreListedOnce() {
+        let store = NewAgentStore()
+        store.open(on: Cards.desk)
+        store.listed(.success(Directories(
+            recent: [
+                Directory(path: "/src/relay", name: "relay"),
+                Directory(path: "/src/scratch", name: "scratch"),
+            ],
+            projects: [
+                Directory(path: "/src/web", name: "web"),
+                Directory(path: "/src/relay", name: "relay"),
+            ])), asked: store.asking())
+        XCTAssertEqual(store.projects.map(\.name), ["web", "relay"])
+        XCTAssertEqual(store.recent.map(\.name), ["scratch"])
+        XCTAssertEqual(store.likely.map(\.name), ["scratch", "web", "relay"])
+        XCTAssertEqual(store.directory, "/src/relay", "where an agent worked last is prefilled, project or not")
+        XCTAssertFalse(store.searching)
+        XCTAssertEqual(store.found, [])
+        store.query = "a"
+        XCTAssertTrue(store.searching)
+        XCTAssertEqual(store.found.map(\.name), ["relay", "scratch"])
+    }
+
+    func testAHostWithOnlyProjectsPrefillsTheFirst() {
+        let store = NewAgentStore()
+        store.open(on: Cards.desk)
+        store.listed(.success(Directories(
+            recent: [], projects: [Directory(path: "/src/web", name: "web")])),
+            asked: store.asking())
+        XCTAssertEqual(store.directory, "/src/web")
     }
 
     func testTheAgentStartsAsTheKindMostRecentlyAtWorkUntilOneIsPicked() {

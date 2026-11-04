@@ -21,10 +21,44 @@ use crate::attach::{Attacher, Outcome, farewell};
 /// ones that never will, over a slow remote connection.
 const TERMINAL_COLOR_QUERY: Duration = Duration::from_millis(250);
 
-pub async fn run(config: &InstallationConfig, profile: Option<&str>) -> Result<()> {
+pub async fn run(
+    config: &InstallationConfig,
+    profile: Option<&str>,
+    cloud_url: &str,
+) -> Result<()> {
     let profile = crate::connect::profile(config, profile).await?;
     let attacher = Attacher::new(&profile, config.keybinds.leader.clone())?;
-    open(config, &profile, attacher, None).await
+    let desk = desk(config, &profile, cloud_url, true).await;
+    open(config, &profile, attacher, None, desk).await
+}
+
+/// Onboarding and the settings screen, through the front door; none when
+/// it does not answer, and the client runs without them.
+async fn desk(
+    config: &InstallationConfig,
+    profile: &wire::Profile,
+    cloud_url: &str,
+    opens: bool,
+) -> Option<tui::DeskConfig> {
+    let installation = client::GrpcInstallation::connect(&config.front_door())
+        .await
+        .ok()?;
+    Some(tui::DeskConfig {
+        installation: Arc::new(installation),
+        profile: profile.clone(),
+        notice: tui::Notice {
+            words: analytics::NOTICE.to_owned(),
+            url: analytics::NOTICE_URL.to_owned(),
+        },
+        machine: if cfg!(target_os = "macos") {
+            "Mac"
+        } else {
+            "computer"
+        }
+        .to_owned(),
+        cloud_url: cloud_url.to_owned(),
+        opens,
+    })
 }
 
 /// `amux attach`: the agent's chat on this terminal, in the interface asked
@@ -41,11 +75,12 @@ pub async fn attach(
     let mut client = crate::connect::client_of(&profile).await?;
     let agent = crate::verbs::resolve(&mut client, agent).await?;
     let mut attacher = Attacher::new(&profile, config.keybinds.leader.clone())?;
+    let desk = desk(config, &profile, "", false).await;
     if asked.unwrap_or(config.ui.chat_in) == ChatInSetting::Native {
         match attacher.refusal(&agent) {
             None => {
                 return match attacher.attach(&agent).await? {
-                    Outcome::Fleet => open(config, &profile, attacher, None).await,
+                    Outcome::Fleet => open(config, &profile, attacher, None, desk).await,
                     outcome => {
                         println!("{}", farewell(&agent, &outcome));
                         Ok(())
@@ -56,7 +91,7 @@ pub async fn attach(
             Some(_) => {}
         }
     }
-    open(config, &profile, attacher, Some(agent.agent_id)).await
+    open(config, &profile, attacher, Some(agent.agent_id), desk).await
 }
 
 async fn open(
@@ -64,6 +99,7 @@ async fn open(
     profile: &wire::Profile,
     attacher: Attacher,
     initial_chat: Option<Vec<u8>>,
+    desk: Option<tui::DeskConfig>,
 ) -> Result<()> {
     let socket = Path::new(&profile.socket_path);
     let client = client::GrpcClient::connect(socket)
@@ -87,7 +123,7 @@ async fn open(
         chat_in: config.ui.chat_in,
         defaults: config.new_agent.clone(),
     };
-    tui::run(Arc::new(client), tui_config, attach_fn(attacher)).await
+    tui::run(Arc::new(client), tui_config, desk, attach_fn(attacher)).await
 }
 
 /// The fleet's raw attach. Only the fleet chord comes back to the fleet;

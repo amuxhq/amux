@@ -48,6 +48,10 @@ struct Cli {
     #[arg(long, global = true)]
     profile: Option<String>,
 
+    /// The account service a sign-in from the terminal client goes to.
+    #[arg(long, default_value = settings::DEFAULT_CLOUD_URL, hide = true)]
+    cloud_url: String,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -309,7 +313,7 @@ enum Hook {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let Some(command) = cli.command else {
-        return report(open_ui(cli.config, cli.profile));
+        return report(open_ui(cli.config, cli.profile, cli.cloud_url));
     };
     // A command a person runs; what amux runs on itself, and the daemon
     // and relay a service manager runs, print nothing of their own.
@@ -388,10 +392,10 @@ fn block_on<T>(future: impl std::future::Future<Output = Result<T>>) -> Result<T
         .block_on(future)
 }
 
-fn open_ui(config_path: Option<PathBuf>, profile: Option<String>) -> Result<()> {
+fn open_ui(config_path: Option<PathBuf>, profile: Option<String>, cloud_url: String) -> Result<()> {
     block_on(async move {
         let config = connect::load_config(config_path.as_deref())?;
-        ui::run(&config, profile.as_deref()).await
+        ui::run(&config, profile.as_deref(), &cloud_url).await
     })
 }
 

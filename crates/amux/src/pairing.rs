@@ -337,11 +337,7 @@ fn duration(seconds: u64) -> String {
 }
 
 fn terminal_qr(payload: &str) -> Result<String> {
-    let code = qrcode::QrCode::new(payload.as_bytes()).context("encoding the QR code")?;
-    Ok(code
-        .render::<qrcode::render::unicode::Dense1x2>()
-        .quiet_zone(true)
-        .build())
+    tui::qr::printed(payload).context("encoding the QR code")
 }
 
 /// Closes this host's pairing mode.

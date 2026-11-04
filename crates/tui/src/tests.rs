@@ -22,6 +22,7 @@ const W: u16 = 100;
 const H: u16 = 30;
 
 mod narrow;
+mod onboarding;
 mod round2;
 mod text_layout;
 

@@ -33,6 +33,7 @@ use tui::chat::ChatView;
 use tui::chat::review::ReviewPage;
 use tui::report::Report;
 use tui::sessions::{agent, caught_up};
+use tui::setup_scenes::{SettingsScene, SetupScene};
 use tui::vocabulary::{ChatScene, HomeScene};
 use ui_state::{Connection, FleetMsg, FleetState, InputOutcome, Msg, PhaseView, SessionState};
 use wire::Kind;
@@ -87,6 +88,9 @@ impl Story {
 
 /// One whole screen, ready to draw at any size.
 pub enum Scene {
+    /// An onboarding screen.
+    Setup(Box<SetupScene>),
+    Settings(Box<SettingsScene>),
     Home(Box<HomeScene>),
     Chat(Box<ChatScene>),
     Review(Box<ReviewPage>),
@@ -98,6 +102,8 @@ pub enum Scene {
 impl Scene {
     pub fn draw(&mut self, frame: &mut Frame<'_>, area: Rect, theme: Theme) {
         match self {
+            Scene::Setup(setup) => setup.draw(frame, area, theme),
+            Scene::Settings(settings) => settings.draw(frame, area, theme),
             Scene::Home(home) => home.draw(frame, area, theme),
             Scene::Chat(chat) => chat.draw(frame, area, theme),
             Scene::Review(page) => page.draw(frame, area, None, theme),
@@ -125,7 +131,40 @@ fn story(id: &'static str, build: fn() -> Scene) -> Story {
 
 /// Every story, in the order the storybook steps through them: the list's.
 pub fn all() -> Vec<Story> {
+    use tui::setup_scenes as setup;
     vec![
+        // Onboarding.
+        story("onboarding.pair", || Scene::Setup(Box::new(setup::pair()))),
+        story("onboarding.pair-rename", || {
+            Scene::Setup(Box::new(setup::pair_rename()))
+        }),
+        story("onboarding.pairing", || {
+            Scene::Setup(Box::new(setup::pairing()))
+        }),
+        story("onboarding.paired", || {
+            Scene::Setup(Box::new(setup::paired()))
+        }),
+        story("onboarding.sign-in", || {
+            Scene::Setup(Box::new(setup::sign_in()))
+        }),
+        story("onboarding.sign-in-waiting", || {
+            Scene::Setup(Box::new(setup::sign_in_waiting()))
+        }),
+        story("onboarding.sign-in-offer", || {
+            Scene::Setup(Box::new(setup::sign_in_offer()))
+        }),
+        story("onboarding.projects", || {
+            Scene::Setup(Box::new(setup::projects()))
+        }),
+        story("onboarding.projects-add", || {
+            Scene::Setup(Box::new(setup::projects_add()))
+        }),
+        story("onboarding.improve", || {
+            Scene::Setup(Box::new(setup::improve()))
+        }),
+        story("onboarding.first-agent", || {
+            Scene::Setup(Box::new(setup::first_agent()))
+        }),
         // The agent list.
         story("fleet.first-run", || Scene::Home(Box::new(first_run()))),
         story("fleet.busy", || {
@@ -146,6 +185,12 @@ pub fn all() -> Vec<Story> {
             for c in "-v2".chars() {
                 home.key(KeyCode::Char(c));
             }
+            Scene::Home(Box::new(home))
+        }),
+        story("fleet.finish-setup", || {
+            let mut home = first_run();
+            home.home.finish = 3;
+            home.key(KeyCode::Down);
             Scene::Home(Box::new(home))
         }),
         // Hosts.
@@ -210,6 +255,13 @@ pub fn all() -> Vec<Story> {
         // Review.
         story("review.page", || {
             Scene::Review(Box::new(tui::vocabulary::commented_review()))
+        }),
+        // Settings.
+        story("settings.machine", || {
+            Scene::Settings(Box::new(setup::settings_page(true)))
+        }),
+        story("settings.machine-signed-out", || {
+            Scene::Settings(Box::new(setup::settings_page(false)))
         }),
         // Reporting a problem.
         story("report.ready", || {

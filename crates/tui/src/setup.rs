@@ -144,11 +144,13 @@ pub struct Setup {
     /// Which Claude the chosen host says a new agent runs there, taken as
     /// the agent starts; unspecified follows where the person chats.
     pub host_claude_kind: Kind,
+    /// The folders the chosen host offers, once it has said: its projects,
+    /// then the folders its agents ran in lately.
+    pub folders: Option<(Vec<u8>, Vec<String>)>,
 }
 
 impl Setup {
-    /// From home: the defaults. No memory per folder: that would start a
-    /// notion of projects nobody has designed.
+    /// From home: the defaults, in the folder the client started in.
     pub fn defaults(
         chat_in: ChatInSetting,
         working_dir: &str,
@@ -170,6 +172,7 @@ impl Setup {
             worktree: false,
             defaults: defaults.clone(),
             host_claude_kind: Kind::Unspecified,
+            folders: None,
         };
         setup.start_from_defaults();
         setup
@@ -349,7 +352,8 @@ impl Setup {
             Item::Effort => effort_choices(&self.view()),
             Item::Permission => permission_choices(&self.view()),
             Item::Mode => mode_choices(&self.view()),
-            Item::Folder => recent_folders(fleet, &self.host, &self.folder)
+            Item::Folder => self
+                .folder_choices()
                 .into_iter()
                 .map(|folder| {
                     let current = folder == self.folder;
@@ -440,8 +444,9 @@ impl Setup {
                 }
             }
             // A folder names a place on one machine: on another host it
-            // names nothing, or something else. The new host's last folder
-            // comes from the fleet (`fill_folder`), else one must be chosen.
+            // names nothing, or something else. The new host's first folder
+            // comes from its own list (`fill_folder`), else one must be
+            // chosen.
             Item::Host => {
                 if let Some(host) = host_of_value(value)
                     && host != self.host
@@ -455,14 +460,66 @@ impl Setup {
         }
     }
 
-    /// With no folder on its host yet, the one the host's agents last
-    /// worked in, when the fleet knows one.
-    pub fn fill_folder(&mut self, fleet: &FleetState) {
+    /// With no folder on its host yet, the first the host offers, once it
+    /// has said.
+    pub fn fill_folder(&mut self) {
         if self.folder.is_empty()
-            && let Some(folder) = recent_folders(fleet, &self.host, "").into_iter().next()
+            && let Some(folder) = self.folder_choices().into_iter().next()
         {
             self.folder = folder;
         }
+    }
+
+    /// What the chosen host offers as folders: its projects, then where its
+    /// agents ran lately, with the folder chosen now first when it is
+    /// neither.
+    pub fn folder_choices(&self) -> Vec<String> {
+        let mut folders: Vec<String> = Some(self.folder.clone())
+            .filter(|current| !current.is_empty())
+            .into_iter()
+            .collect();
+        if let Some((host, offered)) = &self.folders
+            && *host == self.host
+        {
+            for folder in offered {
+                if !folders.contains(folder) {
+                    folders.push(folder.clone());
+                }
+            }
+            // The current folder leads only when the host does not list
+            // it; listed, it keeps its place among the projects.
+            if offered.contains(&self.folder) {
+                folders.remove(0);
+            }
+        }
+        folders
+    }
+
+    /// The host's folders, when they are for the chosen host: its projects
+    /// first, then its recent folders.
+    pub fn take_folders(&mut self, host: &[u8], answer: &wire::ListRepositoriesResponse) {
+        let folders = answer
+            .projects
+            .iter()
+            .chain(&answer.recent)
+            .map(|entry| entry.path.clone())
+            .fold(Vec::new(), |mut folders: Vec<String>, path| {
+                if !folders.contains(&path) {
+                    folders.push(path);
+                }
+                folders
+            });
+        self.folders = Some((host.to_vec(), folders));
+        if host == self.host {
+            self.fill_folder();
+        }
+    }
+
+    /// Whether the chosen host's folders are still to ask for.
+    pub fn wants_folders(&self) -> bool {
+        self.folders
+            .as_ref()
+            .is_none_or(|(host, _)| *host != self.host)
     }
 
     /// The create request, with the first prompt when there is one.
@@ -572,26 +629,6 @@ fn host_of_value(value: &str) -> Option<Vec<u8>> {
         .step_by(2)
         .map(|at| u8::from_str_radix(value.get(at..at + 2)?, 16).ok())
         .collect()
-}
-
-/// The folders agents on `host` work in, the most recently busy first,
-/// with `current` among them.
-fn recent_folders(fleet: &FleetState, host: &[u8], current: &str) -> Vec<String> {
-    let mut agents: Vec<&wire::Agent> = fleet
-        .agents()
-        .filter(|agent| agent.host_id == host && !agent.cwd.is_empty())
-        .collect();
-    agents.sort_by_key(|agent| std::cmp::Reverse(agent.phase_since_ms));
-    let mut folders: Vec<String> = Some(current.to_owned())
-        .filter(|current| !current.is_empty())
-        .into_iter()
-        .collect();
-    for agent in agents {
-        if !folders.contains(&agent.cwd) {
-            folders.push(agent.cwd.clone());
-        }
-    }
-    folders
 }
 
 /// One choice of a flyover.
@@ -1192,8 +1229,8 @@ impl Form {
     }
 
     /// Another host: the folder field follows the folder chosen there.
-    fn host_changed(&mut self, setup: &mut Setup, fleet: &FleetState) {
-        setup.fill_folder(fleet);
+    fn host_changed(&mut self, setup: &mut Setup) {
+        setup.fill_folder();
         self.folder.set(&setup.shown(&setup.folder), Vec::new());
     }
 
@@ -1202,9 +1239,10 @@ impl Form {
     }
 
     /// The folders matching what is typed.
-    fn folders(&self, setup: &Setup, fleet: &FleetState) -> Vec<String> {
+    fn folders(&self, setup: &Setup) -> Vec<String> {
         let typed = self.folder.text().trim().to_lowercase();
-        recent_folders(fleet, &setup.host, &setup.folder)
+        setup
+            .folder_choices()
             .into_iter()
             .map(|folder| setup.shown(&folder))
             .filter(|folder| typed.is_empty() || folder.to_lowercase().contains(&typed))
@@ -1231,7 +1269,7 @@ impl Form {
                 let next = Picker::step(&choices, at, step);
                 if let Some(choice) = choices.get(next) {
                     setup.pick(Item::Host, &choice.value);
-                    self.host_changed(setup, fleet);
+                    self.host_changed(setup);
                 }
             }
             Field::Worktree => setup.pick(Item::Worktree, ""),
@@ -1259,7 +1297,7 @@ impl Form {
                 // The folder's best match fills it; again, it moves on.
                 KeyCode::Tab => {
                     let top = (self.field == Field::Folder)
-                        .then(|| self.folders(setup, fleet).into_iter().next())
+                        .then(|| self.folders(setup).into_iter().next())
                         .flatten()
                         .filter(|top| top != self.folder.text().trim());
                     match top {
@@ -1298,7 +1336,7 @@ impl Form {
     }
 
     /// A click on the form.
-    pub fn click(&mut self, setup: &mut Setup, fleet: &FleetState, hit: FormHit) -> FormOutcome {
+    pub fn click(&mut self, setup: &mut Setup, hit: FormHit) -> FormOutcome {
         match hit {
             FormHit::Field(field) => {
                 self.field = field;
@@ -1313,7 +1351,7 @@ impl Form {
                 self.field = Field::Host;
                 self.typing = false;
                 setup.pick(Item::Host, &value);
-                self.host_changed(setup, fleet);
+                self.host_changed(setup);
             }
             FormHit::Folder(folder) => {
                 self.field = Field::Folder;
@@ -1478,7 +1516,7 @@ impl Form {
             rows.push((line, spots, current));
             // Typing a folder: the folders it could be, under it.
             if field == Field::Folder && current && self.typing {
-                let folders = self.folders(setup, fleet);
+                let folders = self.folders(setup);
                 let mut more = Line::from(Span::raw(" ".repeat(1 + LABEL)));
                 let mut spots = Vec::new();
                 for (i, folder) in folders.iter().take(4).enumerate() {

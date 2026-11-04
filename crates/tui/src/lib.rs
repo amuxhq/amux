@@ -15,12 +15,17 @@ pub mod highlight;
 pub mod home;
 mod hosts;
 pub(crate) mod markdown;
+pub mod onboarding;
 pub(crate) mod panel;
+pub mod qr;
 pub mod report;
 pub mod run;
 #[cfg(any(test, feature = "fixtures"))]
 pub mod sessions;
+pub mod settings_screen;
 pub mod setup;
+#[cfg(any(test, feature = "fixtures"))]
+pub mod setup_scenes;
 pub mod terminal;
 pub(crate) mod text;
 pub mod theme;
@@ -34,7 +39,8 @@ mod fixtures;
 #[cfg(test)]
 mod tests;
 
-pub use app::{App, TuiConfig};
+pub use app::{App, DeskConfig, TuiConfig};
+pub use onboarding::Notice;
 pub use run::{AttachFn, AttachReturn, run};
 pub use terminal::{RESTORE_BYTES, TerminalGuard, query_terminal_colors};
 pub use theme::{ColorMode, TerminalColors, Theme, detect_color_mode};

@@ -19,6 +19,9 @@ use ui_state::{AgentKey, Composer, PhaseView};
 use ui_view::family_header;
 use wire::{Agent, Attachment, DeleteAgentRequest, Diff, RenameAgentRequest};
 
+mod desk;
+pub use desk::DeskConfig;
+
 use crate::chat::layout::{CAP, PAGE};
 use crate::chat::{ChatEffect, ChatView};
 use crate::clipboard::read_clipboard;
@@ -241,6 +244,13 @@ pub enum AppEvent {
         key: crate::chat::FetchKey,
         diff: Diff,
     },
+    /// Onboarding's and the settings screen's calls came back.
+    Desk(desk::DeskEvent),
+    /// The folders a host offers a new agent: its projects, then recent.
+    Folders {
+        host: Vec<u8>,
+        answer: wire::ListRepositoriesResponse,
+    },
     /// What a host offers for a provider, for a new agent there.
     HostOffer {
         host: Vec<u8>,
@@ -305,6 +315,11 @@ pub struct App {
     /// rest of what they were typing never acts on another agent. The last
     /// key's time, or the close's.
     home_held: Option<i64>,
+    /// Onboarding and settings, when the installation is served.
+    desk: Option<desk::Desk>,
+    /// The folders each host last offered, and the hosts asked now.
+    host_folders: HashMap<Vec<u8>, wire::ListRepositoriesResponse>,
+    folders_asked: HashSet<Vec<u8>>,
     events: mpsc::UnboundedSender<AppEvent>,
     pub receiver: mpsc::UnboundedReceiver<AppEvent>,
 }
@@ -390,9 +405,20 @@ impl App {
             host_offers: HashMap::new(),
             home_held: None,
             offers_asked: HashSet::new(),
+            desk: None,
+            host_folders: HashMap::new(),
+            folders_asked: HashSet::new(),
             events,
             receiver,
         }
+    }
+
+    /// Serves onboarding and the settings screen through the
+    /// installation's front door, and starts reading what they show.
+    pub fn with_desk(mut self, config: DeskConfig) -> App {
+        self.desk = Some(desk::Desk::new(config));
+        self.start_desk();
+        self
     }
 
     fn theme(&self) -> Theme {
@@ -440,6 +466,9 @@ impl App {
                 at(Instant::now() + Duration::from_millis(250));
             }
         }
+        if let Some(renew) = self.desk_next_tick() {
+            at(renew);
+        }
         // Code drawn plain while the grammars load is drawn again once
         // they arrive.
         if crate::highlight::loading() {
@@ -450,6 +479,7 @@ impl App {
 
     /// Drops what has expired; true when that changed the screen.
     pub fn tick(&mut self) -> bool {
+        self.desk_tick();
         let mut changed = false;
         if self
             .quit_armed
@@ -472,6 +502,7 @@ impl App {
     /// Opens the configured first chat once its row is in the fleet. The
     /// fleet keeps the open chat's entry and host current itself.
     pub fn fleet_changed(&mut self) {
+        self.desk_fleet_changed();
         if let Some(id) = self.config.initial_chat.clone() {
             let agent = self.fleet.state().find(&id).map(ui_state::agent_key);
             if let Some(agent) = agent {
@@ -530,6 +561,14 @@ impl App {
                 }
             }
             AppEvent::Notice(words, tone) => self.notice(words, tone),
+            AppEvent::Desk(event) => self.desk_event(event),
+            AppEvent::Folders { host, answer } => {
+                self.folders_asked.remove(&host);
+                if let Some(setup) = self.home.open_setup() {
+                    setup.take_folders(&host, &answer);
+                }
+                self.host_folders.insert(host, answer);
+            }
             AppEvent::Restore {
                 agent_id,
                 text,
@@ -725,6 +764,9 @@ impl App {
     }
 
     fn field_text(&self) -> bool {
+        if self.desk_open() {
+            return self.desk_field_text().unwrap_or(false);
+        }
         match &self.chat {
             Some(chat) => {
                 let state = chat.session.state();
@@ -756,6 +798,10 @@ impl App {
                 if self.help {
                     return Flow::Continue;
                 }
+                if self.desk_open() {
+                    self.desk_paste(&text);
+                    return Flow::Continue;
+                }
                 match &mut self.chat {
                     Some(chat) => {
                         let state = chat.session.state();
@@ -776,6 +822,10 @@ impl App {
                         crossterm::event::MouseEventKind::ScrollDown => self.help_scroll += 3,
                         _ => {}
                     }
+                    return Flow::Continue;
+                }
+                if self.desk_open() {
+                    self.desk_mouse(mouse);
                     return Flow::Continue;
                 }
                 let theme = self.theme();
@@ -827,6 +877,10 @@ impl App {
         if key.code == KeyCode::Char('c') && ctrl {
             if self.field_text() {
                 self.quit_armed = None;
+                if self.desk_open() {
+                    self.desk_kill_field();
+                    return Flow::Continue;
+                }
                 match &mut self.chat {
                     Some(chat) => {
                         let state = chat.session.state();
@@ -843,6 +897,13 @@ impl App {
             return Flow::Continue;
         }
         self.quit_armed = None;
+        // Onboarding and settings have every other key: they are whole
+        // screens of their own, with no chat under them.
+        if self.desk_open() {
+            self.leader_pending = false;
+            self.desk_key(key);
+            return Flow::Continue;
+        }
         if key.code == KeyCode::Char(self.config.leader) && ctrl {
             self.leader_pending = true;
             self.leader_since = Some(Instant::now());
@@ -878,6 +939,10 @@ impl App {
                 drop(state);
                 self.close_chat();
                 self.home.open_hosts();
+            }
+            KeyCode::Char(crate::home::SETTINGS_KEY) => {
+                drop(state);
+                self.open_settings();
             }
             KeyCode::Char('d') => return Flow::Quit,
             KeyCode::Char('k') => chat.view.move_focus(&state, true, theme),
@@ -1010,6 +1075,9 @@ impl App {
         match effect {
             FleetEffect::Quit => return Some(Flow::Quit),
             FleetEffect::Help => self.help = true,
+            FleetEffect::Settings => self.open_settings(),
+            FleetEffect::FinishSetup => self.finish_setup(),
+            FleetEffect::DismissSetup => self.dismiss_setup(),
             FleetEffect::Report => self.report_asked = true,
             FleetEffect::Open(agent) => self.open(agent),
             FleetEffect::Attach(agent) => return self.raw_attach(&agent),
@@ -1356,6 +1424,7 @@ impl App {
             return;
         }
         self.ask_host_offers();
+        self.ask_folders();
         let Some(chat) = &mut self.chat else {
             return;
         };
@@ -1381,6 +1450,38 @@ impl App {
                 })
             });
         }
+    }
+
+    /// While a new agent is being set up: the folders its host offers,
+    /// from what it said last time at once and asked again, so a project
+    /// added since shows.
+    fn ask_folders(&mut self) {
+        let Some(setup) = self.home.open_setup() else {
+            return;
+        };
+        if !setup.wants_folders() {
+            return;
+        }
+        let host = setup.host.clone();
+        if let Some(answer) = self.host_folders.get(&host) {
+            setup.take_folders(&host, answer);
+        }
+        if !self.folders_asked.insert(host.clone()) {
+            return;
+        }
+        let client = self.client.clone();
+        self.spawn(async move {
+            let answer = client
+                .list_repositories(wire::ListRepositoriesRequest {
+                    query: None,
+                    limit: 0,
+                    host_id: Some(host.clone()),
+                })
+                .await
+                // A host that cannot say leaves the folder to be typed.
+                .unwrap_or_default();
+            Some(AppEvent::Folders { host, answer })
+        });
     }
 
     /// While a new agent is being set up: what its host offers for each
@@ -1500,6 +1601,11 @@ impl App {
         let area = paint.area();
         let theme = self.theme();
         let width = usize::from(area.width);
+        if !self.help && self.desk_open() {
+            let footer = self.footer(width);
+            self.draw_desk(paint, area, footer);
+            return;
+        }
         if self.help {
             let lines = help_lines(self.config.leader, width, theme);
             self.help_scroll = self
@@ -1678,6 +1784,7 @@ fn sibling_setup(
         worktree: false,
         defaults: defaults.clone(),
         host_claude_kind: wire::Kind::Unspecified,
+        folders: None,
     }
 }
 
@@ -1719,6 +1826,7 @@ fn panel_entries() -> Vec<crate::chat::PanelEntry> {
         entry("amux", "s", "home", 's'),
         entry("amux", "n", "new agent", 'n'),
         entry("amux", "h", "hosts", 'h'),
+        entry("amux", ",", "settings", ','),
         entry("amux", "d", "detach", 'd'),
         entry("amux", "b", "bug report", 'b'),
         entry("amux", "?", "all keys", '?'),
@@ -1808,10 +1916,11 @@ pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'
         ("Leader", String::new()),
     ]);
     // The leader's chords, by their whole keys.
-    let chords: [(&str, &str); 13] = [
+    let chords: [(&str, &str); 14] = [
         ("s", "home"),
         ("n", "new agent, starting from this chat's settings"),
         ("h", "hosts"),
+        (",", "settings"),
         ("d", "detach: leave to the shell; agents keep running"),
         ("b", "report a problem: mark the screen, write a note"),
         ("r", "review changes; comments go in the draft"),
@@ -1900,6 +2009,17 @@ fn open_url(url: &str) -> std::io::Result<()> {
         return Err(std::io::Error::other(
             "link contains spaces, quotes or control characters",
         ));
+    }
+    // A person's chosen browser, as other command-line tools honour it;
+    // the system's handler otherwise.
+    if let Some(browser) = std::env::var_os("BROWSER").filter(|browser| !browser.is_empty()) {
+        return std::process::Command::new(browser)
+            .arg(url)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map(|_| ());
     }
     system_open(url)
 }

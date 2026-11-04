@@ -22,7 +22,6 @@ clap = { workspace = true }
 crossterm = { workspace = true }
 hyper-util = { workspace = true }
 node = { workspace = true }
-qrcode = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_ignored = { workspace = true }

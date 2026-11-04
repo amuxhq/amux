@@ -1,6 +1,7 @@
 use std::path::Path;
 
 mod release;
+mod signing;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     match std::env::args().nth(1).as_deref() {

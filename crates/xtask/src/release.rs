@@ -14,6 +14,7 @@
 //! number goes into the manifests, the commit is tagged and pushed, and the
 //! tag's workflow builds the binaries into a GitHub Release. `deploy` puts
 //! that release in front of machines: a channel and a rollout are chosen,
+//! the macOS binary is signed with Developer ID and notarized (`signing`),
 //! the binaries' checksums are signed, and the channel manifest is uploaded
 //! to the release and handed to the operator's publish script, which puts
 //! it where amux.sh serves it as `/releases/<channel>.json`. A stable
@@ -33,6 +34,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use release::{Manifest, Release};
+
+use crate::signing;
 
 /// The keychain item that holds the seed, as `security` names it.
 const KEYCHAIN_SERVICE: &str = "amux-release-key";
@@ -414,6 +417,8 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
         .into());
     }
 
+    sign_macos(&root, &tag)?;
+
     let repository = gh(&[
         "repo",
         "view",
@@ -493,6 +498,67 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
         Vec::new()
     };
     publish(&options.channel, version, &file, &installers)?;
+    Ok(())
+}
+
+/// The release's macOS binary, as every machine that takes the release
+/// receives it.
+const MACOS_ASSET: &str = "amux-macos-arm64";
+
+/// Makes the release's macOS binary one signed with Developer ID and
+/// notarized, and its line in `checksums.txt` that binary's, before any
+/// manifest is signed over them. The binary is signed only once: a later
+/// deploy of the same release finds it signed and only checks the checksum,
+/// which also repairs a deploy stopped between the two uploads.
+fn sign_macos(root: &Path, tag: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let dir = root.join("target/release-sign").join(tag);
+    std::fs::create_dir_all(&dir)?;
+    let binary = dir.join(MACOS_ASSET);
+    let dir_arg = dir.to_string_lossy();
+    gh(&[
+        "release",
+        "download",
+        tag,
+        "--pattern",
+        MACOS_ASSET,
+        "--dir",
+        &dir_arg,
+        "--clobber",
+    ])?;
+    if signing::sign_and_notarize(&binary)? {
+        gh(&[
+            "release",
+            "upload",
+            tag,
+            &binary.to_string_lossy(),
+            "--clobber",
+        ])?;
+        println!("uploaded the signed {MACOS_ASSET} to {tag}");
+    }
+    let digest = release::sha256_of(&std::fs::read(&binary)?);
+    let checksums = gh(&[
+        "release",
+        "download",
+        tag,
+        "--pattern",
+        "checksums.txt",
+        "--output",
+        "-",
+    ])?;
+    if checksum(&checksums, MACOS_ASSET).as_deref() != Some(digest.as_str()) {
+        let rewritten = signing::with_checksum(&checksums, MACOS_ASSET, &digest)
+            .ok_or_else(|| format!("checksums.txt of {tag} has no line for {MACOS_ASSET}"))?;
+        let file = dir.join("checksums.txt");
+        std::fs::write(&file, rewritten)?;
+        gh(&[
+            "release",
+            "upload",
+            tag,
+            &file.to_string_lossy(),
+            "--clobber",
+        ])?;
+        println!("checksums.txt of {tag} now names the signed {MACOS_ASSET}");
+    }
     Ok(())
 }
 

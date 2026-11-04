@@ -820,7 +820,8 @@ just deploy 0.8.0 --rollout 10          # stable, a tenth of the machines; later
 
 `xtask release deploy` waits until the tagged GitHub Release holds
 `checksums.txt` (the workflow may still be building after a cut; it gives
-up after 45 minutes), reads the checksums, signs each target's hash with
+up after 45 minutes), signs the macOS binary with Developer ID (below),
+reads the checksums, signs each target's hash with
 the keychain's seed (or the backup's, with `--key-file PATH`), verifies the
 signature against the keys the workflow compiles in, writes the channel's manifest with each entry's URL pointing
 at the release's own asset (a copy stays in `target/release-manifests/`),
@@ -837,6 +838,44 @@ there. So:
 
 Because the key is local, deploying is done on the release Mac. Nothing in
 the workflow can sign.
+
+### Signing the macOS binary
+
+The workflow builds `amux-macos-arm64` with only the linker's ad-hoc
+signature, and no signing secret goes to GitHub. Before any manifest is
+signed, the deploy downloads that binary into `target/release-sign/<tag>/`,
+signs it with the Developer ID Application certificate in the login keychain
+under the hardened runtime and a secure timestamp, with the stable
+identifier `sh.amux.cli`, and has Apple notarize it with the App Store
+Connect API key (`xcrun notarytool submit --wait`, giving up after two
+hours; a rejection prints Apple's log). Only an accepted binary is uploaded
+back to the release, replacing the workflow's, and `checksums.txt` is
+rewritten with its hash, so the manifest signs the binary machines will
+receive. A bare executable cannot carry a stapled ticket: Gatekeeper looks
+the ticket up online the first time a quarantined download runs.
+
+What it buys: macOS names amux in its login-item list, privacy grants keyed
+to its identity survive updates, and a copy downloaded with a browser opens.
+Updates are trusted through the release key either way.
+
+A binary already signed with Developer ID is left alone, so a second deploy
+of the same release (a wider rollout, preview promoted to stable) signs
+nothing and only checks that `checksums.txt` names it, which also repairs a
+deploy stopped between the two uploads.
+
+The release Mac needs, beside the release key:
+
+- A Developer ID Application certificate with its private key in the login
+  keychain. It is chosen by its type, never by its full name, which carries
+  the Team ID. The first `codesign` use asks for the key; answer Allow, never
+  Always Allow.
+- The App Store Connect key's identifiers in the login keychain under the
+  service `amux-appstoreconnect` (accounts `key-id` and `issuer-id`) and the
+  key at `~/.appstoreconnect/private_keys/AuthKey_<key id>.p8`, the same items
+  the iPhone release reads ([One-time operator setup](#one-time-operator-setup)).
+
+A team's first notarizations can take hours; `xcrun notarytool history`
+lists them.
 
 ### What amux.sh serves
 

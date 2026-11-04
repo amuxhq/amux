@@ -1589,7 +1589,10 @@ fn composer_limits(journey: &mut TerminalJourney) -> Proved {
 }
 
 fn new_agent_terminal(journey: &mut TerminalJourney) -> Proved {
+    // Each machine runs its new Claude agents in the interface its own
+    // owner chats in, so the desk is set to the native one too.
     journey.configure("laptop", "[ui]\nchat_in = \"native\"")?;
+    journey.configure("desk", "[ui]\nchat_in = \"native\"")?;
     let before = ids(&journey.inventory("laptop", Some("inventory-before"))?);
     let pane = journey.launch("terminal", "laptop", &[])?;
     journey.wait(&pane, at_home, "home")?;

@@ -15,8 +15,8 @@ ask.reply.text |  | Let me see both palettes on the desk first. | 28,699,346,59
 ask.reply.send | Send reply |  | 28,770,346,44
 chat.more | More |  | 350,66,28,36
 chat.back | Back |  | 20,66,40,36
-chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
-chat.title | asker | asker | 80,66,152,36
+chat.header | /p/t/a/n/d/work · desk | live | 80,66,165,36
+chat.title | asker | asker | 80,66,165,36
  | Question |  | 62,634,70,20
  | More |  | 338,622,44,44
  | Reply in your own words |  | 28,672,180,17
@@ -31,5 +31,5 @@ chat.title | asker | asker | 80,66,152,36
  | Pick the palette too. |  | 16,484,370,40
  | Asking |  | 16,536,370,20
  | Back |  | 20,66,40,36
- | asker, /t/a/n/d/work · desk |  | 80,66,152,36
+ | asker, /p/t/a/n/d/work · desk |  | 80,66,165,36
  | More |  | 350,66,28,36

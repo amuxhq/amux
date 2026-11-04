@@ -1057,6 +1057,9 @@ impl PhoneJourney {
             launch.geometry,
             relay_quic.as_deref(),
         );
+        if !launch.first_run {
+            arguments.extend(["-localNetworkExplained".to_owned(), "YES".to_owned()]);
+        }
         arguments.extend(launch.extra);
         if let Some(phone) = &self.phone {
             // The phone's link socket dials out from where it is bound, so it
@@ -1520,6 +1523,11 @@ impl PhoneJourney {
 #[derive(Default)]
 pub(crate) struct Launch {
     pub extra: Vec<String>,
+    /// Launched as on a phone that never looked for hosts: the line that
+    /// explains the local network comes before any browsing. Every other
+    /// launch starts with it answered, as a person past their first run
+    /// would, so the screens the journeys read are the list's.
+    pub first_run: bool,
     pub found: Option<Vec<String>>,
     pub geometry: bool,
     pub relay_quic: Option<String>,

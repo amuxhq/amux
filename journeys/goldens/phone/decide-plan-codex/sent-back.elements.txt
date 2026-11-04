@@ -22,8 +22,8 @@ ask.approve | Approve |  | 28,770,169,44
 ask.choice.1 | Send back… |  | 205,770,169,44
 chat.more | More |  | 350,66,28,36
 chat.back | Back |  | 20,66,40,36
-chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
-chat.title | planner-codex | planner-codex | 80,66,152,36
+chat.header | /p/t/a/n/d/work · desk | live | 80,66,165,36
+chat.title | planner-codex | planner-codex | 80,66,165,36
  | Plan ready |  | 62,722,79,20
  | More |  | 338,710,44,44
  | Approve |  | 28,770,169,44
@@ -43,5 +43,5 @@ chat.title | planner-codex | planner-codex | 80,66,152,36
  | Plan proposed, Rotate the logs, Rotate the logs, 1., Rotate the daemon's log every night., 2., Compress rotated logs., 3., Delete logs older than a month. |  | 16,502,370,160
  | Worked <t> |  | 16,672,62,16
  | Back |  | 20,66,40,36
- | planner-codex, /t/a/n/d/work · desk |  | 80,66,152,36
+ | planner-codex, /p/t/a/n/d/work · desk |  | 80,66,165,36
  | More |  | 350,66,28,36

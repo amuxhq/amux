@@ -11,8 +11,8 @@ ask.choice.0 | Allow |  | 28,749,169,65
 ask.deny | Deny… |  | 205,749,169,65
 chat.more | More |  | 347,66,33,36
 chat.back | Back |  | 20,66,40,36
-chat.header | /t/a/n/d/work · desk | live | 80,66,161,36
-chat.title | decision-sdk | decision-sdk | 80,66,161,36
+chat.header | /p/t/a/n/d/work · desk | live | 80,66,175,36
+chat.title | decision-sdk | decision-sdk | 80,66,175,36
  | Wants to run a command |  | 62,340,218,86
  | More |  | 338,361,44,44
  | deploy --check |  | 28,438,346,62
@@ -23,5 +23,5 @@ chat.title | decision-sdk | decision-sdk | 80,66,161,36
  | Check the deployment once. |  | 16,112,370,106
  | Wants to run, deploy --check |  | 16,230,370,80
  | Back |  | 20,66,40,36
- | decision-sdk, /t/a/n/d/work · desk |  | 80,66,161,36
+ | decision-sdk, /p/t/a/n/d/work · desk |  | 80,66,175,36
  | More |  | 347,66,33,36

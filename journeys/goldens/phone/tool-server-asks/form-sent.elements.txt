@@ -14,8 +14,8 @@ chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
 chat.more | More |  | 350,66,28,36
 chat.back | Back |  | 20,66,40,36
-chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
-chat.title | filer | filer | 80,66,152,36
+chat.header | /p/t/a/n/d/work · desk | live | 80,66,165,36
+chat.title | filer | filer | 80,66,165,36
  | Attach |  | 23,779,44,44
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
@@ -27,5 +27,5 @@ chat.title | filer | filer | 80,66,152,36
  | Filed it in Linear. |  | 16,274,370,20
  | Worked <t> |  | 16,301,62,16
  | Back |  | 20,66,40,36
- | filer, /t/a/n/d/work · desk |  | 80,66,152,36
+ | filer, /p/t/a/n/d/work · desk |  | 80,66,165,36
  | More |  | 350,66,28,36

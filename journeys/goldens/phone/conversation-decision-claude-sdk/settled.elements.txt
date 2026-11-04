@@ -13,8 +13,8 @@ chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
 chat.more | More |  | 350,66,28,36
 chat.back | Back |  | 20,66,40,36
-chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
-chat.title | decision-sdk | decision-sdk | 80,66,152,36
+chat.header | /p/t/a/n/d/work · desk | live | 80,66,165,36
+chat.title | decision-sdk | decision-sdk | 80,66,165,36
  | Attach |  | 23,779,44,44
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
@@ -25,5 +25,5 @@ chat.title | decision-sdk | decision-sdk | 80,66,152,36
  | The deploy check passed. |  | 16,244,370,20
  | Worked <t> |  | 16,271,62,16
  | Back |  | 20,66,40,36
- | decision-sdk, /t/a/n/d/work · desk |  | 80,66,152,36
+ | decision-sdk, /p/t/a/n/d/work · desk |  | 80,66,165,36
  | More |  | 350,66,28,36

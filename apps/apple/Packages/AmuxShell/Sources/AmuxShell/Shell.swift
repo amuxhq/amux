@@ -277,7 +277,10 @@ public struct Shell: View {
         // itself, where the person is looking for one: the first-run screen,
         // an empty Agents list or the Hosts tab.
         .onChange(of: windowToOffer, initial: true) { _, host in
-            if let host { router.pairing = .code(host) }
+            guard let host else { return }
+            // The keypad's first frame already names the machine it offers.
+            stores.pairing.open(machine: stores.hosts.known(host))
+            router.pairing = .code(host)
         }
         // Putting a code sheet away puts that machine's window away: it is
         // not raised again until the machine opens another.

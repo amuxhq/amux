@@ -2,6 +2,7 @@
 Store Connect: which version it picks, which set it replaces, how it uploads
 a frame and the order it leaves them in. Nothing here reaches Apple."""
 
+import base64
 import hashlib
 import importlib.util
 import json
@@ -173,11 +174,11 @@ class Signing(unittest.TestCase):
         made = recipe.token("KEY", "ISSUER", key, now=1_000)
         header, claims, signature = made.split(".")
         pad = lambda text: text + "=" * (-len(text) % 4)
-        self.assertEqual(json.loads(recipe.base64.urlsafe_b64decode(pad(header))),
+        self.assertEqual(json.loads(base64.urlsafe_b64decode(pad(header))),
                          {"alg": "ES256", "kid": "KEY", "typ": "JWT"})
-        self.assertEqual(json.loads(recipe.base64.urlsafe_b64decode(pad(claims))),
+        self.assertEqual(json.loads(base64.urlsafe_b64decode(pad(claims))),
                          {"iss": "ISSUER", "iat": 1_000, "exp": 2_200, "aud": "appstoreconnect-v1"})
-        raw = recipe.base64.urlsafe_b64decode(pad(signature))
+        raw = base64.urlsafe_b64decode(pad(signature))
         r, s = int.from_bytes(raw[:32], "big"), int.from_bytes(raw[32:], "big")
 
         def integer(n):

@@ -12,7 +12,7 @@ the same two commands, on its own schedule:
 
 | Product | `release` | `deploy` | Tags |
 | --- | --- | --- | --- |
-| The iPhone app | `just ios release`: archive, validate, upload to App Store Connect | not yet: submitting for review is by hand | `ios-v<version>-b<build>` |
+| The iPhone app | `just ios release`: archive, validate, upload to App Store Connect | `just ios deploy <version>`: submit it for review, or give it to TestFlight's external testers | `ios-v<version>-b<build>` |
 | The `amux` binary | `just amux release <version>`: the Release workflow builds the pushed tag | `just amux deploy <version>`: sign the channel manifest and publish it to amux.sh | `v<version>` |
 
 ## The iPhone app
@@ -22,9 +22,10 @@ project — there is no Expo, no EAS and no hosted build service in the path.
 One command, `just ios release`, takes a clean checkout to a signed `.ipa` that
 Apple has validated, and delivers it to App Store Connect, where TestFlight
 shows it once Apple has processed it; the commit and its tag are pushed after
-that. It stops there: **nothing here submits anything for review.** A
-rehearsal, `--no-upload` and `--no-push` each stop short; see
-[Where it stops](#where-it-stops).
+that. It stops there and submits nothing for review: that is
+`just ios deploy`, run on purpose afterwards
+([Deploying](#deploying)). A rehearsal, `--no-upload` and `--no-push` each
+stop short; see [Where it stops](#where-it-stops).
 
 The app's privacy manifest, `apps/apple/Amux/Resources/PrivacyInfo.xcprivacy`,
 declares what the app collects and why it calls the APIs Apple asks reasons
@@ -146,9 +147,10 @@ written by hand. The same text is written beside the exported `.ipa` as
 `ReleaseNotes.txt`, so the export directory carries what the build claims to
 contain.
 
-The upload does not send them to Apple. TestFlight's "What to Test" for a
-build is filled in by hand in App Store Connect, from `ReleaseNotes.txt` if
-that is what testers should read.
+The upload does not send them to Apple, and they are written for the
+repository, not for the App Store: `just ios deploy --notes-file` sets the
+App Store's What's New, or TestFlight's What to Test, from prose written for
+the people who read it.
 
 ### Signing
 
@@ -427,8 +429,34 @@ free to run as often as you like, since validation spends no build number.
 delivery. `--no-push` keeps the commit and tag at home, which leaves the
 record unreadable to every other checkout.
 
-Submitting for review stays a person's act in App Store Connect, with the
-screenshots, the notes and the reviewers already decided.
+Submitting for review is the next command, `just ios deploy`.
+
+### Deploying
+
+```sh
+just ios deploy 1.0.34 --dry-run                       # say what would change
+just ios deploy 1.0.34 --notes-file whats-new.txt      # submit it for review
+just ios deploy 1.0.34 --channel preview               # external TestFlight testers
+```
+
+`just ios deploy <version>` takes the build the tags record for that
+version (the highest `ios-v<version>-b<build>`, or `--build N`) to the
+people a channel names, through the App Store Connect API with the release's
+key ([`apps/apple/Tools/ios-deploy.py`](../apps/apple/Tools/ios-deploy.py)).
+It refuses a build Apple has not finished processing.
+
+- **stable** (the default): the version's App Store listing, created if it
+  is new. The build is attached, the version is released as soon as review
+  approves it, any phased release is removed, and the version is submitted
+  for review. What's New comes from `--notes-file`, else what the listing
+  already holds; a listing with none is refused before anything changes. A
+  version already submitted, in review or live is refused.
+- **preview**: the app's external TestFlight group (`--group NAME` when
+  there are several), with What to Test from `--notes-file`. A build that
+  needs Apple's beta review, a version's first, is submitted for it; testers
+  get it once Apple approves.
+
+Screenshots go on the version beforehand ([Screenshots](#screenshots)).
 
 ### Screenshots
 
@@ -451,8 +479,7 @@ it is whole: an older 6.5-inch set left in place would go on showing on
 6.5-inch phones. iPad sets are left alone. The API calls the 6.9-inch set
 `APP_IPHONE_67`, the largest iPhone type its reference lists;
 `--display-type` names another if Apple adds one. It attaches no build and
-submits nothing: in App Store Connect, the version still needs its build and
-a person to submit it.
+submits nothing; `just ios deploy` does both.
 
 ### One-time operator setup
 

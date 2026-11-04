@@ -677,7 +677,7 @@ def main() -> int:
     else:
         print("uploaded to App Store Connect"
               + ("" if arguments.no_push else ", and the commit and tag pushed")
-              + "; nothing was submitted for review")
+              + f"; nothing was submitted for review (`just ios deploy {version}` does that)")
     return 0
 
 

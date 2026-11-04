@@ -219,6 +219,15 @@ script-tests:
 release *ARGS: package scope-audit
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 8100 {{python}} -B scripts/release.py "$@"
 
+# `just ios deploy 1.0.34` submits the version's released build for review,
+# released once approved with no phased release; `--channel preview` gives it
+# to the external TestFlight group instead. `--notes-file PATH` sets What's
+# New (or What to Test); `--dry-run` says what would change and changes
+# nothing (docs/RELEASE.md).
+# Put a released build in front of people.
+deploy VERSION *ARGS:
+    shift; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 600 {{python}} -B apps/apple/Tools/ios-deploy.py {{VERSION}} "$@"
+
 # Replaces the iPhone screenshots of the App Store version being prepared
 # with the seven frames `just store` composes, in order, through the App Store
 # Connect API and the release key. --dry-run says what would change and

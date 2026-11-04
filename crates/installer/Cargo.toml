@@ -10,6 +10,7 @@ publish = false
 agent-dir = { workspace = true }
 release = { workspace = true }
 reqwest = { workspace = true }
+semver = { workspace = true }
 serde_json = { workspace = true }
 settings = { workspace = true }
 sha2 = { workspace = true }

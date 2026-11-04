@@ -61,7 +61,10 @@ answering an `Installed`; then `amux_runtime_attach` takes an `AttachConfig`
 and attaches to that daemon. An attached runtime answers the same calls over
 the daemon's sockets; those only a hosted installation can answer (pairing
 from this device, its roster, a bearer, which profiles trust a host) answer
-`{"Err": ..}` saying the app is attached, and lifecycle inputs do nothing. Every call that blocks until the cores have done something
+`{"Err": ..}` saying the app is attached, and lifecycle inputs do nothing. On
+the Mac, `amux_check_for_update` takes an `UpdateCheck` and blocks, off the
+main thread, until a newer app from the Mac feed is staged, answering an
+`AppUpdate`, or `null` when the app is current (docs/MAC.md). Every call that blocks until the cores have done something
 steps them on the calling thread while it waits, so it may be made from the
 queue that steps. `amux_profile_open` opens one
 profile's fleet and blocks until it has caught up with that profile's store;

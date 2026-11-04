@@ -189,6 +189,83 @@ async fn a_download_is_installed_only_once_its_signature_and_hash_check_out() {
     assert!(installer::answering(&installer::front_door(Some(&home.config)).unwrap()).await);
 }
 
+/// The Mac app's feed: a newer app is downloaded, checked and unpacked
+/// beside the running one, a current one is left alone, and an app that is
+/// not the one the manifest hashed is never staged.
+#[cfg(target_os = "macos")]
+#[tokio::test(flavor = "multi_thread")]
+async fn the_mac_app_stages_a_newer_version_only_once_it_checks_out() {
+    use installer::update::{self, Staged};
+
+    let work = tempfile::tempdir().unwrap();
+    let contents = work.path().join("Amux.app/Contents");
+    std::fs::create_dir_all(&contents).unwrap();
+    std::fs::write(contents.join("Info.plist"), "<plist/>").unwrap();
+    let zip = work.path().join("Amux.zip");
+    let zipped = std::process::Command::new("ditto")
+        .args(["-c", "-k", "--keepParent"])
+        .arg(work.path().join("Amux.app"))
+        .arg(&zip)
+        .status()
+        .unwrap();
+    assert!(zipped.success());
+    let zip = std::fs::read(zip).unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let app = |path: &str| {
+        let mut signed = manifest(&base, path, &zip, "0.0.2");
+        let entry = signed.targets.remove(release::TARGET).unwrap();
+        signed.targets.insert(update::TARGET.to_owned(), entry);
+        signed.signature = release::sign(&release::TEST_SEED, &signed);
+        serde_json::to_vec(&signed).unwrap()
+    };
+    serve(
+        vec![
+            ("/good/mac-stable.json".into(), app("/Amux.zip")),
+            ("/swapped/mac-stable.json".into(), app("/other.zip")),
+            ("/Amux.zip".into(), zip.clone()),
+            ("/other.zip".into(), b"PK not the app".to_vec()),
+        ],
+        listener,
+    );
+    let options = |home: &Home, current: &str| update::Options {
+        config: Some(home.config.clone()),
+        current: current.into(),
+        dir: home.dir.path().join("Updates"),
+    };
+
+    let home = Home::new(&format!("{base}/swapped"));
+    let refused = update::check(&options(&home, "0.0.1")).await;
+    assert!(matches!(refused, Err(Error::Verify(_))), "{refused:?}");
+    let left: Vec<_> = std::fs::read_dir(home.dir.path().join("Updates"))
+        .unwrap()
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+    drop(home);
+
+    let home = Home::new(&format!("{base}/good"));
+    let staged = update::check(&options(&home, "0.0.1")).await.unwrap();
+    let app = home.dir.path().join("Updates/0.0.2/Amux.app");
+    assert_eq!(
+        staged,
+        Some(Staged {
+            version: "0.0.2".into(),
+            app: app.clone(),
+        })
+    );
+    assert!(app.join("Contents/Info.plist").is_file());
+    assert!(!home.dir.path().join("Updates/0.0.2.zip").exists());
+    // Asked again, the staged app is answered as it is.
+    assert_eq!(
+        update::check(&options(&home, "0.0.1")).await.unwrap(),
+        staged
+    );
+    // Once it runs, what was staged goes.
+    assert_eq!(update::check(&options(&home, "0.0.2")).await.unwrap(), None);
+    assert!(!home.dir.path().join("Updates/0.0.2").exists());
+}
+
 /// The stable channel naming `path` on `base` for this target, signed with
 /// the key debug builds trust.
 fn manifest(base: &str, path: &str, binary: &[u8], version: &str) -> Manifest {

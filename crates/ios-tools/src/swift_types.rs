@@ -65,6 +65,8 @@ pub fn definitions() -> Map<String, Value> {
         app_runtime::values::AttachConfig,
         app_runtime::values::InstallOptions,
         app_runtime::values::Installed,
+        app_runtime::values::UpdateCheck,
+        app_runtime::values::AppUpdate,
         app_runtime::values::ChatDelta,
         app_runtime::values::ChatFrame,
         app_runtime::values::Draft,

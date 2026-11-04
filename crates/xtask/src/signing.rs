@@ -31,38 +31,48 @@ pub const DEVELOPER_ID: &str = "Developer ID Application";
 /// together with the team.
 pub const IDENTIFIER: &str = "sh.amux.cli";
 
-/// A copy of `binary` beside it, signed with Developer ID.
-pub fn signed_copy(binary: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+/// The SHA-1 of this Mac's Developer ID Application identity, which
+/// `codesign --sign` takes, so the name that carries the Team ID is never
+/// needed.
+pub fn identity() -> Result<String, Box<dyn std::error::Error>> {
     if !cfg!(target_os = "macos") {
-        return Err(
-            "a deploy signs the macOS binary with Developer ID, so it runs on a Mac".into(),
-        );
+        return Err("signing with Developer ID runs on a Mac".into());
     }
     let listed = output("security", &["find-identity", "-v", "-p", "codesigning"])?;
-    let identity = developer_id(&listed).ok_or_else(|| {
+    developer_id(&listed).ok_or_else(|| {
         format!(
             "no {DEVELOPER_ID} certificate with its private key is in this Mac's keychains; \
              docs/RELEASE.md says how the release Mac gets one"
         )
-    })?;
+        .into()
+    })
+}
+
+/// Signs `path` (a binary, an app bundle or a disk image) in place with
+/// `identity` under the hardened runtime and a secure timestamp, as
+/// `identifier` when one is given, and verifies the signature.
+pub fn sign(
+    path: &Path,
+    identity: &str,
+    identifier: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let path = path.to_string_lossy();
+    let mut args = vec!["--force", "--options", "runtime", "--timestamp"];
+    if let Some(identifier) = identifier {
+        args.extend(["--identifier", identifier]);
+    }
+    args.extend(["--sign", identity, &path]);
+    output("codesign", &args)?;
+    output("codesign", &["--verify", "--strict", "--verbose=2", &path])?;
+    Ok(())
+}
+
+/// A copy of `binary` beside it, signed with Developer ID as amux.
+pub fn signed_copy(binary: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let identity = identity()?;
     let copy = binary.with_extension("signed");
     std::fs::copy(binary, &copy)?;
-    let path = copy.to_string_lossy();
-    output(
-        "codesign",
-        &[
-            "--force",
-            "--options",
-            "runtime",
-            "--timestamp",
-            "--identifier",
-            IDENTIFIER,
-            "--sign",
-            &identity,
-            &path,
-        ],
-    )?;
-    output("codesign", &["--verify", "--strict", "--verbose=2", &path])?;
+    sign(&copy, &identity, Some(IDENTIFIER))?;
     Ok(copy)
 }
 

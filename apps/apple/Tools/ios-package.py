@@ -5,9 +5,14 @@ Simulator and device, under the `release` profile every shipped binary uses, wit
 driving tools. The result is what the Swift package's binary target links and
 what a Release archive ships, so the linkage smoke runs against it here and
 the release recipes depend on this one.
+
+`--mac` builds the Mac slice alone, the same way, into the same framework,
+for `just mac release`; the next phone recipe rebuilds the framework it
+needs, since that one is no longer the phone's.
 """
 
 from pathlib import Path
+import argparse
 import subprocess
 import sys
 import tomllib
@@ -18,14 +23,14 @@ import ios_bridge as bridge
 LINKAGE_SMOKE = Path("apps/apple/Tools/linkage_smoke.py")
 
 
-def main() -> None:
+def main(mac: bool = False) -> None:
     bridge.OUTPUT.mkdir(parents=True, exist_ok=True)
     framework = bridge.OUTPUT / bridge.FRAMEWORK
     linkage = bridge.OUTPUT / "simulator-linkage.txt"
 
     lines = []
     staged_dirs = []
-    for triple in bridge.SHIPPING_TRIPLES:
+    for triple in (bridge.MAC_TRIPLE,) if mac else bridge.SHIPPING_TRIPLES:
         built = bridge.cargo_build(triple, profile=bridge.SHIPPING_PROFILE, features=(),
                                    log=bridge.OUTPUT / f"{triple}-build.jsonl")
         directory = bridge.OUTPUT / triple
@@ -34,6 +39,15 @@ def main() -> None:
     headers = {(directory / "include" / bridge.HEADER).read_bytes() for directory in staged_dirs}
     if len(headers) != 1:
         raise RuntimeError("Device and simulator C headers differ")
+    if mac:
+        # The development recipe's stamp no longer describes this framework,
+        # and nothing the phone links is in it.
+        bridge.package(framework, staged_dirs)
+        (bridge.OUTPUT / "framework.sha256").unlink(missing_ok=True)
+        bridge.stand_in_marker(framework).unlink(missing_ok=True)
+        (bridge.OUTPUT / "rust-stamp.json").unlink(missing_ok=True)
+        print("\n".join(lines), flush=True)
+        return
     if bridge.package_if_changed(framework, staged_dirs, bridge.OUTPUT / "framework.sha256"):
         # A fresh framework has not been linked yet; the previous result says
         # nothing about it.
@@ -53,4 +67,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--mac", action="store_true", help="the Mac slice alone")
+    main(parser.parse_args().mac)

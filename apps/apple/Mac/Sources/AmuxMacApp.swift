@@ -9,11 +9,13 @@ import SwiftUI
 /// sign in through the daemon, switch profiles and read a profile's fleet.
 @main
 struct AmuxMacApp: App {
+    @NSApplicationDelegateAdaptor private var delegate: AppDelegate
     @State private var model: AppModel
 
     init() {
         let model = AppModel()
         _model = State(initialValue: model)
+        AppDelegate.model = model
         // Started with the app, not with a window: a launch that restores no
         // window still attaches, and a window opened later shows it.
         Task { await model.start() }
@@ -24,6 +26,15 @@ struct AmuxMacApp: App {
             Window(model: model)
                 .frame(minWidth: 560, minHeight: 360)
         }
+    }
+}
+
+/// Applies a staged update as the app quits, however it quits.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    @MainActor static var model: AppModel?
+
+    func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated { Self.model?.applyUpdate() }
     }
 }
 
@@ -55,6 +66,14 @@ private struct Window: View {
                 }
             } detail: {
                 Agents(model: model)
+                    .toolbar {
+                        if model.update != nil {
+                            Button("Restart to Complete Update") { model.restartToUpdate() }
+                                .buttonStyle(.borderless)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
             }
         }
     }

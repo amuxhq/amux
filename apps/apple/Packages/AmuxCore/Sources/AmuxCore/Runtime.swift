@@ -122,6 +122,25 @@ public final class Runtime: @unchecked Sendable {
         }.value
         return try answer.get()
     }
+
+    /// Looks for a newer version of the Mac app and answers it once it is
+    /// downloaded, checked and unpacked, or nil when the running app is
+    /// current. Blocks for as long as the download takes, so it runs off the
+    /// caller's thread.
+    public static func checkForUpdate(_ check: UpdateCheck) async throws(RuntimeFailure) -> AppUpdate? {
+        let check = Bridge.json(check)
+        let answer: Result<AppUpdate?, RuntimeFailure> = await Task.detached {
+            var error: UnsafeMutablePointer<CChar>?
+            guard let answered = check.withCString({ amux_check_for_update($0, &error) }) else {
+                return .failure(Bridge.failure(error, otherwise: "the update check failed"))
+            }
+            guard let value = Bridge.read(AppUpdate?.self, answered) else {
+                return .failure(RuntimeFailure("the update check answered something unreadable"))
+            }
+            return .success(value)
+        }.value
+        return try answer.get()
+    }
     #endif
 
     /// Stops the runtime and flushes every profile's store, closing every

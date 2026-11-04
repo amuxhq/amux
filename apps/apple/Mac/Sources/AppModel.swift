@@ -1,5 +1,6 @@
 import AmuxCore
 import AmuxValues
+import AppKit
 import Foundation
 import Observation
 import os
@@ -30,9 +31,12 @@ final class AppModel {
     private(set) var agents: [String] = []
     private(set) var signingIn = false
     private(set) var problem: String?
+    /// A newer version of the app, staged and swapped in when the app quits.
+    private(set) var update: AppUpdate?
 
     @ObservationIgnored private var runtime: Runtime?
     @ObservationIgnored private var profile: Profile?
+    @ObservationIgnored private var checking: Task<Void, Never>?
     @ObservationIgnored private let cloud = AmuxCloudService(endpoint: AppModel.endpoint)
     private static let log = Logger(subsystem: "sh.amux.desktop", category: "app")
 
@@ -80,6 +84,7 @@ final class AppModel {
             }.value
             runtime = attached
             phase = .attached
+            checkForUpdates()
             // The first profile list reaches the main actor while attaching,
             // before there was a runtime to open its first profile from.
             open(selected)
@@ -164,6 +169,89 @@ final class AppModel {
         } catch {
             problem = String(describing: error)
         }
+    }
+
+    /// How often the app looks for a newer version of itself, as often as
+    /// amux's supervisor looks for one of amux.
+    private static let updateInterval: Duration = .seconds(60 * 60)
+
+    /// Looks for a newer app now and every hour after, while there is
+    /// nothing staged. An app that could not replace its own bundle (opened
+    /// from its disk image, or moved by Gatekeeper's App Translocation)
+    /// looks for none.
+    private func checkForUpdates() {
+        guard checking == nil, Self.replaceable else { return }
+        let check = UpdateCheck(current: Self.version, dir: Self.updates.path, config: Self.config)
+        checking = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    if let found = try await Runtime.checkForUpdate(check) {
+                        Self.log.notice("update staged: \(found.version, privacy: .public)")
+                        self?.update = found
+                        return
+                    }
+                } catch {
+                    let reason = (error as? RuntimeFailure)?.description ?? String(describing: error)
+                    Self.log.error("update check failed: \(reason, privacy: .public)")
+                }
+                try? await Task.sleep(for: Self.updateInterval)
+            }
+        }
+    }
+
+    /// Quits and opens the updated app once this one has gone.
+    func restartToUpdate() {
+        guard update != nil else { return }
+        // The new app opens with the installation and account service this
+        // one was given, so a checkout's app relaunches onto the checkout's
+        // daemon rather than the default installation.
+        let carried = ["AMUX_CONFIG", "AMUX_CLOUD"].compactMap { name in
+            Self.environment(name).map { ["--env", "\(name)=\($0)"] }
+        }.flatMap(\.self)
+        let relaunch = Process()
+        relaunch.executableURL = URL(filePath: "/bin/sh")
+        relaunch.arguments = [
+            "-c",
+            #"pid=$1; app=$2; shift 2; while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done; exec /usr/bin/open "$@" "$app""#,
+            "relaunch", String(ProcessInfo.processInfo.processIdentifier),
+            Bundle.main.bundleURL.path,
+        ] + carried
+        do {
+            try relaunch.run()
+        } catch {
+            Self.log.error("relaunch failed: \(error.localizedDescription, privacy: .public)")
+        }
+        NSApplication.shared.terminate(nil)
+    }
+
+    /// Puts the staged app in place of this one, which keeps running from
+    /// the files it has open until it exits. Called as the app quits.
+    func applyUpdate() {
+        guard let update else { return }
+        do {
+            _ = try FileManager.default.replaceItemAt(
+                Bundle.main.bundleURL, withItemAt: URL(filePath: update.app))
+            Self.log.notice("updated to \(update.version, privacy: .public)")
+        } catch {
+            Self.log.error("update failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// The running app's version, as its bundle carries it.
+    private static var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+    }
+
+    /// Where updates are staged.
+    private static var updates: URL {
+        URL.applicationSupportDirectory.appending(path: "sh.amux.desktop/Updates")
+    }
+
+    /// Whether this app can replace its own bundle.
+    private static var replaceable: Bool {
+        let bundle = Bundle.main.bundleURL
+        return !bundle.path.contains("/AppTranslocation/")
+            && FileManager.default.isWritableFile(atPath: bundle.deletingLastPathComponent().path)
     }
 
     /// Signs the profile on screen out; it stays tied to its account.

@@ -40,12 +40,13 @@ targets:
         LSApplicationCategoryType: public.app-category.developer-tools
         NSHumanReadableCopyright: ""
     postBuildScripts:
-      # The app carries its own copy of amux and installs it when this Mac
-      # has none (InstallOptions.bundled). Contents/Helpers is where a bundle
-      # keeps a command-line tool it runs, so code signing seals it with the
-      # app. Development builds carry the checkout's own debug build, which
-      # the linker has already signed ad hoc; a distribution build signs it
-      # with the app's identity before the app is sealed.
+      # The app installs a copy of amux it carries when this Mac has none
+      # (InstallOptions.bundled). Contents/Helpers is where a bundle keeps a
+      # command-line tool it runs, so code signing seals it with the app.
+      # Development builds carry the checkout's own debug build, which the
+      # linker has already signed ad hoc. A release build carries none: the
+      # release adds the stable amux, signed, only to the disk image's copy,
+      # since an update never installs amux (docs/MAC.md).
       - name: Bundle amux
         basedOnDependencyAnalysis: true
         inputFiles:
@@ -54,6 +55,7 @@ targets:
           - "$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/amux"
         script: |
           set -eu
+          [ "$CONFIGURATION" = Debug ] || exit 0
           helpers="$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers"
           mkdir -p "$helpers"
           cp -f "$SCRIPT_INPUT_FILE_0" "$SCRIPT_OUTPUT_FILE_0"
@@ -61,8 +63,10 @@ targets:
       base:
         PRODUCT_NAME: Amux
         PRODUCT_BUNDLE_IDENTIFIER: sh.amux.desktop
-        MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "1"
+        # Written by `just mac release`; the build number is the version,
+        # since no store keeps a ledger of builds.
+        MARKETING_VERSION: "0.0.0"
+        CURRENT_PROJECT_VERSION: "0.0.0"
         # Distributed outside the App Store and signed with Developer ID, so
         # the hardened runtime is on and the sandbox is off: the app talks to
         # amux's sockets under ~/.amux and installs amux into ~/.amux/bin.

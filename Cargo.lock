@@ -1767,6 +1767,7 @@ dependencies = [
  "provider-fakes",
  "release",
  "reqwest",
+ "semver",
  "serde_json",
  "settings",
  "sha2",

@@ -36,3 +36,20 @@ build: rust
 run: build
     {{bounded}} 60 sh -c 'target/debug/amux status >/dev/null 2>&1 || target/debug/amux server start'
     {{app}}/Contents/MacOS/Amux
+
+# `just mac release 0.0.1` builds the app with the shipping bridge, signs it
+# with Developer ID, makes the update zip and the notarized disk image,
+# commits the version, tags mac-v0.0.1, pushes and puts both on the tag's
+# GitHub Release. `--rehearse` builds and signs everything and writes, tags
+# and uploads nothing; `--no-notarize` skips Apple (docs/RELEASE.md).
+# Cut a release of the Mac app.
+release VERSION *ARGS:
+    shift; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 7200 cargo run --locked -q -p xtask -- mac release {{VERSION}} "$@"
+
+# `just mac deploy 0.0.1` signs the stable channel's Mac feed over the
+# release's zip and publishes it, with the disk image as Amux.dmg;
+# `--channel preview` publishes the preview feed instead, and `--key-file
+# PATH` signs with the backup key.
+# Put a released Mac app in front of a channel.
+deploy VERSION *ARGS:
+    shift; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1800 cargo run --locked -q -p xtask -- mac deploy {{VERSION}} "$@"

@@ -35,6 +35,9 @@ generated values (`AmuxValues`), which build for macOS as well as iOS:
   redirect itself, so nothing registers the scheme. The refresh token goes to
   the daemon with `Runtime.bind`, and the app keeps nothing.
 
+- `Runtime.checkForUpdate(_:)` looks for a newer version of the app itself
+  ([Updates](#updates)).
+
 Screens, navigation and layout are the desktop's own; nothing from
 `AmuxFeatures` or `AmuxShell` is linked.
 
@@ -55,7 +58,8 @@ The project is generated from `apps/apple/Mac/project.yml` into
 app's recipes build or check the other. The app is built for Apple silicon,
 macOS 26, with the hardened runtime and without the sandbox: it reaches amux's
 sockets under `~/.amux` and installs amux into `~/.amux/bin`. Development
-builds are signed ad hoc and carry the checkout's debug `amux`.
+builds are signed ad hoc and carry the checkout's debug `amux`; release
+builds carry none ([Releases](#releases)).
 
 `AMUX_CONFIG` names the installation the app attaches to, as it does for every
 amux command, so in a worktree `just mac run` attaches to that tree's daemon.
@@ -69,9 +73,63 @@ it installed, attached and listed under the `sh.amux.desktop` subsystem:
 log show --predicate 'subsystem == "sh.amux.desktop"' --last 5m
 ```
 
+## Updates
+
+The app updates itself, apart from amux, which its supervisor updates. At
+launch and every hour it reads its own feed, `mac-<channel>.json` beside
+amux's `<channel>.json` under the installation's `releases_url`, for the
+installation's channel. The feed is amux's signed manifest format with one
+target, `mac-app`, naming the zipped app; the check is the installer's
+(`installer::update`), so the manifest's signature and the zip's size and
+hash are checked by the same code that checks an amux download.
+
+A newer version is downloaded and unpacked into
+`~/Library/Application Support/sh.amux.desktop/Updates/<version>/Amux.app`,
+and the window shows a quiet "Restart to Complete Update". Quitting the app
+any way puts the staged app in place of the running one
+(`FileManager.replaceItemAt`); the button quits and opens the new one once
+this one has exited. An app that cannot replace its own bundle (run from its
+disk image, or moved by Gatekeeper's App Translocation) does not look.
+
+A build trusts the keys compiled into its bridge. A release build trusts the
+release keys; a development build trusts none, so it finds no update, and a
+test of the updater builds the bridge with `AMUX_RELEASE_PUBLIC_KEYS` naming
+the test key and serves a feed on loopback.
+
+## Releases
+
+```sh
+just mac release 0.0.2 --rehearse   # build and sign both artifacts; write, tag and upload nothing
+just mac release 0.0.2              # the same, then commit, tag mac-v0.0.2, push, GitHub Release
+just mac deploy 0.0.2               # sign the stable Mac feed and publish it, with Amux.dmg
+just mac deploy 0.0.2 --channel preview
+```
+
+The app versions on its own: `MARKETING_VERSION` in `project.yml`, which is
+also its build number, and tags `mac-v<version>`. A release builds on the
+release Mac, since the signature is made with its Developer ID certificate:
+the bridge's Mac slice under the `release` profile without the driving tools
+(`apps/apple/Tools/ios-package.py --mac`), built to trust the release keys
+the Release workflow names, then the Release app, signed ad hoc by Xcode and
+then with Developer ID by `codesign` under the hardened runtime. Two
+artifacts come from that one app:
+
+- `Amux-<version>.zip`, the app alone: the update. It is not notarized; the
+  app downloads it itself, and nothing marks that download for Gatekeeper.
+- `Amux-<version>.dmg`, the app carrying the stable channel's `amux` (checked
+  against its signed manifest and signed as `sh.amux.cli`) in
+  `Contents/Helpers`, beside a link to Applications. It is what a browser
+  downloads, so it is notarized and stapled; `--no-notarize` skips that,
+  and such a disk image needs "Open Anyway" once.
+
+The tag's message records both digests, and the deploy refuses a file on the
+GitHub Release that is not the one this Mac built. A deploy signs the
+channel's Mac feed over the zip with the release key and publishes it
+through the operator's publish script as `mac-<channel>.json`; a stable
+deploy publishes the disk image as `Amux.dmg` beside it, so
+`https://amux.sh/releases/Amux.dmg` is always the current one. There is no
+staged rollout for the Mac app.
+
 ## Not yet
 
-- A distribution build: Developer ID signing of the app and of the `amux` it
-  carries, notarization and a download. The release signs and notarizes the
-  `amux` binary itself (docs/RELEASE.md).
 - The app's real screens, its copy in the string catalogue, and tests.

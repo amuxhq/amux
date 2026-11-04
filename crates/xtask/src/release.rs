@@ -48,7 +48,7 @@ const KEYCHAIN: &str = "amux-release.keychain";
 /// Seconds the keychain stays unlocked after a read.
 const KEYCHAIN_LOCK_SECS: &str = "60";
 /// The workflow whose `env` names the keys the published binaries trust.
-const WORKFLOW: &str = ".github/workflows/release.yml";
+pub(crate) const WORKFLOW: &str = ".github/workflows/release.yml";
 const PUBLIC_KEY_VARIABLE: &str = "AMUX_RELEASE_PUBLIC_KEYS";
 /// The file the Release workflow publishes for each target it builds.
 const ASSETS: &[(&str, &str)] = &[
@@ -110,7 +110,7 @@ fn account() -> String {
 }
 
 /// Refuses when the release keychain already holds a seed.
-fn refuse_if_kept() -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn refuse_if_kept() -> Result<(), Box<dyn std::error::Error>> {
     if keychain_path().exists()
         && security(&["find-generic-password", "-s", KEYCHAIN_SERVICE, KEYCHAIN]).is_ok()
     {
@@ -167,13 +167,13 @@ fn keep(seed: &[u8; 32]) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn keychain_path() -> PathBuf {
+pub(crate) fn keychain_path() -> PathBuf {
     let home = std::env::var_os("HOME").expect("HOME is set");
     Path::new(&home).join("Library/Keychains/amux-release.keychain-db")
 }
 
 /// The seed from the release keychain, after its password.
-fn keychain_seed() -> Result<[u8; 32], Box<dyn std::error::Error>> {
+pub(crate) fn keychain_seed() -> Result<[u8; 32], Box<dyn std::error::Error>> {
     read_seed(KEYCHAIN).map_err(|_| {
         format!(
             "no release key in the release keychain {KEYCHAIN} (service {KEYCHAIN_SERVICE}); \
@@ -196,7 +196,7 @@ fn read_seed(keychain: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
 }
 
 /// The backup seed in the file at `path`.
-fn file_seed(path: &Path) -> Result<[u8; 32], Box<dyn std::error::Error>> {
+pub(crate) fn file_seed(path: &Path) -> Result<[u8; 32], Box<dyn std::error::Error>> {
     let text = std::fs::read_to_string(path)
         .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
     release::parse_key(&text)
@@ -229,7 +229,7 @@ pub fn workflow_keys(workflow: &str) -> Option<Vec<[u8; 32]>> {
 /// The workflow's keys, refused unless there are at least two: a release
 /// whose binaries trust no backup could not be followed by one that
 /// retires a leaked key.
-fn trusted_keys(workflow: &str) -> Result<Vec<[u8; 32]>, Box<dyn std::error::Error>> {
+pub(crate) fn trusted_keys(workflow: &str) -> Result<Vec<[u8; 32]>, Box<dyn std::error::Error>> {
     let keys = workflow_keys(workflow)
         .ok_or_else(|| format!("{WORKFLOW} sets no {PUBLIC_KEY_VARIABLE}"))?;
     if keys.len() < 2 {
@@ -300,7 +300,9 @@ fn cut(version: &str) -> Result<(), Box<dyn std::error::Error>> {
     git(&root, &["tag", &tag])?;
     git(&root, &["push"])?;
     git(&root, &["push", "origin", &tag])?;
-    println!("cut {tag}; the Release workflow is building it. `just amux deploy {wanted}` when it has.");
+    println!(
+        "cut {tag}; the Release workflow is building it. `just amux deploy {wanted}` when it has."
+    );
     Ok(())
 }
 
@@ -327,7 +329,11 @@ pub fn bump_version(
         .then(|| manifest.replacen(&old, &new, 1))
 }
 
-fn run(root: &Path, program: &str, args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn run(
+    root: &Path,
+    program: &str,
+    args: &[&str],
+) -> Result<(), Box<dyn std::error::Error>> {
     let status = Command::new(program)
         .args(args)
         .current_dir(root)
@@ -338,7 +344,7 @@ fn run(root: &Path, program: &str, args: &[&str]) -> Result<(), Box<dyn std::err
     Ok(())
 }
 
-fn git(root: &Path, args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
+pub(crate) fn git(root: &Path, args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
     let output = Command::new("git").args(args).current_dir(root).output()?;
     if !output.status.success() {
         return Err(format!(
@@ -546,7 +552,7 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
 
 /// The commit the local tag names. The cut made that tag, so a tag moved on
 /// GitHub afterwards is not followed.
-fn tagged_commit(root: &Path, tag: &str) -> Result<String, Box<dyn std::error::Error>> {
+pub(crate) fn tagged_commit(root: &Path, tag: &str) -> Result<String, Box<dyn std::error::Error>> {
     let name = format!("refs/tags/{tag}^{{commit}}");
     git(root, &["rev-parse", "--verify", "--quiet", &name])
         .map(|commit| commit.trim().to_owned())
@@ -645,7 +651,7 @@ const PUBLISH_SCRIPT: &str = "amux-publish-release";
 /// their own names. A deploy that stops at the GitHub upload is a silent
 /// no-op for every machine, so a missing script is an error, not a skipped
 /// step.
-fn publish(
+pub(crate) fn publish(
     channel: &str,
     version: &str,
     manifest: &Path,
@@ -716,7 +722,7 @@ pub fn checksum(checksums: &str, asset: &str) -> Option<String> {
     })
 }
 
-fn gh(args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
+pub(crate) fn gh(args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
     let output = Command::new("gh").args(args).output()?;
     if !output.status.success() {
         return Err(format!(
@@ -729,7 +735,7 @@ fn gh(args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
     Ok(String::from_utf8(output.stdout)?)
 }
 
-fn repository_root() -> PathBuf {
+pub(crate) fn repository_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)

@@ -1,6 +1,6 @@
 # Releasing amux
 
-*For maintainers cutting a release of the iPhone app or the `amux` binary, and developers working on how installed daemons find and verify new builds.*
+*For maintainers cutting a release of the iPhone app, the Mac app or the `amux` binary, and developers working on how installed daemons find and verify new builds.*
 
 Each product that ships from this repository has its own `just` module and
 the same two commands, on its own schedule:
@@ -14,6 +14,7 @@ the same two commands, on its own schedule:
 | --- | --- | --- | --- |
 | The iPhone app | `just ios release`: archive, validate, upload to App Store Connect | `just ios deploy <version>`: submit it for review, or give it to TestFlight's external testers | `ios-v<version>-b<build>` |
 | The `amux` binary | `just amux release <version>`: the Release workflow builds the pushed tag | `just amux deploy <version>`: sign the channel manifest and publish it to amux.sh | `v<version>` |
+| The Mac app | `just mac release <version>`: build, sign with Developer ID, make the update zip and the disk image ([MAC](MAC.md#releases)) | `just mac deploy <version>`: sign the channel's Mac feed and publish it with the disk image | `mac-v<version>` |
 
 ## The iPhone app
 
@@ -917,6 +918,9 @@ file: the deploy's last step runs the operator's publish script,
 `~/scripts/amux-publish-release <channel> <version> <manifest> [<file>...]`,
 which puts the signed manifest, and any files named after it, where amux.sh
 serves them and reads each back over the public address to confirm. The
+script names the manifest after its first word, so the Mac app's deploy
+passes `mac-<channel>` and its feed lands as `mac-<channel>.json` beside
+amux's ([MAC](MAC.md#releases)). The
 script is not in this repository; which host holds the files, where, and how
 the Mac reaches it belong with the rest of the host configuration, and this
 repository only says that the step happens and refuses to finish a deploy

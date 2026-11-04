@@ -26,6 +26,9 @@ use settings::InstallationConfig;
 use sha2::{Digest as _, Sha256};
 use tokio::io::AsyncWriteExt as _;
 
+#[cfg(target_os = "macos")]
+pub mod update;
+
 /// How long [`ensure`] waits for a started amux to answer.
 pub const START_PATIENCE: Duration = Duration::from_secs(30);
 /// The most a manifest may be.
@@ -292,34 +295,8 @@ async fn download(
     on_step: &mut impl FnMut(Step),
 ) -> Result<String, Error> {
     let url = config.manifest_url();
-    let keys = release::feed_keys(&url).ok_or(Error::NoKeys)?;
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(30))
-        .timeout(Duration::from_secs(15 * 60))
-        .build()
-        .map_err(fetch(&url))?;
-    let mut response = client
-        .get(&url)
-        .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(fetch(&url))?;
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(fetch(&url))? {
-        if body.len() as u64 + chunk.len() as u64 > MANIFEST_LIMIT {
-            return Err(Error::TooLarge {
-                url,
-                limit: MANIFEST_LIMIT,
-            });
-        }
-        body.extend_from_slice(&chunk);
-    }
-    let manifest: release::Manifest =
-        serde_json::from_slice(&body).map_err(|error| Error::Manifest {
-            url: url.clone(),
-            error,
-        })?;
-    release::verify_manifest(&manifest, config.channel_name(), &keys)?;
+    let client = http(&url)?;
+    let manifest = manifest(&client, &url, config.channel_name()).await?;
     let build = manifest
         .targets
         .get(release::TARGET)
@@ -327,46 +304,110 @@ async fn download(
             channel: config.channel_name().to_owned(),
             target: release::TARGET.to_owned(),
         })?;
+    artifact(&client, build, staged, |received| {
+        on_step(Step::Downloading {
+            received,
+            total: build.size,
+        })
+    })
+    .await?;
+    Ok(build.version.clone())
+}
+
+/// A client for one feed and the artifacts it names.
+pub(crate) fn http(url: &str) -> Result<reqwest::Client, Error> {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(15 * 60))
+        .build()
+        .map_err(fetch(url))
+}
+
+/// The channel's manifest at `url`, believed only once its signature
+/// verifies against a key this build trusts for that feed.
+pub(crate) async fn manifest(
+    client: &reqwest::Client,
+    url: &str,
+    channel: &str,
+) -> Result<release::Manifest, Error> {
+    let keys = release::feed_keys(url).ok_or(Error::NoKeys)?;
+    let mut response = client
+        .get(url)
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(fetch(url))?;
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(fetch(url))? {
+        if body.len() as u64 + chunk.len() as u64 > MANIFEST_LIMIT {
+            return Err(Error::TooLarge {
+                url: url.to_owned(),
+                limit: MANIFEST_LIMIT,
+            });
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let manifest: release::Manifest =
+        serde_json::from_slice(&body).map_err(|error| Error::Manifest {
+            url: url.to_owned(),
+            error,
+        })?;
+    release::verify_manifest(&manifest, channel, &keys)?;
+    Ok(manifest)
+}
+
+/// Downloads `build` to `staged`, writing no more than its signed size and
+/// keeping it only once its size and hash are the manifest's.
+pub(crate) async fn artifact(
+    client: &reqwest::Client,
+    build: &release::Release,
+    staged: &Path,
+    mut on_received: impl FnMut(u64),
+) -> Result<(), Error> {
     if build.size > ARTIFACT_LIMIT {
         return Err(Error::TooLarge {
             url: build.url.clone(),
             limit: ARTIFACT_LIMIT,
         });
     }
-    let mut response = client
-        .get(&build.url)
-        .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(fetch(&build.url))?;
-    let mut file = tokio::fs::File::create(staged)
-        .await
-        .map_err(io("creating", staged))?;
-    let mut hash = Sha256::new();
-    let mut received = 0u64;
-    while let Some(chunk) = response.chunk().await.map_err(fetch(&build.url))? {
-        received += chunk.len() as u64;
-        // The signed size is the most that is written: a server sending
-        // more is not sending the build.
-        if received > build.size {
-            return Err(release::VerifyError::Size {
-                expected: build.size,
-                actual: received,
-            }
-            .into());
-        }
-        hash.update(&chunk);
-        file.write_all(&chunk)
+    let fetched = async {
+        let mut response = client
+            .get(&build.url)
+            .send()
             .await
-            .map_err(io("writing", staged))?;
-        on_step(Step::Downloading {
-            received,
-            total: build.size,
-        });
+            .and_then(reqwest::Response::error_for_status)
+            .map_err(fetch(&build.url))?;
+        let mut file = tokio::fs::File::create(staged)
+            .await
+            .map_err(io("creating", staged))?;
+        let mut hash = Sha256::new();
+        let mut received = 0u64;
+        while let Some(chunk) = response.chunk().await.map_err(fetch(&build.url))? {
+            received += chunk.len() as u64;
+            // The signed size is the most that is written: a server sending
+            // more is not sending the build.
+            if received > build.size {
+                return Err(release::VerifyError::Size {
+                    expected: build.size,
+                    actual: received,
+                }
+                .into());
+            }
+            hash.update(&chunk);
+            file.write_all(&chunk)
+                .await
+                .map_err(io("writing", staged))?;
+            on_received(received);
+        }
+        file.sync_all().await.map_err(io("writing", staged))?;
+        release::verify_artifact(build, &release::sha256_hex(&hash.finalize()), received)?;
+        Ok(())
     }
-    file.sync_all().await.map_err(io("writing", staged))?;
-    release::verify_artifact(build, &release::sha256_hex(&hash.finalize()), received)?;
-    Ok(build.version.clone())
+    .await;
+    if fetched.is_err() {
+        let _ = std::fs::remove_file(staged);
+    }
+    fetched
 }
 
 fn fetch(url: &str) -> impl FnOnce(reqwest::Error) -> Error {

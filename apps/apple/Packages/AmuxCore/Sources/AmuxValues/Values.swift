@@ -367,6 +367,24 @@ public struct AnswerView: Codable, Hashable, Sendable {
     }
 }
 
+/// A newer version of the app, unpacked and ready to replace the running
+/// one when it quits.
+public struct AppUpdate: Codable, Hashable, Sendable {
+    public var version: String
+    /// The staged app bundle.
+    public var app: String
+
+    public init(version: String, app: String) {
+        self.version = version
+        self.app = app
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case app
+    }
+}
+
 public enum AskBody: Codable, Hashable, Sendable {
     case command(command: String, cwd: String, reason: String, description: String)
     /// The patch's lines, and the new file's line its first change lands
@@ -6752,6 +6770,29 @@ public enum Underway: Codable, Hashable, Sendable {
             var _container = encoder.singleValueContainer()
             try _container.encode("MayNotHaveArrived")
         }
+    }
+}
+
+/// What a desktop app asks when it looks for a newer version of itself.
+public struct UpdateCheck: Codable, Hashable, Sendable {
+    /// The running app's version.
+    public var current: String
+    /// Where updates are staged; a directory the app keeps for nothing else.
+    public var dir: String
+    /// The installation config whose `releases_url` and `channel` name the
+    /// app's feed; none is the default one.
+    public var config: String?
+
+    public init(current: String, dir: String, config: String?) {
+        self.current = current
+        self.dir = dir
+        self.config = config
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case current
+        case dir
+        case config
     }
 }
 

@@ -101,6 +101,28 @@ pub enum Installed {
     Installed { version: String, bundled: bool },
 }
 
+/// What a desktop app asks when it looks for a newer version of itself.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct UpdateCheck {
+    /// The installation config whose `releases_url` and `channel` name the
+    /// app's feed; none is the default one.
+    #[serde(default)]
+    pub config: Option<PathBuf>,
+    /// The running app's version.
+    pub current: String,
+    /// Where updates are staged; a directory the app keeps for nothing else.
+    pub dir: PathBuf,
+}
+
+/// A newer version of the app, unpacked and ready to replace the running
+/// one when it quits.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AppUpdate {
+    pub version: String,
+    /// The staged app bundle.
+    pub app: PathBuf,
+}
+
 /// Where a person's report went: written on the device, and sent to their
 /// account when the profile is signed in to one.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]

@@ -6373,6 +6373,30 @@
         }
       }
     },
+    "the update check answered something unreadable" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/Runtime.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the update check answered something unreadable"
+          }
+        }
+      }
+    },
+    "the update check failed" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/Runtime.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the update check failed"
+          }
+        }
+      }
+    },
     "Thinking" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxCore/Sources/AmuxCore/ComposerState.swift.",
       "extractionState" : "manual",

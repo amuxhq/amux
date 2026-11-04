@@ -933,6 +933,52 @@ pub unsafe extern "C" fn amux_install(
     }
 }
 
+/// Looks for a newer version of the Mac app, from an `UpdateCheck` as JSON,
+/// in the feed beside amux's own, and answers an `AppUpdate` as JSON once
+/// that version is downloaded, checked against its signed manifest and
+/// unpacked, or `null` when the running app is current. Blocks for as long
+/// as the download takes, so call it off the main thread. Null on failure,
+/// with the reason in `error` when it is not null, which the caller frees.
+///
+/// # Safety
+/// `check` is a NUL-terminated string; `error` is null or writable.
+#[cfg(target_os = "macos")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_check_for_update(
+    check: *const c_char,
+    error: *mut *mut c_char,
+) -> *mut c_char {
+    let checked = guard(Err("checking for an update panicked".to_owned()), || {
+        // SAFETY: the caller's contract.
+        let check: app_runtime::values::UpdateCheck =
+            unsafe { parse(check) }.ok_or_else(|| "the check is not an UpdateCheck".to_owned())?;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|error| error.to_string())?;
+        let options = installer::update::Options {
+            config: check.config,
+            current: check.current,
+            dir: check.dir,
+        };
+        let staged = runtime
+            .block_on(installer::update::check(&options))
+            .map_err(|error| error.to_string())?;
+        Ok(staged.map(|staged| app_runtime::values::AppUpdate {
+            version: staged.version,
+            app: staged.app,
+        }))
+    });
+    match checked {
+        Ok(update) => owned(&update),
+        Err(reason) => {
+            // SAFETY: the caller's contract.
+            unsafe { fail(error, reason) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
 /// A descriptor that becomes readable whenever something waits for
 /// `amux_runtime_step`: inputs for the cores, views to redraw, answers to
 /// acts. The app watches it from the queue it steps on; no Rust thread

@@ -232,6 +232,36 @@ impl FleetState {
         out
     }
 
+    /// The agent's children as a fleet lists them. A settled child is done
+    /// with: its parent stopped it, or the person settled it. It is kept
+    /// only so its parent can start it again, until retention reclaims it,
+    /// so no client lists it under its family or counts it there.
+    pub fn listed_children(&self, parent: &AgentKey) -> impl DoubleEndedIterator<Item = &AgentKey> {
+        self.families.children(parent).filter(|child| {
+            self.agents
+                .get(*child)
+                .is_none_or(|child| child.filing() != wire::Filing::Settled)
+        })
+    }
+
+    /// The agent and every descendant a fleet lists, depth first: its
+    /// family without the settled children, and what is under them.
+    pub fn listed_family(&self, agent: &AgentKey) -> Vec<&Agent> {
+        let mut out = Vec::new();
+        let mut stack = vec![agent.clone()];
+        let mut seen = BTreeSet::new();
+        while let Some(at) = stack.pop() {
+            if !seen.insert(at.clone()) {
+                continue;
+            }
+            if let Some(agent) = self.agents.get(&at) {
+                out.push(agent);
+            }
+            stack.extend(self.listed_children(&at).rev().cloned());
+        }
+        out
+    }
+
     /// How loudly the agent's family asks for the person: its loudest
     /// member, the agent included.
     pub fn family_attention(&self, agent: &AgentKey) -> Option<Attention> {

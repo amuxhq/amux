@@ -1,5 +1,5 @@
 shell |  | hosts | 0,62,402,778
-home |  | signed-out | 0,174,402,617
+home |  | signed-out | 0,196,402,595
 hosts |  | 1 offline | 0,196,402,595
 hosts.row.<desk> | desk, macOS, offline while this phone is signed out, its agents’ state is unknown | offline | 16,202,370,65
 hosts.subtitle |  | 1 offline | 16,166,370,22

@@ -647,7 +647,7 @@ impl Home {
             KeyCode::Char('n') => self.open_draft(),
             KeyCode::Right => {
                 if let Some(agent) = agent.filter(|agent| {
-                    fleet.families().children(agent).next().is_some()
+                    fleet.listed_children(agent).next().is_some()
                         && !self.expanded.contains(&agent.agent)
                 }) {
                     self.toggle(&agent);
@@ -665,7 +665,7 @@ impl Home {
             }
             KeyCode::Char(' ') | KeyCode::Char('z') => {
                 if let Some(agent) =
-                    agent.filter(|agent| fleet.families().children(agent).next().is_some())
+                    agent.filter(|agent| fleet.listed_children(agent).next().is_some())
                 {
                     self.toggle(&agent);
                 }

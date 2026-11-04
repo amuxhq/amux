@@ -454,9 +454,9 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
             .map(|host| host.name().to_owned())
             .unwrap_or_default(),
         host_reach: reach(fleet, local_host, &agent.host_id),
-        children: fleet.families().children(&at).count() as u32,
+        children: fleet.listed_children(&at).count() as u32,
         family_attention: fleet.family_attention(&at).unwrap_or(Attention::Exited),
-        members: fleet.family(&at).len() as u32,
+        members: fleet.listed_family(&at).len() as u32,
         descendants: agent.descendants,
         background_jobs: agent.background_jobs,
         settle_held: fleet.settle_held(&at),
@@ -562,7 +562,7 @@ pub fn fleet_view(
     let mut families: Vec<(SectionKind, i64, &Agent)> = fleet
         .roots()
         .filter_map(|root| {
-            let members = fleet.family(&ui_state::agent_key(root));
+            let members = fleet.listed_family(&ui_state::agent_key(root));
             if !members.iter().any(|member| keep(member)) {
                 return None;
             }
@@ -646,8 +646,7 @@ fn push(
 ) {
     let card_ = card(fleet, local_host, agent);
     let mut children: Vec<&Agent> = fleet
-        .families()
-        .children(&card_.agent)
+        .listed_children(&card_.agent)
         .filter_map(|child| fleet.agent(child))
         .collect();
     children.sort_by(|a, b| {
@@ -659,7 +658,7 @@ fn push(
     let loud = (!children.is_empty() && !expanded && card_.attention != Attention::NeedsYou)
         .then(|| {
             fleet
-                .family(&card_.agent)
+                .listed_family(&card_.agent)
                 .into_iter()
                 .filter(|member| placed(fleet, local_host, member) == Attention::NeedsYou)
                 .max_by(|a, b| {
@@ -790,8 +789,7 @@ pub fn family_header(
         .parent(&at)
         .map(|parent| card(fleet, local_host, parent));
     let children: Vec<FleetCard> = fleet
-        .families()
-        .children(&at)
+        .listed_children(&at)
         .filter_map(|child| fleet.agent(child))
         .map(|child| card(fleet, local_host, child))
         .collect();
@@ -804,7 +802,7 @@ pub fn family_header(
         children,
         attention: fleet.family_attention(&root).unwrap_or(Attention::Exited),
         need_you: fleet
-            .family(&root)
+            .listed_family(&root)
             .into_iter()
             .filter(|member| {
                 ui_state::agent_key(member) != at

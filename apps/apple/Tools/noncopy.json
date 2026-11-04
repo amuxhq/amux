@@ -484,7 +484,8 @@
       {"literal": "\"pin.fill\"", "context": "Image(systemName: \"pin.fill\")", "reason": "SF Symbol name, not a displayed label.", "count": 1},
       {"literal": "\"home.scope.\\(scope.id)\"", "context": ".identified(\"home.scope.\\(scope.id)\", label: scope.title)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"settle.\\(row.id)\"", "context": "case .settle(let row, _): \"settle.\\(row.id)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"delete.\\(row.id)\"", "context": "case .delete(let row): \"delete.\\(row.id)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"delete.\\(row.id)\"", "context": "case .delete(let row): \"delete.\\(row.id)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"archivebox\"", "context": "Image(systemName: \"archivebox\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Components.swift": [
       {"literal": "\"chevron.right\"", "context": "Image(systemName: \"chevron.right\")", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1}

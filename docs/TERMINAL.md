@@ -60,7 +60,9 @@ folded until opened. Pinned and Settled hold the families the person filed there
 other sections agents are listed by when each last changed state (a turn starting or ending, an ask opening or
 answered), newest first, so a row never moves while an agent streams. The sections, their order and each row's second line come from the shared
 fleet view every client draws. A family sits in its loudest member's section;
-`→`, `←` or Space shows and hides its members, indented under their parent.
+`→`, `←` or Space shows and hides its members, indented under their parent. A settled member (one its parent
+stopped, or the person settled) is not listed or counted under its family: it is done with, and kept only so its
+parent can start it again.
 
 Each row is the agent's mark (`○` idle, starting, exited or on a host that is away; `●` working; `●` in the
 attention ink when it needs you), its name, its branch when it works in a repository, then faint which agent it is

@@ -366,8 +366,15 @@ public struct AgentsHome: View {
         guard scope == .fleet else { return "" }
         // Narrowed to nothing is still a fleet: the counts are the fleet's,
         // not the filter's.
+        //
+        // Never empty over a list. A subtitle that comes and goes changes the
+        // large title's height, and one that changes while a chat covers the
+        // fleet leaves the bar collapsed on the way back, its edge effect
+        // drawn at the taller title's height over the first row and taking
+        // its taps.
         if !model.rows.isEmpty || filtering {
-            return model.needYou == 0 ? "" : "\(model.needYou) need you"
+            return model.needYou == 0
+                ? String(localized: "Nothing needs you") : "\(model.needYou) need you"
         }
         // An empty phone says so in its own heading, under the title.
         return ""
@@ -734,45 +741,46 @@ public struct AgentsHome: View {
         }
     }
 
-    /// The settled agents, behind one quiet line at the foot of the list:
-    /// a hairline with the section's name and count set into it where the
-    /// rows' names start, as a chat app keeps its archive, opening a page of
-    /// their own.
+    /// The settled agents, behind one row at the foot of the list, as a chat
+    /// app keeps its archive: drawn as a row, so it reads as a place to go
+    /// rather than a section that unfolds, and at the foot rather than the
+    /// top, which belongs to the agents that need the person. Not revealed
+    /// by pulling down: that already brings the search and a refresh.
     private func settledLink(_ section: FleetSection) -> some View {
         let title = "\(Self.title(section.kind)) · \(section.families)"
-        let hairline = Rectangle().fill(design.hairline.color).frame(height: design.metrics.hairline)
-        return Button { actions(.openSettled) } label: {
-            HStack(spacing: Space.s) {
-                hairline
-                    .frame(width: AgentRowView.markColumn)
-                    .padding(.trailing, Space.m - Space.s)
-                Text(Self.title(section.kind))
-                    .designFont(.sectionTitle, design)
-                    .foregroundStyle(design.inkMuted.color)
-                    .layoutPriority(1)
-                Text("\(section.families)")
-                    .designFont(.caption, design)
-                    .foregroundStyle(design.inkFaint.color)
-                    .layoutPriority(1)
-                hairline
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(design.inkFaint.color)
-                    .frame(width: 16)
+        return VStack(spacing: 0) {
+            Rectangle()
+                .fill(design.hairline.color)
+                .frame(height: design.metrics.hairline)
+                .padding(.leading, Space.margin + AgentRowView.textInset)
+                .accessibilityHidden(true)
+            Button { actions(.openSettled) } label: {
+                HStack(alignment: .center, spacing: Space.m) {
+                    Image(systemName: "archivebox")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(design.inkMuted.color)
+                        .frame(width: AgentRowView.markColumn)
+                    Text(Self.title(section.kind))
+                        .designFont(.identifier, design)
+                        .foregroundStyle(design.ink.color)
+                    Spacer(minLength: Space.xs)
+                    Text("\(section.families)")
+                        .designFont(.caption, design)
+                        .foregroundStyle(design.inkMuted.color)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(design.inkFaint.color)
+                }
+                .padding(.vertical, Space.m)
+                .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                .padding(.horizontal, Space.margin)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, Space.margin)
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
+            .buttonStyle(.amuxPush)
+            .accessibilityLabel(title)
+            .accessibilityAddTraits(.isButton)
+            .identified("home.settled", label: title, value: "\(section.families)")
         }
-        // Nothing drawn under the thumb: the page that opens is the answer
-        // to the press. A control's press would shrink this full-width line
-        // about its centre, and a row's tint flashes a slab over a line that
-        // is mostly empty space.
-        .buttonStyle(.amuxPush)
-        .padding(.top, Space.l)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(.isButton)
-        .identified("home.settled", label: title, value: "\(section.families)")
     }
 
     /// What this account could do to reach a machine it cannot: subscribe,

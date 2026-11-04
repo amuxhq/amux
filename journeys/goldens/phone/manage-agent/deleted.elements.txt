@@ -1,5 +1,5 @@
 shell |  | agents | 0,62,402,778
-home |  | signed-out | 0,174,402,617
+home |  | signed-out | 0,196,402,595
 settled |  | signed-out | 0,174,402,666
 settled.empty | Nothing settled |  | 0,174,366,101
 hosts |  | 1 reachable | 0,174,402,617

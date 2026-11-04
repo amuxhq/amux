@@ -439,6 +439,45 @@ fn no_sessions() -> HashMap<AgentKey, SessionLine> {
 }
 
 #[test]
+fn a_settled_child_is_not_listed_under_its_family_nor_counted_there() {
+    let mut fleet = FleetState::new();
+    for msg in [
+        fleet_row("a", "parent", Phase::Working, None, 100),
+        fleet_row("a", "working", Phase::Working, Some("parent"), 50),
+    ] {
+        fleet.update(msg);
+    }
+    // Stopped by its parent: done with, and kept only so the parent can
+    // start it again.
+    let mut stopped = fleet_entry("a", "stopped", Phase::Idle, Some("parent"), 60);
+    stopped.lifecycle = wire::Lifecycle::Exited as i32;
+    stopped.filing = wire::Filing::Settled as i32;
+    fleet.update(listed(stopped));
+    let all = |_: &wire::Agent| true;
+    let expand: HashSet<Vec<u8>> = [b"parent".to_vec()].into();
+    let view = fleet_view(&fleet, b"a", &no_sessions(), &expand, &all);
+    assert_eq!(
+        home(&view),
+        vec![
+            (SectionKind::Live, "parent".into(), 0),
+            (SectionKind::Live, "working".into(), 1),
+        ]
+    );
+    let parent = &view.sections[0].rows[0].card;
+    assert_eq!((parent.children, parent.members), (1, 2));
+    // A search does not find it through its family either.
+    let only_stopped = |agent: &wire::Agent| agent.name == "stopped";
+    let view = fleet_view(&fleet, b"a", &no_sessions(), &expand, &only_stopped);
+    assert!(view.sections.is_empty());
+    // Nor does the chat's family header name it.
+    let header = family_header(&fleet, b"a", b"parent").unwrap();
+    assert_eq!(
+        header.children.iter().map(|child| child.name.as_str()).collect::<Vec<_>>(),
+        ["working"]
+    );
+}
+
+#[test]
 fn the_fleet_places_families_by_filing_then_by_their_loudest_member_newest_first() {
     let mut fleet = FleetState::new();
     for msg in [

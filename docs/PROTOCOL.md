@@ -920,7 +920,8 @@ inventory replicates it, as it does the name.
   it, resumable; its children are settled with it by the family rule. A
   parent's stop tool settles its child, and a one-shot child that finishes
   settles itself. Retention removes only settled agents, and the agents'
-  own listing leaves them out.
+  own listing leaves them out. Clients list no settled child under its
+  family, nor count it there.
 - **Resuming** a settled agent files it active again.
 
 A message to an exited agent resumes it, with the message as the next

@@ -452,6 +452,13 @@ async fn place(
                 .is_some_and(|record| same_account(&record))
         })
         .map(|(id, ..)| *id);
+    // The installation's only profile, unbound, is the one a person signing
+    // in means: what it holds already is theirs, so nothing is asked.
+    let only_unbound = match hosted.as_slice() {
+        [(id, _, _, edge)] if edge.account().record().is_none() => Some(*id),
+        _ => None,
+    };
+    let mut adopt = sign_in.adopt;
     let id = match sign_in.profile {
         Some(id) => {
             if bound.is_some_and(|bound| bound != id) {
@@ -459,8 +466,11 @@ async fn place(
             }
             id
         }
-        None => match bound {
-            Some(id) => id,
+        None => match bound.or(only_unbound) {
+            Some(id) => {
+                adopt |= Some(id) == only_unbound;
+                id
+            }
             None => {
                 let mut unbound = Vec::new();
                 for (id, position, runtime, edge) in &hosted {
@@ -497,7 +507,7 @@ async fn place(
         Some(record) if !same_account(record) => {
             return Err(ProfileRefusal::OtherAccount);
         }
-        None if !sign_in.adopt
+        None if !adopt
             && !pristine(&runtime, &edge)
                 .await
                 .map_err(|error| ProfileRefusal::Failed(error.to_string()))? =>

@@ -337,8 +337,10 @@ device flow and streams what happens:
 3. **A `signed_in` event** with the profile, and the stream ends.
 
 Leave `profile_id` empty to let the installation pick: the profile already
-bound to this account, else one that holds nothing yet, else a new one.
-Closing the stream abandons the sign-in.
+bound to this account; else the installation's only profile, when it has
+one and nobody has signed in on it, without the `adopt` question, since what
+it holds is already the person's; else one that holds nothing yet; else a
+new one. Closing the stream abandons the sign-in.
 
 An app that runs its own browser sign-in (authorization code with PKCE)
 hands the refresh token it obtained to the daemon with `BindProfile`,

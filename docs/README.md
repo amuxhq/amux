@@ -45,7 +45,7 @@
 - [iPhone copy](IOS_COPY.md) — the rules the app's words follow and the lint that holds them.
 - [Cloud](CLOUD.md) — what the app and daemon ask of amux.sh.
 - [Writing a client](WRITING_A_CLIENT.md) — for third parties: finding and installing amux, profiles,
-  sign-in and the fleet over the local sockets.
+  sign-in and the fleet, on amux's Rust crates or from the protocol.
 
 ## Verifying
 

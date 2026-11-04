@@ -12,6 +12,8 @@
 - The vocabulary PNGs match the hashes in their manifest, so a stale or
   hand-edited rendering is caught.
 - docs/README.md links every page in docs/ exactly once.
+- A fenced block under a `<!-- source: <path> -->` line is that file, word
+  for word: a page that shows a compiled example cannot drift from it.
 - No page or figure names a system or tool the design drew on, or the
   crate name of a tool amux runs: the docs describe amux in its own words,
   and a tool's name belongs in the comment of the recipe that runs it. A
@@ -194,6 +196,30 @@ def check_readme(errors: list[str]) -> None:
             errors.append(f"docs/README.md links {page} {counts.get(page, 0)} times; it should link it once")
 
 
+SOURCE = re.compile(r"^<!-- source: (\S+) -->$")
+
+
+def check_sources(pages: list[Path], errors: list[str]) -> None:
+    for page in pages:
+        lines = page.read_text(encoding="utf-8").splitlines()
+        for number, line in enumerate(lines, 1):
+            marker = SOURCE.match(line)
+            if not marker:
+                continue
+            where = f"{page.relative_to(ROOT)}:{number}"
+            source = ROOT / marker.group(1)
+            if number >= len(lines) or not FENCE.match(lines[number]):
+                errors.append(f"{where}: a source line must sit just above a fenced block")
+                continue
+            end = next((i for i in range(number + 1, len(lines)) if FENCE.match(lines[i])), None)
+            if end is None:
+                errors.append(f"{where}: the fenced block never closes")
+            elif not source.is_file():
+                errors.append(f"{where}: {marker.group(1)} does not exist")
+            elif lines[number + 1:end] != source.read_text(encoding="utf-8").splitlines():
+                errors.append(f"{where}: the block differs from {marker.group(1)}; copy the file in again")
+
+
 def check_vendor_names(errors: list[str]) -> None:
     for path in sorted([*DOCS.rglob("*.md"), *DOCS.rglob("*.svg")]):
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -211,13 +237,14 @@ def main() -> int:
     check_svgs(errors)
     check_vocabulary(errors)
     check_readme(errors)
+    check_sources(pages, errors)
     check_vendor_names(errors)
     for error in errors:
         print(error, file=sys.stderr)
     if errors:
         print(f"docs check: {len(errors)} problem(s)", file=sys.stderr)
         return 1
-    print(f"docs check: {len(pages)} pages, every link, figure and page accounted for, no vendor named")
+    print(f"docs check: {len(pages)} pages, every link, figure and page accounted for, every shown source current, no vendor named")
     return 0
 
 

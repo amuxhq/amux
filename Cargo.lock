@@ -4341,6 +4341,7 @@ dependencies = [
  "async-trait",
  "client",
  "futures-util",
+ "installer",
  "prost",
  "provider-fakes",
  "replay-support",

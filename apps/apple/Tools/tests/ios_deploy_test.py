@@ -20,7 +20,8 @@ class Fake:
     deploy makes, keeping every write in order."""
 
     def __init__(self, versions=(), whats_new="Faster sign-in.", groups=(("Friends", False),),
-                 beta_state="READY_FOR_BETA_SUBMISSION", phased=True, build_state="VALID"):
+                 beta_state="READY_FOR_BETA_SUBMISSION", phased=True, build_state="VALID",
+                 open_submission=None):
         self.versions = [{"id": f"v{i}", "type": "appStoreVersions",
                           "attributes": {"versionString": number, "appStoreState": state}}
                          for i, (number, state) in enumerate(versions)]
@@ -31,6 +32,8 @@ class Fake:
         self.beta_state = beta_state
         self.phased = phased
         self.build_state = build_state
+        # (state, version ids it holds) of a submission not yet accepted.
+        self.open_submission = open_submission
         self.writes = []
 
     def __call__(self, method, url, headers, body):
@@ -62,7 +65,16 @@ class Fake:
             return answer({"data": {"id": "ph", "type": "appStoreVersionPhasedReleases"}
                            if self.phased else None})
         if method == "GET" and route == "/v1/reviewSubmissions":
-            return answer({"data": []})
+            assert "filter[state]=READY_FOR_REVIEW,UNRESOLVED_ISSUES" in path, path
+            if not self.open_submission:
+                return answer({"data": []})
+            state, _ = self.open_submission
+            return answer({"data": [{"id": "open", "type": "reviewSubmissions",
+                                     "attributes": {"state": state}}]})
+        if method == "GET" and route == "/v1/reviewSubmissions/open/items":
+            _, held = self.open_submission
+            return answer({"data": [{"id": f"i{v}", "type": "reviewSubmissionItems", "relationships": {
+                "appStoreVersion": {"data": {"type": "appStoreVersions", "id": v}}}} for v in held]})
         if method == "POST" and route == "/v1/reviewSubmissions":
             return answer({"data": {"id": "rs", "type": "reviewSubmissions"}}, 201)
         if method == "GET" and route == "/v1/apps/app/betaGroups":
@@ -98,13 +110,14 @@ class Builds(unittest.TestCase):
 class Stable(unittest.TestCase):
     def test_a_new_version_is_created_attached_and_submitted_without_a_phased_release(self):
         fake = Fake()
-        said = run(fake)
+        said = run(fake, notes="Faster sign-in.")
         routes = [(method, route) for method, route, _ in fake.writes]
         self.assertEqual(routes, [
             ("POST", "/v1/appStoreVersions"),
             ("PATCH", "/v1/appStoreVersions/vnew"),
             ("PATCH", "/v1/appStoreVersions/vnew/relationships/build"),
             ("DELETE", "/v1/appStoreVersionPhasedReleases/ph"),
+            ("PATCH", "/v1/appStoreVersionLocalizations/loc"),
             ("POST", "/v1/reviewSubmissions"),
             ("POST", "/v1/reviewSubmissionItems"),
             ("PATCH", "/v1/reviewSubmissions/rs"),
@@ -114,6 +127,28 @@ class Stable(unittest.TestCase):
         self.assertEqual(fake.writes[1][2]["data"]["attributes"], {"releaseType": "AFTER_APPROVAL"})
         self.assertEqual(fake.writes[-1][2]["data"]["attributes"], {"submitted": True})
         self.assertIn("submitted version 1.0.34 for review", said[-1])
+
+    def test_a_new_version_without_notes_is_refused_before_it_is_made(self):
+        fake = Fake()
+        with self.assertRaisesRegex(recipe.Refusal, "--notes-file"):
+            run(fake)
+        self.assertEqual(fake.writes, [])
+
+    def test_a_rejected_versions_submission_is_sent_again_without_adding_it_twice(self):
+        fake = Fake(versions=(("1.0.34", "REJECTED"),), phased=False,
+                    open_submission=("UNRESOLVED_ISSUES", ["v0"]))
+        run(fake)
+        routes = [(method, route) for method, route, _ in fake.writes]
+        self.assertNotIn(("POST", "/v1/reviewSubmissions"), routes)
+        self.assertNotIn(("POST", "/v1/reviewSubmissionItems"), routes)
+        self.assertEqual(routes[-1], ("PATCH", "/v1/reviewSubmissions/open"))
+
+    def test_an_unsent_submission_gets_the_version_added(self):
+        fake = Fake(versions=(("1.0.34", "PREPARE_FOR_SUBMISSION"),), phased=False,
+                    open_submission=("READY_FOR_REVIEW", []))
+        run(fake)
+        added = [data for method, route, data in fake.writes if route == "/v1/reviewSubmissionItems"]
+        self.assertEqual(added[0]["data"]["relationships"]["reviewSubmission"]["data"]["id"], "open")
 
     def test_notes_become_whats_new(self):
         fake = Fake(versions=(("1.0.34", "PREPARE_FOR_SUBMISSION"),), phased=False)

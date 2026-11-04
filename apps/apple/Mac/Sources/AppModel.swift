@@ -62,6 +62,9 @@ final class AppModel {
     /// and attaches to it.
     func start() async {
         guard runtime == nil else { return }
+        // Before anything that can fail: an app that cannot install or
+        // attach to the amux it finds may be the one a newer app fixes.
+        checkForUpdates()
         phase = .installing
         let bundled = Bundle.main.bundleURL.appending(path: "Contents/Helpers/amux")
         do {
@@ -84,7 +87,6 @@ final class AppModel {
             }.value
             runtime = attached
             phase = .attached
-            checkForUpdates()
             // The first profile list reaches the main actor while attaching,
             // before there was a runtime to open its first profile from.
             open(selected)

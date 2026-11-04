@@ -82,6 +82,10 @@ def store(connect: Connect, app_id: str, version: str, build_id: str,
         state = versions[0]["attributes"]["appStoreState"]
         if state not in EDITABLE:
             raise Refusal(f"version {version} is {state}; it can no longer be submitted")
+    elif notes is None:
+        # A version made now would have no What's New, so the refusal below
+        # comes before it is made.
+        raise Refusal(f"version {version} is new and has no What's New; pass --notes-file")
     elif dry_run:
         version_id = ""
         say(f"would create App Store version {version}")
@@ -124,20 +128,30 @@ def store(connect: Connect, app_id: str, version: str, build_id: str,
                 "attributes": {"whatsNew": notes}}})
     say(f"attached the build to version {version}")
 
+    # A submission not yet sent, or one review sent back, is the one to send:
+    # a run that stopped after adding the version, or a resubmission after a
+    # rejection, carries on with it rather than starting another.
     open_ = connect.call(
         "GET", f"/v1/reviewSubmissions?filter[app]={app_id}&filter[platform]=IOS"
-               "&filter[state]=READY_FOR_REVIEW")["data"]
+               "&filter[state]=READY_FOR_REVIEW,UNRESOLVED_ISSUES")["data"]
     if open_:
         submission = open_[0]["id"]
     else:
         submission = connect.call("POST", "/v1/reviewSubmissions", {"data": {
             "type": "reviewSubmissions", "attributes": {"platform": "IOS"},
             "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}})["data"]["id"]
-    connect.call("POST", "/v1/reviewSubmissionItems", {"data": {
-        "type": "reviewSubmissionItems",
-        "relationships": {
-            "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": submission}},
-            "appStoreVersion": {"data": {"type": "appStoreVersions", "id": version_id}}}}})
+    items = connect.call(
+        "GET", f"/v1/reviewSubmissions/{submission}/items?include=appStoreVersion") if open_ \
+        else {"data": []}
+    held = any(((item.get("relationships") or {}).get("appStoreVersion") or {})
+               .get("data", {}) == {"type": "appStoreVersions", "id": version_id}
+               for item in items["data"])
+    if not held:
+        connect.call("POST", "/v1/reviewSubmissionItems", {"data": {
+            "type": "reviewSubmissionItems",
+            "relationships": {
+                "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": submission}},
+                "appStoreVersion": {"data": {"type": "appStoreVersions", "id": version_id}}}}})
     connect.call("PATCH", f"/v1/reviewSubmissions/{submission}", {"data": {
         "type": "reviewSubmissions", "id": submission, "attributes": {"submitted": True}}})
     say(f"submitted version {version} for review; it is released once approved")

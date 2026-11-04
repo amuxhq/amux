@@ -261,6 +261,17 @@ async fn the_mac_app_stages_a_newer_version_only_once_it_checks_out() {
         update::check(&options(&home, "0.0.1")).await.unwrap(),
         staged
     );
+    // A version staged from another feed is replaced, not taken for this one.
+    let ready = home.dir.path().join("Updates/0.0.2/ready");
+    std::fs::write(&ready, "staged from a test feed").unwrap();
+    assert_eq!(
+        update::check(&options(&home, "0.0.1")).await.unwrap(),
+        staged
+    );
+    assert_eq!(
+        std::fs::read_to_string(&ready).unwrap(),
+        release::sha256_of(&zip)
+    );
     // Once it runs, what was staged goes.
     assert_eq!(update::check(&options(&home, "0.0.2")).await.unwrap(), None);
     assert!(!home.dir.path().join("Updates/0.0.2").exists());

@@ -81,11 +81,15 @@ amux's `<channel>.json` under the installation's `releases_url`, for the
 installation's channel. The feed is amux's signed manifest format with one
 target, `mac-app`, naming the zipped app; the check is the installer's
 (`installer::update`), so the manifest's signature and the zip's size and
-hash are checked by the same code that checks an amux download.
+hash are checked by the same code that checks an amux download. It looks
+before installing or attaching to amux, so an app that cannot reach the
+amux it finds can still fetch the version that can.
 
 A newer version is downloaded and unpacked into
 `~/Library/Application Support/sh.amux.desktop/Updates/<version>/Amux.app`,
-and the window shows a quiet "Restart to Complete Update". Quitting the app
+its `ready` file holding the zip's digest, so a version staged from
+another feed is fetched again rather than swapped in, and the window shows a
+quiet "Restart to Complete Update". Quitting the app
 any way puts the staged app in place of the running one
 (`FileManager.replaceItemAt`); the button quits and opens the new one once
 this one has exited. An app that cannot replace its own bundle (run from its
@@ -120,7 +124,8 @@ artifacts come from that one app:
   against its signed manifest and signed as `sh.amux.cli`) in
   `Contents/Helpers`, beside a link to Applications. It is what a browser
   downloads, so it is notarized and stapled; `--no-notarize` skips that,
-  and such a disk image needs "Open Anyway" once.
+  and such a disk image needs "Open Anyway" once, so a stable deploy
+  refuses it and only preview takes it.
 
 The tag's message records both digests, and the deploy refuses a file on the
 GitHub Release that is not the one this Mac built. A deploy signs the

@@ -69,7 +69,9 @@ fn is_loopback(url: &str) -> bool {
     let Some((_, rest)) = url.split_once("://") else {
         return false;
     };
-    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    // The authority ends where a URL parser ends an http URL's, at a backslash
+    // too, so this never reads a host the fetch does not reach.
+    let authority = rest.split(['/', '\\', '?', '#']).next().unwrap_or_default();
     let host = authority
         .rsplit_once('@')
         .map_or(authority, |(_, host)| host);
@@ -376,6 +378,7 @@ mod tests {
             "http://10.0.0.1/stable.json",
             "http://localhost.amux.sh/stable.json",
             "http://127.0.0.1@amux.sh/stable.json",
+            "http://amux.sh\\@127.0.0.1/stable.json",
             "not a url",
         ] {
             assert!(!is_loopback(url), "{url}");

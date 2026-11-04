@@ -514,6 +514,30 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
         fetched.insert(name, (digest, bytes.len() as u64));
     }
 
+    let beside = if channel == "stable" {
+        // Amux.dmg is what a browser downloads, so stable only ever serves
+        // one with Apple's ticket stapled to it.
+        let dmg = staging.join(dmg_name(&version));
+        if run(
+            &root,
+            "xcrun",
+            &["stapler", "validate", &dmg.to_string_lossy()],
+        )
+        .is_err()
+        {
+            return Err(format!(
+                "{} is not notarized, so stable would serve a download Gatekeeper stops; deploy \
+                 it to preview, or release a notarized version",
+                dmg_name(&version)
+            )
+            .into());
+        }
+        let named = staging.join("Amux.dmg");
+        std::fs::copy(staging.join(dmg_name(&version)), &named)?;
+        vec![named]
+    } else {
+        Vec::new()
+    };
     let seed = match &key_file {
         Some(path) => file_seed(path)?,
         None => keychain_seed()?,
@@ -560,13 +584,6 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
         &file.to_string_lossy(),
         "--clobber",
     ])?;
-    let beside = if channel == "stable" {
-        let named = staging.join("Amux.dmg");
-        std::fs::copy(staging.join(dmg_name(&version)), &named)?;
-        vec![named]
-    } else {
-        Vec::new()
-    };
     // The publish script names the manifest after its first word, so the
     // Mac feed lands as mac-<channel>.json beside amux's <channel>.json.
     publish(&feed, &version, &file, &beside)?;

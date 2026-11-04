@@ -52,6 +52,9 @@ private struct Window: View {
                 Text("amux is not running").font(.headline)
                 Text(reason).foregroundStyle(.secondary).textSelection(.enabled)
                 Button("Try again") { Task { await model.start() } }
+                if model.update != nil {
+                    Button("Restart to Complete Update") { model.restartToUpdate() }
+                }
             }
             .padding()
         case .attached:

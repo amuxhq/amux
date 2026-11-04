@@ -22,8 +22,10 @@ use crate::{Error, artifact, config, http, io, manifest};
 pub const TARGET: &str = "mac-app";
 /// The app's bundle, as its zip holds it and as the update is staged.
 pub const BUNDLE: &str = "Amux.app";
-/// Written beside a staged version once it is whole, so a check stopped
-/// partway is redone rather than offered.
+/// Written beside a staged version once it is whole, holding the digest of
+/// the zip it came from: a check stopped partway is redone rather than
+/// offered, and a version staged from another feed (a test's) is replaced
+/// rather than taken for the one this feed names.
 const READY: &str = "ready";
 
 /// What [`check`] needs to know.
@@ -73,7 +75,8 @@ pub async fn check(options: &Options) -> Result<Option<Staged>, Error> {
     };
     let staged = options.dir.join(&build.version);
     let app = staged.join(BUNDLE);
-    if staged.join(READY).is_file() && app.is_dir() {
+    let ready = std::fs::read_to_string(staged.join(READY)).unwrap_or_default();
+    if ready.trim() == build.sha256 && app.is_dir() {
         return Ok(Some(Staged {
             version: build.version.clone(),
             app,
@@ -95,7 +98,7 @@ pub async fn check(options: &Options) -> Result<Option<Staged>, Error> {
             target: format!("{TARGET} ({} has no {BUNDLE})", build.url),
         });
     }
-    std::fs::write(staged.join(READY), &build.version).map_err(io("writing", &staged))?;
+    std::fs::write(staged.join(READY), &build.sha256).map_err(io("writing", &staged))?;
     remove_others(&options.dir, Some(&build.version));
     Ok(Some(Staged {
         version: build.version.clone(),

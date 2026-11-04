@@ -801,7 +801,7 @@ command again.
 | `SubscribeInventory` | The host set and every agent row: current state, `CaughtUp`, then deltas. A listing is this stream read to `CaughtUp`. |
 | `ResolveAgent` | A fleet-wide reference to one row: an id with or without dashes, the eight-character short id (or any longer prefix), a name, or `name@host`. `NOT_FOUND`, or `FAILED_PRECONDITION` when a bare name matches agents on several hosts; the message offers the `name@host` forms that pick each. Every other agent call takes an id. |
 | `CreateAgent` | Creates an agent, on this host or on a trusted host named by id or by name. |
-| `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent` | Registry operations. A stop ends the agent now (its turn cancelled the provider's own way); a delete stops it if live and removes it. Both act on the named agent alone; its children follow on their own hosts by [the family rule](#the-family-rule), so the answer says nothing of them. |
+| `RenameAgent`, `FileAgent`, `ResumeAgent`, `DeleteAgent` | Registry operations. `FileAgent` files the agent as the person asked, apart from its lifecycle (see [filing](#filing)): settling ends a live agent now (its turn cancelled the provider's own way) and answers once it has ended; pinning or filing it active answers at once. A delete stops it if live and removes it. Each acts on the named agent alone; its children follow on their own hosts by [the family rule](#the-family-rule), so the answer says nothing of them. |
 | `SendMessage` | A message to an agent, whose sender the daemon stamps from the caller; see [agent tools](AGENT_TOOLS.md). |
 | `PutBlob`, `GetBlob`, `GetDiff` | Bytes in an agent's directory; see [attachments](ATTACHMENTS.md). |
 | `GetCatalogue` | What a provider on a host offers with no agent running, from the host's own copy. What an agent offers is a blob its snapshot names, read with `GetBlob`; see [the wire](WIRE.md). |
@@ -837,9 +837,9 @@ reached the owner:
   (its subscription lapsed), the relay carries no calls between hosts, and
   the call is refused at once as that: reason `PAYMENT_REQUIRED` with a
   sentence naming the lapse, for `SendInput` the same rejected verdict
-  with that sentence as its detail, and for `StopAgent`
-  reason `HOST_UNREACHABLE` with that sentence, so a client holds the stop
-  as it holds any stop that never left.
+  with that sentence as its detail, and for `FileAgent`
+  reason `HOST_UNREACHABLE` with that sentence, so a client holds a settle
+  as it holds any settle that never left.
 - **Uncertain.** The call went out and its answer did not come back: the
   link failed under it, or 30 seconds passed (enough for a spawn, which waits
   for the child's process to start on the far side). That is
@@ -892,7 +892,7 @@ these ways:
 - It answers only for this host's own agents. Its inventory stream carries
   this host's entry and this host's agents, never what this host knows of
   other hosts. Every call that names an agent (`SubscribeSession`, `ListItems`, `GetItem`,
-  `SendInput`, `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent`,
+  `SendInput`, `RenameAgent`, `FileAgent`, `ResumeAgent`, `DeleteAgent`,
   `PutBlob`, `GetBlob` and `GetDiff`) is `NOT_FOUND` for an agent this host only
   replicates, even when this host holds that agent's rows or blobs.
 - `SubscribeSession` may ask for what came `after` a revision: that is how a
@@ -904,13 +904,41 @@ these ways:
 - `ResolveAgent` and the drafts are refused: a peer resolves names itself, and
   a draft stays on the machine it was typed on.
 
+### Filing
+
+Every agent row carries how the person filed it, apart from its lifecycle:
+`FILING_ACTIVE`, `FILING_PINNED` or `FILING_SETTLED`, with `filed_at_ms`, when
+that last changed on the agent's host. The agent's host owns it and the
+inventory replicates it, as it does the name.
+
+- **Active** is the default. An agent that exited without being settled is
+  still active, and reads as an ordinary agent that a message resumes.
+- **Pinned** keeps it at the top of the fleet, in the order pinned. Only an
+  agent with no parent is pinned (`FAILED_PRECONDITION` otherwise). Pinning
+  changes nothing about the process.
+- **Settled** is the person being done with it. Settling a live agent stops
+  it, resumable; its children are settled with it by the family rule. A
+  parent's stop tool settles its child, and a one-shot child that finishes
+  settles itself. Retention removes only settled agents, and the agents'
+  own listing leaves them out.
+- **Resuming** a settled agent files it active again.
+
+A message to an exited agent resumes it, with the message as the next
+incarnation's first input: one from the person or from the agent's own
+parent always, one from any other agent unless it is settled, by the
+person, by its parent's stop, or by finishing as a one-shot child (refused
+`REFUSAL_SETTLED`), and a child's report never.
+
 ### The family rule
 
 A host enforces family rules only for its own agents, from the parent's row as
 it holds it (an own row, or a replica kept by the inventory stream), and only
 on what that row actually says (`ParentSays` and `parent_changed` in
-`crates/node/src/runtime.rs`):
+`crates/daemon-core/src/families.rs`):
 
+- **The parent's row says it was settled**: the child is settled, and so
+  stopped when live. Only the change counts, so a child the person filed
+  active again under a settled parent stays so.
 - **The parent's row says it exited**, whatever the cause: the child is
   stopped.
 - **The parent is gone from its host's listing**: the child is stopped and
@@ -951,8 +979,8 @@ row: while this host has not caught up with that host's listing since they
 last connected, or holds no row for the parent yet, the create is made, and
 the family rule above settles the child once the parent's row speaks.
 
-A stop's or delete's answer covers the named agent only; it never confirms the
-children, which may be on hosts that are away.
+A settle's or delete's answer covers the named agent only; it never confirms
+the children, which may be on hosts that are away.
 
 ### The tools socket
 
@@ -966,11 +994,12 @@ no request carries an agent id or a token claiming one. On that socket:
   model, effort or provider arguments are refused, being the person's to
   choose.
 - `SendMessage` stamps the caller as the message's sender.
-- Every call on a named agent (`SendInput`, `StopAgent`, `RenameAgent`,
+- Every call on a named agent (`SendInput`, `FileAgent`, `RenameAgent`,
   `ResumeAgent`, `DeleteAgent`, the blob, diff, draft and session reads) goes
   only to one of the caller's own direct children, refused with
   `PERMISSION_DENIED` otherwise; the stop tool's interrupt is the input an
-  agent sends. An agent reaches any other agent by messaging it.
+  agent sends. `FileAgent` there only settles: pinning and filing active are
+  the person's. An agent reaches any other agent by messaging it.
 
 [Agent tools](AGENT_TOOLS.md) describes the tool server that dials it.
 

@@ -167,7 +167,7 @@ fn online(id: &str) -> FleetMsg {
 /// as when its own daemon restarts, is held; the stream that reopens names
 /// the host online again with no away in between, and the stop goes.
 #[test]
-fn a_stop_held_while_its_host_read_online_goes_when_the_host_is_listed_again() {
+fn a_settle_held_while_its_host_read_online_goes_when_the_host_is_listed_again() {
     let mut fleet = FleetState::new();
     for msg in [
         online("a"),
@@ -177,12 +177,12 @@ fn a_stop_held_while_its_host_read_online_goes_when_the_host_is_listed_again() {
         fleet.update(msg);
     }
     let listing = fleet.listings();
-    fleet.update(FleetMsg::HoldStop {
+    fleet.update(FleetMsg::HoldSettle {
         agent: at("a", "worker"),
         listing,
     });
-    assert!(fleet.stop_held(&at("a", "worker")));
-    assert!(fleet.take_released_stops().is_empty());
+    assert!(fleet.settle_held(&at("a", "worker")));
+    assert!(fleet.take_released_settles().is_empty());
     for msg in [
         FleetMsg::Connection(Connection::Reconnecting),
         FleetMsg::Connection(Connection::Live),
@@ -192,15 +192,15 @@ fn a_stop_held_while_its_host_read_online_goes_when_the_host_is_listed_again() {
     ] {
         fleet.update(msg);
     }
-    assert_eq!(fleet.take_released_stops(), [at("a", "worker")]);
-    assert!(!fleet.stop_held(&at("a", "worker")));
+    assert_eq!(fleet.take_released_settles(), [at("a", "worker")]);
+    assert!(!fleet.settle_held(&at("a", "worker")));
 }
 
 /// The stream can reopen and list the host online before the failed stop
 /// is held: that listing already said the host is back, and the stop goes
 /// at once. One held mid-listing goes when the listing ends.
 #[test]
-fn a_stop_held_after_its_host_was_listed_again_goes_at_once() {
+fn a_settle_held_after_its_host_was_listed_again_goes_at_once() {
     let mut fleet = FleetState::new();
     for msg in [
         online("a"),
@@ -221,31 +221,31 @@ fn a_stop_held_after_its_host_was_listed_again_goes_at_once() {
     ] {
         fleet.update(msg);
     }
-    fleet.update(FleetMsg::HoldStop {
+    fleet.update(FleetMsg::HoldSettle {
         agent: at("a", "worker"),
         listing: left,
     });
-    assert_eq!(fleet.take_released_stops(), [at("a", "worker")]);
-    assert!(!fleet.stop_held(&at("a", "worker")));
+    assert_eq!(fleet.take_released_settles(), [at("a", "worker")]);
+    assert!(!fleet.settle_held(&at("a", "worker")));
 
     let left = fleet.listings();
     fleet.update(FleetMsg::Connection(Connection::Reconnecting));
     fleet.update(FleetMsg::Connection(Connection::Live));
     fleet.update(online("a"));
-    fleet.update(FleetMsg::HoldStop {
+    fleet.update(FleetMsg::HoldSettle {
         agent: at("a", "other"),
         listing: left,
     });
-    assert!(fleet.stop_held(&at("a", "other")));
+    assert!(fleet.settle_held(&at("a", "other")));
     fleet.update(agent(row("a", "other", Phase::Working, None)));
     fleet.update(caught_up());
-    assert_eq!(fleet.take_released_stops(), [at("a", "other")]);
+    assert_eq!(fleet.take_released_settles(), [at("a", "other")]);
 }
 
 /// A stop that failed under the newest listing waits for the next word of
 /// its host, so a host that cannot take it is not asked again and again.
 #[test]
-fn a_stop_held_under_the_newest_listing_waits_for_its_host() {
+fn a_settle_held_under_the_newest_listing_waits_for_its_host() {
     let mut fleet = FleetState::new();
     for msg in [
         online("a"),
@@ -255,12 +255,12 @@ fn a_stop_held_under_the_newest_listing_waits_for_its_host() {
         fleet.update(msg);
     }
     let listing = fleet.listings();
-    fleet.update(FleetMsg::HoldStop {
+    fleet.update(FleetMsg::HoldSettle {
         agent: at("a", "worker"),
         listing,
     });
-    assert!(fleet.take_released_stops().is_empty());
-    assert!(fleet.stop_held(&at("a", "worker")));
+    assert!(fleet.take_released_settles().is_empty());
+    assert!(fleet.settle_held(&at("a", "worker")));
 }
 
 /// A held stop the end of a listing sends again leaves its row changed, so
@@ -279,13 +279,13 @@ fn a_stop_released_at_a_listings_end_changes_its_row() {
     fleet.update(FleetMsg::Connection(Connection::Reconnecting));
     fleet.update(FleetMsg::Connection(Connection::Live));
     fleet.update(online("a"));
-    fleet.update(FleetMsg::HoldStop {
+    fleet.update(FleetMsg::HoldSettle {
         agent: at("a", "worker"),
         listing: left,
     });
     fleet.update(agent(row("a", "worker", Phase::Working, None)));
     let changed = fleet.update(caught_up());
-    assert_eq!(fleet.take_released_stops(), [at("a", "worker")]);
+    assert_eq!(fleet.take_released_settles(), [at("a", "worker")]);
     assert!(
         changed.contains(&at("a", "worker")),
         "the released stop's row did not change: {changed:?}"

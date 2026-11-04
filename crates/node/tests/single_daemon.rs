@@ -1257,12 +1257,14 @@ async fn retention_sweep() {
     let say = |line: String| println!("{line}");
     let install = Install::new();
 
-    // Two old agents that exited long ago, and one live agent that has run
-    // for a long time and is by far the largest.
+    // Two old agents that exited and were settled long ago, and one live
+    // agent that has run for a long time and is by far the largest.
     let mut old = Vec::new();
     for (name, at) in [("old-1", 1_000), ("old-2", 2_000)] {
         let mut agent = SyntheticAgent::new(&install, name, BIG_SEGMENTS);
-        agent.register(&install);
+        let mut row = agent.row(&install);
+        row.filing = wire::Filing::Settled as i32;
+        install.store().put_agent(&row).unwrap();
         for n in 0..30 {
             agent.append(&item(&format!("{name}-{n}"), &kilobyte(n)));
         }

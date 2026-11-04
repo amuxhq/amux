@@ -766,7 +766,7 @@ impl World for SimNet {
         Ok(self.ack(format!("{agent} deleted")))
     }
 
-    async fn stop(&self, agent: &str) -> Result<Ack, NetError> {
+    async fn settle_agent(&self, agent: &str) -> Result<Ack, NetError> {
         let at = self.agent_named(agent)?;
         let h = self.host_index(&at.host)?;
         let id = AgentId(at.id.into_bytes());
@@ -775,10 +775,18 @@ impl World for SimNet {
         if !sim.is_up(h) {
             return Err(NetError::Down(at.host.clone()));
         }
-        let what = format!("{agent} to stop");
-        registry_call(&mut sim, h, &what, ClientRequest::StopAgent { agent: id })?;
+        let what = format!("{agent} to settle");
+        registry_call(
+            &mut sim,
+            h,
+            &what,
+            ClientRequest::FileAgent {
+                agent: id,
+                filing: daemon_core::Filing::Settled,
+            },
+        )?;
         drop(sim);
-        Ok(self.ack(format!("{agent} stopped")))
+        Ok(self.ack(format!("{agent} settled")))
     }
 
     async fn resume(&mut self, agent: &str, prompt: Option<&str>) -> Result<wire::Agent, NetError> {

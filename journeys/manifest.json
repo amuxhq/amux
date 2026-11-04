@@ -54,7 +54,7 @@
       "clients": ["terminal", "phone"],
       "topology": "journeys/topologies/terminal-stories.json",
       "phone_topology": "journeys/topologies/phone-stories.json",
-      "claim": "From the fleet a person creates a Claude agent on the desk and it answers; renames it and the desk lists the same agent under the new name; stops it and the desk lists it exited with its prompt and reply kept; resumes it from the exited composer with a message and the desk lists the same agent live again, each prompt held once; and deletes it, after which neither the fleet nor the desk has it."
+      "claim": "From the fleet a person creates a Claude agent on the desk and it answers; renames it and the desk lists the same agent under the new name; settles it and the desk lists it exited and settled with its prompt and reply kept, while the client puts it away under Settled; resumes it from the exited composer with a message and the desk lists the same agent live and active again, each prompt held once; and, settled again, deletes it, after which neither the fleet nor the desk has it."
     },
     {
       "id": "attachment-or-review",

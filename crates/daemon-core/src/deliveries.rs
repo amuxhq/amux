@@ -22,8 +22,10 @@
 //! been accepted. A message handed over again with no answer seen (its
 //! patience ran out, or this daemon restarted and adopted the process) is
 //! answered by the recipient's process itself, which takes an envelope id
-//! once per incarnation. A parent's message to its exited child resumes the child
-//! with the message as the new incarnation's first input. A parent on
+//! once per incarnation. A message to an exited agent resumes it, with the
+//! message as the new incarnation's first input: one from the person or the
+//! agent's own parent always, one from another agent unless the
+//! recipient is settled, and a child's report never. A parent on
 //! another host is sent the report as a message from the child, and that
 //! host's daemon makes the same checks where the parent lives.
 //!
@@ -130,8 +132,8 @@ struct MessageLane {
 struct Message {
     #[serde(with = "codec::message")]
     envelope: Envelope,
-    /// Its sender is the recipient's parent, which may resume it.
-    resume: bool,
+    /// Whether it resumes the recipient when it has exited.
+    wakes: Wakes,
     /// The recipient's incarnation a child's report is for; stale once
     /// another has begun.
     incarnation: Option<u32>,
@@ -205,6 +207,31 @@ pub fn delivery_envelope_id(delivery: &Delivery) -> Vec<u8> {
     uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, &name)
         .as_bytes()
         .to_vec()
+}
+
+/// Who a message may resume an exited recipient for. Judged against the
+/// recipient's row as the message begins, since the person may settle or
+/// un-settle it while the message waits its turn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+enum Wakes {
+    /// The person, or the recipient's own parent: settled or not.
+    Always,
+    /// Any other agent: unless the recipient is settled.
+    UnlessSettled,
+    /// A child's report, which is for one incarnation of its parent.
+    Never,
+}
+
+impl Wakes {
+    /// Whether the message resumes `row`, exited, or why not.
+    fn judge(self, row: &store::AgentRow) -> Result<(), Refused> {
+        match self {
+            Self::Always => Ok(()),
+            Self::UnlessSettled if row.is_settled() => Err(Refused::Settled),
+            Self::UnlessSettled => Ok(()),
+            Self::Never => Err(Refused::Exited),
+        }
+    }
 }
 
 fn refused(refusal: Refused) -> Rejected {
@@ -433,7 +460,7 @@ impl Daemon {
             };
             let message = Message {
                 envelope,
-                resume: false,
+                wakes: Wakes::Never,
                 incarnation,
                 whose: Whose::Report,
             };
@@ -593,7 +620,7 @@ impl Daemon {
             .store
             .agent(&self.own_key(agent))?
             .ok_or(refused(MessageRefusal::NoAgent))?;
-        let (sender, parent) = match from {
+        let (sender, from_agent) = match from {
             MessageFrom::Person | MessageFrom::PeerPerson => (sender::Value::Human(Human {}), None),
             MessageFrom::Agent(caller) => {
                 let key = self.own_key(caller);
@@ -621,9 +648,17 @@ impl Daemon {
             Some(envelope::Body::Report(report)) => Some(report.to_incarnation),
             _ => None,
         };
+        // A child's report from another host comes as a message from the
+        // child, and is for one incarnation of its parent: it never resumes.
+        let wakes = match from_agent {
+            _ if incarnation.is_some() => Wakes::Never,
+            None => Wakes::Always,
+            Some(agent) if recipient.parent.as_ref() == Some(&agent) => Wakes::Always,
+            Some(_) => Wakes::UnlessSettled,
+        };
         let message = Message {
             envelope,
-            resume: parent.is_some() && recipient.parent == parent,
+            wakes,
             incarnation,
             whose: Whose::Call(call),
         };
@@ -717,10 +752,9 @@ impl Daemon {
             return Err(MessageRefusal::Stale);
         }
         if row.lifecycle == Lifecycle::Exited as i32 {
-            return if message.resume {
-                Ok(Some(Stage::Resuming))
-            } else {
-                Err(MessageRefusal::Rejected(refused(Refused::Exited)))
+            return match message.wakes.judge(&row) {
+                Ok(()) => Ok(Some(Stage::Resuming)),
+                Err(refusal) => Err(MessageRefusal::Rejected(refused(refusal))),
             };
         }
         Ok(Some(self.offer(agent, message, out)))
@@ -742,8 +776,8 @@ impl Daemon {
         Stage::Verdict
     }
 
-    /// Resumes an exited child with its parent's message as the new
-    /// incarnation's first input, once the lane holds it as resuming: the
+    /// Resumes an exited agent with the message as the new incarnation's
+    /// first input, once the lane holds it as resuming: the
     /// registry builds its next spec from the settings it last ran with
     /// and starts it.
     fn resume_with(&mut self, agent: AgentId, envelope: &Envelope, out: &mut Vec<Output>) {
@@ -928,7 +962,7 @@ impl Daemon {
         if current.stage != Stage::Verdict || current.message.envelope.id != input_id {
             return;
         }
-        let resume = current.message.resume;
+        let wakes = current.message.wakes;
         let envelope = current.message.envelope.clone();
         match verdict.and_then(|verdict| verdict.of) {
             None => self.conclude(agent, Err(MessageRefusal::Lost), out),
@@ -937,10 +971,14 @@ impl Daemon {
                 if rejected.refusal() == Refused::Exiting =>
             {
                 self.exiting(agent);
-                if !resume {
+                let judged = match self.store.agent(&self.own_key(agent)) {
+                    Ok(Some(row)) => wakes.judge(&row),
+                    _ => Err(Refused::Exited),
+                };
+                if let Err(refusal) = judged {
                     return self.conclude(
                         agent,
-                        Err(MessageRefusal::Rejected(refused(Refused::Exited))),
+                        Err(MessageRefusal::Rejected(refused(refusal))),
                         out,
                     );
                 }
@@ -1160,6 +1198,64 @@ mod tests {
                 status: Status::Failed(CallError::Message(MessageRefusal::Lost)),
             }),
             "{out:?}"
+        );
+    }
+
+    #[test]
+    fn another_agents_message_resumes_an_exited_agent_unless_the_person_settled_it() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut daemon = daemon(&dir);
+        let mut recipient = AgentRow::new(daemon.own_key(PARENT), 1, "/src");
+        recipient.lifecycle = wire::Lifecycle::Exited as i32;
+        recipient.filing = wire::Filing::Settled as i32;
+        daemon.store.put_agent(&recipient).unwrap();
+        daemon
+            .store
+            .put_agent(&AgentRow::new(daemon.own_key(CHILD), 1, "/src"))
+            .unwrap();
+        step(&mut daemon, Input::Swept);
+        let send = |daemon: &mut Daemon, call: u64, id: &[u8]| {
+            let envelope = Envelope {
+                id: id.to_vec(),
+                to: Some(AgentRef {
+                    host_id: OWN.to_vec(),
+                    agent_id: PARENT.0.to_vec(),
+                }),
+                ..Envelope::default()
+            };
+            step(
+                daemon,
+                Input::ClientCall {
+                    call: CallId(call),
+                    request: ClientRequest::SendMessage {
+                        envelope: Box::new(envelope),
+                        from: MessageFrom::Agent(CHILD),
+                    },
+                },
+            )
+        };
+        let out = send(&mut daemon, 1, b"first");
+        assert!(
+            out.contains(&Output::EndCall {
+                call: CallId(1),
+                status: Status::Failed(CallError::Message(MessageRefusal::Rejected(refused(
+                    Refused::Settled
+                )))),
+            }),
+            "{out:?}"
+        );
+        recipient.filing = wire::Filing::Active as i32;
+        daemon.store.put_agent(&recipient).unwrap();
+        let out = send(&mut daemon, 2, b"second");
+        assert!(
+            out.iter().any(|output| matches!(
+                output,
+                Output::Job {
+                    op: crate::Job::AwaitUnlocked { agent: PARENT, .. },
+                    ..
+                }
+            )),
+            "the recipient is resumed with the message: {out:?}"
         );
     }
 

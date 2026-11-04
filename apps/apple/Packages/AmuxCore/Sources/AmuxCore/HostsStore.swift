@@ -19,6 +19,12 @@ public final class HostsStore {
     /// The account this profile is bound to, as the profile list carries it.
     public private(set) var account: AccountView?
 
+    /// The machines last read away, kept until each is reached or no longer
+    /// listed: putting the app away drops every link, and coming back reads
+    /// a machine unreached until the first dials end, which is no news about
+    /// the plan.
+    public private(set) var heldAway: Set<HostId> = []
+
     @ObservationIgnored private var departures: [HostId: Date] = [:]
     @ObservationIgnored private let clock: @MainActor () -> Date
 
@@ -51,6 +57,16 @@ public final class HostsStore {
         }
         discovered = views.filter { $0.candidate && !$0.local }
             .sorted { $0.name.lowercased() < $1.name.lowercased() }
+        let unreached = Set(trusted.filter { !$0.online }.compactMap(\.id))
+        heldAway = heldAway.intersection(unreached)
+            .union(trusted.filter { $0.group == .away }.compactMap(\.id))
+    }
+
+    /// The first machine, by name, the relay would reach if this account
+    /// paid for it, as last read.
+    public var awayHost: HostView? {
+        hosts.filter { host in host.id.map(heldAway.contains) ?? false }
+            .min { $0.name.lowercased() < $1.name.lowercased() }
     }
 
     public func show(_ roster: Roster) {

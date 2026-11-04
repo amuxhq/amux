@@ -563,9 +563,9 @@ enum ComponentCatalog {
             readinessIdentifier: readiness?.0, readinessValue: readiness?.1, settlesLate: true
         ) {
             let source = chat()
-            // In a navigation stack, as the app pushes it, so its bar is the
-            // system's.
-            NavigationStack {
+            // Pushed, as the app pushes it, so its bar and its back button
+            // are the system's.
+            Pushed {
                 CatalogChat(source: source) { model in
                     ChatScreen(model: model, subject: subject, family: family, showing: showing) { _ in }
                         .onAppear { setUp(model, source) }
@@ -694,15 +694,14 @@ enum ComponentCatalog {
             }),
             chat("rename", chat: { ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame()) },
                  showing: .rename),
-            chat("stop", chat: { ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame()) }, showing: .stop),
-            chat("stop-cuts", chat: {
+            chat("settle-cuts", chat: {
                 ScriptedChat(
                     rows: F.conversation, frame: ScriptedChat.frame(phase: .working),
                     strip: ScriptedChat.strip(background: 2))
-            }, family: F.family, showing: .stop),
+            }, family: F.family, showing: .settle),
             chat("delete", chat: {
                 ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .exited(cause: .ended)))
-            }, showing: .delete),
+            }, subject: F.settledSubject, showing: .delete),
             chat("delete-family", chat: {
                 ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .exited(cause: .ended)))
             }, family: F.family, showing: .delete),
@@ -729,7 +728,7 @@ enum ComponentCatalog {
             // The system bar lays its items out a frame after the page.
             settlesLate: true
         ) {
-            NavigationStack { PagePlaceholder(showing, identifier: identifier) {} }
+            Pushed { PagePlaceholder(showing, identifier: identifier) }
         }
     }
 }
@@ -787,7 +786,7 @@ extension ComponentCatalog {
         ) {
             // In a navigation stack, as the app pushes it, so its bar is the
             // system's.
-            NavigationStack {
+            Pushed {
                 CatalogReview(setUp: setUp) { model in
                     ReviewPage(model: model, against: "Uncommitted", writing: writing, editing: editing) { _ in }
                 }
@@ -1071,6 +1070,12 @@ enum CatalogFixtures {
     static let subject = ChatSubject(
         name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
         reach: .online(.direct))
+    static let settledSubject = ChatSubject(
+        name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
+        reach: .online(.direct), filing: .settled)
+    static let subagentSubject = ChatSubject(
+        name: "refactor-auth-tests", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
+        reach: .online(.direct), topLevel: false)
     static let awaySubject = ChatSubject(
         name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", reach: .away)
 
@@ -1303,18 +1308,18 @@ enum CatalogFixtures {
         agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 5, count: 16)),
         name: "docs-sweep", kind: .claudeSdk, attention: .exited, cwd: "", phaseSinceMs: 0,
         host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .exited,
-        members: 1, descendants: 0, backgroundJobs: 0, stopHeld: false, branch: nil, exitCause: .finished)
+        members: 1, descendants: 0, backgroundJobs: 0, settleHeld: false, filing: .active, topLevel: true, branch: nil, exitCause: .finished)
 
     static let family = FamilyHeader(
         children: [
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 3, count: 16)),
                       name: "worker-2", kind: .claudeSdk, attention: .needsYou, cwd: "", phaseSinceMs: 0,
                       host: "Laptop", hostReach: .online(.direct), children: 0, familyAttention: .needsYou,
-                      members: 1, descendants: 0, backgroundJobs: 0, stopHeld: false, branch: nil, exitCause: nil),
+                      members: 1, descendants: 0, backgroundJobs: 0, settleHeld: false, filing: .active, topLevel: true, branch: nil, exitCause: nil),
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 4, count: 16)),
                       name: "worker-3", kind: .codex, attention: .working, cwd: "", phaseSinceMs: 0,
                       host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .working,
-                      members: 1, descendants: 0, backgroundJobs: 0, stopHeld: false, branch: nil, exitCause: nil),
+                      members: 1, descendants: 0, backgroundJobs: 0, settleHeld: false, filing: .active, topLevel: true, branch: nil, exitCause: nil),
         ],
         attention: .needsYou, needYou: 1, parent: nil)
 }
@@ -1598,7 +1603,7 @@ extension ComponentCatalog {
 
     /// One machine's page as the hosts tab pushes it.
     static func hostPageView(host: HostView, confirming: Bool = false) -> some View {
-        NavigationStack {
+        Pushed {
             HostPage(
                 model: CatalogFixtures.hostsStore(CatalogFixtures.machines), host: host.id!,
                 confirming: confirming
@@ -1740,15 +1745,15 @@ extension ComponentCatalog {
                 actions: { _ in }
             ) { YouScreen(accounts: stores.accounts) { _ in } }
         },
-        sheet("paywall") { Paywall(model: PaywallStore(plans: CatalogFixtures.plans)) { _ in } },
-        sheet("paywall-confirming") {
+        sheet("paywall", pushed: true) { Paywall(model: PaywallStore(plans: CatalogFixtures.plans)) { _ in } },
+        sheet("paywall-confirming", pushed: true) {
             Paywall(model: PaywallStore(plans: CatalogFixtures.plans, phase: .confirming)) { _ in }
         },
-        sheet("paywall-unconfirmed") {
+        sheet("paywall-unconfirmed", pushed: true) {
             Paywall(
                 model: PaywallStore(plans: CatalogFixtures.plans, phase: .unconfirmed(.unreachable))) { _ in }
         },
-        sheet("paywall-subscribed") {
+        sheet("paywall-subscribed", pushed: true) {
             Paywall(
                 model: PaywallStore(
                     entitlement: .active(grant: .purchased(.appStore), renews: CatalogFixtures.now.addingTimeInterval(86_400 * 300)),
@@ -1757,7 +1762,7 @@ extension ComponentCatalog {
     ]
 
     private static func sheet(
-        _ id: String, size: DynamicTypeSize = .large, height: CGFloat = 844,
+        _ id: String, size: DynamicTypeSize = .large, height: CGFloat = 844, pushed: Bool = false,
         build: @escaping @MainActor () -> some View
     ) -> ComponentExample {
         ComponentExample(
@@ -1765,7 +1770,19 @@ extension ComponentCatalog {
             // The system bar lays its items out a frame after the page.
             settlesLate: true
         ) {
-            NavigationStack { build() }
+            if pushed { Pushed { build() } } else { NavigationStack { build() } }
+        }
+    }
+}
+
+/// A page as the app shows it: pushed onto a stack, so the system bar draws
+/// the back button a person sees on it, which a stack's root never has.
+struct Pushed<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        NavigationStack(path: .constant([0])) {
+            Color.clear.navigationDestination(for: Int.self) { _ in content() }
         }
     }
 }

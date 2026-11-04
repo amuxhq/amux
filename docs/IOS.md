@@ -53,6 +53,14 @@ the screen. Both are what a cold launch's first frame is made of, and
 building both tabs and every row for a launch that showed one tab and
 ten rows was most of its time.
 
+The fleet is the system's `List`, for the system's row actions: a row
+swiped left settles (or, once settled, un-settles, beside Delete), swiped
+right pins, and held offers the same with Rename. The settled agents sit
+behind one row at the list's foot, on a page of their own; a search finds
+them under the rest, and the narrowings (needs you, working, a host) are the
+search field's scopes. Pushed pages keep the system's back button, chevron
+only, so its edge swipe follows the finger and can be changed mid-way.
+
 `Composition` builds one `RuntimeCoordinator` per process. The coordinator
 starts the installation under Application Support (`amux/installation`),
 reading the phone's own store before any network is dialled, so the first

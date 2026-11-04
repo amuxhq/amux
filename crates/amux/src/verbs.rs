@@ -9,9 +9,9 @@ use settings::{ChatInSetting, InstallationConfig};
 use uuid::Uuid;
 use wire::{
     Agent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, DeleteAgentRequest, DumpRequest, HostEntry, Input, Kind, Lifecycle, Phase,
-    PromptInput, PromptSubmission, Refusal, RenameAgentRequest, ResolveAgentRequest,
-    ResumeAgentRequest, SendInputRequest, StopAgentRequest, claude_pty_input, claude_sdk_input,
+    CreateAgentRequest, DeleteAgentRequest, DumpRequest, FileAgentRequest, Filing, HostEntry,
+    Input, Kind, Lifecycle, Phase, PromptInput, PromptSubmission, Refusal, RenameAgentRequest,
+    ResolveAgentRequest, ResumeAgentRequest, SendInputRequest, claude_pty_input, claude_sdk_input,
     codex_input, create_agent_request, inventory_event, send_input_response,
 };
 
@@ -112,7 +112,11 @@ fn exit_words(agent: &Agent) -> Option<String> {
 }
 
 fn state(agent: &Agent) -> String {
-    if Lifecycle::try_from(agent.lifecycle) == Ok(Lifecycle::Exited) {
+    let exited = Lifecycle::try_from(agent.lifecycle) == Ok(Lifecycle::Exited);
+    if exited && agent.filing() == Filing::Settled {
+        return "settled".to_owned();
+    }
+    if exited {
         return match exit_words(agent) {
             Some(cause) => format!("exited: {cause}"),
             None => "exited".to_owned(),
@@ -406,19 +410,23 @@ fn refusal_words(name: &str, refusal: Refusal) -> String {
              not the one on its screen"
         ),
         Refusal::TooLong => format!("the prompt is longer than {name} takes"),
+        Refusal::Settled => {
+            format!("{name} is settled; start it again with `amux resume {name} <text>`")
+        }
     }
 }
 
-pub async fn stop(client: &mut Client, reference: &str) -> Result<()> {
+pub async fn settle(client: &mut Client, reference: &str) -> Result<()> {
     let agent = resolve(client, reference).await?;
     client
         .agents
-        .stop_agent(StopAgentRequest {
+        .file_agent(FileAgentRequest {
             agent_id: agent.agent_id.clone(),
+            filing: Filing::Settled as i32,
         })
         .await
         .map_err(crate::plain)?;
-    println!("Stopped {}.", agent.name);
+    println!("Settled {}.", agent.name);
     Ok(())
 }
 

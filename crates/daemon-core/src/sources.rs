@@ -835,9 +835,15 @@ impl Daemon {
             }
         }
         let exited = wire::Lifecycle::Exited as i32;
-        for agent in listed.iter().filter(|agent| agent.lifecycle == exited) {
+        let settled = wire::Filing::Settled as i32;
+        for agent in &listed {
             let key = AgentKey::new(agent.host_id.clone(), agent.agent_id.clone());
-            self.parent_changed(&key, ParentSays::Exited, out)?;
+            if agent.filing == settled {
+                self.parent_changed(&key, ParentSays::Settled, out)?;
+            }
+            if agent.lifecycle == exited {
+                self.parent_changed(&key, ParentSays::Exited, out)?;
+            }
         }
         self.sources.following.remove(&host);
         self.sources.ready.insert(host, session);
@@ -849,18 +855,23 @@ impl Daemon {
     }
 
     /// A row the host's live stream says changed: written, and when it says
-    /// the agent has just exited, its children here follow. Only a change
-    /// to exited counts, not a row that already said so, so a child its
-    /// person resumed under an exited parent is not stopped again by every
-    /// later change to the parent's row (a recount, a rename).
+    /// the agent has just been settled or has just exited, its children here
+    /// follow. Only a change counts, not a row that already said so, so a
+    /// child its person resumed under an exited or settled parent is not
+    /// stopped or settled again by every later change to the parent's row
+    /// (a recount, a rename).
     fn replica_changed(&mut self, agent: &Agent, out: &mut Vec<Output>) -> Result<(), StoreError> {
         let key = AgentKey::new(agent.host_id.clone(), agent.agent_id.clone());
         let exited = wire::Lifecycle::Exited as i32;
-        let was_exited = self
-            .store
-            .agent(&key)?
+        let held = self.store.agent(&key)?;
+        let was_exited = held
+            .as_ref()
             .is_some_and(|was| was.lifecycle == exited && was.incarnation == agent.incarnation);
+        let was_settled = held.as_ref().is_some_and(AgentRow::is_settled);
         self.put_replica_row(agent, out)?;
+        if agent.filing == wire::Filing::Settled as i32 && !was_settled {
+            self.parent_changed(&key, ParentSays::Settled, out)?;
+        }
         if agent.lifecycle == exited && !was_exited {
             self.parent_changed(&key, ParentSays::Exited, out)?;
         }
@@ -1682,6 +1693,8 @@ pub fn from_wire(agent: &Agent) -> AgentRow {
     row.incarnation = agent.incarnation;
     row.background_jobs = agent.background_jobs;
     row.descendants = agent.descendants;
+    row.filing = agent.filing;
+    row.filed_at_ms = agent.filed_at_ms;
     row
 }
 

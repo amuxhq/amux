@@ -3919,6 +3919,15 @@ pub struct Agent {
     /// The snapshot's count of jobs the provider runs in the background.
     #[prost(uint32, tag = "17")]
     pub background_jobs: u32,
+    /// How the person filed the agent, apart from its lifecycle: an exited
+    /// agent left active reads as an ordinary one, and a settled one is done
+    /// with.
+    #[prost(enumeration = "Filing", tag = "18")]
+    pub filing: i32,
+    /// When the filing last changed, on the clock of the agent's host; pins
+    /// are listed in this order.
+    #[prost(int64, tag = "19")]
+    pub filed_at_ms: i64,
 }
 impl ::prost::Name for Agent {
     const NAME: &'static str = "Agent";
@@ -4009,6 +4018,43 @@ impl RouteKind {
             "ROUTE_KIND_DIRECT" => Some(Self::Direct),
             "ROUTE_KIND_RELAY" => Some(Self::Relay),
             "ROUTE_KIND_SSH" => Some(Self::Ssh),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Filing {
+    Unspecified = 0,
+    Active = 1,
+    /// Kept at the top of the fleet. Only an agent with no parent is pinned.
+    Pinned = 2,
+    /// Done with: stopped when it was live, out of other agents' listing, and
+    /// the only kind retention deletes. A message from the person or its own
+    /// parent resumes it, filed active again.
+    Settled = 3,
+}
+impl Filing {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "FILING_UNSPECIFIED",
+            Self::Active => "FILING_ACTIVE",
+            Self::Pinned => "FILING_PINNED",
+            Self::Settled => "FILING_SETTLED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "FILING_UNSPECIFIED" => Some(Self::Unspecified),
+            "FILING_ACTIVE" => Some(Self::Active),
+            "FILING_PINNED" => Some(Self::Pinned),
+            "FILING_SETTLED" => Some(Self::Settled),
             _ => None,
         }
     }
@@ -5897,6 +5943,8 @@ pub enum Refusal {
     ConversationElsewhere = 8,
     /// The prompt is longer than the agent takes; the detail names the limit.
     TooLong = 9,
+    /// The agent is settled: only the person or its own parent resume it.
+    Settled = 10,
 }
 impl Refusal {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -5915,6 +5963,7 @@ impl Refusal {
             Self::HostUnreachable => "REFUSAL_HOST_UNREACHABLE",
             Self::ConversationElsewhere => "REFUSAL_CONVERSATION_ELSEWHERE",
             Self::TooLong => "REFUSAL_TOO_LONG",
+            Self::Settled => "REFUSAL_SETTLED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -5930,6 +5979,7 @@ impl Refusal {
             "REFUSAL_HOST_UNREACHABLE" => Some(Self::HostUnreachable),
             "REFUSAL_CONVERSATION_ELSEWHERE" => Some(Self::ConversationElsewhere),
             "REFUSAL_TOO_LONG" => Some(Self::TooLong),
+            "REFUSAL_SETTLED" => Some(Self::Settled),
             _ => None,
         }
     }
@@ -6691,22 +6741,26 @@ impl ::prost::Name for RenameAgentRequest {
         "type.googleapis.com/amux.v1.RenameAgentRequest".into()
     }
 }
-/// Ends the agent now: the running turn is cancelled the provider's own way
-/// and the agent exits, resumable. Named apart from the Interrupt input, which
-/// ends only the turn.
+/// FILING_SETTLED ends a live agent now: the running turn is cancelled the
+/// provider's own way and the agent exits, resumable. Named apart from the
+/// Interrupt input, which ends only the turn. FILING_PINNED is refused for an
+/// agent with a parent; FILING_ACTIVE files the agent back without resuming
+/// it.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct StopAgentRequest {
+pub struct FileAgentRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(enumeration = "Filing", tag = "2")]
+    pub filing: i32,
 }
-impl ::prost::Name for StopAgentRequest {
-    const NAME: &'static str = "StopAgentRequest";
+impl ::prost::Name for FileAgentRequest {
+    const NAME: &'static str = "FileAgentRequest";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.StopAgentRequest".into()
+        "amux.v1.FileAgentRequest".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.StopAgentRequest".into()
+        "type.googleapis.com/amux.v1.FileAgentRequest".into()
     }
 }
 /// The composer of an exited chat sends its draft through initial_prompt.
@@ -7096,10 +7150,12 @@ pub mod agent_service_client {
                 .insert(GrpcMethod::new("amux.v1.AgentService", "RenameAgent"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn stop_agent(
+        /// Pins, settles or returns the agent to active. Settling a live agent
+        /// stops it, resumable, and settles its children with it.
+        pub async fn file_agent(
             &mut self,
-            request: impl tonic::IntoRequest<super::StopAgentRequest>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::FileAgentRequest>,
+        ) -> std::result::Result<tonic::Response<super::Agent>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -7110,14 +7166,14 @@ pub mod agent_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.AgentService/StopAgent",
+                "/amux.v1.AgentService/FileAgent",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.AgentService", "StopAgent"));
+                .insert(GrpcMethod::new("amux.v1.AgentService", "FileAgent"));
             self.inner.unary(req, path, codec).await
         }
-        /// Spawn the directory again.
+        /// Spawn the directory again, filed active when it was settled.
         pub async fn resume_agent(
             &mut self,
             request: impl tonic::IntoRequest<super::ResumeAgentRequest>,
@@ -7356,11 +7412,13 @@ pub mod agent_service_server {
             &self,
             request: tonic::Request<super::RenameAgentRequest>,
         ) -> std::result::Result<tonic::Response<super::Agent>, tonic::Status>;
-        async fn stop_agent(
+        /// Pins, settles or returns the agent to active. Settling a live agent
+        /// stops it, resumable, and settles its children with it.
+        async fn file_agent(
             &self,
-            request: tonic::Request<super::StopAgentRequest>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
-        /// Spawn the directory again.
+            request: tonic::Request<super::FileAgentRequest>,
+        ) -> std::result::Result<tonic::Response<super::Agent>, tonic::Status>;
+        /// Spawn the directory again, filed active when it was settled.
         async fn resume_agent(
             &self,
             request: tonic::Request<super::ResumeAgentRequest>,
@@ -7676,25 +7734,25 @@ pub mod agent_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.AgentService/StopAgent" => {
+                "/amux.v1.AgentService/FileAgent" => {
                     #[allow(non_camel_case_types)]
-                    struct StopAgentSvc<T: AgentService>(pub Arc<T>);
+                    struct FileAgentSvc<T: AgentService>(pub Arc<T>);
                     impl<
                         T: AgentService,
-                    > tonic::server::UnaryService<super::StopAgentRequest>
-                    for StopAgentSvc<T> {
-                        type Response = super::Empty;
+                    > tonic::server::UnaryService<super::FileAgentRequest>
+                    for FileAgentSvc<T> {
+                        type Response = super::Agent;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::StopAgentRequest>,
+                            request: tonic::Request<super::FileAgentRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as AgentService>::stop_agent(&inner, request).await
+                                <T as AgentService>::file_agent(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -7705,7 +7763,7 @@ pub mod agent_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = StopAgentSvc(inner);
+                        let method = FileAgentSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -620,8 +620,13 @@ impl Machine for ComposedNet {
             }
             Action::Stop => {
                 next.used.stops += 1;
-                next.net
-                    .client_call(origin, ClientRequest::StopAgent { agent });
+                next.net.client_call(
+                    origin,
+                    ClientRequest::FileAgent {
+                        agent,
+                        filing: daemon_core::Filing::Settled,
+                    },
+                );
             }
         }
         next.judge(self);

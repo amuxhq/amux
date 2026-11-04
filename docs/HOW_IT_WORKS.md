@@ -49,7 +49,7 @@ amux ls                               # list the agents, children beneath their 
 amux new claude --prompt "…"          # start an agent in the current directory
 amux send <agent> fix the flaky test  # send it a prompt
 amux attach <agent>                   # open its chat in this terminal
-amux stop <agent>                     # stop its process
+amux settle <agent>                   # done with it: stops its process
 amux resume <agent> [message]         # start a stopped agent again
 amux rm <agent>                       # delete it, its history and its children
 amux config set <key> <value>         # change a setting; `amux config get <key>` reads one
@@ -92,7 +92,7 @@ again.
 
 An agent never stops on its own because of anything short of that. The Stop
 button in a chat interrupts the current turn and leaves the agent ready for
-the next prompt; only `amux stop`, `amux rm`, or the provider itself
+the next prompt; only `amux settle`, `amux rm`, or the provider itself
 exiting ends the process.
 
 ## Accounts and profiles

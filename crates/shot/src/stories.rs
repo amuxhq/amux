@@ -133,7 +133,7 @@ pub fn all() -> Vec<Story> {
         }),
         story("fleet.filter", || filtered("spec")),
         story("fleet.no-matches", || filtered("zebra")),
-        story("fleet.stop", stop),
+        story("fleet.settle", settle),
         story("fleet.delete", || {
             let mut home = tui::vocabulary::authored_home();
             home.key(KeyCode::Char('G'));
@@ -232,7 +232,7 @@ fn filtered(word: &str) -> Scene {
 
 /// The Stop window over the working agent, which has background jobs and
 /// a subagent for the window to name.
-fn stop() -> Scene {
+fn settle() -> Scene {
     use wire::inventory_event::Of;
 
     let mut home = tui::vocabulary::authored_home();

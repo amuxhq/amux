@@ -506,14 +506,16 @@ counted in the store's SQL.
 [`crates/store/src/retention.rs`](../crates/store/src/retention.rs)), against
 the profile's own budget:
 
-1. Remove exited agents whole, least recent activity first. An exited child
-   whose parent's row says live is skipped, because its parent can still send
-   to it; a parent goes together with its descendants, and one with a live
-   descendant stays.
-2. If still over, trim live agents in rounds: each round takes the largest live
-   agent and deletes its oldest rows until about one chunk of bytes is gone,
-   then measures again. No agent is taken below its newest K rows.
-3. When every live agent is at K and the pool is still over, the sweep stops;
+1. Remove settled agents that have exited whole, least recent activity first.
+   An agent the person has not settled is never removed whole, live or not:
+   an exited one they never looked at stays in their fleet. A settled child
+   whose parent is live or not settled is skipped, because its parent can
+   still send to it; a parent goes together with its descendants, and one
+   with a descendant still kept stays.
+2. If still over, trim the other agents in rounds: each round takes the
+   largest and deletes its oldest rows until about one chunk of bytes is
+   gone, then measures again. No agent is taken below its newest K rows.
+3. When every such agent is at K and the pool is still over, the sweep stops;
    from there the budget is soft.
 
 A trim sets the agent's `complete_from_order` and `exhausted`, so `ListItems`

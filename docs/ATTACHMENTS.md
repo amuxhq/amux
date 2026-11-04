@@ -184,8 +184,8 @@ There is no expiry and there are no reference counts. A blob lives and dies
 with the directory it sits in:
 
 - An own agent's blobs go when the agent is deleted (`DeleteAgent`; its
-  children follow by the family rule), or when own retention removes the agent: exited
-  agents are removed whole, least recently active first, when the profile's
+  children follow by the family rule), or when own retention removes the agent: settled
+  agents that have exited are removed whole, least recently active first, when the profile's
   own rows pass their budget (`OWN_BUDGET_BYTES`, 2 GiB).
 - A patch written by `GetDiff` goes into the requesting agent's directory and
   lives with that agent whether or not a review is ever sent.

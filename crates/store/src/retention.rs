@@ -1,11 +1,13 @@
 //! Retention: keeping own rows and replica rows under their budgets.
 //!
 //! Own rows are the truth, so they go in the order that loses least:
-//! finished history first (exited agents, whole, least recently active
-//! first), and only then the oldest rows of whatever live work is largest,
-//! a chunk at a time, never below the newest rows a stream may still be
-//! appending to. An exited child whose parent's row says live is live work,
-//! since its parent can still continue it. Replica rows are a cache, so
+//! what the person is done with first (settled agents that have exited,
+//! whole, least recently active first), and only then the oldest rows of
+//! whatever other work is largest, a chunk at a time, never below the newest
+//! rows a stream may still be appending to. An agent the person has not
+//! settled is never removed whole, live or not: an exited one they never
+//! looked at stays in their fleet. A settled child whose parent is not
+//! settled is kept too, since its parent can still continue it. Replica rows are a cache, so
 //! agents nobody is following lose all their rows, least recently used
 //! first, keeping only their agents row, and the rest keep their newest rows
 //! as one contiguous block.
@@ -44,8 +46,9 @@ pub enum SweepStep {
     Floor,
 }
 
-fn is_live(row: &AgentRow) -> bool {
-    row.lifecycle == wire::Lifecycle::Live as i32
+/// Work retention keeps whole: live, or not settled by the person.
+fn is_kept(row: &AgentRow) -> bool {
+    row.lifecycle == wire::Lifecycle::Live as i32 || !row.is_settled()
 }
 
 pub(crate) fn sweep_own(
@@ -66,7 +69,7 @@ pub(crate) fn sweep_own(
         let candidates = rows
             .agents()?
             .into_iter()
-            .filter(|row| rows.is_own(&row.agent) && is_live(row))
+            .filter(|row| rows.is_own(&row.agent) && is_kept(row))
             .map(|row| row.agent)
             .collect::<Vec<_>>();
         pool = trim_rounds(
@@ -84,9 +87,9 @@ pub(crate) fn sweep_own(
     Ok(sweep)
 }
 
-/// Removes exited agents whole, least recently active first, until the pool
-/// fits. A parent goes with its descendants, as delete takes them; one with
-/// a live descendant is still live work and stays.
+/// Removes settled, exited agents whole, least recently active first, until
+/// the pool fits. A parent goes with its descendants, as delete takes them;
+/// one with a descendant still kept stays.
 fn remove_finished(
     tables: &Rows<'_>,
     budget: u64,
@@ -121,12 +124,12 @@ fn remove_finished(
         row.parent
             .as_ref()
             .and_then(|parent| by_ref.get(parent))
-            .is_some_and(|parent| is_live(parent))
+            .is_some_and(|parent| is_kept(parent))
     };
     let mut candidates = rows
         .iter()
-        .filter(|row| tables.is_own(&row.agent) && !is_live(row) && !protected(row))
-        .filter(|row| descendants(row).iter().all(|child| !is_live(child)))
+        .filter(|row| tables.is_own(&row.agent) && !is_kept(row) && !protected(row))
+        .filter(|row| descendants(row).iter().all(|child| !is_kept(child)))
         .collect::<Vec<_>>();
     candidates.sort_by_key(|row| {
         (

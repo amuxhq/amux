@@ -12,9 +12,8 @@ chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44
 chat.changes | +2 −1 | Uncommitted | 277,66,51,36
 chat.more | More |  | 344,66,38,36
-chat.back | Back |  | 20,66,40,36
-chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
-chat.title | reviewer | reviewer | 80,66,152,36
+chat.header | /p/t/a/n/d/work · desk | live | 76,66,159,36
+chat.title | reviewer | reviewer | 76,66,159,36
  | Plain Text |  | 38,689,10,13
  | Pasted text · 12 lines |  | 57,687,117,16
  | Remove |  | 164,673,44,44
@@ -26,7 +25,8 @@ chat.title | reviewer | reviewer | 80,66,152,36
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44
  | Ended · stopped |  | 16,124,370,34
- | Back |  | 20,66,40,36
- | reviewer, /t/a/n/d/work · desk |  | 80,66,152,36
+BackButton | Agents |  | 16,62,44,44
+ | reviewer, /p/t/a/n/d/work · desk |  | 76,66,159,36
  | 1 file, 2 added, 1 removed |  | 277,66,51,36
  | More |  | 344,66,38,36
+ | Back |  | 16,73,44,23

@@ -11,9 +11,8 @@ ask.plan.auto |  | off | 28,720,346,38
 ask.approve | Approve |  | 28,770,169,44
 ask.choice.2 | Send back… |  | 205,770,169,44
 chat.more | More |  | 350,66,28,36
-chat.back | Back |  | 20,66,40,36
-chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
-chat.title | planner-pty | planner-pty | 80,66,152,36
+chat.header | /p/t/a/n/d/work · desk | live | 76,66,165,36
+chat.title | planner-pty | planner-pty | 76,66,165,36
  | Plan ready |  | 62,684,79,20
  | More |  | 338,672,44,44
  | Switch to Accept edits, As the work starts | 0 | 28,720,346,38
@@ -23,6 +22,7 @@ chat.title | planner-pty | planner-pty | 80,66,152,36
  | Move the journal. |  | 16,158,370,40
  | Plan sent back, “Check the copy before switching.” |  | 16,198,370,65
  | Plan proposed, Move the journal, Move the journal, 1., Copy the journal to the new store., 2., Check the copy against the original., 3., Point the daemon at it., 4., Keep the old journal for a week. |  | 16,261,370,185
- | Back |  | 20,66,40,36
- | planner-pty, /t/a/n/d/work · desk |  | 80,66,152,36
+BackButton | Agents |  | 16,62,44,44
+ | planner-pty, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36
+ | Back |  | 16,73,44,23

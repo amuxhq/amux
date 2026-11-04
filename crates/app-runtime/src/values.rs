@@ -606,11 +606,16 @@ pub enum ChatAct {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum AgentAct {
     Rename(String),
-    /// Stops it now. One whose host cannot be reached is held, shown on its
-    /// card, and goes when the host is back.
-    Stop,
-    /// Takes back a held stop.
-    CancelStop,
+    /// Files it as done with, stopping it now when live. One whose host
+    /// cannot be reached is held, shown on its card, and goes when the
+    /// host is back.
+    Settle,
+    /// Takes back a held settle.
+    CancelSettle,
+    /// Keeps it at the top of the fleet; only an agent with no parent.
+    Pin,
+    /// Files it back as active: un-pinned, or un-settled without resuming.
+    Unfile,
     Delete,
 }
 

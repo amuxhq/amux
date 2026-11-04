@@ -576,11 +576,12 @@ impl TerminalJourney {
 
     /// Unfolds home's Exited section, the last thing on home while it is
     /// folded.
-    pub(crate) fn open_exited(&mut self, pane: &str) -> Result<String, String> {
+    /// Unfolds the Settled section at the foot of home.
+    pub(crate) fn open_settled(&mut self, pane: &str) -> Result<String, String> {
         self.keys(pane, &["G"])?;
-        self.wait_terms(pane, &["▸ Exited ", "enter show"])?;
+        self.wait_terms(pane, &["▸ Settled ", "enter show"])?;
         self.keys(pane, &["Enter"])?;
-        self.wait_terms(pane, &["▾ Exited "])
+        self.wait_terms(pane, &["▾ Settled "])
     }
 
     pub(crate) fn open_chat(&mut self, pane: &str, agent: &str) -> Result<String, String> {

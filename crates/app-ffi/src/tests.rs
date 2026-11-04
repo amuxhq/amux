@@ -692,7 +692,7 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     // A live agent's session stays with the fleet once its chat closes; an
     // exited one's goes, and a one-row chat on it pages its history in
     // below the oldest it holds.
-    let stop = c(&json!("Stop").to_string());
+    let stop = c(&json!("Settle").to_string());
     // SAFETY: the runtime is live; the strings live for the call.
     phone
         .started(unsafe { amux_profile_agent_act(phone.profile, agent_c.as_ptr(), stop.as_ptr()) });
@@ -784,7 +784,7 @@ fn nothing_closed_is_handed_over_while_its_acts_are_in_flight() {
     }
 
     // And a stop waits on it too, holding the fleet past its close.
-    let stop = c(&json!("Stop").to_string());
+    let stop = c(&json!("Settle").to_string());
     // SAFETY: the profile is open; the strings live for the call.
     phone.started(unsafe { amux_profile_agent_act(closing, agent.as_ptr(), stop.as_ptr()) });
     settle(&phone, closing_fleet);

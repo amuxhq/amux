@@ -953,7 +953,7 @@ impl Run {
             if attempt == 0 {
                 self.journey.tap(&row)?;
                 self.journey.wait_for(&["chat.field"])?;
-                self.journey.tap("chat.back")?;
+                self.journey.back()?;
                 continue;
             }
             let profiler = if self.traces(Group::Opening) {
@@ -975,7 +975,7 @@ impl Run {
                 self.finish_profiler(profiler)?;
             }
             self.journey.wait_for(&["chat.field"])?;
-            self.journey.tap("chat.back")?;
+            self.journey.back()?;
             let hitch = measurement["hitchMsPerS"].as_f64().unwrap_or_default();
             let cpu = measurement["mainThreadCpuPercent"]
                 .as_f64()

@@ -168,7 +168,7 @@ impl Daemon {
             PeerRequest::SendInput(_)
             | PeerRequest::CreateAgent(_)
             | PeerRequest::RenameAgent(_)
-            | PeerRequest::StopAgent(_)
+            | PeerRequest::FileAgent(_)
             | PeerRequest::ResumeAgent(_)
             | PeerRequest::DeleteAgent(_)
             | PeerRequest::SendMessage(_)
@@ -294,8 +294,9 @@ mod tests {
     #[test]
     fn a_forwarded_call_waits_across_a_checkpoint_and_answers_with_the_peers_reply() {
         let mut daemon = daemon();
-        let request = PeerRequest::StopAgent(wire::StopAgentRequest {
+        let request = PeerRequest::FileAgent(wire::FileAgentRequest {
             agent_id: THEIRS.to_vec(),
+            filing: wire::Filing::Settled as i32,
         });
         let out = step(
             &mut daemon,

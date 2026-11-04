@@ -248,7 +248,6 @@ public struct Shell: View {
         }
         .tint(design.accentColor)
         .reported("shell", value: router.tab.rawValue)
-        .simultaneousGesture(backGesture)
         // What the account buys is read again as the app comes to the front
         // and as You comes on screen; the composition spaces the reads out.
         .onChange(of: scenePhase, initial: true) { _, phase in
@@ -300,20 +299,6 @@ public struct Shell: View {
         }
     }
 
-    /// Restores the platform's edge-to-pop interaction while the custom page
-    /// chrome keeps the system navigation bar out of the approved layout.
-    private var backGesture: some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .global)
-            .onEnded { value in
-                guard !router.path.isEmpty,
-                      value.startLocation.x <= 24,
-                      value.translation.width >= 80,
-                      abs(value.translation.width) > abs(value.translation.height)
-                else { return }
-                router.pop()
-            }
-    }
-
     /// One page per route, every route with a built screen: the switch has
     /// no default, so a new route does not compile until it has one.
     @ViewBuilder
@@ -325,6 +310,10 @@ public struct Shell: View {
             ChangesPage(agent: agent, router: router, stores: stores)
         case .paywall(let from):
             PaywallPage(from: from, router: router, model: paywall, actions: actions)
+        case .settled:
+            AgentsTab(
+                router: router, accounts: accounts, stores: stores, offerNotifications: false,
+                signingIn: false, scope: .settled, actions: actions)
         case .host(let host):
             HostPage(model: stores.hosts, host: host) { action in
                 switch action {
@@ -336,6 +325,7 @@ public struct Shell: View {
                     router.pop()
                 case .pairAgain(let host):
                     router.pairing = .code(host)
+                case .subscribe: actions(.subscribe)
                 }
             }
         }
@@ -381,8 +371,7 @@ private struct ChangesPage: View {
             } else {
                 PagePlaceholder(
                     missing ?? .waiting(String(localized: "Reading the changes")),
-                    identifier: "review"
-                ) { router.pop() }
+                    identifier: "review")
             }
         }
         .task {
@@ -458,8 +447,7 @@ private struct ChatPage: View {
                 PagePlaceholder(
                     failure.map { .failed(title: String(localized: "Couldn’t open this chat"), reason: $0) }
                         ?? .waiting(String(localized: "Opening this chat")),
-                    identifier: "chat"
-                ) { router.pop() }
+                    identifier: "chat")
             }
         }
         .photosPicker(
@@ -487,7 +475,7 @@ private struct ChatPage: View {
         .onAppear(perform: open)
         .onChange(of: standing?.listed) { _, present in
             guard let present else { return }
-            if present { listed = true } else if listed { router.pop() }
+            if present { listed = true } else if listed { router.close(.conversation(agent)) }
         }
         .onChange(of: model?.frame?.ended != nil) { _, ended in
             if ended { router.pop() }
@@ -520,7 +508,7 @@ private struct ChatPage: View {
         let row = stores.fleet.row(agent)
         let host = stores.fleet.host(agent.hostId)
         let name = row?.name ?? model?.frame?.name ?? agent.description
-        // The card counts what a stop cuts on hosts this phone cannot see; a
+        // The card counts what a settle cuts on hosts this phone cannot see; a
         // folded family's member has one though home lists no row for it.
         let card = row?.card ?? stores.profile?.card(agent)
         let subject = ChatSubject(
@@ -531,7 +519,9 @@ private struct ChatPage: View {
             reach: host?.reach ?? row?.hostReach ?? .offline(.plain),
             descendants: Int(card?.descendants ?? 0),
             backgroundJobs: Int(card?.backgroundJobs ?? 0),
-            stopHeld: card?.stopHeld ?? false)
+            settleHeld: card?.settleHeld ?? false,
+            filing: card?.filing ?? .active,
+            topLevel: card?.topLevel ?? true)
         return Standing(subject: subject, family: stores.profile?.family(agent), listed: row != nil)
     }
 
@@ -540,11 +530,16 @@ private struct ChatPage: View {
         case .back: router.pop()
         case .attach(let choice): picking = choice
         case .rename(let name): Task { _ = await stores.rename(name, of: agent) }
-        case .stopAgent: Task { _ = await stores.stop(agent) }
-        case .cancelStop: Task { _ = await stores.cancelStop(agent) }
+        // Done with it, so back to the list it is filed away from.
+        case .settle:
+            Task { _ = await stores.settle(agent) }
+            router.pop()
+        case .cancelSettle: Task { _ = await stores.cancelSettle(agent) }
+        case .pin: Task { _ = await stores.pin(agent) }
+        case .unpin, .unsettle: Task { _ = await stores.unfile(agent) }
         case .delete:
             Task {
-                if case .success = await stores.delete(agent) { router.pop() }
+                if case .success = await stores.delete(agent) { router.close(.conversation(agent)) }
             }
         case .copyAddress: copy(subject.address)
         case .open(let other): router.open(.conversation(other))
@@ -583,14 +578,22 @@ private struct AgentsTab: View {
     let stores: StoreBundle
     let offerNotifications: Bool
     let signingIn: Bool
+    var scope: HomeScope = .fleet
     let actions: @MainActor (ShellAction) -> Void
 
     var body: some View {
         AgentsHome(
             model: stores.fleet, accounts: accounts, hosts: stores.hosts,
-            offerNotifications: offerNotifications, signingIn: signingIn
+            offerNotifications: offerNotifications, signingIn: signingIn, scope: scope
         ) { action in
             switch action {
+            case .settle(let agent): Task { _ = await stores.settle(agent) }
+            case .cancelSettle(let agent): Task { _ = await stores.cancelSettle(agent) }
+            case .pin(let agent): Task { _ = await stores.pin(agent) }
+            case .unfile(let agent): Task { _ = await stores.unfile(agent) }
+            case .delete(let agent): Task { _ = await stores.delete(agent) }
+            case .rename(let agent, let name): Task { _ = await stores.rename(name, of: agent) }
+            case .openSettled: router.open(.settled)
             case .open(let agent):
                 router.open(.conversation(agent))
             case .newAgent: router.composing = true

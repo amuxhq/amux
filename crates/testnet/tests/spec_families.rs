@@ -392,7 +392,7 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
 }
 
 /// Stop is an interrupt only a parent may send its own child, and a send
-/// to an exited child resumes it only from its parent; both hold with the
+/// to a settled child resumes it only from its parent; both hold with the
 /// child on another host, checked where the caller is known and carried
 /// out where the child lives.
 #[tokio::test(flavor = "multi_thread")]
@@ -463,12 +463,14 @@ async fn stop_and_send_are_lineage_checked_across_hosts() {
         .await
         .unwrap_err();
     assert_eq!(refused.code(), Code::FailedPrecondition);
+    // The one-shot child finished its turn, so it settled itself: an agent
+    // that is not its parent no longer wakes it.
     assert!(
-        refused.message().contains("has stopped"),
+        refused.message().contains("is settled"),
         "{}",
         refused.message()
     );
-    println!("other sends to exited helper: {}", refused.message());
+    println!("other sends to settled helper: {}", refused.message());
 
     net.next_start(
         "helper",

@@ -510,21 +510,23 @@ fn manage_agent(journey: &mut TerminalJourney) -> Proved {
     )?;
     lifecycle(&renamed, &id, "helper", LIVE)?;
 
-    // Stopped: exited on the host with its history kept, and resumable.
+    // Settled: idle, so x settles it at once with nothing to confirm; exited
+    // on the host with its history kept, folded away, and resumable.
     journey.select_agent(&pane, "helper")?;
     journey.keys(&pane, &["x"])?;
-    journey.wait_terms(&pane, &["Stop helper? It can be resumed later."])?;
-    journey.frame(&pane, "stop-asked")?;
-    journey.keys(&pane, &["Enter"])?;
     journey.wait(
         &pane,
-        |frame| frame.contains("▸ Exited 1 ") && agent_row(frame, "helper").is_none(),
-        "helper exited",
+        |frame| frame.contains("▸ Settled 1 ") && agent_row(frame, "helper").is_none(),
+        "helper settled",
     )?;
+    journey.frame(&pane, "settled")?;
     let stopped = journey.wait_inventory(
         "desk",
-        |agents| listed(agents, &id).is_some_and(|agent| agent["lifecycle"] == EXITED),
-        "stopped",
+        |agents| {
+            listed(agents, &id)
+                .is_some_and(|agent| agent["lifecycle"] == EXITED && agent["filing"] == SETTLED)
+        },
+        "settled",
     )?;
     lifecycle(&stopped, &id, "helper", EXITED)?;
     let control = negative_control(lifecycle(&stopped, &id, "helper", LIVE))?;
@@ -532,15 +534,16 @@ fn manage_agent(journey: &mut TerminalJourney) -> Proved {
     reflected_once(&kept, HELLO)?;
     if !holds(&kept, READY) {
         return Err(format!(
-            "the stopped agent's history lost its reply: {kept}"
+            "the settled agent's history lost its reply: {kept}"
         ));
     }
-    journey.open_exited(&pane)?;
+    journey.open_settled(&pane)?;
     journey.open_chat(&pane, "helper")?;
     journey.wait_terms(&pane, &[HELLO, READY, "enter resume"])?;
     journey.frame(&pane, "exited-and-resumable")?;
 
-    // Resumed from the exited composer: the same identity, live again.
+    // Resumed from the exited composer: the same identity, live again and
+    // filed back among the fleet's agents.
     journey.type_text(&pane, BACK)?;
     journey.keys(&pane, &["Enter"])?;
     journey.wait(
@@ -550,7 +553,10 @@ fn manage_agent(journey: &mut TerminalJourney) -> Proved {
     )?;
     let resumed = journey.wait_inventory(
         "desk",
-        |agents| listed(agents, &id).is_some_and(|agent| agent["lifecycle"] == LIVE),
+        |agents| {
+            listed(agents, &id)
+                .is_some_and(|agent| agent["lifecycle"] == LIVE && agent["filing"] == ACTIVE)
+        },
         "resumed",
     )?;
     lifecycle(&resumed, &id, "helper", LIVE)?;
@@ -564,23 +570,24 @@ fn manage_agent(journey: &mut TerminalJourney) -> Proved {
     reflected_once(&resumed, BACK)?;
     journey.frame(&pane, "resumed")?;
 
-    // Deleted, explicitly: only an exited agent offers it, so stopped
+    // Deleted, explicitly: only a settled agent offers it, so settled
     // again first, then gone from home and from the host.
     journey.home(&pane)?;
     journey.select_agent(&pane, "helper")?;
     journey.keys(&pane, &["x"])?;
-    journey.wait_terms(&pane, &["Stop helper? It can be resumed later."])?;
-    journey.keys(&pane, &["Enter"])?;
     journey.wait_inventory(
         "desk",
-        |agents| listed(agents, &id).is_some_and(|agent| agent["lifecycle"] == EXITED),
-        "stopped-again",
+        |agents| {
+            listed(agents, &id)
+                .is_some_and(|agent| agent["lifecycle"] == EXITED && agent["filing"] == SETTLED)
+        },
+        "settled-again",
     )?;
     if journey
-        .wait_terms(&pane, &["Exited "])?
-        .contains("▸ Exited ")
+        .wait_terms(&pane, &["Settled "])?
+        .contains("▸ Settled ")
     {
-        journey.open_exited(&pane)?;
+        journey.open_settled(&pane)?;
     }
     journey.select_agent(&pane, "helper")?;
     journey.keys(&pane, &["x"])?;
@@ -597,12 +604,12 @@ fn manage_agent(journey: &mut TerminalJourney) -> Proved {
     let mut proved = lines(&[
         "n, a first prompt and enter started a headless Claude the desk lists, and its chat opened on the reply",
         "r renamed it in place; the desk lists the same id as helper",
-        "x stopped it: the desk lists it exited, with its prompt and reply kept",
+        "x settled it at once, as it was idle: the desk lists it exited and settled, with its prompt and reply kept, and home folds it under Settled",
     ]);
     proved.push(control);
     proved.extend(lines(&[
-        "a message from the exited composer resumed the same id, and each prompt is in the desk's chat once",
-        "stopped again, x on its exited row deleted it: gone from home and from the desk",
+        "a message from the settled agent's exited composer resumed the same id and filed it back among the fleet's agents, and each prompt is in the desk's chat once",
+        "settled again, x on its settled row deleted it: gone from home and from the desk",
         "the client exited 0",
     ]));
     Ok(proved)

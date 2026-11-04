@@ -17,7 +17,7 @@ pub mod trace;
 use std::io;
 use std::path::Path;
 
-pub use fleet::{Fleet, FleetGuard, HELD_ROWS, OpenError, Stop, Window};
+pub use fleet::{Fleet, FleetGuard, HELD_ROWS, OpenError, Settle, Window};
 pub use session::{
     Changes, InputError, PageError, Sent, Session, StateGuard, TRANSCRIPT_CHECK, TRANSCRIPT_DUMP,
 };

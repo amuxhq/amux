@@ -45,14 +45,15 @@ final class PhoneDecisionsTests: XCTestCase {
     }
 
     private func chat(
-        _ source: ScriptedChat, family: FamilyHeader? = nil, size: DynamicTypeSize = .large
+        _ source: ScriptedChat, subject: ChatSubject = CatalogFixtures.subject, family: FamilyHeader? = nil,
+        size: DynamicTypeSize = .large
     ) async throws -> ChatModel {
         let model = ChatModel(source: source, loadingHintAfter: .zero)
         // In a navigation stack, as the app pushes it: the chat's menu and
         // title are the system bar's, which draws only inside one.
         try host(
             NavigationStack {
-                ChatScreen(model: model, subject: CatalogFixtures.subject, family: family) { [unowned self] action in
+                ChatScreen(model: model, subject: subject, family: family) { [unowned self] action in
                     acted.append(action)
                 }
             }, size: size)
@@ -108,21 +109,46 @@ final class PhoneDecisionsTests: XCTestCase {
             children: [CatalogFixtures.family.children[1]], attention: .working, needYou: 0, parent: nil)
     }
 
-    // MARK: - Stop, delete, interrupt
+    // MARK: - Settle, delete, interrupt
 
-    /// A live agent is stopped, not deleted; only an exited one is deleted.
-    func testALiveAgentOffersStopAndOnlyAnExitedOneOffersDelete() async throws {
+    /// An agent the person has not settled is settled, not deleted, exited
+    /// or not; only a settled one is deleted.
+    func testAnUnsettledAgentOffersSettleAndOnlyASettledOneOffersDelete() async throws {
         _ = try await chat(ScriptedChat(rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .working)))
-        let stop = try await chatMenuItem("Stop Agent")
-        XCTAssertNotNil(stop, "a live agent's menu offers Stop Agent")
-        XCTAssertNil(try menuItem("Delete Agent"), "a live agent's menu offers Delete Agent; only an exited agent may be deleted")
+        let opened1 = try await chatMenuItem("Settle")
+        XCTAssertNotNil(opened1, "a live agent's menu offers Settle")
+        XCTAssertNil(try menuItem("Delete Agent"), "a live agent's menu offers Delete Agent; only a settled agent may be deleted")
 
         tearDownWindow()
         _ = try await chat(ScriptedChat(
             rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .exited(cause: .ended))))
-        let delete = try await chatMenuItem("Delete Agent")
-        XCTAssertNotNil(delete, "an exited agent's menu offers Delete Agent")
-        XCTAssertNil(try menuItem("Stop Agent"), "an exited agent has nothing to stop")
+        let opened2 = try await chatMenuItem("Settle")
+        XCTAssertNotNil(opened2, "an exited agent the person has not settled offers Settle")
+        XCTAssertNil(try menuItem("Delete Agent"), "an exited agent nobody settled offers Delete Agent")
+
+        tearDownWindow()
+        _ = try await chat(
+            ScriptedChat(rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .exited(cause: .ended))),
+            subject: CatalogFixtures.settledSubject)
+        let opened3 = try await chatMenuItem("Delete Agent")
+        XCTAssertNotNil(opened3, "a settled agent's menu offers Delete Agent")
+        XCTAssertNotNil(try menuItem("Un-settle"), "a settled agent's menu offers Un-settle")
+        XCTAssertNil(try menuItem("Settle"), "a settled agent has nothing to settle")
+    }
+
+    /// Only an agent with no parent is pinned; a subagent's menu has no Pin.
+    func testOnlyATopLevelAgentOffersPin() async throws {
+        _ = try await chat(ScriptedChat(rows: CatalogFixtures.conversation, frame: ScriptedChat.frame()))
+        let opened4 = try await chatMenuItem("Pin")
+        XCTAssertNotNil(opened4, "a top-level agent's menu offers Pin")
+
+        tearDownWindow()
+        _ = try await chat(
+            ScriptedChat(rows: CatalogFixtures.conversation, frame: ScriptedChat.frame()),
+            subject: CatalogFixtures.subagentSubject)
+        let opened5 = try await chatMenuItem("Settle")
+        XCTAssertNotNil(opened5, "the subagent's menu opened")
+        XCTAssertNil(try menuItem("Pin"), "a subagent's menu offers Pin")
     }
 
     /// The square button under a working turn ends the turn, not the agent,
@@ -145,24 +171,24 @@ final class PhoneDecisionsTests: XCTestCase {
         XCTAssertNotNil(try menuItem("Interrupt"), "the ask card offers Interrupt to end the turn")
     }
 
-    /// Stopping is always "stop now"; when it cuts work, the confirm says
+    /// Settling stops the agent now; when that cuts work, the confirm says
     /// what: the turn under way, its background jobs and its subagents.
-    func testStoppingAWorkingAgentNamesWhatTheStopCuts() async throws {
+    func testSettlingAWorkingAgentNamesWhatTheSettleCuts() async throws {
         _ = try await chat(
             ScriptedChat(
                 rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(name: "desk-1", phase: .working),
                 strip: ScriptedChat.strip(background: 2)),
             family: oneChild)
-        let found = try await chatMenuItem("Stop Agent")
-        let (button, stop) = try XCTUnwrap(found)
-        MenuSource.run(stop, from: button)
+        let found = try await chatMenuItem("Settle")
+        let (button, settle) = try XCTUnwrap(found)
+        MenuSource.run(settle, from: button)
         await spin()
-        XCTAssertFalse(acted.contains(.stopAgent), "the agent was stopped with no confirm naming what it cut")
+        XCTAssertFalse(acted.contains(.settle), "the agent was settled with no confirm naming what it cut")
         let said = probe.elements.map { [$0.label, $0.value].compactMap { $0 }.joined(separator: " ") }
             .joined(separator: " | ")
         XCTAssertTrue(
             said.contains("working") && said.contains("2 background jobs") && said.contains("1 subagent"),
-            "the stop confirm names the turn, its 2 background jobs and its subagent: \(said)")
+            "the settle confirm names the turn, its 2 background jobs and its subagent: \(said)")
     }
 
     /// Terminal Claude's own view resumed another conversation: the chat
@@ -376,7 +402,7 @@ final class PhoneDecisionsTests: XCTestCase {
             agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 9, count: 16)),
             name: "cx", kind: .codex, attention: .idle, cwd: "~/src", phaseSinceMs: 0,
             host: "desk", hostReach: .online(.direct), children: 0, familyAttention: .idle,
-            members: 1, descendants: 0, backgroundJobs: 2, stopHeld: false, branch: nil, exitCause: nil)
+            members: 1, descendants: 0, backgroundJobs: 2, settleHeld: false, filing: .active, topLevel: true, branch: nil, exitCause: nil)
         let fleet = FleetStore()
         fleet.show(
             FleetView(

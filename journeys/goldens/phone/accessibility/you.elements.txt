@@ -18,13 +18,16 @@ you.report | Report a Problem |  | 16,1580,370,69
 you.dump | Export Diagnostics |  | 16,1650,370,112
 you.help.caption |  |  | 16,1769,366,106
 you.close | Close |  | 342,82,40,36
- | All |  | 16,185,60,44
- | Needs you |  | 84,185,165,44
- | Working |  | 257,185,140,44
- | decision-sdk, Idle, The deploy check passed., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,231,370,150
+ | decision-sdk, Idle, The deploy check passed., desk, /private/tmp/amux-phone-journey/net/desk/work, <age> |  | 0,187,402,150
  | Agents |  | 16,124,174,62
  | Switch account |  | 21,66,34,36
  | New Agent |  | 348,66,33,36
+ | All |  | 16,189,123,32
+ | All |  | 69,196,17,18
+ | Needs you |  | 139,189,123,32
+ | Needs you |  | 164,196,73,18
+ | Working |  | 262,189,124,32
+ | Working |  | 296,196,57,18
  | Search |  | 16,188,370,0
  | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12

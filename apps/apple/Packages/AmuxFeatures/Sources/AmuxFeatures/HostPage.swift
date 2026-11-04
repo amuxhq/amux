@@ -9,6 +9,8 @@ public enum HostPageAction: Equatable, Sendable {
     case revoke(HostId)
     /// Pair with a machine that no longer trusts this phone.
     case pairAgain(HostId)
+    /// The subscription that reaches a machine only the relay can see.
+    case subscribe
 }
 
 /// One paired machine, opened from its row on Hosts: how this phone reaches
@@ -55,13 +57,7 @@ public struct HostPage: View {
             }
             .scrollIndicators(.hidden)
         }
-        .navigationBarBackButtonHidden(true)
-        .toolbarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                BarBack(identifier: "host.back") { actions(.back) }
-            }
-        }
+        .backBar()
         .accessibilityElement(children: .contain)
         .identified("host", value: model.host(host)?.name ?? "")
     }
@@ -95,6 +91,16 @@ public struct HostPage: View {
                 .buttonStyle(.amuxControl)
                 .accessibilityLabel(String(localized: "Pair Again with \(view.name)"))
                 .identified("host.pairAgain", label: String(localized: "Pair Again"))
+            }
+            // Away is the one machine a subscription reaches: offered here,
+            // where somebody looking at it wants to use it.
+            if view.group == .away {
+                Button { actions(.subscribe) } label: {
+                    ActionLabel(String(localized: "Subscribe"), kind: .primary, fill: true)
+                }
+                .buttonStyle(.amuxControl)
+                .accessibilityLabel(String(localized: "Subscribe to reach \(view.name)"))
+                .identified("host.subscribe", label: String(localized: "Subscribe"))
             }
             Surface {
                 VStack(spacing: 0) {
@@ -144,9 +150,8 @@ public struct HostPage: View {
     func meaning(_ view: HostView) -> String? {
         switch view.group {
         case .onThisNetwork, .throughTheRelay: return nil
-        // Stated, not sold: the relay can see it and this account cannot
-        // open a tunnel to it. The offer belongs where somebody is trying to
-        // use it.
+        // The relay can see it and this account cannot open a tunnel to it;
+        // the page offers the subscription that would, under this.
         case .away:
             return String(localized: "The relay can see it. The free plan does not relay between hosts, so reaching it needs a subscription.")
         case .offline:

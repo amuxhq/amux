@@ -36,6 +36,9 @@ public enum Route: Hashable, Sendable {
     /// The changes one agent has made, opened from its conversation.
     case changes(AgentKey)
     case host(HostId)
+    /// The agents the person has settled, behind the row at the foot of
+    /// the list.
+    case settled
     /// Subscribing, pushed onto whichever stack asked for it. The Agents list
     /// and the settings sheet both offer it, so where it was opened from is a
     /// fact about the push rather than about the screen — and it is what the
@@ -46,7 +49,7 @@ public enum Route: Hashable, Sendable {
     /// its tab with it, so the tab bar always agrees with what is on screen.
     public var tab: Tab {
         switch self {
-        case .conversation, .changes: .agents
+        case .conversation, .changes, .settled: .agents
         case .host: .hosts
         case .paywall(let from): from
         }
@@ -59,6 +62,7 @@ public enum Route: Hashable, Sendable {
         case .conversation: "conversation"
         case .changes: "changes"
         case .host: "host"
+        case .settled: "settled"
         case .paywall: "paywall"
         }
     }

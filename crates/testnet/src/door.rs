@@ -83,7 +83,7 @@ pub enum Control {
         agent: String,
         text: String,
     },
-    Stop {
+    SettleAgent {
         agent: String,
     },
     Freeze {
@@ -672,7 +672,7 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                 .await?;
             json!({ "verdict": format!("{:?}", verdict.of), "input_id": hex(id.as_bytes()) })
         }
-        Control::Stop { agent } => value(net.stop(&agent).await?),
+        Control::SettleAgent { agent } => value(net.settle_agent(&agent).await?),
         Control::Freeze { agent } => value(net.freeze(&agent)?),
         Control::Thaw { agent } => value(net.thaw(&agent)?),
         Control::OpenGate { name } => value(net.open_gate(&name)?),
@@ -824,6 +824,7 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                         "id": Uuid::from_slice(&agent.agent_id).unwrap_or_default(),
                         "host_id": Uuid::from_slice(&agent.host_id).unwrap_or_default(),
                         "lifecycle": agent.lifecycle,
+                        "filing": agent.filing,
                         "phase": agent.phase,
                         "cwd": agent.cwd,
                         "branch": agent.git.as_ref().and_then(|git| git.branch.clone()),

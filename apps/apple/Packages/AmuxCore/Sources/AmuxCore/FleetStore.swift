@@ -21,6 +21,12 @@ extension FleetRow: Identifiable {
     /// A kind this build knows how to open.
     public var readable: Bool { card.kind != .unspecified }
     public var needsYou: Bool { attention == .needsYou }
+    /// How the person filed it, apart from its lifecycle.
+    public var filing: Filing { card.filing }
+    public var pinned: Bool { card.filing == .pinned }
+    public var settled: Bool { card.filing == .settled }
+    /// It has no parent, so it may be pinned.
+    public var pinnable: Bool { card.topLevel && !settled }
     /// A folded family's head speaking for a member that needs the person.
     public var speaksForAMember: Bool { loud != nil }
 
@@ -54,8 +60,9 @@ public enum Elapsed {
 public final class FleetStore {
     /// Every row on screen, families expanded where asked.
     public private(set) var rows: [FleetRow] = []
-    /// Home's sections as the runtime groups them: a family sits in the
-    /// section of its loudest member.
+    /// Home's sections as the runtime groups them: a family sits where its
+    /// head is filed, pinned or settled, else in the section of its loudest
+    /// member.
     public private(set) var sections: [FleetSection] = []
     /// Agents across the fleet that need the person, and that are working
     /// or starting, whatever is folded.
@@ -77,6 +84,11 @@ public final class FleetStore {
     public private(set) var loaded = false
     /// The relay link, as the account screens report it.
     public private(set) var relay: RelayLink = .off
+    /// The host last read away, kept until it is reached or no longer
+    /// listed: putting the app away drops every link, and coming back reads
+    /// the host unreached until the first dials end, which is no news about
+    /// the plan. The card stays put rather than going and coming back.
+    public private(set) var heldAway: String?
 
     @ObservationIgnored private var markedFirstFrame = false
     /// The launch's first frame with rows is built and not yet on screen.
@@ -99,6 +111,7 @@ public final class FleetStore {
         needYou = Int(view.needYou)
         working = Int(view.working)
         if let newest = rows.map(\.lastActivity).max(), newest > orderedAt { orderedAt = newest }
+        holdAway()
         if !markedFirstFrame && !self.rows.isEmpty {
             markedFirstFrame = true
             presenting = true
@@ -156,8 +169,10 @@ public final class FleetStore {
 
     public var subtitle: String {
         guard needYou > 0 else { return "Nothing needs you · \(working) working" }
-        // A folded family stands for every member under it.
-        let agents = rows.reduce(0) { $0 + ($1.expanded ? 1 : Int($1.card.members)) }
+        // A folded family stands for every member under it. Settled agents
+        // are put away on their own page and are not counted here.
+        let agents = rows.filter { !$0.settled }
+            .reduce(0) { $0 + ($1.expanded ? 1 : Int($1.card.members)) }
         return "\(needYou) need you · \(agents) agent\(agents == 1 ? "" : "s")"
     }
 
@@ -177,6 +192,18 @@ public final class FleetStore {
     public var awayHost: String? {
         machines.filter { $0.group == .away }.map(\.name).sorted().first
     }
+
+    private func holdAway() {
+        if let away = awayHost {
+            heldAway = away
+        } else if let held = heldAway,
+                  !machines.contains(where: { $0.name == held && !$0.online }) {
+            heldAway = nil
+        }
+    }
+
+    /// The settled agents, newest settled first, folded away from home.
+    public var settled: FleetSection? { sections.first { $0.kind == .settled } }
 
     public var unreachableHost: String? {
         machines.filter { !$0.online }.map(\.name).sorted().first

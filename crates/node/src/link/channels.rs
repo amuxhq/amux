@@ -1088,7 +1088,7 @@ mod tests {
                 unanswered()
             }
 
-            async fn stop_agent(&self, _: Request<wire::StopAgentRequest>) -> Answer<wire::Empty> {
+            async fn file_agent(&self, _: Request<wire::FileAgentRequest>) -> Answer<wire::Agent> {
                 unanswered()
             }
 

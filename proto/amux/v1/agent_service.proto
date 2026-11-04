@@ -29,8 +29,10 @@ service AgentService {
   rpc ResolveAgent(ResolveAgentRequest) returns (Agent);
   rpc CreateAgent(CreateAgentRequest) returns (Agent);
   rpc RenameAgent(RenameAgentRequest) returns (Agent);
-  rpc StopAgent(StopAgentRequest) returns (Empty);
-  // Spawn the directory again.
+  // Pins, settles or returns the agent to active. Settling a live agent
+  // stops it, resumable, and settles its children with it.
+  rpc FileAgent(FileAgentRequest) returns (Agent);
+  // Spawn the directory again, filed active when it was settled.
   rpc ResumeAgent(ResumeAgentRequest) returns (Agent);
   // Removes the agent for good, stopping it first when it is live. Its
   // children, on any host, follow on their own hosts by the family rule.
@@ -96,11 +98,14 @@ message RenameAgentRequest {
   string name = 2;
 }
 
-// Ends the agent now: the running turn is cancelled the provider's own way
-// and the agent exits, resumable. Named apart from the Interrupt input, which
-// ends only the turn.
-message StopAgentRequest {
+// FILING_SETTLED ends a live agent now: the running turn is cancelled the
+// provider's own way and the agent exits, resumable. Named apart from the
+// Interrupt input, which ends only the turn. FILING_PINNED is refused for an
+// agent with a parent; FILING_ACTIVE files the agent back without resuming
+// it.
+message FileAgentRequest {
   bytes agent_id = 1;
+  Filing filing = 2;
 }
 
 // The composer of an exited chat sends its draft through initial_prompt.

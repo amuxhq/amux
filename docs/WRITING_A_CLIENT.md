@@ -370,7 +370,7 @@ each change as it happens:
 Rows from a host this machine cannot reach right now are as that host last
 reported them; the host's entry says whether it is reachable.
 
-`CreateAgent`, `StopAgent`, `ResumeAgent`, `RenameAgent` and `DeleteAgent`
+`CreateAgent`, `FileAgent`, `ResumeAgent`, `RenameAgent` and `DeleteAgent`
 act on agents.
 
 ## Errors

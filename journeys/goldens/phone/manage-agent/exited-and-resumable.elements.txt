@@ -1,4 +1,5 @@
 shell |  | agents | 0,62,402,778
+settled |  | signed-out | 0,174,402,666
 chat |  | helper | 0,116,402,724
 chat.row.boundary | Started |  | 16,124,370,34
 chat.row.prompt | Say hello. |  | 16,158,370,40
@@ -13,9 +14,8 @@ chat.model | claude-fake-1 · medium |  | 71,779,117,44
 chat.dictate | Dictate | idle | 228,779,44,44
 chat.resume | Resume |  | 276,779,103,44 (disabled)
 chat.more | More |  | 350,66,28,36
-chat.back | Back |  | 20,66,40,36
-chat.header | Exited | live | 80,66,85,36
-chat.title | helper | helper | 80,66,85,36
+chat.header | Exited | live | 76,66,85,36
+chat.title | helper | helper | 76,66,85,36
  | Exited, desk |  | 29,720,345,20
  | Attach |  | 23,779,44,44
  | claude-fake-1 |  | 71,779,117,44
@@ -26,6 +26,7 @@ chat.title | helper | helper | 80,66,85,36
  | Ready when you are. |  | 16,210,370,20
  | Worked <t> |  | 16,237,62,16
  | Ended · stopped |  | 16,267,370,34
- | Back |  | 20,66,40,36
- | helper, Exited |  | 80,66,85,36
+BackButton | Settled |  | 16,62,44,44
+ | helper, Exited |  | 76,66,85,36
  | More |  | 350,66,28,36
+ | Back |  | 16,73,44,23

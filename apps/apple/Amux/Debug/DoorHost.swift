@@ -128,6 +128,7 @@ final class DoorHost {
             await reveal(identifier)
             return await tap(identifier, after: after)
         case .choose(let label): await still(); return choose(label)
+        case .back: await still(); return back()
         case .perform(let identifier, let action): await still(); return perform(action, on: identifier)
         case .type(let identifier, let text): await still(); return type(text, into: identifier)
         case .clear(let identifier): await still(); return clear(identifier)
@@ -625,8 +626,58 @@ final class DoorHost {
         // Where it was aimed and what is there, so a refusal says whether
         // the element was covered, out of sight or simply would not act.
         let aimed = declared(named: identifier).map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) }
-        let hit = aimed.flatMap { window.hitTest($0, with: nil) }.map { String(describing: Swift.type(of: $0)) }
-        return .error("\(identifier) did not activate (aimed at \(aimed.map { "\(Int($0.x)),\(Int($0.y))" } ?? "nowhere"), which reaches \(hit ?? "nothing"))")
+        // The view hit and the views holding it, so a cover says whose it is.
+        let hit = aimed.flatMap { window.hitTest($0, with: nil) }.map { view in
+            sequence(first: view, next: \.superview).prefix(6)
+                .map { String(describing: Swift.type(of: $0)) }.joined(separator: " in ")
+        }
+        let scrolled = aimed.flatMap { VisibleTree.scroller(holding: $0, in: window) }.map {
+            "; its list is at \(Int($0.contentOffset.y)) under an inset of \(Int($0.adjustedContentInset.top))"
+        } ?? ""
+        return .error("\(identifier) did not activate (aimed at \(aimed.map { "\(Int($0.x)),\(Int($0.y))" } ?? "nowhere"), which reaches \(hit ?? "nothing")\(scrolled))")
+    }
+
+    /// The system bar's back button: drawn by the bar, not the page, under
+    /// the system's own identifier, and deaf to an accessibility activation
+    /// from inside the process (it reports success and does nothing). So the
+    /// button is required on screen and the stack it belongs to goes back as
+    /// its press makes it. It is found by the system's identifier, not by
+    /// what it says: an ask card has a Back of its own, between questions.
+    private func back() -> DoorReply {
+        guard let window = DoorWindow.current else { return .error("no window on screen") }
+        guard let button = VisibleTree.find("BackButton", in: window) else {
+            return .error("no back button on screen")
+        }
+        if let control = sequence(first: button as? UIView, next: { $0?.superview }).lazy
+            .compactMap({ $0 as? UIControl }).first {
+            control.sendActions(for: .touchUpInside)
+            return .ack
+        }
+        guard let stack = Self.deepestStack(from: window.rootViewController) else {
+            return .error("the back button did not activate and no stack is pushed")
+        }
+        stack.popViewController(animated: true)
+        return .ack
+    }
+
+    /// The innermost navigation stack on screen with a page pushed on it.
+    private static func deepestStack(from controller: UIViewController?) -> UINavigationController? {
+        guard let controller else { return nil }
+        if let presented = controller.presentedViewController, let found = deepestStack(from: presented) {
+            return found
+        }
+        let children: [UIViewController] = switch controller {
+        case let tabs as UITabBarController: [tabs.selectedViewController].compactMap { $0 }
+        case let stack as UINavigationController: [stack.topViewController].compactMap { $0 }
+        default: controller.children
+        }
+        for child in children.reversed() {
+            if let found = deepestStack(from: child) { return found }
+        }
+        if let stack = controller as? UINavigationController, stack.viewControllers.count > 1 {
+            return stack
+        }
+        return nil
     }
 
     /// Picks an item by its title, from a dialog on screen, the tab bar or

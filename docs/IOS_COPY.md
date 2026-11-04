@@ -52,18 +52,20 @@ every other host out of reach, including one that no longer trusts this phone
 and one only a signed-out phone cannot reach. Never describe an offline host as
 away, and never offer a subscription merely because a host is offline.
 
-A live agent's menu offers **Stop Agent** and never **Delete Agent**; only an
-exited agent is deleted. The square button under a working turn and the ask
-card's way out of the turn read **Interrupt**. A stop confirm names what the
-stop cuts, "desk-1 is working and has 2 background jobs and 1 subagent. Stop
-anyway?", and asks plainly when it cuts nothing under way.
+Putting an agent away is **Settle**, never "stop" or "archive": swiped left
+on its row, or from its menu. Only a settled agent offers **Delete Agent**,
+beside **Un-settle**. Settling asks first only when it cuts work short, and
+names what it cuts: "desk-1 is working and has 2 background jobs and 1
+subagent." with "Settling stops it now."; otherwise it settles at once. A row
+swiped right offers **Pin** or **Unpin**. The square button under a working
+turn and the ask card's way out of the turn read **Interrupt**.
 
 A message is never sent while the chat is not current: Send is off and the
 draft stays, and the empty field says why, short enough for one line:
 "Catching up · your draft is kept", "Reconnecting · your draft is kept",
 "desk is out of reach · your draft is kept". One refused because its host
-could not be reached comes back with "Not sent: its host is away". A stop
-whose host cannot be reached is **held** and says when it goes: "Stop held ·
+could not be reached comes back with "Not sent: its host is away". A settle
+whose host cannot be reached is **held** and says when it goes: "Settle held ·
 sends when desk is back". Revoking a host asks first: "Revoke desk? This phone stops reaching it,
 and only pairing again brings it back."
 

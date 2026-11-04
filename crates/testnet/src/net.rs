@@ -1269,12 +1269,13 @@ impl Net {
             })
     }
 
-    /// Stops the agent on its own host, as a person does there: it exits
+    /// Settles the agent on its own host, as a person does there: it exits
     /// and can be resumed.
-    pub async fn stop(&self, name: &str) -> Result<Ack, NetError> {
+    pub async fn settle_agent(&self, name: &str) -> Result<Ack, NetError> {
         let agent = self.agent(name)?.clone();
-        let request = wire::StopAgentRequest {
+        let request = wire::FileAgentRequest {
             agent_id: agent.id.as_bytes().to_vec(),
+            filing: wire::Filing::Settled as i32,
         };
         match &self.hosts[&agent.host].process {
             Some(process) => {
@@ -1286,17 +1287,17 @@ impl Net {
                         why,
                     })?
                     .agents
-                    .stop_agent(request)
+                    .file_agent(request)
                     .await
             }
             None => {
                 self.client(&agent.host)?
-                    .stop_agent(tonic::Request::new(request))
+                    .file_agent(tonic::Request::new(request))
                     .await
             }
         }
         .map_err(|status| NetError::Refused(Box::new(status)))?;
-        Ok(self.ack(format!("{name} stopped")))
+        Ok(self.ack(format!("{name} settled")))
     }
 
     /// What `name` offers now, as a person on `host` fetches it: the blob

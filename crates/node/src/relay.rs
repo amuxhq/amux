@@ -119,8 +119,9 @@ fn said(rejected: &Rejected) -> String {
         Refusal::Unsupported => "the recipient cannot take that input",
         Refusal::Draining => "the recipient is finishing its last turn and takes nothing new",
         Refusal::Exiting => "the recipient is stopping",
-        Refusal::Exited => {
-            "the recipient has stopped; only a message from its parent starts it again"
+        Refusal::Exited => "the recipient has stopped",
+        Refusal::Settled => {
+            "the recipient is settled, done with; only the person or its parent start it again"
         }
         Refusal::HostUnreachable => "the recipient's host cannot be reached",
         Refusal::ConversationElsewhere => {

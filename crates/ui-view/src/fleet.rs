@@ -1,6 +1,6 @@
-//! The fleet: home's sections, each family placed by its loudest member and
-//! ordered by since-when, every row with its second line; cards; and the
-//! family header a chat shows.
+//! The fleet: home's sections, each family placed by how the person filed
+//! its head, else by its loudest member, and ordered by since-when, every
+//! row with its second line; cards; and the family header a chat shows.
 
 use std::collections::{HashMap, HashSet};
 
@@ -11,7 +11,9 @@ pub use ui_state::ExitCause;
 use ui_state::{
     Activity, ActivityKind, AgentKey, Attention, FleetState, ItemBody, ItemClass, SessionState,
 };
-use wire::{Agent, HostEntry, Kind, Lifecycle, RouteKind, SignInState, UsageState, trusted};
+use wire::{
+    Agent, Filing, HostEntry, Kind, Lifecycle, RouteKind, SignInState, UsageState, trusted,
+};
 
 use crate::ask::{AskBody, ask_card};
 use crate::text::{markdown_words, within, without_direction_controls};
@@ -43,9 +45,13 @@ pub struct FleetCard {
     pub descendants: u32,
     /// Jobs its provider runs in the background, as its row reports them.
     pub background_jobs: u32,
-    /// This client's stop of it is held: its host could not be reached, and
-    /// the stop goes when the host is back. Cancel takes it back.
-    pub stop_held: bool,
+    /// This client's settle of it is held: its host could not be reached,
+    /// and the settle goes when the host is back. Cancel takes it back.
+    pub settle_held: bool,
+    /// How the person filed it, apart from its lifecycle.
+    pub filing: Filing,
+    /// It has no parent, so it may be pinned.
+    pub top_level: bool,
 }
 
 /// Home's sections, computed once for every client. Empty sections are
@@ -66,20 +72,26 @@ pub struct FleetSection {
     pub kind: SectionKind,
     /// How many families the section holds, folded or not.
     pub families: u32,
-    /// Whether the section starts folded: exited agents are history,
+    /// Whether the section starts folded: settled agents are done with,
     /// rarely opened.
     pub folded_by_default: bool,
     /// Each family's head, with the members of expanded families under it.
     pub rows: Vec<FleetRow>,
 }
 
-/// Where a family sits: by its loudest member. Live holds the starting,
-/// working and idle: alive, whether or not busy.
+/// Where a family sits: pinned or settled by how the person filed its head,
+/// else by its loudest member. Live holds the starting, working and idle,
+/// and those that ended without being settled: they read as ordinary
+/// agents, which a message resumes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, JsonSchema)]
 pub enum SectionKind {
+    /// Kept at the top in the order pinned, newest pin first, whatever
+    /// their members are doing.
+    Pinned,
     NeedsYou,
     Live,
-    Exited,
+    /// Done with, newest settled first.
+    Settled,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
@@ -420,8 +432,9 @@ fn placed(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> Attention {
 fn section_of(attention: Attention) -> SectionKind {
     match attention {
         Attention::NeedsYou => SectionKind::NeedsYou,
-        Attention::Exited => SectionKind::Exited,
-        Attention::Idle | Attention::Starting | Attention::Working => SectionKind::Live,
+        Attention::Exited | Attention::Idle | Attention::Starting | Attention::Working => {
+            SectionKind::Live
+        }
     }
 }
 
@@ -446,7 +459,12 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
         members: fleet.family(&at).len() as u32,
         descendants: agent.descendants,
         background_jobs: agent.background_jobs,
-        stop_held: fleet.stop_held(&at),
+        settle_held: fleet.settle_held(&at),
+        filing: match agent.filing() {
+            Filing::Unspecified => Filing::Active,
+            filing => filing,
+        },
+        top_level: agent.parent.is_none(),
         agent: at,
     }
 }
@@ -523,9 +541,11 @@ pub fn kind_name(kind: Kind) -> &'static str {
     }
 }
 
-/// Home: every family in the section of its loudest member, newest
-/// since-when first, with the members of expanded families (by root agent
-/// id in `expand`) under their parents, newest first. A family stays when
+/// Home: every family whose head the person pinned or settled in that
+/// section, newest filing first; every other in the section of its loudest
+/// member not settled, newest since-when first; with the members of
+/// expanded families (by root agent id in `expand`) under their parents,
+/// newest first. A family stays when
 /// `keep` holds for any member, so a filter finds folded members too.
 /// `lines` holds what each session knows; an agent without one says only
 /// what its inventory row does.
@@ -546,15 +566,22 @@ pub fn fleet_view(
             if !members.iter().any(|member| keep(member)) {
                 return None;
             }
+            match root.filing() {
+                Filing::Pinned => return Some((SectionKind::Pinned, root.filed_at_ms, root)),
+                Filing::Settled => return Some((SectionKind::Settled, root.filed_at_ms, root)),
+                Filing::Active | Filing::Unspecified => {}
+            }
             let section = section_of(
                 members
                     .iter()
+                    .filter(|member| member.filing() != Filing::Settled)
                     .map(|member| placed(fleet, local_host, member))
                     .max()?,
             );
             // Ordered by when the members that place it there last changed.
             let since = members
                 .iter()
+                .filter(|member| member.filing() != Filing::Settled)
                 .filter(|member| section_of(placed(fleet, local_host, member)) == section)
                 .map(|member| member.phase_since_ms)
                 .max()?;
@@ -566,9 +593,10 @@ pub fn fleet_view(
             .then_with(|| ui_state::agent_key(a.2).cmp(&ui_state::agent_key(b.2)))
     });
     let sections = [
+        SectionKind::Pinned,
         SectionKind::NeedsYou,
         SectionKind::Live,
-        SectionKind::Exited,
+        SectionKind::Settled,
     ]
     .into_iter()
     .filter_map(|kind| {
@@ -587,7 +615,7 @@ pub fn fleet_view(
         Some(FleetSection {
             kind,
             families: heads.len() as u32,
-            folded_by_default: kind == SectionKind::Exited,
+            folded_by_default: kind == SectionKind::Settled,
             rows,
         })
     })

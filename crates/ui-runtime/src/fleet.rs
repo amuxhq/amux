@@ -19,7 +19,7 @@ use tokio::sync::{OnceCell, watch};
 use tokio::task::JoinHandle;
 use ui_state::{AgentKey, Connection, FleetMsg, FleetState};
 use wire::{
-    Agent, DumpFile, DumpPart, ErrorCode, InventoryEvent, Lifecycle, StopAgentRequest,
+    Agent, DumpFile, DumpPart, ErrorCode, FileAgentRequest, Filing, InventoryEvent, Lifecycle,
     inventory_event,
 };
 
@@ -40,10 +40,10 @@ pub struct Window {
     pub cap: u32,
 }
 
-/// What became of a person's stop.
+/// What became of a person's settle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Stop {
-    Stopped,
+pub enum Settle {
+    Settled,
     /// The agent's host could not be reached, so it never left: the fleet
     /// holds it, the row shows it with Cancel, and it goes when the host is
     /// back. Closing the client drops it.
@@ -123,24 +123,25 @@ impl Inner {
             .unwrap_or_else(|poison| poison.into_inner())
     }
 
-    /// Stops the agent; a stop that never left, its host out of reach, is
-    /// held and goes again when the host is back.
-    async fn stop(self: &Arc<Self>, agent: AgentKey) -> Result<Stop, RpcError> {
-        let request = StopAgentRequest {
+    /// Settles the agent, stopping it when live; a settle that never left,
+    /// its host out of reach, is held and goes again when the host is back.
+    async fn settle(self: &Arc<Self>, agent: AgentKey) -> Result<Settle, RpcError> {
+        let request = FileAgentRequest {
             agent_id: agent.agent.clone(),
+            filing: Filing::Settled as i32,
         };
         let listing = self.model().state.listings();
-        match self.client.stop_agent(request).await {
-            Ok(()) => {
-                self.apply(FleetMsg::DropStop(agent));
-                Ok(Stop::Stopped)
+        match self.client.file_agent(request).await {
+            Ok(_) => {
+                self.apply(FleetMsg::DropSettle(agent));
+                Ok(Settle::Settled)
             }
             Err(error) if never_left(&error) => {
-                self.apply(FleetMsg::HoldStop { agent, listing });
-                Ok(Stop::Held)
+                self.apply(FleetMsg::HoldSettle { agent, listing });
+                Ok(Settle::Held)
             }
             Err(error) => {
-                self.apply(FleetMsg::DropStop(agent));
+                self.apply(FleetMsg::DropSettle(agent));
                 Err(error)
             }
         }
@@ -169,7 +170,7 @@ impl Inner {
             )
         );
         let keys = state.update(msg);
-        let released = state.take_released_stops();
+        let released = state.take_released_settles();
         let moved = connection || host || !keys.is_empty();
         model.changed.extend(keys.iter().cloned());
         model.hosts_changed |= host;
@@ -187,8 +188,8 @@ impl Inner {
                 let me = me.clone();
                 tokio::spawn(async move {
                     // Held again if the host went before it landed; any
-                    // other failure is the stop's own, and it is not held.
-                    let _ = me.stop(agent).await;
+                    // other failure is the settle's own, and it is not held.
+                    let _ = me.settle(agent).await;
                 });
             }
         }
@@ -435,16 +436,28 @@ impl Fleet {
         FleetGuard(self.inner.model())
     }
 
-    /// A person's stop of the agent. One whose host cannot be reached
-    /// never left: it is held, shown on the agent's row with Cancel, and
-    /// goes when the host is back. Rename and delete are never held.
-    pub async fn stop(&self, agent: &AgentKey) -> Result<Stop, RpcError> {
-        self.inner.stop(agent.clone()).await
+    /// A person's settle of the agent, stopping it when live. One whose
+    /// host cannot be reached never left: it is held, shown on the agent's
+    /// row with Cancel, and goes when the host is back. Pin, un-settle,
+    /// rename and delete are never held.
+    pub async fn settle(&self, agent: &AgentKey) -> Result<Settle, RpcError> {
+        self.inner.settle(agent.clone()).await
     }
 
-    /// Takes back a held stop before it goes.
-    pub fn cancel_stop(&self, agent: &AgentKey) {
-        self.inner.apply(FleetMsg::DropStop(agent.clone()));
+    /// Pins the agent, or files it back as active (un-pinned, or
+    /// un-settled without resuming it). Never held: a host that cannot be
+    /// reached fails it at once, with the reason.
+    pub async fn file(&self, agent: &AgentKey, filing: Filing) -> Result<Agent, RpcError> {
+        let request = FileAgentRequest {
+            agent_id: agent.agent.clone(),
+            filing: filing as i32,
+        };
+        self.inner.client.file_agent(request).await
+    }
+
+    /// Takes back a held settle before it goes.
+    pub fn cancel_settle(&self, agent: &AgentKey) {
+        self.inner.apply(FleetMsg::DropSettle(agent.clone()));
     }
 
     /// The one session for a live agent, held with a small window while no

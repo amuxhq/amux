@@ -58,6 +58,7 @@ fn add(
     if !live {
         let mut row = store.agent(agent).unwrap().unwrap();
         row.lifecycle = Lifecycle::Exited as i32;
+        row.filing = wire::Filing::Settled as i32;
         store.put_agent(&row).unwrap();
     }
 }
@@ -407,6 +408,20 @@ fn retention_stops_as_soon_as_the_pool_fits() {
     let sweep = store.sweep_own(4 * ROW, ROW, 1).unwrap();
     assert_eq!(sweep.removed, [own("a")]);
     assert_eq!(sweep.pool_after, 4 * ROW);
+}
+
+#[test]
+fn retention_never_removes_an_exited_agent_the_person_has_not_settled() {
+    let mut store = fresh();
+    add(&mut store, &own("crashed"), 3, 1, false, None);
+    let mut row = store.agent(&own("crashed")).unwrap().unwrap();
+    row.filing = wire::Filing::Active as i32;
+    store.put_agent(&row).unwrap();
+    add(&mut store, &own("settled"), 3, 2, false, None);
+    let sweep = store.sweep_own(0, ROW, 1).unwrap();
+    // The settled agent goes whole; the one never settled is only trimmed.
+    assert_eq!(sweep.removed, [own("settled")]);
+    assert!(store.agent(&own("crashed")).unwrap().is_some());
 }
 
 #[test]

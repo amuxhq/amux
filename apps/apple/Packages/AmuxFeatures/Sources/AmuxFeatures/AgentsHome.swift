@@ -11,6 +11,20 @@ public enum HomeAction: Equatable, Sendable {
     case filter(FleetFilter)
     /// Lists or folds away a family's members.
     case toggleFamily(AgentKey)
+    /// Done with it: stops it when live; a message resumes it.
+    case settle(AgentKey)
+    /// Takes back a settle held while the agent's host is out of reach.
+    case cancelSettle(AgentKey)
+    /// Keeps an agent with no parent at the top of the list.
+    case pin(AgentKey)
+    /// Files it back as active: its pin taken away, or un-settled without
+    /// resuming it.
+    case unfile(AgentKey)
+    /// Removes a settled agent for good, once the person has confirmed it.
+    case delete(AgentKey)
+    case rename(AgentKey, String)
+    /// The settled agents, on a page of their own.
+    case openSettled
     case newAgent
     case switchAccount(AccountId)
     case addAccount
@@ -46,6 +60,13 @@ public enum HomeAction: Equatable, Sendable {
 /// The title, its subtitle and the buttons beside it are the system
 /// navigation bar's: a large title that shrinks as the list scrolls, with
 /// glass buttons, the way a chat app's list reads.
+/// Which agents the screen lists: the fleet, with the settled ones behind
+/// one row at its foot, or those settled ones on a page of their own.
+public enum HomeScope: Sendable {
+    case fleet
+    case settled
+}
+
 public struct AgentsHome: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.design) private var design
@@ -67,6 +88,7 @@ public struct AgentsHome: View {
     /// so in its place rather than looking as if the press was dropped.
     private let signingIn: Bool
     private let actions: @MainActor (HomeAction) -> Void
+    private let scope: HomeScope
     /// The fold is view state, not fleet state: opening it is a thing this
     /// screen is doing, and coming back to the screen starts it closed again.
     /// Whether the account switcher is out. View state for the same reason,
@@ -79,6 +101,10 @@ public struct AgentsHome: View {
     /// The offer that has stood long enough to be made; see `offer`.
     @State private var offered: Offer?
     @State private var discs = AccountDiscs()
+    /// A row's settle or delete being asked about, and a rename being typed.
+    @State private var confirming: Confirming?
+    @State private var renaming: FleetRow?
+    @State private var newName = ""
 
     public init(
         model: FleetStore,
@@ -86,8 +112,10 @@ public struct AgentsHome: View {
         hosts: HostsStore,
         offerNotifications: Bool = false,
         signingIn: Bool = false,
+        scope: HomeScope = .fleet,
         actions: @escaping @MainActor (HomeAction) -> Void
     ) {
+        self.scope = scope
         self.model = model
         self.accounts = accounts
         self.hosts = hosts
@@ -119,7 +147,9 @@ public struct AgentsHome: View {
                 // phone has a machine at all. One that has paired is not a
                 // phone with nothing paired, and offering to pair again there
                 // would say the pairing it just did never happened.
-                if !model.rows.isEmpty || filtering {
+                if scope == .settled {
+                    fleet
+                } else if !model.rows.isEmpty || filtering {
                     fleet
                 } else if !model.loaded {
                     // A reopened app draws before its saved hosts are read;
@@ -134,21 +164,26 @@ public struct AgentsHome: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .navigationTitle("Agents")
+        .navigationTitle(scope == .fleet ? String(localized: "Agents") : String(localized: "Settled"))
         .navigationSubtitle(subtitle)
         // Pulled down from under the title, as a chat app's search is. It
-        // matches what a row says, as the terminal's filter does. Only over a
-        // list: an empty phone has nothing to search.
-        .modifier(FleetSearch(shown: !model.rows.isEmpty || filtering, words: $words))
+        // matches what a row says, as the terminal's filter does, and offers
+        // the narrowings as the field's scopes. Only over a list: an empty
+        // phone has nothing to search.
+        .modifier(FleetSearch(
+            shown: scope == .fleet && (!model.rows.isEmpty || filtering), words: $words,
+            only: $only, scopes: scopes))
         .onChange(of: filter) { _, filter in actions(.filter(filter)) }
         .toolbar {
             ToolbarItem(placement: .largeSubtitle) {
                 LargeSubtitle(text: subtitle, identifier: "home.subtitle")
             }
-            ToolbarItem(placement: .topBarLeading) {
-                accountMenu
+            if scope == .fleet {
+                ToolbarItem(placement: .topBarLeading) {
+                    accountMenu
+                }
             }
-            if canStartAnAgent {
+            if scope == .fleet && canStartAnAgent {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { actions(.newAgent) } label: { Image(systemName: "plus").foregroundStyle(design.onAccent.color) }
                         .buttonStyle(.glassProminent)
@@ -159,13 +194,15 @@ public struct AgentsHome: View {
             }
         }
         .onAppear { actions(.refresh) }
-        // An offer is made once it has stood for a while on screen. Put
-        // away, the phone lets go of every link, so coming back waits again.
-        .task(id: OfferWait(offer: offer, active: phase == .active)) {
+        // Signing in is offered once a machine has stood out of reach for a
+        // while on screen: a reopened app reads every machine unreached until
+        // it has dialled them. Away is certain when it is read, so its offer
+        // is made at once and kept by the fleet.
+        .task(id: OfferWait(offer: signInOffer, active: phase == .active)) {
             offered = nil
-            guard let offer, phase == .active else { return }
+            guard let signInOffer, phase == .active else { return }
             try? await Task.sleep(for: Self.offerPatience)
-            if !Task.isCancelled { offered = offer }
+            if !Task.isCancelled { offered = signInOffer }
         }
         // Ages count while the list is on screen, as the terminal's do. A
         // compared picture holds its clock still.
@@ -176,13 +213,42 @@ public struct AgentsHome: View {
                 model.refreshOrder(now: Date())
             }
         }
+        .confirmationDialog(
+            confirming?.title ?? "", isPresented: Binding(
+                get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
+            titleVisibility: .visible, presenting: confirming
+        ) { asked in
+            switch asked {
+            case .settle(let row, _):
+                Button(String(localized: "Settle"), role: .destructive) { actions(.settle(row.id)) }
+                    .identified("home.settle.confirm", label: String(localized: "Settle"))
+            case .delete(let row):
+                Button(String(localized: "Delete"), role: .destructive) { actions(.delete(row.id)) }
+                    .identified("home.delete.confirm", label: String(localized: "Delete"))
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {}
+        } message: { asked in
+            Text(asked.message)
+        }
+        .alert(
+            String(localized: "Rename Agent"),
+            isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })
+        ) {
+            TextField(String(localized: "Name"), text: $newName)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button(String(localized: "Cancel"), role: .cancel) {}
+            Button(String(localized: "Rename")) {
+                if let row = renaming { actions(.rename(row.id, newName)) }
+            }
+        }
         // A screen is a container of the things on it, not a name for all of
         // them. Without this the system spreads this identifier over every
         // element underneath — the title, the buttons, the rows — so
         // everything on the screen answers to the screen's own name, for
         // VoiceOver and for anything driving the app alike.
         .accessibilityElement(children: .contain)
-        .identified("home", value: accounts.gate.name)
+        .identified(scope == .fleet ? "home" : "settled", value: accounts.gate.name)
     }
 
     // MARK: - Header
@@ -285,18 +351,19 @@ public struct AgentsHome: View {
             await discs.load(accounts.accounts.compactMap(\.account.picture))
         }
         .accessibilityLabel("Switch account")
-        .identified("home.accounts", label: "Switch account")
+        // The account the fleet is of, said where the person changes it: the
+        // title no longer carries it.
+        .accessibilityValue(accounts.selectedAccount?.name ?? "")
+        .identified("home.accounts", label: "Switch account", value: accounts.selectedAccount?.name ?? "")
     }
 
-    /// Under the title, only what needs saying: whose fleet this is when the
-    /// phone holds more than one account, how many agents need the person,
-    /// and on an empty phone why it is empty. A calm fleet has no subtitle;
-    /// the list says the rest.
+    /// Under the title, only what needs saying: how many agents need the
+    /// person, and on an empty phone why it is empty. A calm fleet has no
+    /// subtitle; the list says the rest. Whose fleet it is goes unsaid: the
+    /// account's disc beside the title says it, and two accounts a person
+    /// holds tend to carry the same name.
     private var subtitle: String {
-        if accounts.accounts.count > 1, let entry = accounts.selectedAccount {
-            let waiting = model.needYou
-            return waiting == 0 ? entry.name : "\(entry.name) · \(waiting) need you"
-        }
+        guard scope == .fleet else { return "" }
         // Narrowed to nothing is still a fleet: the counts are the fleet's,
         // not the filter's.
         if !model.rows.isEmpty || filtering {
@@ -310,66 +377,191 @@ public struct AgentsHome: View {
 
     private var sections: [FleetSection] { model.sections }
 
-    /// The agents that are live, in one list, with the ones that need the
-    /// person at the top; the stopped ones folded away under it.
+    /// The agents not settled, in one list: the pinned at the top, then the
+    /// ones that need the person, then the rest.
     private var live: [FleetRow] {
-        sections.filter { $0.kind != .exited }.flatMap(\.rows)
+        sections.filter { $0.kind != .settled }.flatMap(\.rows)
     }
 
-    private var stopped: FleetSection? { sections.first { $0.kind == .exited } }
+    /// What the list holds: on the fleet, every agent not settled, and the
+    /// settled ones too while a search is finding them; on the settled
+    /// page, only those.
+    private var listed: [FleetRow] {
+        switch scope {
+        case .fleet: live
+        case .settled: model.settled?.rows ?? []
+        }
+    }
 
     /// Names a machine on a row only when there is more than one to tell
     /// apart.
     private var namesHosts: Bool { Set(model.rows.map(\.hostName)).count > 1 }
 
     private var fleet: some View {
-        let live = self.live
-        // Lazy, so only the rows on screen are laid out. The list is read
-        // again several times a second while an agent works, and it stays
-        // in place under an open chat: laying out every row on each read
-        // is enough to drop the chat's frames.
-        return ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                chips
-                    .padding(.bottom, Space.s)
-                if !callouts.isEmpty {
+        let listed = self.listed
+        // The system's list, for the system's row actions: a swipe that
+        // gives way to its main action when drawn far enough, and a press
+        // that holds for the rest. Lazy as a list is, so only the rows on
+        // screen are laid out: the list is read again several times a second
+        // while an agent works, and it stays in place under an open chat.
+        return List {
+            Group {
+                if scope == .fleet && !callouts.isEmpty {
                     CalloutStrip(callouts: callouts, act: actions)
                         .padding(.top, Space.xs)
                         .padding(.bottom, Space.s)
                 }
                 if filtering && model.rows.isEmpty { noMatches }
-                ForEach(Array(live.enumerated()), id: \.element.id) { index, row in
-                    agentRow(row)
-                    if index < live.count - 1 { rule(row) }
+                if scope == .settled && listed.isEmpty { nothingSettled }
+                ForEach(Array(listed.enumerated()), id: \.element.id) { index, row in
+                    swipeable(row, last: index == listed.count - 1)
                 }
-                if let stopped {
-                    stoppedFold(stopped)
-                    if !model.folded(stopped) {
-                        // One block, so it fades and settles as a whole: it
-                        // comes down from under the line that opened it and
-                        // goes back up into it.
-                        VStack(alignment: .leading, spacing: 0) {
-                            ForEach(stopped.rows) { row in
-                                agentRow(row)
-                                rule(row)
-                            }
+                if scope == .fleet, let settled = model.settled {
+                    if filtering {
+                        // Found by the search, under the rest, as a chat app
+                        // finds archived chats.
+                        heading(Self.title(.settled))
+                        ForEach(Array(settled.rows.enumerated()), id: \.element.id) { index, row in
+                            swipeable(row, last: index == settled.rows.count - 1)
                         }
-                        .transition(.opacity.combined(with: .offset(y: -Space.m)))
+                    } else {
+                        settledLink(settled)
                     }
                 }
+                Color.clear.frame(height: 120)
             }
-            .padding(.top, Space.xs)
-            .padding(.bottom, 120)
-            // Keyed on which rows are where and nothing else. A row is
-            // equatable over its whole card, so animating on the sections
-            // themselves would set the list moving every time an agent
-            // changed its headline or aged by a minute. Safe because
-            // regrouping only happens on a refresh, which is something the
-            // reader did.
-            .moving(value: sections.map { $0.rows.map(\.id) })
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .environment(\.defaultMinListRowHeight, 0)
         .scrollIndicators(.hidden)
         .refreshable { actions(.refresh) }
+        // Keyed on which rows are where and nothing else. A row is
+        // equatable over its whole card, so animating on the sections
+        // themselves would set the list moving every time an agent changed
+        // its headline or aged by a minute. Safe because regrouping only
+        // happens on a refresh, which is something the reader did.
+        .animation(
+            photographed || reducesMotion ? nil : Motion.standard,
+            value: sections.map { $0.rows.map(\.id) })
+    }
+
+    /// A row with what can be done to it from the list: drawn left, settled
+    /// (or, once settled, back among the agents, or deleted); drawn right,
+    /// pinned or unpinned; held, all of it and a rename.
+    private func swipeable(_ row: FleetRow, last: Bool) -> some View {
+        agentRow(row)
+            .overlay(alignment: .bottom) {
+                if !last { rule(row) }
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) { trailing(row) }
+            .swipeActions(edge: .leading, allowsFullSwipe: true) { leading(row) }
+            .contextMenu { menu(row) }
+    }
+
+    @ViewBuilder
+    private func trailing(_ row: FleetRow) -> some View {
+        if row.settled {
+            Button { actions(.unfile(row.id)) } label: {
+                Label(String(localized: "Un-settle"), systemImage: "tray.and.arrow.up")
+            }
+            .tint(design.accent.color)
+            Button(role: .destructive) { confirming = .delete(row) } label: {
+                Label(String(localized: "Delete"), systemImage: "trash")
+            }
+        } else if row.card.settleHeld {
+            Button { actions(.cancelSettle(row.id)) } label: {
+                Label(String(localized: "Cancel Settle"), systemImage: "arrow.uturn.backward")
+            }
+        } else {
+            Button { settle(row) } label: {
+                Label(String(localized: "Settle"), systemImage: "checkmark.circle")
+            }
+            .tint(design.accent.color)
+        }
+    }
+
+    @ViewBuilder
+    private func leading(_ row: FleetRow) -> some View {
+        if row.pinnable {
+            if row.pinned {
+                Button { actions(.unfile(row.id)) } label: {
+                    Label(String(localized: "Unpin"), systemImage: "pin.slash")
+                }
+                .tint(.gray)
+            } else {
+                Button { actions(.pin(row.id)) } label: {
+                    Label(String(localized: "Pin"), systemImage: "pin")
+                }
+                .tint(.gray)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func menu(_ row: FleetRow) -> some View {
+        if row.pinnable {
+            if row.pinned {
+                Button { actions(.unfile(row.id)) } label: { Label("Unpin", systemImage: "pin.slash") }
+            } else {
+                Button { actions(.pin(row.id)) } label: { Label("Pin", systemImage: "pin") }
+            }
+        }
+        Button {
+            newName = row.name
+            renaming = row
+        } label: { Label("Rename", systemImage: "pencil") }
+        if row.settled {
+            Button { actions(.unfile(row.id)) } label: { Label("Un-settle", systemImage: "tray.and.arrow.up") }
+            Button(role: .destructive) { confirming = .delete(row) } label: {
+                Label("Delete Agent", systemImage: "trash")
+            }
+        } else if row.card.settleHeld {
+            Button { actions(.cancelSettle(row.id)) } label: {
+                Label("Cancel Settle", systemImage: "arrow.uturn.backward")
+            }
+        } else {
+            Button { settle(row) } label: { Label("Settle", systemImage: "checkmark.circle") }
+        }
+    }
+
+    /// Settles at once, or asks first when that would cut work short.
+    private func settle(_ row: FleetRow) {
+        let cuts = ChatWords.settleCuts(
+            name: row.name, attention: row.attention, jobs: Int(row.card.backgroundJobs),
+            subAgents: Int(row.card.descendants))
+        if let cuts {
+            confirming = .settle(row, cuts: cuts)
+        } else {
+            actions(.settle(row.id))
+        }
+    }
+
+    /// A quiet heading over a group of rows, where the rows' names start.
+    private func heading(_ title: String) -> some View {
+        Text(title)
+            .designFont(.sectionTitle, design)
+            .foregroundStyle(design.inkMuted.color)
+            .padding(.leading, Space.margin + AgentRowView.textInset)
+            .padding(.top, Space.l)
+            .padding(.bottom, Space.xs)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    /// The settled page, empty.
+    private var nothingSettled: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Nothing settled")
+                .designFont(.screenTitle, design)
+                .foregroundStyle(design.ink.color)
+            Explain("Swipe an agent left to settle it once you are done with it.")
+        }
+        .padding(.horizontal, design.metrics.gutter)
+        .padding(.top, Space.xl)
+        .identified("settled.empty", label: "Nothing settled")
     }
 
     // MARK: - Narrowing the list
@@ -383,7 +575,7 @@ public struct AgentsHome: View {
                     .designFont(.screenTitle, design)
                     .foregroundStyle(design.ink.color)
                     .identified("home.noMatches", label: "No agents match")
-                Explain("Try other words, or another chip.")
+                Explain("Try other words, or another scope.")
             }
             Button {
                 words = ""
@@ -406,60 +598,27 @@ public struct AgentsHome: View {
 
     /// One state or one machine at a time, as a chat app's folders are:
     /// everything, what needs you, what is working, and each machine when
-    /// the list spans more than one.
-    private var chips: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: Space.s) {
-                chip(String(localized: "All"), nil, id: "all")
-                chip(
-                    String(localized: "Needs you"), .needsYou, id: "needsYou", count: model.needYou,
-                    spoken: String(localized: "Needs you \(model.needYou)"))
-                chip(String(localized: "Working"), .working, id: "working")
-                // Counted from the machines rather than the rows, so a list
-                // narrowed to one machine still offers the others.
-                if model.machines.count > 1 {
-                    ForEach(model.machines.sorted { $0.name < $1.name }, id: \.hostId) { host in
-                        chip(PlaceNames.host(host.name), .host(host: host.hostId), id: "host.\(host.name)")
-                    }
-                }
+    /// the list spans more than one. Offered as the search field's scopes,
+    /// so they are out of the way until somebody goes looking.
+    private var scopes: [FleetScope] {
+        var scopes = [
+            FleetScope(id: "all", title: String(localized: "All"), only: nil),
+            FleetScope(
+                id: "needsYou",
+                title: model.needYou > 0
+                    ? String(localized: "Needs you \(model.needYou)") : String(localized: "Needs you"),
+                only: .needsYou),
+            FleetScope(id: "working", title: String(localized: "Working"), only: .working),
+        ]
+        // Counted from the machines rather than the rows, so a list narrowed
+        // to one machine still offers the others.
+        if model.machines.count > 1 {
+            scopes += model.machines.sorted { $0.name < $1.name }.map { host in
+                FleetScope(
+                    id: "host.\(host.name)", title: PlaceNames.host(host.name), only: .host(host: host.hostId))
             }
-            .padding(.horizontal, Space.margin)
         }
-        .scrollIndicators(.hidden)
-        // The strip lays out at the chips' drawn height; its reach spills
-        // into the gaps above and below, which hold nothing to press.
-        .reclaimingThumbTarget(y: Self.chipReach)
-    }
-
-    /// How far a chip's press reaches past its drawn capsule, above and
-    /// below, to make the 44 points a thumb needs.
-    private static let chipReach: CGFloat = 6
-
-    /// A count rides after the name in a fainter ink, as a mail folder's
-    /// does, so the name still reads first.
-    private func chip(_ title: String, _ narrowing: FleetOnly?, id: String, count: Int = 0, spoken: String? = nil
-    ) -> some View {
-        let on = only == narrowing
-        return Button { only = narrowing } label: {
-            HStack(spacing: Space.s) {
-                Text(title)
-                    .foregroundStyle(on ? design.ground.color : design.ink.color)
-                if count > 0 {
-                    Text(count, format: .number)
-                        .monospacedDigit()
-                        .foregroundStyle(on ? design.ground.color.opacity(0.6) : design.inkMuted.color)
-                }
-            }
-            .designFont(.caption, design)
-            .fontWeight(.medium)
-            .padding(.horizontal, Space.m)
-            .frame(minWidth: 44, minHeight: 32, maxHeight: 32)
-            .background(Capsule().fill(on ? design.ink.color : design.sunken.color))
-            .thumbTarget(y: Self.chipReach)
-        }
-        .buttonStyle(.amuxControl)
-        .accessibilityAddTraits(on ? .isSelected : [])
-        .identified("home.chip.\(id)", label: count > 0 ? spoken ?? title : title, value: on ? "on" : "off")
+        return scopes
     }
 
     /// A hairline under a row, starting where its text does, as a system
@@ -481,10 +640,10 @@ public struct AgentsHome: View {
     private func agentRow(_ row: FleetRow) -> some View {
         let state = RowState(row: row)
         let heads = row.depth == 0 && row.children > 0
-        // A stop that is held until the host is back says so before anything
-        // else the row would say; the chat has its Cancel.
-        let second = row.card.stopHeld
-            ? (text: String(localized: "Stop held · sends when \(row.hostName) is back"), ink: FleetWords.Ink.warning)
+        // A settle that is held until the host is back says so before
+        // anything else the row would say; its menu has the Cancel.
+        let second = row.card.settleHeld
+            ? (text: String(localized: "Settle held · sends when \(row.hostName) is back"), ink: FleetWords.Ink.warning)
             : FleetWords.secondLine(
                 row.secondLine, kind: row.card.kind, now: model.orderedAt,
                 backgroundJobs: row.card.backgroundJobs)
@@ -550,6 +709,7 @@ public struct AgentsHome: View {
     /// says it: who, what, where, how long, and what it needs.
     private func spoken(_ row: FleetRow, _ state: RowState) -> String {
         var parts = [row.name]
+        if row.pinned { parts.append(String(localized: "pinned")) }
         if let said = state.spoken { parts.append(said) }
         if let second = FleetWords.secondLine(
             row.secondLine, kind: row.card.kind, now: model.orderedAt,
@@ -567,28 +727,21 @@ public struct AgentsHome: View {
     /// A section's heading, as every client words it.
     static func title(_ kind: SectionKind) -> String {
         switch kind {
+        case .pinned: String(localized: "Pinned")
         case .needsYou: String(localized: "Needs you")
         case .live: String(localized: "Live")
-        case .exited: String(localized: "Exited")
+        case .settled: String(localized: "Settled")
         }
     }
 
-    /// The stopped agents, folded into one quiet line: a hairline with the
-    /// section's name set into it where the rows' names start, closing the
-    /// live list the way the chat marks where its agent started.
-    ///
-    /// Opened and closed in one explicit animation rather than by watching
-    /// the fold, so the rows leave as smoothly as they arrive and nothing
-    /// else on the screen is swept along with them.
-    private func stoppedFold(_ section: FleetSection) -> some View {
-        let names = section.rows.filter { $0.depth == 0 }.map(\.name).joined(separator: ", ")
+    /// The settled agents, behind one quiet line at the foot of the list:
+    /// a hairline with the section's name and count set into it where the
+    /// rows' names start, as a chat app keeps its archive, opening a page of
+    /// their own.
+    private func settledLink(_ section: FleetSection) -> some View {
         let title = "\(Self.title(section.kind)) · \(section.families)"
         let hairline = Rectangle().fill(design.hairline.color).frame(height: design.metrics.hairline)
-        return Button {
-            withAnimation(photographed || reducesMotion ? nil : Motion.standard) {
-                model.toggle(section.kind)
-            }
-        } label: {
+        return Button { actions(.openSettled) } label: {
             HStack(spacing: Space.s) {
                 hairline
                     .frame(width: AgentRowView.markColumn)
@@ -605,36 +758,39 @@ public struct AgentsHome: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(design.inkFaint.color)
-                    .rotationEffect(.degrees(model.folded(section) ? 0 : 90))
                     .frame(width: 16)
             }
             .padding(.horizontal, Space.margin)
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
-        // Nothing drawn under the thumb: the rows opening or closing beneath
-        // it are the answer to the press. A control's press would shrink this
-        // full-width line about its centre, sliding the heading inward and
-        // back on every tap, and a row's tint flashes a slab over a line that
+        // Nothing drawn under the thumb: the page that opens is the answer
+        // to the press. A control's press would shrink this full-width line
+        // about its centre, and a row's tint flashes a slab over a line that
         // is mostly empty space.
         .buttonStyle(.amuxPush)
         .padding(.top, Space.l)
-        .accessibilityLabel("\(title), \(names)")
-        .identified("home.fold.\(section.kind.rawValue)", label: "\(title), \(names)", value: names)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(.isButton)
+        .identified("home.settled", label: title, value: "\(section.families)")
     }
 
     /// What this account could do to reach a machine it cannot: subscribe,
     /// for a machine the relay would carry if the plan paid for it, or sign
     /// in, on a phone with no account and a machine out of reach.
     ///
-    /// An offer waits `offerPatience` before it is made. A free account at
-    /// home reads its machine away for the moment between the relay refusing
-    /// and the local network's link coming up, and a reopened app reads every
-    /// machine unreached until it has dialled them; an offer made then would
-    /// be gone before it could be read, or be wrong.
+    /// Away is certain once it is read, and the fleet keeps the machine it
+    /// last read away until it is reached, so that offer is made at once and
+    /// stays across leaving the screen and putting the app away. Signing in
+    /// waits `offerPatience`: a reopened app reads every machine unreached
+    /// until it has dialled them, and an offer made then would be wrong.
     private var offer: Offer? {
-        if signedIn { return model.awayHost.map(Offer.subscribe) }
-        return model.unreachableHost.map(Offer.signIn)
+        if signedIn { return model.heldAway.map(Offer.subscribe) }
+        return signInOffer
+    }
+
+    private var signInOffer: Offer? {
+        signedIn ? nil : model.unreachableHost.map(Offer.signIn)
     }
 
     /// Longer than a link on the local network takes to come up, by a margin.
@@ -642,7 +798,9 @@ public struct AgentsHome: View {
 
     /// The offer to show: a captured screen shows its state at once.
     private var shownOffer: Offer? {
-        photographed ? offer : offered.flatMap { $0 == offer ? $0 : nil }
+        if photographed { return offer }
+        if case .subscribe? = offer { return offer }
+        return offered.flatMap { $0 == offer ? $0 : nil }
     }
 
     /// Above the list, only what the person can do something about. A
@@ -976,6 +1134,12 @@ struct AgentRowView: View {
                         .lineLimit(1)
                         .layoutPriority(1)
                     Spacer(minLength: Space.xs)
+                    if row.pinned {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(design.inkFaint.color)
+                            .accessibilityLabel(String(localized: "Pinned"))
+                    }
                     Text(facts)
                         .designFont(.caption, design)
                         .foregroundStyle(design.inkFaint.color)
@@ -1410,14 +1574,63 @@ final class AccountDiscs {
 private struct FleetSearch: ViewModifier {
     let shown: Bool
     @Binding var words: String
+    @Binding var only: FleetOnly?
+    let scopes: [FleetScope]
 
     func body(content: Content) -> some View {
         if shown {
-            content.searchable(
-                text: $words, placement: .navigationBarDrawer(displayMode: .automatic),
-                prompt: Text("Search"))
+            content
+                .searchable(
+                    text: $words, placement: .navigationBarDrawer(displayMode: .automatic),
+                    prompt: Text("Search"))
+                .searchScopes($only, activation: .onSearchPresentation) {
+                    ForEach(scopes) { scope in
+                        Text(scope.title)
+                            .tag(scope.only)
+                            .identified("home.scope.\(scope.id)", label: scope.title)
+                    }
+                }
         } else {
             content
+        }
+    }
+}
+
+/// One way the search narrows the list.
+struct FleetScope: Identifiable {
+    let id: String
+    let title: String
+    let only: FleetOnly?
+}
+
+/// What the list is asking the person about one row before it acts.
+enum Confirming: Identifiable {
+    /// A settle that would cut work short, with what it cuts.
+    case settle(FleetRow, cuts: String)
+    case delete(FleetRow)
+
+    var id: String {
+        switch self {
+        case .settle(let row, _): "settle.\(row.id)"
+        case .delete(let row): "delete.\(row.id)"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .settle(let row, _): String(localized: "Settle \(row.name)?")
+        case .delete(let row): String(localized: "Delete \(row.name)?")
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .settle(_, let cuts):
+            String(localized: "\(cuts) Settling stops it now. Its chat and edits stay, and a message resumes it.")
+        case .delete(let row):
+            row.card.descendants > 0
+                ? String(localized: "Its chat is deleted on every device, with its subagents. Its edits stay.")
+                : String(localized: "Its chat is deleted on every device. Its edits stay.")
         }
     }
 }

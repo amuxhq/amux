@@ -42,6 +42,8 @@ pub(crate) fn named<'a>(agents: &'a [Value], name: &str) -> Result<&'a Value, St
 
 pub(crate) const LIVE: i64 = 1;
 pub(crate) const EXITED: i64 = 2;
+pub(crate) const ACTIVE: i64 = 1;
+pub(crate) const SETTLED: i64 = 3;
 
 /// The host lists `id` under `name` in lifecycle `state`.
 pub(crate) fn lifecycle(agents: &[Value], id: &str, name: &str, state: i64) -> Result<(), String> {

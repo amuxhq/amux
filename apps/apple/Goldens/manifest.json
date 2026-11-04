@@ -497,8 +497,8 @@
       "shows": "The same prompt waiting for the agent's host while the link is down."
     },
     {
-      "id": "chat.stop-cuts",
-      "shows": "Stopping a working agent with background jobs and a child: the confirm names the turn, the jobs and the subagents the stop cuts."
+      "id": "chat.settle-cuts",
+      "shows": "Settling a working agent with background jobs and a child: the confirm names the turn, the jobs and the subagents settling cuts."
     },
     {
       "id": "chat.delete-family",
@@ -621,8 +621,8 @@
       "shows": "Starting a Claude agent on a host where Claude is not signed in."
     },
     {
-      "id": "fleet.stopped-open",
-      "shows": "The same list with the stopped agents unfolded."
+      "id": "fleet.settled",
+      "shows": "The Settled page: the agents the person put away, which swipe to un-settle or delete."
     },
     {
       "id": "fleet.notifications-offer",

@@ -2275,7 +2275,8 @@ fn a_paste_in_the_fleet_types_into_the_rename_field() {
 fn q_and_question_mark_reach_an_open_fleet_overlay_first() {
     let mut fleet = FleetState::new();
     inventory(&mut fleet, host(b"a", "studio", Reads::Online));
-    inventory(&mut fleet, agent_row(b"p", "planner", Phase::Idle, None));
+    // Working, so `x` asks before settling it.
+    inventory(&mut fleet, agent_row(b"p", "planner", Phase::Working, None));
     let mut view = crate::home::Home::default();
     let q = key(KeyCode::Char('q'));
     let help = key(KeyCode::Char('?'));
@@ -2366,7 +2367,7 @@ fn now() -> i64 {
 }
 
 /// A fleet on host `a`: a family whose child needs you, two working
-/// agents, and an idle one untouched for two days.
+/// agents, and one settled two days ago.
 fn home_fleet() -> FleetState {
     let now = now();
     let mut fleet = FleetState::new();
@@ -2391,6 +2392,7 @@ fn home_fleet() -> FleetState {
     if let wire::inventory_event::Of::Agent(agent) = &mut archive {
         agent.lifecycle = wire::Lifecycle::Exited as i32;
         agent.exit_cause = wire::ExitCause::Stopped as i32;
+        agent.filing = wire::Filing::Settled as i32;
     }
     inventory(&mut fleet, archive);
     inventory(
@@ -2444,13 +2446,13 @@ fn row_of(screen: &str, words: &str) -> u16 {
 }
 
 #[test]
-fn home_leads_with_what_needs_you_and_folds_the_exited() {
+fn home_leads_with_what_needs_you_and_folds_the_settled() {
     let fleet = home_fleet();
     let mut home = new_home();
     let screen = home_screen(&mut home, &fleet, theme());
     // The family whose child needs you is under the heading, its child
     // named on its second line; the running follow newest first; the
-    // exited are folded away under their own heading.
+    // settled are folded away under their own heading.
     let heading = row_of(&screen, "Needs you 1");
     let planner = row_of(&screen, "planner");
     assert!(heading < planner, "{screen}");
@@ -2463,7 +2465,7 @@ fn home_leads_with_what_needs_you_and_folds_the_exited() {
         row_of(&screen, "Needs you 1") < row_of(&screen, "Live 2"),
         "{screen}"
     );
-    assert!(screen.contains("Exited 1"), "{screen}");
+    assert!(screen.contains("Settled 1"), "{screen}");
     assert!(!screen.contains("archive"), "{screen}");
     assert!(!screen.contains('┌'), "home has no frame: {screen}");
 }
@@ -2543,17 +2545,20 @@ fn hovering_highlights_a_row_and_its_close_mark_asks_first() {
     );
     home.key(&fleet, key(KeyCode::Char('k')));
     home_screen(&mut home, &fleet, theme());
-    // The × stops, after asking; beta is working, so the window says the
-    // stop cuts its turn, and Enter on the focused [Stop] confirms.
+    // The × settles, after asking; beta is working, so the window says the
+    // settle cuts its turn, and Enter on the focused [Settle] confirms.
     let effects = home.mouse(
         &fleet,
         mouse(MouseEventKind::Down(MouseButton::Left), W - 5, beta),
     );
     assert!(effects.is_empty());
     let screen = home_screen(&mut home, &fleet, theme());
-    assert!(screen.contains("beta is working. Stop anyway?"), "{screen}");
+    assert!(
+        screen.contains("beta is working. Settling stops it now."),
+        "{screen}"
+    );
     let effects = home.key(&fleet, key(KeyCode::Enter));
-    assert!(matches!(effects.as_slice(), [FleetEffect::Stop(agent)] if agent.agent == b"w2"));
+    assert!(matches!(effects.as_slice(), [FleetEffect::Settle(agent)] if agent.agent == b"w2"));
 }
 
 #[test]

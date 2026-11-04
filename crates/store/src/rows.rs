@@ -20,7 +20,7 @@ const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, name, cwd, parent_host
     lifecycle, exit_cause, exit_detail, phase, working_on, phase_since_ms, git, snapshot, \
     ingest_cursor, next_revision, source_cursor, source_generation, \
     complete_from_order, exhausted, owes_report, created_at_ms, incarnation, background_jobs, \
-    descendants";
+    descendants, filing, filed_at_ms";
 
 const ITEM_COLUMNS: &str =
     "key, position, revision, at_ms, input_id, text, kind, attachments, body";
@@ -44,6 +44,8 @@ const REGISTRY: &[&str] = &[
     "exit_detail",
     "created_at_ms",
     "incarnation",
+    "filing",
+    "filed_at_ms",
 ];
 
 /// What a replica's inventory row carries of its newest snapshot. Not its
@@ -169,6 +171,8 @@ fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
             incarnation: row.get(23)?,
             background_jobs: row.get(24)?,
             descendants: row.get(25)?,
+            filing: row.get(26)?,
+            filed_at_ms: row.get(27)?,
         },
         row.get(14)?,
         row.get(13)?,
@@ -333,7 +337,7 @@ impl Rows<'_> {
             .prepare_cached(&format!(
                 "INSERT INTO agents ({AGENT_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, \
                  ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, \
-                 ?25, ?26) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
+                 ?25, ?26, ?27, ?28) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
             ))?
             .execute(params![
                 row.agent.host,
@@ -364,6 +368,8 @@ impl Rows<'_> {
                 row.incarnation,
                 row.background_jobs,
                 row.descendants,
+                row.filing,
+                row.filed_at_ms,
             ])?;
         Ok(())
     }

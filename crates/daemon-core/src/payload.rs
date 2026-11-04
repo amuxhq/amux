@@ -140,9 +140,12 @@ pub enum ClientRequest {
     CreateAgent(Box<Create>),
     /// Starts an exited agent's next incarnation; answered as a create is.
     ResumeAgent(Box<Resume>),
-    /// Stops the agent's process; answered with its row once it ended.
-    StopAgent {
+    /// Files the agent as the person asked; answered with its row. A
+    /// settle of a live agent stops its process first and answers once it
+    /// ended.
+    FileAgent {
         agent: AgentId,
+        filing: crate::Filing,
     },
     /// Kills the agent's process at once, as the stop deadline does.
     KillAgent {
@@ -273,7 +276,7 @@ pub enum PeerRequest {
     SendInput(#[serde(with = "codec::message")] wire::SendInputRequest),
     CreateAgent(#[serde(with = "codec::message")] wire::CreateAgentRequest),
     RenameAgent(#[serde(with = "codec::message")] wire::RenameAgentRequest),
-    StopAgent(#[serde(with = "codec::message")] wire::StopAgentRequest),
+    FileAgent(#[serde(with = "codec::message")] wire::FileAgentRequest),
     ResumeAgent(#[serde(with = "codec::message")] wire::ResumeAgentRequest),
     DeleteAgent(#[serde(with = "codec::message")] wire::DeleteAgentRequest),
     SendMessage(#[serde(with = "codec::message")] wire::Envelope),
@@ -290,9 +293,10 @@ pub enum PeerReply {
     Fetched(#[serde(with = "codec::message")] wire::ListItemsResponse),
     Item(#[serde(with = "codec::message")] wire::Item),
     SendInput(#[serde(with = "codec::message")] wire::SendInputResponse),
-    /// CreateAgent, RenameAgent and ResumeAgent answer with the agent.
+    /// CreateAgent, RenameAgent, FileAgent and ResumeAgent answer with the
+    /// agent.
     Agent(#[serde(with = "codec::message")] wire::Agent),
-    /// StopAgent and DeleteAgent answer with nothing.
+    /// DeleteAgent answers with nothing.
     Done,
     SendMessage(#[serde(with = "codec::message")] wire::SendMessageResponse),
     Blob(#[serde(with = "codec::message")] wire::BlobRef),

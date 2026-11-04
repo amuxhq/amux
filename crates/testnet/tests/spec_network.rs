@@ -1834,10 +1834,11 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
             .map(|_| ()),
     ));
     answers.push((
-        "StopAgent with a three-byte agent id",
+        "FileAgent with a three-byte agent id",
         peer.agents
-            .stop_agent(wire::StopAgentRequest {
+            .file_agent(wire::FileAgentRequest {
                 agent_id: short.clone(),
+                filing: wire::Filing::Settled as i32,
             })
             .await
             .map(|_| ()),
@@ -2977,8 +2978,9 @@ async fn a_call_to_a_host_only_a_lapsed_account_reached_names_the_lapse_at_once(
         Duration::from_secs(5),
         net.client("desk")
             .unwrap()
-            .stop_agent(tonic::Request::new(wire::StopAgentRequest {
+            .file_agent(tonic::Request::new(wire::FileAgentRequest {
                 agent_id: net.agent("w").unwrap().id.as_bytes().to_vec(),
+                filing: wire::Filing::Settled as i32,
             })),
     )
     .await

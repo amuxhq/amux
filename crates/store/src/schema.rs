@@ -41,6 +41,8 @@ CREATE TABLE agents (
   incarnation         INTEGER NOT NULL,  -- the agent's spec.<n>, counting resumes from 1
   background_jobs     INTEGER NOT NULL DEFAULT 0, -- copied from the newest snapshot: jobs the provider runs in the background
   descendants         INTEGER NOT NULL DEFAULT 0, -- live agents below this one: own rows counted here, replicas as their origin counts
+  filing              INTEGER NOT NULL DEFAULT 1, -- amux.v1.Filing: how the person filed the agent, apart from its lifecycle
+  filed_at_ms         INTEGER NOT NULL DEFAULT 0, -- when the filing last changed, on the origin's clock; pins list in this order
   PRIMARY KEY (origin_host, agent_id)
 ) STRICT;
 

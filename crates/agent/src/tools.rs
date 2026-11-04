@@ -23,9 +23,9 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader
 use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Status};
 use wire::{
-    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, Envelope, ExitCause, HostEntry,
-    HostRef, Kind, Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, StopAgentRequest,
-    attachment, create_agent_request, inventory_event,
+    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, Envelope, ExitCause,
+    FileAgentRequest, Filing, HostEntry, HostRef, Kind, Lifecycle, PromptInput, PromptSubmission,
+    ResolveAgentRequest, attachment, create_agent_request, inventory_event,
 };
 
 use crate::dir;
@@ -61,8 +61,9 @@ pub(crate) fn unasked() -> impl Iterator<Item = &'static str> {
         .filter_map(|(name, unasked)| unasked.then_some(name))
 }
 
-const AGENTS: &str = "List the amux fleet: every agent's name, kind, host, whether it is live, \
-what it is doing and working on, its parent, and which one is you.";
+const AGENTS: &str = "List the amux fleet: every agent the person has not settled, with its \
+name, kind, host, whether it is live, what it is doing and working on, its parent, and which \
+one is you.";
 const HOSTS: &str = "List the hosts this fleet trusts: each one's name, whether it is online, \
 and which one is this host. Spawn on another host by its name.";
 const SEND: &str = "Send a message to another amux agent by name. It answers once the \
@@ -74,8 +75,9 @@ another trusted host, in your working directory unless you give one. On another 
 a folder there: ask the person which one if you do not know one. The child does \
 its work and stops; you are sent its last message when it finishes, and a later send to it \
 resumes it.";
-const STOP: &str = "Stop one of your own child agents now: its turn is cancelled, it ends, \
-and so do the agents it started. Its history stays, and a later send to it resumes it.";
+const STOP: &str = "Stop one of your own child agents now, done with it: its turn is \
+cancelled, it ends, and so do the agents it started. Its history stays, and a later send from \
+you resumes it.";
 const STATUS: &str = "Say what you are working on, so people and other agents can find the \
 right collaborator. Null clears it.";
 const ATTACH: &str = "Attach a file from this host to your reply. Returns an amux attachment \
@@ -253,8 +255,12 @@ impl Server {
                     |agent| agent.name.clone(),
                 )
         };
+        // The person is done with a settled agent, so it is not offered as
+        // one to work with; naming it still answers why it will not take a
+        // message.
         let rows = agents
             .iter()
+            .filter(|agent| agent.filing() != Filing::Settled)
             .map(|agent| {
                 let mut row = json!({
                     "name": agent.name,
@@ -405,19 +411,20 @@ impl Server {
         .to_string())
     }
 
-    /// A real stop, as a person's: the child ends now and the daemon stops
-    /// its descendants on every host with it. Only a direct child: the
-    /// daemon checks the lineage and refuses the rest. Answers once the
-    /// child has ended.
+    /// A real stop, as a person's settle: the child ends now, filed away as
+    /// done with, and the daemon settles its descendants on every host with
+    /// it. Only a direct child: the daemon checks the lineage and refuses
+    /// the rest. Answers once the child has ended.
     async fn stop(&self, arguments: &Value) -> Answer {
         let name = required(arguments, "name")?;
         let child = self.resolve(&name).await?;
-        let request = StopAgentRequest {
+        let request = FileAgentRequest {
             agent_id: child.agent_id.clone(),
+            filing: Filing::Settled as i32,
         };
         self.daemon_once(format!("the stop for {name}"), |mut client| {
             let request = request.clone();
-            async move { client.agents.stop_agent(request).await }
+            async move { client.agents.file_agent(request).await }
         })
         .await
         .map_err(|refusal| {

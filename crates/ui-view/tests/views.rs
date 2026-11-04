@@ -439,7 +439,7 @@ fn no_sessions() -> HashMap<AgentKey, SessionLine> {
 }
 
 #[test]
-fn the_fleet_places_families_by_their_loudest_member_newest_first() {
+fn the_fleet_places_families_by_filing_then_by_their_loudest_member_newest_first() {
     let mut fleet = FleetState::new();
     for msg in [
         fleet_row("a", "quiet", Phase::Idle, None, 900),
@@ -450,9 +450,18 @@ fn the_fleet_places_families_by_their_loudest_member_newest_first() {
     ] {
         fleet.update(msg);
     }
+    // Ended without being settled, it reads as an ordinary agent.
     let mut gone = fleet_entry("a", "gone", Phase::Idle, None, 2000);
     gone.lifecycle = wire::Lifecycle::Exited as i32;
     fleet.update(listed(gone));
+    let mut done = fleet_entry("a", "done", Phase::Idle, None, 3000);
+    done.lifecycle = wire::Lifecycle::Exited as i32;
+    done.filing = wire::Filing::Settled as i32;
+    fleet.update(listed(done));
+    // Pinned, it stays at the top whatever it does.
+    let mut kept = fleet_entry("a", "kept", Phase::Idle, None, 1);
+    kept.filing = wire::Filing::Pinned as i32;
+    fleet.update(listed(kept));
     use SectionKind::*;
     let all = |_: &wire::Agent| true;
     let view = fleet_view(&fleet, b"a", &no_sessions(), &HashSet::new(), &all);
@@ -461,11 +470,13 @@ fn the_fleet_places_families_by_their_loudest_member_newest_first() {
     assert_eq!(
         home(&view),
         vec![
+            (Pinned, "kept".into(), 0),
             (NeedsYou, "parent".into(), 0),
             (NeedsYou, "asker".into(), 0),
+            (Live, "gone".into(), 0),
             (Live, "quiet".into(), 0),
             (Live, "busy".into(), 0),
-            (Exited, "gone".into(), 0),
+            (Settled, "done".into(), 0),
         ]
     );
     assert_eq!(
@@ -473,21 +484,21 @@ fn the_fleet_places_families_by_their_loudest_member_newest_first() {
             .iter()
             .map(|section| section.families)
             .collect::<Vec<_>>(),
-        vec![2, 2, 1]
+        vec![1, 2, 3, 1]
     );
-    // Only the exited start folded.
+    // Only the settled start folded.
     assert_eq!(
         view.sections
             .iter()
             .map(|section| section.folded_by_default)
             .collect::<Vec<_>>(),
-        vec![false, false, true]
+        vec![false, false, false, true]
     );
     // The counts are of agents, folded or not: the child and the asker
     // need the person, and one agent works.
     assert_eq!((view.need_you, view.working), (2, 1));
     // Folded, the parent speaks for the child that needs you.
-    let parent = &view.sections[0].rows[0];
+    let parent = &view.sections[1].rows[0];
     let loud = parent.loud.as_ref().unwrap();
     assert_eq!(loud.name, "child");
     assert_eq!(
@@ -497,14 +508,14 @@ fn the_fleet_places_families_by_their_loudest_member_newest_first() {
     let expand: HashSet<Vec<u8>> = [b"parent".to_vec()].into();
     let view = fleet_view(&fleet, b"a", &no_sessions(), &expand, &all);
     assert_eq!(
-        home(&view)[..3],
+        home(&view)[1..4],
         [
             (NeedsYou, "parent".into(), 0),
             (NeedsYou, "child".into(), 1),
             (NeedsYou, "asker".into(), 0),
         ]
     );
-    assert!(view.sections[0].rows[0].loud.is_none());
+    assert!(view.sections[1].rows[0].loud.is_none());
     // A filter keeps a family when any member matches, folded or not.
     let only_child = |agent: &wire::Agent| agent.name == "child";
     let view = fleet_view(&fleet, b"a", &no_sessions(), &HashSet::new(), &only_child);

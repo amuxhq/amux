@@ -17,6 +17,7 @@ you.report | Report a Problem |  | 16,739,370,46
 you.dump | Export Diagnostics |  | 16,785,370,46
 you.help.caption |  |  | 16,839,310,32
 you.close | Close |  | 342,82,40,36
+ | Switch account |  | 24,66,29,36
  | Pair your first host |  | 16,204,214,32
  | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
  | Looking on this network… |  | 36,305,174,18

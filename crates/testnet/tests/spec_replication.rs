@@ -486,7 +486,11 @@ async fn a_rewound_origin_resets_a_settled_replica_too() {
     net.checkpoint_host("desk").await.unwrap();
     net.send("brief", "lost").await.unwrap();
     wait_origin_says(&net, "brief", "t1-0").await;
-    net.runtime("desk").unwrap().stop(brief.id).await.unwrap();
+    net.runtime("desk")
+        .unwrap()
+        .file(brief.id, daemon_core::Filing::Settled)
+        .await
+        .unwrap();
     let laptop = net.runtime("laptop").unwrap();
     until("the laptop to settle brief exited", || async {
         let key = key.clone();

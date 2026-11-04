@@ -19,9 +19,8 @@ ask.skip | Skip |  | 28,714,169,44
 ask.next | Next |  | 205,714,169,44
 ask.reply | Reply instead |  | 28,770,114,44
 chat.more | More |  | 350,66,28,36
-chat.back | Back |  | 20,66,40,36
-chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
-chat.title | asker | asker | 80,66,152,36
+chat.header | /p/t/a/n/d/work · desk | live | 76,66,165,36
+chat.title | asker | asker | 76,66,165,36
  | 3 questions |  | 62,182,87,20
  | More |  | 338,170,44,44
  | Layout |  | 28,218,63,44
@@ -44,6 +43,7 @@ Theme ──────────
  | Started |  | 16,42,370,34
  | Add a settings screen. |  | 16,76,370,40
  | Asking, 3 questions |  | 16,128,370,20
- | Back |  | 20,66,40,36
- | asker, /t/a/n/d/work · desk |  | 80,66,152,36
+BackButton | Agents |  | 16,62,44,44
+ | asker, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36
+ | Back |  | 16,73,44,23

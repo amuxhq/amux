@@ -254,7 +254,7 @@ mod stories {
         until_live(&net, "laptop", "scout").await;
         net.sever_link("desk", "laptop").unwrap();
         net.wait_link("desk", "laptop", false).await.unwrap();
-        net.stop("lead").await.unwrap();
+        net.settle_agent("lead").await.unwrap();
         until_exited(&net, "desk", "lead").await;
         assert_eq!(
             lifecycle(&net, "laptop", "scout").await,
@@ -369,7 +369,7 @@ mod stories {
         .await
         .unwrap();
 
-        net.stop("lead").await.unwrap();
+        net.settle_agent("lead").await.unwrap();
         until_exited(&net, "desk", "lead").await;
         println!("lead stopped");
 
@@ -550,7 +550,7 @@ mod stories {
         .unwrap();
         net.open_gate("mid-go").unwrap();
         net.turn_ended("mid", 1).await.unwrap();
-        net.stop("mid").await.unwrap();
+        net.settle_agent("mid").await.unwrap();
         let reached = net
             .until("the lead to hear that mid stopped", || async {
                 let got = received(&net, "lead").await;
@@ -619,7 +619,7 @@ mod stories {
         net.wait_link("desk", "server", false).await.unwrap();
         net.open_gate("second").unwrap();
         until_outbox(&net, "second's finished row", "server", 1).await;
-        net.stop("lead").await.unwrap();
+        net.settle_agent("lead").await.unwrap();
         net.resume("lead", None).await.unwrap();
         net.restore_link("desk", "server").await.unwrap();
         until_outbox(&net, "the stale row to be dropped", "server", 0).await;

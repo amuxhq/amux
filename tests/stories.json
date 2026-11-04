@@ -58,14 +58,14 @@
       "why": "Only the phone has accounts on screen; the terminal signs in with amux login."
     },
     {
-      "name": "fleet.stop",
-      "shows": "Stopping a working agent from the agent list: what stopping cuts short, and the confirm.",
+      "name": "fleet.settle",
+      "shows": "Settling a working agent from the agent list: what settling cuts short, and the confirm.",
       "clients": ["terminal"],
-      "why": "The phone stops an agent from its chat, as chat.stop shows."
+      "why": "The phone settles from a row's swipe or from its chat, and asks in a system dialog the catalogue cannot draw outside a window."
     },
     {
       "name": "fleet.delete",
-      "shows": "Deleting an exited agent and its history from the agent list.",
+      "shows": "Deleting a settled agent and its history from the agent list.",
       "clients": ["terminal"],
       "why": "The phone deletes an agent from its chat, as chat.delete shows."
     },
@@ -246,14 +246,8 @@
       "clients": ["phone", "terminal"]
     },
     {
-      "name": "chat.stop",
-      "shows": "Stopping an agent from its chat: the plain confirm.",
-      "clients": ["phone"],
-      "why": "The terminal interrupts a turn at once from its chat and stops an agent from the agent list, as fleet.stop shows."
-    },
-    {
       "name": "chat.delete",
-      "shows": "Deleting an exited agent from its chat.",
+      "shows": "Deleting a settled agent from its chat.",
       "clients": ["phone"],
       "why": "The terminal deletes an agent from the agent list, as fleet.delete shows."
     },

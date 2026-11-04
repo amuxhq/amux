@@ -567,6 +567,13 @@ pub fn authored_home() -> HomeScene {
                 ..Default::default()
             }),
             incarnation: 1,
+            // A one-shot child that finished, and one the person put away,
+            // are settled; one that crashed reads as an ordinary agent.
+            filing: if matches!(name, "doc-sweep" | "clean-up") {
+                wire::Filing::Settled
+            } else {
+                wire::Filing::Active
+            } as i32,
             ..Default::default()
         };
         if let Some(said) = said {

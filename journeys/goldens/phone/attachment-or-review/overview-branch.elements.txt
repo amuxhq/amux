@@ -15,11 +15,10 @@ chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
 chat.changes | +2 −1 | Uncommitted | 277,66,51,36
 chat.more | More |  | 344,66,38,36
-chat.back | Back |  | 20,66,40,36
-chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
-chat.title | reviewer | reviewer | 80,66,152,36
+chat.header | /p/t/a/n/d/work · desk | live | 76,66,159,36
+chat.title | reviewer | reviewer | 76,66,159,36
 chat.overview |  |  | 8,415,402,436
-chat.place | reviewer/desk |  | 31,438,287,153
+chat.place | reviewer/desk |  | 31,438,349,153
 chat.overview.branch | Branch | main | 96,545,31,17
 chat.overview.comparison |  | Uncommitted | 31,631,354,31
 chat.overview.file.deploy.sh | deploy.sh | +2 −1 | 31,670,354,18
@@ -33,15 +32,16 @@ chat.overview.review | Review changes |  | 31,698,121,44
  | Please check against, Pasted text · 12 lines, Review · 1 comment |  | 16,192,370,104
  | I read the review. |  | 16,308,370,20
  | Worked <t> |  | 16,335,62,16
- | Back |  | 20,66,40,36
- | reviewer, /t/a/n/d/work · desk |  | 80,66,152,36
+BackButton | Agents |  | 16,62,44,44
+ | reviewer, /p/t/a/n/d/work · desk |  | 76,66,159,36
  | 1 file, 2 added, 1 removed |  | 277,66,51,36
  | More |  | 344,66,38,36
+ | Back |  | 16,73,44,23
  | reviewer |  | 31,438,98,31
  | Host |  | 31,481,27,15
  | desk |  | 96,480,30,16
  | Directory |  | 31,505,54,15
- | /tmp/amux-phone-journey/net/desk/work |  | 96,504,210,33
+ | /private/tmp/amux-phone-journey/net/desk/work |  | 96,504,270,33
  | Branch |  | 31,545,41,15
  | main |  | 96,545,30,16
  | Address |  | 31,569,47,15

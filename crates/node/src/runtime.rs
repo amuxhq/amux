@@ -207,6 +207,8 @@ pub enum RegistryError {
     BadName(wire::AgentNameProblem),
     #[error("another agent on this host is already named {0}; names are unique on a host")]
     NameTaken(String),
+    #[error("agent {0} has a parent; only an agent with no parent is pinned")]
+    HasParent(AgentId),
     #[error("starting in a new worktree: {0}")]
     Worktree(#[from] git_facts::WorktreeError),
     #[error("spawning on another host goes through that host's daemon")]
@@ -295,7 +297,9 @@ impl RegistryError {
             | Self::NoFarCwd(_)
             | Self::BadName(_) => ErrorCode::InvalidArgument,
             Self::OtherHost => ErrorCode::Unimplemented,
-            Self::KindNotRun { .. } | Self::ParentEnded(_) => ErrorCode::FailedPrecondition,
+            Self::KindNotRun { .. } | Self::ParentEnded(_) | Self::HasParent(_) => {
+                ErrorCode::FailedPrecondition
+            }
             Self::StartTimeout(_) | Self::StopTimeout(_) => ErrorCode::Aborted,
             Self::Worktree(error) => match error {
                 git_facts::WorktreeError::BranchExists(_)
@@ -1367,17 +1371,20 @@ impl ProfileRuntime {
         ))
     }
 
-    // --- stop, delete, rename --------------------------------------------
+    // --- file, delete, rename --------------------------------------------
 
-    /// Stops a live agent's process now: the running turn is cancelled the
-    /// provider's own way and the agent exits, resumable. A stop that
-    /// overruns the stop deadline kills. An exited agent is left as it is.
-    ///
-    /// The stop acts on this agent alone. Its children, on this host or
-    /// another, follow by the family rule once their host sees it exited.
-    pub async fn stop(&self, id: AgentId) -> Result<Agent, RegistryError> {
+    /// Files an agent as the person asked. Settling a live agent stops its
+    /// process now: the running turn is cancelled the provider's own way
+    /// and the agent exits, resumable; a stop that overruns the stop
+    /// deadline kills. Its children, on this host or another, are settled
+    /// with it by the family rule once their host sees its row.
+    pub async fn file(
+        &self,
+        id: AgentId,
+        filing: daemon_core::Filing,
+    ) -> Result<Agent, RegistryError> {
         let agent = core_agent(id);
-        self.registry_row(id, ClientRequest::StopAgent { agent })
+        self.registry_row(id, ClientRequest::FileAgent { agent, filing })
             .await
     }
 
@@ -1963,6 +1970,7 @@ fn registry_error(id: AgentId, error: CallError) -> RegistryError {
         Refusal::AlreadyExists => RegistryError::AlreadyExists(id),
         Refusal::Live => RegistryError::Live(id),
         Refusal::NameTaken(name) => RegistryError::NameTaken(name),
+        Refusal::HasParent => RegistryError::HasParent(id),
         Refusal::ParentEnded(parent) => RegistryError::ParentEnded(Uuid::from_bytes(parent.0)),
         Refusal::StartTimeout => RegistryError::StartTimeout(id),
         Refusal::StopTimeout => RegistryError::StopTimeout(id),

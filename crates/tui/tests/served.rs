@@ -310,8 +310,11 @@ impl client::Client for SlowClearing {
     ) -> Result<wire::Agent, client::RpcError> {
         self.inner.rename_agent(request).await
     }
-    async fn stop_agent(&self, request: wire::StopAgentRequest) -> Result<(), client::RpcError> {
-        self.inner.stop_agent(request).await
+    async fn file_agent(
+        &self,
+        request: wire::FileAgentRequest,
+    ) -> Result<wire::Agent, client::RpcError> {
+        self.inner.file_agent(request).await
     }
     async fn resume_agent(
         &self,

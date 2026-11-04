@@ -105,9 +105,10 @@ enum Command {
         #[arg(required = true, num_args = 1..)]
         text: Vec<String>,
     },
-    /// Stop an agent now: its turn is cancelled and it exits, resumable.
-    Stop { agent: String },
-    /// Start a stopped agent again, with an optional first prompt.
+    /// Settle an agent, done with it: a live one's turn is cancelled and it
+    /// exits, resumable, its children settled with it.
+    Settle { agent: String },
+    /// Start an exited or settled agent again, with an optional first prompt.
     Resume { agent: String, text: Vec<String> },
     /// Rename an agent.
     Rename { agent: String, name: String },
@@ -562,7 +563,7 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                     Command::Send { agent, text } => {
                         verbs::send(&mut client, &agent, &text.join(" ")).await
                     }
-                    Command::Stop { agent } => verbs::stop(&mut client, &agent).await,
+                    Command::Settle { agent } => verbs::settle(&mut client, &agent).await,
                     Command::Resume { agent, text } => {
                         let text = text.join(" ");
                         let text = Some(text.as_str()).filter(|text| !text.is_empty());
@@ -662,7 +663,7 @@ mod tests {
                 "ls",
                 "new",
                 "send",
-                "stop",
+                "settle",
                 "resume",
                 "rename",
                 "rm",

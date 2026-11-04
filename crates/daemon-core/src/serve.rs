@@ -132,8 +132,8 @@ impl Daemon {
                 self.resume(call, resume, out);
                 Ok(())
             }
-            ClientRequest::StopAgent { agent } => {
-                self.stop(call, agent, out);
+            ClientRequest::FileAgent { agent, filing } => {
+                self.file(call, agent, filing, out);
                 Ok(())
             }
             ClientRequest::KillAgent { agent } => {
@@ -604,6 +604,8 @@ pub fn to_wire(row: &AgentRow) -> Agent {
         git: row.git.clone(),
         descendants: row.descendants,
         background_jobs: row.background_jobs,
+        filing: row.filing,
+        filed_at_ms: row.filed_at_ms,
     }
 }
 

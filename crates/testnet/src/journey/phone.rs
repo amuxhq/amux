@@ -1299,6 +1299,14 @@ impl PhoneJourney {
         Ok(())
     }
 
+    /// Back from a pushed page by the system bar's back button, which the
+    /// system draws with no name of its own to tap it by.
+    pub(crate) fn back(&mut self) -> Result<(), String> {
+        self.app(json!({"kind": "back"}))?;
+        self.record.actions.push("back".to_owned());
+        Ok(())
+    }
+
     /// The tab reading `title` in the system's tab bar, whose tabs carry
     /// their titles and no names of their own.
     pub(crate) fn tab(&mut self, title: &str) -> Result<(), String> {

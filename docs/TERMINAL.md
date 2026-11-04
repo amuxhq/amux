@@ -529,6 +529,9 @@ these; the entries amux and service managers run are hidden from it and listed a
 | `amux server start` | Starts amux detached from the terminal: the supervisor where the install has one, the daemon otherwise. |
 | `amux server stop` | Stops amux cleanly, the supervisor first where one runs; agents keep running. |
 
+The first of these a person runs on a build that would send usage counts prints, once, on standard error, what
+amux sends and where to read more; amux sends nothing before that notice has been shown, here or by another client.
+
 Hidden flags serve tests and demos: the global `--config <path>` (or `AMUX_CONFIG`) names another config file;
 `amux pair --qr --print-link` also prints the QR code's link, to paste into a simulator;
 `amux pair --demo --pin <digits> --for <duration>` holds a PIN you choose open for an

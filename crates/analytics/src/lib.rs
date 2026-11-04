@@ -26,9 +26,18 @@ pub use context::{
 };
 pub use event::{
     Ask, By, CheckCause, CheckCore, CheckId, CheckIn, Client, Counts, Event, Interval, Kind,
-    Method, On, PairingFailure, PaywallFrom, Recorded, RelayCarrier, Role, Route, SignInFailure,
-    Tier, Token,
+    Method, OfferOutcome, OfferRole, On, PairingFailure, PaywallFrom, Recorded, RelayCarrier, Role,
+    Route, SignInFailure, Step, StepOutcome, Tier, Token, Via,
 };
+
+/// The public page saying what amux sends and how to turn it off, which the
+/// notice every first-party client shows links to.
+pub const NOTICE_URL: &str = "https://github.com/amuxhq/amux/blob/main/docs/ANALYTICS.md";
+
+/// The notice a person sees before anything is sent, in the words every
+/// client uses.
+pub const NOTICE: &str = "amux sends usage counts, never content; a signed-in profile's are \
+                          linked to its account. What's sent and how to turn it off:";
 pub use upload::{
     Accounts, Flusher, Gate, Http, MAX_EVENTS_PER_REQUEST, Params, Posted, Transport, Upload,
     Uploader,
@@ -223,7 +232,7 @@ mod tests {
                 "pairing_failed",
                 json!({"role": "offerer", "method": "pin", "reason": "wrong_secret"}),
             ),
-            ("signed_in", json!({})),
+            ("signed_in", json!({"via": "browser"})),
             ("sign_in_failed", json!({"reason": "rejected"})),
             ("signed_out", json!({})),
             ("relay_refused", json!({})),
@@ -232,6 +241,15 @@ mod tests {
             (
                 "check_failed",
                 json!({"core": "daemon", "check": "daemon.generation_fell", "cause": "invariant", "held_back": 3}),
+            ),
+            (
+                "onboarding_step",
+                json!({"step": "pair_phone", "outcome": "done", "surface": "mac"}),
+            ),
+            ("projects_chosen", json!({"kept": 3, "suggested": 5})),
+            (
+                "sign_in_offer",
+                json!({"role": "receiver", "outcome": "accepted"}),
             ),
         ];
         assert_eq!(examples, expected);
@@ -279,6 +297,9 @@ mod tests {
         }
         for ask in Ask::ALL {
             check("ask", &json!(ask.as_str()));
+        }
+        for step in Step::ALL {
+            check("step", &json!(step.as_str()));
         }
     }
 

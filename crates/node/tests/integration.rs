@@ -15,6 +15,7 @@ mod front_door;
 mod host_catalogue;
 mod hosts;
 mod messaging;
+mod onboarding;
 mod peer_service;
 mod push;
 mod registry;

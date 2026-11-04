@@ -59,6 +59,11 @@ pub(crate) fn wire_error(code: ErrorCode, message: impl Into<String>) -> wire::E
     }
 }
 
+/// The request header a client of the profile socket names itself in, for
+/// the usage count of clients opened: `mac` for the Mac app; the terminal
+/// sends none.
+pub const SURFACE_HEADER: &str = "amux-surface";
+
 /// The client services for one profile. `caller` is set on an agent's
 /// tools socket: that agent is the parent of what it spawns and the sender
 /// of what it sends.
@@ -291,13 +296,25 @@ impl AgentService for ClientApi {
         &self,
         request: Request<wire::Empty>,
     ) -> Result<Response<Self::SubscribeInventoryStream>, Status> {
+        // The Mac app opens the same socket as the terminal and says which
+        // it is in a header.
+        let opened = self.opened.map(|client| {
+            match request
+                .metadata()
+                .get(SURFACE_HEADER)
+                .and_then(|value| value.to_str().ok())
+            {
+                Some("mac") => analytics::Client::Mac,
+                _ => client,
+            }
+        });
         let runtime = self.runtime()?;
         let subscription = match self.peer(&request)? {
             Some(from) => runtime.peer_subscribe_inventory(from).await,
             None => runtime.subscribe_inventory().await,
         }
         .map_err(|error| status(error.to_wire()))?;
-        if let Some(client) = self.opened.filter(|_| self.counts()) {
+        if let Some(client) = opened.filter(|_| self.counts()) {
             runtime.analytics().record_at_most_every(
                 telemetry::CLIENT_OPENED_EVERY,
                 analytics::Event::ClientOpened { client },
@@ -333,8 +350,11 @@ impl AgentService for ClientApi {
     ) -> Result<Response<Agent>, Status> {
         // A paired host names the parent, one of its own agents or none for
         // the person, from its own tools-socket caller.
-        self.peer(&request)?;
+        let peer = self.peer(&request)?;
         let request = request.into_inner();
+        // A person's request from a paired device: what finishes the
+        // onboarding's first-agent step on this host.
+        let from_device = peer.is_some() && request.parent.is_none();
         // An agent starts children as its spawn tool does, with the kind's
         // defaults: a permission mode or provider arguments are the
         // person's to choose, never another agent's.
@@ -368,6 +388,10 @@ impl AgentService for ClientApi {
             analytics::On::PairedHost(host) => runtime.spawn_on(host, request, self.caller).await,
         }
         .map_err(|error| status(error.to_wire()))?;
+        if from_device && let Err(error) = runtime.onboarding().agent_from_device(runtime.profile())
+        {
+            tracing::warn!(%error, "recording the first agent from a device");
+        }
         if self.forwards
             && let Some(kind) = kind
         {

@@ -258,23 +258,49 @@ impl InstallationService for FrontDoor {
 
     async fn subscribe_onboarding(
         &self,
-        _request: Request<wire::OnboardingRequest>,
+        request: Request<wire::OnboardingRequest>,
     ) -> Result<Response<Self::SubscribeOnboardingStream>, Status> {
-        Err(Status::unimplemented("onboarding"))
+        let request = request.into_inner();
+        let profile = (!request.profile_id.is_empty())
+            .then(|| profile_id(&request.profile_id))
+            .transpose()?;
+        let steps = self.registry.subscribe_onboarding(profile)?;
+        Ok(Response::new(Box::pin(futures_util::stream::unfold(
+            steps,
+            |mut steps| async move { steps.recv().await.map(|now| (Ok(now), steps)) },
+        ))))
     }
 
     async fn answer_onboarding(
         &self,
-        _request: Request<wire::AnswerOnboardingRequest>,
+        request: Request<wire::AnswerOnboardingRequest>,
     ) -> Result<Response<wire::Onboarding>, Status> {
-        Err(Status::unimplemented("onboarding"))
+        let registry = self.registry.clone();
+        let request = request.into_inner();
+        // The answer is written to disk.
+        let answered = tokio::task::spawn_blocking(move || registry.answer_onboarding(&request))
+            .await
+            .map_err(|error| failed(ErrorCode::Internal, error.to_string()))??;
+        Ok(Response::new(answered))
     }
 
     async fn suggest_projects(
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<wire::SuggestProjectsResponse>, Status> {
-        Err(Status::unimplemented("project suggestions"))
+        let installation = self.registry.installation()?;
+        let suggestions = tokio::task::spawn_blocking(move || {
+            let suggestions = installation
+                .settings
+                .home()
+                .map(|home| crate::suggestions::suggest(home, std::time::SystemTime::now()))
+                .unwrap_or_default();
+            installation.onboarding.suggested(suggestions.len());
+            suggestions
+        })
+        .await
+        .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
+        Ok(Response::new(wire::SuggestProjectsResponse { suggestions }))
     }
 
     async fn web_sign_in_link(

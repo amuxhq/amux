@@ -146,8 +146,8 @@ fn telemetry(config: &InstallationConfig) -> node::Telemetry {
     let Some(endpoint) = analytics::Endpoint::resolve(node::release::is_published()) else {
         return node::Telemetry::Off;
     };
-    // Read again before every upload, so `amux config telemetry off` stops
-    // a running daemon at once. A file that no longer reads sends nothing.
+    // Read again before every upload, so `amux config set telemetry false`
+    // stops a running daemon at once. A file that no longer reads sends nothing.
     let path = config
         .path
         .clone()
@@ -203,6 +203,7 @@ fn settings(config: &InstallationConfig) -> node::SettingsOptions {
         file: Some(file),
         initial: config.clone(),
         login,
+        home: None,
     }
 }
 

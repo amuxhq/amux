@@ -399,13 +399,17 @@ pub struct ProfileRuntime {
     pub(crate) replicas: Mutex<crate::replicas::Replicas>,
     /// Replica blob files by last read, indexed at the first sweep.
     pub(crate) replica_blobs: Mutex<Option<store::BlobLru>>,
-    /// The host set as the core last published it on the inventory.
-    pub(crate) hosts: Mutex<Vec<wire::HostEntry>>,
+    /// The host set as the core last published it on the inventory,
+    /// watched by what derives from it (onboarding's paired phone).
+    pub(crate) hosts: watch::Sender<Vec<wire::HostEntry>>,
     analytics: analytics::Analytics,
     /// Turns ended since the last check-in.
     turns: crate::telemetry::Turns,
     /// What each provider offers on this host.
     offers: crate::offers::Offers,
+    /// The installation's onboarding state, which this profile's agents
+    /// move.
+    onboarding: Arc<crate::onboarding::Onboarding>,
 }
 
 /// A write waiting for its verdict: its number, and where the verdict
@@ -618,6 +622,8 @@ pub struct Profile {
     pub auto_reports: crate::reports::AutoReports,
     /// What makes the worktree an agent asked to start in one starts in.
     pub worktrees: crate::worktree::GitWorktrees,
+    /// The installation's onboarding state.
+    pub(crate) onboarding: Arc<crate::onboarding::Onboarding>,
 }
 
 impl ProfileRuntime {
@@ -638,6 +644,7 @@ impl ProfileRuntime {
             analytics,
             auto_reports,
             worktrees,
+            onboarding,
         } = profile;
         let options = daemon_core::StartOptions {
             generation,
@@ -680,11 +687,12 @@ impl ProfileRuntime {
             edge: std::sync::OnceLock::new(),
             replicas: Mutex::new(crate::replicas::Replicas::default()),
             replica_blobs: Mutex::new(None),
-            hosts: Mutex::new(Vec::new()),
+            hosts: watch::Sender::new(Vec::new()),
             offers: crate::offers::Offers::load(&dir),
             dir,
             analytics,
             turns: crate::telemetry::Turns::default(),
+            onboarding,
         });
         core.expect("built with the runtime").start(&runtime.driver);
         runtime.tell_own_host();
@@ -727,6 +735,10 @@ impl ProfileRuntime {
     }
 
     /// Where this profile records product analytics.
+    pub(crate) fn onboarding(&self) -> &crate::onboarding::Onboarding {
+        &self.onboarding
+    }
+
     pub fn analytics(&self) -> &analytics::Analytics {
         &self.analytics
     }

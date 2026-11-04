@@ -49,8 +49,7 @@ impl ProfileRuntime {
     /// `host`'s entry as last published.
     pub fn host_entry_of(&self, host: crate::HostId) -> Option<HostEntry> {
         self.hosts
-            .lock()
-            .unwrap()
+            .borrow()
             .iter()
             .find(|entry| entry.host_id() == host.as_bytes())
             .cloned()
@@ -58,11 +57,28 @@ impl ProfileRuntime {
 
     /// The host set as last published: what an inventory opening lists.
     pub(crate) fn published_hosts(&self) -> Vec<HostEntry> {
-        self.hosts.lock().unwrap().clone()
+        self.hosts.borrow().clone()
+    }
+
+    /// Rings whenever the core publishes the host set anew.
+    pub(crate) fn subscribe_hosts(&self) -> tokio::sync::watch::Receiver<Vec<HostEntry>> {
+        self.hosts.subscribe()
+    }
+
+    /// Whether the profile trusts a phone: a host whose own entry says it
+    /// runs on iOS.
+    pub(crate) fn trusts_a_phone(&self) -> bool {
+        self.hosts.borrow().iter().any(|entry| {
+            matches!(entry.standing, Some(wire::host_entry::Standing::Trusted(_)))
+                && entry.host.as_ref().is_some_and(|host| {
+                    host.platform == wire::Platform::Ios as i32
+                        && host.host_id != self.host().as_bytes()
+                })
+        })
     }
 
     /// The core published the host set anew.
     pub(crate) fn hosts_published(&self, entries: Vec<HostEntry>) {
-        *self.hosts.lock().unwrap() = entries;
+        self.hosts.send_replace(entries);
     }
 }

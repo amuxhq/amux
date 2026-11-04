@@ -142,6 +142,8 @@ message AnswerOnboardingRequest {
     Empty notice_shown = 4;
     // "Finish setting up" dismissed: every needed step is skipped.
     Empty dismiss = 5;
+    // The client showed the step: counted for usage, nothing kept.
+    OnboardingStepId shown = 7;
   }
   // The client answering, for the usage event.
   Surface surface = 6;

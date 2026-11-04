@@ -30,7 +30,7 @@ pub fn run(
 ) -> Result<()> {
     if !config.supervisor {
         bail!(
-            "this install has no supervisor (supervisor: off): the service manager runs amux daemon"
+            "this install has no supervisor (supervisor = false): the service manager runs amux daemon"
         );
     }
     let inherited = inherit
@@ -43,7 +43,7 @@ pub fn run(
             "this build trusts no release key for its feed: it restarts the daemon but installs nothing"
         );
     }
-    // The config is read again before every check, so `amux config
+    // The config is read again before every check, so `amux config set
     // channel` takes effect without a restart.
     let reread = config_path.map(Path::to_owned);
     let updates = Arc::new(move || {

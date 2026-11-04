@@ -95,6 +95,9 @@ pub enum ProfileRefusal {
     OtherAccount,
     #[error("the profile already holds agents or paired hosts; confirm adopting it")]
     HoldsData,
+    /// An onboarding answer the daemon cannot take.
+    #[error("{0}")]
+    BadAnswer(String),
     #[error("{0}")]
     Failed(String),
 }
@@ -104,7 +107,9 @@ impl ProfileRefusal {
         let code = match self {
             Self::Stopping | Self::NotInService | Self::Unreachable(_) => ErrorCode::Unavailable,
             Self::NoProfile(_) => ErrorCode::NotFound,
-            Self::NoName | Self::BadService(_) | Self::NoRefreshToken => ErrorCode::InvalidArgument,
+            Self::NoName | Self::BadService(_) | Self::NoRefreshToken | Self::BadAnswer(_) => {
+                ErrorCode::InvalidArgument
+            }
             Self::NameTaken(_) | Self::AccountElsewhere => ErrorCode::AlreadyExists,
             Self::LastProfile
             | Self::AgentsRunning
@@ -117,7 +122,7 @@ impl ProfileRefusal {
         crate::grpc::wire_error(code, self.to_string())
     }
 
-    fn failed(error: impl std::fmt::Display) -> Self {
+    pub(crate) fn failed(error: impl std::fmt::Display) -> Self {
         Self::Failed(error.to_string())
     }
 
@@ -371,7 +376,9 @@ impl Registry {
             .or_else(|| installation.first_analytics());
         if let Some(analytics) = analytics {
             analytics.record(match &bound {
-                Ok(_) => analytics::Event::SignedIn,
+                Ok(_) => analytics::Event::SignedIn {
+                    via: analytics::Via::Browser,
+                },
                 Err(refusal) => analytics::Event::SignInFailed {
                     reason: refusal.sign_in_failure(),
                 },

@@ -28,6 +28,7 @@ mod generation;
 mod grpc;
 mod host_settings;
 pub use host_settings::{SettingsOptions, claude_kind};
+pub use onboarding::{ONBOARDING, mark_notice_shown_in, notice_shown_in};
 mod hosts;
 mod identity;
 mod install;
@@ -35,6 +36,7 @@ mod link;
 mod names;
 mod net_error;
 mod offers;
+mod onboarding;
 mod outbox;
 mod pairing;
 mod profile_admin;
@@ -52,6 +54,7 @@ mod runtime;
 mod serve;
 mod services;
 mod spec;
+mod suggestions;
 #[cfg(not(target_os = "ios"))]
 pub mod supervisor;
 mod telemetry;
@@ -82,7 +85,7 @@ pub use edge::{
 };
 pub use forward::Owner;
 pub use generation::{Generation, boot_id};
-pub use grpc::{ClientApi, status};
+pub use grpc::{ClientApi, SURFACE_HEADER, status};
 pub use identity::LinkLiveness;
 pub use install::{
     AGENTS, CORE_RING, GENERATION, INSTALLATION_LOCK, LockError, PROFILES, REPLICAS, REPORTS,

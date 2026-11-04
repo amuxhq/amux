@@ -28,6 +28,9 @@ pub struct SettingsOptions {
     /// The login item `start_at_login` keeps, on an install whose
     /// supervisor a login item would start; none has nothing to start.
     pub login: Option<StartAtLogin>,
+    /// Where project suggestions read the session logs: the person's home
+    /// when none.
+    pub home: Option<PathBuf>,
 }
 
 /// The kind a host's settings resolve to for a new Claude agent.
@@ -69,6 +72,7 @@ impl From<ConfigError> for SettingsError {
 pub(crate) struct HostSettings {
     file: Option<PathBuf>,
     login: Option<StartAtLogin>,
+    home: Option<PathBuf>,
     held: Mutex<Held>,
 }
 
@@ -87,6 +91,7 @@ impl HostSettings {
             file,
             initial,
             login,
+            home,
         } = options;
         let (text, stamp) = match &file {
             Some(path) => (
@@ -98,12 +103,18 @@ impl HostSettings {
         HostSettings {
             file,
             login,
+            home: home.or_else(std::env::home_dir),
             held: Mutex::new(Held {
                 text,
                 config: initial,
                 stamp,
             }),
         }
+    }
+
+    /// Where project suggestions look; none on a system with no home.
+    pub(crate) fn home(&self) -> Option<&Path> {
+        self.home.as_deref()
     }
 
     /// The settings now.
@@ -327,6 +338,7 @@ mod tests {
             file: Some(path.clone()),
             initial: InstallationConfig::from_file(&path).unwrap(),
             login: None,
+            home: None,
         });
         let config = settings
             .update(&UpdateSettingsRequest {
@@ -400,6 +412,7 @@ mod tests {
             file: Some(path.clone()),
             initial: InstallationConfig::from_file(&path).unwrap(),
             login: None,
+            home: None,
         });
         assert!(settings.reread().is_none());
         std::fs::write(&path, "keep_awake = false\ntelemetry = false\n").unwrap();

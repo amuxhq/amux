@@ -111,6 +111,7 @@ pub(crate) struct Installation {
     /// Whether an agent works while `keep_awake` is on.
     pub(crate) awake: Arc<crate::awake::Awake>,
     pub(crate) settings: crate::host_settings::HostSettings,
+    pub(crate) onboarding: Arc<crate::onboarding::Onboarding>,
     pub(crate) hosted: Mutex<BTreeMap<ProfileId, Hosted>>,
     /// One change to the profile set at a time: create, rename, delete.
     pub(crate) profile_changes: tokio::sync::Mutex<()>,
@@ -266,6 +267,7 @@ impl Installation {
             worktrees: crate::worktree::GitWorktrees::new(
                 self.data_dir.join(crate::worktree::WORKTREES),
             ),
+            onboarding: self.onboarding.clone(),
         }))
     }
 
@@ -445,6 +447,10 @@ impl Installation {
                         endpoint,
                         default_base: settings::DEFAULT_CLOUD_URL.to_owned(),
                         gate,
+                        notice: {
+                            let onboarding = self.onboarding.clone();
+                            Arc::new(move || onboarding.notice_shown())
+                        },
                     },
                     Arc::new(telemetry::Profiles(Arc::downgrade(self))),
                     Arc::new(analytics::Http::new(
@@ -559,6 +565,7 @@ pub async fn start(
         .await
         .map_err(StartError::Generation)?;
 
+    let onboarding = Arc::new(crate::onboarding::Onboarding::open(&data_dir));
     let installation = Arc::new(Installation {
         data_dir,
         front_door,
@@ -573,6 +580,7 @@ pub async fn start(
         applied: Mutex::new(settings.initial.clone()),
         awake: Arc::new(crate::awake::Awake::new(settings.initial.keep_awake)),
         settings: crate::host_settings::HostSettings::new(settings),
+        onboarding,
         hosted: Mutex::new(BTreeMap::new()),
         profile_changes: tokio::sync::Mutex::new(()),
         moved: watch::Sender::new(()),

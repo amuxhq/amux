@@ -59,6 +59,10 @@ pub struct Upload {
     /// Where an unbound profile's events go under [`Endpoint::Accounts`].
     pub default_base: String,
     pub gate: Gate,
+    /// Whether a client has shown the person the notice. Until one has,
+    /// nothing is sent: events wait in memory, as many as the queue holds,
+    /// and go once it has.
+    pub notice: Gate,
 }
 
 /// The installation's profiles, as the uploader asks after them.
@@ -227,7 +231,9 @@ async fn run(
         tokio::select! {
             command = received.recv() => match command {
                 None => {
-                    sender.send(std::mem::take(&mut waiting)).await;
+                    if (sender.upload.notice)() {
+                        sender.send(std::mem::take(&mut waiting)).await;
+                    }
                     return;
                 }
                 Some(Command::Event(host, recorded)) => {
@@ -239,7 +245,7 @@ async fn run(
                     }
                     waiting.push((host, recorded));
                     if waiting.len() >= sender.params.batch {
-                        sender.send(std::mem::take(&mut waiting)).await;
+                        sender.flush(&mut waiting).await;
                         tick.reset();
                     }
                 }
@@ -255,7 +261,7 @@ async fn run(
                             Command::Flush(done) => flushes.push(done),
                         }
                     }
-                    sender.send(std::mem::take(&mut waiting)).await;
+                    sender.flush(&mut waiting).await;
                     tick.reset();
                     for done in flushes {
                         let _ = done.send(());
@@ -264,7 +270,7 @@ async fn run(
             },
             _ = tick.tick() => {
                 if !waiting.is_empty() {
-                    sender.send(std::mem::take(&mut waiting)).await;
+                    sender.flush(&mut waiting).await;
                 }
             }
         }
@@ -279,6 +285,17 @@ struct Sender {
 }
 
 impl Sender {
+    /// Sends what is waiting once the notice has been shown; until then
+    /// keeps it, the newest as many as the queue holds.
+    async fn flush(&self, waiting: &mut Vec<(HostId, Recorded)>) {
+        if (self.upload.notice)() {
+            self.send(std::mem::take(waiting)).await;
+            return;
+        }
+        let over = waiting.len().saturating_sub(self.params.queue.max(1));
+        waiting.drain(..over);
+    }
+
     /// Sends one request per host, in the order the hosts first appear.
     async fn send(&self, events: Vec<(HostId, Recorded)>) {
         if events.is_empty() || !(self.upload.gate)() {
@@ -427,6 +444,15 @@ mod tests {
     }
 
     fn start(server: &Arc<Server>, gate: Gate, endpoint: Endpoint) -> Uploader {
+        start_noticed(server, gate, open(), endpoint)
+    }
+
+    fn start_noticed(
+        server: &Arc<Server>,
+        gate: Gate,
+        notice: Gate,
+        endpoint: Endpoint,
+    ) -> Uploader {
         Uploader::start(
             Upload {
                 installation_id: Uuid::from_u128(9),
@@ -434,6 +460,7 @@ mod tests {
                 endpoint,
                 default_base: "https://amux.sh".into(),
                 gate,
+                notice,
             },
             profiles(),
             server.clone(),
@@ -485,7 +512,9 @@ mod tests {
         let server = Arc::new(Server::default());
         let uploader = start(&server, open(), accounts());
         Analytics::new(UNBOUND, uploader.sink()).record(Event::Installed);
-        Analytics::new(BOUND, uploader.sink()).record(Event::SignedIn);
+        Analytics::new(BOUND, uploader.sink()).record(Event::SignedIn {
+            via: crate::Via::Browser,
+        });
         uploader.flush(Duration::from_secs(5)).await;
         let requests = server.requests();
         assert_eq!(requests.len(), 2, "one request per host");
@@ -513,7 +542,9 @@ mod tests {
             open(),
             Endpoint::Fixed("http://localhost:5000".into()),
         );
-        Analytics::new(BOUND, uploader.sink()).record(Event::SignedIn);
+        Analytics::new(BOUND, uploader.sink()).record(Event::SignedIn {
+            via: crate::Via::Browser,
+        });
         uploader.flush(Duration::from_secs(5)).await;
         let requests = server.requests();
         assert_eq!(requests[0].0, "http://localhost:5000/api/events");
@@ -555,7 +586,9 @@ mod tests {
         let server = Arc::new(Server::default());
         server.answer_next(&[Posted::Unauthorized]);
         let uploader = start(&server, open(), accounts());
-        Analytics::new(BOUND, uploader.sink()).record(Event::SignedIn);
+        Analytics::new(BOUND, uploader.sink()).record(Event::SignedIn {
+            via: crate::Via::Browser,
+        });
         uploader.flush(Duration::from_secs(5)).await;
         let requests = server.requests();
         assert_eq!(requests.len(), 2);
@@ -608,6 +641,36 @@ mod tests {
         let events = requests[0].2["events"].as_array().unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0]["event"], "signed_out");
+    }
+
+    /// Before a client has shown the notice nothing is sent, however full
+    /// the batch or however many minutes pass; what waited goes once it
+    /// has, the newest as many as the queue holds.
+    #[tokio::test(start_paused = true)]
+    async fn nothing_is_sent_until_the_notice_is_shown() {
+        let server = Arc::new(Server::default());
+        let shown = Arc::new(AtomicBool::new(false));
+        let notice = {
+            let shown = shown.clone();
+            Arc::new(move || shown.load(Ordering::SeqCst))
+        };
+        let uploader = start_noticed(&server, open(), notice, accounts());
+        let handle = Analytics::new(UNBOUND, uploader.sink());
+        handle.record(Event::Installed);
+        for _ in 0..9 {
+            tokio::task::yield_now().await;
+            handle.record(Event::RelayRefused);
+        }
+        tokio::time::sleep(Duration::from_secs(120)).await;
+        uploader.flush(Duration::from_secs(5)).await;
+        assert!(server.requests().is_empty(), "nothing before the notice");
+        shown.store(true, Ordering::SeqCst);
+        uploader.flush(Duration::from_secs(5)).await;
+        let requests = server.requests();
+        assert_eq!(requests.len(), 1);
+        let events = requests[0].2["events"].as_array().unwrap();
+        assert_eq!(events.len(), 8, "as many as the queue holds");
+        assert!(events.iter().all(|event| event["event"] == "relay_refused"));
     }
 
     #[tokio::test(start_paused = true)]

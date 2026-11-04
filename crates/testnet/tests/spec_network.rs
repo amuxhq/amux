@@ -2057,6 +2057,70 @@ async fn create(net: &Net, host: &str, label: &str) -> (Vec<u8>, std::sync::Arc<
     (info.id, edge)
 }
 
+/// An agent a person creates on the desk from a paired device finishes the
+/// desk's first-agent onboarding step; one the desk's own client creates
+/// does not.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_created_from_a_paired_device_finishes_the_first_agent_step() {
+    let mut net = Net::start(
+        Topology::new()
+            .host("desk")
+            .host("phone")
+            .link("desk", "phone"),
+    )
+    .await
+    .unwrap();
+    let mut steps = door(&net, "desk")
+        .await
+        .subscribe_onboarding(wire::OnboardingRequest::default())
+        .await
+        .unwrap()
+        .into_inner();
+    let first_agent = |onboarding: &wire::Onboarding| onboarding.steps[5].state();
+    let now = steps.message().await.unwrap().unwrap();
+    assert_eq!(first_agent(&now), wire::StepState::Needed);
+
+    net.spawn(testnet::AgentDecl::new("local", "desk").prompt("Hello."))
+        .await
+        .unwrap();
+    let after_local = door(&net, "desk")
+        .await
+        .subscribe_onboarding(wire::OnboardingRequest::default())
+        .await
+        .unwrap()
+        .into_inner()
+        .message()
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first_agent(&after_local), wire::StepState::Needed);
+    let work = net
+        .host("desk")
+        .unwrap()
+        .work
+        .to_string_lossy()
+        .into_owned();
+    net.client("phone")
+        .unwrap()
+        .create_agent(tonic::Request::new(wire::CreateAgentRequest {
+            host: Some(wire::HostRef::named("desk")),
+            cwd: work,
+            agent: wire::create_agent_request::Agent::defaults(wire::Kind::ClaudeSdk),
+            ..wire::CreateAgentRequest::default()
+        }))
+        .await
+        .expect("the desk starts the phone's agent");
+    let moved = tokio::time::timeout(testnet::PATIENCE, steps.message())
+        .await
+        .expect("the steps move")
+        .unwrap()
+        .unwrap();
+    assert_eq!(first_agent(&moved), wire::StepState::Done, "{moved:?}");
+
+    drop(steps);
+    net.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     let mut net = Net::start(

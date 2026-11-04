@@ -20,6 +20,7 @@ async fn desk_with_file(install: &Install, text: &str) -> (node::Daemon, std::pa
         file: Some(file.clone()),
         initial: settings::InstallationConfig::from_file(&file).unwrap(),
         login: None,
+        home: None,
     };
     options.edge.host_name = "desk".to_owned();
     (node::start(options, None).await.unwrap(), file)
@@ -196,6 +197,7 @@ async fn the_daemon_keeps_the_machine_awake_while_an_agent_works() {
         file: Some(file.clone()),
         initial: settings::InstallationConfig::from_file(&file).unwrap(),
         login: None,
+        home: None,
     };
     let daemon = node::start(options, None).await.unwrap();
     let runtime = runtime(&daemon, &install);

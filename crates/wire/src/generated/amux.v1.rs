@@ -8343,7 +8343,7 @@ pub struct AnswerOnboardingRequest {
     /// The client answering, for the usage event.
     #[prost(enumeration = "Surface", tag = "6")]
     pub surface: i32,
-    #[prost(oneof = "answer_onboarding_request::Answer", tags = "2, 3, 4, 5")]
+    #[prost(oneof = "answer_onboarding_request::Answer", tags = "2, 3, 4, 5, 7")]
     pub answer: ::core::option::Option<answer_onboarding_request::Answer>,
 }
 /// Nested message and enum types in `AnswerOnboardingRequest`.
@@ -8360,6 +8360,9 @@ pub mod answer_onboarding_request {
         /// "Finish setting up" dismissed: every needed step is skipped.
         #[prost(message, tag = "5")]
         Dismiss(super::Empty),
+        /// The client showed the step: counted for usage, nothing kept.
+        #[prost(enumeration = "super::OnboardingStepId", tag = "7")]
+        Shown(i32),
     }
 }
 impl ::prost::Name for AnswerOnboardingRequest {

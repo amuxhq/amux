@@ -396,6 +396,44 @@ How amux is deployed (the supervisor, updates, where releases and data
 live, discovery's scope, the agents' tunables) stays in the file and
 `amux config`, not on this call.
 
+`SuggestProjects` offers folders for the `projects` setting: the Git
+repositories Claude Code and Codex ran in on this machine in the last 30
+days that still exist, newest first, at most eight. A session in a linked
+worktree suggests the repository it was made from.
+
+Onboarding is one list of steps the daemon keeps for each profile, the
+same for every client. `SubscribeOnboarding` sends them now and again on
+every change; leave `profile_id` empty for the profile a bare `amux`
+opens, the oldest. Each step is `needed`, `done`, `skipped` or
+`not_needed`, in the order to show them:
+
+| Step | Done when |
+| --- | --- |
+| `pair_phone` | the profile trusts a phone |
+| `keep_reachable` | the person confirms starting at login and keeping awake; not needed on an install without a supervisor |
+| `sign_in` | the profile is signed in |
+| `projects` | the person confirms the project list |
+| `improve` | the person confirms the telemetry and automatic-reports choice |
+| `first_agent` | a paired device created an agent on this machine |
+
+`AnswerOnboarding` takes one answer and returns the steps after it:
+`done` for a step the person confirms (only `keep_reachable`, `projects`
+and `improve`: the others are done when they happen), `skip` for "Later",
+`dismiss` to skip every needed step, `shown` when the client shows a step,
+and `notice_shown` once it has shown the analytics notice. Name the client
+in `surface` so the answer is counted for it; unspecified counts nothing.
+Confirmations are the installation's; a skip of `pair_phone`, `sign_in` or
+`first_agent` is the profile's. A step added in a later release appears to
+existing installations on its own, needed.
+
+Until some client sets `notice_shown`, amux sends no usage counts: show
+the notice (`analytics::NOTICE`, linking `analytics::NOTICE_URL`) once,
+before or with the first screen, then answer `notice_shown`.
+
+A client other than the terminal that opens a profile socket says which
+it is in the `amux-surface` request header (`mac` for the Mac app), so the
+fleet subscription counts it as that client opening.
+
 ## Errors
 
 Calls fail with ordinary gRPC status codes, the reason in the status

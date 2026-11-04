@@ -17,9 +17,9 @@ has, events wait in memory and nothing leaves the machine. To turn it off:
 
 - **On a computer:** `amux config set telemetry false`. A running daemon stops
   sending at once, and nothing it records while off is sent later.
-  `amux config set telemetry true` resumes it, or, if the daemon started with
-  telemetry off, takes effect when it next starts. `amux status` says
-  whether it is on and where it goes.
+  `amux config set telemetry true` resumes it at once too, including on a
+  daemon that started with it off. `amux status` says whether it is on and
+  where it goes.
 - **`DO_NOT_TRACK`:** a daemon started with `DO_NOT_TRACK` set to anything
   but empty or `0` sends nothing, whatever the setting says. It must be set
   where the daemon starts: a daemon started at login, or by a service

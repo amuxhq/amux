@@ -202,8 +202,8 @@ fn note(key: &str) -> Option<&'static str> {
             Some("The supervisor follows it from its next check; `amux update` checks now.")
         }
         "telemetry" => Some(
-            "A running daemon stops sending at once; one that started with telemetry off \
-             starts sending when it next starts.",
+            "A running daemon follows it at once: it stops sending, or starts, and nothing \
+             recorded while it was off is sent.",
         ),
         "auto_reports" => Some(
             "A running daemon follows it from its next report. Reports go to the account each \

@@ -434,7 +434,14 @@ fn retention_frees_the_settled_children_of_a_parent_the_person_kept() {
     let mut row = store.agent(&parent).unwrap().unwrap();
     row.filing = wire::Filing::Active as i32;
     store.put_agent(&row).unwrap();
-    add(&mut store, &own("finished-child"), 3, 2, false, Some(&parent));
+    add(
+        &mut store,
+        &own("finished-child"),
+        3,
+        2,
+        false,
+        Some(&parent),
+    );
     let sweep = store.sweep_own(0, ROW, 1).unwrap();
     assert_eq!(sweep.removed, [own("finished-child")]);
     assert!(store.agent(&parent).unwrap().is_some());

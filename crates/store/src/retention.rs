@@ -6,8 +6,8 @@
 //! whatever other work is largest, a chunk at a time, never below the newest
 //! rows a stream may still be appending to. An agent the person has not
 //! settled is never removed whole, live or not: an exited one they never
-//! looked at stays in their fleet. A settled child whose parent is not
-//! settled is kept too, since its parent can still continue it. Replica rows are a cache, so
+//! looked at stays in their fleet. A settled child whose parent is live is
+//! kept too, since its parent can still continue it. Replica rows are a cache, so
 //! agents nobody is following lose all their rows, least recently used
 //! first, keeping only their agents row, and the rest keep their newest rows
 //! as one contiguous block.

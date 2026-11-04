@@ -1,7 +1,7 @@
 //! Retention: the store's sweeps, as one step.
 //!
 //! The store decides what goes (settled, exited agents whole, least
-//! recently active first, never a settled child whose parent is not; then
+//! recently active first, never a settled child whose parent is live; then
 //! the largest other agent trimmed a chunk at a time, never below its newest rows; replicas
 //! with no source least recently used first, the rest trimmed to their
 //! tail with the block kept whole) and says which agents it removed. The

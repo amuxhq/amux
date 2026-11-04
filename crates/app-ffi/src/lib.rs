@@ -506,10 +506,36 @@ pub fn attach(front_door: &std::path::Path, tail: u32) -> Result<Box<AmuxRuntime
     serve(phone, Arc::new(installation), tail, wire::Surface::Mac)
 }
 
-/// How soon the profile stream is opened again after it ends, doubling up
-/// to the most while the front door does not answer.
+/// How soon a stream from the daemon is opened again after it ends,
+/// doubling up to the most while the daemon does not answer.
 const RESUBSCRIBE_FIRST: std::time::Duration = std::time::Duration::from_millis(250);
 const RESUBSCRIBE_MOST: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Hands `each` every message of the stream `open` opens, for as long as
+/// the task runs. An attached daemon restarts under the app (an update, a
+/// stop and start), which ends the stream; it is opened again once the
+/// daemon answers, and every stream followed this way starts with the state
+/// now, so nothing that moved meanwhile is missed.
+async fn follow<T, Opened>(
+    mut open: impl FnMut() -> Opened,
+    mut each: impl FnMut(T),
+) -> std::convert::Infallible
+where
+    Opened: Future<Output = Result<client::EventStream<T>, client::RpcError>>,
+{
+    use futures_util::StreamExt as _;
+    let mut pause = RESUBSCRIBE_FIRST;
+    loop {
+        if let Ok(mut stream) = open().await {
+            while let Some(Ok(now)) = stream.next().await {
+                each(now);
+                pause = RESUBSCRIBE_FIRST;
+            }
+        }
+        tokio::time::sleep(pause).await;
+        pause = (pause * 2).min(RESUBSCRIBE_MOST);
+    }
+}
 
 /// Serves the profile list to the app: posted now, for the first step, and
 /// again whenever the installation's profile stream says it moved.
@@ -626,18 +652,16 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
         .opened(fleet, 0, View::Fleet(Arc::downgrade(&app)));
     let (watching, posting) = (app.client().clone(), shared.outbox.clone());
     let offers = shared.phone.handle().spawn(async move {
-        use futures_util::StreamExt as _;
-        // A runtime that serves no offers (an older daemon) has none to
-        // hand over.
-        let Ok(mut moves) = watching.subscribe_sign_in_offers().await else {
-            return;
-        };
-        while let Some(Ok(now)) = moves.next().await {
-            posting.post_offers(
-                fleet,
-                now.offers.iter().map(SignInOfferView::from).collect(),
-            );
-        }
+        follow(
+            || watching.subscribe_sign_in_offers(),
+            |now: wire::SignInOffers| {
+                posting.post_offers(
+                    fleet,
+                    now.offers.iter().map(SignInOfferView::from).collect(),
+                );
+            },
+        )
+        .await;
     });
     Ok(Box::new(AmuxProfile {
         profile,
@@ -2219,24 +2243,17 @@ pub unsafe extern "C" fn amux_profile_watch_onboarding(profile: *const AmuxProfi
         let outbox = profile.shared.outbox.clone();
         let (fleet, id) = (profile.fleet, profile.profile);
         *watch = Some(profile.shared.handle().spawn(async move {
-            use futures_util::StreamExt as _;
-            // An attached daemon restarts under the app, which ends the
-            // stream; it is opened again once the front door answers, and
-            // its first message is the steps as they stand.
-            let mut pause = RESUBSCRIBE_FIRST;
-            loop {
-                let request = wire::OnboardingRequest {
-                    profile_id: id.as_bytes().to_vec(),
-                };
-                if let Ok(mut steps) = installation.subscribe_onboarding(request).await {
-                    while let Some(Ok(now)) = steps.next().await {
-                        outbox.post_onboarding(fleet, OnboardingState::from(&now));
-                        pause = RESUBSCRIBE_FIRST;
-                    }
-                }
-                tokio::time::sleep(pause).await;
-                pause = (pause * 2).min(RESUBSCRIBE_MOST);
-            }
+            follow(
+                || {
+                    installation.subscribe_onboarding(wire::OnboardingRequest {
+                        profile_id: id.as_bytes().to_vec(),
+                    })
+                },
+                |now: wire::Onboarding| {
+                    outbox.post_onboarding(fleet, OnboardingState::from(&now));
+                },
+            )
+            .await;
         }));
     });
 }
@@ -2306,13 +2323,13 @@ pub unsafe extern "C" fn amux_profile_open_pairing(
                 let (watching, outbox, fleet) =
                     (client.clone(), profile.shared.outbox.clone(), profile.fleet);
                 *watch = Some(profile.shared.handle().spawn(async move {
-                    use futures_util::StreamExt as _;
-                    let Ok(mut statuses) = watching.watch_pairing().await else {
-                        return;
-                    };
-                    while let Some(Ok(status)) = statuses.next().await {
-                        outbox.post_pairing(fleet, PairingStatusView::from(&status));
-                    }
+                    follow(
+                        || watching.watch_pairing(),
+                        |status: wire::PairingStatus| {
+                            outbox.post_pairing(fleet, PairingStatusView::from(&status));
+                        },
+                    )
+                    .await;
                 }));
             }
         }

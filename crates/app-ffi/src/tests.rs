@@ -1597,6 +1597,82 @@ fn an_attached_app_hears_the_profile_list_again_after_the_daemon_restarts() {
     tokio.block_on(net.shutdown()).unwrap();
 }
 
+/// The profile's pairing window is followed across a daemon restart: a
+/// window opened again afterwards is handed over as open, as the Mac app
+/// needs to say when a phone pairs with it.
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+)]
+fn an_attached_app_follows_its_pairing_window_after_the_daemon_restarts() {
+    let tokio = tokio::runtime::Runtime::new().unwrap();
+    let topology = Topology::new().host_decl(HostDecl {
+        name: "desk".into(),
+        process: true,
+        ..HostDecl::default()
+    });
+    let mut net = tokio
+        .block_on(Net::start_with(
+            topology,
+            testnet::NetOptions {
+                clock: testnet::ClockMode::Wall,
+                ..testnet::NetOptions::default()
+            },
+        ))
+        .unwrap();
+    let door = net.host("desk").unwrap().front_door.clone();
+    let runtime = Box::into_raw(attach(&door, 50).unwrap());
+    let queue = Queue::start(runtime);
+    let id = c(&net.host("desk").unwrap().profile.to_string());
+    let mut error = std::ptr::null_mut();
+    // SAFETY: the runtime is live; the strings live for the call.
+    let profile = unsafe { amux_profile_open(runtime, id.as_ptr(), &mut error) };
+    assert!(!profile.is_null());
+    // SAFETY: the profile is open.
+    let fleet = unsafe { amux_profile_fleet_id(profile) };
+    let mut kept = Kept::default();
+    let open = |kept: &mut Kept| {
+        kept.until(&queue, fleet, "the window open", |kept| {
+            kept.pairing
+                .iter()
+                .any(|status| status["active"] == true)
+                .then_some(())
+        });
+    };
+    // SAFETY: the profile is open.
+    let window = kept.answer(&queue, fleet, unsafe {
+        amux_profile_open_pairing(profile, 60)
+    });
+    assert!(window["Ok"]["pin"].is_string(), "{window}");
+    open(&mut kept);
+
+    tokio.block_on(net.stop_daemon("desk")).unwrap();
+    tokio.block_on(net.restart_daemon("desk")).unwrap();
+    kept.pairing.clear();
+    // The window went with the daemon; the app renews it.
+    let renewed = loop {
+        // SAFETY: the profile is open.
+        let answered = kept.answer(&queue, fleet, unsafe {
+            amux_profile_open_pairing(profile, 60)
+        });
+        if answered["Ok"].is_object() {
+            break answered;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    assert!(renewed["Ok"]["pin"].is_string(), "{renewed}");
+    open(&mut kept);
+
+    drop(queue);
+    // SAFETY: from `amux_profile_open` and `attach`, not used again.
+    unsafe {
+        amux_profile_close(profile);
+        amux_runtime_stop(runtime);
+    }
+    tokio.block_on(net.shutdown()).unwrap();
+}
+
 /// A desktop app attaches to the daemon on its machine instead of hosting
 /// an installation: the daemon's profiles arrive with the first step, a
 /// profile's fleet opens with the daemon's agents, and a call only an

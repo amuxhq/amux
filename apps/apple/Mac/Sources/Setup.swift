@@ -100,6 +100,14 @@ final class Setup {
     /// Whether to open setting up was decided, on the first steps heard.
     @ObservationIgnored private var decided = false
     @ObservationIgnored private var renewal: Task<Void, Never>?
+    /// The pairing window's calls to the daemon, each made after the one
+    /// before has answered: two opens in flight together (a renewal and New
+    /// Code) could land in either order, and the code shown would be the
+    /// one the later landing cancelled.
+    @ObservationIgnored private var pairingCalls: Task<Void, Never>?
+    /// Counts what was asked of the window; only the latest ask's answer is
+    /// shown, and an ask overtaken before its turn is not made.
+    @ObservationIgnored private var pairingAsk = 0
     private static let log = Logger(subsystem: "sh.amux.desktop", category: "setup")
 
     init(app: AppModel, profile: Profile) {
@@ -247,10 +255,9 @@ final class Setup {
     /// heard, as the app quits: a pairing window left open would let a
     /// phone pair until it timed out.
     func closeForQuit() async {
-        guard step == .pair_phone, pairing.window != nil else { return }
-        renewal?.cancel()
-        pairing = Pairing()
-        await profile.closePairing()
+        guard step == .pair_phone else { return }
+        closePairing()
+        await pairingCalls?.value
     }
 
     private func answer(_ answer: OnboardingAnswer) {
@@ -317,26 +324,45 @@ final class Setup {
         if step == .pair_phone { closePairing() }
     }
 
+    /// Makes `call` once every pairing call before it has answered.
+    private func queuePairing(_ call: @escaping @MainActor () async -> Void) {
+        let before = pairingCalls
+        pairingCalls = Task { @MainActor in
+            await before?.value
+            await call()
+        }
+    }
+
     private func openPairing() {
         pairing.failed = nil
-        Task {
+        pairingAsk += 1
+        let ask = pairingAsk
+        let profile = profile
+        queuePairing { [weak self] in
+            // Overtaken before its turn: the newer ask opens or closes it.
+            guard let self, ask == self.pairingAsk else { return }
             let opened = await profile.openPairing(ttl: Self.windowSeconds)
+            guard ask == self.pairingAsk else { return }
             // Left meanwhile: the window is not wanted.
-            guard step == .pair_phone else {
-                if case .success = opened { await profile.closePairing() }
+            guard self.step == .pair_phone else {
+                if case .success = opened { _ = await profile.closePairing() }
                 return
             }
-            switch opened {
-            case .success(let window):
-                pairing.window = window
-                pairing.openedAt = Date()
-                pairing.status = nil
-                pairing.renewing = false
-                scheduleRenewal()
-            case .failure(let failed):
-                pairing.failed = failed.description
-                pairing.renewing = false
-            }
+            self.opened(opened)
+        }
+    }
+
+    private func opened(_ opened: Result<PairingWindowView, RuntimeFailure>) {
+        switch opened {
+        case .success(let window):
+            pairing.window = window
+            pairing.openedAt = Date()
+            pairing.status = nil
+            pairing.renewing = false
+            scheduleRenewal()
+        case .failure(let failed):
+            pairing.failed = failed.description
+            pairing.renewing = false
         }
     }
 
@@ -348,8 +374,11 @@ final class Setup {
         // Closed even when the window already ended with a pairing: the
         // watch on it stops too.
         if held || step == .pair_phone {
+            // An open still on its way is not shown, and is closed here
+            // once it has answered.
+            pairingAsk += 1
             let profile = profile
-            Task { await profile.closePairing() }
+            queuePairing { _ = await profile.closePairing() }
         }
     }
 

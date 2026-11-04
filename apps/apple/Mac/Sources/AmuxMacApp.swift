@@ -41,15 +41,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         MainActor.assumeIsolated {
             guard let setup = Self.model?.setup else { return .terminateNow }
-            Task {
-                // A daemon that does not answer does not hold the app open.
-                await withTaskGroup(of: Void.self) { group in
-                    group.addTask { await setup.closeForQuit() }
-                    group.addTask { try? await Task.sleep(for: .seconds(2)) }
-                    await group.next()
-                    group.cancelAll()
-                }
-                sender.reply(toApplicationShouldTerminate: true)
+            // Whichever comes first, the window closed or two seconds, lets
+            // the app go: a daemon that does not answer does not hold it
+            // open. Closing ignores cancellation, so nothing waits for it
+            // to end once the time is up.
+            let reply = QuitReply(sender)
+            Task { @MainActor in
+                await setup.closeForQuit()
+                reply.send()
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                reply.send()
             }
             return .terminateLater
         }
@@ -57,5 +60,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated { Self.model?.applyUpdate() }
+    }
+}
+
+/// Answers a deferred quit once, whichever of its answers comes first.
+@MainActor
+private final class QuitReply {
+    private var sender: NSApplication?
+
+    init(_ sender: NSApplication) { self.sender = sender }
+
+    func send() {
+        sender?.reply(toApplicationShouldTerminate: true)
+        sender = nil
     }
 }

@@ -291,9 +291,10 @@ The shared stories are `reach-host`, `conversation-decision-claude-pty`, `conver
 `conversation-decision-codex`, `leave-and-recover`, `manage-agent`, `attachment-or-review` and `keep-authority`.
 The terminal has `first-run` of its own: a first `amux` walked through setting up, another machine pairing
 with the PIN it shows, a browser sign-in at the net's account service, quitting half way and resuming. The
-phone has its own besides (`account-sign-in`, `purchase-restore`, `report`, `accessibility`,
+phone has its own besides (`account-sign-in`, `one-tap-sign-in`, `purchase-restore`, `report`, `accessibility`,
 `local-network`, `push-wake`, `resume`; `just ios journey -- --native` runs them), and `survive-daemon` is the
-system journey on the built binaries. `resume` launches one installation three times (the first launch ever, a
+system journey on the built binaries. `one-tap-sign-in` pairs a signed-out phone with a signed-in machine,
+which the door's `OfferSignIn` has offer the phone its account; one tap on Sign In signs the phone in. `resume` launches one installation three times (the first launch ever, a
 relaunch, and a launch after a machine restarted) and keeps each launch's link log in
 `target/ios/journey/resume/<launch>.log`.
 

@@ -51,6 +51,7 @@ const STORIES: &[(&str, Tell)] = &[
     ("attachment-or-review", attachment_or_review),
     ("leave-and-recover", leave_and_recover),
     ("account-sign-in", account_sign_in),
+    ("one-tap-sign-in", one_tap_sign_in),
     ("purchase-restore", purchase_restore),
     ("report", report),
     ("accessibility", accessibility),
@@ -2126,6 +2127,51 @@ fn account_sign_in(journey: &mut PhoneJourney) -> Proved {
     ])
 }
 
+/// A signed-out phone paired with a signed-in desk takes the desk's
+/// account with one tap.
+fn one_tap_sign_in(journey: &mut PhoneJourney) -> Proved {
+    journey.launch(Launch::plain())?;
+    pair_by_code(journey, "desk")?;
+    journey.screen("paired", &[])?;
+
+    // The desk offers the phone it just paired its account, as its own
+    // client does when the person ticks "Also sign in" there.
+    journey.request(
+        Control::OfferSignIn {
+            host: "desk".to_owned(),
+            to: None,
+        },
+        Some("offer"),
+    )?;
+    let question = "Sign in as ada@example.com?";
+    let drawn = journey.wait(
+        |drawn| drawn.value("sign-in-offer") == "offered" && labelled(drawn, question),
+        "the desk's offer on the phone",
+    )?;
+    if !labelled(&drawn, "desk offers its account") {
+        return Err("the offer did not name the desk that made it".to_owned());
+    }
+    journey.screen("offered", &[])?;
+
+    journey.tap("sign-in-offer.accept")?;
+    journey.wait(|drawn| !drawn.has("sign-in-offer"), "the offer put away")?;
+    journey.settings()?;
+    signed_in_as_ada(journey)?;
+    journey.screen("signed-in", &[])?;
+    close_settings(journey)?;
+
+    journey.tab("Hosts")?;
+    let desk = journey.host_id("desk");
+    let drawn = journey.wait_for(&[&format!("hosts.row.{desk}")])?;
+    trusted_as(&drawn, &desk, "desk")?;
+    Ok(vec![
+        "signed out, the phone paired with the desk on the keypad with the PIN `amux pair` printed".to_owned(),
+        format!("the desk offered the phone its account, and the phone asked {} in a sheet naming the desk", quoted(question)),
+        "one tap on Sign In put the sheet away and Settings showed the phone signed in as ada, with nothing else pressed".to_owned(),
+        "the phone still lists the desk under its own name".to_owned(),
+    ])
+}
+
 fn purchase_restore(journey: &mut PhoneJourney) -> Proved {
     let desk = journey.host_id("desk");
     journey.launch(Launch::plain())?;
@@ -3027,8 +3073,9 @@ mod tests {
     use super::super::phone::tests::{DESK, element};
     use super::*;
 
-    const NATIVE: [&str; 7] = [
+    const NATIVE: [&str; 8] = [
         "account-sign-in",
+        "one-tap-sign-in",
         "purchase-restore",
         "report",
         "accessibility",

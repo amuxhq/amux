@@ -172,6 +172,13 @@
       "claim": "A phone nobody has signed in on offers Sign In on the You tab, and pressing it opens the account service at once, with no page of the app's own between. Closed without finishing, nothing is shown and Sign In is offered again; refused, an alert says so in the account service's words and Try Again asks again; while the browser is up the row says it is signing in, and it comes back signed in where it was pressed with nothing more to press. The account service is asked to sign in and to hand over the account's session. That session's relay, and only it, carries the pairing to a machine that shares no network with the phone: the machine is listed under its own name, its agent opens, and the machine receives the prompt written on the phone exactly once and answers it. Signed out and signing back in, a browser that comes back as another account is named in a question, and Cancel keeps nobody and lets that account's session go."
     },
     {
+      "id": "one-tap-sign-in",
+      "stage": 16,
+      "clients": ["phone"],
+      "topology": "journeys/topologies/phone-offer.json",
+      "claim": "A phone nobody has signed in on pairs on the keypad with a machine signed in to an account. The machine offers the phone its account: the phone asks to sign in as the account's address, naming the machine that offers it, and one tap on Sign In signs it in to that account with nothing else to press, so Settings shows it signed in. The phone still lists the machine under its own name."
+    },
+    {
       "id": "purchase-restore",
       "stage": 16,
       "clients": ["phone"],

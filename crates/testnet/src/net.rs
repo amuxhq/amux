@@ -2154,6 +2154,56 @@ impl Net {
         Ok((offer, profile))
     }
 
+    /// The person on `host` offers its account to the device it trusts as
+    /// `to`, as the "Also sign in" choice does after pairing: the device is
+    /// a host of the net, or one outside it by the name it paired with;
+    /// with none, the one device outside the net `host` trusts. Answers the
+    /// device as `host` trusts it.
+    pub async fn offer_sign_in(
+        &self,
+        host: &str,
+        to: Option<&str>,
+    ) -> Result<wire::Peer, NetError> {
+        let refused = |status: tonic::Status| NetError::Refused(Box::new(status));
+        let in_net = |id: &[u8]| {
+            self.hosts
+                .values()
+                .any(|net| net.info.host_id.as_bytes() == id)
+        };
+        let wanted = to.and_then(|to| self.host(to).ok().map(|net| net.host_id));
+        let mut admin = self.admin(host).await?;
+        let peers = admin
+            .list_peers(wire::Empty {})
+            .await
+            .map_err(refused)?
+            .into_inner()
+            .peers;
+        let mut matching = peers.into_iter().filter(|peer| match (to, &wanted) {
+            (_, Some(id)) => peer.host_id == id.as_bytes(),
+            (Some(to), None) => peer.name == to,
+            (None, None) => !in_net(&peer.host_id),
+        });
+        let peer = match (matching.next(), matching.next()) {
+            (Some(peer), None) => peer,
+            (found, _) => {
+                return Err(NetError::Host {
+                    host: host.to_owned(),
+                    error: match found {
+                        Some(_) => format!("{host} trusts more than one device outside the net"),
+                        None => format!("{host} trusts no device {to:?}"),
+                    },
+                });
+            }
+        };
+        admin
+            .offer_sign_in(wire::OfferSignInRequest {
+                host_id: peer.host_id.clone(),
+            })
+            .await
+            .map_err(refused)?;
+        Ok(peer)
+    }
+
     /// A person on `from` starts an agent named `name` on `host`, as a
     /// client there does: through `from`'s own runtime, which forwards it.
     pub async fn create_from(

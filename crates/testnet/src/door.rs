@@ -74,6 +74,15 @@ pub enum Control {
         host: String,
         accept: bool,
     },
+    /// A person on `host`, signed in, offers its account to the device
+    /// paired with it as `to`: a host of the net, or a device outside it by
+    /// the name it paired with; without `to`, the one device outside the
+    /// net it trusts (the phone). Answers the device's host id.
+    OfferSignIn {
+        host: String,
+        #[serde(default)]
+        to: Option<String>,
+    },
     /// A person on `from` starts an agent named `name` on `host`, as that
     /// host's client does; answers its id. In-process hosts only.
     Create {
@@ -686,6 +695,10 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                 "email": offer.email,
                 "signed_in_as": profile.email,
             })
+        }
+        Control::OfferSignIn { host, to } => {
+            let peer = net.offer_sign_in(&host, to.as_deref()).await?;
+            json!({ "host_id": Uuid::from_slice(&peer.host_id).unwrap_or_default() })
         }
         Control::Create { from, host, name } => {
             let agent = net.create_from(&from, &host, &name).await?;

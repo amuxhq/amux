@@ -985,7 +985,7 @@ lane = "journey"
 evidence = "target/journeys/phone"
 update = "UPDATE_JOURNEY_GOLDENS=1 just ios journey -- conversation-decision-claude-sdk"
 journey_manifest = "journeys/manifest.json"
-journeys = ["account-sign-in", "purchase-restore", "report", "accessibility", "local-network", "push-wake", "resume"]
+journeys = ["account-sign-in", "one-tap-sign-in", "purchase-restore", "report", "accessibility", "local-network", "push-wake", "resume"]
 
 [[suite]]
 name = "terminal-journeys"

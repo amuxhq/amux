@@ -83,11 +83,7 @@ pub(crate) fn list(
     }
     ListRepositoriesResponse {
         recent,
-        repositories,
-        roots: roots
-            .iter()
-            .filter_map(|root| root.to_str().map(str::to_owned))
-            .collect(),
+        projects: repositories,
     }
 }
 
@@ -153,18 +149,13 @@ mod tests {
             temp.path().join("missing"),
         ];
         let listed = list(&roots, &[], None, u32::MAX);
-        assert_eq!(listed.repositories.len(), MAX_DIRECTORIES);
-        assert_eq!(listed.repositories[0].name, "repo-000");
-        assert_eq!(listed.repositories[199].name, "repo-199");
-        assert_eq!(listed.roots.len(), 2);
+        assert_eq!(listed.projects.len(), MAX_DIRECTORIES);
+        assert_eq!(listed.projects[0].name, "repo-000");
+        assert_eq!(listed.projects[199].name, "repo-199");
 
         let recent = recorded(&[(&temp.path().join("repo-150"), 1)]);
         let listed = list(&roots, &recent, None, 3);
-        let names: Vec<_> = listed
-            .repositories
-            .iter()
-            .map(|e| e.name.as_str())
-            .collect();
+        let names: Vec<_> = listed.projects.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(listed.recent[0].name, "repo-150");
         assert_eq!(names, ["repo-000", "repo-001"]);
     }

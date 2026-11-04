@@ -534,12 +534,11 @@ pub struct Directory {
 }
 
 /// What a host offers to start an agent in: where agents ran lately and the
-/// repositories under its roots.
+/// projects its person chose.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Directories {
     pub recent: Vec<Directory>,
-    pub repositories: Vec<Directory>,
-    pub roots: Vec<String>,
+    pub projects: Vec<Directory>,
 }
 
 /// An act on an open chat. Its answer is a `SendOutcome` for `Send` (as

@@ -291,6 +291,9 @@ fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
                 lines.push(format!("Pairing link: {payload}"));
             }
         }
+        Some(pairing_window::Secret::PinAndQr(_)) => {
+            bail!("the daemon opened a window `amux pair` did not ask for")
+        }
         None => bail!("the daemon opened pairing mode without a secret"),
     }
     Ok(lines)
@@ -903,6 +906,7 @@ mod tests {
             addrs: vec!["10.0.0.2:7420".into()],
             cloud_url: None,
             secret: Some(pairing_window::Secret::QrSecret(vec![9; 32])),
+            qr_link: String::new(),
         };
         let lines = invitation(&started, true).unwrap();
         let link = lines
@@ -1048,8 +1052,8 @@ mod tests {
     fn announced(name: &str, by: Vec<wire::Host>) -> HostEntry {
         HostEntry {
             standing: Some(wire::host_entry::Standing::Candidate(wire::Candidate {
-                addrs: Vec::new(),
                 announced_by: by,
+                ..wire::Candidate::default()
             })),
             ..HostEntry::candidate_host(vec![3; 16], name, Vec::new())
         }

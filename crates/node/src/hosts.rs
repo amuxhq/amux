@@ -36,6 +36,7 @@ impl ProfileRuntime {
                 )),
                 current: true,
             })),
+            ..HostEntry::default()
         }
     }
 

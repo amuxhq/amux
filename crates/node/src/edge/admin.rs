@@ -174,6 +174,9 @@ impl Edge {
             Method::Pin(_) => ("pin", WindowMethod::Pin),
             Method::Qr(_) => ("qr", WindowMethod::Qr),
             Method::DemoPin(pin) => ("demo", WindowMethod::Demo(pin)),
+            Method::PinOrQr(_) => {
+                return Err(Status::unimplemented("a window for a PIN or a QR secret"));
+            }
         };
         let opened = self
             .ask(ClientRequest::StartPairing {
@@ -218,6 +221,7 @@ impl Edge {
                 .filter(|_| self.account.wants_cloud())
                 .map(|service| service.as_str().to_owned()),
             secret: Some(secret),
+            qr_link: String::new(),
         })
     }
 

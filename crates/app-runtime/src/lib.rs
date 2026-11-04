@@ -364,8 +364,7 @@ impl AppRuntime {
         };
         Ok(Directories {
             recent: listed.recent.into_iter().map(directory).collect(),
-            repositories: listed.repositories.into_iter().map(directory).collect(),
-            roots: listed.roots,
+            projects: listed.projects.into_iter().map(directory).collect(),
         })
     }
 

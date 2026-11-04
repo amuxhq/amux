@@ -281,7 +281,7 @@ impl HostEntry {
             }),
             standing: Some(host_entry::Standing::Candidate(Candidate {
                 addrs,
-                announced_by: Vec::new(),
+                ..Candidate::default()
             })),
             ..Self::default()
         }

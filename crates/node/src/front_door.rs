@@ -220,6 +220,49 @@ fn profile_id(bytes: &[u8]) -> Result<Uuid, Status> {
 impl InstallationService for FrontDoor {
     type SubscribeProfilesStream = EventStream<ListProfilesResponse>;
     type SignInStream = EventStream<SignInEvent>;
+    type SubscribeOnboardingStream = EventStream<wire::Onboarding>;
+
+    async fn get_settings(
+        &self,
+        _request: Request<Empty>,
+    ) -> Result<Response<wire::Settings>, Status> {
+        Err(Status::unimplemented("settings"))
+    }
+
+    async fn update_settings(
+        &self,
+        _request: Request<wire::UpdateSettingsRequest>,
+    ) -> Result<Response<wire::Settings>, Status> {
+        Err(Status::unimplemented("settings"))
+    }
+
+    async fn subscribe_onboarding(
+        &self,
+        _request: Request<wire::OnboardingRequest>,
+    ) -> Result<Response<Self::SubscribeOnboardingStream>, Status> {
+        Err(Status::unimplemented("onboarding"))
+    }
+
+    async fn answer_onboarding(
+        &self,
+        _request: Request<wire::AnswerOnboardingRequest>,
+    ) -> Result<Response<wire::Onboarding>, Status> {
+        Err(Status::unimplemented("onboarding"))
+    }
+
+    async fn suggest_projects(
+        &self,
+        _request: Request<Empty>,
+    ) -> Result<Response<wire::SuggestProjectsResponse>, Status> {
+        Err(Status::unimplemented("project suggestions"))
+    }
+
+    async fn web_sign_in_link(
+        &self,
+        _request: Request<wire::WebSignInLinkRequest>,
+    ) -> Result<Response<wire::WebSignInLinkResponse>, Status> {
+        Err(Status::unimplemented("web sign-in links"))
+    }
 
     async fn subscribe_profiles(
         &self,

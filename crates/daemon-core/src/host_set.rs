@@ -206,6 +206,7 @@ impl Daemon {
                         reach: Some(self.reads(host)),
                         current: self.sources.ready(host),
                     })),
+                    ..HostEntry::default()
                 },
             );
         }
@@ -246,7 +247,7 @@ impl Daemon {
                 }),
                 standing: Some(Standing::Candidate(wire::Candidate {
                     addrs: candidate.addrs.clone(),
-                    announced_by: Vec::new(),
+                    ..wire::Candidate::default()
                 })),
                 ..HostEntry::default()
             });

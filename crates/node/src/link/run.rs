@@ -1149,8 +1149,13 @@ async fn handle_control_body(
             ctx.report_frame(link, wire::message::Body::ForwardRefused(refused));
             ControlAction::Continue
         }
-        // The core keeps what a peer lists and what the relay sees.
-        body @ (wire::message::Body::Addresses(_) | wire::message::Body::ObservedAddress(_)) => {
+        // The core keeps what a peer lists and what the relay sees, and the
+        // sign-in offers paired peers make each other.
+        body @ (wire::message::Body::Addresses(_)
+        | wire::message::Body::ObservedAddress(_)
+        | wire::message::Body::SignInOffer(_)
+        | wire::message::Body::SignInAnswer(_)
+        | wire::message::Body::SignInTicket(_)) => {
             ctx.report_frame(link, body);
             ControlAction::Continue
         }

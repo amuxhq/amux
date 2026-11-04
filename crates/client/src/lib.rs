@@ -336,13 +336,20 @@ macro_rules! grpc_call {
 
 client_impl!(impl[] Client for GrpcClient, grpc_call);
 
+/// A profile's administration served in process, its streams boxed so one
+/// trait object can stand for any implementation.
+pub type DynProfileAdmin = dyn ProfileAdminService<
+        WatchPairingStream = tonic::codegen::BoxStream<wire::PairingStatus>,
+        SubscribeSignInOffersStream = tonic::codegen::BoxStream<wire::SignInOffers>,
+    >;
+
 /// The client services hosted in this process, called directly: the
 /// phone's embedded runtime. Errors take the same shape they would over a
 /// socket. Without the profile's administration, a dump is unimplemented.
 #[derive(Clone)]
 pub struct InProcess<S> {
     service: S,
-    admin: Option<Arc<dyn ProfileAdminService>>,
+    admin: Option<Arc<DynProfileAdmin>>,
 }
 
 impl<S: AgentService + SessionService> InProcess<S> {
@@ -354,7 +361,7 @@ impl<S: AgentService + SessionService> InProcess<S> {
     }
 
     /// Serves the dump through the profile's administration.
-    pub fn with_admin(mut self, admin: Arc<dyn ProfileAdminService>) -> InProcess<S> {
+    pub fn with_admin(mut self, admin: Arc<DynProfileAdmin>) -> InProcess<S> {
         self.admin = Some(admin);
         self
     }

@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package amux.v1;
 
+import "amux/v1/agent_service.proto";
 import "amux/v1/records.proto";
 
 // The installation's front door: the installation itself and its profiles.
@@ -35,6 +36,136 @@ service InstallationService {
   // as after a purchase; the daemon also reads it whenever it refreshes the
   // account's token.
   rpc RefreshProfile(RefreshProfileRequest) returns (Profile);
+  // The installation's everyday settings, as the config file resolves them.
+  rpc GetSettings(Empty) returns (Settings);
+  // Changes the named settings in the config file and applies each at once.
+  rpc UpdateSettings(UpdateSettingsRequest) returns (Settings);
+  // One profile's onboarding steps, now and on every change.
+  rpc SubscribeOnboarding(OnboardingRequest) returns (stream Onboarding);
+  rpc AnswerOnboarding(AnswerOnboardingRequest) returns (Onboarding);
+  // Folders worth offering as projects: where Claude Code and Codex ran
+  // lately, Git repositories that still exist.
+  rpc SuggestProjects(Empty) returns (SuggestProjectsResponse);
+  // A one-time link that signs the browser in to the profile's account and
+  // opens `path` on amux.sh.
+  rpc WebSignInLink(WebSignInLinkRequest) returns (WebSignInLinkResponse);
+}
+
+message Settings {
+  // What paired hosts and phones call this machine; never empty.
+  string host_name = 1;
+  // Whether amux starts when the person logs in; absent when this install
+  // runs no supervisor, so there is nothing to start.
+  optional bool start_at_login = 2;
+  // On power the machine stays awake while amux runs; on battery only while
+  // an agent works.
+  bool keep_awake = 3;
+  // The project list new-agent pickers offer, as canonical paths.
+  repeated string projects = 4;
+  ChatIn chat_in = 5;
+  // Which Claude a new agent runs; KIND_UNSPECIFIED follows chat_in.
+  Kind claude_kind = 6;
+  bool telemetry = 7;
+  bool auto_reports = 8;
+}
+
+// Where the terminal client chats with agents.
+enum ChatIn {
+  CHAT_IN_UNSPECIFIED = 0;
+  // amux's own chat.
+  CHAT_IN_AMUX = 1;
+  // Each agent's own interface.
+  CHAT_IN_NATIVE = 2;
+}
+
+// Absent fields are left as they are.
+message UpdateSettingsRequest {
+  // An empty name returns to the machine's default name.
+  optional string host_name = 1;
+  optional bool start_at_login = 2;
+  optional bool keep_awake = 3;
+  // The whole new list.
+  optional ProjectList projects = 4;
+  optional ChatIn chat_in = 5;
+  optional Kind claude_kind = 6;
+  optional bool telemetry = 7;
+  optional bool auto_reports = 8;
+}
+
+message ProjectList {
+  repeated string paths = 1;
+}
+
+message OnboardingRequest {
+  // Empty: the profile a bare `amux` opens.
+  bytes profile_id = 1;
+}
+
+message Onboarding {
+  bytes profile_id = 1;
+  // In the order they are shown.
+  repeated OnboardingStep steps = 2;
+  // Whether a client has shown the analytics notice; nothing is sent to
+  // amux.sh before it has.
+  bool notice_shown = 3;
+}
+
+message OnboardingStep {
+  OnboardingStepId id = 1;
+  StepState state = 2;
+}
+
+enum OnboardingStepId {
+  ONBOARDING_STEP_ID_UNSPECIFIED = 0;
+  ONBOARDING_STEP_ID_PAIR_PHONE = 1;
+  ONBOARDING_STEP_ID_KEEP_REACHABLE = 2;
+  ONBOARDING_STEP_ID_SIGN_IN = 3;
+  ONBOARDING_STEP_ID_PROJECTS = 4;
+  ONBOARDING_STEP_ID_IMPROVE = 5;
+  ONBOARDING_STEP_ID_FIRST_AGENT = 6;
+}
+
+enum StepState {
+  STEP_STATE_UNSPECIFIED = 0;
+  STEP_STATE_NEEDED = 1;
+  STEP_STATE_DONE = 2;
+  STEP_STATE_SKIPPED = 3;
+  STEP_STATE_NOT_NEEDED = 4;
+}
+
+message AnswerOnboardingRequest {
+  bytes profile_id = 1;
+  oneof answer {
+    // A confirmation step the person confirmed.
+    OnboardingStepId done = 2;
+    OnboardingStepId skip = 3;
+    Empty notice_shown = 4;
+    // "Finish setting up" dismissed: every needed step is skipped.
+    Empty dismiss = 5;
+  }
+  // The client answering, for the usage event.
+  Surface surface = 6;
+}
+
+enum Surface {
+  SURFACE_UNSPECIFIED = 0;
+  SURFACE_TERMINAL = 1;
+  SURFACE_PHONE = 2;
+  SURFACE_MAC = 3;
+}
+
+message SuggestProjectsResponse {
+  repeated ProjectEntry suggestions = 1;
+}
+
+message WebSignInLinkRequest {
+  bytes profile_id = 1;
+  // A path on amux.sh, such as "/offer".
+  string path = 2;
+}
+
+message WebSignInLinkResponse {
+  string url = 1;
 }
 
 message Installation { string version = 1; }

@@ -1504,18 +1504,14 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
     // Nothing inside a repository is searched, and plain directories are
     // not repositories.
     assert_eq!(
-        names(&local.repositories),
+        names(&local.projects),
         ["amux", "amux-review", "site", "notes"]
     );
     assert!(
         local
-            .repositories
+            .projects
             .iter()
             .all(|entry| entry.last_used_ms.is_none())
-    );
-    assert_eq!(
-        local.roots,
-        [roots.canonicalize().unwrap().to_str().unwrap()]
     );
 
     let found = person
@@ -1524,7 +1520,7 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
         .unwrap()
         .into_inner();
     assert!(found.recent.is_empty());
-    assert_eq!(names(&found.repositories), ["amux-review"]);
+    assert_eq!(names(&found.projects), ["amux-review"]);
     let capped = person
         .list_repositories(listing(None, 3, None))
         .await
@@ -1532,7 +1528,7 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
         .into_inner();
     assert_eq!(names(&capped.recent), ["newer", "older"]);
     assert_eq!(
-        names(&capped.repositories),
+        names(&capped.projects),
         ["amux"],
         "the limit counts both lists"
     );
@@ -1563,7 +1559,7 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
         .await
         .unwrap()
         .into_inner();
-    assert!(own.recent.is_empty() && own.repositories.is_empty() && own.roots.is_empty());
+    assert!(own.recent.is_empty() && own.projects.is_empty());
     let stranger = from_laptop
         .list_repositories(listing(None, 50, Some(uuid::Uuid::new_v4())))
         .await

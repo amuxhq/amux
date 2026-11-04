@@ -187,6 +187,7 @@ async fn the_fleet_dump_part_writes_no_names_paths_or_status_text() {
                 name: NEIGHBOUR.into(),
                 ..Default::default()
             }],
+            ..Default::default()
         }),
     ));
     feed.send(inventory_agent(wire::Agent {

@@ -49,6 +49,37 @@ fn token(token: &[u8]) -> Result<&[u8], Status> {
 
 #[tonic::async_trait]
 impl ProfileAdminService for ProfileAdmin {
+    type WatchPairingStream = tonic::codegen::BoxStream<wire::PairingStatus>;
+    type SubscribeSignInOffersStream = tonic::codegen::BoxStream<wire::SignInOffers>;
+
+    async fn watch_pairing(
+        &self,
+        _request: Request<wire::Empty>,
+    ) -> Result<Response<Self::WatchPairingStream>, Status> {
+        Err(Status::unimplemented("watching pairing"))
+    }
+
+    async fn offer_sign_in(
+        &self,
+        _request: Request<wire::OfferSignInRequest>,
+    ) -> Result<Response<wire::Empty>, Status> {
+        Err(Status::unimplemented("offering sign-in"))
+    }
+
+    async fn subscribe_sign_in_offers(
+        &self,
+        _request: Request<wire::Empty>,
+    ) -> Result<Response<Self::SubscribeSignInOffersStream>, Status> {
+        Err(Status::unimplemented("sign-in offers"))
+    }
+
+    async fn answer_sign_in_offer(
+        &self,
+        _request: Request<wire::AnswerSignInOfferRequest>,
+    ) -> Result<Response<wire::Profile>, Status> {
+        Err(Status::unimplemented("answering a sign-in offer"))
+    }
+
     async fn sign_out(
         &self,
         _request: Request<wire::Empty>,
@@ -75,6 +106,7 @@ impl ProfileAdminService for ProfileAdmin {
         Ok(Response::new(PairingStatus {
             active: edge.pairing_active(),
             locked_out: edge.pairing_locked_out(),
+            ..PairingStatus::default()
         }))
     }
 

@@ -283,9 +283,14 @@ pub struct State {
     revoked: bool,
     used: Used,
     /// The relay refused the target for the plan, and since then no link
-    /// of its own came up, the relay said it holds no link to it, and some
-    /// route listed it throughout.
+    /// of its own came up, the relay said it holds no link to it, and the
+    /// relay claimed it throughout.
     refused_for_plan: bool,
+    /// The target may read away: the relay's refusal for the plan stands,
+    /// and no attempt is out or the target read away already. A refusal
+    /// that came while a path of the target's own was being tried waits
+    /// for that attempt to end, and away holds through the retries after.
+    away: bool,
     /// What the core last told about the target.
     view: HostView,
     /// The rules a step broke.
@@ -318,7 +323,7 @@ impl State {
         (&BTreeSet<LinkId>, &BTreeSet<LinkId>, &BTreeSet<LinkId>),
         (&BTreeSet<Via>, bool, bool),
         (&Option<Plan>, bool, Option<bool>),
-        (bool, bool, bool, bool, bool),
+        (bool, bool, bool, bool, bool, bool),
         &Used,
         &HostView,
         (&BTreeSet<&'static str>, &Option<String>),
@@ -334,6 +339,7 @@ impl State {
                 self.rested,
                 self.revoked,
                 self.refused_for_plan,
+                self.away,
             ),
             &self.used,
             &self.view,
@@ -461,6 +467,7 @@ impl Machine for PresenceRouting {
             revoked: false,
             used: Used::default(),
             refused_for_plan: false,
+            away: false,
             view,
             broken: BTreeSet::new(),
             dumped: None,
@@ -734,20 +741,22 @@ impl Machine for PresenceRouting {
         {
             next.broken.insert(CALL_DIALS);
         }
-        // A link of the target's own coming up, or the last route going,
+        // A link of the target's own coming up, or the relay's claim going,
         // is the last word on it; a refusal while its own link is up stays
         // the last word once that link goes.
         let came_up = next.direct.iter().any(|link| !s.direct.contains(link));
-        if came_up || next.view.routes.is_empty() {
+        if came_up || !next.view.routes.contains(&Route::Via(RELAY)) {
             next.refused_for_plan = false;
         }
+        next.away =
+            next.refused_for_plan && (next.attempt.is_none() || s.view.presence == Presence::Away);
         Some(next)
     }
 
     fn properties(&self) -> Vec<Property<Self>> {
         vec![
             Property::always(PRESENCE_FROM_LINKS, |_, s: &State| {
-                reads_by_links(&s.view, s.refused_for_plan)
+                reads_by_links(&s.view, s.away)
                     && (s.view.presence == Presence::Online) == !s.direct.is_empty()
             }),
             Property::always(ONE_ATTEMPT, |_, s: &State| !s.broken.contains(ONE_ATTEMPT)),
@@ -780,6 +789,19 @@ impl Machine for PresenceRouting {
             Property::sometimes("a host is sometimes away", |_, s: &State| {
                 s.view.presence == Presence::Away
             }),
+            Property::sometimes(
+                "a host the relay refused for the plan reads offline while a path of its own \
+                 is still being tried",
+                |_, s: &State| {
+                    s.refused_for_plan
+                        && s.attempt.is_some()
+                        && s.view.presence == Presence::Offline
+                },
+            ),
+            Property::sometimes(
+                "a host reads away while it is dialled again",
+                |_, s: &State| s.view.presence == Presence::Away && s.attempt.is_some(),
+            ),
             Property::sometimes(
                 "a host dialled from memory reads online before the relay says anything of it",
                 |_, s: &State| s.view.presence == Presence::Online && !s.relay_claimed,
@@ -936,15 +958,16 @@ fn link_up(next: &mut State, kind: CarrierKind) -> Input {
 /// Presence's promise the composed net judges too, with the predicate both
 /// judge it by.
 pub(crate) const PRESENCE_FROM_LINKS: &str = "presence from links: a host reads online exactly \
-     while a link of its own is up, away only while none is and the relay's refusal for the \
-     account's plan is the last word on it, and offline otherwise";
+     while a link of its own is up, away only while none is, the relay's refusal for the \
+     account's plan is the last word on it and nothing else is being tried, or it read away \
+     already, and offline otherwise";
 
 /// Whether a host reading as `view` reads as the links listed in it say,
-/// `refused_for_plan` being whether the relay's refusal for the plan is
-/// the last word on the host.
-pub(crate) fn reads_by_links(view: &HostView, refused_for_plan: bool) -> bool {
+/// `away` being whether the relay's refusal for the plan is the last word
+/// on the host and either no attempt is out or it read away already.
+pub(crate) fn reads_by_links(view: &HostView, away: bool) -> bool {
     let own = view.routes.iter().any(Route::is_direct);
-    let away = !own && refused_for_plan && !view.routes.is_empty();
+    let away = !own && away && !view.routes.is_empty();
     match view.presence {
         Presence::Online => own,
         Presence::Away => away,
@@ -1010,7 +1033,8 @@ impl fmt::Debug for State {
             .field("untold", &self.untold)
             .field("rested", &self.rested)
             .field("revoked", &self.revoked)
-            .field("refused_for_plan", &self.refused_for_plan);
+            .field("refused_for_plan", &self.refused_for_plan)
+            .field("away", &self.away);
         if !self.broken.is_empty() {
             debug.field("broken", &self.broken);
         }

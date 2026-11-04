@@ -45,7 +45,9 @@ consequences. Do not add reassurance or describe implementation choices.
 | Removing an exited agent for good | delete |
 
 Use **away** only when the daemon says the relay refused the host because the
-selected account has no subscription: upgrading reaches it. Use **offline** for
+selected account has no subscription: upgrading reaches it. The daemon says so
+only once nothing else is being tried, and keeps saying so until that changes,
+so the subscription offer shows as soon as a host reads away and stays put. Use **offline** for
 every other host out of reach, including one that no longer trusts this phone
 and one only a signed-out phone cannot reach. Never describe an offline host as
 away, and never offer a subscription merely because a host is offline.

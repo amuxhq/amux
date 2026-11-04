@@ -240,11 +240,20 @@ place, the daemon core's presence state (`crates/daemon-core/src/presence.rs`):
 - **Online:** a link of the host's own is up, whether its packets go on the
   network, over SSH or through a forwarder end to end. The kind of path that
   link takes is the one the host entry's `online` reach names.
-- **Away:** no such link is up, and the relay last refused to forward to the
-  host with `PAYMENT_REQUIRED`, because the account's free plan carries no
-  connection between hosts. Upgrading reaches the host; nothing else reads
-  away. A link of the host's own coming up, the relay saying it holds no link
-  to the host, or no route listing it any more ends it.
+- **Away:** no such link is up, the relay last refused to forward to the host
+  with `PAYMENT_REQUIRED`, because the account's free plan carries no
+  connection between hosts, and nothing else is still being tried. Upgrading
+  reaches the host; nothing else reads away. The relay refuses within a round
+  trip, long before a dial on the local network, over SSH or through a paired
+  host has ended, so while an attempt to the host is out the refusal says
+  nothing yet: the host reads offline until that attempt ends without a link,
+  and online if one comes up. Once a host reads away it goes on reading away
+  through every retry after, without a gap, until the refusal stops being the
+  relay's last word: a link of the host's own comes up, the relay says it
+  holds no link to the host, or the relay no longer claims it. A paired host
+  refusing to forward says nothing of what the relay carries. A client may
+  therefore offer the subscription the moment a host reads away and withdraw
+  it the moment it stops; no client needs to wait out a refusal of its own.
 - **Offline:** everything else. A host that said it no longer trusts this one
   is offline, with `revoked` set on its entry.
 

@@ -34,7 +34,10 @@ struct LocalNetworkPrimer: View {
 /// put this in front of somebody. Share Usage in Settings turns them off.
 struct UsageNoticeLine: View {
     @Environment(\.design) private var design
-    /// Told once the line is on screen.
+    /// Told once the line is in view. The first-run screen scrolls, and on
+    /// a small phone or at a large text size the line starts below the
+    /// fold: drawn there it was not read, so it counts only once nearly all
+    /// of it has been scrolled into view.
     let drawn: @MainActor () -> Void
     let details: @MainActor () -> Void
 
@@ -56,7 +59,9 @@ struct UsageNoticeLine: View {
             .identified("home.usageNotice.details", label: "Details")
             .reclaimingThumbTarget(y: 14)
         }
-        .onAppear { drawn() }
+        .onScrollVisibilityChange(threshold: 0.9) { visible in
+            if visible { drawn() }
+        }
     }
 }
 

@@ -172,6 +172,8 @@ macro_rules! installation_impl {
 #[derive(Clone)]
 pub struct GrpcInstallation {
     door: InstallationServiceClient<tonic::transport::Channel>,
+    /// What each profile opened from here names its client as.
+    surface: Option<&'static str>,
 }
 
 impl GrpcInstallation {
@@ -179,7 +181,15 @@ impl GrpcInstallation {
     pub async fn connect(path: &Path) -> Result<GrpcInstallation, RpcError> {
         Ok(GrpcInstallation {
             door: InstallationServiceClient::new(crate::local_channel(path).await?),
+            surface: None,
         })
+    }
+
+    /// Names the client of every profile opened from here as `surface`
+    /// ([`GrpcClient::naming`]).
+    pub fn naming(mut self, surface: &'static str) -> GrpcInstallation {
+        self.surface = Some(surface);
+        self
     }
 }
 
@@ -191,8 +201,11 @@ macro_rules! grpc_call {
 
 macro_rules! grpc_open {
     ($installation:expr, $profile:expr) => {{
-        let client: Arc<dyn Client> =
-            Arc::new(GrpcClient::connect(Path::new(&$profile.socket_path)).await?);
+        let client: Arc<dyn Client> = Arc::new(
+            GrpcClient::connect(Path::new(&$profile.socket_path))
+                .await?
+                .naming($installation.surface),
+        );
         Ok(client)
     }};
 }

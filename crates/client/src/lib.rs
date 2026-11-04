@@ -386,6 +386,8 @@ pub async fn local_channel(path: &Path) -> Result<tonic::transport::Channel, Rpc
 pub struct GrpcClient {
     service: wire::ClientStubs,
     admin: ProfileAdminServiceClient<tonic::transport::Channel>,
+    /// What every call names this client as, in [`wire::SURFACE_HEADER`].
+    surface: Option<tonic::metadata::AsciiMetadataValue>,
 }
 
 impl GrpcClient {
@@ -398,16 +400,38 @@ impl GrpcClient {
         GrpcClient {
             service: wire::client_stubs(channel.clone()),
             admin: ProfileAdminServiceClient::new(channel),
+            surface: None,
         }
+    }
+
+    /// Names this client as `surface` on every call (`mac` for the Mac
+    /// app), so the daemon counts it as that client opening.
+    pub fn naming(mut self, surface: Option<&'static str>) -> GrpcClient {
+        self.surface = surface.map(tonic::metadata::AsciiMetadataValue::from_static);
+        self
+    }
+
+    fn request<T>(&self, message: T) -> Request<T> {
+        let mut request = Request::new(message);
+        if let Some(surface) = &self.surface {
+            request
+                .metadata_mut()
+                .insert(wire::SURFACE_HEADER, surface.clone());
+        }
+        request
     }
 }
 
 macro_rules! grpc_call {
     ($client:expr, admin, $name:ident, $request:expr) => {
-        $client.admin.clone().$name($request)
+        $client.admin.clone().$name($client.request($request))
     };
     ($client:expr, $service:ident, $name:ident, $request:expr) => {
-        $client.service.$service.clone().$name($request)
+        $client
+            .service
+            .$service
+            .clone()
+            .$name($client.request($request))
     };
 }
 

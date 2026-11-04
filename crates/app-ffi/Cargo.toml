@@ -18,6 +18,7 @@ default = []
 debug-tools = []
 
 [dependencies]
+analytics = { workspace = true }
 app-embedded = { workspace = true }
 app-runtime = { workspace = true }
 client = { workspace = true }

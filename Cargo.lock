@@ -252,6 +252,7 @@ dependencies = [
 name = "app-ffi"
 version = "0.2.0"
 dependencies = [
+ "analytics",
  "app-embedded",
  "app-runtime",
  "cbindgen",

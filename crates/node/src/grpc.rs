@@ -59,10 +59,7 @@ pub(crate) fn wire_error(code: ErrorCode, message: impl Into<String>) -> wire::E
     }
 }
 
-/// The request header a client of the profile socket names itself in, for
-/// the usage count of clients opened: `mac` for the Mac app; the terminal
-/// sends none.
-pub const SURFACE_HEADER: &str = "amux-surface";
+pub use wire::SURFACE_HEADER;
 
 /// The client services for one profile. `caller` is set on an agent's
 /// tools socket: that agent is the parent of what it spawns and the sender

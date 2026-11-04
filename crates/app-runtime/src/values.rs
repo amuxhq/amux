@@ -9,9 +9,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ui_state::{AgentKey, Connection, InputState, Key, PhaseView, Refusal};
 use ui_view::{
-    AskCard, ComposerView, ContextView, ControlsSummary, FleetView, FormValue, Overview,
-    PLACEHOLDER, QuestionResponse, QueuedRow, Reach, RefusedPrompt, Row, SentPrompt, SettingChange,
-    SettingsView, SignInView,
+    AskCard, ComposerView, ContextView, ControlsSummary, FleetView, FormValue, OnboardingView,
+    Overview, PLACEHOLDER, QuestionResponse, QueuedRow, Reach, RefusedPrompt, Row, SentPrompt,
+    SettingChange, SettingsView, SetupStep, SignInView,
 };
 use wire::{BlobRef, Kind, Platform, RouteKind};
 
@@ -684,6 +684,279 @@ pub enum SignInOfferOutcome {
     /// went away before it answered. An offer that still stands stays
     /// listed, and accepting it again once that machine is back can work.
     Unreachable,
+}
+
+// --- setting up a desktop ------------------------------------------------
+
+/// The installation's everyday settings, as a desktop client shows them.
+/// Which interface the terminal chats in, and which Claude new agents run,
+/// are the terminal's to show and are left out.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MachineSettings {
+    /// What paired devices call this machine; never empty.
+    pub host_name: String,
+    /// Whether amux starts at login; None on an install without a
+    /// supervisor, which has nothing to start.
+    pub start_at_login: Option<bool>,
+    /// On power the machine stays awake while amux runs; on battery only
+    /// while an agent works.
+    pub keep_awake: bool,
+    /// The folders new-agent pickers offer first, as absolute paths.
+    pub projects: Vec<String>,
+    /// Usage counts are sent.
+    pub telemetry: bool,
+    /// A report is sent on its own when something goes wrong.
+    pub auto_reports: bool,
+}
+
+impl From<&wire::Settings> for MachineSettings {
+    fn from(settings: &wire::Settings) -> Self {
+        MachineSettings {
+            host_name: settings.host_name.clone(),
+            start_at_login: settings.start_at_login,
+            keep_awake: settings.keep_awake,
+            projects: settings.projects.clone(),
+            telemetry: settings.telemetry,
+            auto_reports: settings.auto_reports,
+        }
+    }
+}
+
+/// A change to the installation's settings: what is None is left as it
+/// is.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SettingsChange {
+    /// Empty returns to the machine's own name.
+    #[serde(default)]
+    pub host_name: Option<String>,
+    #[serde(default)]
+    pub start_at_login: Option<bool>,
+    #[serde(default)]
+    pub keep_awake: Option<bool>,
+    /// The whole new list.
+    #[serde(default)]
+    pub projects: Option<Vec<String>>,
+    #[serde(default)]
+    pub telemetry: Option<bool>,
+    #[serde(default)]
+    pub auto_reports: Option<bool>,
+}
+
+impl From<SettingsChange> for wire::UpdateSettingsRequest {
+    fn from(change: SettingsChange) -> Self {
+        wire::UpdateSettingsRequest {
+            host_name: change.host_name,
+            start_at_login: change.start_at_login,
+            keep_awake: change.keep_awake,
+            projects: change.projects.map(|paths| wire::ProjectList { paths }),
+            telemetry: change.telemetry,
+            auto_reports: change.auto_reports,
+            ..wire::UpdateSettingsRequest::default()
+        }
+    }
+}
+
+/// A folder worth offering as a project: where Claude Code or Codex ran
+/// lately.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ProjectSuggestion {
+    pub path: String,
+    pub name: String,
+}
+
+/// The analytics notice, in the words every client shows, and the page
+/// that says what is sent and how to turn it off.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AnalyticsNotice {
+    pub words: String,
+    pub url: String,
+}
+
+/// Where one step of setting up stands, as the daemon keeps it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StepState {
+    Needed,
+    Done,
+    Skipped,
+    NotNeeded,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct OnboardingStepState {
+    pub step: SetupStep,
+    pub state: StepState,
+}
+
+/// A profile's setting up as the daemon serves it, with what the shared
+/// rules make of it: where onboarding opens, how many steps "Finish setting
+/// up" offers, and whether the analytics notice is still to show.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct OnboardingState {
+    /// In the order they are shown; steps this build has no name for are
+    /// left out.
+    pub steps: Vec<OnboardingStepState>,
+    pub notice_shown: bool,
+    /// The person dismissed finishing what they skipped.
+    pub dismissed: bool,
+    pub view: OnboardingView,
+    /// The steps still to do: needed, or skipped.
+    pub open: Vec<SetupStep>,
+}
+
+impl From<&wire::Onboarding> for OnboardingState {
+    fn from(onboarding: &wire::Onboarding) -> Self {
+        let steps = onboarding
+            .steps
+            .iter()
+            .filter_map(|step| {
+                let state = match step.state() {
+                    wire::StepState::Needed => StepState::Needed,
+                    wire::StepState::Done => StepState::Done,
+                    wire::StepState::Skipped => StepState::Skipped,
+                    wire::StepState::NotNeeded => StepState::NotNeeded,
+                    wire::StepState::Unspecified => return None,
+                };
+                Some(OnboardingStepState {
+                    step: SetupStep::of(step.id())?,
+                    state,
+                })
+            })
+            .collect::<Vec<_>>();
+        OnboardingState {
+            open: steps
+                .iter()
+                .map(|step| step.step)
+                .filter(|step| ui_view::step_open(onboarding, *step))
+                .collect(),
+            steps,
+            notice_shown: onboarding.notice_shown,
+            dismissed: onboarding.dismissed,
+            view: ui_view::onboarding_view(onboarding),
+        }
+    }
+}
+
+impl From<&OnboardingState> for wire::Onboarding {
+    /// The steps as the daemon would serve them, for the shared rules to
+    /// read.
+    fn from(state: &OnboardingState) -> Self {
+        wire::Onboarding {
+            profile_id: Vec::new(),
+            steps: state
+                .steps
+                .iter()
+                .map(|step| wire::OnboardingStep {
+                    id: step.step.id() as i32,
+                    state: match step.state {
+                        StepState::Needed => wire::StepState::Needed,
+                        StepState::Done => wire::StepState::Done,
+                        StepState::Skipped => wire::StepState::Skipped,
+                        StepState::NotNeeded => wire::StepState::NotNeeded,
+                    } as i32,
+                })
+                .collect(),
+            notice_shown: state.notice_shown,
+            dismissed: state.dismissed,
+        }
+    }
+}
+
+/// What a client tells the daemon of setting up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum OnboardingAnswer {
+    /// The step is on screen: counted, nothing kept.
+    Shown(SetupStep),
+    /// The person confirmed a step only they can confirm: keeping it
+    /// reachable, the projects, helping improve amux.
+    Done(SetupStep),
+    /// "Later".
+    Skip(SetupStep),
+    /// The analytics notice was put in front of the person.
+    NoticeShown,
+    /// "Finish setting up" dismissed: every step still needed is skipped.
+    Dismiss,
+    /// A one-tap sign-in was put in front of the person, on this side.
+    SignInOfferShown(OfferRole),
+}
+
+impl From<OnboardingAnswer> for wire::answer_onboarding_request::Answer {
+    fn from(answer: OnboardingAnswer) -> Self {
+        use wire::answer_onboarding_request::Answer;
+        match answer {
+            OnboardingAnswer::Shown(step) => Answer::Shown(step.id() as i32),
+            OnboardingAnswer::Done(step) => Answer::Done(step.id() as i32),
+            OnboardingAnswer::Skip(step) => Answer::Skip(step.id() as i32),
+            OnboardingAnswer::NoticeShown => Answer::NoticeShown(wire::Empty {}),
+            OnboardingAnswer::Dismiss => Answer::Dismiss(wire::Empty {}),
+            OnboardingAnswer::SignInOfferShown(role) => Answer::SignInOfferShown(match role {
+                OfferRole::Offerer => wire::OfferRole::Offerer,
+                OfferRole::Receiver => wire::OfferRole::Receiver,
+            }
+                as i32),
+        }
+    }
+}
+
+/// A pairing window open on this machine: one that takes the PIN typed on
+/// a phone or the secret its QR code carries.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PairingWindowView {
+    /// Six digits; empty when the window takes none.
+    pub pin: String,
+    /// What the QR code shows: a link that opens the app at the
+    /// confirmation, or sends a phone without it to the App Store.
+    pub qr_link: String,
+    /// How long the window stays open from when it opened.
+    pub ttl_seconds: u64,
+}
+
+impl From<&wire::PairingWindow> for PairingWindowView {
+    fn from(window: &wire::PairingWindow) -> Self {
+        use wire::pairing_window::Secret;
+        PairingWindowView {
+            pin: match &window.secret {
+                Some(Secret::PinAndQr(both)) => both.pin.clone(),
+                Some(Secret::Pin(pin)) => pin.clone(),
+                _ => String::new(),
+            },
+            qr_link: window.qr_link.clone(),
+            ttl_seconds: window.ttl_seconds,
+        }
+    }
+}
+
+/// Where this machine's pairing window stands.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PairingStatusView {
+    /// A window is open.
+    pub active: bool,
+    /// A device proved the window's secret and is confirming.
+    pub joining: bool,
+    /// Too many wrong codes closed the last window.
+    pub locked_out: bool,
+    /// The device the window's last pairing trusted.
+    pub paired: Option<PairedDevice>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PairedDevice {
+    pub host_id: Vec<u8>,
+    pub name: String,
+}
+
+impl From<&wire::PairingStatus> for PairingStatusView {
+    fn from(status: &wire::PairingStatus) -> Self {
+        PairingStatusView {
+            active: status.active,
+            joining: status.joining,
+            locked_out: status.locked_out,
+            paired: status.paired.as_ref().map(|peer| PairedDevice {
+                host_id: peer.host_id.clone(),
+                name: peer.name.clone(),
+            }),
+        }
+    }
 }
 
 /// The tab the subscription page was opened from.

@@ -52,7 +52,10 @@ after the start, and before the answer of any act that moved it), `fleets`
 and `chats` (each the fleet's number and a `FleetDelta` or `ChatDelta`: what
 moved in that view, see below), `sign_in_offers` (each an open profile's fleet
 number and every `SignInOfferView` it holds now, when they moved: a paired
-machine's offer of its account, shown with the account's email) and `answers`
+machine's offer of its account, shown with the account's email),
+`onboarding` and `pairing` (each an open profile's fleet number and its
+`OnboardingState` or `PairingStatusView`, while the app follows them; see
+below) and `answers`
 (each an act's ticket and its result as JSON text, after the deltas of what
 the act moved).
 
@@ -122,6 +125,39 @@ and writes a `rebind` line to the link log saying so. `amux_runtime_record(rt, p
 `UsageEvent` (the paywall opening, a purchase starting) on that profile, or on
 every profile when `profile` is null. Only a published build sends; every
 other build records nothing unless `AMUX_ANALYTICS_URL` names a server.
+
+## Setting up a computer
+
+A desktop app walks its person through setting up the computer it attached
+to, in the steps and order the daemon keeps, the same ones the terminal
+shows. An attached runtime names itself `mac` to the daemon on every call,
+so the client opening and each step counted say which app it was.
+
+The installation's settings are the runtime's: `amux_runtime_settings`
+answers `MachineSettings` (the machine's name, start at login where the
+install has a supervisor, keep awake, projects, usage counts and automatic
+reports) and `amux_runtime_update_settings` applies a `SettingsChange` at
+once, answering the settings it left. `amux_runtime_suggest_projects`
+answers the `ProjectSuggestion`s, the repositories Claude Code and Codex ran
+in lately, and `amux_runtime_web_sign_in_link(rt, profile, path)` a
+one-time link that signs the browser in to the profile's account and opens
+`path` (`/offer` after a sign-in on this computer).
+
+The steps are a profile's: `amux_profile_watch_onboarding` follows them,
+handing over an `OnboardingState` (each step's state, whether the
+analytics notice was shown, whether finishing was dismissed, and the
+shared `OnboardingView` with where it opens and how many steps are left)
+whenever they move; `amux_profile_answer_onboarding` tells the daemon an
+`OnboardingAnswer` (a step shown, done or skipped, the notice shown,
+finishing dismissed, a sign-in offer shown) and answers the state after it.
+`amux_onboarding_next` applies the shared rule for the step after another,
+and `amux_analytics_notice` answers the notice's words and link as an
+`AnalyticsNotice`. Pairing a phone opens a window that takes the PIN or the
+QR code's secret: `amux_profile_open_pairing(profile, ttl_seconds)` closes
+any window open, opens one and answers its `PairingWindowView` (PIN, QR
+link, lifetime), and hands over a `PairingStatusView` (open, a phone
+joining, locked out after wrong PINs, the device paired) as it moves, until
+`amux_profile_close_pairing`.
 
 ## Views and deltas
 
@@ -212,7 +248,10 @@ failure. The `debug-tools` feature, which only driving builds carry, lets
 process: pairing by PIN, the fleet, a chat's rows by key, a permission
 answered by position, a question answered with picks, paging and a report, and
 the profile registry (create, the list moving, per-profile identity and source
-policy, delete and the refusal to delete the last).
+policy, delete and the refusal to delete the last), and a Mac app attached to a
+daemon setting it up: the client and its steps counted as the Mac, the steps
+handed over and answered, settings read and changed, suggestions, and a
+pairing window opened, followed and closed.
 A confinement test holds the loop's shape: the header declares no function
 type the library could call back through, and a step on one thread drains
 the inputs another thread posted. `just test-crate app-runtime` covers the

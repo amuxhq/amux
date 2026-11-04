@@ -260,6 +260,42 @@ public final class Runtime: @unchecked Sendable {
         }
     }
 
+    // MARK: - Settings
+
+    /// The installation's everyday settings, as its daemon keeps them.
+    public func settings() async -> Result<MachineSettings, RuntimeFailure> {
+        await act(MachineSettings.self) { amux_runtime_settings($0) }
+    }
+
+    /// Changes the installation's settings, each in force at once; answers
+    /// them as the change left them.
+    public func updateSettings(
+        _ change: SettingsChange
+    ) async -> Result<MachineSettings, RuntimeFailure> {
+        let change = Bridge.json(change)
+        return await act(MachineSettings.self) { live in
+            change.withCString { amux_runtime_update_settings(live, $0) }
+        }
+    }
+
+    /// The folders worth offering as projects: where Claude Code and Codex
+    /// ran lately, newest first.
+    public func suggestProjects() async -> Result<[ProjectSuggestion], RuntimeFailure> {
+        await act([ProjectSuggestion].self) { amux_runtime_suggest_projects($0) }
+    }
+
+    /// A one-time link that signs the browser in to a profile's account and
+    /// opens `path` on its account service.
+    public func webSignInLink(
+        _ profile: String, path: String
+    ) async -> Result<String, RuntimeFailure> {
+        await act(String.self) { live in
+            profile.withCString { profile in
+                path.withCString { amux_runtime_web_sign_in_link(live, profile, $0) }
+            }
+        }
+    }
+
     // MARK: - The app's life
 
     /// Tells the runtime of a moment of the app's life, on the core queue,
@@ -358,6 +394,33 @@ public enum Moved: Sendable {
     /// Every offer of an account the profile's paired machines make it now:
     /// an offer gone is missing from the list.
     case signInOffers([SignInOfferView])
+    /// The profile's setting up, once it is followed
+    /// (`Profile.watchOnboarding`).
+    case onboarding(OnboardingState)
+    /// The profile's pairing window, while one is held open
+    /// (`Profile.openPairing`).
+    case pairing(PairingStatusView)
+}
+
+/// The shared rules of setting up, applied to steps the app holds.
+public enum Onboarding {
+    /// The analytics notice, in the words every client shows.
+    public static var notice: AnalyticsNotice {
+        Bridge.read(AnalyticsNotice.self, amux_analytics_notice()) ?? AnalyticsNotice(words: "", url: "")
+    }
+
+    /// The step a run of setting up shows after `after` (from the start
+    /// when nil): the next still needed and, when the person came back to
+    /// finish, the next skipped too. Nil ends the run.
+    public static func next(
+        in state: OnboardingState, after: SetupStep?, finishing: Bool
+    ) -> SetupStep? {
+        Bridge.json(state).withCString { state in
+            Bridge.optional(after.map { Bridge.json($0) }) { after in
+                Bridge.read(SetupStep?.self, amux_onboarding_next(state, after, finishing)) ?? nil
+            }
+        }
+    }
 }
 
 /// One profile's fleet and chats, open while it is on screen.
@@ -501,6 +564,38 @@ public final class Profile: @unchecked Sendable {
         return await act(SignInOfferOutcome.self) { live in
             answer.withCString { amux_profile_answer_sign_in_offer(live, $0) }
         }
+    }
+
+    // MARK: - Setting up
+
+    /// Follows the profile's setting up: `moved` hears the steps now and on
+    /// every change, until the profile closes.
+    public func watchOnboarding() {
+        call(()) { amux_profile_watch_onboarding($0) }
+    }
+
+    /// Tells the daemon what the person did with setting up, counted for
+    /// this app; answers the steps after it.
+    public func answerOnboarding(
+        _ answer: OnboardingAnswer
+    ) async -> Result<OnboardingState, RuntimeFailure> {
+        let answer = Bridge.json(answer)
+        return await act(OnboardingState.self) { live in
+            answer.withCString { amux_profile_answer_onboarding(live, $0) }
+        }
+    }
+
+    /// Opens a pairing window that takes the PIN or the QR code's secret,
+    /// replacing any open one, for `ttl` seconds (0 for the daemon's own);
+    /// `moved` hears its status until `closePairing`.
+    public func openPairing(ttl: UInt64) async -> Result<PairingWindowView, RuntimeFailure> {
+        await act(PairingWindowView.self) { amux_profile_open_pairing($0, ttl) }
+    }
+
+    /// Closes the pairing window and stops following it.
+    @discardableResult
+    public func closePairing() async -> Result<Nothing, RuntimeFailure> {
+        await act(Nothing.self) { amux_profile_close_pairing($0) }
     }
 
     /// Stops trusting a machine, telling it so where it can be reached.
@@ -766,7 +861,8 @@ final class CoreLoop: @unchecked Sendable {
         // Queued on the main actor before any answer resumes its waiter
         // there, so an act is answered after what it moved is in place.
         if stepped.profiles != nil || !stepped.fleets.isEmpty || !stepped.chats.isEmpty
-            || !stepped.signInOffers.isEmpty {
+            || !stepped.signInOffers.isEmpty || !stepped.onboarding.isEmpty
+            || !stepped.pairing.isEmpty {
             DispatchQueue.main.async { [self] in
                 MainActor.assumeIsolated {
                     // Read here, not on the queue: a fleet closed since the
@@ -779,6 +875,12 @@ final class CoreLoop: @unchecked Sendable {
                     }
                     for moved in stepped.signInOffers {
                         lock.withLock { moves[moved.fleet] }?(.signInOffers(moved.offers))
+                    }
+                    for moved in stepped.onboarding {
+                        lock.withLock { moves[moved.fleet] }?(.onboarding(moved.onboarding))
+                    }
+                    for moved in stepped.pairing {
+                        lock.withLock { moves[moved.fleet] }?(.pairing(moved.status))
                     }
                     if let profiles = stepped.profiles { profilesMoved(profiles) }
                 }
@@ -811,14 +913,26 @@ final class CoreLoop: @unchecked Sendable {
             let offers: [SignInOfferView]
         }
 
+        struct OnboardingMoved: Decodable, Sendable {
+            let fleet: UInt64
+            let onboarding: OnboardingState
+        }
+
+        struct PairingMoved: Decodable, Sendable {
+            let fleet: UInt64
+            let status: PairingStatusView
+        }
+
         let profiles: [ProfileView]?
         let fleets: [FleetMoved]
         let chats: [ChatMoved]
         let signInOffers: [OffersMoved]
+        let onboarding: [OnboardingMoved]
+        let pairing: [PairingMoved]
         let answers: [Answer]
 
         private enum CodingKeys: String, CodingKey {
-            case profiles, fleets, chats, answers
+            case profiles, fleets, chats, answers, onboarding, pairing
             case signInOffers = "sign_in_offers"
         }
     }

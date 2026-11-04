@@ -130,6 +130,9 @@ public final class StoreBundle {
             chats[delta.chat]?.moved(delta)
         case .signInOffers(let listed):
             offers.listed(listed)
+        case .onboarding, .pairing:
+            // The phone sets up on its own, and follows neither.
+            break
         }
     }
 

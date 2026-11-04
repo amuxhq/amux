@@ -403,7 +403,14 @@ impl Edge {
                     "{host} made this profile no offer"
                 )));
             };
-            if state.awaiting.contains_key(&host) {
+            // An accept still waiting holds the receiving end of its ticket;
+            // one whose caller went away (a client quit mid-wait) dropped it,
+            // and is replaced rather than left to refuse every later accept.
+            if state
+                .awaiting
+                .get(&host)
+                .is_some_and(|waiter| !waiter.is_closed())
+            {
                 return Err(Status::aborted(format!(
                     "{} is already being asked for a ticket",
                     offer.host_name

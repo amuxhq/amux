@@ -20,9 +20,11 @@ generated values (`AmuxValues`), which build for macOS as well as iOS:
 
 - `Runtime.install(_:)` makes sure amux is installed and answering. It returns
   at once when the daemon answers, starts an installed amux that is stopped,
-  and otherwise installs the copy the app carries in `Contents/Helpers/amux`
-  (or, without one, the stable channel's build, checked against the signed
-  manifest) with a login item, and starts it.
+  and otherwise downloads the stable channel's build, checks it against the
+  signed manifest, installs it with a login item and starts it. The app
+  carries no amux of its own: a Mac app has no step that runs on install,
+  so its first launch is that step, and the build it fetches is the one the
+  supervisor would move a carried copy to anyway.
 - `Runtime.attach(_:profilesMoved:)` answers the same `Runtime` the phone's
   `Runtime.start` does, over the daemon's sockets. Calls only an installation
   hosted in the app can answer (offering pairing from this device, its roster,
@@ -115,17 +117,16 @@ release Mac, since the signature is made with its Developer ID certificate:
 the bridge's Mac slice under the `release` profile without the driving tools
 (`apps/apple/Tools/ios-package.py --mac`), built to trust the release keys
 the Release workflow names, then the Release app, signed ad hoc by Xcode and
-then with Developer ID by `codesign` under the hardened runtime. Two
-artifacts come from that one app:
+then with Developer ID by `codesign` under the hardened runtime. That one
+signed app is packed two ways:
 
-- `Amux-<version>.zip`, the app alone: the update. It is not notarized; the
-  app downloads it itself, and nothing marks that download for Gatekeeper.
-- `Amux-<version>.dmg`, the app carrying the stable channel's `amux` (checked
-  against its signed manifest and signed as `sh.amux.cli`) in
-  `Contents/Helpers`, beside a link to Applications. It is what a browser
-  downloads, so it is notarized and stapled; `--no-notarize` skips that,
-  and such a disk image needs "Open Anyway" once, so a stable deploy
-  refuses it and only preview takes it.
+- `Amux-<version>.zip`: the update, which an installed app downloads
+  itself. Nothing marks that download for Gatekeeper.
+- `Amux-<version>.dmg`: the install, the app beside a link to Applications
+  to drag it onto. It is what a browser downloads, so it is notarized and
+  stapled, which covers the app inside and so the zip's copy too.
+  `--no-notarize` skips that, and such a disk image needs "Open Anyway"
+  once, so a stable deploy refuses it and only preview takes it.
 
 The tag's message records both digests, and the deploy refuses a file on the
 GitHub Release that is not the one this Mac built. A deploy signs the

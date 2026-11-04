@@ -601,7 +601,7 @@ every message a provider sends or is sent.
 | [`redaction`](../crates/redaction/src/lib.rs) | The structural redactor for free text and JSON in reports, logs and captures. |
 | [`log-file`](../crates/log-file/src/lib.rs) | The capped log file every process writes, rotated to one `.1`, and the tail a dump reads. |
 | [`release`](../crates/release/src/lib.rs) | A release channel's signed manifest: signing, verification and the build a host installs, shared by the daemon, the installer and the release tool; the keys a build trusts and the target it was built for; and the version stamp in a built binary, with re-stamping a copy ([`version_stamp`](../crates/release/src/version_stamp.rs)). |
-| [`installer`](../crates/installer/src/lib.rs) | What every client calls first: finds amux at the front door, installs a bundled copy or a download checked against the signed manifest when it is missing, runs `amux init` and starts it. Does not link the daemon. |
+| [`installer`](../crates/installer/src/lib.rs) | What every client calls first: finds amux at the front door, downloads the channel's build and checks it against the signed manifest when it is missing, runs `amux init` and starts it. Does not link the daemon. |
 | [`analytics`](../crates/analytics/src/lib.rs) | The usage events a device may send, typed so nothing but enums, numbers and ids fits; the per-profile handle and the installation's uploader. See [what amux sends](ANALYTICS.md). |
 
 **The agent side** — everything that reads a provider.

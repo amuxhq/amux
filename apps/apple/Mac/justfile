@@ -19,8 +19,8 @@ default:
 rust:
     {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-rust.py --mac
 
-# The app, with the checkout's own amux inside it, from a project generated
-# from apps/apple/Mac/project.yml.
+# The app, from a project generated from apps/apple/Mac/project.yml, and the
+# checkout's own amux, which `run` starts for it to attach to.
 # Build the Mac app.
 build: rust
     {{bounded}} 900 cargo build --locked -p amux --bin amux

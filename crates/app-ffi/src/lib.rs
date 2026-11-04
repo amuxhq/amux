@@ -883,8 +883,8 @@ pub unsafe extern "C" fn amux_runtime_attach(
 /// Makes sure amux is installed and answering, from `InstallOptions` as
 /// JSON, and answers what it did as an `Installed`: it returns at once when
 /// amux answers, starts an installed one that is stopped, and otherwise
-/// installs the app's own copy or the stable channel's build, checked
-/// against its signed manifest, and starts it. Blocks for as long as that
+/// downloads the stable channel's build, checks it against its signed
+/// manifest, and starts it. Blocks for as long as that
 /// takes, so call it off the main thread. Null on failure, with the reason
 /// in `error` when it is not null, which the caller frees.
 ///
@@ -905,7 +905,6 @@ pub unsafe extern "C" fn amux_install(
             .build()
             .map_err(|error| error.to_string())?;
         let options = installer::Options {
-            bundled: options.bundled,
             login_item: options.login_item,
             config: options.config,
         };
@@ -915,11 +914,8 @@ pub unsafe extern "C" fn amux_install(
         Ok(match outcome {
             installer::Outcome::Running => app_runtime::values::Installed::Running,
             installer::Outcome::Started => app_runtime::values::Installed::Started,
-            installer::Outcome::Installed { version, source } => {
-                app_runtime::values::Installed::Installed {
-                    version,
-                    bundled: source == installer::Source::Bundled,
-                }
+            installer::Outcome::Installed { version } => {
+                app_runtime::values::Installed::Installed { version }
             }
         })
     });

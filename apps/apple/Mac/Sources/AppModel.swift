@@ -66,18 +66,14 @@ final class AppModel {
         // attach to the amux it finds may be the one a newer app fixes.
         checkForUpdates()
         phase = .installing
-        let bundled = Bundle.main.bundleURL.appending(path: "Contents/Helpers/amux")
         do {
             // An installation `AMUX_CONFIG` names is a checkout's or a
             // test's, run by its own build: the app attaches to it or says it
             // is down, and never installs the default amux for it or starts
             // the installed one on its root.
             if Self.config == nil {
-                let installed = try await Runtime.install(InstallOptions(
-                    bundled: FileManager.default.isExecutableFile(atPath: bundled.path)
-                        ? bundled.path : nil,
-                    config: nil,
-                    loginItem: true))
+                let installed = try await Runtime.install(
+                    InstallOptions(config: nil, loginItem: true))
                 Self.log.notice("amux: \(String(describing: installed), privacy: .public)")
             }
             phase = .attaching

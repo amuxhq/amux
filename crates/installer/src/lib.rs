@@ -8,10 +8,13 @@
 //!
 //! 1. If the front door (`<root>/amux.sock`) answers, it returns.
 //! 2. If amux is installed (`~/.amux/bin/amux`) but stopped, it starts it.
-//! 3. Otherwise it installs a copy the client bundled, or downloads the
-//!    channel's build and checks it against the signed manifest, places it
-//!    under a lock so two clients installing at once cannot interleave,
-//!    runs `amux init`, and starts it.
+//! 3. Otherwise it downloads the channel's build, checks it against the
+//!    signed manifest, places it under a lock so two clients installing at
+//!    once cannot interleave, runs `amux init`, and starts it.
+//!
+//! amux always comes from the channel's feed, never from a copy a client
+//! carries: a client can be older than the channel, and the first amux on a
+//! machine should be the one the supervisor would move it to anyway.
 //!
 //! Then it waits for the front door. Nothing here writes amux's config or
 //! its login item: the binary does that itself, through `amux init`, and
@@ -40,11 +43,6 @@ const POLL: Duration = Duration::from_millis(100);
 /// What a client asks of [`ensure`].
 #[derive(Clone, Debug)]
 pub struct Options {
-    /// A copy of the `amux` binary shipped with the client, installed when
-    /// amux is missing. Without one the channel's build is downloaded. The
-    /// supervisor moves an installed copy to the channel's current build
-    /// within the hour and never downgrades.
-    pub bundled: Option<PathBuf>,
     /// Whether a fresh install starts at login. Asked of nobody: a client
     /// with a person in front of it asks them before calling.
     pub login_item: bool,
@@ -57,7 +55,6 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            bundled: None,
             login_item: true,
             config: None,
         }
@@ -71,22 +68,13 @@ pub enum Outcome {
     Running,
     /// amux was installed but stopped, and is now started.
     Started,
-    /// amux was installed from `source`, set up and started.
-    Installed { version: String, source: Source },
-}
-
-/// Where an installed amux came from.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Source {
-    Bundled,
-    Downloaded,
+    /// amux was downloaded, set up and started.
+    Installed { version: String },
 }
 
 /// What [`ensure`] is doing, for a client that shows progress.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Step {
-    /// Installing from the bundled copy or a download.
-    Installing(Source),
     /// Bytes of the download received so far, of its signed size.
     Downloading { received: u64, total: u64 },
     /// Starting amux and waiting for it to answer.
@@ -118,7 +106,7 @@ pub enum Error {
     Verify(#[from] release::VerifyError),
     #[error("the {channel} channel has no build for {target}")]
     NoBuild { channel: String, target: String },
-    #[error("this build trusts no release key, so it cannot check a download; bundle amux instead")]
+    #[error("this build trusts no release key, so it cannot check a download")]
     NoKeys,
     #[error("`{command}` failed ({status}): {output}")]
     Command {
@@ -187,7 +175,7 @@ pub async fn ensure(options: &Options, mut on_step: impl FnMut(Step)) -> Result<
     let binary = installed_binary()?;
     let installed = match binary.exists() {
         true => None,
-        false => install(&config, options, &binary, &mut on_step).await?,
+        false => install(&config, &binary, &mut on_step).await?,
     };
     on_step(Step::Starting);
     let with_config = |words: &[&str]| -> Vec<OsString> {
@@ -210,7 +198,7 @@ pub async fn ensure(options: &Options, mut on_step: impl FnMut(Step)) -> Result<
     }
     wait_for(&door).await?;
     Ok(match installed {
-        Some((version, source)) => Outcome::Installed { version, source },
+        Some(version) => Outcome::Installed { version },
         None => Outcome::Started,
     })
 }
@@ -229,15 +217,14 @@ pub async fn wait_for(front_door: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-/// Places the bundled copy or a verified download at `binary`, under the
+/// Places a verified download at `binary`, under the
 /// install directory's lock. `None` when another client installed it
 /// while this one waited for the lock.
 async fn install(
     config: &InstallationConfig,
-    options: &Options,
     binary: &Path,
     on_step: &mut impl FnMut(Step),
-) -> Result<Option<(String, Source)>, Error> {
+) -> Result<Option<String>, Error> {
     let dir = binary
         .parent()
         .expect("the binary is in the install directory");
@@ -255,27 +242,12 @@ async fn install(
     }
     let staged = dir.join(format!(".amux.installing.{}", std::process::id()));
     let placed = async {
-        let (version, source) = match &options.bundled {
-            Some(bundled) => {
-                on_step(Step::Installing(Source::Bundled));
-                tokio::fs::copy(bundled, &staged)
-                    .await
-                    .map_err(io("copying", bundled))?;
-                (version_of(&staged).await?, Source::Bundled)
-            }
-            None => {
-                on_step(Step::Installing(Source::Downloaded));
-                (
-                    download(config, &staged, on_step).await?,
-                    Source::Downloaded,
-                )
-            }
-        };
+        let version = download(config, &staged, on_step).await?;
         make_executable(&staged)?;
         tokio::fs::rename(&staged, binary)
             .await
             .map_err(io("placing", binary))?;
-        Ok((version, source))
+        Ok(version)
     }
     .await;
     if placed.is_err() {
@@ -415,26 +387,9 @@ fn fetch(url: &str) -> impl FnOnce(reqwest::Error) -> Error {
     move |error| Error::Fetch { url, error }
 }
 
-/// The version a binary reports (`amux 0.9.0` prints `0.9.0`).
-async fn version_of(binary: &Path) -> Result<String, Error> {
-    make_executable(binary)?;
-    let output = tokio::process::Command::new(binary)
-        .arg("--version")
-        .stdin(Stdio::null())
-        .output()
-        .await
-        .map_err(io("running", binary))?;
-    let text = String::from_utf8_lossy(&output.stdout);
-    Ok(text
-        .split_whitespace()
-        .last()
-        .unwrap_or_default()
-        .to_owned())
-}
-
-/// Executable, and on macOS without the quarantine a copy out of a
-/// downloaded app inherits: the binary is signed and notarized, and the
-/// login item that runs it has nobody to answer Gatekeeper's question.
+/// Executable, and on macOS without a quarantine attribute, should the
+/// process that wrote it be one that marks what it downloads: the login
+/// item that runs it has nobody to answer Gatekeeper's question.
 fn make_executable(path: &Path) -> Result<(), Error> {
     // Windows runs whatever it is handed and keeps no quarantine here.
     #[cfg(not(unix))]

@@ -863,6 +863,13 @@ of the same release (a wider rollout, preview promoted to stable) signs
 nothing and only checks that `checksums.txt` names it, which also repairs a
 deploy stopped between the two uploads.
 
+Signing replaces the release's macOS binary, and a channel's manifest names
+a binary by its hash. A release deployed to a channel before deploys signed
+(any release up to 0.8.x) that is then deployed with signing leaves the
+other channel's manifest naming the unsigned binary, which no longer exists,
+so Macs on that channel refuse the update: deploy such a release to every
+channel that carries it.
+
 The release Mac needs, beside the release key:
 
 - A Developer ID Application certificate with its private key in the login

@@ -409,6 +409,11 @@ pub fn attach(front_door: &std::path::Path, tail: u32) -> Result<Box<AmuxRuntime
     serve(phone, Arc::new(installation), tail)
 }
 
+/// How soon the profile stream is opened again after it ends, doubling up
+/// to the most while the front door does not answer.
+const RESUBSCRIBE_FIRST: std::time::Duration = std::time::Duration::from_millis(250);
+const RESUBSCRIBE_MOST: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Serves the profile list to the app: posted now, for the first step, and
 /// again whenever the installation's profile stream says it moved.
 fn serve(
@@ -439,10 +444,27 @@ fn serve(
         .map_err(|error| error.to_string())?;
     outbox.post_listed(&listed);
     let posting = outbox.clone();
+    let resubscribing = installation.clone();
     let watch = phone.handle().spawn(async move {
         use futures_util::StreamExt as _;
-        while let Some(Ok(moved)) = moves.next().await {
-            posting.post_listed(&moved.profiles);
+        // An attached daemon restarts under the app (an update, a stop and
+        // start), which ends the stream; it is opened again once the front
+        // door answers, and its first message is the whole list, so nothing
+        // that moved meanwhile is missed.
+        let mut pause = RESUBSCRIBE_FIRST;
+        loop {
+            while let Some(Ok(moved)) = moves.next().await {
+                posting.post_listed(&moved.profiles);
+                pause = RESUBSCRIBE_FIRST;
+            }
+            loop {
+                tokio::time::sleep(pause).await;
+                pause = (pause * 2).min(RESUBSCRIBE_MOST);
+                if let Ok(again) = resubscribing.subscribe_profiles().await {
+                    moves = again;
+                    break;
+                }
+            }
         }
     });
     Ok(Box::new(AmuxRuntime {

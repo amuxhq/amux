@@ -9,12 +9,19 @@ import SwiftUI
 /// sign in through the daemon, switch profiles and read a profile's fleet.
 @main
 struct AmuxMacApp: App {
-    @State private var model = AppModel()
+    @State private var model: AppModel
+
+    init() {
+        let model = AppModel()
+        _model = State(initialValue: model)
+        // Started with the app, not with a window: a launch that restores no
+        // window still attaches, and a window opened later shows it.
+        Task { await model.start() }
+    }
 
     var body: some Scene {
         WindowGroup("Amux") {
             Window(model: model)
-                .task { await model.start() }
                 .frame(minWidth: 560, minHeight: 360)
         }
     }

@@ -61,12 +61,18 @@ final class AppModel {
         phase = .installing
         let bundled = Bundle.main.bundleURL.appending(path: "Contents/Helpers/amux")
         do {
-            let installed = try await Runtime.install(InstallOptions(
-                bundled: FileManager.default.isExecutableFile(atPath: bundled.path)
-                    ? bundled.path : nil,
-                config: Self.config,
-                loginItem: true))
-            Self.log.notice("amux: \(String(describing: installed), privacy: .public)")
+            // An installation `AMUX_CONFIG` names is a checkout's or a
+            // test's, run by its own build: the app attaches to it or says it
+            // is down, and never installs the default amux for it or starts
+            // the installed one on its root.
+            if Self.config == nil {
+                let installed = try await Runtime.install(InstallOptions(
+                    bundled: FileManager.default.isExecutableFile(atPath: bundled.path)
+                        ? bundled.path : nil,
+                    config: nil,
+                    loginItem: true))
+                Self.log.notice("amux: \(String(describing: installed), privacy: .public)")
+            }
             phase = .attaching
             let config = AttachConfig(config: Self.config, tail: nil)
             let attached = try await Task.detached { () throws(RuntimeFailure) -> Runtime in

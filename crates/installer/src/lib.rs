@@ -395,6 +395,9 @@ async fn version_of(binary: &Path) -> Result<String, Error> {
 /// downloaded app inherits: the binary is signed and notarized, and the
 /// login item that runs it has nobody to answer Gatekeeper's question.
 fn make_executable(path: &Path) -> Result<(), Error> {
+    // Windows runs whatever it is handed and keeps no quarantine here.
+    #[cfg(not(unix))]
+    let _ = path;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
@@ -459,7 +462,11 @@ async fn run(binary: &Path, args: &[OsString]) -> Result<(), Error> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true);
+        .kill_on_drop(true)
+        // The installation is the one `ensure` resolved, named by `--config`
+        // when it is not the default; an `AMUX_CONFIG` the client inherited
+        // would point the command at another.
+        .env_remove("AMUX_CONFIG");
     if let Some(path) = login_path().await {
         command.env("PATH", path);
     }

@@ -59,6 +59,9 @@ builds are signed ad hoc and carry the checkout's debug `amux`.
 
 `AMUX_CONFIG` names the installation the app attaches to, as it does for every
 amux command, so in a worktree `just mac run` attaches to that tree's daemon.
+With it set the app installs and starts nothing: such an installation runs its
+own build, and the installed amux started on its root, or a login item
+rewritten for it, would take the person's real installation's place.
 `AMUX_CLOUD` points its sign-in at another account service. The app logs what
 it installed, attached and listed under the `sh.amux.desktop` subsystem:
 

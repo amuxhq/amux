@@ -314,24 +314,9 @@ pub async fn uninstall(
         }
     }
     crate::server::stop(config).await?;
-    // The installed binary serves the default installation; one named by
-    // --config or AMUX_CONFIG (a worktree's, a test's) leaves it alone.
-    if config_path.is_none() {
-        let bin = install_dir()?;
-        let mut removed = false;
-        for name in BINARY_NAMES {
-            removed |= remove_file(&bin.join(name))?;
-        }
-        if removed {
-            println!("Removed amux from {}.", bin.display());
-        }
-        remove_empty_dir(&bin);
-        if let Some(parent) = bin.parent() {
-            remove_empty_dir(parent);
-        }
-        #[cfg(unix)]
-        unset_shell_path()?;
-    }
+    // The data goes first: on Windows the binary running this command
+    // cannot be deleted, only moved aside, and a failure there must not
+    // leave the data behind.
     if delete_data {
         if config.root.exists() {
             std::fs::remove_dir_all(&config.root)
@@ -350,7 +335,55 @@ pub async fn uninstall(
             config.root.display()
         );
     }
+    // The installed binary serves the default installation; one named by
+    // --config or AMUX_CONFIG (a worktree's, a test's) leaves it alone.
+    if config_path.is_none() {
+        let bin = install_dir()?;
+        let mut removed = false;
+        for name in BINARY_NAMES {
+            removed |= remove_binary(&bin.join(name))?;
+        }
+        if removed {
+            println!("Removed amux from {}.", bin.display());
+        }
+        remove_empty_dir(&bin);
+        if let Some(parent) = bin.parent() {
+            remove_empty_dir(parent);
+        }
+        #[cfg(unix)]
+        unset_shell_path()?;
+    }
     Ok(())
+}
+
+/// Removes one installed binary. Windows refuses to delete the image a
+/// process is running, and this command is usually that process, so there
+/// the running binary is moved aside instead (into the temporary directory,
+/// else beside itself when that is on another drive) and the person is told
+/// to delete the copy once this exits.
+fn remove_binary(path: &Path) -> Result<bool> {
+    #[cfg(windows)]
+    if std::env::current_exe()
+        .and_then(std::fs::canonicalize)
+        .is_ok_and(|running| std::fs::canonicalize(path).is_ok_and(|path| path == running))
+    {
+        let name = format!("amux-uninstalled-{}.exe", std::process::id());
+        let temporary = std::env::temp_dir().join(&name);
+        let aside = if std::fs::rename(path, &temporary).is_ok() {
+            temporary
+        } else {
+            let beside = path.with_file_name(&name);
+            std::fs::rename(path, &beside)
+                .with_context(|| format!("moving the running {} aside", path.display()))?;
+            beside
+        };
+        println!(
+            "Moved the running amux to {}; delete it once this exits.",
+            aside.display()
+        );
+        return Ok(true);
+    }
+    remove_file(path)
 }
 
 /// Whether the login item at `file` runs this installation: every login

@@ -1470,6 +1470,70 @@ fn the_composers_rules_come_from_the_shared_view() {
     assert_eq!(amux_attachment_limit(), wire::ATTACHMENT_SIZE_LIMIT as u64);
 }
 
+/// An attached daemon restarts under the app (an update, a stop and a
+/// start); the profile list keeps following it afterwards.
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+)]
+fn an_attached_app_hears_the_profile_list_again_after_the_daemon_restarts() {
+    let tokio = tokio::runtime::Runtime::new().unwrap();
+    // A real daemon process, whose exit drops the app's connection as an
+    // update or a stop does.
+    let topology = Topology::new().host_decl(HostDecl {
+        name: "desk".into(),
+        process: true,
+        ..HostDecl::default()
+    });
+    let mut net = tokio
+        .block_on(Net::start_with(
+            topology,
+            testnet::NetOptions {
+                clock: testnet::ClockMode::Wall,
+                ..testnet::NetOptions::default()
+            },
+        ))
+        .unwrap();
+    let door = net.host("desk").unwrap().front_door.clone();
+    let runtime = Box::into_raw(attach(&door, 50).unwrap());
+    let queue = Queue::start(runtime);
+    let listed = |queue: &Queue, count: usize| {
+        let deadline = Instant::now() + PATIENCE;
+        loop {
+            assert!(
+                Instant::now() < deadline,
+                "the app never heard {count} profiles"
+            );
+            if let Ok(stepped) = queue.stepped.recv_timeout(Duration::from_millis(200))
+                && stepped["profiles"]
+                    .as_array()
+                    .is_some_and(|listed| listed.len() == count)
+            {
+                return;
+            }
+        }
+    };
+    listed(&queue, 1);
+
+    tokio.block_on(net.stop_daemon("desk")).unwrap();
+    tokio.block_on(net.restart_daemon("desk")).unwrap();
+    // Made by another client once the daemon is back, so only a stream
+    // opened again after the restart can tell the app.
+    tokio.block_on(async {
+        let other = client::GrpcInstallation::connect(&door).await.unwrap();
+        client::Installation::create_profile(&other, wire::CreateProfileRequest { label: None })
+            .await
+            .unwrap();
+    });
+    listed(&queue, 2);
+
+    drop(queue);
+    // SAFETY: from `attach`, not used again.
+    unsafe { amux_runtime_stop(runtime) };
+    tokio.block_on(net.shutdown()).unwrap();
+}
+
 /// A desktop app attaches to the daemon on its machine instead of hosting
 /// an installation: the daemon's profiles arrive with the first step, a
 /// profile's fleet opens with the daemon's agents, and a call only an

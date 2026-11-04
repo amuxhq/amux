@@ -33,6 +33,30 @@ pub trait Installation: Send + Sync + 'static {
     async fn sign_in(&self, request: SignInRequest) -> Result<EventStream<SignInEvent>, RpcError>;
     async fn answer_sign_in(&self, request: AnswerSignInRequest) -> Result<(), RpcError>;
     async fn refresh_profile(&self, request: RefreshProfileRequest) -> Result<Profile, RpcError>;
+    /// The everyday settings, as the config file resolves them.
+    async fn get_settings(&self) -> Result<wire::Settings, RpcError>;
+    /// Changes the named settings and applies each at once.
+    async fn update_settings(
+        &self,
+        request: wire::UpdateSettingsRequest,
+    ) -> Result<wire::Settings, RpcError>;
+    /// One profile's onboarding steps now, then again on every change.
+    async fn subscribe_onboarding(
+        &self,
+        request: wire::OnboardingRequest,
+    ) -> Result<EventStream<wire::Onboarding>, RpcError>;
+    async fn answer_onboarding(
+        &self,
+        request: wire::AnswerOnboardingRequest,
+    ) -> Result<wire::Onboarding, RpcError>;
+    /// Folders worth offering as projects.
+    async fn suggest_projects(&self) -> Result<Vec<wire::ProjectEntry>, RpcError>;
+    /// A one-time link that signs the browser in and opens a page of the
+    /// profile's account service.
+    async fn web_sign_in_link(
+        &self,
+        request: wire::WebSignInLinkRequest,
+    ) -> Result<String, RpcError>;
     /// The profile's own services: its agents and sessions, and its
     /// administration (signing out, its identity, its dump).
     async fn open_profile(&self, profile: &Profile) -> Result<Arc<dyn Client>, RpcError>;
@@ -98,6 +122,42 @@ macro_rules! installation_impl {
                 request: RefreshProfileRequest,
             ) -> Result<Profile, RpcError> {
                 Ok($call!(self, refresh_profile, request).await?.into_inner())
+            }
+
+            async fn get_settings(&self) -> Result<wire::Settings, RpcError> {
+                Ok($call!(self, get_settings, wire::Empty {}).await?.into_inner())
+            }
+
+            async fn update_settings(
+                &self,
+                request: wire::UpdateSettingsRequest,
+            ) -> Result<wire::Settings, RpcError> {
+                Ok($call!(self, update_settings, request).await?.into_inner())
+            }
+
+            async fn subscribe_onboarding(
+                &self,
+                request: wire::OnboardingRequest,
+            ) -> Result<EventStream<wire::Onboarding>, RpcError> {
+                Ok(events($call!(self, subscribe_onboarding, request).await?.into_inner()))
+            }
+
+            async fn answer_onboarding(
+                &self,
+                request: wire::AnswerOnboardingRequest,
+            ) -> Result<wire::Onboarding, RpcError> {
+                Ok($call!(self, answer_onboarding, request).await?.into_inner())
+            }
+
+            async fn suggest_projects(&self) -> Result<Vec<wire::ProjectEntry>, RpcError> {
+                Ok($call!(self, suggest_projects, wire::Empty {}).await?.into_inner().suggestions)
+            }
+
+            async fn web_sign_in_link(
+                &self,
+                request: wire::WebSignInLinkRequest,
+            ) -> Result<String, RpcError> {
+                Ok($call!(self, web_sign_in_link, request).await?.into_inner().url)
             }
 
             async fn open_profile(&self, profile: &Profile) -> Result<Arc<dyn Client>, RpcError> {

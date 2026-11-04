@@ -421,9 +421,16 @@ opens, the oldest. Each step is `needed`, `done`, `skipped` or
 `AnswerOnboarding` takes one answer and returns the steps after it:
 `done` for a step the person confirms (only `keep_reachable`, `projects`
 and `improve`: the others are done when they happen), `skip` for "Later",
-`dismiss` to skip every needed step, `shown` when the client shows a step,
-and `notice_shown` once it has shown the analytics notice. Name the client
-in `surface` so the answer is counted for it; unspecified counts nothing.
+`dismiss` when the person dismisses an offer to finish setting up, which
+skips every needed step, `shown` when the client shows a step,
+`sign_in_offer_shown` when it puts a one-tap sign-in in front of the
+person (`offerer` for "Also sign in" on the signed-in side, `receiver` for
+the offer on the signed-out side), and `notice_shown` once it has shown
+the analytics notice. Name the client in `surface` so the answer is
+counted for it; unspecified counts nothing. After a dismissal the steps
+carry `dismissed`: every step skipped now was skipped when the person
+dismissed, so a client stops offering to finish them; a step skipped
+afterwards clears it.
 Confirmations are the installation's; a skip of `pair_phone`, `sign_in` or
 `first_agent` is the profile's. A step added in a later release appears to
 existing installations on its own, needed.

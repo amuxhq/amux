@@ -8312,6 +8312,11 @@ pub struct Onboarding {
     /// amux.sh before it has.
     #[prost(bool, tag = "3")]
     pub notice_shown: bool,
+    /// The person dismissed "Finish setting up": every step skipped now was
+    /// skipped when they did, so a client stops offering to finish them. A
+    /// step skipped later offers it again.
+    #[prost(bool, tag = "4")]
+    pub dismissed: bool,
 }
 impl ::prost::Name for Onboarding {
     const NAME: &'static str = "Onboarding";
@@ -8347,7 +8352,7 @@ pub struct AnswerOnboardingRequest {
     /// The client answering, for the usage event.
     #[prost(enumeration = "Surface", tag = "6")]
     pub surface: i32,
-    #[prost(oneof = "answer_onboarding_request::Answer", tags = "2, 3, 4, 5, 7")]
+    #[prost(oneof = "answer_onboarding_request::Answer", tags = "2, 3, 4, 5, 7, 8")]
     pub answer: ::core::option::Option<answer_onboarding_request::Answer>,
 }
 /// Nested message and enum types in `AnswerOnboardingRequest`.
@@ -8367,6 +8372,10 @@ pub mod answer_onboarding_request {
         /// The client showed the step: counted for usage, nothing kept.
         #[prost(enumeration = "super::OnboardingStepId", tag = "7")]
         Shown(i32),
+        /// The client put a one-tap sign-in in front of the person, on the side
+        /// named: counted for usage, nothing kept.
+        #[prost(enumeration = "super::OfferRole", tag = "8")]
+        SignInOfferShown(i32),
     }
 }
 impl ::prost::Name for AnswerOnboardingRequest {
@@ -8938,6 +8947,38 @@ impl StepState {
             "STEP_STATE_DONE" => Some(Self::Done),
             "STEP_STATE_SKIPPED" => Some(Self::Skipped),
             "STEP_STATE_NOT_NEEDED" => Some(Self::NotNeeded),
+            _ => None,
+        }
+    }
+}
+/// Which side of a one-tap sign-in a client is on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum OfferRole {
+    Unspecified = 0,
+    /// Signed in, offering a paired device its account.
+    Offerer = 1,
+    /// Signed out, offered a paired device's account.
+    Receiver = 2,
+}
+impl OfferRole {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "OFFER_ROLE_UNSPECIFIED",
+            Self::Offerer => "OFFER_ROLE_OFFERER",
+            Self::Receiver => "OFFER_ROLE_RECEIVER",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "OFFER_ROLE_UNSPECIFIED" => Some(Self::Unspecified),
+            "OFFER_ROLE_OFFERER" => Some(Self::Offerer),
+            "OFFER_ROLE_RECEIVER" => Some(Self::Receiver),
             _ => None,
         }
     }

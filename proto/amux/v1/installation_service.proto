@@ -108,6 +108,10 @@ message Onboarding {
   // Whether a client has shown the analytics notice; nothing is sent to
   // amux.sh before it has.
   bool notice_shown = 3;
+  // The person dismissed "Finish setting up": every step skipped now was
+  // skipped when they did, so a client stops offering to finish them. A
+  // step skipped later offers it again.
+  bool dismissed = 4;
 }
 
 message OnboardingStep {
@@ -144,9 +148,21 @@ message AnswerOnboardingRequest {
     Empty dismiss = 5;
     // The client showed the step: counted for usage, nothing kept.
     OnboardingStepId shown = 7;
+    // The client put a one-tap sign-in in front of the person, on the side
+    // named: counted for usage, nothing kept.
+    OfferRole sign_in_offer_shown = 8;
   }
   // The client answering, for the usage event.
   Surface surface = 6;
+}
+
+// Which side of a one-tap sign-in a client is on.
+enum OfferRole {
+  OFFER_ROLE_UNSPECIFIED = 0;
+  // Signed in, offering a paired device its account.
+  OFFER_ROLE_OFFERER = 1;
+  // Signed out, offered a paired device's account.
+  OFFER_ROLE_RECEIVER = 2;
 }
 
 enum Surface {

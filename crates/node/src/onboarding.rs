@@ -87,6 +87,10 @@ struct Stored {
 #[serde(default)]
 struct OfProfile {
     skipped: BTreeSet<Step>,
+    /// The steps that were skipped when the person dismissed "Finish
+    /// setting up": while every skipped step is among them, clients stop
+    /// offering to finish.
+    dismissed: BTreeSet<Step>,
     /// An agent on this host was created on a paired device's request.
     agent_from_device: bool,
 }
@@ -172,6 +176,31 @@ impl Onboarding {
                 }
             })
             .collect()
+    }
+
+    /// Whether every step skipped in `steps` was skipped when the person
+    /// dismissed "Finish setting up" for `profile`.
+    pub(crate) fn dismissed(&self, profile: ProfileId, steps: &[wire::OnboardingStep]) -> bool {
+        let stored = self.stored.lock().unwrap();
+        let Some(of_profile) = stored.profiles.get(&profile) else {
+            return false;
+        };
+        !of_profile.dismissed.is_empty()
+            && steps
+                .iter()
+                .filter(|step| step.state() == StepState::Skipped)
+                .filter_map(|step| Step::of(step.id()))
+                .all(|step| of_profile.dismissed.contains(&step))
+    }
+
+    /// The person dismissed "Finish setting up" for `profile` with
+    /// `skipped` skipped.
+    pub(crate) fn dismiss(&self, profile: ProfileId, skipped: &[Id]) -> io::Result<()> {
+        let skipped: BTreeSet<Step> = skipped.iter().filter_map(|id| Step::of(*id)).collect();
+        self.change(|stored| {
+            let of = stored.profiles.entry(profile).or_default();
+            !std::mem::replace(&mut of.dismissed, skipped.clone()).eq(&skipped)
+        })
     }
 
     /// The person confirmed a step that is done when they say so.
@@ -334,9 +363,11 @@ impl Registry {
             paired_phone: runtime.trusts_a_phone(),
         };
         let onboarding = &installation.onboarding;
+        let steps = onboarding.steps(runtime.profile(), facts);
         wire::Onboarding {
             profile_id: runtime.profile().as_bytes().to_vec(),
-            steps: onboarding.steps(runtime.profile(), facts),
+            dismissed: onboarding.dismissed(runtime.profile(), &steps),
+            steps,
             notice_shown: onboarding.notice_shown(),
         }
     }
@@ -462,16 +493,32 @@ impl Registry {
             }
             Some(Answer::Shown(raw)) => record(step(raw)?, analytics::StepOutcome::Shown),
             Some(Answer::NoticeShown(_)) => kept(onboarding.mark_notice_shown())?,
+            Some(Answer::SignInOfferShown(raw)) => {
+                let role = match wire::OfferRole::try_from(raw) {
+                    Ok(wire::OfferRole::Offerer) => analytics::OfferRole::Offerer,
+                    Ok(wire::OfferRole::Receiver) => analytics::OfferRole::Receiver,
+                    _ => return Err(bad_answer("the answer names no side of an offer")),
+                };
+                runtime.analytics().record(analytics::Event::SignInOffer {
+                    role,
+                    outcome: analytics::OfferOutcome::Shown,
+                });
+            }
             Some(Answer::Dismiss(_)) => {
                 let now = Self::onboarding_of(&installation, &runtime);
-                for needed in now
-                    .steps
-                    .iter()
-                    .filter(|step| step.state() == StepState::Needed)
-                {
-                    kept(onboarding.skip(profile, needed.id()))?;
-                    record(needed.id(), analytics::StepOutcome::Skipped);
+                let mut skipped = Vec::new();
+                for step in &now.steps {
+                    match step.state() {
+                        StepState::Needed => {
+                            kept(onboarding.skip(profile, step.id()))?;
+                            record(step.id(), analytics::StepOutcome::Skipped);
+                        }
+                        StepState::Skipped => {}
+                        _ => continue,
+                    }
+                    skipped.push(step.id());
                 }
+                kept(onboarding.dismiss(profile, &skipped))?;
             }
             None => return Err(bad_answer("the request carries no answer")),
         }
@@ -545,6 +592,16 @@ mod tests {
         // Confirming a skipped step makes it done.
         again.confirm(Id::Projects).unwrap();
         assert_eq!(states(&again, desk, facts)[3], Done);
+
+        // Dismissing covers the steps skipped then; one skipped after
+        // brings finishing back.
+        let steps = again.steps(desk, facts);
+        assert!(!again.dismissed(desk, &steps));
+        again.dismiss(desk, &[Id::PairPhone]).unwrap();
+        assert!(again.dismissed(desk, &steps));
+        again.skip(desk, Id::KeepReachable).unwrap();
+        assert!(!again.dismissed(desk, &again.steps(desk, facts)));
+        assert!(!again.dismissed(work, &again.steps(work, supervised)));
     }
 
     #[test]

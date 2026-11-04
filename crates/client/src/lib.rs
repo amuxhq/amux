@@ -145,6 +145,18 @@ pub trait Client: Send + Sync + 'static {
     async fn sign_out(&self) -> Result<(), RpcError>;
     /// This profile's identity as its peers pin it.
     async fn get_device_identity(&self) -> Result<wire::DeviceIdentity, RpcError>;
+    /// Opens a pairing window on this profile.
+    async fn start_pairing(
+        &self,
+        request: wire::StartPairingRequest,
+    ) -> Result<wire::PairingWindow, RpcError> {
+        let _ = request;
+        Err(not_served("start_pairing"))
+    }
+    /// Closes the profile's pairing window, if one is open.
+    async fn cancel_pairing(&self) -> Result<(), RpcError> {
+        Err(not_served("cancel_pairing"))
+    }
     /// The profile's pairing window, now and on every change.
     async fn watch_pairing(&self) -> Result<EventStream<wire::PairingStatus>, RpcError> {
         Err(not_served("watch_pairing"))
@@ -300,6 +312,18 @@ macro_rules! client_impl {
 
             async fn get_device_identity(&self) -> Result<wire::DeviceIdentity, RpcError> {
                 Ok($call!(self, admin, get_device_identity, wire::Empty {}).await?.into_inner())
+            }
+
+            async fn start_pairing(
+                &self,
+                request: wire::StartPairingRequest,
+            ) -> Result<wire::PairingWindow, RpcError> {
+                Ok($call!(self, admin, start_pairing, request).await?.into_inner())
+            }
+
+            async fn cancel_pairing(&self) -> Result<(), RpcError> {
+                $call!(self, admin, cancel_pairing, wire::Empty {}).await?;
+                Ok(())
             }
 
             async fn watch_pairing(&self) -> Result<EventStream<wire::PairingStatus>, RpcError> {

@@ -79,6 +79,7 @@ async fn answers_move_the_steps_and_outlive_a_restart() {
         .unwrap()
         .into_inner();
     assert_eq!(skipped.steps[0].state(), Skipped);
+    assert!(!skipped.dismissed, "skipping is not dismissing");
     let streamed = steps.next().await.expect("the change").unwrap();
     assert_eq!(streamed, skipped);
 
@@ -109,6 +110,22 @@ async fn answers_move_the_steps_and_outlive_a_restart() {
     assert!(
         dismissed.steps.iter().all(|step| step.state() != Needed),
         "{dismissed:?}"
+    );
+    assert!(
+        dismissed.dismissed,
+        "the skipped steps stay skipped, and finishing them is no longer offered"
+    );
+    door.answer_onboarding(answer(Answer::SignInOfferShown(
+        wire::OfferRole::Receiver as i32,
+    )))
+    .await
+    .unwrap();
+    assert_eq!(
+        recording.named("sign_in_offer"),
+        [Event::SignInOffer {
+            role: analytics::OfferRole::Receiver,
+            outcome: analytics::OfferOutcome::Shown,
+        }]
     );
 
     let step = |step, outcome| Event::OnboardingStep {
@@ -149,7 +166,7 @@ async fn answers_move_the_steps_and_outlive_a_restart() {
         .unwrap()
         .unwrap();
     assert_eq!(states(&again), states(&dismissed));
-    assert!(again.notice_shown);
+    assert!(again.notice_shown && again.dismissed);
     daemon.shutdown().await.unwrap();
 }
 

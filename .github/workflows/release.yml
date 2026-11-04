@@ -63,7 +63,7 @@ jobs:
         run: scripts/release-symbols.sh ${{ matrix.target }} ${{ matrix.artifact }}${{ runner.os == 'Windows' && '.exe' || '' }} out
 
       # Records the shipped binary's digest as built by this workflow at the
-      # tagged commit. `just deploy` signs a binary only once its attestation
+      # tagged commit. `just amux deploy` signs a binary only once its attestation
       # verifies, so swapping a release asset and its checksum afterwards
       # gets nothing signed.
       - name: Attest the binary

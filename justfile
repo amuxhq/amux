@@ -35,6 +35,9 @@ compose *ARGS:
 store *ARGS:
     {{bounded}} 300 uv run --script marketing/store.py "$@"
 
+# The amux binary's release recipes: `just amux release`, `just amux deploy` (`just --list amux`).
+mod amux 'crates/amux/justfile'
+
 # The iPhone app's recipes: `just ios build`, `just ios verify`, ... (`just --list ios`).
 mod ios 'apps/apple/justfile'
 
@@ -119,27 +122,6 @@ proto-compat *ARGS:
 release-check *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p amux --bins "$@"
     if [ "${1-}" = -- ]; then shift; fi; scripts/release-policy-check.sh "$@"
-
-# `just release 0.8.0` writes the version, checks the release build, commits,
-# tags v0.8.0 and pushes; the tag's workflow builds the binaries into a
-# GitHub Release.
-# Cut a release of the amux binary.
-release VERSION:
-    {{bounded}} 1800 cargo run --locked -q -p xtask -- release cut {{VERSION}}
-
-# `just deploy 0.8.0` signs the release's binaries with the keychain's key and
-# publishes the stable manifest; `--channel preview` and `--rollout 10`
-# choose who takes it, and `--key-file PATH` signs with the backup instead.
-# Put a cut release in front of a channel.
-deploy VERSION *ARGS:
-    shift; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 3600 cargo run --locked -q -p xtask -- release deploy {{VERSION}} "$@"
-
-# `just release-key generate` makes a key in its own keychain and prints its
-# public half; `generate --file PATH` makes the offline backup in a new file
-# instead.
-# The release signing key.
-release-key *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 600 cargo run --locked -q -p xtask -- release key "$@"
 
 # Install the pre-push credential scan (scripts/hooks/pre-push) for every worktree.
 hooks:

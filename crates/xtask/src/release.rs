@@ -300,7 +300,7 @@ fn cut(version: &str) -> Result<(), Box<dyn std::error::Error>> {
     git(&root, &["tag", &tag])?;
     git(&root, &["push"])?;
     git(&root, &["push", "origin", &tag])?;
-    println!("cut {tag}; the Release workflow is building it. `just deploy {wanted}` when it has.");
+    println!("cut {tag}; the Release workflow is building it. `just amux deploy {wanted}` when it has.");
     Ok(())
 }
 

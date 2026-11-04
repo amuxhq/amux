@@ -2,13 +2,18 @@
 
 *For maintainers cutting a release of the iPhone app or the `amux` binary, and developers working on how installed daemons find and verify new builds.*
 
-Three things ship from this repository, each on its own schedule:
+Each product that ships from this repository has its own `just` module and
+the same two commands, on its own schedule:
 
-| What | How it is cut | Tags |
-| --- | --- | --- |
-| The iPhone app | `just ios release`, from a Mac with the signing setup below | `ios-v<version>-b<build>` |
-| The `amux` binary | `just release <version>`, then the Release workflow on the pushed tag | `v<version>` |
-| The daemon's release feed | `just deploy <version>` signs the release's binaries with the release Mac's key and publishes the channel manifest to amux.sh | none |
+- `just <product> release` makes a version exist: it builds and signs it,
+  tags it and stores what it built. Nobody runs it yet.
+- `just <product> deploy <version>` puts a version that exists in front of
+  people. It can be repeated for the same version, to reach more of them.
+
+| Product | `release` | `deploy` | Tags |
+| --- | --- | --- | --- |
+| The iPhone app | `just ios release`: archive, validate, upload to App Store Connect | not yet: submitting for review is by hand | `ios-v<version>-b<build>` |
+| The `amux` binary | `just amux release <version>`: the Release workflow builds the pushed tag | `just amux deploy <version>`: sign the channel manifest and publish it to amux.sh | `v<version>` |
 
 ## The iPhone app
 
@@ -577,13 +582,13 @@ recipe (both implemented by `xtask release` in
 [`crates/xtask/src/release.rs`](../crates/xtask/src/release.rs)):
 
 ```
-just release 0.8.0                 # cut: the version exists and its binaries are built
-just deploy 0.8.0 --channel preview   # machines on preview take it
-just deploy 0.8.0 --rollout 10        # a tenth of the machines on stable take it
-just deploy 0.8.0                     # all of stable
+just amux release 0.8.0                   # cut: the version exists and its binaries are built
+just amux deploy 0.8.0 --channel preview  # machines on preview take it
+just amux deploy 0.8.0 --rollout 10       # a tenth of the machines on stable take it
+just amux deploy 0.8.0                    # all of stable
 ```
 
-**Cutting** makes the version exist. `just release <version>` refuses a
+**Cutting** makes the version exist. `just amux release <version>` refuses a
 tree with other changes in it, a version not above the current one, and a
 Mac without the release signing key (a cut nobody could deploy is a tag
 for nothing); then it writes the version into both `Cargo.toml` files,
@@ -593,7 +598,7 @@ starts the Release workflow, and the cut is done. It does not wait for the
 workflow.
 
 **Deploying** puts a cut release in front of machines, and is the act that
-chooses who: a channel, and how much of it. `just deploy <version>` waits
+chooses who: a channel, and how much of it. `just amux deploy <version>` waits
 for the tag's workflow to have published the binaries if it has not yet,
 then signs and publishes the channel manifest (below,
 [Deploying a release](#deploying-a-release)). It repeats against the same
@@ -766,7 +771,7 @@ The keychain has a password of its own, not the login password, and locks
 again a minute after use and when the Mac sleeps. Its item names no
 application allowed to read it, so every read, the release tool's own
 included, asks for that password: a process running as the operator, such
-as a dependency's build script during `just deploy`, cannot take the seed
+as a dependency's build script during `just amux deploy`, cannot take the seed
 without a prompt. A deploy asks twice: once to unlock the keychain, once to
 let `security` read the item. Answer the second with **Allow**, never
 **Always Allow**, which would add `security` to the item's readers for good.
@@ -775,7 +780,7 @@ What the key does not vouch for is the build itself. The binaries are
 built by the Release workflow on GitHub's runners, and each build job
 attests its binary as soon as it is built: GitHub signs a provenance
 statement for the binary's digest with that run's identity, naming the
-workflow, the tag and the commit. `just deploy` downloads every binary,
+workflow, the tag and the commit. `just amux deploy` downloads every binary,
 verifies its attestation and signs only the digest it computed itself, so
 someone who can edit the GitHub release, and swaps a binary and its
 checksum before the deploy, gets nothing signed. What is left trusted is
@@ -784,7 +789,7 @@ its own binary. That is kept deliberately; the alternative is building
 every target on the release Mac. The build job restores no Rust cache, so
 the CI jobs that save caches on `main` cannot reach it that way.
 
-`just release-key generate` makes a seed from the system's randomness,
+`just amux release-key generate` makes a seed from the system's randomness,
 makes the keychain when there is none (asking for its new password), stores
 the seed and prints the public half; it refuses when an item is already
 there, so a key is rotated deliberately by deleting the old item first
@@ -792,14 +797,14 @@ there, so a key is rotated deliberately by deleting the old item first
 A deploy names the keychain key's public half when the workflow does not list
 it.
 
-**The backup key.** A second seed, made once by `just release-key generate
+**The backup key.** A second seed, made once by `just amux release-key generate
 --file PATH`, which writes it to a new file only its owner can read and prints its
 public half. It does not stay on the Mac: it is moved somewhere offline and
 the file deleted. Its public half is listed in
 `AMUX_RELEASE_PUBLIC_KEYS` beside the release key's, so every binary trusts
 it already. If the release key leaks or the Mac is lost, the backup signs the
 release that drops the old key and adds a new one
-(`just deploy VERSION --key-file PATH`), and installed machines take it
+(`just amux deploy VERSION --key-file PATH`), and installed machines take it
 without anyone reinstalling.
 
 Both public halves are committed as `AMUX_RELEASE_PUBLIC_KEYS` in
@@ -816,9 +821,9 @@ public key compiled in, then switch.
 ### Deploying a release
 
 ```
-just deploy 0.8.0                       # stable, every machine
-just deploy 0.8.0 --channel preview     # the preview channel
-just deploy 0.8.0 --rollout 10          # stable, a tenth of the machines; later --rollout 100
+just amux deploy 0.8.0                    # stable, every machine
+just amux deploy 0.8.0 --channel preview  # the preview channel
+just amux deploy 0.8.0 --rollout 10       # stable, a tenth of the machines; later --rollout 100
 ```
 
 `xtask release deploy` reads the trusted keys from the Release workflow as

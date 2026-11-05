@@ -2281,22 +2281,21 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
         },
         Some("created-from-the-laptop"),
     )?;
-    let landed = journey.wait(
+    // Connecting an iPhone is still to do, so the offer to finish stays.
+    // The setting-up count and the new agent's first turn reach home on
+    // their own, after the row lands; the frame is taken once both settle,
+    // the agent idle.
+    journey.wait(
         &again,
         |frame| {
             at_home(frame)
                 && frame.contains("There it is")
                 && super::terminal::selected_row(frame, "first-agent")
+                && frame.contains("Finish setting up (1)")
+                && !frame.contains(" working")
         },
-        "home with the first agent selected",
+        "home with the first agent selected and idle, offering to finish setting up",
     )?;
-    // Connecting an iPhone is still to do: the offer to finish stays.
-    if !landed.contains("Finish setting up (1)") {
-        return Err(format!(
-            "home does not offer to finish setting up:
-{landed}"
-        ));
-    }
     journey.frame(&again, "there-it-is")?;
     let done = journey.request(
         Control::Onboarding {

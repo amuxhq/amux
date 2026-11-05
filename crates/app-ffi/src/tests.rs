@@ -1851,7 +1851,10 @@ fn an_attached_mac_app_sets_up_through_the_c_abi() {
 
     // Answers are counted as the Mac app's, and the steps after each come
     // back with it and with the next step.
-    for answer in [json!({"Shown": "pair_phone"}), json!({"Skip": "repositories"})] {
+    for answer in [
+        json!({"Shown": "pair_phone"}),
+        json!({"Skip": "repositories"}),
+    ] {
         let answer = c(&answer.to_string());
         // SAFETY: the profile is open; the string lives for the call.
         let ticket = unsafe { amux_profile_answer_onboarding(profile, answer.as_ptr()) };

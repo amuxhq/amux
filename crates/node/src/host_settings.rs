@@ -185,7 +185,7 @@ impl HostSettings {
         &self,
         request: &UpdateSettingsRequest,
     ) -> Result<InstallationConfig, SettingsError> {
-        let changes = changes(request)?;
+        let changes = changes(request, self.home())?;
         let mut held = self.held.lock().unwrap();
         // A change made beside the daemon since it last looked is kept.
         if let Some(path) = &self.file {
@@ -251,7 +251,10 @@ pub(crate) fn to_wire(
 }
 
 /// The file's keys a request changes.
-fn changes(request: &UpdateSettingsRequest) -> Result<Vec<Change<'static>>, SettingsError> {
+fn changes(
+    request: &UpdateSettingsRequest,
+    home: Option<&Path>,
+) -> Result<Vec<Change<'static>>, SettingsError> {
     let mut changes: Vec<Change> = Vec::new();
     if let Some(name) = &request.host_name {
         let name = name.trim();
@@ -267,7 +270,7 @@ fn changes(request: &UpdateSettingsRequest) -> Result<Vec<Change<'static>>, Sett
         let mut array = toml_edit::Array::new();
         let mut seen = std::collections::BTreeSet::new();
         for path in &repositories.paths {
-            let path = repository(path)?;
+            let path = repository(path, home)?;
             if seen.insert(path.clone()) {
                 array.push(path);
             }
@@ -304,9 +307,18 @@ fn changes(request: &UpdateSettingsRequest) -> Result<Vec<Change<'static>>, Sett
     Ok(changes)
 }
 
-/// A repository as the file keeps it: absolute, and canonical where it exists.
-fn repository(path: &str) -> Result<String, SettingsError> {
-    let given = Path::new(path.trim());
+/// A repository as the file keeps it: absolute, and canonical where it
+/// exists. A path typed from home (`~` or `~/src/app`) is taken from this
+/// machine's home, as a shell would.
+fn repository(path: &str, home: Option<&Path>) -> Result<String, SettingsError> {
+    let path = path.trim();
+    let from_home = match (path.strip_prefix('~'), home) {
+        (Some(rest), Some(home)) if rest.is_empty() || rest.starts_with('/') => {
+            Some(home.join(rest.trim_start_matches('/')))
+        }
+        _ => None,
+    };
+    let given = from_home.as_deref().unwrap_or(Path::new(path));
     if !given.is_absolute() {
         return Err(SettingsError::Invalid(format!(
             "a repository is an absolute path, not {path:?}"
@@ -343,6 +355,46 @@ mod tests {
 
     fn request() -> UpdateSettingsRequest {
         UpdateSettingsRequest::default()
+    }
+
+    #[test]
+    fn a_repository_typed_from_home_is_taken_from_this_machines_home() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "").unwrap();
+        let repository = dir.path().join("src/app");
+        std::fs::create_dir_all(&repository).unwrap();
+        let settings = HostSettings::new(SettingsOptions {
+            file: Some(path.clone()),
+            initial: InstallationConfig::from_file(&path).unwrap(),
+            login: None,
+            home: Some(dir.path().to_owned()),
+        });
+        let config = settings
+            .update(&UpdateSettingsRequest {
+                repositories: Some(wire::RepositoryList {
+                    paths: vec!["~/src/app".into(), " ~ ".into()],
+                }),
+                ..request()
+            })
+            .unwrap();
+        assert_eq!(
+            config.repositories,
+            [
+                repository.canonicalize().unwrap(),
+                dir.path().canonicalize().unwrap()
+            ]
+        );
+        let refused = settings.update(&UpdateSettingsRequest {
+            repositories: Some(wire::RepositoryList {
+                paths: vec!["~someone/app".into()],
+            }),
+            ..request()
+        });
+        assert!(
+            matches!(refused, Err(SettingsError::Invalid(_))),
+            "{refused:?}"
+        );
     }
 
     #[test]

@@ -143,39 +143,42 @@ impl App {
         let profile_id = desk.config.profile.id.clone();
         let send = self.desk_send();
         let steps_send = send.clone();
-        tokio::spawn(async move {
-            if let Ok(settings) = installation.get_settings().await {
-                steps_send(DeskEvent::Settings(settings));
-            }
-            let Ok(mut steps) = installation
-                .subscribe_onboarding(wire::OnboardingRequest { profile_id })
-                .await
-            else {
-                return;
-            };
-            while let Some(Ok(now)) = steps.next().await {
-                steps_send(DeskEvent::Steps(now));
-            }
-        });
+        let settings_send = send.clone();
+        follow(
+            move || {
+                let installation = installation.clone();
+                let settings_send = settings_send.clone();
+                let request = wire::OnboardingRequest {
+                    profile_id: profile_id.clone(),
+                };
+                async move {
+                    if let Ok(settings) = installation.get_settings().await {
+                        settings_send(DeskEvent::Settings(settings));
+                    }
+                    installation.subscribe_onboarding(request).await
+                }
+            },
+            move |now| steps_send(DeskEvent::Steps(now)),
+        );
         let installation = desk.config.installation.clone();
         let profiles_send = send.clone();
-        tokio::spawn(async move {
-            let Ok(mut profiles) = installation.subscribe_profiles().await else {
-                return;
-            };
-            while let Some(Ok(listed)) = profiles.next().await {
+        follow(
+            move || {
+                let installation = installation.clone();
+                async move { installation.subscribe_profiles().await }
+            },
+            move |listed: wire::ListProfilesResponse| {
                 profiles_send(DeskEvent::Profiles(listed.profiles));
-            }
-        });
+            },
+        );
         let client = self.client.clone();
-        tokio::spawn(async move {
-            let Ok(mut offers) = client.subscribe_sign_in_offers().await else {
-                return;
-            };
-            while let Some(Ok(now)) = offers.next().await {
-                send(DeskEvent::Offers(now.offers));
-            }
-        });
+        follow(
+            move || {
+                let client = client.clone();
+                async move { client.subscribe_sign_in_offers().await }
+            },
+            move |now: wire::SignInOffers| send(DeskEvent::Offers(now.offers)),
+        );
     }
 
     /// Onboarding or settings has the screen.
@@ -377,8 +380,12 @@ impl App {
         self.setup_effects(vec![SetupEffect::Answer(Answer::Dismiss(wire::Empty {}))]);
     }
 
-    /// The settings screen over home.
+    /// The settings screen over home, drawn from the settings last read and
+    /// read again at once: `amux config` or the Mac app may have changed
+    /// them since, and a list edited from a stale copy would drop what was
+    /// added elsewhere.
     pub(super) fn open_settings(&mut self) {
+        let send = self.desk_send();
         let Some(desk) = &mut self.desk else {
             self.notice("settings are not served here", Tone::Info);
             return;
@@ -392,6 +399,12 @@ impl App {
             Some(desk.config.profile.clone()),
             &desk.config.machine,
         ));
+        let installation = desk.config.installation.clone();
+        tokio::spawn(async move {
+            if let Ok(settings) = installation.get_settings().await {
+                send(DeskEvent::Settings(settings));
+            }
+        });
         self.close_chat_for_desk();
     }
 
@@ -667,14 +680,13 @@ impl App {
                 if desk.pairing_watch.is_none() {
                     let watched = send.clone();
                     let client = client.clone();
-                    let task = tokio::spawn(async move {
-                        let Ok(mut statuses) = client.watch_pairing().await else {
-                            return;
-                        };
-                        while let Some(Ok(status)) = statuses.next().await {
-                            watched(DeskEvent::Pairing(status));
-                        }
-                    });
+                    let task = follow(
+                        move || {
+                            let client = client.clone();
+                            async move { client.watch_pairing().await }
+                        },
+                        move |status| watched(DeskEvent::Pairing(status)),
+                    );
                     desk.pairing_watch = Some(task.abort_handle());
                 }
                 // A renewal closes the window it replaces first: one window
@@ -852,6 +864,37 @@ fn pairing_words(error: &client::RpcError) -> String {
     }
 }
 
+/// The first pause before a stream that ended is opened again.
+const REOPEN_FIRST: std::time::Duration = std::time::Duration::from_millis(250);
+/// The longest pause between attempts to open a stream again.
+const REOPEN_MOST: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Follows a daemon stream for as long as the app runs, handing each item to
+/// `on`. A stream that ends or cannot be opened, as when the daemon restarts
+/// for an update, is opened again after a pause that doubles up to
+/// [`REOPEN_MOST`], and starts again from [`REOPEN_FIRST`] once one opens.
+fn follow<T, Open, Opened, On>(open: Open, on: On) -> tokio::task::JoinHandle<()>
+where
+    T: Send + 'static,
+    Open: Fn() -> Opened + Send + 'static,
+    Opened: Future<Output = Result<client::EventStream<T>, client::RpcError>> + Send,
+    On: Fn(T) + Send + 'static,
+{
+    tokio::spawn(async move {
+        let mut pause = REOPEN_FIRST;
+        loop {
+            if let Ok(mut stream) = open().await {
+                pause = REOPEN_FIRST;
+                while let Some(Ok(item)) = stream.next().await {
+                    on(item);
+                }
+            }
+            tokio::time::sleep(pause).await;
+            pause = (pause * 2).min(REOPEN_MOST);
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
@@ -881,5 +924,41 @@ mod tests {
         answer.send(()).unwrap();
         closed.await.unwrap();
         assert_eq!(*done.lock().unwrap(), ["open", "close"]);
+    }
+}
+
+#[cfg(test)]
+mod follow_tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+
+    /// A stream that cannot be opened, then ends, is opened again each time,
+    /// and what each opening carries arrives.
+    #[tokio::test(start_paused = true)]
+    async fn a_stream_that_ends_or_fails_to_open_is_opened_again() {
+        let opened = Arc::new(AtomicUsize::new(0));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let attempts = opened.clone();
+        let task = follow(
+            move || {
+                let attempt = attempts.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    if attempt == 0 {
+                        return Err(client::RpcError::Transport("restarting".into()));
+                    }
+                    let items: client::EventStream<usize> =
+                        Box::pin(futures_util::stream::iter([Ok(attempt)]));
+                    Ok(items)
+                }
+            },
+            move |item| {
+                let _ = tx.send(item);
+            },
+        );
+        assert_eq!(rx.recv().await, Some(1));
+        assert_eq!(rx.recv().await, Some(2));
+        assert!(opened.load(Ordering::SeqCst) >= 3);
+        task.abort();
     }
 }

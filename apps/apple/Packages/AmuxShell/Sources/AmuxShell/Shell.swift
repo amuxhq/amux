@@ -267,12 +267,18 @@ public struct Shell: View {
         }
         // A machine nearby that opens its pairing window is offered by
         // itself, where the person is looking for one: the first-run screen,
-        // an empty Agents list or the Hosts tab.
+        // an empty Agents list or the Hosts tab. Putting a code sheet away
+        // makes its machine the one to offer in the same update that records
+        // it declined, so the offer is raised on the next turn, once that
+        // decline is in, and only if a machine is still to be offered.
         .onChange(of: windowToOffer, initial: true) { _, host in
-            guard let host else { return }
-            // The keypad's first frame already names the machine it offers.
-            stores.pairing.open(machine: stores.hosts.known(host))
-            router.pairing = .code(host)
+            guard host != nil else { return }
+            Task { @MainActor in
+                guard let host = windowToOffer else { return }
+                // The keypad's first frame already names the machine it offers.
+                stores.pairing.open(machine: stores.hosts.known(host))
+                router.pairing = .code(host)
+            }
         }
         // Putting a code sheet away puts that machine's window away: it is
         // not raised again until the machine opens another.

@@ -89,6 +89,30 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
     assert_eq!(listed.repositories.len(), 1);
     assert_eq!(listed.repositories[0].name, "app");
 
+    // A profile opened after the change starts with it too.
+    let created = door
+        .create_profile(Request::new(wire::CreateProfileRequest {
+            label: Some("spare".to_owned()),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    let spare = daemon
+        .profile(uuid::Uuid::from_slice(&created.id).unwrap())
+        .expect("the new profile runs");
+    assert_eq!(spare.host_entry().claude_kind(), wire::Kind::ClaudePty);
+    let listed = node::ClientApi::new(&spare, None)
+        .list_repositories(Request::new(wire::ListRepositoriesRequest {
+            query: None,
+            limit: 10,
+            host_id: None,
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(listed.repositories.len(), 1, "{listed:?}");
+    drop(spare);
+
     let refused = door
         .update_settings(Request::new(UpdateSettingsRequest {
             claude_kind: Some(wire::Kind::Codex as i32),

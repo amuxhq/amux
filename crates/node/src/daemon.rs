@@ -98,7 +98,10 @@ pub(crate) struct Installation {
     pub(crate) data_dir: PathBuf,
     pub(crate) front_door: Option<PathBuf>,
     generation: u64,
-    launch: Launch,
+    /// What each profile opens with; its repositories and Claude kind
+    /// follow the settings, so a profile opened after a change starts with
+    /// it.
+    launch: Mutex<Launch>,
     clock: Arc<dyn Clock>,
     push: Arc<dyn PushSender>,
     daemon_log: Option<PathBuf>,
@@ -153,6 +156,15 @@ impl Installation {
         self.awake.keep_awake(config.keep_awake);
         if repositories.is_none() && kind.is_none() && renamed.is_none() {
             return;
+        }
+        {
+            let mut launch = self.launch.lock().unwrap();
+            if let Some(repositories) = &repositories {
+                launch.repositories.clone_from(repositories);
+            }
+            if let Some(kind) = kind {
+                launch.claude_kind = kind;
+            }
         }
         let runtimes: Vec<Arc<ProfileRuntime>> = self
             .hosted
@@ -254,7 +266,7 @@ impl Installation {
             generation: self.generation,
             dir,
             store,
-            launch: self.launch.clone(),
+            launch: self.launch.lock().unwrap().clone(),
             clock: self.clock.clone(),
             push: self.push.clone(),
             reports: self.data_dir.join(REPORTS),
@@ -567,7 +579,7 @@ pub async fn start(
         data_dir,
         front_door,
         generation: generation.counter,
-        launch,
+        launch: Mutex::new(launch),
         clock,
         push,
         daemon_log,

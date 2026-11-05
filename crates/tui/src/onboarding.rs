@@ -42,8 +42,7 @@ const RENEW_BEFORE_MS: i64 = 30_000;
 const REPORTS_LINE: &str = "Never your chats, code, or file names.";
 /// The one line that says usage counts are sent: they are on unless turned
 /// off in Settings, and nothing waits for this line.
-const USAGE_NOTICE: &str =
-    "amux sends usage counts to help improve it, never your code or chats. You can turn this off in Settings.";
+const USAGE_NOTICE: &str = "amux sends usage counts to help improve it, never your code or chats. You can turn this off in Settings.";
 
 /// What the app does for the onboarding screen.
 #[derive(Clone, Debug, PartialEq)]

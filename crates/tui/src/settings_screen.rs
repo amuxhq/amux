@@ -532,10 +532,7 @@ impl SettingsScreen {
                     "On battery it stays awake only while an agent works.".to_owned(),
                     theme.faint(),
                 )],
-                Row::Telemetry => vec![(
-                    "Never your code or chats.".to_owned(),
-                    theme.faint(),
-                )],
+                Row::Telemetry => vec![("Never your code or chats.".to_owned(), theme.faint())],
                 Row::Account => match &self.signing_in {
                     Some(Some((code, unopened))) => {
                         let mut said = vec![(

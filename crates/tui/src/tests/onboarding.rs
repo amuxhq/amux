@@ -429,7 +429,10 @@ fn repositories_keep_the_ticked_folders_and_the_ones_typed_with_those_chosen_bef
 fn improve_asks_about_reports_and_says_usage_counts_are_sent() {
     let mut scene = scenes::improve();
     let drawn = screen(&mut scene, 110, 34);
-    assert!(drawn.contains("Never your chats, code, or file names."), "{drawn}");
+    assert!(
+        drawn.contains("Never your chats, code, or file names."),
+        "{drawn}"
+    );
     assert!(
         drawn.contains("amux sends usage counts to help improve it, never your code or chats."),
         "{drawn}"

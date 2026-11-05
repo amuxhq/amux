@@ -7,7 +7,7 @@ sidebar:
 
 Pair two computers and each one sees the other's agents, opens their chats,
 and starts new agents there. A desktop and a laptop, a home machine and a
-server: once they're paired, it's one list of agents across both.
+server: once they're paired, you work with the agents on both from either.
 
 First [install amux](install.md) on the new computer. Then pair the two.
 Pairing is a one-time step, and a paired computer can run agents on the

@@ -19,7 +19,7 @@ To pair it with a computer, see
 
 ## Agents
 
-The Agents tab lists your agents in one list: the ones you pinned, then the
+The Agents tab lists your agents: the ones you pinned, then the
 ones that need you, then the rest, with **Settled** at the bottom for the ones
 you're done with. The line under each name says what the agent is doing or
 what it's waiting for. Pull down for search, by name, folder or host.
@@ -105,8 +105,9 @@ signing in and the rest.
 
 ## Notifications
 
-The App Store version doesn't send notifications yet. Open the app to see
-which agents need you.
+With [Pro](https://amux.sh/docs/account/plans-and-billing/), the app notifies
+you when an agent needs you. Your computer encrypts each notification for your
+phone before it leaves, so neither amux.sh nor Apple can read it.
 
 ## Settings and help
 

@@ -29,7 +29,7 @@ curl -fsSL https://amux.sh/install | sh      # macOS, Linux
   </picture>
 </p>
 
-## Every agent, every machine, one list
+## Every agent, every machine
 
 Agents keep working on the machine you started them on: your desktop, a build server, your
 laptop. amux shows all of them together, grouped by machine, with the agents that need you

@@ -1453,7 +1453,9 @@ fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
         .ok_or("no review line holds the edit")?;
     journey.perform(&line, "Select line")?;
     journey.wait_for(&["review.comment"])?;
-    journey.screen("review-diff", &[])?;
+    // The chat behind the review keeps its header in the tree, undrawn, at
+    // either of two offsets in its own bar.
+    journey.screen("review-diff", &["chat.header", "chat.title"])?;
     journey.tap("review.comment")?;
     journey.wait_for(&["review.note"])?;
     journey.type_text("review.note", COMMENT)?;

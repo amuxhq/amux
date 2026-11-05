@@ -1,7 +1,7 @@
 //! The installer against the built amux binary, in a home of its own: a
-//! bundled copy is installed, set up and started; a download is believed
-//! only once its manifest's signature and its own hash check out; and an
-//! installation already answering is left alone.
+//! download is believed only once its manifest's signature and its own hash
+//! check out, then set up and started; and an installation already
+//! answering is left alone.
 //!
 //! Each case points `HOME` at its own directory, which the amux it starts
 //! inherits; nextest runs every case in a process of its own.
@@ -13,7 +13,7 @@ use std::io::{Read as _, Write as _};
 use std::net::TcpListener;
 use std::path::PathBuf;
 
-use installer::{Error, Options, Outcome, Source, Step};
+use installer::{Error, Options, Outcome, Step};
 use release::{Manifest, Release};
 
 struct Home {
@@ -46,9 +46,8 @@ impl Home {
         Self { dir, config }
     }
 
-    fn options(&self, bundled: Option<PathBuf>) -> Options {
+    fn options(&self) -> Options {
         Options {
-            bundled,
             config: Some(self.config.clone()),
         }
     }
@@ -70,39 +69,6 @@ impl Drop for Home {
 
 fn amux() -> PathBuf {
     provider_fakes::binaries::path("amux")
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_bundled_copy_is_installed_set_up_and_answers_and_then_is_left_alone() {
-    let home = Home::new("http://127.0.0.1:9/releases");
-    let mut steps = Vec::new();
-    let outcome = installer::ensure(&home.options(Some(amux())), |step| steps.push(step))
-        .await
-        .unwrap();
-    let Outcome::Installed { version, source } = outcome else {
-        panic!("installed, not {outcome:?}");
-    };
-    assert_eq!(source, Source::Bundled);
-    let reported = std::process::Command::new(amux())
-        .arg("--version")
-        .output()
-        .unwrap();
-    assert!(
-        String::from_utf8_lossy(&reported.stdout)
-            .trim()
-            .ends_with(&version)
-    );
-    assert_eq!(steps, [Step::Installing(Source::Bundled), Step::Starting]);
-    assert!(home.installed().is_file());
-    let door = installer::front_door(Some(&home.config)).unwrap();
-    assert!(door.ends_with("data/amux.sock"), "{}", door.display());
-    assert!(installer::answering(&door).await);
-
-    // Already answering: nothing is touched.
-    let again = installer::ensure(&home.options(Some(amux())), |_| panic!("no steps"))
-        .await
-        .unwrap();
-    assert_eq!(again, Outcome::Running);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -135,7 +101,7 @@ async fn a_download_is_installed_only_once_its_signature_and_hash_check_out() {
 
     // A manifest whose words changed after signing is refused whole.
     let home = Home::new(&format!("{base}/forged"));
-    let refused = installer::ensure(&home.options(None), |_| {}).await;
+    let refused = installer::ensure(&home.options(), |_| {}).await;
     assert!(
         matches!(refused, Err(Error::Verify(release::VerifyError::Signature))),
         "{refused:?}"
@@ -145,7 +111,7 @@ async fn a_download_is_installed_only_once_its_signature_and_hash_check_out() {
 
     // A build that is not the one the manifest hashed is not placed.
     let home = Home::new(&format!("{base}/swapped"));
-    let refused = installer::ensure(&home.options(None), |_| {}).await;
+    let refused = installer::ensure(&home.options(), |_| {}).await;
     assert!(
         matches!(
             refused,
@@ -164,15 +130,16 @@ async fn a_download_is_installed_only_once_its_signature_and_hash_check_out() {
 
     let home = Home::new(&format!("{base}/good"));
     let mut received = 0;
-    let outcome = installer::ensure(&home.options(None), |step| {
-        if let Step::Downloading {
+    let mut starting = false;
+    let outcome = installer::ensure(&home.options(), |step| match step {
+        Step::Downloading {
             received: now,
             total,
-        } = step
-        {
-            assert!(now <= total);
+        } => {
+            assert!(now <= total && !starting);
             received = now;
         }
+        Step::Starting => starting = true,
     })
     .await
     .unwrap();
@@ -180,12 +147,20 @@ async fn a_download_is_installed_only_once_its_signature_and_hash_check_out() {
         outcome,
         Outcome::Installed {
             version: "9.9.9".into(),
-            source: Source::Downloaded
         }
     );
     assert_eq!(received, binary.len() as u64);
+    assert!(starting);
     assert_eq!(std::fs::read(home.installed()).unwrap(), binary);
-    assert!(installer::answering(&installer::front_door(Some(&home.config)).unwrap()).await);
+    let door = installer::front_door(Some(&home.config)).unwrap();
+    assert!(door.ends_with("data/amux.sock"), "{}", door.display());
+    assert!(installer::answering(&door).await);
+
+    // Already answering: nothing is touched.
+    let again = installer::ensure(&home.options(), |_| panic!("no steps"))
+        .await
+        .unwrap();
+    assert_eq!(again, Outcome::Running);
 }
 
 /// The Mac app's feed: a newer app is downloaded, checked and unpacked

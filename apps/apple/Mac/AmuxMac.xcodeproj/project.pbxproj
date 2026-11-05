@@ -137,7 +137,6 @@
 			buildPhases = (
 				AE5775CEBEF19545957546F7 /* Sources */,
 				425DEDF52B5AB736B8705EC5 /* Frameworks */,
-				35D69A26212D8575756EF880 /* Bundle amux */,
 			);
 			buildRules = (
 			);
@@ -191,29 +190,6 @@
 			);
 		};
 /* End PBXProject section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		35D69A26212D8575756EF880 /* Bundle amux */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/../../../target/debug/amux",
-			);
-			name = "Bundle amux";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/amux",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -eu\n[ \"$CONFIGURATION\" = Debug ] || exit 0\nhelpers=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers\"\nmkdir -p \"$helpers\"\ncp -f \"$SCRIPT_INPUT_FILE_0\" \"$SCRIPT_OUTPUT_FILE_0\"\n";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		1B89DDC55F7AE127C1BF7465 /* Sources */ = {

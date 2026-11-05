@@ -77,10 +77,6 @@ pub struct AttachConfig {
 /// What a desktop app asks of the installer before it attaches.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct InstallOptions {
-    /// The copy of `amux` the app carries, installed when amux is missing;
-    /// none downloads the stable channel's build.
-    #[serde(default)]
-    pub bundled: Option<PathBuf>,
     /// The installation's config file; none is the default one.
     #[serde(default)]
     pub config: Option<PathBuf>,
@@ -93,9 +89,8 @@ pub enum Installed {
     Running,
     /// amux was installed but stopped, and is now started.
     Started,
-    /// amux was installed, set up and started: from the app's own copy, or
-    /// downloaded.
-    Installed { version: String, bundled: bool },
+    /// amux was downloaded from the stable channel, set up and started.
+    Installed { version: String },
 }
 
 /// What a desktop app asks when it looks for a newer version of itself.

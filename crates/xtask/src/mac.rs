@@ -4,15 +4,17 @@
 //! The app versions on its own (`MARKETING_VERSION` in
 //! `apps/apple/Mac/project.yml`, tags `mac-v<version>`) and updates itself
 //! apart from amux. A release builds it here, on the release Mac, since its
-//! Developer ID signature is made with this Mac's certificate, and makes two
-//! artifacts of one build:
+//! Developer ID signature is made with this Mac's certificate, and packs the
+//! one signed app two ways:
 //!
-//! - `Amux-<version>.zip`, the app alone: what an installed app downloads
-//!   to update itself. It is never notarized, since the app downloads it
-//!   itself and nothing marks it as downloaded.
-//! - `Amux-<version>.dmg`, the same app with the stable `amux` in
-//!   `Contents/Helpers`, signed, for a first install that needs no network
-//!   to install amux. It is what a browser downloads, so it is notarized.
+//! - `Amux-<version>.zip`: what an installed app downloads to update
+//!   itself.
+//! - `Amux-<version>.dmg`: what a person downloads to install it, dragging
+//!   the app onto Applications. A browser marks it as downloaded, so it is
+//!   notarized, and notarizing it covers the app inside, the zip's too.
+//!
+//! Neither carries amux: the app downloads the stable channel's build on
+//! its first launch when this Mac has none, as any client does.
 //!
 //! Both go on the tag's GitHub Release, and the tag's message records their
 //! digests, so a deploy signs only what this Mac built. A deploy writes the
@@ -43,9 +45,6 @@ const PROJECT: &str = "apps/apple/Mac/AmuxMac.xcodeproj";
 /// The Mac app's entry in its feed; the app looks itself up by it.
 pub const TARGET: &str = "mac-app";
 const BUNDLE: &str = "Amux.app";
-/// amux's own stable feed, whose macOS build the disk image carries.
-const STABLE_FEED: &str = "https://amux.sh/releases/stable.json";
-const AMUX_TARGET: &str = "aarch64-apple-darwin";
 /// Where the App Store Connect key's identifiers live, as the iPhone
 /// release reads them; the accounts are `key-id` and `issuer-id`.
 const CONNECT_SERVICE: &str = "amux-appstoreconnect";
@@ -178,8 +177,8 @@ fn cut(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(&out)?;
     let built = build(&root, &version, &keys)?;
 
-    // The update: the app alone, signed.
-    let app = out.join("update").join(BUNDLE);
+    let image = out.join("image");
+    let app = image.join(BUNDLE);
     copy_bundle(&built, &app)?;
     signing::sign(&app, &identity, None)?;
     let zip = out.join(zip_name(&version));
@@ -195,17 +194,8 @@ fn cut(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
         ],
     )?;
 
-    // The disk image: the same app carrying the stable amux, signed inside
-    // out, beside a link to /Applications to drag it onto.
-    let image = out.join("image");
-    let carried = image.join(BUNDLE);
-    copy_bundle(&built, &carried)?;
-    let helpers = carried.join("Contents/Helpers");
-    std::fs::create_dir_all(&helpers)?;
-    let amux = helpers.join("amux");
-    stable_amux(&root, &keys, &amux)?;
-    signing::sign(&amux, &identity, Some(signing::IDENTIFIER))?;
-    signing::sign(&carried, &identity, None)?;
+    // The disk image: the same app beside a link to /Applications to drag
+    // it onto.
     run(
         &root,
         "ln",
@@ -317,6 +307,10 @@ fn build(
         &["generate", "--spec", "project.yml", "--quiet"],
     )?;
     let derived = root.join("target/mac/ReleaseDerivedData");
+    let product = derived.join("Build/Products/Release").join(BUNDLE);
+    // Xcode builds into the last release's app and never removes what a
+    // build no longer makes, so a release starts from no app at all.
+    let _ = std::fs::remove_dir_all(&product);
     run(
         root,
         "xcodebuild",
@@ -337,7 +331,7 @@ fn build(
             "build",
         ],
     )?;
-    Ok(derived.join("Build/Products/Release").join(BUNDLE))
+    Ok(product)
 }
 
 fn copy_bundle(from: &Path, to: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -347,36 +341,6 @@ fn copy_bundle(from: &Path, to: &Path) -> Result<(), Box<dyn std::error::Error>>
         "ditto",
         &[&from.to_string_lossy(), &to.to_string_lossy()],
     )
-}
-
-/// The stable channel's macOS amux, checked against its signed manifest.
-fn stable_amux(
-    root: &Path,
-    keys: &[[u8; 32]],
-    to: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let manifest: Manifest = serde_json::from_slice(&curl(STABLE_FEED)?)?;
-    release::verify_manifest(&manifest, "stable", keys)?;
-    let build = manifest
-        .targets
-        .get(AMUX_TARGET)
-        .ok_or("the stable manifest has no macOS build")?;
-    let bytes = curl(&build.url)?;
-    release::verify_artifact(build, &release::sha256_of(&bytes), bytes.len() as u64)?;
-    std::fs::write(to, &bytes)?;
-    run(root, "chmod", &["0755", &to.to_string_lossy()])?;
-    println!("carrying amux {} from the stable channel", build.version);
-    Ok(())
-}
-
-fn curl(url: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let fetched = Command::new("curl")
-        .args(["-fsSL", "--max-time", "600", url])
-        .output()?;
-    if !fetched.status.success() {
-        return Err(format!("{url}: {}", String::from_utf8_lossy(&fetched.stderr).trim()).into());
-    }
-    Ok(fetched.stdout)
 }
 
 /// The App Store Connect key notarization signs in with.

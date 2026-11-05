@@ -934,8 +934,8 @@ amux never removes a worktree or its branch.
 ### The client services on a link
 
 A paired daemon calls the same `AgentService` and `SessionService` over a link
-stream (`crates/node/src/edge/peer.rs` serves them, `ClientApi::for_peer` in
-`crates/node/src/grpc.rs` answers); replication is a daemon being a client of
+stream (`PeerApi` in `crates/node/src/edge/peer.rs` serves and answers them,
+apart from the local sockets' `ClientApi`); replication is a daemon being a client of
 its peer. The caller is the host whose pinned key the stream's handshake
 presented, and a call without one is refused as `UNAUTHENTICATED`. Only amux
 daemons call them, and each stamps what it says on behalf of its own callers,

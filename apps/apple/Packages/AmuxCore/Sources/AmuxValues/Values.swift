@@ -4000,19 +4000,14 @@ public enum InputState: Codable, Hashable, Sendable {
 
 /// What a desktop app asks of the installer before it attaches.
 public struct InstallOptions: Codable, Hashable, Sendable {
-    /// The copy of `amux` the app carries, installed when amux is missing;
-    /// none downloads the stable channel's build.
-    public var bundled: String?
     /// The installation's config file; none is the default one.
     public var config: String?
 
-    public init(bundled: String?, config: String?) {
-        self.bundled = bundled
+    public init(config: String?) {
         self.config = config
     }
 
     private enum CodingKeys: String, CodingKey {
-        case bundled
         case config
     }
 }
@@ -4023,9 +4018,8 @@ public enum Installed: Codable, Hashable, Sendable {
     case running
     /// amux was installed but stopped, and is now started.
     case started
-    /// amux was installed, set up and started: from the app's own copy, or
-    /// downloaded.
-    case installed(version: String, bundled: Bool)
+    /// amux was downloaded from the stable channel, set up and started.
+    case installed(version: String)
 
     private enum Tag: String, CodingKey {
         case installed = "Installed"
@@ -4033,7 +4027,6 @@ public enum Installed: Codable, Hashable, Sendable {
 
     private enum InstalledKeys: String, CodingKey {
         case version
-        case bundled
     }
 
     public init(from decoder: any Decoder) throws {
@@ -4061,8 +4054,7 @@ public enum Installed: Codable, Hashable, Sendable {
             let _fields = try _container.nestedContainer(
                 keyedBy: InstalledKeys.self, forKey: .installed)
             self = .installed(
-                version: try _fields.decode(String.self, forKey: .version),
-                bundled: try _fields.decode(Bool.self, forKey: .bundled))
+                version: try _fields.decode(String.self, forKey: .version))
         }
     }
 
@@ -4074,11 +4066,10 @@ public enum Installed: Codable, Hashable, Sendable {
         case .started:
             var _container = encoder.singleValueContainer()
             try _container.encode("Started")
-        case .installed(let version, let bundled):
+        case .installed(let version):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: InstalledKeys.self, forKey: .installed)
             try _fields.encode(version, forKey: .version)
-            try _fields.encode(bundled, forKey: .bundled)
         }
     }
 }

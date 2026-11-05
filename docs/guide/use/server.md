@@ -83,13 +83,11 @@ its own.
 
 If you'd rather run amux as a system service you manage yourself, stop it,
 turn off starting at login if you turned it on, and tell it there's no
-supervisor. Only the supervisor installs updates, so updates become manual
-first:
+supervisor:
 
 ```sh
 amux server stop
 amux config set start_at_login false
-amux config set updates manual
 amux config set supervisor false
 ```
 

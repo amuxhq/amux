@@ -49,7 +49,7 @@ final class DoorTests: XCTestCase {
             .attach(
                 agent: "6f1c1f8e-0000-4000-8000-000000000001", kind: "image",
                 name: "screenshot.png", mime: "image/png", base64: "iVBORw0KGgo="),
-            .pair(qr: #"{"host_id":"…","cloud_url":"http://127.0.0.1:9","secret":[1]}"#),
+            .pair(qr: "http://127.0.0.1:9/p#ATofnSwAAEAAgAAAAAAAAAEBAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICMp"),
             .pairByCode(host: "9f1c1f8e-0000-4000-8000-000000000002", pin: "419507"),
             .awaitAgent(agent: "6f1c1f8e-0000-4000-8000-000000000001", seconds: 120),
             .screenshot,

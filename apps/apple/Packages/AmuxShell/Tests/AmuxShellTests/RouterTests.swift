@@ -242,8 +242,7 @@ final class RouterTests: XCTestCase {
         router.leaveAccount()
         XCTAssertNil(router.pairing)
 
-        let invitation = PairingInvitation(
-            host: machine, cloudURL: nil, addrs: [], secret: [1, 2, 3], payload: "{}")
+        let invitation = PairingInvitation(host: machine, addrs: [], link: "https://amux.sh/p#")
         router.pairing = .link(invitation)
         router.leaveAccount()
         XCTAssertEqual(router.pairing, .link(invitation))

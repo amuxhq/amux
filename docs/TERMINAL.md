@@ -594,7 +594,7 @@ another client. A command whose standard error is not a terminal (a script's, or
 nothing and leaves the notice to be shown.
 
 Hidden flags serve tests and demos: the global `--config <path>` (or `AMUX_CONFIG`) names another config file;
-`amux pair --qr --print-link` also prints the QR code's link (`https://amux.sh/p#…`; the app also takes it as `amux://pair?payload=…`), to paste into a simulator;
+`amux pair --qr --print-link` also prints the QR code's link (`https://amux.sh/p#…`), to paste into a simulator;
 `amux pair --demo --pin <digits> --for <duration>` holds a PIN you choose open for an
 unattended demo (`30d`, `12h`, `45m`; at most 90 days) and returns at once, and `amux pair --cancel` closes it;
 `amux login --cloud-url` signs in to another account service.

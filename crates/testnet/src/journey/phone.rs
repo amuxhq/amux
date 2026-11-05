@@ -947,7 +947,7 @@ impl PhoneJourney {
         let mut process = self.amux(host, &["pair", "--qr", "--print-link"])?;
         match process.find(Duration::from_secs(60), |line| {
             line.strip_prefix("Pairing link: ")
-                .map(|link| app_link(link.trim()))
+                .map(|link| link.trim().to_owned())
         }) {
             Some(link) => Ok((process, link)),
             None => {
@@ -1677,19 +1677,6 @@ pub(crate) fn ask(
         )));
     }
     Ok(reply)
-}
-
-/// The app's own `amux://pair` link for the invitation a printed link
-/// carries. A QR code shows the cloud's pairing page, which opens the app
-/// only through its associated domain; the test cloud is no such domain,
-/// so the app is handed the invitation under its own scheme.
-fn app_link(printed: &str) -> String {
-    match printed.split_once("/p#") {
-        Some((_, payload)) if printed.starts_with("http") => {
-            format!("{}{payload}", node::PAIR_LINK)
-        }
-        _ => printed.to_owned(),
-    }
 }
 
 #[cfg(test)]

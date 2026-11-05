@@ -204,7 +204,7 @@
       "stage": 16,
       "clients": ["phone"],
       "topology": "journeys/topologies/phone-reach.json",
-      "claim": "With the local network refused, the Hosts tab says so, offers the setting that undoes it and lists no machine; granted, the phone's own browser finds the machine on its network and offers it. The amux://pair link the machine printed, opened from outside the app as the system hands a scanned code over, names the machine before anything is trusted; trusted, the machine is listed under its own name and receives the prompt written on the phone exactly once and answers it."
+      "claim": "With the local network refused, the Hosts tab says so, offers the setting that undoes it and lists no machine; granted, the phone's own browser finds the machine on its network and offers it. The pairing link the machine printed, opened from outside the app as the system hands a scanned code over, names the machine before anything is trusted; trusted, the machine is listed under its own name and receives the prompt written on the phone exactly once and answers it."
     },
     {
       "id": "push-wake",

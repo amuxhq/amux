@@ -421,10 +421,10 @@ login form is missing, a recipe names which and exits non-zero.
 
 ## Which cloud a pairing invitation names
 
-A QR invitation (`amux://pair?payload=...`) carries the offering machine's
-host id, a one-shot secret, the addresses it can be dialled at directly, and
-its configured `cloud_url` when it has one; the six printed digits carry none
-of that. The cloud is the account service, normally `https://amux.sh`, which
+A QR invitation (`https://<cloud>/p#<invitation>`) carries the offering
+machine's host id, a one-shot secret, and the addresses it can be dialled at
+directly; the cloud is the link's own origin, the profile's configured cloud or
+amux.sh. The six printed digits carry none of that. The cloud is the account service, normally `https://amux.sh`, which
 assigns a relay through `/api/connect`; the relay address is only where
 traffic goes and is never written into configuration.
 

@@ -1624,7 +1624,7 @@ pub unsafe extern "C" fn amux_runtime_trusting_profiles(
 }
 
 /// Opens pairing mode on a profile and answers the link its QR code would
-/// carry; the ticket answers `{"Ok": "amux://pair?.."}` or `{"Err": ..}`. Only
+/// carry; the ticket answers `{"Ok": "https://amux.sh/p#.."}` or `{"Err": ..}`. Only
 /// a driving build offers one: the phone shows no pairing code of its own.
 ///
 /// # Safety

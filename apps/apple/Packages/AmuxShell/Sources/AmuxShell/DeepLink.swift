@@ -29,8 +29,8 @@ public struct PairingInvitation: Hashable, Sendable, CustomStringConvertible {
     ///
     /// An invitation carrying addresses is dialled on the network this phone
     /// is on and needs nothing else. One carrying none names no address to
-    /// dial, so it is taken up through the relay, and there is no relay
-    /// without an account.
+    /// dial, so unless discovery finds the machine nearby it is taken up
+    /// through the relay, and there is no relay without an account.
     public var needsAnAccount: Bool { addrs.isEmpty }
 
     /// The invitation is a secret, so it prints as the machine it came from

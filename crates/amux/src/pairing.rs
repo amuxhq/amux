@@ -277,7 +277,18 @@ fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
                  instead.",
                 if name.is_empty() { "this host" } else { name }
             ));
-            let computer = match (name, started.addrs.first()) {
+            // The window's addresses are sorted, so loopback comes first on
+            // most networks; another computer can only use one it can reach.
+            let reachable = started
+                .addrs
+                .iter()
+                .find(|addr| {
+                    !addr
+                        .parse::<std::net::SocketAddr>()
+                        .is_ok_and(|addr| addr.ip().is_loopback())
+                })
+                .or(started.addrs.first());
+            let computer = match (name, reachable) {
                 ("", Some(addr)) => format!("`amux pair {addr}`"),
                 ("", None) => "`amux pair <this host>`".to_owned(),
                 (name, Some(addr)) => format!(
@@ -926,7 +937,8 @@ mod tests {
                 ..PairingIdentity::default()
             }),
             ttl_seconds: 300,
-            addrs: vec!["10.0.0.2:7420".into()],
+            // Sorted, as a window's are: loopback first, and never offered.
+            addrs: vec!["127.0.0.1:7420".into(), "10.0.0.2:7420".into()],
             secret: Some(pairing_window::Secret::Pin("482913".into())),
             ..PairingWindow::default()
         };

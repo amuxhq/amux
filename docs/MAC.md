@@ -23,7 +23,7 @@ and Escape or Later skips it.
 
 | Screen | What it does |
 | --- | --- |
-| Connect your iPhone | The Mac's name, with Rename to change it at once; a QR code the app draws for the window's link; "2. Enter 418 207 in the app"; then "Your iPhone is pairing…" as a phone joins, and a lockout with a new code after wrong PINs. The window is renewed before it ends unless a phone is joining, and closed when the screen leaves or the app quits. |
+| Connect your iPhone | The Mac's name, with Rename to change it at once; a QR code the app draws for the window's link, with "Scan with your iPhone's camera to pair." and "Or enter 418 207 in the amux app."; then "Your iPhone is pairing…" as a phone joins, and a lockout with a new code after wrong PINs. The window is renewed before it ends unless a phone is joining, and closed when the screen leaves or the app quits. |
 | Keep it connected | "Paired with <phone> ✓" once a phone paired, then start at login and keep awake, both ticked, applied on Continue. |
 | Reach it from anywhere | Sign In runs `WebSignIn`. "Also sign in <phone>" is ticked when the phone just paired is signed out; after the sign-in the Mac offers it the account and opens the account service's offer page. When a paired machine offers its account instead, the screen asks "Sign in as <email> (from <machine>)?". |
 | Repositories | The repositories Claude Code and Codex ran in lately, ticked, and Add a Folder. |

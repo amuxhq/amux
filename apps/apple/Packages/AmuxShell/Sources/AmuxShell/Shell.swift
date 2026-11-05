@@ -962,9 +962,16 @@ private struct PairConfirmationPage: View {
     }
 
     /// Whether this invitation has nothing this phone can act on: no address
-    /// to dial and no account to reach a relay with.
+    /// to dial, the machine not found on this network under its id, and no
+    /// account to reach a relay with. The code names at most two IPv4
+    /// addresses, so a machine on an IPv6-only network sends none, and
+    /// discovery is what finds it.
     private var unreachable: Bool {
-        invitation.needsAnAccount && stores.hosts.account?.binding != .signedIn
+        invitation.needsAnAccount
+            && !stores.hosts.discovered.contains {
+                $0.id == invitation.host && !$0.addrs.isEmpty
+            }
+            && stores.hosts.account?.binding != .signedIn
     }
 
     private var confirmation: some View {

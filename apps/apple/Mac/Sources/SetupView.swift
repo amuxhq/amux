@@ -147,10 +147,10 @@ private struct PairPhone: View {
             MachineName(setup: setup, model: model)
             HStack(alignment: .center, spacing: 36) {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("1. Scan to get amux on your iPhone")
+                    Text("Scan with your iPhone's camera to pair.")
                     pinLine
                     status
-                    Text("Whoever enters this code can run agents on this Mac as you.")
+                    Text("Whoever scans this code or enters the PIN can run agents on this Mac as you.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -167,11 +167,11 @@ private struct PairPhone: View {
     @ViewBuilder
     private var pinLine: some View {
         if let pin = setup.pairing.window?.pin, !pin.isEmpty {
-            Text("2. Enter \(Text(spaced(pin)).monospacedDigit().fontWeight(.semibold)) in the app")
+            Text("Or enter \(Text(spaced(pin)).monospacedDigit().fontWeight(.semibold)) in the amux app.")
                 .textSelection(.enabled)
-                .accessibilityLabel("2. Enter \(pin) in the app")
+                .accessibilityLabel("Or enter \(pin) in the amux app.")
         } else {
-            Text("2. Enter the code in the app")
+            Text("Or enter the code in the amux app.")
         }
     }
 
@@ -257,9 +257,11 @@ private struct MachineName: View {
     }
 }
 
-/// The pairing link as a QR code, drawn by Core Image a module to a pixel
-/// and scaled up without smoothing, black on white whatever the
-/// appearance, so a phone's camera reads it.
+/// The pairing link as a QR code, drawn by Core Image eight pixels to a
+/// module and scaled to fit without smoothing, black on white whatever the
+/// appearance, so a phone's camera reads it. Drawn a module to a pixel, a
+/// renderer that smooths anyway (as offscreen rendering does) blurs every
+/// edge; at eight the smoothing is a sliver.
 struct QRCode: View {
     let link: String
 
@@ -281,7 +283,9 @@ struct QRCode: View {
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(text.utf8)
         filter.correctionLevel = "M"
-        guard let output = filter.outputImage else { return nil }
+        guard let output = filter.outputImage?
+            .transformed(by: CGAffineTransform(scaleX: 8, y: 8))
+        else { return nil }
         return context.createCGImage(output, from: output.extent)
     }
 }

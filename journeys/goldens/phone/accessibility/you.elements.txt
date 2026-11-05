@@ -48,7 +48,7 @@ you.close | Close |  | 342,82,40,36
  | Dark |  | 121,544,84,66
  | System |  | 204,544,120,66
  | Share Usage, Counts and choices, never what you type | 1 | 30,622,342,115
- | Send Automatic Reports, When amux catches its own bug, send what it saw, chats included | 0 | 30,755,342,228
+ | Send Automatic Reports, When amux catches its own bug. Never your chats, code, or file names. | 0 | 30,755,342,228
  | Notifications, Off |  | 16,993,370,114
  | Name, <device> |  | 16,1107,370,114
  | Fingerprint, <key> |  | 30,1234,342,203

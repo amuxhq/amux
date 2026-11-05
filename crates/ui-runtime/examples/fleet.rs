@@ -1,6 +1,6 @@
 //! A whole amux client in one file: it makes sure amux is running, opens
 //! the installation's first profile and prints its fleet, again each time
-//! the fleet changes. docs/WRITING_A_CLIENT.md walks through it.
+//! the fleet changes. docs/guide/build/build-a-client.md walks through it.
 //!
 //! cargo run -p ui-runtime --example fleet
 

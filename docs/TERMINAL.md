@@ -162,7 +162,7 @@ that pairs them: `found nearby · amux pair desk` for one local-network discover
 desk` for one a paired host announces, and `on your account · Pro pairs it through the relay · amux pair desk` for
 one only the relay announces; a faint line
 says to pair another with `amux pair`. Esc, `q` or `h` closes it. Pairing, unpairing and signing in happen from the
-command line ([`amux pair`](#command-line-verbs) and friends); [HOW_IT_WORKS.md](HOW_IT_WORKS.md) explains hosts,
+command line ([`amux pair`](#command-line-verbs) and friends); [How amux works](guide/understand/how-amux-works.md) explains hosts,
 pairing and the relay.
 
 ### The chat

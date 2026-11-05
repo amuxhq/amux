@@ -1,13 +1,35 @@
-# Writing a client
+---
+title: Build an amux client
+description: Write your own amux client, an editor plugin, a menu-bar app or a script, and every agent on every machine you've paired is yours to show and drive.
+sidebar:
+  order: 1
+---
 
-*For anyone writing their own amux client — a desktop app, an editor
-plugin, a script: how to find amux on a machine, install it when it is
-missing, sign in, choose a profile and read its agents.*
+amux's own apps are clients like any other. The terminal app and the iPhone
+app hold no secret API: they ask the amux running on your machine what your
+agents are doing, through the same documented interface that is open to you.
+So you can build your own:
 
-amux runs as a daemon on each machine. A client, amux's own terminal client
-and apps included, keeps no state of its own and holds no account token: it
-asks that daemon, in gRPC over local sockets. Every client does the same
-five things:
+- an editor plugin that shows which agents need you, and answers them without
+  leaving the file you're in
+- a menu-bar app with a badge for every agent waiting on a question
+- a script that pings you when an agent finishes, or starts one every morning
+  on the repository that needs it
+
+Whatever you build gets the whole of amux for free. It sees every agent on
+this machine and on every machine you've paired with it, however amux
+reaches them: on your network, over SSH, or through the relay. It keeps no
+state of its own and holds no account token: amux does the networking, the
+pairing, the encryption and the sign-in, and your client asks it.
+
+The example [below](#example-the-fleet-live) is a whole working client, in
+one file of about a hundred lines.
+
+## How a client works
+
+amux runs as a daemon on each machine, and a client, amux's own included,
+talks to it in gRPC over local sockets. Every client does the same five
+things:
 
 1. **Find the installation** and its front door, the socket the daemon
    answers on.
@@ -23,12 +45,12 @@ There are two ways to build one:
 - **On amux's Rust crates**, which do most of that for you. This is how
   amux's own clients are built ([below](#building-on-amuxs-rust-crates)).
 - **From the protocol**, in any language, with the messages and services in
-  [`proto/amux/v1`](../proto/amux/v1).
+  [`proto/amux/v1`](../../../proto/amux/v1).
   [The protocol, step by step](#the-protocol-step-by-step) explains each of
   the five; a client on the Rust crates reads it for what the calls mean.
 
 The protocol is stable from 0.9.0: fields are added and never renumbered
-([README](../proto/amux/v1/README.md)). Before 0.9.0 it changes from
+([README](../../../proto/amux/v1/README.md)). Before 0.9.0 it changes from
 release to release, so a client built against one release talks to that
 release's daemon; `GetInstallation` says which one is running.
 
@@ -62,7 +84,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 Unlike the protocol, the crates promise nothing, before 0.9.0 or after:
 their APIs change whenever amux's own clients need them to, so moving to a
 newer tag can mean changing code. They are under the same licence as the
-rest of amux ([LICENSING](LICENSING.md)).
+rest of amux ([LICENSING](../../LICENSING.md)).
 
 ### Example: the fleet, live
 
@@ -74,7 +96,7 @@ change.
 ```rust
 //! A whole amux client in one file: it makes sure amux is running, opens
 //! the installation's first profile and prints its fleet, again each time
-//! the fleet changes. docs/WRITING_A_CLIENT.md walks through it.
+//! the fleet changes. docs/guide/build/build-a-client.md walks through it.
 //!
 //! cargo run -p ui-runtime --example fleet
 
@@ -352,7 +374,7 @@ then on. Signing out is `SignOut` on the profile's own socket.
 Everything inside a profile is on its own socket, `Profile.socket_path`:
 
 - `AgentService`: the fleet, and acting on agents.
-- `SessionService`: reading and writing a chat; the [wire](WIRE.md)
+- `SessionService`: reading and writing a chat; the [wire](../../WIRE.md)
   describes its subscriptions, items and inputs.
 - `ProfileAdminService`: the profile's account, pairing and peers.
 
@@ -460,3 +482,17 @@ them no deadline, and cancel the call to close one. They end when the
 daemon stops or restarts, which an update does on its own. The client then
 waits for the front door to answer again and subscribes afresh, as after a
 `lagged` event. (The Rust drivers do this themselves.)
+
+
+## Every amux client works with yours
+
+That's the payoff. Your client isn't a side door into amux: it's one more
+client of the same amux, beside the terminal app and the iPhone app. An
+agent your script starts shows up in the terminal and on your phone.
+A question your plugin answers is answered everywhere. A prompt you send
+from the iPhone, on a train, lands in the chat your menu-bar app is
+showing.
+
+So you build only the part you care about. Remote access from your phone,
+the fleet across every machine, pairing and the relay are already there, in
+the apps people already use, and they all work with what you made.

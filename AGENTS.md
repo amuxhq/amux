@@ -17,6 +17,9 @@ never renumber), which `just proto-compat` checks. `amux.dump` is exempt.
 - Committed documentation lives in `docs/` (start at `docs/README.md`);
   `notes/` is gitignored working material. Graduate notes into `docs/`
   deliberately; never force-add them.
+- `docs/guide/` is the user guide, which amux.sh publishes from main at
+  amux.sh/docs. A change people will notice updates its page there in the
+  same commit; write those pages for users, not maintainers.
 - Agent debugging starts at `docs/DEBUGGING.md`; captured reports live in `<root>/reports` under the installation root.
 - This file holds rules about how agents operate. Documentation about the
   source belongs in `docs/` and component READMEs, not here.

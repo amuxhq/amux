@@ -2,12 +2,33 @@
 
 *For anyone arriving at amux: this is the map, one line per page.*
 
-## Readers first
+## The user guide
 
-- [How amux works](HOW_IT_WORKS.md) — for people using amux: devices, accounts, pairing, hosts, the relay,
-  revocation, and agents that keep running while the daemon restarts.
-- [What amux sends](ANALYTICS.md) — the usage events a machine sends amux.sh, every property, what is never
-  sent, and how to turn it off.
+The pages under [`guide/`](guide/) are for people using amux, and amux.sh
+publishes them as its documentation at <https://amux.sh/docs>. A change
+people will notice updates the page that describes it.
+
+- **Get started:** [Install](guide/get-started/install.md),
+  [Your first agent](guide/get-started/first-agent.md),
+  [Connect your phone](guide/get-started/connect-your-phone.md),
+  [Add another computer](guide/get-started/add-another-computer.md).
+- **Understand:** [How amux works](guide/understand/how-amux-works.md),
+  [Security and privacy](guide/understand/security-and-privacy.md),
+  [What amux sends](guide/understand/what-amux-sends.md).
+- **Use:** [Terminal app](guide/use/terminal.md),
+  [iPhone app](guide/use/iphone.md),
+  [Agents working together](guide/use/agents-working-together.md),
+  [Running amux on a server](guide/use/server.md),
+  [Updates and channels](guide/use/updates.md),
+  [Troubleshooting](guide/use/troubleshooting.md).
+- **Build on amux:** [Build an amux client](guide/build/build-a-client.md),
+  for anyone writing their own client: finding and installing amux,
+  profiles, sign-in and the fleet, on amux's Rust crates or from the protocol.
+
+Every guide page starts with a `title`, a `description` and a
+`sidebar.order`, which the site uses for the page's heading, its search
+summary and its place in the sidebar. Links between pages are relative
+paths to the `.md` files, so they work both here and on the site.
 
 ## The system
 
@@ -44,8 +65,6 @@
 - [Embedding](EMBEDDED.md) — app-runtime, app-embedded, app-ffi, the generated Swift types and the seams.
 - [iPhone copy](IOS_COPY.md) — the rules the app's words follow and the lint that holds them.
 - [Cloud](CLOUD.md) — what the app and daemon ask of amux.sh.
-- [Writing a client](WRITING_A_CLIENT.md) — for third parties: finding and installing amux, profiles,
-  sign-in and the fleet, on amux's Rust crates or from the protocol.
 
 ## Verifying
 

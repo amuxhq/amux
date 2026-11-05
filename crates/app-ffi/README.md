@@ -101,7 +101,7 @@ the system may browse, to every profile.
 agent of the profile on screen, and only for the chats that open for every
 other profile; null, for the app in the background, lists none.
 
-Product analytics ([what is sent](../../docs/ANALYTICS.md)) is the
+Product analytics ([what is sent](../../docs/guide/understand/what-amux-sends.md)) is the
 runtime's; the app tells it what only the app knows.
 `amux_runtime_set_telemetry(rt, on)` follows the app's Share Usage setting
 (the start's `StartConfig.telemetry` is its first value), and off holds back

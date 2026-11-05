@@ -153,7 +153,7 @@ and are tuned the same way:
 | Analytics check-in | Once a day per profile, never sooner than a minute after a start | `CHECK_IN_EVERY_MS` and `CHECK_IN_SETTLE_MS` in [`crates/node/src/telemetry.rs`](../crates/node/src/telemetry.rs) |
 | Analytics repeats held back | `client_opened` and `relay_refused` at most once an hour per profile | `CLIENT_OPENED_EVERY` and `RELAY_REFUSED_EVERY` in [`crates/node/src/telemetry.rs`](../crates/node/src/telemetry.rs); the phone's in [`crates/app-embedded/src/lib.rs`](../crates/app-embedded/src/lib.rs) |
 
-The analytics values are described in [what amux sends](ANALYTICS.md). What
+The analytics values are described in [what amux sends](guide/understand/what-amux-sends.md). What
 the other values govern is described in [the journal and store](JOURNAL_AND_STORE.md),
 [the wire](WIRE.md), [the agent process](AGENT_PROCESS.md) and
 [the supervisor](SUPERVISOR.md).

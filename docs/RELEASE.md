@@ -33,7 +33,7 @@ declares what the app collects and why it calls the APIs Apple asks reasons
 for (UserDefaults, file timestamps, disk space). An upload that uses one of
 those APIs without a declared reason is refused. The manifest and the App
 Privacy answers in App Store Connect describe the same collection, so a change
-to what the app or [analytics](ANALYTICS.md) sends updates both, and the App
+to what the app or [analytics](guide/understand/what-amux-sends.md) sends updates both, and the App
 Store Connect answers before the version that starts sending is submitted.
 
 The app is the next version of the listing already on the App Store, not a

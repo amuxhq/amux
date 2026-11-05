@@ -191,7 +191,7 @@ steps against a budget of its own: the daemon's 100 ms, the relay's 1 ms, and th
 
 Each check a limit admits is also counted as a `check_failed` usage event, naming the core, the check's id, whether
 it was an invariant or a step over budget, and how many the limit held back since: no reason text and nothing from
-the report (see [what amux sends](ANALYTICS.md)). It is sent whenever usage events are, so a check that breaks in
+the report (see [what amux sends](guide/understand/what-amux-sends.md)). It is sent whenever usage events are, so a check that breaks in
 the field is seen without anybody sending its report.
 
 ## Records

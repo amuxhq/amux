@@ -298,9 +298,10 @@ mod tests {
     #[test]
     fn the_public_page_names_every_event_and_property() {
         let page = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/ANALYTICS.md"),
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../docs/guide/understand/what-amux-sends.md"),
         )
-        .expect("docs/ANALYTICS.md exists");
+        .expect("docs/guide/understand/what-amux-sends.md exists");
         let mut missing = Vec::new();
         for event in Event::examples() {
             let name = format!("`{}`", event.name());
@@ -330,7 +331,7 @@ mod tests {
         }
         assert!(
             missing.is_empty(),
-            "docs/ANALYTICS.md does not mention: {}",
+            "docs/guide/understand/what-amux-sends.md does not mention: {}",
             missing.join(", ")
         );
     }

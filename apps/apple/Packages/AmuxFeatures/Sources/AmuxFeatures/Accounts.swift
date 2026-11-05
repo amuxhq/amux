@@ -480,13 +480,14 @@ public struct YouScreen: View {
             id: "you.shareUsage")
     }
 
-    /// Off unless somebody turns it on: unlike usage, what a check's dump
-    /// carries includes the chats, and the caption says so.
+    /// Off unless somebody turns it on. A check's report carries the shape of
+    /// what happened, with every word of a chat emptied out, and the caption
+    /// says so in the words setting up uses on the computer.
     private var autoReportsRow: some View {
         switchRow(
             String(localized: "Send Automatic Reports"),
-            caption: String(localized: "When amux catches its own bug, send what it saw, chats included"),
-            spoken: String(localized: "Send Automatic Reports, When amux catches its own bug, send what it saw, chats included"),
+            caption: String(localized: "When amux catches its own bug. Never your chats, code, or file names."),
+            spoken: String(localized: "Send Automatic Reports, When amux catches its own bug. Never your chats, code, or file names."),
             isOn: Binding(get: { autoReports }, set: { actions(.autoReports($0)) }),
             id: "you.autoReports")
     }

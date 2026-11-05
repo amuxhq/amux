@@ -5377,14 +5377,14 @@
         }
       }
     },
-    "Send Automatic Reports, When amux catches its own bug, send what it saw, chats included" : {
+    "Send Automatic Reports, When amux catches its own bug. Never your chats, code, or file names." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Send Automatic Reports, When amux catches its own bug, send what it saw, chats included"
+            "value" : "Send Automatic Reports, When amux catches its own bug. Never your chats, code, or file names."
           }
         }
       }
@@ -9469,14 +9469,14 @@
         }
       }
     },
-    "When amux catches its own bug, send what it saw, chats included" : {
+    "When amux catches its own bug. Never your chats, code, or file names." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "When amux catches its own bug, send what it saw, chats included"
+            "value" : "When amux catches its own bug. Never your chats, code, or file names."
           }
         }
       }

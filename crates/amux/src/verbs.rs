@@ -238,14 +238,27 @@ pub enum CliAgent {
     Codex,
 }
 
-/// What a new agent runs on. Claude runs headless for amux's chat and in a
-/// terminal for its own; Codex is the same agent for both.
-fn kind_for(agent: CliAgent, interface: ChatInSetting) -> Kind {
-    match (agent, interface) {
-        (CliAgent::Claude, ChatInSetting::Amux) => Kind::ClaudeSdk,
-        (CliAgent::Claude, ChatInSetting::Native) => Kind::ClaudePty,
-        (CliAgent::Codex, _) => Kind::Codex,
+/// What a new agent runs on. Claude runs as its host publishes, the kind
+/// every client starts there; an interface named for this one agent
+/// (`--in`) chooses for it instead: headless for amux's chat, in a terminal
+/// for its own. Codex is the same agent for both.
+fn kind_for(agent: CliAgent, named: Option<ChatInSetting>, published: Kind) -> Kind {
+    match (agent, named, published) {
+        (CliAgent::Codex, ..) => Kind::Codex,
+        (CliAgent::Claude, Some(ChatInSetting::Amux), _) => Kind::ClaudeSdk,
+        (CliAgent::Claude, Some(ChatInSetting::Native), _) => Kind::ClaudePty,
+        (CliAgent::Claude, None, kind @ (Kind::ClaudeSdk | Kind::ClaudePty)) => kind,
+        (CliAgent::Claude, None, _) => Kind::ClaudeSdk,
     }
+}
+
+/// The Claude kind this host publishes for a new agent.
+async fn published_claude_kind(client: &mut Client, host: &[u8]) -> Result<Kind> {
+    let (hosts, _) = inventory(client).await?;
+    Ok(hosts
+        .iter()
+        .find(|entry| entry.host_id() == host)
+        .map_or(Kind::Unspecified, HostEntry::claude_kind))
 }
 
 /// A prompt in the input arm the agent's kind takes.
@@ -296,6 +309,7 @@ pub struct Create {
 /// the agent's own interface those are its own to set, as in the app.
 pub async fn create(
     client: &mut Client,
+    host: &[u8],
     config: &InstallationConfig,
     create: Create,
 ) -> Result<()> {
@@ -322,7 +336,13 @@ pub async fn create(
         effort: effort.clone(),
         permission: permission.clone(),
     };
-    let config = match kind_for(create.agent, interface) {
+    let published = match create.agent {
+        CliAgent::Claude if create.interface.is_none() => {
+            published_claude_kind(client, host).await?
+        }
+        _ => Kind::Unspecified,
+    };
+    let config = match kind_for(create.agent, create.interface, published) {
         Kind::ClaudePty => create_agent_request::Agent::ClaudePty(claude()),
         Kind::ClaudeSdk => create_agent_request::Agent::ClaudeSdk(claude()),
         _ => {
@@ -515,6 +535,29 @@ pub async fn dump(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Claude runs as its host publishes unless the command names the
+    /// interface for this one agent.
+    #[test]
+    fn a_new_claude_runs_the_kind_its_host_publishes() {
+        use ChatInSetting::{Amux, Native};
+        let claude = CliAgent::Claude;
+        assert_eq!(kind_for(claude, None, Kind::ClaudePty), Kind::ClaudePty);
+        assert_eq!(kind_for(claude, None, Kind::ClaudeSdk), Kind::ClaudeSdk);
+        assert_eq!(kind_for(claude, None, Kind::Unspecified), Kind::ClaudeSdk);
+        assert_eq!(
+            kind_for(claude, Some(Native), Kind::ClaudeSdk),
+            Kind::ClaudePty
+        );
+        assert_eq!(
+            kind_for(claude, Some(Amux), Kind::ClaudePty),
+            Kind::ClaudeSdk
+        );
+        assert_eq!(
+            kind_for(CliAgent::Codex, None, Kind::ClaudePty),
+            Kind::Codex
+        );
+    }
 
     /// An agent whose host is out of reach reads as its host away, as the
     /// clients' rows do: the last phase this machine heard ("working") is

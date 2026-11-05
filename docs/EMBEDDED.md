@@ -143,6 +143,12 @@ profile's `AppRuntime`. `refresh_entitlement` asks the account
 service what the account buys now, so a purchase lifts the relay's tier
 without waiting for the next credential renewal.
 
+A paired machine's offer of its account arrives in the step
+(`sign_in_offers`); the profile's client accepts or declines it
+(`answer_sign_in_offer`) and offers a machine this profile's account
+(`offer_sign_in`). Each host's view says which Claude a new
+agent there runs (`claude_kind`), as that host's settings resolve it.
+
 ## Seams
 
 Nothing test-shaped is compiled into a product crate by default. Where a

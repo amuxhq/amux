@@ -1,14 +1,13 @@
 //! The verbs that set an install up rather than talk to its agents:
-//! `amux init` (whether amux starts at login), `amux update` and
-//! `amux uninstall`.
+//! `amux update` and `amux uninstall`, and the login item `start_at_login`
+//! keeps.
 
 use std::io::{BufRead as _, IsTerminal as _, Write as _};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, bail};
-use node::supervisor::login::LoginItem;
+use node::supervisor::login::StartAtLogin;
 use node::supervisor::{Files, Request, ask};
 use settings::InstallationConfig;
 
@@ -21,235 +20,35 @@ const CHECK_PATIENCE: Duration = Duration::from_secs(20 * 60);
 /// How long it then waits for the new build to answer.
 const RESTART_PATIENCE: Duration = Duration::from_secs(180);
 
-/// `amux init`: asks once whether amux starts at login and, on yes, adds
-/// the login item that runs `amux supervise`.
-pub async fn init(
-    config: &InstallationConfig,
-    config_path: Option<&Path>,
-    login_item: Option<bool>,
-) -> Result<()> {
+/// Writes or removes this installation's login item to match its
+/// `start_at_login`, for the next login: the running amux is left alone.
+pub fn start_at_login(config: &InstallationConfig, config_path: Option<&Path>) -> Result<()> {
     if !config.supervisor {
-        println!(
-            "This install has no supervisor: the service manager that runs `amux daemon` \
-             starts it at boot, so there is no login item to add."
-        );
-        return Ok(());
-    }
-    let wanted = match login_item {
-        Some(wanted) => wanted,
-        None if std::io::stdin().is_terminal() => ask_yes("Start amux at login? [Y/n] ")?,
-        None => {
+        if config.start_at_login {
             println!(
-                "Not asking about a login item without a terminal; \
-                 `amux init --login-item yes` adds one."
+                "This install has no supervisor: the service manager that runs `amux daemon` \
+                 starts it, so there is no login item to add."
             );
-            return Ok(());
         }
-    };
-    if !wanted {
-        println!(
-            "No login item: `amux server start` starts amux, and so does any amux command \
-             that finds it stopped."
-        );
         return Ok(());
     }
-    let binary = std::env::current_exe().context("finding the amux binary")?;
-    let path = std::env::var("PATH").unwrap_or_default();
-    let log = config.root.join(SUPERVISOR_LOG);
-    let item = LoginItem {
-        binary: &binary,
-        config: config_path,
-        path: &path,
-        log: &log,
-    };
-    // The service manager opens the log itself, before amux ever runs.
-    std::fs::create_dir_all(&config.root)
-        .with_context(|| format!("creating {}", config.root.display()))?;
-    let (file, text, commands) = login_item_for_this_platform(&item, config)?;
-    if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
-    }
-    std::fs::write(&file, text).with_context(|| format!("writing {}", file.display()))?;
-    // The login item's supervisor must own the install: stop one started by
-    // hand first. Agents keep running and the new daemon picks them up.
-    if running_supervisor(&config.root)?.is_some() {
-        crate::server::stop(config).await?;
-    }
-    for command in &commands {
-        register(command)?;
-    }
-    println!(
-        "Added a login item ({}): amux starts at login and comes back if it crashes; \
-         `amux server stop` stops it until the next login.",
-        file.display()
-    );
-    Ok(())
-}
-
-fn ask_yes(question: &str) -> Result<bool> {
-    print!("{question}");
-    std::io::stdout().flush()?;
-    let mut answer = String::new();
-    std::io::stdin().lock().read_line(&mut answer)?;
-    Ok(!matches!(
-        answer.trim().to_ascii_lowercase().as_str(),
-        "n" | "no"
-    ))
-}
-
-/// Runs one registration command; the first word of a failure's command
-/// line is how a person would run it again.
-fn register(command: &[String]) -> Result<()> {
-    let status = Command::new(&command[0])
-        .args(&command[1..])
-        .status()
-        .with_context(|| format!("running {}", command.join(" ")))?;
-    // Unloading a job that was never loaded fails harmlessly.
-    if !status.success() && !command.iter().any(|word| word == "bootout") {
-        bail!("{} failed ({status})", command.join(" "));
+    let login = StartAtLogin::here(&config.root, own_config(config_path))?;
+    login
+        .set(config.start_at_login)
+        .with_context(|| format!("changing the login item ({})", login.file().display()))?;
+    if config.start_at_login {
+        println!(
+            "amux starts at login ({}); `amux config set start_at_login false` stops that.",
+            login.file().display()
+        );
     }
     Ok(())
 }
 
-type LoginFile = (PathBuf, Vec<u8>, Vec<Vec<String>>);
-
-#[cfg(target_os = "macos")]
-fn login_item_for_this_platform(
-    item: &LoginItem,
-    _config: &InstallationConfig,
-) -> Result<LoginFile> {
-    use node::supervisor::login::LAUNCH_AGENT_LABEL;
-    let home = std::env::var_os("HOME").context("HOME is not set")?;
-    let file = PathBuf::from(home)
-        .join("Library/LaunchAgents")
-        .join(format!("{LAUNCH_AGENT_LABEL}.plist"));
-    // SAFETY: getuid cannot fail.
-    let uid = unsafe { libc::getuid() };
-    let file_arg = file.display().to_string();
-    Ok((
-        file,
-        item.launch_agent().into_bytes(),
-        vec![
-            words(&[
-                "launchctl",
-                "bootout",
-                &format!("gui/{uid}/{LAUNCH_AGENT_LABEL}"),
-            ]),
-            words(&["launchctl", "bootstrap", &format!("gui/{uid}"), &file_arg]),
-            // launchd defers the first spawn of a job kept alive on a
-            // condition; start it now rather than whenever it gets to it.
-            words(&[
-                "launchctl",
-                "kickstart",
-                &format!("gui/{uid}/{LAUNCH_AGENT_LABEL}"),
-            ]),
-        ],
-    ))
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn login_item_for_this_platform(
-    item: &LoginItem,
-    _config: &InstallationConfig,
-) -> Result<LoginFile> {
-    use node::supervisor::login::SYSTEMD_UNIT;
-    let config_home = match std::env::var_os("XDG_CONFIG_HOME") {
-        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
-        _ => PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?).join(".config"),
-    };
-    let file = config_home.join("systemd/user").join(SYSTEMD_UNIT);
-    Ok((
-        file,
-        item.systemd_unit().into_bytes(),
-        vec![
-            words(&["systemctl", "--user", "daemon-reload"]),
-            words(&["systemctl", "--user", "enable", "--now", SYSTEMD_UNIT]),
-        ],
-    ))
-}
-
-#[cfg(windows)]
-fn login_item_for_this_platform(
-    item: &LoginItem,
-    config: &InstallationConfig,
-) -> Result<LoginFile> {
-    use node::supervisor::login::WINDOWS_TASK;
-    let file = config.root.join("amux-task.xml");
-    // Task Scheduler reads its XML as UTF-16 with a byte-order mark.
-    let mut bytes = vec![0xff, 0xfe];
-    for unit in item.windows_task().encode_utf16() {
-        bytes.extend_from_slice(&unit.to_le_bytes());
-    }
-    let file_arg = file.display().to_string();
-    Ok((
-        file,
-        bytes,
-        vec![
-            words(&[
-                "schtasks",
-                "/Create",
-                "/F",
-                "/TN",
-                WINDOWS_TASK,
-                "/XML",
-                &file_arg,
-            ]),
-            words(&["schtasks", "/Run", "/TN", WINDOWS_TASK]),
-        ],
-    ))
-}
-
-/// The login item's file and the commands that unregister it, run before
-/// the file goes; a failure among them means there was nothing to remove.
-#[cfg(target_os = "macos")]
-fn login_item_removal(_config: &InstallationConfig) -> Result<(PathBuf, Vec<Vec<String>>)> {
-    use node::supervisor::login::LAUNCH_AGENT_LABEL;
-    let home = std::env::var_os("HOME").context("HOME is not set")?;
-    let file = PathBuf::from(home)
-        .join("Library/LaunchAgents")
-        .join(format!("{LAUNCH_AGENT_LABEL}.plist"));
-    // SAFETY: getuid cannot fail.
-    let uid = unsafe { libc::getuid() };
-    Ok((
-        file,
-        vec![words(&[
-            "launchctl",
-            "bootout",
-            &format!("gui/{uid}/{LAUNCH_AGENT_LABEL}"),
-        ])],
-    ))
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn login_item_removal(_config: &InstallationConfig) -> Result<(PathBuf, Vec<Vec<String>>)> {
-    use node::supervisor::login::SYSTEMD_UNIT;
-    let config_home = match std::env::var_os("XDG_CONFIG_HOME") {
-        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
-        _ => PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?).join(".config"),
-    };
-    Ok((
-        config_home.join("systemd/user").join(SYSTEMD_UNIT),
-        vec![words(&[
-            "systemctl",
-            "--user",
-            "disable",
-            "--now",
-            SYSTEMD_UNIT,
-        ])],
-    ))
-}
-
-#[cfg(windows)]
-fn login_item_removal(config: &InstallationConfig) -> Result<(PathBuf, Vec<Vec<String>>)> {
-    use node::supervisor::login::WINDOWS_TASK;
-    Ok((
-        config.root.join("amux-task.xml"),
-        vec![
-            words(&["schtasks", "/End", "/TN", WINDOWS_TASK]),
-            words(&["schtasks", "/Delete", "/F", "/TN", WINDOWS_TASK]),
-        ],
-    ))
+/// The config a login item names: none for the default file, which every
+/// amux finds by itself.
+fn own_config(config_path: Option<&Path>) -> Option<&Path> {
+    config_path.filter(|path| *path != InstallationConfig::default_path())
 }
 
 /// `amux uninstall`: stops this machine's running agents, removes the
@@ -300,18 +99,12 @@ pub async fn uninstall(
     // The login item goes before amux stops, so its service manager does
     // not start amux again. It is this installation's when it writes the
     // supervisor's log into this root; another installation's stays.
-    let (file, commands) = login_item_removal(config)?;
-    if login_item_is_ours(&file, config) {
-        for command in &commands {
-            let _ = Command::new(&command[0])
-                .args(&command[1..])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status();
-        }
-        if remove_file(&file)? {
-            println!("Removed the login item ({}).", file.display());
-        }
+    let login = StartAtLogin::here(&config.root, own_config(config_path))?;
+    if login
+        .remove_now()
+        .with_context(|| format!("removing the login item ({})", login.file().display()))?
+    {
+        println!("Removed the login item ({}).", login.file().display());
     }
     crate::server::stop(config).await?;
     // The data goes first: on Windows the binary running this command
@@ -384,20 +177,6 @@ fn remove_binary(path: &Path) -> Result<bool> {
         return Ok(true);
     }
     remove_file(path)
-}
-
-/// Whether the login item at `file` runs this installation: every login
-/// item names the supervisor's log in its root.
-fn login_item_is_ours(file: &Path, config: &InstallationConfig) -> bool {
-    let Ok(bytes) = std::fs::read(file) else {
-        return false;
-    };
-    // Task Scheduler's XML is UTF-16, and sits in the root anyway.
-    if cfg!(windows) {
-        return true;
-    }
-    let log = config.root.join(SUPERVISOR_LOG);
-    String::from_utf8_lossy(&bytes).contains(&*log.to_string_lossy())
 }
 
 /// The binaries an install and its updates leave in the install directory.
@@ -502,10 +281,6 @@ fn ask_no(question: &str) -> Result<bool> {
         answer.trim().to_ascii_lowercase().as_str(),
         "y" | "yes"
     ))
-}
-
-fn words(words: &[&str]) -> Vec<String> {
-    words.iter().map(|word| (*word).to_owned()).collect()
 }
 
 /// `amux update`: asks the supervisor to check the channel now (with

@@ -196,6 +196,20 @@ impl TerminalJourney {
         record
             .actions
             .push(format!("ready control={}", ready.control));
+        if !story.first_run {
+            for host in &ready.hosts {
+                let set_up = Control::SetUp {
+                    host: host.name.clone(),
+                    profile: None,
+                };
+                if let Err(error) = door(ready.control, &set_up, DOOR) {
+                    let _ = process.kill();
+                    let _ = process.wait();
+                    return Err(format!("setting up {}: {error}", host.name));
+                }
+            }
+            record.actions.push("every host set up long ago".to_owned());
+        }
         Ok(TerminalJourney {
             name: story.id.clone(),
             output,
@@ -359,6 +373,16 @@ impl TerminalJourney {
             .unwrap_or_default())
     }
 
+    /// The host's own directory in the net.
+    pub(crate) fn host_dir(&self, host: &str) -> PathBuf {
+        self.ready
+            .hosts
+            .iter()
+            .find(|ready| ready.name == host)
+            .map(|ready| ready.dir.clone())
+            .unwrap_or_default()
+    }
+
     fn config(&self, host: &str) -> PathBuf {
         self.ready
             .hosts
@@ -407,6 +431,17 @@ impl TerminalJourney {
         host: &str,
         args: &[&str],
     ) -> Result<String, String> {
+        self.launch_with(pane, host, args, &[])
+    }
+
+    /// [`Self::launch`], with `env` set for the client.
+    pub(crate) fn launch_with(
+        &mut self,
+        pane: &str,
+        host: &str,
+        args: &[&str],
+        env: &[(&str, &str)],
+    ) -> Result<String, String> {
         let amux = self.binaries.amux();
         let mut words = vec![
             "env".to_owned(),
@@ -420,10 +455,16 @@ impl TerminalJourney {
             // Goldens are approved in ANSI colour, which every terminal the
             // client meets can show.
             "COLORTERM=".to_owned(),
+        ];
+        words.extend(
+            env.iter()
+                .map(|(name, value)| shell_word(&format!("{name}={value}"))),
+        );
+        words.extend([
             shell_word(&amux.display().to_string()),
             "--config".to_owned(),
             shell_word(&self.config(host).display().to_string()),
-        ];
+        ]);
         words.extend(args.iter().map(|arg| shell_word(arg)));
         let held = format!(
             "{}; status=$?; echo AMUX_EXIT_$status; sleep 600",
@@ -636,6 +677,16 @@ impl TerminalJourney {
     pub(crate) fn quit_client(&mut self, pane: &str) -> Result<(), String> {
         self.home(pane)?;
         self.keys(pane, &["q"])?;
+        self.wait_terms_for(pane, &["AMUX_EXIT_0"], Duration::from_secs(30))?;
+        let _ = self.tmux(&["kill-session", "-t", pane]);
+        self.record.actions.push(format!("{pane}: exited 0"));
+        Ok(())
+    }
+
+    /// Ctrl+C twice, wherever the client is; it must say it exited
+    /// cleanly.
+    pub(crate) fn interrupt_client(&mut self, pane: &str) -> Result<(), String> {
+        self.keys(pane, &["C-c", "C-c"])?;
         self.wait_terms_for(pane, &["AMUX_EXIT_0"], Duration::from_secs(30))?;
         let _ = self.tmux(&["kill-session", "-t", pane]);
         self.record.actions.push(format!("{pane}: exited 0"));

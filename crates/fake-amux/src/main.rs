@@ -208,7 +208,7 @@ fn supervise(inherited: Option<Inherited>) {
         running: node::version().parse().expect("a semver stamp"),
         target: node::release::TARGET.to_owned(),
         updates,
-        keep_awake: false,
+        keep_awake: Arc::new(|| false),
         clock: Arc::new(agent_dir::SystemClock),
         params: Params {
             check_interval: Duration::from_millis(300),

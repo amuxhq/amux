@@ -13,8 +13,8 @@ ask.submit | Submit |  | 28,770,169,44
 ask.choice.1 | Decline |  | 205,770,169,44
 chat.more | More |  | 350,66,28,36
 chat.back | Back |  | 20,66,40,36
-chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
-chat.title | filer | filer | 80,66,152,36
+chat.header | /p/t/a/n/d/work · desk | live | 80,66,165,36
+chat.title | filer | filer | 80,66,165,36
  | linear needs details |  | 62,488,145,20
  | More |  | 338,476,44,44
  | Linear needs a few details before it can create the issue. |  | 28,524,313,37
@@ -30,5 +30,5 @@ chat.title | filer | filer | 80,66,152,36
  | 1 call |  | 16,198,370,44
  | linear needs details |  | 16,228,370,44
  | Back |  | 20,66,40,36
- | filer, /t/a/n/d/work · desk |  | 80,66,152,36
+ | filer, /p/t/a/n/d/work · desk |  | 80,66,165,36
  | More |  | 350,66,28,36

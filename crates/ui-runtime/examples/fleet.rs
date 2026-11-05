@@ -18,8 +18,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = std::env::var_os("AMUX_CONFIG").map(PathBuf::from);
     let front_door = installer::front_door(config.as_deref())?;
     if config.is_none() {
-        // A client with a person in front of it asks them before adding a
-        // login item; the default adds one.
+        // Installs and starts amux; whether it also starts at login is the
+        // person's `start_at_login` setting, asked once it answers.
         let options = installer::Options::default();
         installer::ensure(&options, |step| eprintln!("{step:?}")).await?;
     } else if !installer::answering(&front_door).await {

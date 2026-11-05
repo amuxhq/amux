@@ -220,6 +220,110 @@ fn profile_id(bytes: &[u8]) -> Result<Uuid, Status> {
 impl InstallationService for FrontDoor {
     type SubscribeProfilesStream = EventStream<ListProfilesResponse>;
     type SignInStream = EventStream<SignInEvent>;
+    type SubscribeOnboardingStream = EventStream<wire::Onboarding>;
+
+    async fn get_settings(
+        &self,
+        _request: Request<Empty>,
+    ) -> Result<Response<wire::Settings>, Status> {
+        let installation = self.registry.installation()?;
+        // A change made beside the daemon, by `amux config` or an editor,
+        // is in force for the client asking now, not only at the next poll.
+        let reread = installation.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Some(config) = reread.settings.reread() {
+                reread.apply(&config);
+            }
+        })
+        .await
+        .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
+        let settings = &installation.settings;
+        Ok(Response::new(crate::host_settings::to_wire(
+            &settings.current(),
+            &installation.host_name(),
+            settings.supervised(),
+        )))
+    }
+
+    async fn update_settings(
+        &self,
+        request: Request<wire::UpdateSettingsRequest>,
+    ) -> Result<Response<wire::Settings>, Status> {
+        let installation = self.registry.installation()?;
+        let request = request.into_inner();
+        let config = {
+            let installation = installation.clone();
+            tokio::task::spawn_blocking(move || installation.settings.update(&request))
+                .await
+                .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?
+                .map_err(|error| status(error.to_wire()))?
+        };
+        installation.apply(&config);
+        Ok(Response::new(crate::host_settings::to_wire(
+            &config,
+            &installation.host_name(),
+            installation.settings.supervised(),
+        )))
+    }
+
+    async fn subscribe_onboarding(
+        &self,
+        request: Request<wire::OnboardingRequest>,
+    ) -> Result<Response<Self::SubscribeOnboardingStream>, Status> {
+        let request = request.into_inner();
+        let profile = (!request.profile_id.is_empty())
+            .then(|| profile_id(&request.profile_id))
+            .transpose()?;
+        let steps = self.registry.subscribe_onboarding(profile)?;
+        Ok(Response::new(Box::pin(futures_util::stream::unfold(
+            steps,
+            |mut steps| async move { steps.recv().await.map(|now| (Ok(now), steps)) },
+        ))))
+    }
+
+    async fn answer_onboarding(
+        &self,
+        request: Request<wire::AnswerOnboardingRequest>,
+    ) -> Result<Response<wire::Onboarding>, Status> {
+        let registry = self.registry.clone();
+        let request = request.into_inner();
+        // The answer is written to disk.
+        let answered = tokio::task::spawn_blocking(move || registry.answer_onboarding(&request))
+            .await
+            .map_err(|error| failed(ErrorCode::Internal, error.to_string()))??;
+        Ok(Response::new(answered))
+    }
+
+    async fn suggest_repositories(
+        &self,
+        _request: Request<Empty>,
+    ) -> Result<Response<wire::SuggestRepositoriesResponse>, Status> {
+        let installation = self.registry.installation()?;
+        let suggestions = tokio::task::spawn_blocking(move || {
+            let suggestions = installation
+                .settings
+                .home()
+                .map(|home| crate::suggestions::suggest(home, std::time::SystemTime::now()))
+                .unwrap_or_default();
+            installation.onboarding.suggested(suggestions.len());
+            suggestions
+        })
+        .await
+        .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
+        Ok(Response::new(wire::SuggestRepositoriesResponse {
+            suggestions,
+        }))
+    }
+
+    async fn web_sign_in_link(
+        &self,
+        request: Request<wire::WebSignInLinkRequest>,
+    ) -> Result<Response<wire::WebSignInLinkResponse>, Status> {
+        let request = request.into_inner();
+        let edge = self.registry.edge(profile_id(&request.profile_id)?)?;
+        let url = edge.web_sign_in_link(&request.path).await?;
+        Ok(Response::new(wire::WebSignInLinkResponse { url }))
+    }
 
     async fn subscribe_profiles(
         &self,

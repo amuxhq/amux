@@ -626,6 +626,7 @@ async fn a_retry_after_reply_patience_is_concluded_by_the_verdict_that_comes() {
     launch.core.reply_patience_ms = REPLY_MS as u64;
     let daemon = node::start(
         node::StartOptions {
+            settings: Default::default(),
             clock: Arc::new(clock.clone()),
             ..install.options("boot-1", launch)
         },

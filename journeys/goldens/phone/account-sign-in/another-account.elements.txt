@@ -25,7 +25,7 @@ you.close | Close |  | 342,82,40,36
  | All |  | 16,172,44,44
  | Needs you |  | 68,172,87,44
  | Working |  | 163,172,76,44
- | desk-work, desk is offline, Reached through the relay., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,218,370,65
+ | desk-work, desk is offline, Reached through the relay., desk, /private/tmp/amux-phone-journey/net/desk/work, <age> |  | 16,218,370,65
  | Agents |  | 16,127,116,42
  | Switch account |  | 20,66,36,36
  | Search |  | 16,175,370,0

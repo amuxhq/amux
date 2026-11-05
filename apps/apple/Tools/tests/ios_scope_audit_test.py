@@ -25,6 +25,10 @@ def png(path: Path, width: int, height: int, *, cgbi: bool = False) -> Path:
     return path
 
 
+
+# What the App Store build is signed with: amux.sh's pairing page opens the app.
+SHIPPED_GRANTS = {"com.apple.developer.associated-domains": ["applinks:amux.sh"]}
+
 class TheAppIcon(unittest.TestCase):
     """The bundle must carry what the App Store refuses an upload without.
 
@@ -117,14 +121,23 @@ class ScopeAuditTests(unittest.TestCase):
         settings = {"TARGETED_DEVICE_FAMILY": "1", "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator",
                     "SUPPORTS_MACCATALYST": "NO", "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD": "NO",
                     "SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD": "NO"}
-        self.assertEqual(audit.bundle_violations(info, {}, settings, bundle), [])
-        self.assertTrue(audit.bundle_violations(info, {"aps-environment": "development"}, settings, bundle))
-        self.assertTrue(audit.bundle_violations(info | {"UIDeviceFamily": [1, 2]}, {}, settings, bundle))
+        grants = SHIPPED_GRANTS
+        self.assertEqual(audit.bundle_violations(info, grants, settings, bundle), [])
+        self.assertTrue(audit.bundle_violations(
+            info, grants | {"aps-environment": "development"}, settings, bundle))
+        # A build without the pairing page's domain sends a phone that has
+        # the app to the App Store for it.
+        self.assertTrue(audit.bundle_violations(info, {}, settings, bundle))
+        self.assertTrue(audit.bundle_violations(
+            info, {"com.apple.developer.associated-domains": ["applinks:example.com"]},
+            settings, bundle))
+        self.assertTrue(audit.bundle_violations(info | {"UIDeviceFamily": [1, 2]}, grants, settings, bundle))
         for flag in ("SUPPORTS_MACCATALYST", "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD",
                      "SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD"):
             with self.subTest(flag=flag):
-                self.assertTrue(audit.bundle_violations(info, {}, settings | {flag: "YES"}, bundle))
-        self.assertTrue(audit.bundle_violations(info, {}, settings | {"SUPPORTED_PLATFORMS": "macosx"}, bundle))
+                self.assertTrue(audit.bundle_violations(info, grants, settings | {flag: "YES"}, bundle))
+        self.assertTrue(audit.bundle_violations(
+            info, grants, settings | {"SUPPORTED_PLATFORMS": "macosx"}, bundle))
 
     def test_debug_only_resources_in_the_bundle_are_rejected(self):
         # Symbols catch the code that reads these files; nothing else catches
@@ -157,10 +170,10 @@ class ScopeAuditTests(unittest.TestCase):
                     "SUPPORTS_MACCATALYST": "NO",
                     "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD": "NO",
                     "SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD": "NO"}
-        self.assertEqual(audit.bundle_violations(info, {}, settings, bundle), [])
+        self.assertEqual(audit.bundle_violations(info, SHIPPED_GRANTS, settings, bundle), [])
         png(bundle / "frozen-frame.png", 10, 10)
         self.assertIn("excluded resource in the bundle: frozen-frame.png",
-                      audit.bundle_violations(info, {}, settings, bundle))
+                      audit.bundle_violations(info, SHIPPED_GRANTS, settings, bundle))
 
     def test_transitive_cloud_and_legacy_dependencies_are_rejected(self):
         clean = {"name": "AmuxTestSupport", "dependencies": [{"name": "AmuxCore"}]}
@@ -185,7 +198,7 @@ class TheLocalNetworkDeclaration(unittest.TestCase):
                          "SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD": "NO"}
 
     def violations(self, info):
-        return audit.bundle_violations(info, {}, self.settings, self.bundle)
+        return audit.bundle_violations(info, SHIPPED_GRANTS, self.settings, self.bundle)
 
     def test_a_bundle_that_declares_nothing_cannot_browse_and_is_refused(self):
         # iOS answers an undeclared browser with nothing, so the app would find

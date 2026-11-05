@@ -49,10 +49,33 @@ tokens! {
 }
 
 tokens! {
-    /// Which client opened.
+    /// Which client opened, or which one an onboarding step was on.
     Client {
         Terminal => "terminal",
         Phone => "phone",
+        Mac => "mac",
+    }
+}
+
+tokens! {
+    /// One step of first-run onboarding.
+    Step {
+        PairPhone => "pair_phone",
+        KeepReachable => "keep_reachable",
+        SignIn => "sign_in",
+        Repositories => "repositories",
+        Improve => "improve",
+        FirstAgent => "first_agent",
+    }
+}
+
+tokens! {
+    /// What became of an onboarding step: a client showed it, or the
+    /// person confirmed or skipped it.
+    StepOutcome {
+        Shown => "shown",
+        Done => "done",
+        Skipped => "skipped",
     }
 }
 
@@ -109,6 +132,37 @@ tokens! {
         /// Pairing a host with itself.
         SelfPairing => "self_pairing",
         Other => "other",
+    }
+}
+
+tokens! {
+    /// How a profile came to sign in.
+    SignInVia {
+        /// Through the account service's own pages, in a browser.
+        Browser => "browser",
+        /// A paired device signed in to the account offered it, and this
+        /// profile accepted.
+        PairedDevice => "paired_device",
+    }
+}
+
+tokens! {
+    /// Which side of a one-tap sign-in this profile was.
+    OfferRole {
+        /// Signed in, it offered a paired device its account.
+        Offerer => "offerer",
+        /// Signed out, it was offered a paired device's account.
+        Receiver => "receiver",
+    }
+}
+
+tokens! {
+    /// What became of a one-tap sign-in offer.
+    OfferOutcome {
+        /// A client put the offer in front of its person.
+        Shown => "shown",
+        Accepted => "accepted",
+        Dismissed => "dismissed",
     }
 }
 
@@ -339,7 +393,9 @@ pub enum Event {
         method: Method,
         reason: PairingFailure,
     },
-    SignedIn,
+    SignedIn {
+        via: SignInVia,
+    },
     SignInFailed {
         reason: SignInFailure,
     },
@@ -363,11 +419,28 @@ pub enum Event {
         cause: CheckCause,
         held_back: u32,
     },
+    /// A first-run onboarding step was shown, confirmed or skipped.
+    OnboardingStep {
+        step: Step,
+        outcome: StepOutcome,
+        surface: Client,
+    },
+    /// The repositories step was confirmed: how many folders were kept of how
+    /// many suggested. Numbers only, never the folders.
+    RepositoriesChosen {
+        kept: u32,
+        suggested: u32,
+    },
+    /// A one-tap sign-in offer was shown, accepted or dismissed.
+    SignInOffer {
+        role: OfferRole,
+        outcome: OfferOutcome,
+    },
 }
 
 impl Event {
     /// How many variants there are; [`Event::ordinal`] numbers them.
-    pub const COUNT: usize = 19;
+    pub const COUNT: usize = 22;
 
     pub fn name(&self) -> &'static str {
         match self {
@@ -383,13 +456,16 @@ impl Event {
             Event::PairingStarted { .. } => "pairing_started",
             Event::PairingSucceeded { .. } => "pairing_succeeded",
             Event::PairingFailed { .. } => "pairing_failed",
-            Event::SignedIn => "signed_in",
+            Event::SignedIn { .. } => "signed_in",
             Event::SignInFailed { .. } => "sign_in_failed",
             Event::SignedOut => "signed_out",
             Event::RelayRefused => "relay_refused",
             Event::PaywallViewed { .. } => "paywall_viewed",
             Event::PurchaseStarted { .. } => "purchase_started",
             Event::CheckFailed { .. } => "check_failed",
+            Event::OnboardingStep { .. } => "onboarding_step",
+            Event::RepositoriesChosen { .. } => "repositories_chosen",
+            Event::SignInOffer { .. } => "sign_in_offer",
         }
     }
 
@@ -410,13 +486,16 @@ impl Event {
             Event::PairingStarted { .. } => 9,
             Event::PairingSucceeded { .. } => 10,
             Event::PairingFailed { .. } => 11,
-            Event::SignedIn => 12,
+            Event::SignedIn { .. } => 12,
             Event::SignInFailed { .. } => 13,
             Event::SignedOut => 14,
             Event::RelayRefused => 15,
             Event::PaywallViewed { .. } => 16,
             Event::PurchaseStarted { .. } => 17,
             Event::CheckFailed { .. } => 18,
+            Event::OnboardingStep { .. } => 19,
+            Event::RepositoriesChosen { .. } => 20,
+            Event::SignInOffer { .. } => 21,
         }
     }
 
@@ -427,7 +506,8 @@ impl Event {
             out.insert(key.to_owned(), value);
         };
         match self {
-            Event::Installed | Event::SignedIn | Event::SignedOut | Event::RelayRefused => {}
+            Event::Installed | Event::SignedOut | Event::RelayRefused => {}
+            Event::SignedIn { via } => put("via", token(*via)),
             Event::CheckedIn(check_in) => {
                 put("agents_running", check_in.agents_running.to_json());
                 put("agents_created_24h", check_in.agents_created_24h.to_json());
@@ -503,6 +583,23 @@ impl Event {
                 put("cause", token(*cause));
                 put("held_back", json!(held_back));
             }
+            Event::OnboardingStep {
+                step,
+                outcome,
+                surface,
+            } => {
+                put("step", token(*step));
+                put("outcome", token(*outcome));
+                put("surface", token(*surface));
+            }
+            Event::RepositoriesChosen { kept, suggested } => {
+                put("kept", json!(kept));
+                put("suggested", json!(suggested));
+            }
+            Event::SignInOffer { role, outcome } => {
+                put("role", token(*role));
+                put("outcome", token(*outcome));
+            }
         }
         out
     }
@@ -570,7 +667,9 @@ impl Event {
                 method: Method::Pin,
                 reason: PairingFailure::WrongSecret,
             },
-            Event::SignedIn,
+            Event::SignedIn {
+                via: SignInVia::PairedDevice,
+            },
             Event::SignInFailed {
                 reason: SignInFailure::Rejected,
             },
@@ -587,6 +686,19 @@ impl Event {
                 check: CheckId::new("daemon.generation_fell").expect("a check id"),
                 cause: CheckCause::Invariant,
                 held_back: 3,
+            },
+            Event::OnboardingStep {
+                step: Step::PairPhone,
+                outcome: StepOutcome::Done,
+                surface: Client::Mac,
+            },
+            Event::RepositoriesChosen {
+                kept: 3,
+                suggested: 5,
+            },
+            Event::SignInOffer {
+                role: OfferRole::Receiver,
+                outcome: OfferOutcome::Accepted,
             },
         ]
     }

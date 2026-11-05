@@ -1,0 +1,31 @@
+shell |  | agents | 0,62,402,504
+pin |  |  | 0,132,402,434
+pin.title |  | Pair with desk? | 16,148,179,32
+pin.instruction |  | desk | 16,188,266,20
+pin.code | Code |  | 16,250,370,22
+pin.expiry |  | 5 minutes | 16,302,318,18
+pair.close | Close |  | 20,82,40,36
+ | Pair your first host |  | 16,204,214,32
+ | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
+ | Pair with desk?, Enter the code amux shows there, Pair |  | 16,305,370,60
+ | Have an amux account? |  | 16,389,164,18
+ | Sign In |  | 184,376,48,44
+ | Switch account |  | 24,66,29,36
+ | Agents |  | 16,127,116,42
+ | Agents |  | 111,795,94,54
+ | Agents |  | 140,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 229,830,29,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 230,830,29,12
+ | Pair with desk? |  | 16,148,179,32
+ | Enter the code amux shows on desk. |  | 16,188,266,20
+ | Code | empty | 16,250,370,22
+ | The code expires 5 minutes after desk prints it. |  | 16,302,318,18
+ | Close |  | 20,82,40,36
+ | Pair desk |  | 165,82,73,21
+ | On this network |  | 159,103,84,14
+ | Agents | selected | 111,795,94,54
+ | Hosts |  | 197,795,94,54

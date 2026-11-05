@@ -24,6 +24,16 @@ packages:
   AmuxCore:
     path: ../Packages/AmuxCore
 
+schemes:
+  AmuxMac:
+    build:
+      targets:
+        AmuxMac: all
+        AmuxMacTests: [test]
+    test:
+      targets:
+        - AmuxMacTests
+
 targets:
   AmuxMac:
     type: application
@@ -61,6 +71,31 @@ targets:
       configs:
         Debug:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+    dependencies:
+      - package: AmuxCore
+        product: AmuxCore
+      - package: AmuxCore
+        product: AmuxValues
+
+  # The app's screens and model, compiled without its entry point into a test
+  # bundle that runs in the test runner rather than in the app: the screens
+  # are drawn into windows that are never put on screen, so a run shows
+  # nothing on the desktop and needs nobody's input (docs/MAC.md).
+  AmuxMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Sources
+        excludes:
+          - AmuxMacApp.swift
+      - path: Tests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: sh.amux.desktop.tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_HARDENED_RUNTIME: NO
     dependencies:
       - package: AmuxCore
         product: AmuxCore

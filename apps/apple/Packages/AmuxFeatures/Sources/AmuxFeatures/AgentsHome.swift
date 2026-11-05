@@ -35,6 +35,9 @@ public enum HomeAction: Equatable, Sendable {
     /// The list was pulled, or the screen came back into view. Only then may
     /// the ordering regroup.
     case refresh
+    /// The person read why amux looks at this network and asked it to look,
+    /// which is when iOS asks for local network access.
+    case lookOnNetwork
 }
 
 /// The screen the app opens onto.
@@ -688,9 +691,9 @@ public struct AgentsHome: View {
             guard let id = host.id else { return nil }
             let offer = PairOffer(host, pro: hosts.account?.pro)
             return Callout(
-                id: "pair.\(host.name)", glyph: "plus.circle",
+                id: "pair.\(host.name)", glyph: offer.waiting ? "laptopcomputer" : "plus.circle",
                 title: offer.title, detail: offer.detail, button: offer.button,
-                act: offer.subscribe ? .subscribe : .pair(id))
+                act: offer.subscribe ? .subscribe : .pair(id), inert: offer.waiting)
         }
         if let notice { callouts.append(notice) }
         if offerNotifications {
@@ -753,7 +756,11 @@ public struct AgentsHome: View {
                     CalloutStrip(callouts: pairable, act: actions)
                 } else {
                     VStack(alignment: .leading, spacing: Space.xl) {
-                        if hosts.localNetwork == .denied {
+                        if !hosts.networkExplained {
+                            LocalNetworkPrimer(identifier: "home.localNetwork") {
+                                actions(.lookOnNetwork)
+                            }
+                        } else if hosts.localNetwork == .denied {
                             LocalNetworkRefused(heading: false, identifier: "home.localNetwork") {
                                 actions(.openSystemSettings)
                             }
@@ -781,10 +788,10 @@ public struct AgentsHome: View {
             guard let id = host.id else { return nil }
             let offer = PairOffer(host, pro: hosts.account?.pro)
             return Callout(
-                id: "pair.\(host.name)", glyph: "plus.circle",
+                id: "pair.\(host.name)", glyph: offer.waiting ? "laptopcomputer" : "plus.circle",
                 title: offer.title, detail: offer.detail, button: offer.button,
                 act: offer.subscribe ? .subscribe : .pair(id),
-                identifier: offer.subscribe ? "home.subscribe.\(id)" : "home.pair.\(id)")
+                identifier: offer.identifier("home", "\(id)"), inert: offer.waiting)
         }
     }
 
@@ -806,13 +813,15 @@ public struct AgentsHome: View {
 
     /// What to do on the computer, in order. Both steps happen there, so
     /// nothing here is a command to copy; the one thing worth carrying across
-    /// is the address, sent by whatever reaches that computer.
+    /// is the install page, sent by whatever reaches that computer: AirDrop
+    /// to the Mac on the desk is the quick way. Once amux there opens its
+    /// pairing, this phone, still on this screen, sees it and offers to pair.
     private var steps: some View {
         VStack(alignment: .leading, spacing: Space.l) {
             step(1) {
                 VStack(alignment: .leading, spacing: Space.m) {
-                    Text("On your computer, install amux from \(Text(verbatim: "amux.sh").font(design.font(.bodyEmphasis))).")
-                    ShareLink(item: Self.site) {
+                    Text("Get amux on your computer.")
+                    ShareLink(item: Self.install) {
                         ActionLabel("Send Link", kind: .outline)
                     }
                     .buttonStyle(.amuxControl)
@@ -820,14 +829,16 @@ public struct AgentsHome: View {
                 }
             }
             step(2) {
-                Text("Run \(command("amux pair --qr")) on it and scan the code with the Camera app.")
+                Text("Open amux there, and this phone offers to pair.")
             }
         }
         .accessibilityElement(children: .contain)
         .identified("home.empty.howToPair")
     }
 
-    private static let site = URL(string: "https://amux.sh")!
+    /// amux.sh's install page: on a Mac the app first and the terminal's
+    /// command second, on Linux or Windows that platform's command.
+    private static let install = URL(string: "https://amux.sh/get")!
 
     private func step(_ number: Int, @ViewBuilder _ content: () -> some View) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.m) {
@@ -844,10 +855,6 @@ public struct AgentsHome: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-    }
-
-    private func command(_ text: String) -> Text {
-        Text(verbatim: text).font(design.font(.mono))
     }
 
     /// An account, offered under pairing as what it adds rather than as a
@@ -1302,6 +1309,9 @@ struct Callout<Action: Equatable>: Identifiable, Equatable {
     /// Whether what it asks for is under way: its mark breathes in place of
     /// its glyph and a second press does nothing.
     var working = false
+    /// Only says something: there is nothing to press yet, so it is drawn
+    /// without a button, a chevron or a press.
+    var inert = false
 }
 
 /// The callouts: one takes the full width; more than one narrow so the next
@@ -1432,7 +1442,14 @@ private struct CalloutCard<Action: Equatable>: View {
     private var identifier: String { callout.identifier ?? "home.callout.\(callout.id)" }
 
     var body: some View {
-        if let dismiss = callout.dismiss {
+        if callout.inert {
+            face
+                .padding(.horizontal, Space.m)
+                .frame(minHeight: 60)
+                .background(surface)
+                .accessibilityElement(children: .combine)
+                .identified(identifier, label: callout.title, value: callout.detail)
+        } else if let dismiss = callout.dismiss {
             // Two buttons side by side on one surface: a button inside
             // another's label would take every press as the outer one's.
             HStack(spacing: 0) {
@@ -1510,7 +1527,7 @@ private struct CalloutCard<Action: Equatable>: View {
                     .padding(.horizontal, Space.m)
                     .frame(height: 30)
                     .background(Capsule().fill(design.accent.color))
-            } else {
+            } else if !callout.inert {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(design.inkFaint.color)

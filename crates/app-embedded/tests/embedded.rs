@@ -324,6 +324,16 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
         "{hosts:?}"
     );
     assert!(hosts.iter().any(|host| host.local && host.name == "phone"));
+    // The desk says which Claude a new agent there runs, so the phone starts
+    // the same kind its person would; the phone runs none.
+    let listed = hosts.iter().find(|host| host.name == "desk").unwrap();
+    assert!(
+        matches!(
+            listed.claude_kind,
+            Some(wire::Kind::ClaudeSdk | wire::Kind::ClaudePty)
+        ),
+        "{listed:?}"
+    );
 
     // Leaving the foreground closes every session, the open chat's
     // included; returning reopens each, and the chat carries on.
@@ -386,6 +396,7 @@ fn found(desk: node::HostId, addrs: Vec<String>) -> app_runtime::values::Found {
         version: node::PROTOCOL_VERSION,
         addrs,
         scope: String::new(),
+        pairing_open: false,
     }
 }
 
@@ -944,4 +955,105 @@ async fn a_phone_relaunched_after_a_suspend_shows_the_fleet_and_chat_it_left() {
 
     drop(app);
     embedded.shutdown().await.unwrap();
+}
+
+/// The phone sees a nearby computer's pairing window open from what its
+/// browser hands over, pairs with it, and is offered the account the
+/// computer is signed in to; accepting signs the phone in to that account
+/// under the phone's own client.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_phone_paired_with_a_signed_in_desk_takes_its_offered_account() {
+    let net = Net::start(Topology::new().relay(&["ada"]).host_decl(HostDecl {
+        name: "desk".into(),
+        lan: true,
+        account: Some("ada".into()),
+        ..HostDecl::default()
+    }))
+    .await
+    .unwrap();
+    let relay = net.relay().unwrap();
+    let gate = relay.gate().await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let embedded = EmbeddedRuntime::start_with(
+        &config(dir.path()),
+        EdgeOverrides {
+            cloud: relay.cloud_options(&gate),
+            ..loopback()
+        },
+        Arc::new(SystemClock),
+        queue(),
+    )
+    .await
+    .unwrap();
+    let phone = only_profile(&embedded).await;
+    let desk = net.host("desk").unwrap().host_id;
+    let app = app(&embedded, phone).await;
+
+    let (pin, addrs) = pairing_pin(&net).await;
+    embedded.discovered(vec![app_runtime::values::Found {
+        pairing_open: true,
+        ..found(desk, addrs.clone())
+    }]);
+    eventually(&app, "the desk's window open", || {
+        app.hosts()
+            .iter()
+            .any(|host| host.name == "desk" && host.candidate && host.pairing_open)
+    })
+    .await;
+    pair(
+        &embedded,
+        phone,
+        &PairRequest::Pin {
+            host_id: desk.as_bytes().to_vec(),
+            pin,
+            addrs,
+        },
+    )
+    .await
+    .unwrap();
+    eventually(&app, "the desk online", || desk_online(&app)).await;
+
+    let client = embedded.client(phone).unwrap();
+    let mut offers = client.subscribe_sign_in_offers().await.unwrap();
+    net.admin("desk")
+        .await
+        .unwrap()
+        .offer_sign_in(wire::OfferSignInRequest {
+            host_id: embedded.host_id(phone).unwrap(),
+        })
+        .await
+        .expect("the desk offers the phone its account");
+    let offer = tokio::time::timeout(PATIENCE, async {
+        loop {
+            let now = offers.next().await.unwrap().unwrap();
+            if let Some(offer) = now.offers.first() {
+                return app_runtime::values::SignInOfferView::from(offer);
+            }
+        }
+    })
+    .await
+    .expect("the offer reaches the phone");
+    assert_eq!(offer.host_name, "desk");
+    assert_eq!(offer.email, "ada@example.com");
+
+    let profile = client
+        .answer_sign_in_offer(wire::AnswerSignInOfferRequest {
+            host_id: offer.host_id,
+            accept: true,
+        })
+        .await
+        .expect("accepting signs the phone in");
+    let view = ProfileView::from(&profile);
+    assert_eq!(view.account.binding, AccountBinding::SignedIn);
+    assert_eq!(view.account.email, "ada@example.com");
+    assert_eq!(relay.redeemed(), vec![("mobile".to_owned(), true)]);
+    assert_eq!(
+        relay.refreshed_as().last().map(String::as_str),
+        Some("mobile")
+    );
+    relay_link(&embedded, phone, RelayLink::Connected).await;
+
+    drop(app);
+    embedded.shutdown().await.unwrap();
+    net.shutdown().await.unwrap();
 }

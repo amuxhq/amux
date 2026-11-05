@@ -375,6 +375,17 @@ pub(crate) fn up(folder: &Folder, topology: Option<&Path>) -> Result<Outcome, St
         serde_json::to_string_pretty(&record).unwrap_or_default(),
     )
     .map_err(|error| error.to_string())?;
+    // The declared hosts as installations set up long ago, so a client
+    // opens on home; `host add --first-run` makes one that is not.
+    for host in readiness["hosts"].as_array().into_iter().flatten() {
+        let name = host["name"].as_str().unwrap_or_default();
+        door::call(
+            record.control,
+            &json!({"SetUp": {"host": name}}),
+            Duration::from_secs(60),
+        )
+        .map_err(|error| format!("setting up {name}: {error}"))?;
+    }
     let status = folder.status()?;
     Ok(Outcome::new(
         format!(

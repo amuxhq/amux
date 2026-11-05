@@ -48,7 +48,6 @@ impl Home {
 
     fn options(&self) -> Options {
         Options {
-            login_item: false,
             config: Some(self.config.clone()),
         }
     }

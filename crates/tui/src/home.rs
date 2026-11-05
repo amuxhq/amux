@@ -60,10 +60,20 @@ pub enum FleetEffect {
     Help,
     /// Freeze the screen and report a problem with it.
     Report,
+    /// The settings screen.
+    Settings,
+    /// Back into onboarding, at the steps still to finish.
+    FinishSetup,
+    /// No more "Finish setting up": the person dismissed it.
+    DismissSetup,
 }
 
 /// Blank columns at each side of the screen.
 const MARGIN: usize = 2;
+/// The key that opens the settings screen: bare on home, after the leader
+/// in a chat. A comma, as a desktop app's settings sit on its command key
+/// and a comma; the letters that name settings are taken.
+pub const SETTINGS_KEY: char = ',';
 /// Where section headings start, and the `›` of a highlight without a tint.
 const HEAD_COL: usize = MARGIN;
 /// Where a row's mark sits, and the text after it.
@@ -83,6 +93,8 @@ const FOLDER_LEAST: usize = 8;
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Target {
     New,
+    /// "Finish setting up": back into onboarding.
+    Finish,
     Agent(AgentKey),
     /// A section's heading, which folds and unfolds it.
     Section(SectionKind),
@@ -204,6 +216,9 @@ pub struct Home {
     filtering: bool,
     overlay: Option<Overlay>,
     pub draft: Draft,
+    /// How many onboarding steps are left to finish; none hides "Finish
+    /// setting up".
+    pub finish: u32,
     /// The first list line drawn.
     top: usize,
     /// A key moved the highlight, so the list scrolls to keep it in view.
@@ -228,6 +243,8 @@ enum Confirmed {
 /// One block of the list.
 enum Item {
     New,
+    /// "Finish setting up (n)".
+    Finish(u32),
     /// A section's heading: its families, and whether it is folded.
     Heading(SectionKind, usize, bool),
     /// A blank line, unless the list already ends in one.
@@ -363,6 +380,21 @@ impl Home {
         Some(self.draft.setup.get_or_insert_with(|| place.setup()))
     }
 
+    /// The folders `host` offers, for the new agent being set up there,
+    /// and its form's empty folder field.
+    pub fn take_folders(&mut self, host: &[u8], answer: &wire::ListRepositoriesResponse) {
+        if !self.draft.open {
+            return;
+        }
+        let Some(setup) = self.draft.setup.as_mut() else {
+            return;
+        };
+        setup.take_folders(host, answer);
+        if let Some(form) = self.draft.form.as_mut() {
+            form.folders_arrived(setup);
+        }
+    }
+
     /// The hosts modal, from a chat's `<leader> h`.
     pub fn open_hosts(&mut self) {
         self.draft.open = false;
@@ -445,6 +477,9 @@ impl Home {
 
     fn items(&self, fleet: &FleetState, view: FleetView) -> Vec<Item> {
         let mut items = vec![Item::New];
+        if self.finish > 0 && self.needle().is_none() {
+            items.push(Item::Finish(self.finish));
+        }
         if view.sections.is_empty() {
             items.push(Item::Gap);
             items.push(Item::Note(match (self.needle(), fleet.caught_up()) {
@@ -502,6 +537,7 @@ impl Home {
             .iter()
             .filter_map(|item| match item {
                 Item::New => Some(Target::New),
+                Item::Finish(_) => Some(Target::Finish),
                 Item::Agent(row) => Some(Target::Agent(row.card.agent.clone())),
                 Item::Heading(section, ..) => Some(Target::Section(*section)),
                 _ => None,
@@ -557,6 +593,7 @@ impl Home {
     fn activate(&mut self, target: Target) -> Vec<FleetEffect> {
         match target {
             Target::New => self.open_draft(),
+            Target::Finish => return vec![FleetEffect::FinishSetup],
             Target::Agent(agent) => return vec![FleetEffect::Open(agent)],
             Target::Section(section) => self.toggle_section(section),
         }
@@ -644,6 +681,7 @@ impl Home {
                 }
             }
             KeyCode::Char('h') => self.overlay = Some(Overlay::Hosts),
+            KeyCode::Char(SETTINGS_KEY) => return vec![FleetEffect::Settings],
             // Detach: leave to the shell; the agents keep running.
             KeyCode::Char('d') => return vec![FleetEffect::Quit],
             KeyCode::Char('r') => {
@@ -654,6 +692,9 @@ impl Home {
                     editor.set(&entry.name, vec![]);
                     self.overlay = Some(Overlay::Rename { agent, editor });
                 }
+            }
+            KeyCode::Char('x') if current == Target::Finish => {
+                return vec![FleetEffect::DismissSetup];
             }
             KeyCode::Char('x') => {
                 if let Some(agent) = agent {
@@ -790,7 +831,7 @@ impl Home {
                     self.draft.starting = true;
                     self.draft.error = None;
                     vec![FleetEffect::Start {
-                        setup: Box::new(setup.clone()),
+                        setup: setup.started(fleet),
                         text: String::new(),
                         attachments: Vec::new(),
                         open: true,
@@ -806,7 +847,7 @@ impl Home {
                     let item = picker.item;
                     if let Some(setup) = &mut self.draft.setup {
                         setup.pick(item, &value);
-                        setup.fill_folder(fleet);
+                        setup.fill_folder();
                     }
                     self.draft.picker = None;
                 }
@@ -854,7 +895,7 @@ impl Home {
                 self.draft.starting = true;
                 self.draft.error = None;
                 return vec![FleetEffect::Start {
-                    setup: Box::new(setup),
+                    setup: setup.started(fleet),
                     text: self.draft.editor.text().trim_end().to_owned(),
                     attachments: self.draft.editor.attachments().to_vec(),
                     open: !ctrl,
@@ -948,14 +989,14 @@ impl Home {
                     .map(|(_, _, hit)| hit.clone())
                 && let (Some(setup), Some(form)) = (&mut self.draft.setup, &mut self.draft.form)
             {
-                match form.click(setup, fleet, hit) {
+                match form.click(setup, hit) {
                     FormOutcome::None => {}
                     FormOutcome::Close => self.leave_draft(),
                     FormOutcome::Start => {
                         self.draft.starting = true;
                         self.draft.error = None;
                         return vec![FleetEffect::Start {
-                            setup: Box::new(setup.clone()),
+                            setup: setup.started(fleet),
                             text: String::new(),
                             attachments: Vec::new(),
                             open: true,
@@ -981,7 +1022,7 @@ impl Home {
                     let item = self.draft.picker.as_ref().map(|picker| picker.item);
                     if let (Some(setup), Some(item)) = (&mut self.draft.setup, item) {
                         setup.pick(item, &value);
-                        setup.fill_folder(fleet);
+                        setup.fill_folder();
                     }
                     self.draft.picker = None;
                 }
@@ -1486,6 +1527,31 @@ impl Home {
                         spots: vec![(Some((HEAD_COL, to)), Hit::Row(target))],
                     });
                 }
+                Item::Finish(left) => {
+                    // Quiet, as a control under "+ New Agent": faint until
+                    // highlighted.
+                    let chosen = selected == Target::Finish;
+                    let (mark, words) = if chosen {
+                        (theme.emphasis(), theme.emphasis())
+                    } else {
+                        (theme.faint(), theme.faint())
+                    };
+                    let mut line = control_lead(chosen, theme);
+                    pad_to(&mut line, HEAD_COL);
+                    push(&mut line, "○", mark, width);
+                    pad_to(&mut line, MARK_COL);
+                    push(
+                        &mut line,
+                        format!("Finish setting up ({left})"),
+                        words,
+                        width,
+                    );
+                    let to = text::line_width(&line);
+                    laid.push(Laid {
+                        line: tint(line, chosen, width, theme),
+                        spots: vec![(Some((HEAD_COL, to)), Hit::Row(Target::Finish))],
+                    });
+                }
                 Item::Gap => blank(&mut laid),
                 Item::Space => laid.push(Laid::default()),
                 Item::Note(words) => {
@@ -1524,6 +1590,7 @@ impl Home {
             }
             let is_selected = match item {
                 Item::New => selected == Target::New,
+                Item::Finish(_) => selected == Target::Finish,
                 Item::Heading(section, ..) => selected == Target::Section(*section),
                 Item::Agent(row) => selected == Target::Agent(row.card.agent.clone()),
                 _ => false,
@@ -1825,6 +1892,10 @@ impl Home {
             None => {
                 let mut hints = match &self.selected {
                     Some(Target::New) => vec![("enter", "start", key(KeyCode::Enter))],
+                    Some(Target::Finish) => vec![
+                        ("enter", "finish", key(KeyCode::Enter)),
+                        ("x", "dismiss", key(KeyCode::Char('x'))),
+                    ],
                     Some(Target::Section(_)) if section_folded => {
                         vec![("enter", "show", key(KeyCode::Enter))]
                     }
@@ -1935,6 +2006,10 @@ pub fn help_rows() -> Vec<(&'static str, String)> {
             "stop (it can be resumed), or delete once exited; it asks first".into(),
         ),
         ("h", "hosts".into()),
+        (
+            ",",
+            "settings: this machine, repositories, chats, usage counts, the account".into(),
+        ),
         (
             "b",
             "report a problem: mark the screen, write a note".into(),

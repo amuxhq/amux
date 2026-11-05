@@ -629,6 +629,7 @@ fn advert(net: &Net, host: &str, addr: std::net::SocketAddr, scope: &str) -> Adv
         version: wire::PROTOCOL_VERSION,
         addrs: vec![addr],
         scope: scope.to_owned(),
+        pairing_open: false,
     }
 }
 
@@ -2055,6 +2056,118 @@ async fn create(net: &Net, host: &str, label: &str) -> (Vec<u8>, std::sync::Arc<
         .profile_edge(host, node::ProfileId::from_slice(&info.id).unwrap())
         .unwrap();
     (info.id, edge)
+}
+
+/// An agent a person creates on the desk from a paired device finishes the
+/// desk's first-agent onboarding step; one the desk's own client creates
+/// does not.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_created_from_a_paired_device_finishes_the_first_agent_step() {
+    let mut net = Net::start(
+        Topology::new()
+            .host("desk")
+            .host("phone")
+            .link("desk", "phone"),
+    )
+    .await
+    .unwrap();
+    let mut steps = door(&net, "desk")
+        .await
+        .subscribe_onboarding(wire::OnboardingRequest::default())
+        .await
+        .unwrap()
+        .into_inner();
+    let first_agent = |onboarding: &wire::Onboarding| onboarding.steps[5].state();
+    let now = steps.message().await.unwrap().unwrap();
+    assert_eq!(first_agent(&now), wire::StepState::Needed);
+
+    net.spawn(testnet::AgentDecl::new("local", "desk").prompt("Hello."))
+        .await
+        .unwrap();
+    let after_local = door(&net, "desk")
+        .await
+        .subscribe_onboarding(wire::OnboardingRequest::default())
+        .await
+        .unwrap()
+        .into_inner()
+        .message()
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first_agent(&after_local), wire::StepState::Needed);
+    let work = net
+        .host("desk")
+        .unwrap()
+        .work
+        .to_string_lossy()
+        .into_owned();
+    net.client("phone")
+        .unwrap()
+        .create_agent(tonic::Request::new(wire::CreateAgentRequest {
+            host: Some(wire::HostRef::named("desk")),
+            cwd: work,
+            agent: wire::create_agent_request::Agent::defaults(wire::Kind::ClaudeSdk),
+            ..wire::CreateAgentRequest::default()
+        }))
+        .await
+        .expect("the desk starts the phone's agent");
+    let moved = tokio::time::timeout(testnet::PATIENCE, steps.message())
+        .await
+        .expect("the steps move")
+        .unwrap()
+        .unwrap();
+    assert_eq!(first_agent(&moved), wire::StepState::Done, "{moved:?}");
+
+    drop(steps);
+    net.shutdown().await.unwrap();
+}
+
+/// A sign-in that names no profile on an installation of one unbound
+/// profile signs that profile in without asking, though it holds an agent
+/// and a paired host: they are already the person's. With more than one
+/// profile it takes the empty one, as before.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unnamed_sign_in_takes_the_only_profile_with_what_it_holds() {
+    let net = Net::start(
+        Topology::new()
+            .relay(&["ada", "bob"])
+            .host_decl(lan_host("desk", "home"))
+            .host_decl(lan_host("laptop", "home"))
+            .agent(testnet::AgentDecl::new("worker", "desk").prompt("Keep going.")),
+    )
+    .await
+    .unwrap();
+    let main = profile(&net, "desk");
+    pair(&net, "laptop", "desk").await;
+    let unnamed = |refresh: String| {
+        let net = &net;
+        async move {
+            door(net, "desk")
+                .await
+                .bind_profile(wire::BindProfileRequest {
+                    profile_id: None,
+                    cloud_url: net.relay().unwrap().url().to_owned(),
+                    staged_refresh_token: refresh,
+                    adopt_non_pristine: false,
+                    ..wire::BindProfileRequest::default()
+                })
+                .await
+                .map(tonic::Response::into_inner)
+        }
+    };
+    let signed = unnamed(testnet::Relay::login("ada"))
+        .await
+        .expect("the only profile is signed in without asking");
+    assert_eq!(signed.id, main);
+    assert_eq!(signed.account_name, "ada");
+
+    let (work, _) = create(&net, "desk", "work").await;
+    let signed = unnamed(testnet::Relay::login("bob"))
+        .await
+        .expect("an empty profile is taken");
+    assert_eq!(signed.id, work);
+
+    net.shutdown().await.unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]

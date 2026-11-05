@@ -41,6 +41,9 @@ message HostEntry {
     // Never paired: found by discovery, or announced by a neighbor.
     Candidate candidate = 5;
   }
+  // The kind this host's settings resolve to for a new Claude agent: every
+  // client creates Claude agents on this host with it.
+  Kind claude_kind = 6;
 }
 
 message Trusted {
@@ -85,6 +88,9 @@ message Candidate {
   // link, not from what the neighbor said: the cloud relay forwards only for
   // a paid account, and a paired host forwards on any plan.
   repeated Host announced_by = 2;
+  // The host's discovery advertisement says a pairing window is open on it,
+  // so a PIN or QR secret can succeed now.
+  bool pairing_open = 3;
 }
 
 message ProviderOnHost {

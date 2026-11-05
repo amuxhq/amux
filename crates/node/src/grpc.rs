@@ -58,6 +58,8 @@ pub(crate) fn wire_error(code: ErrorCode, message: impl Into<String>) -> wire::E
     }
 }
 
+pub use wire::SURFACE_HEADER;
+
 /// The client services for one profile, on a local socket. `caller` is set
 /// on an agent's tools socket: that agent is the parent of what it spawns
 /// and the sender of what it sends. A call on another host's agent is made
@@ -222,14 +224,26 @@ impl AgentService for ClientApi {
 
     async fn subscribe_inventory(
         &self,
-        _request: Request<wire::Empty>,
+        request: Request<wire::Empty>,
     ) -> Result<Response<Self::SubscribeInventoryStream>, Status> {
+        // The Mac app opens the same socket as the terminal and says which
+        // it is in a header.
+        let opened = self.opened.map(|client| {
+            match request
+                .metadata()
+                .get(SURFACE_HEADER)
+                .and_then(|value| value.to_str().ok())
+            {
+                Some("mac") => analytics::Client::Mac,
+                _ => client,
+            }
+        });
         let runtime = self.runtime()?;
         let subscription = runtime
             .subscribe_inventory()
             .await
             .map_err(|error| status(error.to_wire()))?;
-        if let Some(client) = self.opened.filter(|_| self.counts()) {
+        if let Some(client) = opened.filter(|_| self.counts()) {
             runtime.analytics().record_at_most_every(
                 telemetry::CLIENT_OPENED_EVERY,
                 analytics::Event::ClientOpened { client },

@@ -135,6 +135,10 @@ The same network as JSON, as `testnet serve` reads it:
 
 JSON topologies live in `journeys/topologies`; scripts shared between them in `journeys/scripts`.
 
+An in-process host's repository suggestions read the session logs under its own `home` directory, beside its
+`work` and `repositories`, never the home of whoever runs the net; a story writes a Claude Code or Codex log
+there (`home/.claude/projects/<folder>/<session>.jsonl`, each line naming its `cwd`) to have a folder suggested.
+
 ### Scripts
 
 A script is the model's side of a session; the fake supplies the provider's own protocol (handshakes, echoes,
@@ -507,6 +511,12 @@ verb without fields is a bare string (`"Shutdown"`).
 | `{"Trust": {"a", "b"}}` | Trust as pairing does. |
 | `{"SetTier": {"account", "tier"}}` | Change what an account has bought (`pro` or `free`). |
 | `{"SignIn": {"host", "account"}}` | Sign a host's profile in to a declared account. |
+| `{"SetUp": {"host", "profile"}}` | Leave the host's default profile, or the one with the label `profile`, as set up long ago: setting up dismissed, so a client opens on home. The terminal driver does this for every host's default profile unless the story is a `first_run`. |
+| `{"ApproveSignIn": {"code", "account"}}` | Approve the browser sign-in that shows `code` as a declared account, as the person on the approval page does. |
+| `{"AnswerOffer": {"host", "accept"}}` | Wait for a paired host to offer the host's profile its account, and accept or decline it: `{"from", "email", "signed_in_as"}`. |
+| `{"OfferSignIn": {"host", "to"?}}` | The signed-in host offers its account to the device it paired with as `to`: a host of the net, or a device outside it by the name it paired with; without `to`, the one device outside the net it trusts, such as the phone. Answers `{"host_id"}`. |
+| `{"Create": {"from", "host", "name"}}` | A person on `from` starts an agent on `host`, as that host's client does: `{"id": "…"}`. In-process hosts only. |
+| `{"Onboarding": {"host"}}` | The host's setting up as its daemon keeps it: `{"steps": {"<step id>": "<state>"}, "dismissed", "repositories", "telemetry", "auto_reports", "keep_awake"}`. |
 | `{"KillDaemon": {"host"}}`, `{"StopDaemon": {"host"}}` | Crash or cleanly stop a host's daemon. |
 | `{"RestartDaemon": {"host"}}` | Kill it if it is running, then start it again. |
 | `{"Checkpoint": {"host"}}`, `{"Rewind": {"host", "cuts": [{"agent", "byte"}]}}` | Record what reached the drive; lose power back to it. |
@@ -578,7 +588,7 @@ readable text; `--json` prints the door's reply instead.
 A net's agents outlive a stopped daemon by 20 seconds, where a real installation waits five minutes: long enough to
 ride out a restart, short enough that a failed run's agents go away on their own. A host kept down for longer ends
 every agent on it, and a finished child then reads as having exited while the daemon was away, correctly; `ctl
-status` says so. `host add --lan` brings discovery with it, as a daemon on a real LAN has, unless `--bonjour` puts
+status` says so. Every host `up` declares and `host add` makes is an installation set up long ago, so a client opens on home; `host add --first-run` leaves one new, for walking through setting up. `host add --lan` brings discovery with it, as a daemon on a real LAN has, unless `--bonjour` puts
 the host on the machine's real mDNS instead; a process host with a LAN listener is announced on the net's
 discovery bus. `restart` waits longer than the net's own wait for the host's LAN port, so a restart that fails says
 what holds the port.
@@ -586,7 +596,7 @@ what holds the port.
 | Group | Commands |
 | --- | --- |
 | The net | `up [TOPOLOGY]`, `down`, `status` |
-| Topology | `host add NAME [--lan] [--discovery] [--bonjour] [--account A] [--process] [--supervised] [--provider real\|fake] [--script FILE]`, `host remove NAME`, `link A B`, `unlink A B`, `account add NAME [--tier pro\|free]` |
+| Topology | `host add NAME [--lan] [--discovery] [--bonjour] [--account A] [--process] [--supervised] [--provider real\|fake] [--script FILE] [--first-run]`, `host remove NAME`, `link A B`, `unlink A B`, `account add NAME [--tier pro\|free]` |
 | Faults | `sever A B`, `restore A B`, `flap A B --down D --up U`, `flap stop`, `net HOST\|relay [--loss P] [--delay D] [--jitter D] [--reorder P] [--rate R]`, `block-udp HOST on\|off`, `kill HOST`, `stop HOST`, `restart HOST`, `freeze AGENT`, `thaw AGENT` |
 | Accounts and releases | `sign-in HOST ACCOUNT`, `tier ACCOUNT pro\|free`, `release publish VERSION [--channel C] [--rollout P] [--broken]` |
 | Agents | `spawn NAME --host H [--kind claude-sdk\|claude-pty\|codex] [--provider real\|fake] [--script FILE] [--prompt P] [--model M] [--permission P] [--mode M] [--parent A] [--cwd D] [--wait] [--timeout S]`, `send AGENT TEXT [--wait]`, `wait AGENT`, `stop-agent AGENT`, `resume AGENT [TEXT]`, `gate open NAME` |

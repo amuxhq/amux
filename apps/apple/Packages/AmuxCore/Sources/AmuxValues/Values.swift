@@ -2603,22 +2603,19 @@ public struct DiffLine: Codable, Hashable, Sendable {
 }
 
 /// What a host offers to start an agent in: where agents ran lately and the
-/// repositories under its roots.
+/// repositories its person chose.
 public struct Directories: Codable, Hashable, Sendable {
     public var recent: [Directory]
     public var repositories: [Directory]
-    public var roots: [String]
 
-    public init(recent: [Directory], repositories: [Directory], roots: [String]) {
+    public init(recent: [Directory], repositories: [Directory]) {
         self.recent = recent
         self.repositories = repositories
-        self.roots = roots
     }
 
     private enum CodingKeys: String, CodingKey {
         case recent
         case repositories
-        case roots
     }
 }
 
@@ -3719,13 +3716,16 @@ public struct Found: Codable, Hashable, Sendable {
     /// Resolved addresses as `ip:port`, IPv6 in brackets.
     public var addrs: [String]
     public var scope: String
+    /// Its TXT record carries `pair=1`: a pairing window is open on it.
+    public var pairingOpen: Bool?
 
-    public init(hostId: [UInt8], name: String, version: UInt32, addrs: [String], scope: String) {
+    public init(hostId: [UInt8], name: String, version: UInt32, addrs: [String], scope: String, pairingOpen: Bool?) {
         self.hostId = hostId
         self.name = name
         self.version = version
         self.addrs = addrs
         self.scope = scope
+        self.pairingOpen = pairingOpen
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -3734,6 +3734,7 @@ public struct Found: Codable, Hashable, Sendable {
         case version
         case addrs
         case scope
+        case pairingOpen = "pairing_open"
     }
 }
 
@@ -3820,6 +3821,9 @@ public struct HostView: Codable, Hashable, Sendable {
     /// For a candidate: only the cloud relay reaches it, which carries a
     /// pairing only on a paid plan.
     public var relayOnly: Bool
+    /// For a candidate: its network advertisement says a pairing window is
+    /// open on it, so a PIN can work now.
+    public var pairingOpen: Bool
     /// This device's copy of the host's agents has caught up with the host
     /// on a live stream: what the fleet shows for it is what it lists now.
     /// Always true for this device.
@@ -3827,18 +3831,22 @@ public struct HostView: Codable, Hashable, Sendable {
     /// The providers the host has said it can run, and whether each is
     /// signed in there.
     public var providers: [ProviderSignIn]
+    /// Which Claude a new agent on it runs, as its settings resolve it;
+    /// None until it has said.
+    public var claudeKind: Kind?
     public var lastDialError: String?
     /// The operating system it runs, when it said.
     public var platform: Platform?
-    /// For this device: whether it is signed in to the account its profile
-    /// is bound to; None while it was never bound.
+    /// Whether it is signed in to an account: for this device, the account
+    /// its profile is bound to, None while it was never bound; for another
+    /// host, as its link handshake said, None until it has said.
     public var signedIn: Bool?
     /// For a candidate no address reaches: the paired host announcing it,
     /// which carries a pairing on any plan.
     public var through: String?
     public var version: String?
 
-    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, addrs: [String], relayOnly: Bool, current: Bool, providers: [ProviderSignIn], lastDialError: String?, platform: Platform?, signedIn: Bool?, through: String?, version: String?) {
+    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, addrs: [String], relayOnly: Bool, pairingOpen: Bool, current: Bool, providers: [ProviderSignIn], claudeKind: Kind?, lastDialError: String?, platform: Platform?, signedIn: Bool?, through: String?, version: String?) {
         self.hostId = hostId
         self.name = name
         self.local = local
@@ -3847,8 +3855,10 @@ public struct HostView: Codable, Hashable, Sendable {
         self.reach = reach
         self.addrs = addrs
         self.relayOnly = relayOnly
+        self.pairingOpen = pairingOpen
         self.current = current
         self.providers = providers
+        self.claudeKind = claudeKind
         self.lastDialError = lastDialError
         self.platform = platform
         self.signedIn = signedIn
@@ -3865,8 +3875,10 @@ public struct HostView: Codable, Hashable, Sendable {
         case reach
         case addrs
         case relayOnly = "relay_only"
+        case pairingOpen = "pairing_open"
         case current
         case providers
+        case claudeKind = "claude_kind"
         case lastDialError = "last_dial_error"
         case platform
         case signedIn = "signed_in"
@@ -3990,17 +4002,13 @@ public enum InputState: Codable, Hashable, Sendable {
 public struct InstallOptions: Codable, Hashable, Sendable {
     /// The installation's config file; none is the default one.
     public var config: String?
-    /// Whether a fresh install starts at login.
-    public var loginItem: Bool?
 
-    public init(config: String?, loginItem: Bool?) {
+    public init(config: String?) {
         self.config = config
-        self.loginItem = loginItem
     }
 
     private enum CodingKeys: String, CodingKey {
         case config
-        case loginItem = "login_item"
     }
 }
 
@@ -4273,6 +4281,44 @@ public struct LoudMember: Codable, Hashable, Sendable {
     }
 }
 
+/// The installation's everyday settings, as a desktop client shows them.
+/// Which interface the terminal chats in, and which Claude new agents run,
+/// are the terminal's to show and are left out.
+public struct MachineSettings: Codable, Hashable, Sendable {
+    /// What paired devices call this machine; never empty.
+    public var hostName: String
+    /// On power the machine stays awake while amux runs; on battery only
+    /// while an agent works.
+    public var keepAwake: Bool
+    /// The folders new-agent pickers offer first, as absolute paths.
+    public var repositories: [String]
+    /// Usage counts are sent.
+    public var telemetry: Bool
+    /// A report is sent on its own when something goes wrong.
+    public var autoReports: Bool
+    /// Whether amux starts at login; None on an install without a
+    /// supervisor, which has nothing to start.
+    public var startAtLogin: Bool?
+
+    public init(hostName: String, keepAwake: Bool, repositories: [String], telemetry: Bool, autoReports: Bool, startAtLogin: Bool?) {
+        self.hostName = hostName
+        self.keepAwake = keepAwake
+        self.repositories = repositories
+        self.telemetry = telemetry
+        self.autoReports = autoReports
+        self.startAtLogin = startAtLogin
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case hostName = "host_name"
+        case keepAwake = "keep_awake"
+        case repositories
+        case telemetry
+        case autoReports = "auto_reports"
+        case startAtLogin = "start_at_login"
+    }
+}
+
 /// A mode: how the agent works (Codex's default or plan).
 public struct ModeChoice: Codable, Hashable, Sendable {
     /// What a mode input names.
@@ -4457,6 +4503,14 @@ public enum NewAgentPick: Codable, Hashable, Sendable {
     }
 }
 
+/// Which side of a one-tap sign-in this device is.
+public enum OfferRole: String, Codable, Hashable, Sendable, CaseIterable {
+    /// Signed in, offering a paired device its account.
+    case offerer = "offerer"
+    /// Signed out, offered a paired device's account.
+    case receiver = "receiver"
+}
+
 /// A command or skill the provider offers this session, typed as a prompt
 /// that starts with a slash.
 public struct OfferedCommand: Codable, Hashable, Sendable {
@@ -4605,6 +4659,142 @@ public enum Offline: String, Codable, Hashable, Sendable, CaseIterable {
     /// The host said it no longer trusts this machine, as it closed its
     /// link or refused a stream; only pairing again brings it back.
     case revoked = "Revoked"
+}
+
+/// What a client tells the daemon of setting up.
+public enum OnboardingAnswer: Codable, Hashable, Sendable {
+    /// The step is on screen: counted, nothing kept.
+    case shown(SetupStep)
+    /// The person confirmed a step only they can confirm: keeping it
+    /// reachable, the repositories, helping improve amux.
+    case done(SetupStep)
+    /// "Later".
+    case skip(SetupStep)
+    /// "Finish setting up" dismissed: every step still needed is skipped.
+    case dismiss
+    /// A one-tap sign-in was put in front of the person, on this side.
+    case signInOfferShown(OfferRole)
+
+    private enum Tag: String, CodingKey {
+        case shown = "Shown"
+        case done = "Done"
+        case skip = "Skip"
+        case signInOfferShown = "SignInOfferShown"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "Dismiss": self = .dismiss
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no OnboardingAnswer is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a OnboardingAnswer names exactly one variant"))
+        }
+        switch _tag {
+        case .shown:
+            self = .shown(try _container.decode(SetupStep.self, forKey: .shown))
+        case .done:
+            self = .done(try _container.decode(SetupStep.self, forKey: .done))
+        case .skip:
+            self = .skip(try _container.decode(SetupStep.self, forKey: .skip))
+        case .signInOfferShown:
+            self = .signInOfferShown(try _container.decode(OfferRole.self, forKey: .signInOfferShown))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .shown(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .shown)
+        case .done(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .done)
+        case .skip(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .skip)
+        case .dismiss:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Dismiss")
+        case .signInOfferShown(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .signInOfferShown)
+        }
+    }
+}
+
+/// A profile's setting up as the daemon serves it, with what the shared
+/// rules make of it: where onboarding opens and how many steps "Finish
+/// setting up" offers.
+public struct OnboardingState: Codable, Hashable, Sendable {
+    /// In the order they are shown; steps this build has no name for are
+    /// left out.
+    public var steps: [OnboardingStepState]
+    /// The person dismissed finishing what they skipped.
+    public var dismissed: Bool
+    public var view: OnboardingView
+    /// The steps still to do: needed, or skipped.
+    public var open: [SetupStep]
+
+    public init(steps: [OnboardingStepState], dismissed: Bool, view: OnboardingView, open: [SetupStep]) {
+        self.steps = steps
+        self.dismissed = dismissed
+        self.view = view
+        self.open = open
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case steps
+        case dismissed
+        case view
+        case open
+    }
+}
+
+public struct OnboardingStepState: Codable, Hashable, Sendable {
+    public var step: SetupStep
+    public var state: StepState
+
+    public init(step: SetupStep, state: StepState) {
+        self.step = step
+        self.state = state
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case step
+        case state
+    }
+}
+
+/// What a desktop client does with onboarding as it stands.
+public struct OnboardingView: Codable, Hashable, Sendable {
+    /// How many steps home offers to finish: those still needed, and those
+    /// skipped unless the person dismissed finishing them.
+    public var toFinish: UInt32
+    /// Onboarding opens full-screen before home, at this step: the first
+    /// one still needed. None once every step is done or skipped.
+    public var opensAt: SetupStep?
+
+    public init(toFinish: UInt32, opensAt: SetupStep?) {
+        self.toFinish = toFinish
+        self.opensAt = opensAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case toFinish = "to_finish"
+        case opensAt = "opens_at"
+    }
 }
 
 public struct OptionView: Codable, Hashable, Sendable {
@@ -4767,6 +4957,21 @@ public enum PairRequest: Codable, Hashable, Sendable {
     }
 }
 
+public struct PairedDevice: Codable, Hashable, Sendable {
+    public var hostId: [UInt8]
+    public var name: String
+
+    public init(hostId: [UInt8], name: String) {
+        self.hostId = hostId
+        self.name = name
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case hostId = "host_id"
+        case name
+    }
+}
+
 /// A machine this device trusts.
 public struct PairedPeer: Codable, Hashable, Sendable {
     public var hostId: [UInt8]
@@ -4783,6 +4988,56 @@ public struct PairedPeer: Codable, Hashable, Sendable {
         case hostId = "host_id"
         case name
         case fingerprint
+    }
+}
+
+/// Where this machine's pairing window stands.
+public struct PairingStatusView: Codable, Hashable, Sendable {
+    /// A window is open.
+    public var active: Bool
+    /// A device proved the window's secret and is confirming.
+    public var joining: Bool
+    /// Too many wrong codes closed the last window.
+    public var lockedOut: Bool
+    /// The device the window's last pairing trusted.
+    public var paired: PairedDevice?
+
+    public init(active: Bool, joining: Bool, lockedOut: Bool, paired: PairedDevice?) {
+        self.active = active
+        self.joining = joining
+        self.lockedOut = lockedOut
+        self.paired = paired
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case active
+        case joining
+        case lockedOut = "locked_out"
+        case paired
+    }
+}
+
+/// A pairing window open on this machine: one that takes the PIN typed on
+/// a phone or the secret its QR code carries.
+public struct PairingWindowView: Codable, Hashable, Sendable {
+    /// Six digits; empty when the window takes none.
+    public var pin: String
+    /// What the QR code shows: a link that opens the app at the
+    /// confirmation, or sends a phone without it to the App Store.
+    public var qrLink: String
+    /// How long the window stays open from when it opened.
+    public var ttlSeconds: UInt64
+
+    public init(pin: String, qrLink: String, ttlSeconds: UInt64) {
+        self.pin = pin
+        self.qrLink = qrLink
+        self.ttlSeconds = ttlSeconds
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case pin
+        case qrLink = "qr_link"
+        case ttlSeconds = "ttl_seconds"
     }
 }
 
@@ -5366,6 +5621,23 @@ public struct ReportSent: Codable, Hashable, Sendable {
         case id
         case receivedAtMs = "received_at_ms"
         case notSent = "not_sent"
+    }
+}
+
+/// A folder worth offering as a repository: where Claude Code or Codex ran
+/// lately.
+public struct RepositorySuggestion: Codable, Hashable, Sendable {
+    public var path: String
+    public var name: String
+
+    public init(path: String, name: String) {
+        self.path = path
+        self.name = name
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case path
+        case name
     }
 }
 
@@ -6475,6 +6747,37 @@ public enum SettingChange: Codable, Hashable, Sendable {
     }
 }
 
+/// A change to the installation's settings: what is None is left as it
+/// is.
+public struct SettingsChange: Codable, Hashable, Sendable {
+    public var autoReports: Bool?
+    /// Empty returns to the machine's own name.
+    public var hostName: String?
+    public var keepAwake: Bool?
+    /// The whole new list.
+    public var repositories: [String]?
+    public var startAtLogin: Bool?
+    public var telemetry: Bool?
+
+    public init(autoReports: Bool?, hostName: String?, keepAwake: Bool?, repositories: [String]?, startAtLogin: Bool?, telemetry: Bool?) {
+        self.autoReports = autoReports
+        self.hostName = hostName
+        self.keepAwake = keepAwake
+        self.repositories = repositories
+        self.startAtLogin = startAtLogin
+        self.telemetry = telemetry
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case autoReports = "auto_reports"
+        case hostName = "host_name"
+        case keepAwake = "keep_awake"
+        case repositories
+        case startAtLogin = "start_at_login"
+        case telemetry
+    }
+}
+
 public struct SettingsView: Codable, Hashable, Sendable {
     /// The offered models, then a current model the catalogue does not
     /// list.
@@ -6507,6 +6810,121 @@ public struct SettingsView: Codable, Hashable, Sendable {
         case modes
         case changeable
         case commands
+    }
+}
+
+/// One step of onboarding, in the order clients show them.
+public enum SetupStep: String, Codable, Hashable, Sendable, CaseIterable {
+    /// Connect a phone: the pairing window.
+    case pair_phone = "pair_phone"
+    /// Keep the machine reachable: start at login, keep awake.
+    case keep_reachable = "keep_reachable"
+    /// Reach it from anywhere: sign in to an account.
+    case sign_in = "sign_in"
+    /// Pick the folders new agents are offered.
+    case repositories = "repositories"
+    /// Usage counts and automatic reports.
+    case improve = "improve"
+    /// Start an agent from the phone.
+    case first_agent = "first_agent"
+}
+
+/// The person's answer to a paired machine's offer of its account.
+public struct SignInAnswer: Codable, Hashable, Sendable {
+    /// The machine that offered.
+    public var hostId: [UInt8]
+    /// Accepting signs this device's profile in to the account; declining
+    /// ends the offer.
+    public var accept: Bool
+
+    public init(hostId: [UInt8], accept: Bool) {
+        self.hostId = hostId
+        self.accept = accept
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case hostId = "host_id"
+        case accept
+    }
+}
+
+/// What answering a paired machine's offer of its account came to.
+public enum SignInOfferOutcome: Codable, Hashable, Sendable {
+    /// Accepted: this device's profile is signed in to the account now.
+    case signedIn(ProfileView)
+    /// Declined: the offer is gone, here and on the machine that made it.
+    case declined
+    /// Accepted while the machine that offered could not be reached, or it
+    /// went away before it answered. An offer that still stands stays
+    /// listed, and accepting it again once that machine is back can work.
+    case unreachable
+
+    private enum Tag: String, CodingKey {
+        case signedIn = "SignedIn"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "Declined": self = .declined
+            case "Unreachable": self = .unreachable
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no SignInOfferOutcome is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a SignInOfferOutcome names exactly one variant"))
+        }
+        switch _tag {
+        case .signedIn:
+            self = .signedIn(try _container.decode(ProfileView.self, forKey: .signedIn))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .signedIn(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .signedIn)
+        case .declined:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Declined")
+        case .unreachable:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Unreachable")
+        }
+    }
+}
+
+/// A paired machine's offer of its account to this device's profile: shown
+/// with the account's email, so the person knows whose account it is.
+public struct SignInOfferView: Codable, Hashable, Sendable {
+    /// The machine that offered.
+    public var hostId: [UInt8]
+    public var hostName: String
+    public var email: String
+    public var accountName: String
+
+    public init(hostId: [UInt8], hostName: String, email: String, accountName: String) {
+        self.hostId = hostId
+        self.hostName = hostName
+        self.email = email
+        self.accountName = accountName
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case hostId = "host_id"
+        case hostName = "host_name"
+        case email
+        case accountName = "account_name"
     }
 }
 
@@ -6599,6 +7017,14 @@ public struct StartConfig: Codable, Hashable, Sendable {
         case tail
         case telemetry
     }
+}
+
+/// Where one step of setting up stands, as the daemon keeps it.
+public enum StepState: String, Codable, Hashable, Sendable, CaseIterable {
+    case needed = "needed"
+    case done = "done"
+    case skipped = "skipped"
+    case not_needed = "not_needed"
 }
 
 public enum StuckReason: Codable, Hashable, Sendable {
@@ -6794,10 +7220,15 @@ public enum UsageEvent: Codable, Hashable, Sendable {
     case paywallViewed(from: PaywallFrom)
     /// A purchase began with the App Store.
     case purchaseStarted(interval: BillingInterval)
+    /// A one-tap sign-in offer was put in front of the person: on the
+    /// signed-out side the offer itself, on the signed-in side the choice
+    /// to offer a paired device the account.
+    case signInOfferShown(role: OfferRole)
 
     private enum Tag: String, CodingKey {
         case paywallViewed = "PaywallViewed"
         case purchaseStarted = "PurchaseStarted"
+        case signInOfferShown = "SignInOfferShown"
     }
 
     private enum PaywallViewedKeys: String, CodingKey {
@@ -6806,6 +7237,10 @@ public enum UsageEvent: Codable, Hashable, Sendable {
 
     private enum PurchaseStartedKeys: String, CodingKey {
         case interval
+    }
+
+    private enum SignInOfferShownKeys: String, CodingKey {
+        case role
     }
 
     public init(from decoder: any Decoder) throws {
@@ -6827,6 +7262,11 @@ public enum UsageEvent: Codable, Hashable, Sendable {
                 keyedBy: PurchaseStartedKeys.self, forKey: .purchaseStarted)
             self = .purchaseStarted(
                 interval: try _fields.decode(BillingInterval.self, forKey: .interval))
+        case .signInOfferShown:
+            let _fields = try _container.nestedContainer(
+                keyedBy: SignInOfferShownKeys.self, forKey: .signInOfferShown)
+            self = .signInOfferShown(
+                role: try _fields.decode(OfferRole.self, forKey: .role))
         }
     }
 
@@ -6840,6 +7280,10 @@ public enum UsageEvent: Codable, Hashable, Sendable {
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: PurchaseStartedKeys.self, forKey: .purchaseStarted)
             try _fields.encode(interval, forKey: .interval)
+        case .signInOfferShown(let role):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: SignInOfferShownKeys.self, forKey: .signInOfferShown)
+            try _fields.encode(role, forKey: .role)
         }
     }
 }

@@ -64,13 +64,14 @@ pub(crate) fn log_to_stderr() {
 }
 
 /// What agents start with: this binary as the canonical install path, the
-/// installation's agent settings and where it looks for repositories.
+/// installation's agent settings, its repositories and which Claude it runs.
 fn launch(config: &InstallationConfig) -> Result<Launch> {
     let install_path = std::env::current_exe().context("finding the amux binary")?;
     Ok(Launch {
         install_path,
         agent: config.agent,
-        repository_roots: config.repository_roots.clone(),
+        repositories: config.repositories(),
+        claude_kind: node::claude_kind(config),
         ..Launch::default()
     })
 }
@@ -103,6 +104,7 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
             edge: edge_options(config),
             analytics: telemetry(config),
             auto_reports: auto_reports(config),
+            settings: settings(config),
         };
         let pipe = pipe
             .map(node::InheritedPipe::into_pipe)
@@ -137,15 +139,27 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
 /// Whether the daemon sends product analytics, and where: only a published
 /// build or one `AMUX_ANALYTICS_URL` points somewhere sends, only while the
 /// installation's `telemetry` setting is on, and never under `DO_NOT_TRACK`.
+///
+/// The uploader runs whatever the setting is at start, so turning it on
+/// reaches a daemon that started with it off; while it is off the gate
+/// drops each event as it is recorded, and nothing is sent.
 fn telemetry(config: &InstallationConfig) -> node::Telemetry {
-    if !config.telemetry {
-        return node::Telemetry::Off;
-    }
-    let Some(endpoint) = analytics::Endpoint::resolve(node::release::is_published()) else {
+    telemetry_to(
+        config,
+        analytics::Endpoint::resolve(node::release::is_published()),
+    )
+}
+
+fn telemetry_to(
+    config: &InstallationConfig,
+    endpoint: Option<analytics::Endpoint>,
+) -> node::Telemetry {
+    let Some(endpoint) = endpoint else {
         return node::Telemetry::Off;
     };
-    // Read again before every upload, so `amux config telemetry off` stops
-    // a running daemon at once. A file that no longer reads sends nothing.
+    // Read again as each event is recorded and before every upload, so
+    // `amux config set telemetry` reaches a running daemon either way. A
+    // file that no longer reads sends nothing.
     let path = config
         .path
         .clone()
@@ -180,6 +194,31 @@ fn auto_reports(config: &InstallationConfig) -> node::AutoReports {
     }))
 }
 
+/// Where the everyday settings live: the config file, written in place
+/// when there is none yet, and the login item `start_at_login` keeps when
+/// a supervisor runs this install.
+fn settings(config: &InstallationConfig) -> node::SettingsOptions {
+    let file = config
+        .path
+        .clone()
+        .unwrap_or_else(InstallationConfig::default_path);
+    let named = Some(file.as_path()).filter(|file| *file != InstallationConfig::default_path());
+    let login = config
+        .supervisor
+        .then(|| node::supervisor::login::StartAtLogin::here(&config.root, named))
+        .and_then(|login| {
+            login
+                .inspect_err(|error| tracing::warn!(%error, "no login item can be kept"))
+                .ok()
+        });
+    node::SettingsOptions {
+        file: Some(file),
+        initial: config.clone(),
+        login,
+        home: None,
+    }
+}
+
 /// What each profile serves on the network: a LAN listener, discovery in
 /// the installation's scope, dialling paired hosts, and the link socket SSH
 /// relays use.
@@ -195,6 +234,7 @@ fn edge_options(config: &InstallationConfig) -> node::EdgeOptions {
         cloud: node::CloudOptions::default(),
         interfaces: node::test_interfaces(),
         liveness: Default::default(),
+        sign_in_client: node::CLI_CLIENT_ID.to_owned(),
     }
 }
 
@@ -445,5 +485,40 @@ fn lock_held(path: &Path) -> Result<bool> {
         Err(std::fs::TryLockError::Error(error)) => {
             Err(error).with_context(|| format!("probing {}", path.display()))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A daemon that starts with usage counts off still runs the uploader,
+    /// whose gate follows the file: turned on, it sends; off again, it
+    /// stops.
+    #[test]
+    fn usage_counts_follow_the_setting_from_a_start_with_them_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "telemetry = false\n").unwrap();
+        let config = InstallationConfig {
+            path: Some(path.clone()),
+            ..InstallationConfig::from_file(&path).unwrap()
+        };
+        assert!(!config.telemetry);
+        let node::Telemetry::Upload { gate, .. } = telemetry_to(
+            &config,
+            Some(analytics::Endpoint::Fixed("http://127.0.0.1:9".into())),
+        ) else {
+            panic!("no uploader for a daemon started with usage counts off");
+        };
+        assert!(!gate(), "off at start");
+        std::fs::write(&path, "telemetry = true\n").unwrap();
+        assert!(gate(), "turned on while running");
+        std::fs::write(&path, "telemetry = false\n").unwrap();
+        assert!(!gate(), "off again");
+        assert!(
+            matches!(telemetry_to(&config, None), node::Telemetry::Off),
+            "a build that sends nowhere runs no uploader"
+        );
     }
 }

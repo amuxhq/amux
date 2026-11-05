@@ -1,0 +1,33 @@
+shell |  | agents | 0,62,402,778
+home |  | signed-out | 0,174,402,617
+home.empty.firstRun |  | Pair your first host | 16,204,214,32
+home.empty.explain |  |  | 16,244,368,37
+home.localNetwork.primer |  |  | 16,305,346,37
+home.localNetwork.look | Look for Hosts |  | 16,351,140,44
+home.empty.howToPair |  |  | 16,419,370,134
+home.empty.sendLink | Send Link |  | 52,452,106,44
+home.empty.signIn | Sign In |  | 184,564,48,44
+home.accounts | Switch account |  | 24,66,28,36
+ | Pair your first host |  | 16,204,214,32
+ | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
+ | amux looks for your computers on this network, so iOS asks for local network access next. |  | 16,305,346,37
+ | Look for Hosts |  | 16,351,140,44
+ | 1 |  | 25,423,5,16
+ | Get amux on your computer. |  | 52,421,208,20
+ | Send Link |  | 52,452,106,44
+ | 2 |  | 24,516,7,16
+ | Open amux there, and this phone offers to pair. |  | 52,514,292,39
+ | Have an amux account? |  | 16,577,164,18
+ | Sign In |  | 184,564,48,44
+ | Switch account |  | 24,66,29,36
+ | Agents |  | 16,127,116,42
+ | Agents |  | 111,795,94,54
+ | Agents |  | 140,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 229,830,29,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 230,830,29,12
+ | Agents | selected | 111,795,94,54
+ | Hosts |  | 197,795,94,54

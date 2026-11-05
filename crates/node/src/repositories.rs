@@ -1,5 +1,5 @@
-//! Where a host offers to start an agent: the directories its agents ran
-//! in lately, and the Git repositories under its configured roots.
+//! Where a host offers to start an agent: the repository list its person
+//! chose, then the directories its agents ran in lately.
 //!
 //! The recent list is kept in the store rather than read from the agents'
 //! rows, so a directory stays on it after the agents that ran there are
@@ -8,35 +8,37 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use wire::{ListRepositoriesResponse, ProjectEntry};
+use wire::{ListRepositoriesResponse, RepositoryEntry};
 
 /// The most directories one answer carries, whatever limit it asks for.
 const MAX_DIRECTORIES: usize = store::RECENT_DIRECTORIES;
 
-/// What a host answers: its recent directories that still exist, then the
-/// repositories under `roots`, both matching `query` (case-insensitively,
-/// by name or path) and at most `limit` in all, recent ones first. Reads
-/// the file system: call it off the async workers.
+/// What a host answers: its repositories that still exist, in the order they
+/// were chosen, then its recent directories that still exist and are not
+/// repositories, newest first; both matching `query` (case-insensitively, by
+/// name or path) and at most `limit` in all, repositories first. Reads the file
+/// system: call it off the async workers.
 pub(crate) fn list(
-    roots: &[PathBuf],
+    repositories: &[PathBuf],
     recent: &[(String, i64)],
     query: Option<&str>,
     limit: u32,
 ) -> ListRepositoriesResponse {
     let limit = (limit as usize).min(MAX_DIRECTORIES);
     let query = query.unwrap_or_default().to_lowercase();
-    let matches = |entry: &ProjectEntry| {
+    let matches = |entry: &RepositoryEntry| {
         entry.name.to_lowercase().contains(&query) || entry.path.to_lowercase().contains(&query)
     };
-    let roots: Vec<PathBuf> = roots
-        .iter()
-        .filter_map(|root| root.canonicalize().ok())
-        .filter(|root| root.is_dir() && root.to_str().is_some())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
     let mut seen = BTreeSet::new();
-    let recent: Vec<ProjectEntry> = recent
+    let repositories: Vec<RepositoryEntry> = repositories
+        .iter()
+        .filter_map(|path| path.canonicalize().ok())
+        .filter(|path| path.is_dir())
+        .filter_map(|path| entry(path, None))
+        .filter(|entry| matches(entry) && seen.insert(entry.path.clone()))
+        .take(limit)
+        .collect();
+    let recent: Vec<RepositoryEntry> = recent
         .iter()
         .map(|(path, at)| (PathBuf::from(path), *at))
         // A directory since replaced by a symlink is not the one that was
@@ -44,61 +46,22 @@ pub(crate) fn list(
         .filter(|(path, _)| path.canonicalize().ok().as_ref() == Some(path) && path.is_dir())
         .filter_map(|(path, at)| entry(path, Some(at)))
         .filter(|entry| matches(entry) && seen.insert(entry.path.clone()))
-        .take(limit)
+        .take(limit - repositories.len())
         .collect();
-    let mut repositories = Vec::new();
-    let mut visited = BTreeSet::new();
-    let mut pending: BTreeSet<PathBuf> = roots.iter().cloned().collect();
-    while recent.len() + repositories.len() < limit {
-        let Some(path) = pending.pop_first() else {
-            break;
-        };
-        // Symlinks resolve, but never out of the roots.
-        let Ok(path) = path.canonicalize() else {
-            continue;
-        };
-        if !roots.iter().any(|root| path.starts_with(root)) || !visited.insert(path.clone()) {
-            continue;
-        }
-        // A checkout has a .git directory, a worktree a .git file. Nothing
-        // inside a repository is searched: not its Git internals, not its
-        // dependencies.
-        if path.join(".git").exists() {
-            if let Some(entry) = entry(path, None)
-                && matches(&entry)
-                && seen.insert(entry.path.clone())
-            {
-                repositories.push(entry);
-            }
-            continue;
-        }
-        let Ok(children) = std::fs::read_dir(&path) else {
-            continue;
-        };
-        for child in children.flatten() {
-            if child.file_type().is_ok_and(|kind| kind.is_dir()) {
-                pending.insert(child.path());
-            }
-        }
-    }
     ListRepositoriesResponse {
         recent,
         repositories,
-        roots: roots
-            .iter()
-            .filter_map(|root| root.to_str().map(str::to_owned))
-            .collect(),
     }
 }
 
 /// A directory as a listing names it; `None` for a path that is not UTF-8,
 /// which no client could send back.
-fn entry(path: PathBuf, last_used_ms: Option<i64>) -> Option<ProjectEntry> {
+fn entry(path: PathBuf, last_used_ms: Option<i64>) -> Option<RepositoryEntry> {
     let text = path.to_str()?.to_owned();
     let name = path
         .file_name()
         .map_or_else(|| text.clone(), |name| name.to_string_lossy().into_owned());
-    Some(ProjectEntry {
+    Some(RepositoryEntry {
         path: text,
         name,
         last_used_ms,
@@ -142,30 +105,39 @@ mod tests {
     }
 
     #[test]
-    fn the_limit_caps_both_lists_together_and_overlapping_roots_list_once() {
+    fn repositories_come_first_and_the_limit_caps_both_lists_together() {
         let temp = tempfile::tempdir().unwrap();
-        for index in 0..205 {
-            std::fs::create_dir_all(temp.path().join(format!("repo-{index:03}/.git"))).unwrap();
+        for name in ["app", "site", "notes"] {
+            std::fs::create_dir(temp.path().join(name)).unwrap();
         }
-        let roots = [
-            temp.path().to_path_buf(),
-            temp.path().join("repo-000"),
+        let repositories = [
+            temp.path().join("site"),
             temp.path().join("missing"),
+            temp.path().join("app"),
+            // Listed once, however it is spelled.
+            temp.path().join("site/../site"),
         ];
-        let listed = list(&roots, &[], None, u32::MAX);
-        assert_eq!(listed.repositories.len(), MAX_DIRECTORIES);
-        assert_eq!(listed.repositories[0].name, "repo-000");
-        assert_eq!(listed.repositories[199].name, "repo-199");
-        assert_eq!(listed.roots.len(), 2);
+        let recent = recorded(&[
+            (&temp.path().join("notes"), 2),
+            (&temp.path().join("app"), 1),
+        ]);
+        let listed = list(&repositories, &recent, None, 10);
+        let names = |entries: &[RepositoryEntry]| -> Vec<String> {
+            entries.iter().map(|e| e.name.clone()).collect()
+        };
+        assert_eq!(names(&listed.repositories), ["site", "app"]);
+        assert!(listed.repositories.iter().all(|e| e.last_used_ms.is_none()));
+        assert_eq!(
+            names(&listed.recent),
+            ["notes"],
+            "a repository is not recent too"
+        );
 
-        let recent = recorded(&[(&temp.path().join("repo-150"), 1)]);
-        let listed = list(&roots, &recent, None, 3);
-        let names: Vec<_> = listed
-            .repositories
-            .iter()
-            .map(|e| e.name.as_str())
-            .collect();
-        assert_eq!(listed.recent[0].name, "repo-150");
-        assert_eq!(names, ["repo-000", "repo-001"]);
+        let capped = list(&repositories, &recent, None, 2);
+        assert_eq!(names(&capped.repositories), ["site", "app"]);
+        assert!(capped.recent.is_empty(), "the limit counts both lists");
+        let found = list(&repositories, &recent, Some("NOT"), 10);
+        assert!(found.repositories.is_empty());
+        assert_eq!(names(&found.recent), ["notes"]);
     }
 }

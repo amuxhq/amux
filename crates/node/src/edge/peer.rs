@@ -160,11 +160,18 @@ impl AgentService for PeerApi {
         )?;
         // The parent, one of the calling host's agents or none for the
         // person, is named in the request by the calling daemon.
-        runtime
+        let from_person = request.parent.is_none();
+        let agent = runtime
             .spawn(request, None)
             .await
-            .map(Response::new)
-            .map_err(|error| status(error.to_wire()))
+            .map_err(|error| status(error.to_wire()))?;
+        // A person's agent started from a paired device is what finishes
+        // the onboarding's first-agent step on this host.
+        if from_person && let Err(error) = runtime.onboarding().agent_from_device(runtime.profile())
+        {
+            tracing::warn!(%error, "recording the first agent from a device");
+        }
+        Ok(Response::new(agent))
     }
 
     async fn rename_agent(

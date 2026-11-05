@@ -102,6 +102,11 @@ sized_service!(
     SessionService
 );
 
+/// The request header a client of a profile socket names itself in, for
+/// the usage count of clients opened: `mac` for the Mac app. The terminal
+/// sends none.
+pub const SURFACE_HEADER: &str = "amux-surface";
+
 /// The client services' stubs on one profile or tools socket: what a
 /// caller that speaks gRPC directly holds.
 #[cfg(feature = "grpc")]
@@ -281,7 +286,7 @@ impl HostEntry {
             }),
             standing: Some(host_entry::Standing::Candidate(Candidate {
                 addrs,
-                announced_by: Vec::new(),
+                ..Candidate::default()
             })),
             ..Self::default()
         }

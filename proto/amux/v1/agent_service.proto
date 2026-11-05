@@ -162,12 +162,14 @@ message ListRepositoriesRequest {
 }
 
 message ListRepositoriesResponse {
-  repeated ProjectEntry recent = 1;
-  repeated ProjectEntry repositories = 2;
-  repeated string roots = 3;
+  // Folders this host's agents ran in lately that still exist.
+  repeated RepositoryEntry recent = 1;
+  // The host's repository list, as its person chose it.
+  repeated RepositoryEntry repositories = 2;
+  reserved 3;
 }
 
-message ProjectEntry {
+message RepositoryEntry {
   string path = 1;
   string name = 2;
   optional int64 last_used_ms = 3;

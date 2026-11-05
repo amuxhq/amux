@@ -485,7 +485,9 @@ mod tests {
         let server = Arc::new(Server::default());
         let uploader = start(&server, open(), accounts());
         Analytics::new(UNBOUND, uploader.sink()).record(Event::Installed);
-        Analytics::new(BOUND, uploader.sink()).record(Event::SignedIn);
+        Analytics::new(BOUND, uploader.sink()).record(Event::SignedIn {
+            via: crate::SignInVia::Browser,
+        });
         uploader.flush(Duration::from_secs(5)).await;
         let requests = server.requests();
         assert_eq!(requests.len(), 2, "one request per host");
@@ -513,7 +515,9 @@ mod tests {
             open(),
             Endpoint::Fixed("http://localhost:5000".into()),
         );
-        Analytics::new(BOUND, uploader.sink()).record(Event::SignedIn);
+        Analytics::new(BOUND, uploader.sink()).record(Event::SignedIn {
+            via: crate::SignInVia::Browser,
+        });
         uploader.flush(Duration::from_secs(5)).await;
         let requests = server.requests();
         assert_eq!(requests[0].0, "http://localhost:5000/api/events");
@@ -555,7 +559,9 @@ mod tests {
         let server = Arc::new(Server::default());
         server.answer_next(&[Posted::Unauthorized]);
         let uploader = start(&server, open(), accounts());
-        Analytics::new(BOUND, uploader.sink()).record(Event::SignedIn);
+        Analytics::new(BOUND, uploader.sink()).record(Event::SignedIn {
+            via: crate::SignInVia::Browser,
+        });
         uploader.flush(Duration::from_secs(5)).await;
         let requests = server.requests();
         assert_eq!(requests.len(), 2);

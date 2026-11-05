@@ -30,7 +30,7 @@ pub fn run(
 ) -> Result<()> {
     if !config.supervisor {
         bail!(
-            "this install has no supervisor (supervisor: off): the service manager runs amux daemon"
+            "this install has no supervisor (supervisor = false): the service manager runs amux daemon"
         );
     }
     let inherited = inherit
@@ -43,7 +43,7 @@ pub fn run(
             "this build trusts no release key for its feed: it restarts the daemon but installs nothing"
         );
     }
-    // The config is read again before every check, so `amux config
+    // The config is read again before every check, so `amux config set
     // channel` takes effect without a restart.
     let reread = config_path.map(Path::to_owned);
     let updates = Arc::new(move || {
@@ -69,7 +69,28 @@ pub fn run(
             .context("this build's version is not semver")?,
         target: node::release::TARGET.to_owned(),
         updates,
-        keep_awake: config.keep_awake,
+        keep_awake: {
+            // Read again as it changes, so turning it off in settings lets
+            // the machine sleep without a restart. A file that no longer
+            // reads keeps the last answer.
+            let reread = config_path
+                .map(Path::to_owned)
+                .unwrap_or_else(InstallationConfig::default_path);
+            let last = std::sync::atomic::AtomicBool::new(config.keep_awake);
+            Arc::new(move || {
+                use std::sync::atomic::Ordering;
+                match InstallationConfig::from_file(&reread) {
+                    Ok(config) => last.store(config.keep_awake, Ordering::Relaxed),
+                    Err(settings::ConfigError::Io(error))
+                        if error.kind() == std::io::ErrorKind::NotFound =>
+                    {
+                        last.store(InstallationConfig::default().keep_awake, Ordering::Relaxed);
+                    }
+                    Err(_) => {}
+                }
+                last.load(Ordering::Relaxed)
+            })
+        },
         clock: Arc::new(agent_dir::SystemClock),
         params: Params::default(),
         inherited,

@@ -18,6 +18,8 @@ service ProfileAdminService {
   rpc SignOut(Empty) returns (Profile);
   rpc StartPairing(StartPairingRequest) returns (PairingWindow);
   rpc GetPairingStatus(Empty) returns (PairingStatus);
+  // The pairing status now, then again on every change.
+  rpc WatchPairing(Empty) returns (stream PairingStatus);
   rpc CancelPairing(Empty) returns (Empty);
   rpc BeginPair(BeginPairRequest) returns (PendingPair);
   rpc ConfirmPair(ConfirmPairRequest) returns (Peer);
@@ -32,6 +34,34 @@ service ProfileAdminService {
   // Writes a person's report around a dump and sends it to the profile's
   // account service when the profile is signed in to one.
   rpc SubmitReport(SubmitReportRequest) returns (SubmitReportResponse);
+  // The person offers a paired peer this profile's account: the peer is
+  // asked whether to sign in to it too.
+  rpc OfferSignIn(OfferSignInRequest) returns (Empty);
+  // The offers paired peers made this profile, now and on every change.
+  rpc SubscribeSignInOffers(Empty) returns (stream SignInOffers);
+  // Accepting signs this profile in to the offering peer's account;
+  // declining ends the offer.
+  rpc AnswerSignInOffer(AnswerSignInOfferRequest) returns (Profile);
+}
+
+message OfferSignInRequest {
+  bytes host_id = 1;
+}
+
+message SignInOffers {
+  repeated SignInOffer offers = 1;
+}
+
+message SignInOffer {
+  bytes host_id = 1;
+  string host_name = 2;
+  string email = 3;
+  string account_name = 4;
+}
+
+message AnswerSignInOfferRequest {
+  bytes host_id = 1;
+  bool accept = 2;
 }
 
 message StartPairingRequest {
@@ -43,6 +73,8 @@ message StartPairingRequest {
     // An operator-chosen reusable PIN for unattended demos: the window is
     // neither consumed by success nor locked out by failures.
     string demo_pin = 3;
+    // One window that accepts either a PIN or a QR secret.
+    Empty pin_or_qr = 5;
   }
   // How long the window stays open; absent is the daemon's default for
   // the method.
@@ -57,13 +89,27 @@ message PairingWindow {
   oneof secret {
     string pin = 5;
     bytes qr_secret = 6;
+    // A window opened with `pin_or_qr`.
+    PinAndQr pin_and_qr = 8;
   }
+  // The link the QR shows, composed by the daemon:
+  // https://<amux.sh>/p#<payload>. Empty for a window without a QR secret.
+  string qr_link = 7;
+}
+
+message PinAndQr {
+  string pin = 1;
+  bytes qr_secret = 2;
 }
 
 message PairingStatus {
   bool active = 1;
   // Too many wrong secrets closed the last window; a new one is needed.
   bool locked_out = 2;
+  // A joiner proved the window's secret and is confirming.
+  bool joining = 3;
+  // The peer the last pairing of this window trusted.
+  optional Peer paired = 4;
 }
 
 message BeginPairRequest {

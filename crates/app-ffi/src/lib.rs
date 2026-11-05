@@ -43,7 +43,9 @@ use app_embedded::{
     UsageEvent,
 };
 use app_runtime::values::{
-    AgentAct, ChatAct, ChatDelta, Draft, FleetDelta, Found, FrozenReview, NewAgent,
+    AgentAct, ChatAct, ChatDelta, Draft, FleetDelta, Found, FrozenReview, MachineSettings,
+    NewAgent, OnboardingAnswer, OnboardingState, PairingStatusView, PairingWindowView,
+    RepositorySuggestion, SettingsChange, SignInAnswer, SignInOfferOutcome, SignInOfferView,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
 use node::SourcePolicy;
@@ -98,6 +100,10 @@ struct Shared {
     /// hosted here or is a daemon this app attached to.
     installation: Arc<dyn client::Installation>,
     outbox: Arc<Outbox>,
+    /// The client the app is, in what it tells the daemon of setting up:
+    /// the phone hosting its own installation, or the Mac app attached to
+    /// the daemon on the Mac.
+    surface: wire::Surface,
 }
 
 /// What a phone-only call answers on an app attached to a daemon.
@@ -111,6 +117,24 @@ pub struct AmuxProfile {
     shared: Arc<Shared>,
     app: Arc<AppRuntime>,
     tail: u32,
+    /// Hands the app the sign-in offers paired machines make this profile,
+    /// while the profile is open.
+    offers: tokio::task::JoinHandle<()>,
+    /// Hands the app the profile's setting up, once it asked to follow it.
+    onboarding: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Hands the app the pairing window's status while it holds one open.
+    pairing: Mutex<Option<tokio::task::JoinHandle<()>>>,
+}
+
+impl Drop for AmuxProfile {
+    fn drop(&mut self) {
+        self.offers.abort();
+        for watch in [&self.onboarding, &self.pairing] {
+            if let Some(watch) = watch.lock().unwrap_or_else(|p| p.into_inner()).take() {
+                watch.abort();
+            }
+        }
+    }
 }
 
 /// One open chat.
@@ -219,6 +243,12 @@ struct Waiting {
     profiles: Option<Vec<ProfileView>>,
     /// The fleets (chat 0) and chats that moved.
     moved: BTreeSet<(u64, u64)>,
+    /// Each open profile's sign-in offers, by fleet, when they moved.
+    offers: std::collections::BTreeMap<u64, Vec<SignInOfferView>>,
+    /// Each followed profile's setting up, by fleet, when it moved.
+    onboarding: std::collections::BTreeMap<u64, OnboardingState>,
+    /// Each open pairing window's status, by fleet, when it moved.
+    pairing: std::collections::BTreeMap<u64, PairingStatusView>,
     answers: Vec<Answer>,
 }
 
@@ -230,8 +260,33 @@ struct Stepped {
     profiles: Option<Vec<ProfileView>>,
     fleets: Vec<FleetMoved>,
     chats: Vec<ChatMoved>,
+    /// The open profiles whose sign-in offers moved, each with every offer
+    /// it holds now: an offer gone is missing from its list.
+    sign_in_offers: Vec<SignInOffersMoved>,
+    /// The followed profiles whose setting up moved, each as it is now.
+    onboarding: Vec<OnboardingMoved>,
+    /// The profiles whose pairing window's status moved, each as it is now.
+    pairing: Vec<PairingMoved>,
     /// The acts that ended since the last step, after what they moved.
     answers: Vec<Answer>,
+}
+
+#[derive(Serialize)]
+struct SignInOffersMoved {
+    fleet: u64,
+    offers: Vec<SignInOfferView>,
+}
+
+#[derive(Serialize)]
+struct OnboardingMoved {
+    fleet: u64,
+    onboarding: OnboardingState,
+}
+
+#[derive(Serialize)]
+struct PairingMoved {
+    fleet: u64,
+    status: PairingStatusView,
 }
 
 #[derive(Serialize)]
@@ -279,6 +334,21 @@ impl Outbox {
         let mut stepped = Stepped {
             profiles: waiting.profiles,
             answers: waiting.answers,
+            sign_in_offers: waiting
+                .offers
+                .into_iter()
+                .map(|(fleet, offers)| SignInOffersMoved { fleet, offers })
+                .collect(),
+            onboarding: waiting
+                .onboarding
+                .into_iter()
+                .map(|(fleet, onboarding)| OnboardingMoved { fleet, onboarding })
+                .collect(),
+            pairing: waiting
+                .pairing
+                .into_iter()
+                .map(|(fleet, status)| PairingMoved { fleet, status })
+                .collect(),
             ..Stepped::default()
         };
         for (fleet, chat) in waiting.moved {
@@ -303,6 +373,27 @@ impl Outbox {
             }
         }
         stepped
+    }
+
+    /// Hands the app a profile's sign-in offers in the next step.
+    fn post_offers(&self, fleet: u64, offers: Vec<SignInOfferView>) {
+        self.post(|waiting| {
+            waiting.offers.insert(fleet, offers);
+        });
+    }
+
+    /// Hands the app a profile's setting up in the next step.
+    fn post_onboarding(&self, fleet: u64, onboarding: OnboardingState) {
+        self.post(|waiting| {
+            waiting.onboarding.insert(fleet, onboarding);
+        });
+    }
+
+    /// Hands the app a profile's pairing window status in the next step.
+    fn post_pairing(&self, fleet: u64, status: PairingStatusView) {
+        self.post(|waiting| {
+            waiting.pairing.insert(fleet, status);
+        });
     }
 
     /// Names a fleet (chat 0) or chat in the next step.
@@ -393,26 +484,57 @@ pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxR
         .embedded()
         .installation()
         .map_err(|error| error.to_string())?;
-    serve(phone, installation, config.tail)
+    serve(phone, installation, config.tail, wire::Surface::Phone)
 }
 
 /// Attaches to the daemon answering on `front_door` (`<root>/amux.sock`):
 /// the same runtime as [`start`], with the profiles and their agents the
 /// daemon's, reached over its sockets, and nothing hosted here.
+///
+/// Only the Mac app attaches, so the runtime names itself the Mac app to
+/// the daemon: on every profile socket it opens, which the daemon counts
+/// as the Mac app opening, and in what it answers of setting up.
 pub fn attach(front_door: &std::path::Path, tail: u32) -> Result<Box<AmuxRuntime>, String> {
     let phone = Phone::attached().map_err(|error| error.to_string())?;
     let door = front_door.to_owned();
     let installation = phone
         .wait(async move { client::GrpcInstallation::connect(&door).await })
         .ok_or("the runtime has stopped")?
-        .map_err(|error| format!("amux is not answering on {}: {error}", front_door.display()))?;
-    serve(phone, Arc::new(installation), tail)
+        .map_err(|error| format!("amux is not answering on {}: {error}", front_door.display()))?
+        .naming("mac");
+    serve(phone, Arc::new(installation), tail, wire::Surface::Mac)
 }
 
-/// How soon the profile stream is opened again after it ends, doubling up
-/// to the most while the front door does not answer.
+/// How soon a stream from the daemon is opened again after it ends,
+/// doubling up to the most while the daemon does not answer.
 const RESUBSCRIBE_FIRST: std::time::Duration = std::time::Duration::from_millis(250);
 const RESUBSCRIBE_MOST: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Hands `each` every message of the stream `open` opens, for as long as
+/// the task runs. An attached daemon restarts under the app (an update, a
+/// stop and start), which ends the stream; it is opened again once the
+/// daemon answers, and every stream followed this way starts with the state
+/// now, so nothing that moved meanwhile is missed.
+async fn follow<T, Opened>(
+    mut open: impl FnMut() -> Opened,
+    mut each: impl FnMut(T),
+) -> std::convert::Infallible
+where
+    Opened: Future<Output = Result<client::EventStream<T>, client::RpcError>>,
+{
+    use futures_util::StreamExt as _;
+    let mut pause = RESUBSCRIBE_FIRST;
+    loop {
+        if let Ok(mut stream) = open().await {
+            while let Some(Ok(now)) = stream.next().await {
+                each(now);
+                pause = RESUBSCRIBE_FIRST;
+            }
+        }
+        tokio::time::sleep(pause).await;
+        pause = (pause * 2).min(RESUBSCRIBE_MOST);
+    }
+}
 
 /// Serves the profile list to the app: posted now, for the first step, and
 /// again whenever the installation's profile stream says it moved.
@@ -420,6 +542,7 @@ fn serve(
     phone: Phone,
     installation: Arc<dyn client::Installation>,
     tail: u32,
+    surface: wire::Surface,
 ) -> Result<Box<AmuxRuntime>, String> {
     let outbox = Arc::new(Outbox {
         tickets: AtomicU64::new(0),
@@ -472,6 +595,7 @@ fn serve(
             phone,
             installation,
             outbox,
+            surface,
         }),
         watch: Some(watch),
         tail,
@@ -525,12 +649,28 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
     shared
         .outbox
         .opened(fleet, 0, View::Fleet(Arc::downgrade(&app)));
+    let (watching, posting) = (app.client().clone(), shared.outbox.clone());
+    let offers = shared.phone.handle().spawn(async move {
+        follow(
+            || watching.subscribe_sign_in_offers(),
+            |now: wire::SignInOffers| {
+                posting.post_offers(
+                    fleet,
+                    now.offers.iter().map(SignInOfferView::from).collect(),
+                );
+            },
+        )
+        .await;
+    });
     Ok(Box::new(AmuxProfile {
         profile,
         fleet,
         shared,
         app,
         tail: runtime.tail,
+        offers,
+        onboarding: Mutex::new(None),
+        pairing: Mutex::new(None),
     }))
 }
 
@@ -745,6 +885,35 @@ pub unsafe extern "C" fn amux_new_agent_pick(
     })
 }
 
+/// The step a run of setting up shows after `after`, a `SetupStep` as JSON
+/// or null from the start, in an `OnboardingState` as JSON: the next one
+/// still needed and, when the person came back to finish (`finishing`),
+/// the next one skipped too. Answers the step as JSON, `null` when the run
+/// is over, or null for a state that does not parse.
+///
+/// # Safety
+/// `onboarding` is a NUL-terminated string; `after` is null or one.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_onboarding_next(
+    onboarding: *const c_char,
+    after: *const c_char,
+    finishing: bool,
+) -> *mut c_char {
+    guard(std::ptr::null_mut(), || {
+        // SAFETY: the caller's contract.
+        let Some(onboarding) = (unsafe { parse::<OnboardingState>(onboarding) }) else {
+            return std::ptr::null_mut();
+        };
+        // SAFETY: the caller's contract.
+        let after: Option<ui_view::SetupStep> = unsafe { parse(after) };
+        owned(&ui_view::next_step(
+            &wire::Onboarding::from(&onboarding),
+            after,
+            finishing,
+        ))
+    })
+}
+
 /// The problems of a form's values, as the shared view checks them: the
 /// form's `FormField`s and the person's `FormValue`s, both JSON arrays in
 /// the form's order, give a JSON array of `FormProblem`, empty when the
@@ -905,7 +1074,6 @@ pub unsafe extern "C" fn amux_install(
             .build()
             .map_err(|error| error.to_string())?;
         let options = installer::Options {
-            login_item: options.login_item,
             config: options.config,
         };
         let outcome = runtime
@@ -1438,7 +1606,7 @@ pub unsafe extern "C" fn amux_runtime_trusting_profiles(
 }
 
 /// Opens pairing mode on a profile and answers the link its QR code would
-/// carry; the ticket answers `{"Ok": "amux://pair?.."}` or `{"Err": ..}`. Only
+/// carry; the ticket answers `{"Ok": "https://amux.sh/p#.."}` or `{"Err": ..}`. Only
 /// a driving build offers one: the phone shows no pairing code of its own.
 ///
 /// # Safety
@@ -1634,6 +1802,132 @@ pub unsafe extern "C" fn amux_runtime_record(
     });
 }
 
+// --- settings ----------------------------------------------------------------
+
+/// The installation's everyday settings; the ticket answers
+/// `{"Ok": MachineSettings}` or `{"Err": ..}`.
+///
+/// # Safety
+/// `runtime` is from `amux_runtime_start`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_runtime_settings(runtime: *const AmuxRuntime) -> u64 {
+    guard(0, || {
+        // SAFETY: the caller's contract.
+        let Some(runtime) = (unsafe { live_runtime(runtime) }) else {
+            return 0;
+        };
+        let installation = runtime.shared.installation.clone();
+        runtime.act(async move {
+            Answered::from(
+                installation
+                    .get_settings()
+                    .await
+                    .map(|settings| MachineSettings::from(&settings)),
+            )
+        })
+    })
+}
+
+/// Changes the installation's settings by a `SettingsChange` as JSON, each
+/// in force at once; the ticket answers `{"Ok": MachineSettings}`, the
+/// settings as the change left them, or `{"Err": ..}`.
+///
+/// # Safety
+/// `runtime` is from `amux_runtime_start`; `change` is a NUL-terminated
+/// string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_runtime_update_settings(
+    runtime: *const AmuxRuntime,
+    change: *const c_char,
+) -> u64 {
+    guard(0, || {
+        // SAFETY: the caller's contract.
+        let Some(runtime) = (unsafe { live_runtime(runtime) }) else {
+            return 0;
+        };
+        // SAFETY: the caller's contract.
+        let change: Option<SettingsChange> = unsafe { parse(change) };
+        let installation = runtime.shared.installation.clone();
+        runtime.act(async move {
+            let Some(change) = change else {
+                return Answered::Err("the change is not a SettingsChange".into());
+            };
+            Answered::from(
+                installation
+                    .update_settings(change.into())
+                    .await
+                    .map(|settings| MachineSettings::from(&settings)),
+            )
+        })
+    })
+}
+
+/// The folders worth offering as repositories: the Git repositories Claude
+/// Code and Codex ran in lately, newest first. The ticket answers
+/// `{"Ok": [RepositorySuggestion]}` or `{"Err": ..}`.
+///
+/// # Safety
+/// `runtime` is from `amux_runtime_start`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_runtime_suggest_repositories(runtime: *const AmuxRuntime) -> u64 {
+    guard(0, || {
+        // SAFETY: the caller's contract.
+        let Some(runtime) = (unsafe { live_runtime(runtime) }) else {
+            return 0;
+        };
+        let installation = runtime.shared.installation.clone();
+        runtime.act(async move {
+            Answered::from(installation.suggest_repositories().await.map(|suggested| {
+                suggested
+                    .into_iter()
+                    .map(|entry| RepositorySuggestion {
+                        path: entry.path,
+                        name: entry.name,
+                    })
+                    .collect::<Vec<_>>()
+            }))
+        })
+    })
+}
+
+/// A one-time link that signs the browser in to a profile's account and
+/// opens `path` on its account service (`/offer`, the page after signing
+/// in). The ticket answers `{"Ok": "<url>"}`, or `{"Err": ..}` for a
+/// profile signed out.
+///
+/// # Safety
+/// `runtime` is from `amux_runtime_start`; `profile` and `path` are
+/// NUL-terminated strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_runtime_web_sign_in_link(
+    runtime: *const AmuxRuntime,
+    profile: *const c_char,
+    path: *const c_char,
+) -> u64 {
+    guard(0, || {
+        // SAFETY: the caller's contract.
+        let Some(runtime) = (unsafe { live_runtime(runtime) }) else {
+            return 0;
+        };
+        // SAFETY: the caller's contract.
+        let (profile, path) = unsafe { (profile_id(profile), text(path).map(str::to_owned)) };
+        let installation = runtime.shared.installation.clone();
+        runtime.act(async move {
+            let Some(profile) = profile else {
+                return Answered::Err("the profile is not a profile id".into());
+            };
+            Answered::from(
+                installation
+                    .web_sign_in_link(wire::WebSignInLinkRequest {
+                        profile_id: profile.as_bytes().to_vec(),
+                        path: path.unwrap_or_default(),
+                    })
+                    .await,
+            )
+        })
+    })
+}
+
 // --- one profile ---------------------------------------------------------
 
 /// Opens a profile's fleet, by the profile's id; blocks, stepping the
@@ -1789,6 +2083,240 @@ pub unsafe extern "C" fn amux_profile_begin_pair(
             };
             Answered::from(embedded.begin_pair(id, &request).await)
         })
+    })
+}
+
+/// Offers the paired machine whose host id `host_id` names, as a JSON byte
+/// array, this profile's account: the phone signed in first offers the
+/// computer it paired with. The ticket answers `{"Ok": null}` or
+/// `{"Err": ..}`; the offer stands until that machine answers it.
+///
+/// # Safety
+/// `profile` is from `amux_profile_open`; `host_id` is a NUL-terminated
+/// string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_profile_offer_sign_in(
+    profile: *const AmuxProfile,
+    host_id: *const c_char,
+) -> u64 {
+    guard(0, || {
+        // SAFETY: the caller's contract.
+        let Some(profile) = (unsafe { live_profile(profile) }) else {
+            return 0;
+        };
+        // SAFETY: the caller's contract.
+        let host_id: Option<Vec<u8>> = unsafe { parse(host_id) };
+        let client = profile.app.client().clone();
+        profile.act(async move {
+            let Some(host_id) = host_id else {
+                return Answered::Err("the host id is not a byte array".into());
+            };
+            Answered::from(client.offer_sign_in(host_id).await)
+        })
+    })
+}
+
+/// Answers a paired machine's offer of its account, a `SignInAnswer` as
+/// JSON. The ticket answers `{"Ok": SignInOfferOutcome}`: accepting signs
+/// this profile in to that account and answers it signed in, with the
+/// profile list moving too; declining ends the offer; accepting while the
+/// offering machine cannot be reached answers that, and the offer stays in
+/// the profile's list for as long as it still stands. Any other refusal is
+/// `{"Err": ..}`.
+///
+/// # Safety
+/// `profile` is from `amux_profile_open`; `answer` is a NUL-terminated
+/// string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_profile_answer_sign_in_offer(
+    profile: *const AmuxProfile,
+    answer: *const c_char,
+) -> u64 {
+    guard(0, || {
+        // SAFETY: the caller's contract.
+        let Some(profile) = (unsafe { live_profile(profile) }) else {
+            return 0;
+        };
+        // SAFETY: the caller's contract.
+        let answer: Option<SignInAnswer> = unsafe { parse(answer) };
+        let client = profile.app.client().clone();
+        profile.act(async move {
+            let Some(answer) = answer else {
+                return Answered::Err("the answer is not a SignInAnswer".into());
+            };
+            let answered = client
+                .answer_sign_in_offer(wire::AnswerSignInOfferRequest {
+                    host_id: answer.host_id,
+                    accept: answer.accept,
+                })
+                .await;
+            match answered {
+                Ok(profile) if answer.accept => {
+                    Answered::Ok(SignInOfferOutcome::SignedIn(ProfileView::from(&profile)))
+                }
+                Ok(_) => Answered::Ok(SignInOfferOutcome::Declined),
+                // Said apart from every other refusal: the person's next
+                // step is on the other machine, not on this one.
+                Err(error) if error.code() == Some(wire::ErrorCode::Unavailable) => {
+                    Answered::Ok(SignInOfferOutcome::Unreachable)
+                }
+                Err(error) => Answered::Err(error.to_string()),
+            }
+        })
+    })
+}
+
+/// Follows the profile's setting up: the next step hands over the steps
+/// as the daemon keeps them, and every step after one that moved them
+/// does, as an `OnboardingState` under the profile's fleet number, until
+/// the profile closes. Following twice changes nothing.
+///
+/// # Safety
+/// `profile` is from `amux_profile_open`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_profile_watch_onboarding(profile: *const AmuxProfile) {
+    guard((), || {
+        // SAFETY: the caller's contract.
+        let Some(profile) = (unsafe { live_profile(profile) }) else {
+            return;
+        };
+        let mut watch = profile.onboarding.lock().unwrap_or_else(|p| p.into_inner());
+        if watch.is_some() {
+            return;
+        }
+        let installation = profile.shared.installation.clone();
+        let outbox = profile.shared.outbox.clone();
+        let (fleet, id) = (profile.fleet, profile.profile);
+        *watch = Some(profile.shared.handle().spawn(async move {
+            follow(
+                || {
+                    installation.subscribe_onboarding(wire::OnboardingRequest {
+                        profile_id: id.as_bytes().to_vec(),
+                    })
+                },
+                |now: wire::Onboarding| {
+                    outbox.post_onboarding(fleet, OnboardingState::from(&now));
+                },
+            )
+            .await;
+        }));
+    });
+}
+
+/// Tells the daemon what the person did with setting up this profile, an
+/// `OnboardingAnswer` as JSON, counted for this app; the ticket answers
+/// `{"Ok": OnboardingState}`, the steps after it, or `{"Err": ..}`.
+///
+/// # Safety
+/// `profile` is from `amux_profile_open`; `answer` is a NUL-terminated
+/// string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_profile_answer_onboarding(
+    profile: *const AmuxProfile,
+    answer: *const c_char,
+) -> u64 {
+    guard(0, || {
+        // SAFETY: the caller's contract.
+        let Some(profile) = (unsafe { live_profile(profile) }) else {
+            return 0;
+        };
+        // SAFETY: the caller's contract.
+        let answer: Option<OnboardingAnswer> = unsafe { parse(answer) };
+        let installation = profile.shared.installation.clone();
+        let (id, surface) = (profile.profile, profile.shared.surface);
+        profile.act(async move {
+            let Some(answer) = answer else {
+                return Answered::Err("the answer is not an OnboardingAnswer".into());
+            };
+            Answered::from(
+                installation
+                    .answer_onboarding(wire::AnswerOnboardingRequest {
+                        profile_id: id.as_bytes().to_vec(),
+                        answer: Some(answer.into()),
+                        surface: surface as i32,
+                    })
+                    .await
+                    .map(|now| OnboardingState::from(&now)),
+            )
+        })
+    })
+}
+
+/// Opens a pairing window on the profile that takes the PIN or the QR
+/// code's secret, for `ttl_seconds` (0 for the daemon's own), closing any
+/// window open first, and follows its status: every step after it moved
+/// hands over a `PairingStatusView` under the profile's fleet number until
+/// `amux_profile_close_pairing`. The ticket answers
+/// `{"Ok": PairingWindowView}` or `{"Err": ..}`.
+///
+/// # Safety
+/// `profile` is from `amux_profile_open`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_profile_open_pairing(
+    profile: *const AmuxProfile,
+    ttl_seconds: u64,
+) -> u64 {
+    guard(0, || {
+        // SAFETY: the caller's contract.
+        let Some(profile) = (unsafe { live_profile(profile) }) else {
+            return 0;
+        };
+        let client = profile.app.client().clone();
+        {
+            let mut watch = profile.pairing.lock().unwrap_or_else(|p| p.into_inner());
+            if watch.is_none() {
+                let (watching, outbox, fleet) =
+                    (client.clone(), profile.shared.outbox.clone(), profile.fleet);
+                *watch = Some(profile.shared.handle().spawn(async move {
+                    follow(
+                        || watching.watch_pairing(),
+                        |status: wire::PairingStatus| {
+                            outbox.post_pairing(fleet, PairingStatusView::from(&status));
+                        },
+                    )
+                    .await;
+                }));
+            }
+        }
+        profile.act(async move {
+            // One window is open at a time: a renewal replaces the one
+            // before, which may already have ended.
+            let _ = client.cancel_pairing().await;
+            Answered::from(
+                client
+                    .start_pairing(wire::StartPairingRequest {
+                        method: Some(wire::start_pairing_request::Method::PinOrQr(wire::Empty {})),
+                        ttl_seconds: (ttl_seconds > 0).then_some(ttl_seconds),
+                    })
+                    .await
+                    .map(|window| PairingWindowView::from(&window)),
+            )
+        })
+    })
+}
+
+/// Closes the profile's pairing window and stops following it; the ticket
+/// answers `{"Ok": null}` or `{"Err": ..}`.
+///
+/// # Safety
+/// `profile` is from `amux_profile_open`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_profile_close_pairing(profile: *const AmuxProfile) -> u64 {
+    guard(0, || {
+        // SAFETY: the caller's contract.
+        let Some(profile) = (unsafe { live_profile(profile) }) else {
+            return 0;
+        };
+        if let Some(watch) = profile
+            .pairing
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take()
+        {
+            watch.abort();
+        }
+        let client = profile.app.client().clone();
+        profile.act(async move { Answered::from(client.cancel_pairing().await) })
     })
 }
 

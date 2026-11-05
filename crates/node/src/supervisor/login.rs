@@ -1,6 +1,13 @@
-//! The login items `amux init` installs: each runs `amux supervise` at
+//! The login item `start_at_login` writes: it runs `amux supervise` at
 //! login and restarts it on failure only, never after a clean exit, so a
 //! deliberate stop stays stopped and a crash comes back.
+//!
+//! Turning it on writes the item for the next login and leaves the running
+//! supervisor alone: registering it now would start a second supervisor,
+//! which finds the first one's lock and exits, and a service manager told
+//! to restart failures would start it again and again. Turning it off
+//! removes the item the same way, without stopping amux. Only `amux
+//! uninstall` unregisters it at once, since it stops amux anyway.
 //!
 //! The service manager owns the supervisor and the supervisor owns the
 //! daemon; neither may take the agents down. systemd's default stop kills
@@ -9,10 +16,13 @@
 //! `KillMode=process` and the LaunchAgent `AbandonProcessGroup`.
 //!
 //! Login items start with the service manager's sparse environment, so each
-//! carries the PATH `amux init` ran with: agents find their providers by it.
+//! carries the PATH of the process that wrote it: agents find their
+//! providers by it.
 
 use std::fmt::Write as _;
-use std::path::Path;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 /// The LaunchAgent's label and file stem.
 pub const LAUNCH_AGENT_LABEL: &str = "sh.amux.supervise";
@@ -159,6 +169,261 @@ WantedBy=default.target
     }
 }
 
+/// This installation's login item: where it lives and what it runs.
+#[derive(Clone, Debug)]
+pub struct StartAtLogin {
+    /// The canonical install path the item runs.
+    pub binary: PathBuf,
+    /// The installation config, when not the default one.
+    pub config: Option<PathBuf>,
+    /// The PATH agents will see.
+    pub path: String,
+    /// The installation's root, where the supervisor's log is.
+    pub root: PathBuf,
+    /// The directory the service manager reads login items from:
+    /// `~/Library/LaunchAgents`, the systemd user units, or (on Windows,
+    /// where the item is a scheduled task) the root, which keeps the
+    /// definition it was made from.
+    pub items: PathBuf,
+    /// Whether to tell the service manager, as well as writing the file:
+    /// off only in tests, which have no service manager of their own.
+    pub register: bool,
+}
+
+impl StartAtLogin {
+    /// The login item this process would write: itself as the binary, its
+    /// PATH and the person's home.
+    pub fn here(root: &Path, config: Option<&Path>) -> io::Result<Self> {
+        #[cfg(unix)]
+        let home = PathBuf::from(
+            std::env::var_os("HOME").ok_or_else(|| io::Error::other("HOME is not set"))?,
+        );
+        #[cfg(target_os = "macos")]
+        let items = home.join("Library/LaunchAgents");
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let items = match std::env::var_os("XDG_CONFIG_HOME") {
+            Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+            _ => home.join(".config"),
+        }
+        .join("systemd/user");
+        #[cfg(windows)]
+        let items = root.to_owned();
+        Ok(Self {
+            binary: std::env::current_exe()?,
+            config: config.map(Path::to_owned),
+            path: std::env::var("PATH").unwrap_or_default(),
+            root: root.to_owned(),
+            items,
+            register: true,
+        })
+    }
+
+    fn log(&self) -> PathBuf {
+        self.root.join(crate::SUPERVISOR_LOG)
+    }
+
+    /// The file the item is, or (on Windows) the definition it was made
+    /// from.
+    pub fn file(&self) -> PathBuf {
+        #[cfg(target_os = "macos")]
+        return self.items.join(format!("{LAUNCH_AGENT_LABEL}.plist"));
+        #[cfg(all(unix, not(target_os = "macos")))]
+        return self.items.join(SYSTEMD_UNIT);
+        #[cfg(windows)]
+        return self.items.join("amux-task.xml");
+    }
+
+    /// Whether this installation's item is in place: one is, when it
+    /// writes the supervisor's log into this root.
+    pub fn is_on(&self) -> bool {
+        let Ok(bytes) = std::fs::read(self.file()) else {
+            return false;
+        };
+        // Task Scheduler's XML is UTF-16, and sits in the root anyway.
+        cfg!(windows) || String::from_utf8_lossy(&bytes).contains(&*self.log().to_string_lossy())
+    }
+
+    /// Writes the item for the next login, or removes this installation's,
+    /// leaving whatever runs now alone.
+    pub fn set(&self, on: bool) -> io::Result<()> {
+        let file = self.file();
+        if on {
+            let log = self.log();
+            let item = LoginItem {
+                binary: &self.binary,
+                config: self.config.as_deref(),
+                path: &self.path,
+                log: &log,
+            };
+            // The service manager opens the log itself, before amux runs.
+            std::fs::create_dir_all(&self.root)?;
+            if let Some(parent) = file.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            crate::install::write_durably(&file, &item.file_bytes())?;
+            self.run(&enable_commands(&file), true)
+        } else {
+            if !self.is_on() {
+                return Ok(());
+            }
+            self.run(&disable_commands(), false)?;
+            remove(&file)?;
+            self.run(&after_removal_commands(), false)
+        }
+    }
+
+    /// Stops the item's supervisor now and removes the item, as uninstalling
+    /// does. Says whether there was one of this installation's.
+    pub fn remove_now(&self) -> io::Result<bool> {
+        if !self.is_on() {
+            return Ok(false);
+        }
+        self.run(&stop_commands(), false)?;
+        remove(&self.file())?;
+        Ok(true)
+    }
+
+    /// Runs the service manager's commands; a failure among them matters
+    /// only when `strict` (removing one that was never registered is fine).
+    fn run(&self, commands: &[Vec<String>], strict: bool) -> io::Result<()> {
+        if !self.register {
+            return Ok(());
+        }
+        for command in commands {
+            let status = Command::new(&command[0])
+                .args(&command[1..])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()?;
+            if strict && !status.success() {
+                return Err(io::Error::other(format!(
+                    "{} failed ({status})",
+                    command.join(" ")
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl LoginItem<'_> {
+    /// The item's file as this platform's service manager reads it.
+    fn file_bytes(&self) -> Vec<u8> {
+        #[cfg(target_os = "macos")]
+        return self.launch_agent().into_bytes();
+        #[cfg(all(unix, not(target_os = "macos")))]
+        return self.systemd_unit().into_bytes();
+        #[cfg(windows)]
+        {
+            // Task Scheduler reads its XML as UTF-16 with a byte-order mark.
+            let mut bytes = vec![0xff, 0xfe];
+            for unit in self.windows_task().encode_utf16() {
+                bytes.extend_from_slice(&unit.to_le_bytes());
+            }
+            bytes
+        }
+    }
+}
+
+fn remove(file: &Path) -> io::Result<()> {
+    match std::fs::remove_file(file) {
+        Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
+        _ => Ok(()),
+    }
+}
+
+fn words(words: &[&str]) -> Vec<String> {
+    words.iter().map(|word| (*word).to_owned()).collect()
+}
+
+/// launchd loads every LaunchAgent at login: the file alone is the item.
+#[cfg(target_os = "macos")]
+fn enable_commands(_file: &Path) -> Vec<Vec<String>> {
+    Vec::new()
+}
+
+#[cfg(target_os = "macos")]
+fn disable_commands() -> Vec<Vec<String>> {
+    Vec::new()
+}
+
+#[cfg(target_os = "macos")]
+fn after_removal_commands() -> Vec<Vec<String>> {
+    Vec::new()
+}
+
+#[cfg(target_os = "macos")]
+fn stop_commands() -> Vec<Vec<String>> {
+    // SAFETY: getuid cannot fail.
+    let uid = unsafe { libc::getuid() };
+    vec![words(&[
+        "launchctl",
+        "bootout",
+        &format!("gui/{uid}/{LAUNCH_AGENT_LABEL}"),
+    ])]
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn enable_commands(_file: &Path) -> Vec<Vec<String>> {
+    vec![
+        words(&["systemctl", "--user", "daemon-reload"]),
+        words(&["systemctl", "--user", "enable", SYSTEMD_UNIT]),
+    ]
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn disable_commands() -> Vec<Vec<String>> {
+    vec![words(&["systemctl", "--user", "disable", SYSTEMD_UNIT])]
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn after_removal_commands() -> Vec<Vec<String>> {
+    vec![words(&["systemctl", "--user", "daemon-reload"])]
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn stop_commands() -> Vec<Vec<String>> {
+    vec![words(&[
+        "systemctl",
+        "--user",
+        "disable",
+        "--now",
+        SYSTEMD_UNIT,
+    ])]
+}
+
+#[cfg(windows)]
+fn enable_commands(file: &Path) -> Vec<Vec<String>> {
+    let file = file.display().to_string();
+    vec![words(&[
+        "schtasks",
+        "/Create",
+        "/F",
+        "/TN",
+        WINDOWS_TASK,
+        "/XML",
+        &file,
+    ])]
+}
+
+#[cfg(windows)]
+fn disable_commands() -> Vec<Vec<String>> {
+    vec![words(&["schtasks", "/Delete", "/F", "/TN", WINDOWS_TASK])]
+}
+
+#[cfg(windows)]
+fn after_removal_commands() -> Vec<Vec<String>> {
+    Vec::new()
+}
+
+#[cfg(windows)]
+fn stop_commands() -> Vec<Vec<String>> {
+    vec![
+        words(&["schtasks", "/End", "/TN", WINDOWS_TASK]),
+        words(&["schtasks", "/Delete", "/F", "/TN", WINDOWS_TASK]),
+    ]
+}
+
 fn xml(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -232,5 +497,36 @@ mod tests {
              &amp; more.toml&quot; supervise</Arguments>"
         ));
         assert!(task.contains("<LogonTrigger>") && task.contains("<RestartOnFailure>"));
+    }
+
+    /// Turning it on writes this installation's item; off removes it, and
+    /// another installation's item is never taken for this one's.
+    #[test]
+    fn start_at_login_writes_and_removes_only_this_installations_item() {
+        let home = tempfile::tempdir().unwrap();
+        let root = home.path().join("data");
+        let login = StartAtLogin {
+            binary: PathBuf::from("/opt/amux/bin/amux"),
+            config: None,
+            path: "/usr/bin:/bin".into(),
+            root: root.clone(),
+            items: home.path().join("items"),
+            register: false,
+        };
+        assert!(!login.is_on());
+        login.set(true).unwrap();
+        assert!(login.is_on(), "{}", login.file().display());
+        let other = StartAtLogin {
+            root: home.path().join("elsewhere"),
+            ..login.clone()
+        };
+        assert!(cfg!(windows) || !other.is_on());
+        other.set(false).unwrap();
+        assert!(login.is_on());
+        login.set(false).unwrap();
+        assert!(!login.is_on() && !login.file().exists());
+        login.set(true).unwrap();
+        assert!(login.remove_now().unwrap());
+        assert!(!login.remove_now().unwrap());
     }
 }

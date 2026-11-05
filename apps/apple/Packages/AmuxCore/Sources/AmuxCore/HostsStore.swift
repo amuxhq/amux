@@ -16,8 +16,15 @@ public final class HostsStore {
     /// This phone's identity and the machines it trusts, by fingerprint.
     public private(set) var roster: Roster?
     public private(set) var localNetwork: LocalNetworkPermission = .unknown
+    /// Whether the person has been told why amux looks at this network.
+    /// iOS asks for local network access the moment the phone first looks,
+    /// so until this is said the phone does not look.
+    public private(set) var networkExplained = true
     /// The account this profile is bound to, as the profile list carries it.
     public private(set) var account: AccountView?
+    /// The machines whose pairing window the person already put away: the
+    /// phone does not raise the same window again while it stays open.
+    public private(set) var declinedWindows: Set<HostId> = []
 
     @ObservationIgnored private var departures: [HostId: Date] = [:]
     @ObservationIgnored private let clock: @MainActor () -> Date
@@ -51,6 +58,32 @@ public final class HostsStore {
         }
         discovered = views.filter { $0.candidate && !$0.local }
             .sorted { $0.name.lowercased() < $1.name.lowercased() }
+        // A window that closed is forgotten, so the next one the machine
+        // opens is offered again.
+        let open = Set(discovered.filter(\.windowOpen).compactMap(\.id))
+        declinedWindows.formIntersection(open)
+    }
+
+    /// The machine found nearby with a pairing window open that the phone
+    /// offers to pair with by itself, if there is one the person has not
+    /// put away.
+    public var windowToOffer: HostView? {
+        discovered.first { host in
+            guard host.windowOpen, let id = host.id else { return false }
+            return !declinedWindows.contains(id)
+        }
+    }
+
+    /// The person put away the pairing a machine's open window raised, or
+    /// one they opened for it: the phone does not raise it again until that
+    /// window closes and another opens.
+    public func declineWindow(_ id: HostId) {
+        guard discovered.contains(where: { $0.id == id && $0.windowOpen }) else { return }
+        declinedWindows.insert(id)
+    }
+
+    public func explainedNetwork(_ explained: Bool) {
+        networkExplained = explained
     }
 
     public func show(_ roster: Roster) {
@@ -101,6 +134,17 @@ public final class HostsStore {
     public func known(_ id: HostId) -> HostView? {
         hosts.first { $0.id == id } ?? discovered.first { $0.id == id }
     }
+}
+
+extension HostView {
+    /// Found on this network with a pairing window open: a code typed now
+    /// can work. Only a machine's own advertisement says so, so one reached
+    /// through the relay or a paired machine never reads open.
+    public var windowOpen: Bool { candidate && pairingOpen && !addrs.isEmpty }
+
+    /// Found on this network with no pairing window open: a code typed now
+    /// can only fail, so the person is told to open amux there instead.
+    public var windowClosed: Bool { candidate && !pairingOpen && !addrs.isEmpty }
 }
 
 extension PairedPeer: Identifiable {

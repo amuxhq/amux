@@ -157,11 +157,26 @@
       "claim": "In a chat, the leader's b freezes the screen and opens a report on it. A drag with the mouse marks what looks wrong and takes a note of its own, an overall note follows, and Enter writes one bundle into the installation's reports directory: report.json with the marks in cells and both notes, the frozen screen as text, and the profile's dump with this client's parts, every part not captured declared absent with its reason, readable by this user only. Signed in to no account, the client says the report was kept and why it was not sent."
     },
     {
+      "id": "first-run",
+      "stage": 17,
+      "clients": ["terminal"],
+      "topology": "journeys/topologies/terminal-first-run.json",
+      "first_run": true,
+      "claim": "A first `amux` on a new installation opens setting up before home, on connecting an iPhone: the whole pairing code, which pairs the phone that scans it, beside the six digits. Another machine pairs with the six digits it shows, and it says so and asks how to keep the machine connected. Signing in opens the browser at the account service's approval page with the code to check; approved, the machine just paired is offered the account and takes it. The repository Claude Code ran in lately is offered ticked and kept beside a typed folder. Quit half way, the next `amux` opens at the first step still to do, and once later skips it, the steps done are not asked again. An agent the other machine starts on the desk lands home selected, with Finish setting up offered for the step skipped; the desk keeps every answer."
+    },
+    {
       "id": "account-sign-in",
       "stage": 16,
       "clients": ["phone"],
       "topology": "journeys/topologies/phone-accounts.json",
       "claim": "A phone nobody has signed in on offers Sign In on the You tab, and pressing it opens the account service at once, with no page of the app's own between. Closed without finishing, nothing is shown and Sign In is offered again; refused, an alert says so in the account service's words and Try Again asks again; while the browser is up the row says it is signing in, and it comes back signed in where it was pressed with nothing more to press. The account service is asked to sign in and to hand over the account's session. That session's relay, and only it, carries the pairing to a machine that shares no network with the phone: the machine is listed under its own name, its agent opens, and the machine receives the prompt written on the phone exactly once and answers it. Signed out and signing back in, a browser that comes back as another account is named in a question, and Cancel keeps nobody and lets that account's session go."
+    },
+    {
+      "id": "one-tap-sign-in",
+      "stage": 16,
+      "clients": ["phone"],
+      "topology": "journeys/topologies/phone-offer.json",
+      "claim": "A phone nobody has signed in on pairs on the keypad with a machine signed in to an account. The machine offers the phone its account: the phone asks to sign in as the account's address, naming the machine that offers it, and one tap on Sign In signs it in to that account with nothing else to press, so Settings shows it signed in. The phone still lists the machine under its own name."
     },
     {
       "id": "purchase-restore",
@@ -189,7 +204,7 @@
       "stage": 16,
       "clients": ["phone"],
       "topology": "journeys/topologies/phone-reach.json",
-      "claim": "With the local network refused, the Hosts tab says so, offers the setting that undoes it and lists no machine; granted, the phone's own browser finds the machine on its network and offers it. The amux://pair link the machine printed, opened from outside the app as the system hands a scanned code over, names the machine before anything is trusted; trusted, the machine is listed under its own name and receives the prompt written on the phone exactly once and answers it."
+      "claim": "With the local network refused, the Hosts tab says so, offers the setting that undoes it and lists no machine; granted, the phone's own browser finds the machine on its network and offers it. The pairing link the machine printed, opened from outside the app as the system hands a scanned code over, names the machine before anything is trusted; trusted, the machine is listed under its own name and receives the prompt written on the phone exactly once and answers it."
     },
     {
       "id": "push-wake",

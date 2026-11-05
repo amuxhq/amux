@@ -186,18 +186,19 @@ public struct NewAgent: View {
             value: model.directory, enabled: model.machine != nil)
     }
 
-    /// The other directories this machine was used in recently — the chosen one
-    /// is in the row above and is not repeated as a chip.
+    /// The other directories this machine was used in recently, then its
+    /// repositories — the chosen one is in the row above and is not repeated as
+    /// a chip.
     private var chips: [Directory] {
-        model.recent.filter { $0.path != model.directory }.prefix(4).map { $0 }
+        model.likely.filter { $0.path != model.directory }.prefix(4).map { $0 }
     }
 
     private var recent: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 7) {
-                ForEach(chips) { project in
-                    Button { model.choose(directory: project.path) } label: {
-                        Text(project.name)
+                ForEach(chips) { repository in
+                    Button { model.choose(directory: repository.path) } label: {
+                        Text(repository.name)
                             .designFont(.monoSmall, design)
                             .foregroundStyle(design.ink.color)
                             .padding(.horizontal, 10)
@@ -210,10 +211,10 @@ public struct NewAgent: View {
                             .thumbTarget(y: 8)
                     }
                     .buttonStyle(.amuxControl)
-                    .accessibilityLabel("Start in \(project.name)")
+                    .accessibilityLabel("Start in \(repository.name)")
                     .identified(
-                        "new-agent.recent.\(project.name)", label: "Start in \(project.name)",
-                        value: project.path)
+                        "new-agent.recent.\(repository.name)", label: "Start in \(repository.name)",
+                        value: repository.path)
                     .reclaimingThumbTarget(y: 8)
                 }
             }
@@ -501,7 +502,7 @@ public struct NewAgentDirectories: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(design.inkMuted.color)
-                TextField("Search repositories", text: Binding(
+                TextField("Search folders", text: Binding(
                     get: { model.query },
                     set: { typed in
                         model.query = typed
@@ -516,51 +517,62 @@ public struct NewAgentDirectories: View {
             .padding(.horizontal, 12)
             .frame(minHeight: 40)
             .background(Capsule().fill(design.sunken.color))
-            .identified("new-agent.search", label: "Search repositories", value: model.query)
+            .identified("new-agent.search", label: "Search folders", value: model.query)
         }
     }
 
+    /// The host's repositories first, as its person chose and ordered them,
+    /// then where its agents worked lately; a search lists what matches
+    /// either in their place.
     @ViewBuilder
     private var listing: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !model.recent.isEmpty && model.query.isEmpty {
-                SectionHead(title: "Recent")
-                RowGroup(items: model.recent) { project in
-                    row(project, recent: true)
+            if model.searching {
+                if !model.found.isEmpty {
+                    SectionHead(title: "Found")
+                    RowGroup(items: model.found) { repository in
+                        row(repository, recent: false)
+                    }
+                } else if model.listing != .asking {
+                    Explain("No matching folders on this host.")
+                        .identified("new-agent.browse.none")
+                }
+            } else {
+                if !model.repositories.isEmpty {
+                    SectionHead(title: "Repositories")
+                    RowGroup(items: model.repositories) { repository in
+                        row(repository, recent: false)
+                    }
+                }
+                if !model.recent.isEmpty {
+                    SectionHead(title: "Recent")
+                    RowGroup(items: model.recent) { repository in
+                        row(repository, recent: true)
+                    }
+                }
+                if model.listing == .ready && model.repositories.isEmpty && model.recent.isEmpty {
+                    // Repositories are the host's own setting, chosen where amux
+                    // runs; this phone only reads them.
+                    Explain("Add repositories in amux on this host, or type a path.")
+                        .identified("new-agent.browse.none")
                 }
             }
             switch model.listing {
             case .asking:
-                Explain("Reading this host’s projects…")
+                Explain("Reading this host’s repositories…")
                     .identified("new-agent.browse.reading")
             case .unavailable:
                 Explain("This host could not list its repositories.")
                     .identified("new-agent.browse.unavailable")
             case .none, .ready:
-                if !model.found.isEmpty {
-                    SectionHead(title: model.query.isEmpty ? "Repositories" : "Found")
-                    RowGroup(items: model.found) { project in
-                        row(project, recent: false)
-                    }
-                } else if model.listing == .ready {
-                    Explain(nothing)
-                        .identified("new-agent.browse.none")
-                }
+                EmptyView()
             }
         }
     }
 
-    /// What "no repositories" means here: only useful beside where the machine
-    /// looked, which is the roots it reported.
-    private var nothing: String {
-        guard model.query.isEmpty else { return "No matching repositories on this host." }
-        guard !model.roots.isEmpty else { return "This host listed no repositories." }
-        return "No repositories under \(model.roots.joined(separator: ", "))."
-    }
-
-    private func row(_ project: Directory, recent: Bool) -> some View {
+    private func row(_ repository: Directory, recent: Bool) -> some View {
         Button {
-            model.choose(directory: project.path)
+            model.choose(directory: repository.path)
             model.browsing = false
         } label: {
             HStack(spacing: 11) {
@@ -569,17 +581,17 @@ public struct NewAgentDirectories: View {
                     .foregroundStyle(design.inkFaint.color)
                     .frame(width: 20)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(project.name)
+                    Text(repository.name)
                         .designFont(.identifier, design)
                         .foregroundStyle(design.ink.color)
-                    Text(PlaceNames.path(project.path))
+                    Text(PlaceNames.path(repository.path))
                         .designFont(.monoSmall, design)
                         .foregroundStyle(design.inkFaint.color)
                         .lineLimit(1)
                         .truncationMode(.head)
                 }
                 Spacer(minLength: 6)
-                if model.directory == project.path {
+                if model.directory == repository.path {
                     Image(systemName: "checkmark")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(design.accent.color)
@@ -591,10 +603,10 @@ public struct NewAgentDirectories: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.amuxRow)
-        .accessibilityLabel(project.path)
+        .accessibilityLabel(repository.path)
         .identified(
-            "new-agent.project.\(project.name)", label: project.path,
-            value: model.directory == project.path ? "chosen" : "")
+            "new-agent.repository.\(repository.name)", label: repository.path,
+            value: model.directory == repository.path ? "chosen" : "")
     }
 
     /// A path typed by hand, for a directory the machine did not list. The

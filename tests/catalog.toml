@@ -434,7 +434,7 @@ capabilities = ["desktop", "Unix for the agent-process cases"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "node", modules = ["addresses", "agent_names", "analytics", "blobs", "catalogue", "diff", "dump", "forwarded_send", "front_door", "host_catalogue", "hosts", "messaging", "peer_service", "push", "registry", "resumption", "single_daemon", "worktree"], features = [] }]
+cargo = [{ package = "node", modules = ["addresses", "agent_names", "analytics", "blobs", "catalogue", "diff", "dump", "forwarded_send", "front_door", "host_catalogue", "hosts", "messaging", "onboarding", "peer_service", "push", "registry", "resumption", "settings", "single_daemon", "worktree"], features = [] }]
 
 [[suite]]
 name = "client-install"
@@ -702,7 +702,7 @@ cargo = [{ package = "testnet", modules = ["ctl"], features = [] }]
 [[suite]]
 name = "many-daemon-protocol-spec"
 contract = "Production daemons enforce pairing, trust, discovery, routing, relay carriers, credential refresh, revocation and account isolation, reconcile the inventory, keep each replica one contiguous block, carry agent families and their deliveries across hosts, and count pairings and forwarded prompts once on the right host, and send a person's report or a check's dump to the profile's account only when signed in and allowed."
-paths = ["crates/testnet/tests/spec_analytics.rs", "crates/testnet/tests/spec_edge.rs", "crates/testnet/tests/spec_families.rs", "crates/testnet/tests/spec_inventory.rs", "crates/testnet/tests/spec_network.rs", "crates/testnet/tests/spec_replication.rs", "crates/testnet/tests/spec_reports.rs", "crates/testnet/tests/support"]
+paths = ["crates/testnet/tests/spec_analytics.rs", "crates/testnet/tests/spec_edge.rs", "crates/testnet/tests/spec_families.rs", "crates/testnet/tests/spec_inventory.rs", "crates/testnet/tests/spec_network.rs", "crates/testnet/tests/spec_pairing_window.rs", "crates/testnet/tests/spec_replication.rs", "crates/testnet/tests/spec_reports.rs", "crates/testnet/tests/spec_sign_in_offers.rs", "crates/testnet/tests/support"]
 recipe = "just suite many-daemon-protocol-spec"
 modes = ["real"]
 boundary = "Many daemons"
@@ -714,7 +714,7 @@ capabilities = ["loopback network", "desktop"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "testnet", modules = ["spec_analytics", "spec_edge", "spec_families", "spec_inventory", "spec_network", "spec_replication", "spec_reports"], features = [] }]
+cargo = [{ package = "testnet", modules = ["spec_analytics", "spec_edge", "spec_families", "spec_inventory", "spec_network", "spec_pairing_window", "spec_replication", "spec_reports", "spec_sign_in_offers"], features = [] }]
 
 [[suite]]
 name = "claude-pty-live-compatibility"
@@ -985,7 +985,7 @@ lane = "journey"
 evidence = "target/journeys/phone"
 update = "UPDATE_JOURNEY_GOLDENS=1 just ios journey -- conversation-decision-claude-sdk"
 journey_manifest = "journeys/manifest.json"
-journeys = ["account-sign-in", "purchase-restore", "report", "accessibility", "local-network", "push-wake", "resume"]
+journeys = ["account-sign-in", "one-tap-sign-in", "purchase-restore", "report", "accessibility", "local-network", "push-wake", "resume"]
 
 [[suite]]
 name = "terminal-journeys"
@@ -1002,7 +1002,7 @@ lane = "journey"
 evidence = "target/journeys; target/journeys/summary.txt after `all`"
 update = "UPDATE_JOURNEY_GOLDENS=1 just journey terminal conversation-decision-claude-pty"
 journey_manifest = "journeys/manifest.json"
-journeys = ["reach-host", "conversation-decision-claude-pty", "conversation-decision-claude-sdk", "conversation-decision-codex", "leave-and-recover", "manage-agent", "attachment-or-review", "keep-authority", "decide-plan-claude-sdk", "decide-plan-claude-pty", "decide-plan-codex", "answer-questions", "tool-server-asks", "queue-and-steer", "send-while-away", "send-may-not-have-arrived", "composer-limits", "new-agent-terminal", "new-agent-worktree", "report-a-problem"]
+journeys = ["reach-host", "conversation-decision-claude-pty", "conversation-decision-claude-sdk", "conversation-decision-codex", "leave-and-recover", "manage-agent", "attachment-or-review", "keep-authority", "decide-plan-claude-sdk", "decide-plan-claude-pty", "decide-plan-codex", "answer-questions", "tool-server-asks", "queue-and-steer", "send-while-away", "send-may-not-have-arrived", "composer-limits", "new-agent-terminal", "new-agent-worktree", "report-a-problem", "first-run"]
 
 [[suite]]
 name = "phone-accessibility-audit"

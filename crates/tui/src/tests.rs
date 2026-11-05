@@ -22,6 +22,7 @@ const W: u16 = 100;
 const H: u16 = 30;
 
 mod narrow;
+mod onboarding;
 mod round2;
 mod text_layout;
 
@@ -1343,8 +1344,8 @@ fn announced(id: &[u8], name: &str, by: &[(&str, bool)]) -> wire::inventory_even
         .collect();
     wire::inventory_event::Of::Host(wire::HostEntry {
         standing: Some(wire::host_entry::Standing::Candidate(wire::Candidate {
-            addrs: Vec::new(),
             announced_by: by,
+            ..wire::Candidate::default()
         })),
         ..wire::HostEntry::candidate_host(id, name, Vec::new())
     })
@@ -2587,6 +2588,35 @@ fn a_known_ground_tints_the_highlight_instead_of_marking_it() {
     // terminal's own ground.
     assert_eq!(buffer[(0, planner)].bg, ratatui::style::Color::Reset);
     assert_eq!(buffer[(W / 2, 0)].bg, ratatui::style::Color::Reset);
+}
+
+/// A new Claude agent runs the kind its host publishes, whatever this
+/// terminal chats in, so every client starts the same Claude there.
+#[test]
+fn a_new_claude_runs_the_kind_its_host_publishes() {
+    let mut fleet = home_fleet();
+    let mut studio = wire::HostEntry::trusted_host(
+        b"a",
+        "studio",
+        wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+    );
+    studio.claude_kind = Kind::ClaudePty as i32;
+    inventory(&mut fleet, wire::inventory_event::Of::Host(studio));
+    let mut home = new_home();
+    home.key(&fleet, key(KeyCode::Char('n')));
+    home_screen(&mut home, &fleet, theme());
+    for c in "fix it".chars() {
+        home.key(&fleet, key(KeyCode::Char(c)));
+    }
+    let effects = home.key(&fleet, KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL));
+    let [FleetEffect::Start { setup, .. }] = effects.as_slice() else {
+        panic!("{effects:?}");
+    };
+    assert_eq!(setup.kind(), Kind::ClaudePty);
+    assert!(matches!(
+        setup.request(b"id".to_vec(), None).agent,
+        Some(wire::create_agent_request::Agent::ClaudePty(_))
+    ));
 }
 
 #[test]

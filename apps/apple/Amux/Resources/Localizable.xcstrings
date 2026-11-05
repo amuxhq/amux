@@ -4105,18 +4105,6 @@
         }
       }
     },
-    "No matching repositories on this host." : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No matching repositories on this host."
-          }
-        }
-      }
-    },
     "No model named %@." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
@@ -4137,18 +4125,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No model named %@. It offers %@."
-          }
-        }
-      }
-    },
-    "No repositories under %@." : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No repositories under %@."
           }
         }
       }
@@ -4945,14 +4921,14 @@
         }
       }
     },
-    "Reading this host’s projects…" : {
+    "Reading this host’s repositories…" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reading this host’s projects…"
+            "value" : "Reading this host’s repositories…"
           }
         }
       }
@@ -5173,18 +5149,6 @@
         }
       }
     },
-    "Repositories" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Repositories"
-          }
-        }
-      }
-    },
     "Required" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
@@ -5353,18 +5317,6 @@
         }
       }
     },
-    "Run %@ on a host on this network, or scan the code from %@ with the camera." : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Run %@ on a host on this network, or scan the code from %@ with the camera."
-          }
-        }
-      }
-    },
     "Run claude and sign in with /login on %@." : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
@@ -5421,18 +5373,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Search"
-          }
-        }
-      }
-    },
-    "Search repositories" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Search repositories"
           }
         }
       }
@@ -6469,18 +6409,6 @@
         }
       }
     },
-    "This host listed no repositories." : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This host listed no repositories."
-          }
-        }
-      }
-    },
     "This page is on the agent’s machine. Open the link in a browser there." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift.",
       "extractionState" : "manual",
@@ -7497,18 +7425,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "amux pair"
-          }
-        }
-      }
-    },
-    "amux pair --qr" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "amux pair --qr"
           }
         }
       }
@@ -10141,30 +10057,6 @@
         }
       }
     },
-    "%@ could not list its repositories. Choose where its agents work, or type a path." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ could not list its repositories. Choose where its agents work, or type a path."
-          }
-        }
-      }
-    },
-    "This host could not list its repositories." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This host could not list its repositories."
-          }
-        }
-      }
-    },
     "Pair your first host" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState" : "manual",
@@ -10201,18 +10093,6 @@
         }
       }
     },
-    "On your computer, install amux from %@." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "On your computer, install amux from %@."
-          }
-        }
-      }
-    },
     "Send Link" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState" : "manual",
@@ -10233,18 +10113,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Have an amux account?"
-          }
-        }
-      }
-    },
-    "Run %@ on it and scan the code with the Camera app." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Run %@ on it and scan the code with the Camera app."
           }
         }
       }
@@ -10437,6 +10305,258 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not paired"
+          }
+        }
+      }
+    },
+    "Get amux on your computer." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get amux on your computer."
+          }
+        }
+      }
+    },
+    "Open amux there, and this phone offers to pair." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open amux there, and this phone offers to pair."
+          }
+        }
+      }
+    },
+    "amux looks for your computers on this network, so iOS asks for local network access next." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FirstRun.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "amux looks for your computers on this network, so iOS asks for local network access next."
+          }
+        }
+      }
+    },
+    "Look for Hosts" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FirstRun.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Look for Hosts"
+          }
+        }
+      }
+    },
+    "Enter the code amux shows there" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter the code amux shows there"
+          }
+        }
+      }
+    },
+    "Open amux on %@ to pair" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open amux on %@ to pair"
+          }
+        }
+      }
+    },
+    "%@ could not list its repositories. Choose where its agents work, or type a path." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ could not list its repositories. Choose where its agents work, or type a path."
+          }
+        }
+      }
+    },
+    "Search folders" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search folders"
+          }
+        }
+      }
+    },
+    "No matching folders on this host." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No matching folders on this host."
+          }
+        }
+      }
+    },
+    "Repositories" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repositories"
+          }
+        }
+      }
+    },
+    "Add repositories in amux on this host, or type a path." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add repositories in amux on this host, or type a path."
+          }
+        }
+      }
+    },
+    "This host could not list its repositories." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This host could not list its repositories."
+          }
+        }
+      }
+    },
+    "Open amux on a host on this network to pair it, or scan the code it shows with the Camera app." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open amux on a host on this network to pair it, or scan the code it shows with the Camera app."
+          }
+        }
+      }
+    },
+    "Enter the code amux shows on %@." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter the code amux shows on %@."
+          }
+        }
+      }
+    },
+    "Sign in as %@?" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in as %@?"
+          }
+        }
+      }
+    },
+    "Sign in %@ as %@ too?" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in %@ as %@ too?"
+          }
+        }
+      }
+    },
+    "%@ offers its account, so this phone reaches it from anywhere." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ offers its account, so this phone reaches it from anywhere."
+          }
+        }
+      }
+    },
+    "Then this phone reaches %@ from anywhere." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Then this phone reaches %@ from anywhere."
+          }
+        }
+      }
+    },
+    "%@ is offline. Open amux on %@, then try again." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is offline. Open amux on %@, then try again."
+          }
+        }
+      }
+    },
+    "That host is offline. Open amux on it, then try again." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That host is offline. Open amux on it, then try again."
+          }
+        }
+      }
+    },
+    "Signing in didn’t work. Sign in from Settings instead." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signing in didn’t work. Sign in from Settings instead."
           }
         }
       }

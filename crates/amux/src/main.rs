@@ -47,6 +47,10 @@ struct Cli {
     #[arg(long, global = true)]
     profile: Option<String>,
 
+    /// The account service a sign-in from the terminal client goes to.
+    #[arg(long, default_value = settings::DEFAULT_CLOUD_URL, hide = true)]
+    cloud_url: String,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -191,12 +195,6 @@ enum Command {
     /// Say whether amux is running, which version, and each profile's
     /// account.
     Status,
-    /// Set up this install: whether amux starts at login.
-    Init {
-        /// Start amux at login, or not; asked when omitted.
-        #[arg(long, value_enum)]
-        login_item: Option<YesNo>,
-    },
     /// Install the channel's release now.
     Update {
         /// Install it even if it was rolled back here.
@@ -306,21 +304,36 @@ enum Internal {
     SshLink,
 }
 
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-enum YesNo {
-    Yes,
-    No,
-}
-
 #[derive(Debug, Subcommand)]
 enum Hook {
     Claude,
 }
 
+/// Clears the signal mask this process was started with. A process inherits
+/// its launcher's mask, and Rust's spawn keeps it, so amux started from a
+/// thread that blocks signals (a Grand Central Dispatch worker, which is
+/// where the Mac app installs and starts amux) would never hear SIGTERM or SIGINT: the
+/// supervisor could not stop its daemon, nor `amux server stop` either, and
+/// every agent and tool started below them would inherit the same deafness.
+#[cfg(unix)]
+fn unblock_signals() {
+    // SAFETY: an empty set built by sigemptyset, set before any thread is
+    // started.
+    unsafe {
+        let mut none = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+        libc::sigemptyset(none.as_mut_ptr());
+        libc::pthread_sigmask(libc::SIG_SETMASK, none.as_ptr(), std::ptr::null_mut());
+    }
+}
+
+#[cfg(not(unix))]
+fn unblock_signals() {}
+
 fn main() -> ExitCode {
+    unblock_signals();
     let cli = Cli::parse();
     let Some(command) = cli.command else {
-        return report(open_ui(cli.config, cli.profile));
+        return report(open_ui(cli.config, cli.profile, cli.cloud_url));
     };
     match command {
         Command::Internal {
@@ -391,10 +404,10 @@ fn block_on<T>(future: impl std::future::Future<Output = Result<T>>) -> Result<T
         .block_on(future)
 }
 
-fn open_ui(config_path: Option<PathBuf>, profile: Option<String>) -> Result<()> {
+fn open_ui(config_path: Option<PathBuf>, profile: Option<String>, cloud_url: String) -> Result<()> {
     block_on(async move {
         let config = connect::load_config(config_path.as_deref())?;
-        ui::run(&config, profile.as_deref()).await
+        ui::run(&config, profile.as_deref(), &cloud_url).await
     })
 }
 
@@ -426,14 +439,6 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
         let config = connect::load_config(config_path.as_deref())?;
         let profile = profile.as_deref();
         match command {
-            Command::Init { login_item } => {
-                setup::init(
-                    &config,
-                    config_path.as_deref(),
-                    login_item.map(|answer| matches!(answer, YesNo::Yes)),
-                )
-                .await
-            }
             Command::Update { retry } => setup::update(&config, retry).await,
             Command::Uninstall { yes, delete_data } => {
                 setup::uninstall(&config, config_path.as_deref(), yes, delete_data).await
@@ -542,8 +547,10 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                         prompt,
                         args,
                     } => {
+                        let selected = connect::profile(&config, profile).await?;
                         verbs::create(
                             &mut client,
+                            &selected.id,
                             &config,
                             verbs::Create {
                                 agent,
@@ -674,7 +681,6 @@ mod tests {
                 "logout",
                 "profile",
                 "status",
-                "init",
                 "update",
                 "uninstall",
                 "config",

@@ -1423,8 +1423,7 @@ extension ComponentCatalog {
             store.started(.failure(RuntimeFailure("desk refused: ~/src/amux is not a git repository")))
         },
         newAgent("no-repositories", provider: .claude, signedIn: true, browsing: true) { store in
-            store.listed(
-                .success(Directories(recent: [], repositories: [], roots: ["~/src"])), asked: store.asking())
+            store.listed(.success(Directories(recent: [], repositories: [])), asked: store.asking())
         },
         newAgent("unlisted", provider: .claude, signedIn: true, browsing: true) { store in
             store.listed(.failure(RuntimeFailure("desk did not answer")), asked: store.asking())
@@ -1468,16 +1467,16 @@ extension CatalogFixtures {
         let hosts = HostsStore()
         hosts.show([HostView(
             hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false,
-            reach: .online(.direct), addrs: [], relayOnly: false, current: true,
+            reach: .online(.direct), addrs: [], relayOnly: false, pairingOpen: false, current: true,
             providers: [
                 ProviderSignIn(provider: .claude, signedIn: signedIn),
                 ProviderSignIn(provider: .codex, signedIn: true),
             ],
-            lastDialError: nil, platform: .macos, signedIn: nil, through: nil, version: nil),
+            claudeKind: nil, lastDialError: nil, platform: .macos, signedIn: nil, through: nil, version: nil),
         HostView(
             hostId: Array(repeating: 8, count: 16), name: "laptop", local: false, trusted: true,
-            candidate: false, reach: .away, addrs: [], relayOnly: false, current: false, providers: [],
-            lastDialError: nil, platform: .macos, signedIn: nil, through: nil, version: nil)])
+            candidate: false, reach: .away, addrs: [], relayOnly: false, pairingOpen: false, current: false, providers: [],
+            claudeKind: nil, lastDialError: nil, platform: .macos, signedIn: nil, through: nil, version: nil)])
         let store = NewAgentStore()
         store.open(on: desk)
         store.listed(.success(Directories(
@@ -1487,9 +1486,10 @@ extension CatalogFixtures {
                 Directory(path: "~/src/promo", name: "promo"),
             ],
             repositories: [
+                Directory(path: "~/src/amux", name: "amux"),
                 Directory(path: "~/src/dotfiles", name: "dotfiles"),
                 Directory(path: "~/src/skills", name: "skills"),
-            ], roots: ["~/src"])), asked: store.asking())
+            ])), asked: store.asking())
         for offered in NewAgentStore.Provider.allCases {
             let catalogue = offered == .codex ? codexCatalogue : claudeCatalogue
             store.offered(.success(catalogue), for: offered, asked: store.askingOffer(for: offered))
@@ -1618,6 +1618,7 @@ extension ComponentCatalog {
     /// an account.
     fileprivate static let pairing: [ComponentExample] = [
         code("empty") { _ in },
+        code("offered", machine: CatalogFixtures.openLaptop) { _ in },
         code("typing") { $0.enter("418") },
         code("checking") { store in
             store.enter("418207")
@@ -1658,7 +1659,26 @@ extension ComponentCatalog {
         ) {
             NavigationStack { PairNeedsAnAccount { _ in } }
         },
+        offer("offered", .offered(CatalogFixtures.deskOffer)),
+        offer("offered-accepting", .offered(CatalogFixtures.deskOffer), working: true),
+        offer("offered-offline", .offered(CatalogFixtures.deskOffer), failure: .unreachable("desk")),
+        offer("offering", .offering(host: CatalogFixtures.nearbyLaptop, email: "ada@example.com")),
     ]
+
+    /// An account offered across a pairing: the desk offering this phone
+    /// its account, accepted and the desk away, and this phone offering a
+    /// signed-out laptop it just paired its own.
+    private static func offer(
+        _ id: String, _ prompt: SignInPrompt, working: Bool = false, failure: SignInOffers.Failure? = nil
+    ) -> ComponentExample {
+        ComponentExample(
+            id: "pair.sign-in-\(id)", family: .pairing, canvas: CGSize(width: 390, height: 844),
+            // The system bar lays its items out a frame after the page.
+            settlesLate: true
+        ) {
+            NavigationStack { SignInOfferPanel(prompt: prompt, working: working, failure: failure) { _ in } }
+        }
+    }
 
     /// The code in the system's number pad, as the pairing sheet asks for it
     /// for one machine. The field takes focus once drawn and the pad rises
@@ -1877,9 +1897,13 @@ extension CatalogFixtures {
 
 extension CatalogFixtures {
     static let nearbyLaptop = machine(5, "laptop", platform: .macos, reach: .online(.direct), trusted: false, candidate: true, addrs: ["192.168.1.24:4433"], version: nil, providers: [])
+    /// The laptop with its pairing window open, which raises the keypad.
+    static let openLaptop = machine(5, "laptop", platform: .macos, reach: .online(.direct), trusted: false, candidate: true, addrs: ["192.168.1.24:4433"], pairingOpen: true, version: nil, providers: [])
     static let relayLaptop = machine(5, "laptop", platform: .macos, reach: .online(.relay), trusted: false, candidate: true, relayOnly: true, version: nil, providers: [])
     /// A machine on the account nobody paired, which only the relay reaches.
     static let accountServer = machine(7, "nova-test", platform: .linux, reach: .online(.unspecified), trusted: false, candidate: true, relayOnly: true, version: nil, providers: [])
+    static let deskOffer = SignInOfferView(
+        hostId: deskHost.hostId, hostName: "desk", email: "ada@example.com", accountName: "Ada")
     static let pendingLaptop = PendingPair(
         token: [1, 2, 3], hostId: nearbyLaptop.hostId, name: "laptop", fingerprint: fingerprint(5),
         expiresAtMs: Int64((now.timeIntervalSince1970 + 4 * 60 + 12) * 1000), via: .direct)
@@ -1888,15 +1912,16 @@ extension CatalogFixtures {
 extension CatalogFixtures {
     static func machine(
         _ index: UInt8, _ name: String, platform: Platform?, reach: Reach, trusted: Bool = true,
-        candidate: Bool = false, addrs: [String] = [], relayOnly: Bool = false, version: String? = "0.8.0",
+        candidate: Bool = false, addrs: [String] = [], relayOnly: Bool = false, pairingOpen: Bool = false,
+        version: String? = "0.8.0",
         providers: [ProviderSignIn] = [
             ProviderSignIn(provider: .claude, signedIn: true), ProviderSignIn(provider: .codex, signedIn: false),
         ]
     ) -> HostView {
         HostView(
             hostId: Array(repeating: index, count: 16), name: name, local: false, trusted: trusted,
-            candidate: candidate, reach: reach, addrs: addrs, relayOnly: relayOnly, current: false, providers: providers,
-            lastDialError: nil, platform: platform, signedIn: nil, through: nil, version: version)
+            candidate: candidate, reach: reach, addrs: addrs, relayOnly: relayOnly, pairingOpen: pairingOpen, current: false, providers: providers,
+            claudeKind: nil, lastDialError: nil, platform: platform, signedIn: nil, through: nil, version: version)
     }
 
     static let deskHost = machine(1, "desk", platform: .macos, reach: .online(.direct), addrs: ["192.168.1.20:4433", "[fe80::1c2b:9aff:fe31:7d10]:4433"])

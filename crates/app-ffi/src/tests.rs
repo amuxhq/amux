@@ -920,6 +920,29 @@ fn the_profile_registry_through_the_c_abi() {
     assert!(phone.result()["Err"].is_string());
 }
 
+/// Answering an offer of an account no machine made is a refusal, not a
+/// machine out of reach: only an offerer that cannot be reached is said
+/// apart, since the person's next step is on that machine.
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+)]
+fn answering_an_offer_nobody_made_is_refused_through_the_c_abi() {
+    let phone = Phone::start();
+    for accept in [true, false] {
+        let answer = c(&json!({"host_id": vec![7u8; 16], "accept": accept}).to_string());
+        // SAFETY: the profile is open; the string lives for the call.
+        phone.started(unsafe { amux_profile_answer_sign_in_offer(phone.profile, answer.as_ptr()) });
+        let answered = phone.result();
+        assert!(answered["Err"].is_string(), "accept {accept}: {answered}");
+    }
+    let nonsense = c("not an answer");
+    // SAFETY: as above.
+    phone.started(unsafe { amux_profile_answer_sign_in_offer(phone.profile, nonsense.as_ptr()) });
+    assert!(phone.result()["Err"].is_string());
+}
+
 #[test]
 #[cfg_attr(
     miri,
@@ -1076,6 +1099,14 @@ fn malformed_calls_are_refused_rather_than_crashing() {
     // SAFETY: the runtime is live; the string lives for the call.
     phone.started(unsafe { amux_profile_begin_pair(phone.profile, not_json.as_ptr()) });
     assert!(phone.result()["Err"].is_string());
+    // SAFETY: the runtime is live; the string lives for the call.
+    phone.started(unsafe { amux_profile_answer_onboarding(phone.profile, not_json.as_ptr()) });
+    assert!(phone.result()["Err"].is_string());
+    // SAFETY: the runtime is live; the string lives for the call.
+    phone.started(unsafe { amux_runtime_update_settings(phone.runtime, not_json.as_ptr()) });
+    assert!(phone.result()["Err"].is_string());
+    // SAFETY: the string lives for the call.
+    assert!(unsafe { amux_onboarding_next(not_json.as_ptr(), std::ptr::null(), false) }.is_null());
     let config = c("{}");
     let mut error = std::ptr::null_mut();
     // SAFETY: the strings live for the call.
@@ -1338,6 +1369,12 @@ fn null_handles_read_as_nothing_and_null_results_free_as_nothing() {
     assert!(blob.data.is_null() && blob.len == 0);
     // SAFETY: a null profile is ignored.
     unsafe { amux_profile_set_foreground(std::ptr::null(), false) };
+    // SAFETY: as above.
+    unsafe { amux_profile_watch_onboarding(std::ptr::null()) };
+    // SAFETY: a null profile or runtime starts no act.
+    assert_eq!(unsafe { amux_profile_open_pairing(std::ptr::null(), 0) }, 0);
+    // SAFETY: as above.
+    assert_eq!(unsafe { amux_runtime_settings(std::ptr::null()) }, 0);
     // SAFETY: null results free as nothing.
     unsafe { amux_bytes_free(blob) };
     // SAFETY: as above.
@@ -1534,6 +1571,82 @@ fn an_attached_app_hears_the_profile_list_again_after_the_daemon_restarts() {
     tokio.block_on(net.shutdown()).unwrap();
 }
 
+/// The profile's pairing window is followed across a daemon restart: a
+/// window opened again afterwards is handed over as open, as the Mac app
+/// needs to say when a phone pairs with it.
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+)]
+fn an_attached_app_follows_its_pairing_window_after_the_daemon_restarts() {
+    let tokio = tokio::runtime::Runtime::new().unwrap();
+    let topology = Topology::new().host_decl(HostDecl {
+        name: "desk".into(),
+        process: true,
+        ..HostDecl::default()
+    });
+    let mut net = tokio
+        .block_on(Net::start_with(
+            topology,
+            testnet::NetOptions {
+                clock: testnet::ClockMode::Wall,
+                ..testnet::NetOptions::default()
+            },
+        ))
+        .unwrap();
+    let door = net.host("desk").unwrap().front_door.clone();
+    let runtime = Box::into_raw(attach(&door, 50).unwrap());
+    let queue = Queue::start(runtime);
+    let id = c(&net.host("desk").unwrap().profile.to_string());
+    let mut error = std::ptr::null_mut();
+    // SAFETY: the runtime is live; the strings live for the call.
+    let profile = unsafe { amux_profile_open(runtime, id.as_ptr(), &mut error) };
+    assert!(!profile.is_null());
+    // SAFETY: the profile is open.
+    let fleet = unsafe { amux_profile_fleet_id(profile) };
+    let mut kept = Kept::default();
+    let open = |kept: &mut Kept| {
+        kept.until(&queue, fleet, "the window open", |kept| {
+            kept.pairing
+                .iter()
+                .any(|status| status["active"] == true)
+                .then_some(())
+        });
+    };
+    // SAFETY: the profile is open.
+    let window = kept.answer(&queue, fleet, unsafe {
+        amux_profile_open_pairing(profile, 60)
+    });
+    assert!(window["Ok"]["pin"].is_string(), "{window}");
+    open(&mut kept);
+
+    tokio.block_on(net.stop_daemon("desk")).unwrap();
+    tokio.block_on(net.restart_daemon("desk")).unwrap();
+    kept.pairing.clear();
+    // The window went with the daemon; the app renews it.
+    let renewed = loop {
+        // SAFETY: the profile is open.
+        let answered = kept.answer(&queue, fleet, unsafe {
+            amux_profile_open_pairing(profile, 60)
+        });
+        if answered["Ok"].is_object() {
+            break answered;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    assert!(renewed["Ok"]["pin"].is_string(), "{renewed}");
+    open(&mut kept);
+
+    drop(queue);
+    // SAFETY: from `amux_profile_open` and `attach`, not used again.
+    unsafe {
+        amux_profile_close(profile);
+        amux_runtime_stop(runtime);
+    }
+    tokio.block_on(net.shutdown()).unwrap();
+}
+
 /// A desktop app attaches to the daemon on its machine instead of hosting
 /// an installation: the daemon's profiles arrive with the first step, a
 /// profile's fleet opens with the daemon's agents, and a call only an
@@ -1607,6 +1720,225 @@ fn an_attached_app_lists_the_daemons_profiles_and_the_agents_of_one() {
         }
     };
     assert!(answer.contains("attached to amux"), "{answer}");
+
+    drop(queue);
+    // SAFETY: from `amux_profile_open` and `attach`, not used again.
+    unsafe {
+        amux_profile_close(profile);
+        amux_runtime_stop(runtime);
+    }
+    tokio.block_on(net.shutdown()).unwrap();
+}
+
+/// What an attached app's queue handed back, kept until a test reads it.
+#[derive(Default)]
+struct Kept {
+    answers: HashMap<u64, Value>,
+    onboarding: Vec<Value>,
+    pairing: Vec<Value>,
+}
+
+impl Kept {
+    fn keep(&mut self, stepped: &Value, fleet: u64) {
+        for answer in stepped["answers"].as_array().into_iter().flatten() {
+            let json = serde_json::from_str(answer["json"].as_str().unwrap()).unwrap();
+            self.answers
+                .insert(answer["ticket"].as_u64().unwrap(), json);
+        }
+        for moved in stepped["onboarding"].as_array().into_iter().flatten() {
+            assert_eq!(moved["fleet"], fleet, "only the open profile is followed");
+            self.onboarding.push(moved["onboarding"].clone());
+        }
+        for moved in stepped["pairing"].as_array().into_iter().flatten() {
+            assert_eq!(moved["fleet"], fleet);
+            self.pairing.push(moved["status"].clone());
+        }
+    }
+
+    /// Keeps what the queue hands back until `check` finds what it wants.
+    fn until<T>(
+        &mut self,
+        queue: &Queue,
+        fleet: u64,
+        what: &str,
+        mut check: impl FnMut(&mut Kept) -> Option<T>,
+    ) -> T {
+        let deadline = Instant::now() + PATIENCE;
+        loop {
+            if let Some(found) = check(self) {
+                return found;
+            }
+            assert!(Instant::now() < deadline, "never saw {what}");
+            if let Ok(stepped) = queue.stepped.recv_timeout(Duration::from_millis(100)) {
+                self.keep(&stepped, fleet);
+            }
+        }
+    }
+
+    fn answer(&mut self, queue: &Queue, fleet: u64, ticket: u64) -> Value {
+        assert_ne!(ticket, 0, "the act did not start");
+        self.until(queue, fleet, "the act's answer", |kept| {
+            kept.answers.remove(&ticket)
+        })
+    }
+}
+
+/// The Mac app sets the Mac up through the attached runtime: it is counted
+/// as the Mac app opening, follows the daemon's steps and answers them as
+/// the Mac app, reads and changes the settings, and holds a pairing window
+/// that takes the PIN or the QR code's link while it follows its status.
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+)]
+fn an_attached_mac_app_sets_up_through_the_c_abi() {
+    let tokio = tokio::runtime::Runtime::new().unwrap();
+    let recording = analytics::Recording::new();
+    let net = tokio
+        .block_on(Net::start_with(
+            topology(),
+            testnet::NetOptions {
+                analytics: Some(node::Telemetry::Record(recording.clone())),
+                ..testnet::NetOptions::default()
+            },
+        ))
+        .unwrap();
+    let door = net.host("desk").unwrap().front_door.clone();
+    let runtime = Box::into_raw(attach(&door, 50).unwrap());
+    let queue = Queue::start(runtime);
+    let id = c(&net.host("desk").unwrap().profile.to_string());
+    let mut error = std::ptr::null_mut();
+    // SAFETY: the runtime is live; the strings live for the call.
+    let profile = unsafe { amux_profile_open(runtime, id.as_ptr(), &mut error) };
+    assert!(!profile.is_null());
+    // SAFETY: the profile is open.
+    let fleet = unsafe { amux_profile_fleet_id(profile) };
+    let mut kept = Kept::default();
+
+    // Opening the fleet counts the Mac app opening, by the header the
+    // attached runtime sends.
+    kept.until(&queue, fleet, "the Mac app counted as opened", |_| {
+        recording
+            .named("client_opened")
+            .contains(&analytics::Event::ClientOpened {
+                client: analytics::Client::Mac,
+            })
+            .then_some(())
+    });
+
+    // The steps as the daemon keeps them, with where onboarding opens.
+    // SAFETY: the profile is open.
+    unsafe { amux_profile_watch_onboarding(profile) };
+    let first = kept.until(&queue, fleet, "the steps", |kept| kept.onboarding.pop());
+    assert_eq!(first["view"]["opens_at"], "pair_phone", "{first}");
+    assert!(
+        first["open"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("pair_phone"))
+    );
+    // The shared rules say what follows a step.
+    let state = c(&first.to_string());
+    let after = c("\"pair_phone\"");
+    // SAFETY: the strings live for the call.
+    let next = take(unsafe { amux_onboarding_next(state.as_ptr(), after.as_ptr(), false) });
+    // Keeping the desk reachable is not needed without a supervisor.
+    assert_eq!(next, "sign_in", "{first}");
+    // SAFETY: as above; null starts from the beginning.
+    let start = take(unsafe { amux_onboarding_next(state.as_ptr(), std::ptr::null(), false) });
+    assert_eq!(start, "pair_phone");
+
+    // Answers are counted as the Mac app's, and the steps after each come
+    // back with it and with the next step.
+    for answer in [
+        json!({"Shown": "pair_phone"}),
+        json!({"Skip": "repositories"}),
+    ] {
+        let answer = c(&answer.to_string());
+        // SAFETY: the profile is open; the string lives for the call.
+        let ticket = unsafe { amux_profile_answer_onboarding(profile, answer.as_ptr()) };
+        let answered = kept.answer(&queue, fleet, ticket);
+        assert!(answered["Ok"]["steps"].is_array(), "{answered}");
+    }
+    kept.until(&queue, fleet, "the repositories skipped", |kept| {
+        kept.onboarding
+            .iter()
+            .flat_map(|state| state["steps"].as_array().into_iter().flatten())
+            .any(|step| step["step"] == "repositories" && step["state"] == "skipped")
+            .then_some(())
+    });
+    assert!(
+        recording
+            .named("onboarding_step")
+            .iter()
+            .any(|event| matches!(
+                event,
+                analytics::Event::OnboardingStep {
+                    surface: analytics::Client::Mac,
+                    ..
+                }
+            )),
+        "{:?}",
+        recording.named("onboarding_step")
+    );
+
+    // The settings, read and changed at once.
+    // SAFETY: the runtime is live.
+    let settings = kept.answer(&queue, fleet, unsafe { amux_runtime_settings(runtime) });
+    assert!(
+        !settings["Ok"]["host_name"].as_str().unwrap().is_empty(),
+        "{settings}"
+    );
+    // Kept as canonical paths, as the pickers offer them.
+    let work = std::fs::canonicalize(&net.host("desk").unwrap().work)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let change = c(&json!({"repositories": [work], "keep_awake": false}).to_string());
+    // SAFETY: the runtime is live; the string lives for the call.
+    let changed = kept.answer(&queue, fleet, unsafe {
+        amux_runtime_update_settings(runtime, change.as_ptr())
+    });
+    assert_eq!(changed["Ok"]["repositories"], json!([work]), "{changed}");
+    assert_eq!(changed["Ok"]["keep_awake"], false, "{changed}");
+    // SAFETY: the runtime is live.
+    let suggested = kept.answer(&queue, fleet, unsafe {
+        amux_runtime_suggest_repositories(runtime)
+    });
+    assert!(suggested["Ok"].is_array(), "{suggested}");
+
+    // One window takes the PIN or the QR code's link, and its status is
+    // handed over while it is open.
+    // SAFETY: the profile is open.
+    let window = kept.answer(&queue, fleet, unsafe {
+        amux_profile_open_pairing(profile, 60)
+    });
+    let pin = window["Ok"]["pin"].as_str().unwrap();
+    assert_eq!(pin.len(), 6, "{window}");
+    assert!(
+        window["Ok"]["qr_link"].as_str().unwrap().contains("/p#"),
+        "{window}"
+    );
+    kept.until(&queue, fleet, "the window open", |kept| {
+        kept.pairing
+            .iter()
+            .any(|status| status["active"] == true)
+            .then_some(())
+    });
+    // SAFETY: the profile is open.
+    let closed = kept.answer(&queue, fleet, unsafe {
+        amux_profile_close_pairing(profile)
+    });
+    assert!(closed["Err"].is_null(), "{closed}");
+
+    // The browser's sign-in link needs an account.
+    let path = c("/offer");
+    // SAFETY: the runtime is live; the strings live for the call.
+    let link = kept.answer(&queue, fleet, unsafe {
+        amux_runtime_web_sign_in_link(runtime, id.as_ptr(), path.as_ptr())
+    });
+    assert!(link["Err"].is_string(), "a signed-out profile: {link}");
 
     drop(queue);
     // SAFETY: from `amux_profile_open` and `attach`, not used again.

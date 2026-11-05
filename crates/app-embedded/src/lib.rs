@@ -37,7 +37,7 @@ pub use phone::Phone;
 use sha2::{Digest, Sha256};
 use wire::{
     BeginPairRequest, Empty, HostRef, StartPairingRequest, begin_pair_request, host_ref,
-    pairing_window, start_pairing_request,
+    start_pairing_request,
 };
 
 /// What a test or a driving build changes about the network edge.
@@ -74,6 +74,9 @@ impl Default for EdgeOverrides {
 /// A client opening again within this long is the same visit.
 const CLIENT_OPENED_EVERY: Duration = Duration::from_secs(60 * 60);
 /// How long a flush as the app leaves the screen may take.
+/// The OAuth client the phone signs in as, the one its browser sign-in
+/// names too.
+pub const MOBILE_CLIENT_ID: &str = "mobile";
 const BACKGROUND_FLUSH: Duration = Duration::from_secs(3);
 
 /// What only the app sees, as the event it is sent as.
@@ -91,6 +94,13 @@ fn usage_event(event: UsageEvent) -> analytics::Event {
                 BillingInterval::Monthly => analytics::Interval::Monthly,
                 BillingInterval::Yearly => analytics::Interval::Yearly,
             },
+        },
+        UsageEvent::SignInOfferShown { role } => analytics::Event::SignInOffer {
+            role: match role {
+                app_runtime::values::OfferRole::Offerer => analytics::OfferRole::Offerer,
+                app_runtime::values::OfferRole::Receiver => analytics::OfferRole::Receiver,
+            },
+            outcome: analytics::OfferOutcome::Shown,
         },
     }
 }
@@ -188,6 +198,9 @@ impl EmbeddedRuntime {
             cloud: overrides.cloud,
             interfaces: None,
             liveness: Default::default(),
+            // A ticket a paired computer hands the phone signs it in as the
+            // phone's own client, as its browser sign-in does.
+            sign_in_client: MOBILE_CLIENT_ID.to_owned(),
         };
         let telemetry = Arc::new(AtomicBool::new(config.telemetry));
         let auto_reports = Arc::new(AtomicBool::new(config.auto_reports));
@@ -206,6 +219,7 @@ impl EmbeddedRuntime {
             },
         };
         let options = StartOptions {
+            settings: Default::default(),
             data_dir: config.data_dir.clone(),
             // The phone has no boot id to read; each start is its own boot.
             boot_id: Some(uuid::Uuid::new_v4().to_string()),
@@ -463,8 +477,14 @@ impl EmbeddedRuntime {
                 let invitation = node::parse_pair_link(link)?;
                 BeginPairRequest {
                     host_id: invitation.host_id.as_bytes().to_vec(),
-                    secret: Some(begin_pair_request::Secret::QrSecret(invitation.secret)),
-                    addrs: invitation.addrs.iter().map(ToString::to_string).collect(),
+                    secret: Some(begin_pair_request::Secret::QrSecret(
+                        invitation.secret.to_vec(),
+                    )),
+                    addrs: invitation
+                        .dial_addrs()
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect(),
                 }
             }
         };
@@ -493,27 +513,12 @@ impl EmbeddedRuntime {
                 ttl_seconds: None,
             })
             .await?;
-        let Some(pairing_window::Secret::QrSecret(secret)) = &started.secret else {
+        if started.qr_link.is_empty() {
             return Err(EmbeddedError::Relay(
                 "pairing mode opened without a link secret".into(),
             ));
-        };
-        let host = node::HostId::from_slice(
-            &started
-                .identity
-                .as_ref()
-                .map(|identity| identity.host_id.clone())
-                .unwrap_or_default(),
-        )
-        .map_err(|_| EmbeddedError::NoProfile(profile))?;
-        let addrs: Vec<SocketAddr> = started
-            .addrs
-            .iter()
-            .filter_map(|addr| addr.parse().ok())
-            .collect();
-        let invitation =
-            node::encode_qr_pairing_invitation(host, &addrs, started.cloud_url.as_deref(), secret)?;
-        Ok(node::pair_link(&invitation))
+        }
+        Ok(started.qr_link)
     }
 
     /// Trusts the machine an attempt reached.
@@ -574,6 +579,7 @@ impl EmbeddedRuntime {
                         .filter_map(|addr| addr.parse().ok())
                         .collect(),
                     scope: found.scope,
+                    pairing_open: found.pairing_open,
                 })
             })
             .collect();

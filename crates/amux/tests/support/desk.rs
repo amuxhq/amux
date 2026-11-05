@@ -97,6 +97,24 @@ impl Desk {
         }
     }
 
+    /// As an installation set up long ago: setting up dismissed, so bare
+    /// `amux` opens on home. The daemon must be running.
+    pub async fn set_up(&self) {
+        use client::Installation as _;
+        let door = client::GrpcInstallation::connect(&self.socket)
+            .await
+            .unwrap();
+        door.answer_onboarding(wire::AnswerOnboardingRequest {
+            profile_id: Vec::new(),
+            answer: Some(wire::answer_onboarding_request::Answer::Dismiss(
+                wire::Empty {},
+            )),
+            surface: wire::Surface::Terminal as i32,
+        })
+        .await
+        .unwrap();
+    }
+
     pub fn amux_path(&self) -> PathBuf {
         self.bin.join("amux")
     }

@@ -253,6 +253,25 @@ local-network permission as "amux finds hosts on your network so this phone
 can pair and connect to them directly." When access is denied, the Hosts tab
 says so, lists no machine and offers the Settings route.
 
+iOS asks for local network access the first time anything browses, so a fresh
+install does not browse at once. The empty Agents list (and the empty Hosts
+tab) first says in one line that amux looks for computers on this network and
+that iOS asks next, with **Look for Hosts**; pressing it starts the browser,
+and the system's alert follows. The answer is kept in the app's defaults
+(`localNetworkExplained`). A profile that already trusts a machine counts as
+explained, so an existing install never sees the line.
+
+A machine running `amux pair` (or onboarding's pairing step) advertises an
+open pairing window: `pair=1` in its TXT record. `LocalDiscovery` reads it
+into `Found.pairing_open`, and a change of it alone is handed over without
+resolving again. A machine found with its window open is offered as "Pair
+with laptop?", and while the Agents list is empty or the Hosts tab is in
+front, the phone raises the keypad for it by itself, so a first pairing is
+opening amux there and typing six digits here. Putting the keypad away is
+remembered for that window: the phone does not raise it again until the
+window closes and another opens. A machine found with no window open says
+"Open amux on laptop to pair" and has no button.
+
 The Hosts tab is one list of paired machines, reachable first, each saying
 how the phone reaches it; machines found and not yet paired are offered as
 cards above it. Tapping a host opens its page: how the phone reaches it and,
@@ -269,11 +288,48 @@ opens straight onto checking the invitation. Either way the machine's name
 and how it would be reached are shown before anything is trusted, with its
 key's fingerprint underneath, and the sheet closes itself once the machine
 is trusted. Signing in or subscribing from it opens on the tab beneath, and
-the sheet comes back with its pairing where it was when that is put away. Revoking is the page's last row and asks first,
+the sheet comes back with its pairing where it was when that is put away.
+
+An invitation reaches the app as `https://amux.sh/p#<invitation>`, the address
+a machine's QR code holds, which the Camera app opens; the app reads the
+invitation's bytes only to refuse a malformed link before it becomes a screen,
+and hands the link whole to the runtime. The app claims `applinks:amux.sh` in its
+Associated Domains, so the web address opens the app when it is installed,
+whether it is running (`onContinueUserActivity`) or not; the payload stays in
+the fragment, which no web server sees. The same `/p#` page on another host
+(a self-hosted relay's site) reads the same way.
+
+### An account offered across a pairing
+
+The relay joins only devices on one account, so a phone paired with a
+signed-in computer would otherwise sign in a second time before it reached
+that computer from anywhere. A paired machine can offer its account: the
+runtime lists standing offers in each step (`sign_in_offers`), and the shell
+raises a sheet over the tab, "Sign in as ada@example.com?", saying which
+machine offers it. **Sign In** answers yes
+(`amux_profile_answer_sign_in_offer`), which signs the phone in with a token
+of its own; **Not Now** turns it down and the offer ends. When the offering
+machine is away, the sheet says to open amux there and try again, and the
+offer stands. It works the other way too: a signed-in phone that just paired a
+machine that says it is signed out asks "Sign in laptop as ada@example.com
+too?" and offers its account on yes (`amux_profile_offer_sign_in`). Pairing
+stays the only trust decision; the offer only adds the relay as a route, with
+the account's address in front of the person deciding.
+
+Revoking is the page's last row and asks first,
 saying the phone stops reaching the machine and only pairing again brings it
 back. This phone's own name and fingerprint are in Settings, under This
 phone. Every route the shell can push has a built page; `RoutePagesTests`
 opens each one.
+
+## Starting an agent
+
+New Agent lists the host's repositories (the folders its amux settings name)
+first, then the folders its agents worked in lately that are not among them, and
+prefills where an agent worked last. Typing searches both, asking the host
+when the list it gave was cut short. A new Claude agent runs the kind the
+host's settings resolve to (`HostView.claude_kind`), the terminal one or the
+SDK one, so the phone starts what amux on that host would.
 
 ## Foreground, background and pushes
 
@@ -309,7 +365,8 @@ runtime keeps and sends: coming to the front counts the app as opened (at
 most once an hour), and going to the back sends what is waiting before the
 system may suspend the app. The paywall opening and a purchase starting are
 seen only by the app, which records them on the account on screen
-(`RuntimeCoordinator.record`). **Share Usage** in **Settings** turns it off; the
+(`RuntimeCoordinator.record`). The App Store privacy label says what is
+collected. **Share Usage** in **Settings** turns it off; the
 choice is kept in the app's defaults and handed to the runtime at start and
 on every change. Only the App Store build sends. **Send Automatic Reports**
 beside it, off by default, is handed over the same way: with it on, the
@@ -642,7 +699,9 @@ story names volatile keeps only its name, and tab pages covered by a pushed
 page are left out. Each compared screen is photographed too, into
 `target/journeys/phone/<story>/actual/` beside its geometry, for a person to
 look at; the picture is never compared. `UPDATE_JOURNEY_GOLDENS=1` rewrites
-the geometry that differs; review it before committing.
+the geometry that differs; review it before committing. Every launch starts
+with the local-network line answered (`-localNetworkExplained YES`), as a
+person past their first run would; a story that is a first run asks for it.
 
 The machines in a journey are real daemons with scripted providers, and the
 relay is a real relay beside a stand-in account service that mints its

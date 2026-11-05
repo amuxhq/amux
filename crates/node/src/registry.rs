@@ -95,6 +95,9 @@ pub enum ProfileRefusal {
     OtherAccount,
     #[error("the profile already holds agents or paired hosts; confirm adopting it")]
     HoldsData,
+    /// An onboarding answer the daemon cannot take.
+    #[error("{0}")]
+    BadAnswer(String),
     #[error("{0}")]
     Failed(String),
 }
@@ -104,7 +107,9 @@ impl ProfileRefusal {
         let code = match self {
             Self::Stopping | Self::NotInService | Self::Unreachable(_) => ErrorCode::Unavailable,
             Self::NoProfile(_) => ErrorCode::NotFound,
-            Self::NoName | Self::BadService(_) | Self::NoRefreshToken => ErrorCode::InvalidArgument,
+            Self::NoName | Self::BadService(_) | Self::NoRefreshToken | Self::BadAnswer(_) => {
+                ErrorCode::InvalidArgument
+            }
             Self::NameTaken(_) | Self::AccountElsewhere => ErrorCode::AlreadyExists,
             Self::LastProfile
             | Self::AgentsRunning
@@ -117,7 +122,7 @@ impl ProfileRefusal {
         crate::grpc::wire_error(code, self.to_string())
     }
 
-    fn failed(error: impl std::fmt::Display) -> Self {
+    pub(crate) fn failed(error: impl std::fmt::Display) -> Self {
         Self::Failed(error.to_string())
     }
 
@@ -174,7 +179,7 @@ impl Registry {
     /// The name this machine goes by, which a sign-in shows on the account
     /// service's approval page.
     pub(crate) fn host_name(&self) -> Result<String, ProfileRefusal> {
-        Ok(wire::HostName::lossy(self.installation()?.host_name()).into_string())
+        Ok(wire::HostName::lossy(&self.installation()?.host_name()).into_string())
     }
 
     /// Every hosted profile, oldest first.
@@ -352,6 +357,16 @@ impl Registry {
     /// picks the profile already bound to that account, else one that
     /// holds nothing, else a new one.
     pub async fn bind(&self, sign_in: SignIn) -> Result<ProfileState, ProfileRefusal> {
+        self.bind_via(sign_in, analytics::SignInVia::Browser).await
+    }
+
+    /// Binds as [`Registry::bind`] does, counting the sign-in as having
+    /// come `via` that way.
+    pub(crate) async fn bind_via(
+        &self,
+        sign_in: SignIn,
+        via: analytics::SignInVia,
+    ) -> Result<ProfileState, ProfileRefusal> {
         let installation = self.installation()?;
         let named = sign_in.profile;
         let bound = account::bind(&installation, sign_in).await;
@@ -371,7 +386,7 @@ impl Registry {
             .or_else(|| installation.first_analytics());
         if let Some(analytics) = analytics {
             analytics.record(match &bound {
-                Ok(_) => analytics::Event::SignedIn,
+                Ok(_) => analytics::Event::SignedIn { via },
                 Err(refusal) => analytics::Event::SignInFailed {
                     reason: refusal.sign_in_failure(),
                 },

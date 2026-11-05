@@ -51,6 +51,7 @@ const STORIES: &[(&str, Tell)] = &[
     ("attachment-or-review", attachment_or_review),
     ("leave-and-recover", leave_and_recover),
     ("account-sign-in", account_sign_in),
+    ("one-tap-sign-in", one_tap_sign_in),
     ("purchase-restore", purchase_restore),
     ("report", report),
     ("accessibility", accessibility),
@@ -326,15 +327,15 @@ fn reviewed(chat: &Value, comment: &str) -> Result<Value, String> {
 
 // --- acts ----------------------------------------------------------------
 
-/// The phone's browser finds `host`; the PIN it printed is typed on the
-/// keypad and the machine it names is trusted.
+/// The phone's browser finds `host`; once `amux pair` opens its pairing
+/// window the phone offers the keypad by itself, the PIN it printed is typed
+/// there and the machine it names is trusted.
 fn pair_by_code(journey: &mut PhoneJourney, host: &str) -> Result<(), String> {
     let host_id = journey.host_id(host);
     journey.tab("Hosts")?;
-    journey.wait_for(&[&format!("hosts.pair.{host_id}")])?;
+    journey.wait_for(&[&format!("hosts.found.{host_id}")])?;
     let mut pairing = journey.amux(host, &["pair"])?;
     let pin = printed_pin(&mut pairing)?;
-    journey.tap(&format!("hosts.pair.{host_id}"))?;
     journey.wait_for(&["pin.code"])?;
     journey.type_text("pin.code", &pin)?;
     journey.wait_for(&["pair-confirm.trust"])?;
@@ -502,19 +503,32 @@ fn reach_host(journey: &mut PhoneJourney) -> Proved {
     let desk = journey.host_id("desk");
     let prompt = "Hello from the phone.";
     let reply = "The desk is reachable.";
-    // Unpaired: the phone's own browser finds the desk and offers to pair.
-    journey.launch(Launch::plain())?;
-    journey.tab("Hosts")?;
-    let offer = format!("hosts.pair.{desk}");
-    journey.wait_for(&[&offer, &offer])?;
+    // A first run: the fleet says why iOS is about to ask for the local
+    // network before anything browses.
+    journey.launch(Launch {
+        first_run: true,
+        ..Launch::plain()
+    })?;
+    journey.wait_for(&["home.localNetwork.look"])?;
+    journey.screen("first-run", &[])?;
+    journey.tap("home.localNetwork.look")?;
+
+    // Unpaired: the phone's own browser finds the desk, and with no pairing
+    // window open there the fleet says where pairing starts.
+    let found = format!("home.found.{desk}");
+    journey.wait_for(&[&found])?;
     journey.screen("found-not-paired", &[])?;
 
-    // Six digits the desk printed, typed on the phone's number pad, reach
-    // the desk's own name and key before anything is trusted.
+    // `amux pair` opens the desk's pairing window and the phone offers the
+    // keypad by itself. Six digits the desk printed, typed there, reach the
+    // desk's own name and key before anything is trusted.
     let mut pairing = journey.amux("desk", &["pair"])?;
     let pin = printed_pin(&mut pairing)?;
-    journey.tap(&offer)?;
-    journey.wait_for(&["pin.code"])?;
+    journey.wait(
+        |drawn| drawn.has("pin.code") && drawn.value("pin.title") == "Pair with desk?",
+        "the keypad raised for the desk",
+    )?;
+    journey.screen("pair-offered", &[])?;
     journey.type_text("pin.code", &pin)?;
     let card = journey.wait_for(&["pair-confirm.trust", "pair-confirm.fingerprint"])?;
     if card.value("pair-confirm.name") != "desk" {
@@ -529,6 +543,11 @@ fn reach_host(journey: &mut PhoneJourney) -> Proved {
     )?;
     journey.tap("pair-confirm.trust")?;
     // Trusting closes the sheet, with the desk already in the list.
+    journey.wait(
+        |drawn| !drawn.has("pair-confirm"),
+        "the pairing sheet closed",
+    )?;
+    journey.tab("Hosts")?;
     let row = format!("hosts.row.{desk}");
     let drawn = journey.wait(
         |drawn| drawn.has(&row) && !drawn.has("pair-confirm"),
@@ -579,7 +598,9 @@ fn reach_host(journey: &mut PhoneJourney) -> Proved {
         "the fleet",
     )?;
     Ok(vec![
-        "the phone's own browser found the desk in the net's scope and offered to pair".to_owned(),
+        "a first run explained the local network before browsing".to_owned(),
+        "the phone's own browser found the desk in the net's scope and said to open amux there".to_owned(),
+        "the desk's open pairing window raised the keypad on the phone by itself".to_owned(),
         "the PIN the desk printed, typed on the keypad, reached the desk's name and key before trust".to_owned(),
         control,
         format!("the phone lists desk {desk} as its host after Pair"),
@@ -2106,6 +2127,51 @@ fn account_sign_in(journey: &mut PhoneJourney) -> Proved {
     ])
 }
 
+/// A signed-out phone paired with a signed-in desk takes the desk's
+/// account with one tap.
+fn one_tap_sign_in(journey: &mut PhoneJourney) -> Proved {
+    journey.launch(Launch::plain())?;
+    pair_by_code(journey, "desk")?;
+    journey.screen("paired", &[])?;
+
+    // The desk offers the phone it just paired its account, as its own
+    // client does when the person ticks "Also sign in" there.
+    journey.request(
+        Control::OfferSignIn {
+            host: "desk".to_owned(),
+            to: None,
+        },
+        Some("offer"),
+    )?;
+    let question = "Sign in as ada@example.com?";
+    let drawn = journey.wait(
+        |drawn| drawn.value("sign-in-offer") == "offered" && labelled(drawn, question),
+        "the desk's offer on the phone",
+    )?;
+    if !labelled(&drawn, "desk offers its account") {
+        return Err("the offer did not name the desk that made it".to_owned());
+    }
+    journey.screen("offered", &[])?;
+
+    journey.tap("sign-in-offer.accept")?;
+    journey.wait(|drawn| !drawn.has("sign-in-offer"), "the offer put away")?;
+    journey.settings()?;
+    signed_in_as_ada(journey)?;
+    journey.screen("signed-in", &[])?;
+    close_settings(journey)?;
+
+    journey.tab("Hosts")?;
+    let desk = journey.host_id("desk");
+    let drawn = journey.wait_for(&[&format!("hosts.row.{desk}")])?;
+    trusted_as(&drawn, &desk, "desk")?;
+    Ok(vec![
+        "signed out, the phone paired with the desk on the keypad with the PIN `amux pair` printed".to_owned(),
+        format!("the desk offered the phone its account, and the phone asked {} in a sheet naming the desk", quoted(question)),
+        "one tap on Sign In put the sheet away and Settings showed the phone signed in as ada, with nothing else pressed".to_owned(),
+        "the phone still lists the desk under its own name".to_owned(),
+    ])
+}
+
 fn purchase_restore(journey: &mut PhoneJourney) -> Proved {
     let desk = journey.host_id("desk");
     journey.launch(Launch::plain())?;
@@ -2469,7 +2535,7 @@ fn apart(drawn: &Drawn, names: &[&str]) -> Result<(), String> {
 
 fn local_network(journey: &mut PhoneJourney) -> Proved {
     let desk = journey.host_id("desk");
-    let offer = format!("hosts.pair.{desk}");
+    let offer = format!("hosts.found.{desk}");
     // Refused, the system's browser finds nothing, which the launch stands
     // in for by letting it report no machine.
     journey.launch(Launch {
@@ -2514,7 +2580,7 @@ fn local_network(journey: &mut PhoneJourney) -> Proved {
         |drawn| {
             drawn.has("pair-confirm.trust")
                 && drawn.has("pair-confirm.fingerprint")
-                && labelled(drawn, "desk is nearby")
+                && labelled(drawn, "Enter the code amux shows there")
         },
         "the link's card over the desk found",
     )?;
@@ -2548,7 +2614,7 @@ fn local_network(journey: &mut PhoneJourney) -> Proved {
     Ok(lines(&[
         "with the local network refused the Hosts tab said so, offered Settings and listed no machine",
         "granted, the phone's browser found the desk and offered it",
-        "the desk's amux://pair link started the app on the desk's name and key before trust, and paired it",
+        "the desk's pairing link started the app on the desk's name and key before trust, and paired it",
         "the desk received 'Hello from the phone.' once and answered",
     ]))
 }
@@ -3007,8 +3073,9 @@ mod tests {
     use super::super::phone::tests::{DESK, element};
     use super::*;
 
-    const NATIVE: [&str; 7] = [
+    const NATIVE: [&str; 8] = [
         "account-sign-in",
+        "one-tap-sign-in",
         "purchase-restore",
         "report",
         "accessibility",

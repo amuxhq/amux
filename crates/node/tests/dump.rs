@@ -103,6 +103,7 @@ async fn a_dump_carries_this_hosts_records_and_our_logs_and_no_secret() {
     )
     .unwrap();
     let options = node::StartOptions {
+        settings: Default::default(),
         daemon_log: Some(log),
         supervisor_log: Some(supervisor_log),
         ..install.options("boot-1", launch)

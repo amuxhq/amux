@@ -13,8 +13,8 @@ ask.choice.0 | I’m done |  | 28,770,169,44
 ask.choice.1 | Decline |  | 205,770,169,44
 chat.more | More |  | 350,66,28,36
 chat.back | Back |  | 20,66,40,36
-chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
-chat.title | linker | linker | 80,66,152,36
+chat.header | /p/t/a/n/d/work · desk | live | 80,66,165,36
+chat.title | linker | linker | 80,66,165,36
  | grafana wants you to open a link |  | 62,581,239,20
  | More |  | 338,569,44,44
  | Grafana needs you to sign in before I can read its dashboards. |  | 28,617,332,37
@@ -28,5 +28,5 @@ chat.title | linker | linker | 80,66,152,36
  | 1 call |  | 16,286,370,44
  | Link from, grafana |  | 16,316,370,44
  | Back |  | 20,66,40,36
- | linker, /t/a/n/d/work · desk |  | 80,66,152,36
+ | linker, /p/t/a/n/d/work · desk |  | 80,66,165,36
  | More |  | 350,66,28,36

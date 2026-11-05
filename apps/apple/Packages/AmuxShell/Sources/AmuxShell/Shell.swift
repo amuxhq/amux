@@ -83,6 +83,11 @@ public enum ShellAction: Equatable, Sendable {
     /// came back to the front, or You is on screen. A subscription bought or
     /// lapsed elsewhere reaches the phone only by asking.
     case checkSubscription
+    /// The person read why amux looks at this network: the browser starts,
+    /// and iOS asks for local network access.
+    case lookOnNetwork
+    /// An account offered across a pairing was put in front of the person.
+    case signInOfferShown(OfferRole)
 }
 
 /// Leaves the app for a page somewhere else: a billing portal, the App Store's
@@ -246,6 +251,40 @@ public struct Shell: View {
                     .signInQuestions(signIn, shown: asks == .pairing, answer: answer)
             }
         }
+        // An account offered across a pairing is asked about on its own
+        // sheet, once nothing else is up: either a paired machine offers this
+        // phone its account, or this phone, signed in, may offer one it just
+        // paired. Only its buttons answer it.
+        .sheet(isPresented: Binding(
+            get: { offering != nil },
+            set: { _ in }
+        )) {
+            if let prompt = offering {
+                SignInOfferSheet(prompt: prompt, stores: stores, actions: actions)
+                    .surface()
+                    .interactiveDismissDisabled()
+            }
+        }
+        // A machine nearby that opens its pairing window is offered by
+        // itself, where the person is looking for one: the first-run screen,
+        // an empty Agents list or the Hosts tab. Putting a code sheet away
+        // makes its machine the one to offer in the same update that records
+        // it declined, so the offer is raised on the next turn, once that
+        // decline is in, and only if a machine is still to be offered.
+        .onChange(of: windowToOffer, initial: true) { _, host in
+            guard host != nil else { return }
+            Task { @MainActor in
+                guard let host = windowToOffer else { return }
+                // The keypad's first frame already names the machine it offers.
+                stores.pairing.open(machine: stores.hosts.known(host))
+                router.pairing = .code(host)
+            }
+        }
+        // Putting a code sheet away puts that machine's window away: it is
+        // not raised again until the machine opens another.
+        .onChange(of: router.pairing) { before, now in
+            if case .code(let host)? = before, now == nil { stores.hosts.declineWindow(host) }
+        }
         .tint(design.accentColor)
         .reported("shell", value: router.tab.rawValue)
         .simultaneousGesture(backGesture)
@@ -277,6 +316,32 @@ public struct Shell: View {
         .signInQuestions(signIn, shown: asks == .settings, answer: answer)
     }
 
+    /// The account offered across a pairing to ask about now, once no other
+    /// sheet is up.
+    private var offering: SignInPrompt? {
+        guard router.pairing == nil, !router.composing, router.tab != .you else { return nil }
+        return stores.offers.prompt(hosts: stores.hosts)
+    }
+
+    /// The machine whose open pairing window to raise a code sheet for now:
+    /// only where the person is looking for a machine to pair, and only
+    /// while nothing else is up.
+    private var windowToOffer: HostId? {
+        guard router.pairing == nil, !router.composing, offering == nil else { return nil }
+        switch router.tab {
+        case .hosts:
+            guard router.hostsPath.isEmpty else { return nil }
+        case .agents:
+            let fleet = stores.fleet
+            guard router.agentsPath.isEmpty, fleet.loaded, fleet.rows.isEmpty,
+                  fleet.filter == FleetFilter(words: "", only: nil)
+            else { return nil }
+        case .you:
+            return nil
+        }
+        return stores.hosts.windowToOffer?.id
+    }
+
     /// The surfaces a sign-in's question can be asked over.
     private enum Surface {
         case tabs, settings, pairing
@@ -291,7 +356,7 @@ public struct Shell: View {
         return .tabs
     }
 
-    private func answer(_ answer: SignInAnswer) {
+    private func answer(_ answer: AmuxFeatures.SignInAnswer) {
         switch answer {
         case .retry: actions(.retrySignIn)
         case .dismiss: actions(.dismissSignIn)
@@ -610,6 +675,7 @@ private struct AgentsTab: View {
             case .refresh: stores.fleet.refreshOrder(now: stores.now())
             case .toggleFamily(let head): stores.toggleFamily(head)
             case .filter(let filter): stores.filterFleet(filter)
+            case .lookOnNetwork: actions(.lookOnNetwork)
             }
         }
     }
@@ -675,7 +741,38 @@ private struct HostsTabRoot: View {
             case .revoke(let host): stores.revoke(host)
             case .openSystemSettings: openSystemSettings()
             case .subscribe: actions(.subscribe)
+            case .lookOnNetwork: actions(.lookOnNetwork)
             }
+        }
+    }
+}
+
+/// An account offered across a pairing, on a sheet of its own.
+private struct SignInOfferSheet: View {
+    @Environment(\.design) private var design
+    let prompt: SignInPrompt
+    let stores: StoreBundle
+    let actions: @MainActor (ShellAction) -> Void
+
+    var body: some View {
+        NavigationStack {
+            SignInOfferPanel(
+                prompt: prompt, working: stores.offers.answering == prompt.host,
+                failure: prompt.role == .receiver ? stores.offers.failure : nil
+            ) { action in
+                switch (prompt, action) {
+                case (.offered(let offer), .accept): stores.answer(offer, accept: true)
+                case (.offered(let offer), .decline): stores.answer(offer, accept: false)
+                case (.offering(let host, _), .accept): stores.offerAccount(to: host)
+                case (.offering(let host, _), .decline):
+                    if let id = host.id { stores.offers.notOffering(id) }
+                }
+            }
+        }
+        .tint(design.accentColor)
+        .presentationDetents([.medium])
+        .onAppear {
+            if stores.offers.firstShown(prompt) { actions(.signInOfferShown(prompt.role)) }
         }
     }
 }
@@ -871,9 +968,16 @@ private struct PairConfirmationPage: View {
     }
 
     /// Whether this invitation has nothing this phone can act on: no address
-    /// to dial and no account to reach a relay with.
+    /// to dial, the machine not found on this network under its id, and no
+    /// account to reach a relay with. The code names at most two IPv4
+    /// addresses, so a machine on an IPv6-only network sends none, and
+    /// discovery is what finds it.
     private var unreachable: Bool {
-        invitation.needsAnAccount && stores.hosts.account?.binding != .signedIn
+        invitation.needsAnAccount
+            && !stores.hosts.discovered.contains {
+                $0.id == invitation.host && !$0.addrs.isEmpty
+            }
+            && stores.hosts.account?.binding != .signedIn
     }
 
     private var confirmation: some View {

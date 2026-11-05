@@ -18,8 +18,10 @@ mod cloud;
 pub(crate) mod first_flight;
 mod peer;
 mod relay_server;
+pub(crate) mod sign_in_offers;
 mod status;
 pub mod token;
+mod web_sign_in;
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -108,6 +110,9 @@ pub struct EdgeOptions {
     pub interfaces: Option<Vec<std::net::IpAddr>>,
     /// How this host's links notice a silent peer.
     pub liveness: crate::identity::LinkLiveness,
+    /// The OAuth client a sign-in ticket a paired host hands this device is
+    /// redeemed under: the daemon's own, or the phone's.
+    pub sign_in_client: String,
 }
 
 pub type DiscoveryFactory = Arc<dyn Fn() -> Result<Arc<dyn Discovery>, String> + Send + Sync>;
@@ -170,6 +175,7 @@ impl Default for EdgeOptions {
             cloud: CloudOptions::default(),
             interfaces: None,
             liveness: Default::default(),
+            sign_in_client: crate::auth::oauth::CLI_CLIENT_ID.to_owned(),
         }
     }
 }
@@ -271,7 +277,6 @@ pub enum EdgeError {
 /// One profile's network edge.
 pub struct Edge {
     dir: PathBuf,
-    host_name: String,
     identity: DeviceIdentity,
     trust: SharedTrustStore,
     /// The session tickets this profile issues, kept across restarts.
@@ -284,6 +289,14 @@ pub struct Edge {
     pair_mode: Arc<crate::driver::pairing::PairWindow>,
     reachability: ReachabilityLinkConnector,
     discovery: Arc<dyn Discovery>,
+    /// What this host advertises on the local network, when it does: said
+    /// again when its name changes or its pairing window opens or closes.
+    advert: Arc<Mutex<Option<Advertisement>>>,
+    /// The one-tap sign-in offers this profile made and was made.
+    sign_in_offers: sign_in_offers::SignInOffers,
+    /// The OAuth client this device signs in as when it redeems a ticket a
+    /// paired host offered it.
+    sign_in_client: String,
     found: Arc<FoundHosts>,
     scope: String,
     lan_addr: Option<SocketAddr>,
@@ -380,7 +393,7 @@ impl Edge {
                 PairingService::new(
                     runtime.clone(),
                     LocalPairingIdentity::from_device_identity(&identity),
-                    host_name.clone(),
+                    local_host.clone(),
                 ),
                 pairing_rx,
                 shutdown.subscribe(),
@@ -472,21 +485,25 @@ impl Edge {
             first_flights: first_flights.clone(),
         });
         // A handed set is advertised nowhere: this edge has no advertiser.
+        let mut advert = None;
         if let Some(addr) = lan_addr.filter(|_| !handed) {
             let addrs = if addr.ip().is_unspecified() {
                 local_pairing_addrs(addr.port())
             } else {
                 vec![addr]
             };
+            let advertised = Advertisement {
+                host_id: identity.host_id,
+                name: host_name.clone(),
+                version: crate::PROTOCOL_VERSION,
+                addrs,
+                scope: options.discovery_scope.clone(),
+                pairing_open: pair_mode.is_active(),
+            };
             discovery
-                .advertise(Advertisement {
-                    host_id: identity.host_id,
-                    name: host_name.clone(),
-                    version: crate::PROTOCOL_VERSION,
-                    addrs,
-                    scope: options.discovery_scope.clone(),
-                })
+                .advertise(advertised.clone())
                 .map_err(|error| EdgeError::Discovery(error.to_string()))?;
+            advert = Some(advertised);
         }
         tasks.push(reachability.spawn_dial_on_found(discovery.browse()));
         discovery.requery();
@@ -502,7 +519,6 @@ impl Edge {
 
         let edge = Arc::new(Self {
             dir: dir.to_owned(),
-            host_name,
             identity,
             trust,
             tickets,
@@ -514,6 +530,9 @@ impl Edge {
             pair_mode,
             reachability,
             discovery,
+            advert: Arc::new(Mutex::new(advert)),
+            sign_in_offers: sign_in_offers::SignInOffers::default(),
+            sign_in_client: options.sign_in_client.clone(),
             found,
             scope: options.discovery_scope.clone(),
             lan_addr,
@@ -569,8 +588,27 @@ impl Edge {
         self.identity.public_key()
     }
 
-    pub fn host_name(&self) -> &str {
-        &self.host_name
+    pub fn host_name(&self) -> String {
+        self.local_host.name()
+    }
+
+    /// The person renamed this machine: discovery, new links and pairings
+    /// say the new name from now on. A host already paired keeps the name
+    /// it paired with until it pairs again.
+    pub(crate) fn rename(&self, name: &str) {
+        let name = wire::HostName::lossy(name).into_string();
+        self.local_host.set_name(&name);
+        let advertisement = {
+            let mut advert = self.advert.lock().unwrap();
+            let Some(advertisement) = advert.as_mut() else {
+                return;
+            };
+            advertisement.name = name;
+            advertisement.clone()
+        };
+        if let Err(error) = self.discovery.advertise(advertisement) {
+            tracing::warn!(%error, "advertising the new name");
+        }
     }
 
     /// What this host's handshake says it can do.
@@ -601,6 +639,50 @@ impl Edge {
             Some(addr) => vec![addr],
             None => Vec::new(),
         }
+    }
+
+    /// What a QR invitation names to dial: the LAN listener's port and, for
+    /// a listener on every interface, at most one home and one Tailscale
+    /// address of the machine's (see
+    /// [`crate::pairing::qr::invitation_addrs`]). A listener bound to one
+    /// IPv4 address answers there alone, so that address is named whatever
+    /// it is: a test network's hosts and a driven phone listen on loopback,
+    /// and two of them pair by the link. Port 0 without a listener.
+    pub fn invitation_reach(&self) -> (u16, Vec<std::net::Ipv4Addr>) {
+        let Some(lan) = self.lan_addr else {
+            return (0, Vec::new());
+        };
+        let addrs = match lan.ip() {
+            ip if ip.is_unspecified() => crate::pairing::qr::invitation_addrs(
+                &local_pairing_addrs(lan.port()),
+                crate::discovery::default_route_ipv4(),
+            ),
+            std::net::IpAddr::V4(ip) => vec![ip],
+            std::net::IpAddr::V6(_) => Vec::new(),
+        };
+        (lan.port(), addrs)
+    }
+
+    /// Advertises again with the pairing window open or closed, so a phone
+    /// browsing nearby knows whether a PIN can work. The registration may
+    /// block on the system's responder, so it runs off the caller's task;
+    /// each run advertises the latest state, so a quick open and close
+    /// settle on the last.
+    pub(crate) fn advertise_pairing(&self, open: bool) {
+        let (advert, discovery) = (self.advert.clone(), self.discovery.clone());
+        if let Some(current) = advert.lock().unwrap().as_mut() {
+            current.pairing_open = open;
+        } else {
+            return;
+        }
+        tokio::task::spawn_blocking(move || {
+            let advert = advert.lock().unwrap();
+            if let Some(current) = advert.as_ref()
+                && let Err(error) = discovery.advertise(current.clone())
+            {
+                tracing::warn!(%error, open, "could not advertise the pairing window");
+            }
+        });
     }
 
     pub fn discovery_scope(&self) -> &str {
@@ -1065,6 +1147,8 @@ impl Edge {
     }
 
     pub(crate) async fn stop(&self, reason: wire::LinkCloseReason) {
+        // Nothing advertises again once the record is withdrawn.
+        self.advert.lock().unwrap().take();
         self.discovery.withdraw();
         self.reachability.stop_dialling();
         stop_step("saying goodbye on every link");
@@ -1095,6 +1179,7 @@ impl Edge {
 
 impl Drop for Edge {
     fn drop(&mut self) {
+        self.advert.lock().unwrap().take();
         self.discovery.withdraw();
         self.shutdown.send_replace(true);
         for task in self.tasks.lock().unwrap().drain(..) {

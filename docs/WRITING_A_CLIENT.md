@@ -92,8 +92,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = std::env::var_os("AMUX_CONFIG").map(PathBuf::from);
     let front_door = installer::front_door(config.as_deref())?;
     if config.is_none() {
-        // A client with a person in front of it asks them before adding a
-        // login item; the default adds one.
+        // Installs and starts amux; whether it also starts at login is the
+        // person's `start_at_login` setting, asked once it answers.
         let options = installer::Options::default();
         installer::ensure(&options, |step| eprintln!("{step:?}")).await?;
     } else if !installer::answering(&front_door).await {
@@ -249,24 +249,23 @@ Details:
 amux lives at `~/.amux/bin/amux` (`%USERPROFILE%\.amux\bin\amux.exe` on
 Windows) on every machine, whichever client put it there, and serves the
 default installation. Whichever client arrives first installs it. From then
-on amux starts at login on its own, and every client only attaches.
+on amux runs on its own (and starts at login once the person turns
+`start_at_login` on), and every client only attaches.
 Removing a client leaves amux running; `amux uninstall` is the one way to
 remove it.
 
 - **Installed but not running** (the binary exists, the front door does not
   answer): run `~/.amux/bin/amux server start`, then try the front door
   every quarter second or so. amux's own clients give it 30 seconds.
-- **Not installed:** install it, set it up and start it:
+- **Not installed:** install it and start it:
 
   ```sh
   curl -fsSL https://amux.sh/install | sh
-  ~/.amux/bin/amux init --login-item yes
   ~/.amux/bin/amux server start
   ```
 
   On Windows the install script is PowerShell,
-  `irm https://amux.sh/install | iex`; then `amux init` and
-  `amux server start` as above.
+  `irm https://amux.sh/install | iex`; then `amux server start` as above.
 
 Details:
 
@@ -274,15 +273,16 @@ Details:
   source checkout's, a test's) that may run another build. Attach to it
   when it answers; otherwise report it down, and never install or start
   anything for it. Every `amux` command reads `AMUX_CONFIG` too.
-- **The login item.** `amux init --login-item yes` adds one (a LaunchAgent
-  on macOS, a systemd user unit on Linux, a scheduled task on Windows) that
-  starts amux at every login; `--login-item no` installs without one. Ask
-  the person first: without a terminal, `amux init` asks nothing.
+- **The login item.** Installing adds none. The `start_at_login` setting
+  ([settings](#6-settings-and-onboarding)) writes one (a LaunchAgent on macOS, a systemd
+  user unit on Linux, a scheduled task on Windows) that starts amux at
+  every login from the next one on; ask the person, as onboarding's
+  `keep_reachable` step does.
 - **`PATH`.** An app opened from the desktop often has a sparse `PATH`, and
-  `amux init` records the `PATH` the agents it starts will run with. Run it
-  with the person's login-shell `PATH` (on macOS and Linux, what
-  `$SHELL -ilc 'printf %s "$PATH"'` prints), or the agents will not find
-  the tools they run.
+  the daemon records its own `PATH` in the login item for the agents it
+  starts. Start amux with the person's login-shell `PATH` (on macOS and
+  Linux, what `$SHELL -ilc 'printf %s "$PATH"'` prints), as the installer
+  crate does, or the agents will not find the tools they run.
 - **Downloading amux yourself.** Read
   `https://amux.sh/releases/stable.json`, the stable channel's signed
   manifest, as the install script does. Each target
@@ -337,8 +337,10 @@ device flow and streams what happens:
 3. **A `signed_in` event** with the profile, and the stream ends.
 
 Leave `profile_id` empty to let the installation pick: the profile already
-bound to this account, else one that holds nothing yet, else a new one.
-Closing the stream abandons the sign-in.
+bound to this account; else the installation's only profile, when it has
+one and nobody has signed in on it, without the `adopt` question, since what
+it holds is already the person's; else one that holds nothing yet; else a
+new one. Closing the stream abandons the sign-in.
 
 An app that runs its own browser sign-in (authorization code with PKCE)
 hands the refresh token it obtained to the daemon with `BindProfile`,
@@ -372,6 +374,70 @@ reported them; the host's entry says whether it is reachable.
 
 `CreateAgent`, `StopAgent`, `ResumeAgent`, `RenameAgent` and `DeleteAgent`
 act on agents.
+
+### 6. Settings and onboarding
+
+The installation's everyday settings are on the front door: `GetSettings`
+answers them and `UpdateSettings` changes the fields it sets, leaving the
+rest alone, and answers the settings it leaves. The config file stays where
+they live, so `amux config` and a client see the same values; a change is
+in force at once, and one made to the file beside the daemon within
+seconds, or as soon as a client asks `GetSettings`, which reads a changed
+file first.
+
+| `Settings` field | What it is |
+| --- | --- |
+| `host_name` | What paired devices and the phone call this machine; never empty. Setting it empty returns to the machine's own name. A rename shows in discovery and in every pairing from then on; a device already paired keeps the name it paired with. |
+| `start_at_login` | Whether amux starts at login. Absent on an install without a supervisor, which has nothing to start. Turning it on writes the login item for the next login and leaves the running amux alone. |
+| `keep_awake` | On power the machine stays awake while amux runs; on battery only while an agent works. |
+| `repositories` | The folders new-agent pickers offer first, as absolute paths; `UpdateSettings` takes the whole new list. `ListRepositories` answers them, then the folders agents ran in lately. |
+| `chat_in` | Where the terminal client chats: amux's chat or each agent's own interface. |
+| `claude_kind` | Which Claude a new agent runs; unspecified follows `chat_in` (its own interface means terminal Claude). Every host publishes what this resolves to as `HostEntry.claude_kind`; create Claude agents of that kind. |
+| `telemetry`, `auto_reports` | Usage events and automatic reports. |
+
+How amux is deployed (the supervisor, updates, where releases and data
+live, discovery's scope, the agents' tunables) stays in the file and
+`amux config`, not on this call.
+
+`SuggestRepositories` offers folders for the `repositories` setting: the Git
+repositories Claude Code and Codex ran in on this machine in the last 30
+days that still exist, newest first, at most eight. A session in a linked
+worktree suggests the repository it was made from.
+
+Onboarding is one list of steps the daemon keeps for each profile, the
+same for every client. `SubscribeOnboarding` sends them now and again on
+every change; leave `profile_id` empty for the profile a bare `amux`
+opens, the oldest. Each step is `needed`, `done`, `skipped` or
+`not_needed`, in the order to show them:
+
+| Step | Done when |
+| --- | --- |
+| `pair_phone` | the profile trusts a phone |
+| `keep_reachable` | the person confirms starting at login and keeping awake; not needed on an install without a supervisor |
+| `sign_in` | the profile is signed in |
+| `repositories` | the person confirms the repository list |
+| `improve` | the person confirms the telemetry and automatic-reports choice |
+| `first_agent` | a paired device created an agent on this machine |
+
+`AnswerOnboarding` takes one answer and returns the steps after it:
+`done` for a step the person confirms (only `keep_reachable`, `repositories`
+and `improve`: the others are done when they happen), `skip` for "Later",
+`dismiss` when the person dismisses an offer to finish setting up, which
+skips every needed step, `shown` when the client shows a step,
+`sign_in_offer_shown` when it puts a one-tap sign-in in front of the
+person (`offerer` for "Also sign in" on the signed-in side, `receiver` for
+the offer on the signed-out side). Name the client in `surface` so the answer is
+counted for it; unspecified counts nothing. After a dismissal the steps
+carry `dismissed`: every step skipped now was skipped when the person
+dismissed, so a client stops offering to finish them; a step skipped
+afterwards clears it.
+Confirmations are the installation's; a skip of `pair_phone`, `sign_in` or
+`first_agent` is the profile's. A step added in a later release appears to
+existing installations on its own, needed.
+
+A client other than the terminal that opens a profile socket says which
+it is in the `amux-surface` request header (`mac` for the Mac app), so the
+fleet subscription counts it as that client opening.
 
 ## Errors
 

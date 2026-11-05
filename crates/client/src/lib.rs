@@ -145,6 +145,47 @@ pub trait Client: Send + Sync + 'static {
     async fn sign_out(&self) -> Result<(), RpcError>;
     /// This profile's identity as its peers pin it.
     async fn get_device_identity(&self) -> Result<wire::DeviceIdentity, RpcError>;
+    /// Opens a pairing window on this profile.
+    async fn start_pairing(
+        &self,
+        request: wire::StartPairingRequest,
+    ) -> Result<wire::PairingWindow, RpcError> {
+        let _ = request;
+        Err(not_served("start_pairing"))
+    }
+    /// Closes the profile's pairing window, if one is open.
+    async fn cancel_pairing(&self) -> Result<(), RpcError> {
+        Err(not_served("cancel_pairing"))
+    }
+    /// The profile's pairing window, now and on every change.
+    async fn watch_pairing(&self) -> Result<EventStream<wire::PairingStatus>, RpcError> {
+        Err(not_served("watch_pairing"))
+    }
+    /// Offers the paired host `host_id` this profile's account.
+    async fn offer_sign_in(&self, host_id: Vec<u8>) -> Result<(), RpcError> {
+        let _ = host_id;
+        Err(not_served("offer_sign_in"))
+    }
+    /// The offers paired hosts made this profile, now and on every change.
+    async fn subscribe_sign_in_offers(&self) -> Result<EventStream<wire::SignInOffers>, RpcError> {
+        Err(not_served("subscribe_sign_in_offers"))
+    }
+    /// Accepts an offer, which signs this profile in, or dismisses it.
+    async fn answer_sign_in_offer(
+        &self,
+        request: wire::AnswerSignInOfferRequest,
+    ) -> Result<wire::Profile, RpcError> {
+        let _ = request;
+        Err(not_served("answer_sign_in_offer"))
+    }
+}
+
+/// A call an implementation does not serve, as the runtime would refuse it.
+fn not_served(call: &str) -> RpcError {
+    RpcError::Refused(wire::Error::new(
+        ErrorCode::Unimplemented,
+        format!("{call} is not served here"),
+    ))
 }
 
 /// One implementation of [`Client`] per way of reaching the services:
@@ -272,6 +313,42 @@ macro_rules! client_impl {
             async fn get_device_identity(&self) -> Result<wire::DeviceIdentity, RpcError> {
                 Ok($call!(self, admin, get_device_identity, wire::Empty {}).await?.into_inner())
             }
+
+            async fn start_pairing(
+                &self,
+                request: wire::StartPairingRequest,
+            ) -> Result<wire::PairingWindow, RpcError> {
+                Ok($call!(self, admin, start_pairing, request).await?.into_inner())
+            }
+
+            async fn cancel_pairing(&self) -> Result<(), RpcError> {
+                $call!(self, admin, cancel_pairing, wire::Empty {}).await?;
+                Ok(())
+            }
+
+            async fn watch_pairing(&self) -> Result<EventStream<wire::PairingStatus>, RpcError> {
+                Ok(events($call!(self, admin, watch_pairing, wire::Empty {}).await?.into_inner()))
+            }
+
+            async fn offer_sign_in(&self, host_id: Vec<u8>) -> Result<(), RpcError> {
+                $call!(self, admin, offer_sign_in, wire::OfferSignInRequest { host_id }).await?;
+                Ok(())
+            }
+
+            async fn subscribe_sign_in_offers(
+                &self,
+            ) -> Result<EventStream<wire::SignInOffers>, RpcError> {
+                Ok(events(
+                    $call!(self, admin, subscribe_sign_in_offers, wire::Empty {}).await?.into_inner(),
+                ))
+            }
+
+            async fn answer_sign_in_offer(
+                &self,
+                request: wire::AnswerSignInOfferRequest,
+            ) -> Result<wire::Profile, RpcError> {
+                Ok($call!(self, admin, answer_sign_in_offer, request).await?.into_inner())
+            }
         }
     };
 }
@@ -309,6 +386,8 @@ pub async fn local_channel(path: &Path) -> Result<tonic::transport::Channel, Rpc
 pub struct GrpcClient {
     service: wire::ClientStubs,
     admin: ProfileAdminServiceClient<tonic::transport::Channel>,
+    /// What every call names this client as, in [`wire::SURFACE_HEADER`].
+    surface: Option<tonic::metadata::AsciiMetadataValue>,
 }
 
 impl GrpcClient {
@@ -321,20 +400,49 @@ impl GrpcClient {
         GrpcClient {
             service: wire::client_stubs(channel.clone()),
             admin: ProfileAdminServiceClient::new(channel),
+            surface: None,
         }
+    }
+
+    /// Names this client as `surface` on every call (`mac` for the Mac
+    /// app), so the daemon counts it as that client opening.
+    pub fn naming(mut self, surface: Option<&'static str>) -> GrpcClient {
+        self.surface = surface.map(tonic::metadata::AsciiMetadataValue::from_static);
+        self
+    }
+
+    fn request<T>(&self, message: T) -> Request<T> {
+        let mut request = Request::new(message);
+        if let Some(surface) = &self.surface {
+            request
+                .metadata_mut()
+                .insert(wire::SURFACE_HEADER, surface.clone());
+        }
+        request
     }
 }
 
 macro_rules! grpc_call {
     ($client:expr, admin, $name:ident, $request:expr) => {
-        $client.admin.clone().$name($request)
+        $client.admin.clone().$name($client.request($request))
     };
     ($client:expr, $service:ident, $name:ident, $request:expr) => {
-        $client.service.$service.clone().$name($request)
+        $client
+            .service
+            .$service
+            .clone()
+            .$name($client.request($request))
     };
 }
 
 client_impl!(impl[] Client for GrpcClient, grpc_call);
+
+/// A profile's administration served in process, its streams boxed so one
+/// trait object can stand for any implementation.
+pub type DynProfileAdmin = dyn ProfileAdminService<
+        WatchPairingStream = tonic::codegen::BoxStream<wire::PairingStatus>,
+        SubscribeSignInOffersStream = tonic::codegen::BoxStream<wire::SignInOffers>,
+    >;
 
 /// The client services hosted in this process, called directly: the
 /// phone's embedded runtime. Errors take the same shape they would over a
@@ -342,7 +450,7 @@ client_impl!(impl[] Client for GrpcClient, grpc_call);
 #[derive(Clone)]
 pub struct InProcess<S> {
     service: S,
-    admin: Option<Arc<dyn ProfileAdminService>>,
+    admin: Option<Arc<DynProfileAdmin>>,
 }
 
 impl<S: AgentService + SessionService> InProcess<S> {
@@ -354,7 +462,7 @@ impl<S: AgentService + SessionService> InProcess<S> {
     }
 
     /// Serves the dump through the profile's administration.
-    pub fn with_admin(mut self, admin: Arc<dyn ProfileAdminService>) -> InProcess<S> {
+    pub fn with_admin(mut self, admin: Arc<DynProfileAdmin>) -> InProcess<S> {
         self.admin = Some(admin);
         self
     }

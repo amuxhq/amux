@@ -1,15 +1,22 @@
-//! The machine's sleep assertion, held by the supervisor for its lifetime
-//! under `keep_awake: on`, so a phone can spawn on the machine while nobody
-//! is at it, whether or not an agent is working. Neither the daemon nor an
-//! agent holds one, so it survives daemon restarts and the update gap.
+//! The machine's sleep assertions under `keep_awake`: on power the machine
+//! stays awake whenever amux runs, so a phone can start an agent on it
+//! while nobody is at it; on battery only while an agent is working, so a
+//! laptop in a bag is not drained by an idle amux.
 //!
-//! On macOS it takes two IOKit assertions: PreventSystemSleep, which the
-//! system honours on AC power only, and PreventUserIdleSystemSleep, which it
-//! honours on battery too. Together they keep a machine awake when it is
-//! plugged in with the lid open; whether a closed lid is honoured on AC is
-//! unmeasured. On Windows it is SetThreadExecutionState on a thread kept
-//! for the purpose. Linux holds none: a service-managed server does not
-//! sleep, and desktops differ in how they would be asked.
+//! The two halves have two holders. The supervisor holds the one for power
+//! for its lifetime, so it survives daemon restarts and the update gap; the
+//! daemon holds the one that battery honours while one of its agents works,
+//! since only it knows that. Each reads `keep_awake` as it changes.
+//!
+//! On macOS the supervisor's is the IOKit assertion PreventSystemSleep,
+//! which the system honours on AC power only, and the daemon's is
+//! PreventUserIdleSystemSleep, which it honours on battery too. Together
+//! they keep a machine awake when it is plugged in with the lid open;
+//! whether a closed lid is honoured on AC is unmeasured. On Windows both are
+//! SetThreadExecutionState on a thread kept for the purpose, the
+//! supervisor's set only while the machine reports AC power. Linux holds
+//! none: a service-managed server does not sleep, and desktops differ in how
+//! they would be asked.
 
 /// What `pmset -g assertions` shows as the assertion's name.
 pub const REASON: &str = "amux keeps this machine reachable";
@@ -21,10 +28,21 @@ pub struct KeepAwake {
 }
 
 impl KeepAwake {
-    /// Takes the assertion; a failure is logged and leaves the machine free
-    /// to sleep, which is no worse than keep_awake off.
-    pub fn hold() -> Self {
-        Self { held: imp::hold() }
+    /// The supervisor's: the machine stays awake while it is on power.
+    /// A failure is logged and leaves the machine free to sleep, which is
+    /// no worse than keep_awake off.
+    pub fn on_power() -> Self {
+        Self {
+            held: imp::hold(imp::Want::OnPower),
+        }
+    }
+
+    /// The daemon's while an agent works: the machine stays awake on
+    /// battery too.
+    pub fn while_working() -> Self {
+        Self {
+            held: imp::hold(imp::Want::Always),
+        }
     }
 }
 
@@ -62,7 +80,12 @@ mod imp {
     /// Honoured on battery too.
     const IDLE: &str = "PreventUserIdleSystemSleep";
 
-    pub struct Held(Vec<u32>);
+    pub enum Want {
+        OnPower,
+        Always,
+    }
+
+    pub struct Held(Option<u32>);
 
     struct CfString(*const c_void);
 
@@ -83,32 +106,32 @@ mod imp {
         }
     }
 
-    pub fn hold() -> Held {
+    pub fn hold(want: Want) -> Held {
         let name = CfString::new(REASON);
-        let mut held = Vec::new();
-        for kind in [SYSTEM, IDLE] {
-            let kind_string = CfString::new(kind);
-            let mut id = 0;
-            // SAFETY: two live CFStrings and an out parameter we own.
-            let result =
-                unsafe { IOPMAssertionCreateWithName(kind_string.0, LEVEL_ON, name.0, &mut id) };
-            if result == 0 {
-                held.push(id);
-            } else {
-                tracing::warn!(
-                    assertion = kind,
-                    result,
-                    "could not take the sleep assertion"
-                );
-            }
+        let kind = match want {
+            Want::OnPower => SYSTEM,
+            Want::Always => IDLE,
+        };
+        let kind_string = CfString::new(kind);
+        let mut id = 0;
+        // SAFETY: two live CFStrings and an out parameter we own.
+        let result =
+            unsafe { IOPMAssertionCreateWithName(kind_string.0, LEVEL_ON, name.0, &mut id) };
+        if result != 0 {
+            tracing::warn!(
+                assertion = kind,
+                result,
+                "could not take the sleep assertion"
+            );
+            return Held(None);
         }
-        tracing::info!(assertions = held.len(), "holding the sleep assertion");
-        Held(held)
+        tracing::info!(assertion = kind, "holding the sleep assertion");
+        Held(Some(id))
     }
 
     impl Drop for Held {
         fn drop(&mut self) {
-            for id in self.0.drain(..) {
+            if let Some(id) = self.0.take() {
                 // SAFETY: an assertion this process created.
                 unsafe { IOPMAssertionRelease(id) };
             }
@@ -119,26 +142,60 @@ mod imp {
 #[cfg(windows)]
 mod imp {
     use std::sync::mpsc;
+    use std::time::Duration;
 
     use windows_sys::Win32::System::Power::{
-        ES_CONTINUOUS, ES_SYSTEM_REQUIRED, SetThreadExecutionState,
+        ES_CONTINUOUS, ES_SYSTEM_REQUIRED, GetSystemPowerStatus, SYSTEM_POWER_STATUS,
+        SetThreadExecutionState,
     };
+
+    /// How often the power-only hold looks at whether the machine is on AC.
+    const POWER_POLL: Duration = Duration::from_secs(30);
+
+    pub enum Want {
+        OnPower,
+        Always,
+    }
 
     /// The state belongs to the thread that set it, so one thread holds it
     /// and clears it when the sender drops.
     pub struct Held(#[allow(dead_code)] mpsc::Sender<()>);
 
-    pub fn hold() -> Held {
+    fn on_ac() -> bool {
+        let mut status: SYSTEM_POWER_STATUS = unsafe { std::mem::zeroed() };
+        // SAFETY: a plain call filling a struct we own.
+        unsafe { GetSystemPowerStatus(&mut status) != 0 && status.ACLineStatus == 1 }
+    }
+
+    pub fn hold(want: Want) -> Held {
         let (sender, receiver) = mpsc::channel::<()>();
         std::thread::spawn(move || {
-            // SAFETY: plain calls on this thread's own execution state.
-            if unsafe { SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED) } == 0 {
-                tracing::warn!("could not take the sleep assertion");
-                return;
+            let mut held = false;
+            loop {
+                let wanted = match want {
+                    Want::Always => true,
+                    Want::OnPower => on_ac(),
+                };
+                if wanted != held {
+                    let state = if wanted {
+                        ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+                    } else {
+                        ES_CONTINUOUS
+                    };
+                    // SAFETY: plain calls on this thread's own execution state.
+                    if unsafe { SetThreadExecutionState(state) } == 0 {
+                        tracing::warn!("could not change the sleep assertion");
+                    } else {
+                        held = wanted;
+                        tracing::info!(held, "the sleep assertion");
+                    }
+                }
+                // Returns once the sender is dropped.
+                match receiver.recv_timeout(POWER_POLL) {
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    _ => break,
+                }
             }
-            tracing::info!("holding the sleep assertion");
-            // Returns once the sender is dropped.
-            let _ = receiver.recv();
             // SAFETY: as above.
             unsafe { SetThreadExecutionState(ES_CONTINUOUS) };
         });
@@ -148,9 +205,14 @@ mod imp {
 
 #[cfg(not(any(target_os = "macos", windows)))]
 mod imp {
+    pub enum Want {
+        OnPower,
+        Always,
+    }
+
     pub struct Held;
 
-    pub fn hold() -> Held {
+    pub fn hold(_want: Want) -> Held {
         tracing::info!("this platform holds no sleep assertion");
         Held
     }

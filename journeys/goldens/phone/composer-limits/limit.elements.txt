@@ -12,8 +12,8 @@ chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
 chat.more | More |  | 350,66,28,36
 chat.back | Back |  | 20,66,40,36
-chat.header | /t/a/n/d/work · desk | live | 80,66,152,36
-chat.title | limited | limited | 80,66,152,36
+chat.header | /p/t/a/n/d/work · desk | live | 80,66,165,36
+chat.title | limited | limited | 80,66,165,36
  | Attach |  | 23,779,44,44
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
@@ -23,5 +23,5 @@ chat.title | limited | limited | 80,66,152,36
  | The FAQ is rewritten. |  | 16,210,370,20
  | Worked <t> |  | 16,237,62,16
  | Back |  | 20,66,40,36
- | limited, /t/a/n/d/work · desk |  | 80,66,152,36
+ | limited, /p/t/a/n/d/work · desk |  | 80,66,165,36
  | More |  | 350,66,28,36

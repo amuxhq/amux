@@ -28,8 +28,8 @@ pub const SERVICE_TYPE: &str = "_amux._udp.local.";
 
 /// The TXT properties an advertisement carries. Everything that publishes one
 /// writes these, so a browser reads the same record whoever put it up.
-pub fn txt_properties(advert: &Advertisement) -> [(&'static str, String); 4] {
-    [
+pub fn txt_properties(advert: &Advertisement) -> Vec<(&'static str, String)> {
+    let mut properties = vec![
         ("v", advert.version.to_string()),
         // Hyphenated: the iPhone app parses this with Foundation's
         // `UUID(uuidString:)`, which rejects the 32-digit simple form.
@@ -40,8 +40,17 @@ pub fn txt_properties(advert: &Advertisement) -> [(&'static str, String); 4] {
         // if it were the second of two.
         ("name", advert.name.clone()),
         ("scope", advert.scope.clone()),
-    ]
+    ];
+    // Only while a window is open, so a phone that finds the host offers a
+    // PIN pad that can succeed, and otherwise says to open amux there.
+    if advert.pairing_open {
+        properties.push((PAIRING_OPEN, "1".to_owned()));
+    }
+    properties
 }
+
+/// The TXT property present while a pairing window is open.
+pub const PAIRING_OPEN: &str = "pair";
 
 /// A monotonic pause longer than this is treated as a system wake.
 pub const WAKE_GAP: Duration = Duration::from_secs(30);
@@ -74,6 +83,27 @@ pub(crate) fn local_pairing_addrs(_port: u16) -> Vec<SocketAddr> {
     Vec::new()
 }
 
+/// The IPv4 address the default route leaves this machine by, or none
+/// without one. Connecting a UDP socket only asks the routing table; no
+/// datagram is sent. The destination is a documentation address, which no
+/// route but the default one covers.
+#[cfg(not(target_os = "ios"))]
+pub(crate) fn default_route_ipv4() -> Option<std::net::Ipv4Addr> {
+    let socket = std::net::UdpSocket::bind((std::net::Ipv4Addr::UNSPECIFIED, 0)).ok()?;
+    socket
+        .connect((std::net::Ipv4Addr::new(198, 51, 100, 1), 9))
+        .ok()?;
+    match socket.local_addr().ok()?.ip() {
+        std::net::IpAddr::V4(ip) if !ip.is_unspecified() => Some(ip),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "ios")]
+pub(crate) fn default_route_ipv4() -> Option<std::net::Ipv4Addr> {
+    None
+}
+
 /// The untrusted connection hints published by one host.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Advertisement {
@@ -85,6 +115,8 @@ pub struct Advertisement {
     /// scope equals its own, matched exactly: real machines leave it empty,
     /// and a worktree or a test network sets its own so the two never meet.
     pub scope: String,
+    /// A pairing window is open on the host.
+    pub pairing_open: bool,
 }
 
 /// An update from a standing discovery subscription.

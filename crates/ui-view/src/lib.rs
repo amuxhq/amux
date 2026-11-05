@@ -12,6 +12,7 @@ mod ask;
 mod composer;
 mod fleet;
 mod form;
+mod onboarding;
 mod overview;
 mod review;
 mod rows;
@@ -42,6 +43,7 @@ pub use form::{
     FieldProblem, FormField, FormFieldKind, FormProblem, FormValue, form_answer, form_fields,
     form_problems,
 };
+pub use onboarding::{OnboardingView, SetupStep, next_step, onboarding_view, step_open};
 pub use overview::{
     ChangeTotals, ChangedFile, Changes, Comparison, Folder, JobRow, JobStop, Overview, ServerView,
     TaskLine, TaskMark, TasksView, UsageLabel, UsageView, UsageWindowView, changes, diff_base,

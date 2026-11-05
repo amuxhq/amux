@@ -24,6 +24,49 @@ final class HostsStoreTests: XCTestCase {
         XCTAssertEqual(hosts.known(found)?.addrs, ["10.0.0.9:7"])
     }
 
+    /// A machine found nearby that opens a pairing window is offered by
+    /// itself; one put away is not offered again while that window stays
+    /// open, and is once it closes and another opens.
+    func testAnOpenWindowIsOfferedUntilPutAwayAndAgainWhenItReopens() {
+        let hosts = HostsStore()
+        let closed = Cards.host(
+            found, name: "den", trusted: false, candidate: true, addrs: ["10.0.0.9:7"])
+        let open = Cards.host(
+            found, name: "den", trusted: false, candidate: true, addrs: ["10.0.0.9:7"],
+            pairingOpen: true)
+        hosts.show([closed])
+        XCTAssertTrue(closed.windowClosed)
+        XCTAssertNil(hosts.windowToOffer, "a code typed now could only fail")
+
+        hosts.show([open])
+        XCTAssertTrue(open.windowOpen)
+        XCTAssertEqual(hosts.windowToOffer?.id, found)
+
+        hosts.declineWindow(found)
+        XCTAssertNil(hosts.windowToOffer, "the same window is not raised again")
+        hosts.show([open])
+        XCTAssertNil(hosts.windowToOffer, "nor when the list moves")
+
+        hosts.show([closed])
+        hosts.show([open])
+        XCTAssertEqual(hosts.windowToOffer?.id, found, "a window opened again is offered")
+    }
+
+    /// Only a machine's own advertisement says its window is open, so one
+    /// reached through the relay or a paired machine is never offered by
+    /// itself, and a paired one has nothing to offer.
+    func testOnlyAWindowAdvertisedNearbyIsOffered() {
+        let hosts = HostsStore()
+        hosts.show([
+            Cards.host(found, name: "nova", trusted: false, candidate: true, relayOnly: true,
+                       pairingOpen: true),
+            Cards.host(studio, name: "studio", pairingOpen: true),
+        ])
+        XCTAssertNil(hosts.windowToOffer)
+        hosts.declineWindow(found)
+        XCTAssertEqual(hosts.declinedWindows, [], "only an open window is put away")
+    }
+
     /// A machine nobody paired that no address reaches was announced by the
     /// relay or a paired machine, and pairing goes through it: it is not on
     /// this network.

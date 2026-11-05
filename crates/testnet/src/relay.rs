@@ -83,6 +83,30 @@ struct CloudState {
     /// Device sign-ins started, in order: the code a person enters, and
     /// the account that approved it once one has.
     devices: Vec<(String, Option<String>)>,
+    /// Sign-in tickets minted, in order.
+    tickets: Vec<Ticket>,
+    /// The OAuth client each ticket redemption named, and whether it was
+    /// honoured, in order.
+    redeemed: Vec<(String, bool)>,
+    /// One-time web sign-in links handed out, in order: the account and
+    /// the path each opens.
+    web_links: Vec<(String, String)>,
+    /// The host every ticket is minted for from now on, whatever the
+    /// offerer named, when a story sets one.
+    tickets_for: Option<String>,
+    /// Whether ticket requests are turned down, as an account service that
+    /// is having trouble answers them.
+    refusing_tickets: bool,
+}
+
+/// A one-time sign-in ticket: the account it signs in to, the host it was
+/// minted for, and whether it was spent.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Ticket {
+    pub ticket: String,
+    pub account: String,
+    pub host_id: String,
+    pub spent: bool,
 }
 
 /// A report handed to the account service: whose, each multipart section
@@ -377,6 +401,42 @@ impl Relay {
         self.cloud.state.lock().unwrap().refreshed_as.clone()
     }
 
+    /// Every sign-in ticket minted so far, in order.
+    pub fn tickets(&self) -> Vec<Ticket> {
+        self.cloud.state.lock().unwrap().tickets.clone()
+    }
+
+    /// The OAuth client each ticket redemption named, and whether the
+    /// ticket was honoured, in order.
+    pub fn redeemed(&self) -> Vec<(String, bool)> {
+        self.cloud.state.lock().unwrap().redeemed.clone()
+    }
+
+    /// Every one-time web sign-in link handed out: the account and path.
+    pub fn web_links(&self) -> Vec<(String, String)> {
+        self.cloud.state.lock().unwrap().web_links.clone()
+    }
+
+    /// Mints every ticket from now on for `host_id` (lowercase hex),
+    /// whatever host the offerer names: as if an offerer handed on a ticket
+    /// minted for another of its peers.
+    pub fn mint_tickets_for(&self, host_id: Option<&str>) {
+        self.cloud.state.lock().unwrap().tickets_for = host_id.map(str::to_owned);
+    }
+
+    /// Turns every sign-in ticket request down from now on, as an account
+    /// service having trouble does; `false` mints them again.
+    pub fn refuse_tickets(&self, refusing: bool) {
+        self.cloud.state.lock().unwrap().refusing_tickets = refusing;
+    }
+
+    /// Mints a ticket for `account` and `host_id` as the account service
+    /// would for one of that account's devices: for a story that hands a
+    /// host a ticket minted for another.
+    pub fn mint_ticket(&self, account: &str, host_id: &str) -> String {
+        self.cloud.mint_ticket(account, host_id)
+    }
+
     /// Every credential the relay was shown so far, in Hello or Reauth.
     pub fn presented(&self) -> Vec<String> {
         self.cloud.state.lock().unwrap().presented.clone()
@@ -586,6 +646,34 @@ impl Cloud {
                     None => status(400, serde_json::json!({ "error": "authorization_pending" })),
                 }
             }
+            // A sign-in ticket a paired device minted for this host: spent
+            // once, and only by the host it names.
+            "/connect/token" if field("ticket").is_some() => {
+                let ticket = field("ticket").unwrap_or_default();
+                let host = field("host_id").unwrap_or_default();
+                let client = field("client_id").unwrap_or_default();
+                let mut state = self.state.lock().unwrap();
+                let honoured = state
+                    .tickets
+                    .iter_mut()
+                    .find(|minted| {
+                        minted.ticket == ticket && !minted.spent && minted.host_id == host
+                    })
+                    .map(|minted| {
+                        minted.spent = true;
+                        minted.account.clone()
+                    });
+                state.redeemed.push((client, honoured.is_some()));
+                match honoured {
+                    Some(account) => json(serde_json::json!({
+                        "access_token": format!("access-{account}"),
+                        "token_type": "bearer",
+                        "expires_in": 3600,
+                        "refresh_token": format!("refresh-{account}"),
+                    })),
+                    None => status(400, serde_json::json!({ "error": "invalid_grant" })),
+                }
+            }
             "/connect/token" => {
                 let client = form
                     .split('&')
@@ -615,6 +703,44 @@ impl Cloud {
                     "email": format!("{account}@example.com"),
                     "picture": self.state.lock().unwrap().pictures.get(&account),
                 })),
+                None => status(401, serde_json::json!({})),
+            },
+            "/api/sign-in-tickets" => match bearer.filter(|account| self.signed_in(account)) {
+                Some(_) if self.state.lock().unwrap().refusing_tickets => {
+                    status(503, serde_json::json!({ "error": "unavailable" }))
+                }
+                Some(account) => {
+                    let host = serde_json::from_slice::<serde_json::Value>(&body)
+                        .ok()
+                        .and_then(|body| body["host_id"].as_str().map(str::to_owned));
+                    match host {
+                        Some(host) => json(serde_json::json!({
+                            "ticket": self.mint_ticket(&account, &host),
+                            "expires_in": 60,
+                        })),
+                        None => status(400, serde_json::json!({ "error": "host_id" })),
+                    }
+                }
+                None => status(401, serde_json::json!({})),
+            },
+            "/api/web-sign-in-links" => match bearer.filter(|account| self.signed_in(account)) {
+                Some(account) => {
+                    let path = serde_json::from_slice::<serde_json::Value>(&body)
+                        .ok()
+                        .and_then(|body| body["path"].as_str().map(str::to_owned))
+                        .filter(|path| path.starts_with('/') && !path.starts_with("//"));
+                    match path {
+                        Some(path) => {
+                            let mut state = self.state.lock().unwrap();
+                            state.web_links.push((account, path.clone()));
+                            let n = state.web_links.len();
+                            json(serde_json::json!({
+                                "url": format!("{}/web-sign-in/{n}?next={path}", self.url),
+                            }))
+                        }
+                        None => status(400, serde_json::json!({ "error": "path" })),
+                    }
+                }
                 None => status(401, serde_json::json!({})),
             },
             "/api/connect" => match bearer.filter(|account| self.signed_in(account)) {
@@ -660,6 +786,22 @@ impl Cloud {
             },
             _ => status(404, serde_json::json!({})),
         }
+    }
+
+    fn mint_ticket(&self, account: &str, host_id: &str) -> String {
+        let mut state = self.state.lock().unwrap();
+        let ticket = format!("ticket-{}", state.tickets.len() + 1);
+        let host_id = state
+            .tickets_for
+            .clone()
+            .unwrap_or_else(|| host_id.to_owned());
+        state.tickets.push(Ticket {
+            ticket: ticket.clone(),
+            account: account.to_owned(),
+            host_id,
+            spent: false,
+        });
+        ticket
     }
 
     fn signed_in(&self, account: &str) -> bool {

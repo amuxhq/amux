@@ -26,6 +26,26 @@ impl CoreLinks {
         }
     }
 
+    /// A link to the paired `peer` came up: the profile's sign-in offers
+    /// learn where frames to it go and whether it says it is signed in.
+    pub(crate) fn sign_in_link_up(
+        &self,
+        peer: uuid::Uuid,
+        signed_in: bool,
+        out: tokio::sync::mpsc::Sender<wire::Message>,
+    ) {
+        if let Some(edge) = self.0.upgrade().and_then(|runtime| runtime.edge()) {
+            edge.sign_in_link_up(peer, signed_in, out);
+        }
+    }
+
+    /// A sign-in frame the paired `peer` sent.
+    pub(crate) fn sign_in_frame(&self, peer: uuid::Uuid, body: wire::message::Body) {
+        if let Some(edge) = self.0.upgrade().and_then(|runtime| runtime.edge()) {
+            edge.sign_in_frame(peer, body);
+        }
+    }
+
     /// Reports what a link or channel did, without waiting.
     pub(crate) fn report(&self, input: Input) {
         if let Some(runtime) = self.0.upgrade() {

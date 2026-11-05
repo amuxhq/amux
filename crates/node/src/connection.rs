@@ -175,6 +175,7 @@ impl ConnectionManager {
                     host: core_host(advert.host_id),
                     name: advert.name,
                     addrs: advert.addrs.iter().map(ToString::to_string).collect(),
+                    pairing_open: advert.pairing_open,
                 })
                 .collect(),
         });

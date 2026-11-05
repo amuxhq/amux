@@ -10,7 +10,6 @@
 mod attach;
 mod config;
 mod connect;
-mod notice;
 mod pairing;
 mod profiles;
 mod relay;
@@ -336,14 +335,6 @@ fn main() -> ExitCode {
     let Some(command) = cli.command else {
         return report(open_ui(cli.config, cli.profile, cli.cloud_url));
     };
-    // A command a person runs; what amux runs on itself, and the daemon
-    // and relay a service manager runs, print nothing of their own.
-    if !matches!(
-        command,
-        Command::Internal { .. } | Command::Daemon | Command::Relay | Command::Supervise { .. }
-    ) {
-        notice::once(cli.config.as_deref());
-    }
     match command {
         Command::Internal {
             command: Internal::Agent { dir },

@@ -364,13 +364,8 @@ runtime keeps and sends: coming to the front counts the app as opened (at
 most once an hour), and going to the back sends what is waiting before the
 system may suspend the app. The paywall opening and a purchase starting are
 seen only by the app, which records them on the account on screen
-(`RuntimeCoordinator.record`). The first screen a fresh install draws says
-once that amux sends usage counts and never content, with Details opening
-[the analytics page](ANALYTICS.md): beneath the empty Agents list, or above a
-fleet as a card with a close mark. Drawing it tells the runtime the notice was
-shown (`amux_runtime_mark_notice_shown`), which holds every count until then
-and is kept with the installation, so it is shown once.
-**Share Usage** in **Settings** turns it off; the
+(`RuntimeCoordinator.record`). The App Store privacy label says what is
+collected. **Share Usage** in **Settings** turns it off; the
 choice is kept in the app's defaults and handed to the runtime at start and
 on every change. Only the App Store build sends. **Send Automatic Reports**
 beside it, off by default, is handed over the same way: with it on, the

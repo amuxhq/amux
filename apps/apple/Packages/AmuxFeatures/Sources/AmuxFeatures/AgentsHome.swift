@@ -38,12 +38,6 @@ public enum HomeAction: Equatable, Sendable {
     /// The person read why amux looks at this network and asked it to look,
     /// which is when iOS asks for local network access.
     case lookOnNetwork
-    /// The analytics notice is on screen, there.
-    case usageNoticeDrawn(UsageNotice.Place)
-    /// The analytics notice's card was put away.
-    case putAwayUsageNotice
-    /// Read what the usage counts are and how to turn them off.
-    case usageDetails
 }
 
 /// The screen the app opens onto.
@@ -75,9 +69,6 @@ public struct AgentsHome: View {
     /// Whether a sign-in is under way, so the Sign In this screen offers says
     /// so in its place rather than looking as if the press was dropped.
     private let signingIn: Bool
-    /// Where the analytics notice stands: drawn on the first screen of a
-    /// phone that has not shown it, before anything is sent.
-    private let usageNotice: UsageNotice
     private let actions: @MainActor (HomeAction) -> Void
     /// The fold is view state, not fleet state: opening it is a thing this
     /// screen is doing, and coming back to the screen starts it closed again.
@@ -98,7 +89,6 @@ public struct AgentsHome: View {
         hosts: HostsStore,
         offerNotifications: Bool = false,
         signingIn: Bool = false,
-        usageNotice: UsageNotice = .hidden,
         actions: @escaping @MainActor (HomeAction) -> Void
     ) {
         self.model = model
@@ -106,7 +96,6 @@ public struct AgentsHome: View {
         self.hosts = hosts
         self.offerNotifications = offerNotifications
         self.signingIn = signingIn
-        self.usageNotice = usageNotice
         self.actions = actions
         // Picked up from the fleet so the list comes back narrowed as it was
         // left, rather than with an empty field over a filtered list.
@@ -707,14 +696,6 @@ public struct AgentsHome: View {
                 act: offer.subscribe ? .subscribe : .pair(id), inert: offer.waiting)
         }
         if let notice { callouts.append(notice) }
-        if usageNotice.drawn(at: .callout) {
-            callouts.append(Callout(
-                id: "usage", glyph: "chart.bar",
-                title: String(localized: "Usage counts, never content"),
-                detail: String(localized: "See what amux sends"),
-                button: nil, act: .usageDetails, identifier: "home.usageNotice",
-                dismiss: .putAwayUsageNotice))
-        }
         if offerNotifications {
             callouts.append(Callout(
                 id: "notifications", glyph: "bell",
@@ -792,12 +773,6 @@ public struct AgentsHome: View {
                 }
                 if !signedIn {
                     haveAnAccount.padding(.horizontal, design.metrics.gutter)
-                }
-                if usageNotice.drawn(at: .firstRun) {
-                    UsageNoticeLine(
-                        drawn: { actions(.usageNoticeDrawn(.firstRun)) },
-                        details: { actions(.usageDetails) })
-                        .padding(.horizontal, design.metrics.gutter)
                 }
             }
             .padding(.top, 30)

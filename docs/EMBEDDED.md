@@ -146,10 +146,7 @@ without waiting for the next credential renewal.
 A paired machine's offer of its account arrives in the step
 (`sign_in_offers`); the profile's client accepts or declines it
 (`answer_sign_in_offer`) and offers a machine this profile's account
-(`offer_sign_in`). The analytics notice
-is the installation's: `notice_shown` reads whether its person was told what
-usage amux sends, and `mark_notice_shown` records it, which releases the
-counts the runtime held until then. Each host's view says which Claude a new
+(`offer_sign_in`). Each host's view says which Claude a new
 agent there runs (`claude_kind`), as that host's settings resolve it.
 
 ## Seams

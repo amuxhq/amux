@@ -2046,9 +2046,8 @@ impl Net {
 
     // --- setting up ----------------------------------------------------------
 
-    /// As a host set up long ago: setting up dismissed and the analytics
-    /// notice shown, so a client opens on home. Its default profile, or
-    /// the one labelled `profile`.
+    /// As a host set up long ago: setting up dismissed, so a client opens
+    /// on home. Its default profile, or the one labelled `profile`.
     pub async fn set_up(&self, host: &str, profile: Option<&str>) -> Result<Ack, NetError> {
         use wire::answer_onboarding_request::Answer;
         let mut door = self.front_door(host).await?;
@@ -2068,18 +2067,13 @@ impl Net {
                     error: format!("no profile labelled {label:?}"),
                 })?,
         };
-        for answer in [
-            Answer::Dismiss(wire::Empty {}),
-            Answer::NoticeShown(wire::Empty {}),
-        ] {
-            door.answer_onboarding(wire::AnswerOnboardingRequest {
-                profile_id: profile_id.clone(),
-                answer: Some(answer),
-                surface: wire::Surface::Terminal as i32,
-            })
-            .await
-            .map_err(|status| NetError::Refused(Box::new(status)))?;
-        }
+        door.answer_onboarding(wire::AnswerOnboardingRequest {
+            profile_id,
+            answer: Some(Answer::Dismiss(wire::Empty {})),
+            surface: wire::Surface::Terminal as i32,
+        })
+        .await
+        .map_err(|status| NetError::Refused(Box::new(status)))?;
         Ok(self.ack(format!("{host} is set up")))
     }
 

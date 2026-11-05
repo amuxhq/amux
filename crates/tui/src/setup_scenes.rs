@@ -11,7 +11,7 @@ use wire::inventory_event::Of;
 use wire::{OnboardingStepId as Id, StepState};
 
 use crate::Theme;
-use crate::onboarding::{Notice, Onboarding};
+use crate::onboarding::Onboarding;
 use crate::settings_screen::SettingsScreen;
 
 /// When every scene is drawn, in Unix milliseconds.
@@ -52,16 +52,6 @@ impl SettingsScene {
     }
 }
 
-/// The analytics notice, as the shipping build words it.
-pub fn notice() -> Notice {
-    Notice {
-        words: "amux sends usage counts, never content; a signed-in profile's are linked to its \
-                account. What's sent and how to turn it off:"
-            .to_owned(),
-        url: "https://github.com/amuxhq/amux/blob/main/docs/ANALYTICS.md".to_owned(),
-    }
-}
-
 /// The desk's settings on a first run: a supervisor, so starting at login
 /// is a choice; usage counts on; no repositories yet.
 pub fn settings() -> wire::Settings {
@@ -77,8 +67,8 @@ pub fn settings() -> wire::Settings {
     }
 }
 
-/// The steps with `states` in their order, the notice shown or not.
-pub fn steps(states: [StepState; 6], notice_shown: bool) -> wire::Onboarding {
+/// The steps with `states` in their order.
+pub fn steps(states: [StepState; 6]) -> wire::Onboarding {
     let ids = [
         Id::PairPhone,
         Id::KeepReachable,
@@ -97,7 +87,6 @@ pub fn steps(states: [StepState; 6], notice_shown: bool) -> wire::Onboarding {
                 state: state as i32,
             })
             .collect(),
-        notice_shown,
         dismissed: false,
     }
 }
@@ -159,25 +148,16 @@ pub fn window() -> wire::PairingWindow {
 }
 
 fn opened(step: SetupStep, steps: wire::Onboarding, fleet: FleetState) -> SetupScene {
-    let (onboarding, _) = Onboarding::open(
-        step,
-        false,
-        steps,
-        settings(),
-        notice(),
-        "Mac",
-        b"desk",
-        &fleet,
-    );
+    let (onboarding, _) = Onboarding::open(step, false, steps, settings(), "Mac", b"desk", &fleet);
     SetupScene { onboarding, fleet }
 }
 
 /// The first screen of a first run: the pairing window open, its QR code
-/// and PIN, and the analytics notice under them.
+/// and PIN.
 pub fn pair() -> SetupScene {
     let mut scene = opened(
         SetupStep::PairPhone,
-        steps([StepState::Needed; 6], false),
+        steps([StepState::Needed; 6]),
         fleet(false),
     );
     scene.onboarding.pairing_opened(window(), NOW);
@@ -268,17 +248,14 @@ pub fn sign_in_waiting() -> SetupScene {
 pub fn sign_in_offer() -> SetupScene {
     let mut scene = opened(
         SetupStep::SignIn,
-        steps(
-            [
-                StepState::Done,
-                StepState::Done,
-                StepState::Needed,
-                StepState::Needed,
-                StepState::Needed,
-                StepState::Needed,
-            ],
-            true,
-        ),
+        steps([
+            StepState::Done,
+            StepState::Done,
+            StepState::Needed,
+            StepState::Needed,
+            StepState::Needed,
+            StepState::Needed,
+        ]),
         fleet(true),
     );
     let _ = scene.onboarding.offers_changed(vec![wire::SignInOffer {
@@ -291,17 +268,14 @@ pub fn sign_in_offer() -> SetupScene {
 }
 
 fn later_steps() -> wire::Onboarding {
-    steps(
-        [
-            StepState::Done,
-            StepState::Done,
-            StepState::Done,
-            StepState::Needed,
-            StepState::Needed,
-            StepState::Needed,
-        ],
-        true,
-    )
+    steps([
+        StepState::Done,
+        StepState::Done,
+        StepState::Done,
+        StepState::Needed,
+        StepState::Needed,
+        StepState::Needed,
+    ])
 }
 
 fn entry(path: &str) -> wire::RepositoryEntry {
@@ -342,33 +316,27 @@ pub fn repositories_add() -> SetupScene {
 
 /// Usage counts and automatic reports.
 pub fn improve() -> SetupScene {
-    let steps = steps(
-        [
-            StepState::Done,
-            StepState::Done,
-            StepState::Done,
-            StepState::Done,
-            StepState::Needed,
-            StepState::Needed,
-        ],
-        true,
-    );
+    let steps = steps([
+        StepState::Done,
+        StepState::Done,
+        StepState::Done,
+        StepState::Done,
+        StepState::Needed,
+        StepState::Needed,
+    ]);
     opened(SetupStep::Improve, steps, fleet(true))
 }
 
 /// Waiting for the phone to start an agent.
 pub fn first_agent() -> SetupScene {
-    let steps = steps(
-        [
-            StepState::Done,
-            StepState::Done,
-            StepState::Done,
-            StepState::Done,
-            StepState::Done,
-            StepState::Needed,
-        ],
-        true,
-    );
+    let steps = steps([
+        StepState::Done,
+        StepState::Done,
+        StepState::Done,
+        StepState::Done,
+        StepState::Done,
+        StepState::Needed,
+    ]);
     opened(SetupStep::FirstAgent, steps, fleet(true))
 }
 

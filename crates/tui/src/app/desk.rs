@@ -15,7 +15,7 @@ use ui_view::SetupStep;
 use wire::answer_onboarding_request::Answer;
 
 use super::{App, AppEvent, Tone, now_ms};
-use crate::onboarding::{Notice, Onboarding, SetupEffect, WINDOW_SECONDS};
+use crate::onboarding::{Onboarding, SetupEffect, WINDOW_SECONDS};
 use crate::settings_screen::{SettingsEffect, SettingsScreen};
 
 /// What the terminal client needs to run onboarding and settings: the
@@ -24,8 +24,6 @@ use crate::settings_screen::{SettingsEffect, SettingsScreen};
 pub struct DeskConfig {
     pub installation: Arc<dyn Installation>,
     pub profile: wire::Profile,
-    /// The analytics notice, in the words every client uses.
-    pub notice: Notice,
     /// What this machine is called in "Keep this Mac awake": "Mac" or
     /// "computer".
     pub machine: String,
@@ -204,13 +202,6 @@ impl App {
                         self.open_onboarding(at, false);
                         return;
                     }
-                    if view.notice {
-                        self.home.notice = Some(format!(
-                            "{} {}",
-                            desk.config.notice.words, desk.config.notice.url
-                        ));
-                        effects.push(SetupEffect::Answer(Answer::NoticeShown(wire::Empty {})));
-                    }
                 }
                 self.home.finish = if desk.onboarding.is_some() {
                     0
@@ -348,7 +339,6 @@ impl App {
             finishing,
             steps,
             settings,
-            desk.config.notice.clone(),
             &desk.config.machine,
             &self.config.local_host,
             &fleet,
@@ -358,7 +348,6 @@ impl App {
         desk.onboarding = Some(onboarding);
         desk.page = None;
         self.home.finish = 0;
-        self.home.notice = None;
         drop(fleet);
         self.setup_effects(effects);
     }

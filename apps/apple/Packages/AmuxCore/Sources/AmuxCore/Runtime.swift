@@ -336,20 +336,6 @@ public final class Runtime: @unchecked Sendable {
         }
     }
 
-    /// Whether the analytics notice has been shown on this installation:
-    /// nothing recorded is sent until it has.
-    public var noticeShown: Bool {
-        call(false) { amux_runtime_notice_shown($0) }
-    }
-
-    /// The analytics notice is in front of the person: what was recorded
-    /// meanwhile may be sent from now on. Kept by the installation, so it is
-    /// said once; false when it could not be kept.
-    @discardableResult
-    public func markNoticeShown() -> Bool {
-        call(false) { amux_runtime_mark_notice_shown($0) }
-    }
-
     // MARK: - Profiles
 
     /// Opens a profile's fleet; blocks, on the core queue, until it has
@@ -404,11 +390,6 @@ public enum Moved: Sendable {
 
 /// The shared rules of setting up, applied to steps the app holds.
 public enum Onboarding {
-    /// The analytics notice, in the words every client shows.
-    public static var notice: AnalyticsNotice {
-        Bridge.read(AnalyticsNotice.self, amux_analytics_notice()) ?? AnalyticsNotice(words: "", url: "")
-    }
-
     /// The step a run of setting up shows after `after` (from the start
     /// when nil): the next still needed and, when the person came back to
     /// finish, the next skipped too. Nil ends the run.

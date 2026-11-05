@@ -91,7 +91,6 @@ pub fn definitions() -> Map<String, Value> {
         app_runtime::values::OnboardingAnswer,
         app_runtime::values::PairingWindowView,
         app_runtime::values::PairingStatusView,
-        app_runtime::values::AnalyticsNotice,
         app_runtime::values::AccountView,
         app_runtime::values::ProfileView,
         app_runtime::values::Bearer,

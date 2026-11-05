@@ -299,10 +299,6 @@ final class Composition {
             Task { await subscription.look() }
         case .lookOnNetwork:
             runtime.explainLocalNetwork()
-        case .usageNoticeDrawn(let place):
-            runtime.usageNoticeDrawn(place)
-        case .putAwayUsageNotice:
-            runtime.putAwayUsageNotice()
         case .signInOfferShown(let role):
             runtime.record(.signInOfferShown(role: role))
         }

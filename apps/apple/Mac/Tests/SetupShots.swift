@@ -83,6 +83,9 @@ final class SetupShots: XCTestCase {
 
         setup.later()
         XCTAssertEqual(setup.step, .improve)
+        // Drawn ticked, as a new installation has it: the scratch daemon is
+        // set not to send, and Later below keeps the switch from applying.
+        setup.telemetry = true
         try await shoot("05-improve", stage)
         setup.later()
         XCTAssertEqual(setup.step, .first_agent)

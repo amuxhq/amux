@@ -33,19 +33,6 @@ impl Term {
 
     /// `binary args…` against the desk's install, in a terminal of its own.
     pub fn run(desk: &Desk, binary: &Path, args: &[&str], rows: u16, cols: u16) -> Term {
-        Term::run_with(desk, binary, args, rows, cols, &[], &[])
-    }
-
-    /// [`Term::run`] with `env` set and `remove` unset besides the desk's.
-    pub fn run_with(
-        desk: &Desk,
-        binary: &Path,
-        args: &[&str],
-        rows: u16,
-        cols: u16,
-        env: &[(&str, &str)],
-        remove: &[&str],
-    ) -> Term {
         let path = format!(
             "{}:{}",
             desk.bin.display(),
@@ -55,21 +42,13 @@ impl Term {
             command: binary.to_owned(),
             args: args.iter().map(|arg| (*arg).into()).collect(),
             cwd: desk.work.clone(),
-            env: [
+            env: vec![
                 ("AMUX_CONFIG".into(), desk.config.clone().into()),
                 ("PATH".into(), path.into()),
                 ("TERM".into(), "xterm-256color".into()),
                 (super::NO_DISCOVERY.0.into(), super::NO_DISCOVERY.1.into()),
-            ]
-            .into_iter()
-            .chain(
-                env.iter()
-                    .map(|(key, value)| ((*key).into(), (*value).into())),
-            )
-            .collect(),
-            env_remove: std::iter::once("AMUX_LOG".into())
-                .chain(remove.iter().map(|key| (*key).into()))
-                .collect(),
+            ],
+            env_remove: vec!["AMUX_LOG".into()],
             size: PtySize { rows, cols },
         })
         .expect("amux starts in a terminal");

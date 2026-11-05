@@ -40,7 +40,6 @@ mod fixtures;
 mod tests;
 
 pub use app::{App, DeskConfig, TuiConfig};
-pub use onboarding::Notice;
 pub use run::{AttachFn, AttachReturn, run};
 pub use terminal::{RESTORE_BYTES, TerminalGuard, query_terminal_colors};
 pub use theme::{ColorMode, TerminalColors, Theme, detect_color_mode};

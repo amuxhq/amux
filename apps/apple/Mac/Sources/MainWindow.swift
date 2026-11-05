@@ -110,9 +110,6 @@ struct Agents: View {
                 if setup.toFinish > 0 {
                     FinishSettingUp(setup: setup)
                 }
-                if setup.noticeOnMain {
-                    UsageNoticeBar(setup: setup)
-                }
             }
             if let problem = model.problem {
                 Text(problem).foregroundStyle(.red).padding()
@@ -161,24 +158,6 @@ private struct FinishSettingUp: View {
             }
             .buttonStyle(.borderless)
             .help("Dismiss")
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.quaternary.opacity(0.5))
-    }
-}
-
-/// The analytics notice on the main window, when setting up did not open
-/// and no client had shown it yet.
-private struct UsageNoticeBar: View {
-    let setup: Setup
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "chart.bar").foregroundStyle(.secondary)
-            UsageNoticeLine()
-                .multilineTextAlignment(.leading)
-            Button("OK") { setup.noticeRead() }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

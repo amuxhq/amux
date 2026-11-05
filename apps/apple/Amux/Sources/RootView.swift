@@ -97,7 +97,6 @@ private struct ComposedShell: View {
                 autoReports: composition.autoReports,
                 notifications: composition.notifications,
                 offerNotifications: composition.offerNotifications,
-                usageNotice: composition.runtime.usageNotice,
                 report: { composition.beginReport() },
                 actions: { composition.handle($0) }
             )

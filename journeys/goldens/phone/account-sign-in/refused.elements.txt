@@ -27,8 +27,6 @@ you.close | Close |  | 342,82,40,36
  | Open amux there, and this phone offers to pair. |  | 52,441,292,39
  | Have an amux account? |  | 16,505,164,18
  | Sign In |  | 184,492,48,44
- | amux sends usage counts, never content. Once you sign in, they’re linked to your account. Share Usage in Settings turns them off. |  | 16,547,359,48
- | Details |  | 16,583,43,44
  | Agents |  | 16,127,116,42
  | Switch account |  | 24,66,29,36
  | Agents |  | 111,795,94,54

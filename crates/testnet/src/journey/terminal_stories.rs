@@ -2138,22 +2138,27 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
     let env = [("BROWSER", browser.as_str())];
     let opened_links = || std::fs::read_to_string(&opened).unwrap_or_default();
 
-    // Setting up opens before home, on pairing, with the notice.
+    // Setting up opens before home, on pairing. The step draws "2. Enter
+    // the code in the app" until the daemon answers the window's open, so
+    // the frame is read once the PIN has taken its place.
     let pane = journey.launch_with("terminal", "desk", &args, &env)?;
-    let pairing = journey.wait_terms(
+    let pairing = journey.wait(
         &pane,
-        &[
-            "Connect your iPhone",
-            "This machine is called desk.",
-            "1. Scan to get amux on your iPhone",
-            "2. Enter ",
-            "esc later",
-        ],
+        |frame| {
+            [
+                "Connect your iPhone",
+                "This machine is called desk.",
+                "1. Scan to get amux on your iPhone",
+                "esc later",
+            ]
+            .iter()
+            .all(|term| frame.contains(term))
+                && pin_on(frame).is_some()
+        },
+        "setting up on pairing, with its PIN",
     )?;
-    if at_home(&pairing) || !pairing.contains("amux sends usage counts") {
-        return Err(format!(
-            "setting up did not open on pairing with the notice:\n{pairing}"
-        ));
+    if at_home(&pairing) {
+        return Err(format!("setting up did not open on pairing:\n{pairing}"));
     }
     let pin = pin_on(&pairing).ok_or_else(|| format!("no PIN on the desk:\n{pairing}"))?;
 
@@ -2252,16 +2257,13 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
     // is skipped; the steps done are not asked again.
     journey.interrupt_client(&pane)?;
     let again = journey.launch_with("again", "desk", &args, &env)?;
-    let resumed = journey.wait_terms(&again, &["Connect your iPhone", "2. Enter "])?;
-    if resumed.contains("amux sends usage counts") {
-        return Err(format!("the notice was shown twice:\n{resumed}"));
-    }
+    journey.wait_terms(&again, &["Connect your iPhone", "2. Enter "])?;
     journey.keys(&again, &["Escape"])?;
     journey.wait_terms(
         &again,
         &[
             "Help improve amux",
-            "Never your prompts, code, or file names.",
+            "Usage counts help improve amux. Never your code or chats.",
         ],
     )?;
     journey.frame(&again, "improve")?;
@@ -2325,21 +2327,18 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
         .as_array()
         .map(|paths| paths.iter().filter_map(Value::as_str).collect())
         .unwrap_or_default();
-    if repositories != [kept.as_str(), work.as_str()]
-        || done["auto_reports"] != true
-        || !done["notice_shown"].as_bool().unwrap_or(false)
-    {
+    if repositories != [kept.as_str(), work.as_str()] || done["auto_reports"] != true {
         return Err(format!(
             "the desk does not keep what setting up chose: {done}"
         ));
     }
     journey.quit_client(&again)?;
     Ok(vec![
-        "a first `amux` opened setting up on pairing, with the analytics notice, before home".to_owned(),
+        "a first `amux` opened setting up on pairing, before home".to_owned(),
         "the six digits it showed paired the laptop, and it said `Paired with laptop ✓`".to_owned(),
         format!("signing in opened the browser at the approval page for {code}; approved, the laptop was offered the account and signed in as jordan@example.com"),
         "the repository Claude Code ran in was offered ticked and kept beside a typed folder".to_owned(),
-        "quit half way, the next `amux` resumed past the steps done, without the notice again".to_owned(),
+        "quit half way, the next `amux` resumed past the steps done".to_owned(),
         "an agent the other machine started on the desk landed home selected, with `There it is`".to_owned(),
         "the desk keeps sign-in, repositories, improve and first agent done, pairing an iPhone skipped, reports on".to_owned(),
     ])

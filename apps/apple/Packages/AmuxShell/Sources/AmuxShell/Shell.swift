@@ -86,10 +86,6 @@ public enum ShellAction: Equatable, Sendable {
     /// The person read why amux looks at this network: the browser starts,
     /// and iOS asks for local network access.
     case lookOnNetwork
-    /// The analytics notice is on screen, there.
-    case usageNoticeDrawn(UsageNotice.Place)
-    /// The analytics notice's card was put away.
-    case putAwayUsageNotice
     /// An account offered across a pairing was put in front of the person.
     case signInOfferShown(OfferRole)
 }
@@ -151,8 +147,6 @@ public struct Shell: View {
     private let notifications: NotificationsSetting?
     /// Whether the home offers notifications above its list.
     private let offerNotifications: Bool
-    /// Where the analytics notice stands this launch.
-    private let usageNotice: UsageNotice
     /// Freezes the screen and opens a report on it, from Help. The app owns
     /// the capture; the shell only knows where the row that asks for it is.
     private let report: @MainActor () -> Void
@@ -172,7 +166,6 @@ public struct Shell: View {
         autoReports: Bool = false,
         notifications: NotificationsSetting? = nil,
         offerNotifications: Bool = false,
-        usageNotice: UsageNotice = .hidden,
         report: @escaping @MainActor () -> Void = {},
         actions: @escaping @MainActor (ShellAction) -> Void
     ) {
@@ -182,7 +175,6 @@ public struct Shell: View {
         self.autoReports = autoReports
         self.notifications = notifications
         self.offerNotifications = offerNotifications
-        self.usageNotice = usageNotice
         self.deletion = deletion
         self.removal = removal
         self.router = router
@@ -213,7 +205,7 @@ public struct Shell: View {
                     AgentsTab(
                         router: self.router, accounts: accounts, stores: stores,
                         offerNotifications: offerNotifications, signingIn: signIn.working,
-                        usageNotice: usageNotice, actions: actions)
+                        actions: actions)
                         .barUnderSheet(coveredByASheet)
                         .navigationDestination(for: Route.self) { page($0).toolbar(.hidden, for: .tabBar) }
                 }
@@ -650,14 +642,12 @@ private struct AgentsTab: View {
     let stores: StoreBundle
     let offerNotifications: Bool
     let signingIn: Bool
-    let usageNotice: UsageNotice
     let actions: @MainActor (ShellAction) -> Void
 
     var body: some View {
         AgentsHome(
             model: stores.fleet, accounts: accounts, hosts: stores.hosts,
-            offerNotifications: offerNotifications, signingIn: signingIn,
-            usageNotice: usageNotice
+            offerNotifications: offerNotifications, signingIn: signingIn
         ) { action in
             switch action {
             case .open(let agent):
@@ -680,9 +670,6 @@ private struct AgentsTab: View {
             case .toggleFamily(let head): stores.toggleFamily(head)
             case .filter(let filter): stores.filterFleet(filter)
             case .lookOnNetwork: actions(.lookOnNetwork)
-            case .usageNoticeDrawn(let place): actions(.usageNoticeDrawn(place))
-            case .putAwayUsageNotice: actions(.putAwayUsageNotice)
-            case .usageDetails: leave(for: UsageDetails.page)
             }
         }
     }

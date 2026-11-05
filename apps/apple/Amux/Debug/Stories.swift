@@ -31,10 +31,7 @@ extension ComponentCatalog {
         fleet("first-run-signed-out") { StoryFleet.firstRun(found: [], accounts: 0) },
         fleet("first-run-signed-out-found") { StoryFleet.firstRun(accounts: 0) },
         fleet("first-run-window-open") { StoryFleet.firstRun(found: [StoryFleet.laptopOpen]) },
-        fleet("first-run-explain", usageNotice: .shown(.firstRun)) {
-            StoryFleet.firstRun(found: [], explained: false)
-        },
-        fleet("usage-notice", usageNotice: .shown(.callout)) { StoryFleet.busy(nearby: false) },
+        fleet("first-run-explain") { StoryFleet.firstRun(found: [], explained: false) },
         fleet("large-text", size: .accessibility3) { StoryFleet.busy() },
         fleet("two-accounts") { StoryFleet.busy(accounts: 2) },
         fleet("signed-out") { StoryFleet.busy(accounts: 0) },
@@ -79,7 +76,6 @@ extension ComponentCatalog {
 
     private static func fleet(
         _ id: String, size: DynamicTypeSize = .large, offerNotifications: Bool = false,
-        usageNotice: UsageNotice = .hidden,
         stores: @escaping @MainActor () -> StoryFleet.Stores
     ) -> ComponentExample {
         ComponentExample(
@@ -93,7 +89,7 @@ extension ComponentCatalog {
             NavigationStack {
                 AgentsHome(
                     model: stores.fleet, accounts: stores.accounts, hosts: stores.hosts,
-                    offerNotifications: offerNotifications, usageNotice: usageNotice
+                    offerNotifications: offerNotifications
                 ) { _ in }
             }
             .onAppear { Design.app.dressNavigationBars() }

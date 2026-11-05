@@ -284,7 +284,7 @@ A journey starts at a real user entry point, crosses the production path and obs
 `journeys/manifest.json` declares each story once: its id, the clients that enact it (`terminal`, `phone` or
 `system`), the topology it is served on (and `phone_topology` where the phone's differs), and its claim. The
 terminal and the phone enact the same story each in their own way. The terminal driver starts every host as an
-installation set up long ago (setting up dismissed, the analytics notice shown), so its client opens on home;
+installation set up long ago (setting up dismissed), so its client opens on home;
 a story marked `first_run` keeps them new.
 
 The shared stories are `reach-host`, `conversation-decision-claude-pty`, `conversation-decision-claude-sdk`,

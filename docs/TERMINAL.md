@@ -54,9 +54,7 @@ key in a key line too.
 While the profile has a step of setting up still to do that nobody skipped, bare `amux` opens it full screen before
 home, at the first such step, and each step asks the daemon whether it is still needed, so a step finished on the
 phone or another terminal is not asked again. The top line is the step's title, with `setting up amux` faint at the
-right; Esc on every step is `later`, which skips it, and the last one goes home. The analytics notice (what is
-sent and the link to how to turn it off) is drawn under the first step shown, once for the profile across every
-client. The steps, in order:
+right; Esc on every step is `later`, which skips it, and the last one goes home. The steps, in order:
 
 - **Connect your iPhone.** The machine's name (`This machine is called desk.`; `r` renames it in place), then two
   numbered steps: `1. Scan to get amux on your iPhone` beside a QR code and `2. Enter 418 207 in the app`. The code
@@ -77,13 +75,14 @@ client. The steps, in order:
   opens the account's offer page, `n` declines and the browser sign-in is offered.
 - **Repositories.** The folders Claude Code and Codex ran in lately, ticked, and `+ Add a folder…` for a typed path,
   which the daemon checks as it saves. Enter adds the ticked ones to the repositories already chosen.
-- **Help improve amux.** Usage counts and automatic reports, with `Never your prompts, code, or file names.`
+- **Help improve amux.** `Send usage counts`, ticked, with `Usage counts help improve amux. Never your code or
+  chats. You can disable anytime in Settings.` under it, and `Send a report automatically when something goes
+  wrong`.
 - **Try starting an agent from your phone.** `On your phone, tap + and pick a repository.` When an agent starts on
   this machine, the client goes home with it selected and says `There it is`.
 
 Steps skipped stay on home as a quiet `Finish setting up (n)` row under `+ New Agent`: Enter walks the skipped and
-needed steps again, and `x` dismisses it for good. Where onboarding does not open, the analytics notice shows on
-home until the client is left, if no client had shown it.
+needed steps again, and `x` dismisses it for good.
 
 ### Home
 
@@ -587,11 +586,6 @@ these; the entries amux and service managers run are hidden from it and listed a
 | `amux config edit\|path` | Opens the config file in `$VISUAL` or `$EDITOR` and checks it after, or prints where it is. |
 | `amux server start` | Starts amux detached from the terminal: the supervisor where the install has one, the daemon otherwise. |
 | `amux server stop` | Stops amux cleanly, the supervisor first where one runs; agents keep running. |
-
-The first of these a person runs in a terminal on a build that would send usage counts prints, once, on standard
-error, what amux sends and where to read more; amux sends nothing before that notice has been shown, here or by
-another client. A command whose standard error is not a terminal (a script's, or the Mac app starting amux) prints
-nothing and leaves the notice to be shown.
 
 Hidden flags serve tests and demos: the global `--config <path>` (or `AMUX_CONFIG`) names another config file;
 `amux pair --qr --print-link` also prints the QR code's link (`https://amux.sh/p#…`; the app also takes it as `amux://pair?payload=…`), to paste into a simulator;

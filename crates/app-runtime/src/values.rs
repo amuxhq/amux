@@ -766,14 +766,6 @@ pub struct RepositorySuggestion {
     pub name: String,
 }
 
-/// The analytics notice, in the words every client shows, and the page
-/// that says what is sent and how to turn it off.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct AnalyticsNotice {
-    pub words: String,
-    pub url: String,
-}
-
 /// Where one step of setting up stands, as the daemon keeps it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -791,14 +783,13 @@ pub struct OnboardingStepState {
 }
 
 /// A profile's setting up as the daemon serves it, with what the shared
-/// rules make of it: where onboarding opens, how many steps "Finish setting
-/// up" offers, and whether the analytics notice is still to show.
+/// rules make of it: where onboarding opens and how many steps "Finish
+/// setting up" offers.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct OnboardingState {
     /// In the order they are shown; steps this build has no name for are
     /// left out.
     pub steps: Vec<OnboardingStepState>,
-    pub notice_shown: bool,
     /// The person dismissed finishing what they skipped.
     pub dismissed: bool,
     pub view: OnboardingView,
@@ -832,7 +823,6 @@ impl From<&wire::Onboarding> for OnboardingState {
                 .filter(|step| ui_view::step_open(onboarding, *step))
                 .collect(),
             steps,
-            notice_shown: onboarding.notice_shown,
             dismissed: onboarding.dismissed,
             view: ui_view::onboarding_view(onboarding),
         }
@@ -858,7 +848,6 @@ impl From<&OnboardingState> for wire::Onboarding {
                     } as i32,
                 })
                 .collect(),
-            notice_shown: state.notice_shown,
             dismissed: state.dismissed,
         }
     }
@@ -874,8 +863,6 @@ pub enum OnboardingAnswer {
     Done(SetupStep),
     /// "Later".
     Skip(SetupStep),
-    /// The analytics notice was put in front of the person.
-    NoticeShown,
     /// "Finish setting up" dismissed: every step still needed is skipped.
     Dismiss,
     /// A one-tap sign-in was put in front of the person, on this side.
@@ -889,7 +876,6 @@ impl From<OnboardingAnswer> for wire::answer_onboarding_request::Answer {
             OnboardingAnswer::Shown(step) => Answer::Shown(step.id() as i32),
             OnboardingAnswer::Done(step) => Answer::Done(step.id() as i32),
             OnboardingAnswer::Skip(step) => Answer::Skip(step.id() as i32),
-            OnboardingAnswer::NoticeShown => Answer::NoticeShown(wire::Empty {}),
             OnboardingAnswer::Dismiss => Answer::Dismiss(wire::Empty {}),
             OnboardingAnswer::SignInOfferShown(role) => Answer::SignInOfferShown(match role {
                 OfferRole::Offerer => wire::OfferRole::Offerer,

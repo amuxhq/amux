@@ -426,8 +426,7 @@ and `improve`: the others are done when they happen), `skip` for "Later",
 skips every needed step, `shown` when the client shows a step,
 `sign_in_offer_shown` when it puts a one-tap sign-in in front of the
 person (`offerer` for "Also sign in" on the signed-in side, `receiver` for
-the offer on the signed-out side), and `notice_shown` once it has shown
-the analytics notice. Name the client in `surface` so the answer is
+the offer on the signed-out side). Name the client in `surface` so the answer is
 counted for it; unspecified counts nothing. After a dismissal the steps
 carry `dismissed`: every step skipped now was skipped when the person
 dismissed, so a client stops offering to finish them; a step skipped
@@ -435,10 +434,6 @@ afterwards clears it.
 Confirmations are the installation's; a skip of `pair_phone`, `sign_in` or
 `first_agent` is the profile's. A step added in a later release appears to
 existing installations on its own, needed.
-
-Until some client sets `notice_shown`, amux sends no usage counts: show
-the notice (`analytics::NOTICE`, linking `analytics::NOTICE_URL`) once,
-before or with the first screen, then answer `notice_shown`.
 
 A client other than the terminal that opens a profile socket says which
 it is in the `amux-surface` request header (`mac` for the Mac app), so the

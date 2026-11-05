@@ -58,25 +58,20 @@ fn code_rows(screen: &str) -> usize {
 }
 
 #[test]
-fn a_first_run_opens_the_pairing_window_and_shows_the_notice_once() {
+fn a_first_run_opens_the_pairing_window() {
     let fleet = scenes::fleet(false);
     let (_, effects) = Onboarding::open(
         SetupStep::PairPhone,
         false,
-        scenes::steps([StepState::Needed; 6], false),
+        scenes::steps([StepState::Needed; 6]),
         scenes::settings(),
-        scenes::notice(),
         "Mac",
         b"desk",
         &fleet,
     );
     assert_eq!(
         effects,
-        [
-            SetupEffect::Answer(Answer::NoticeShown(wire::Empty {})),
-            shown(SetupStep::PairPhone),
-            SetupEffect::OpenPairing,
-        ]
+        [shown(SetupStep::PairPhone), SetupEffect::OpenPairing]
     );
     let mut scene = scenes::pair();
     let drawn = screen(&mut scene, 110, 34);
@@ -86,24 +81,6 @@ fn a_first_run_opens_the_pairing_window_and_shows_the_notice_once() {
         "{drawn}"
     );
     assert!(drawn.contains("2. Enter 418 207 in the app"), "{drawn}");
-    assert!(drawn.contains("amux sends usage counts"), "{drawn}");
-    // The next screen has no notice: it was shown.
-    let mut paired = scenes::paired();
-    assert!(!screen(&mut paired, 110, 34).contains("amux sends usage counts"));
-    // Shown already by another client, it is not shown here at all.
-    let (onboarding, effects) = Onboarding::open(
-        SetupStep::PairPhone,
-        false,
-        scenes::steps([StepState::Needed; 6], true),
-        scenes::settings(),
-        scenes::notice(),
-        "Mac",
-        b"desk",
-        &fleet,
-    );
-    assert!(!effects.contains(&SetupEffect::Answer(Answer::NoticeShown(wire::Empty {}))));
-    let mut scene = SetupScene { onboarding, fleet };
-    assert!(!screen(&mut scene, 110, 34).contains("amux sends usage counts"));
 }
 
 /// A window tall enough shows the whole pairing code; a usual one, the
@@ -353,23 +330,19 @@ fn a_phone_signed_in_first_offers_its_account_and_the_offer_page_opens() {
 #[test]
 fn the_shown_offer_is_counted_for_the_side_it_is_on() {
     let fleet = scenes::fleet(true);
-    let steps = scenes::steps(
-        [
-            StepState::Done,
-            StepState::Done,
-            StepState::Needed,
-            StepState::Needed,
-            StepState::Needed,
-            StepState::Needed,
-        ],
-        true,
-    );
+    let steps = scenes::steps([
+        StepState::Done,
+        StepState::Done,
+        StepState::Needed,
+        StepState::Needed,
+        StepState::Needed,
+        StepState::Needed,
+    ]);
     let (mut onboarding, effects) = Onboarding::open(
         SetupStep::SignIn,
         false,
         steps,
         scenes::settings(),
-        scenes::notice(),
         "Mac",
         b"desk",
         &fleet,
@@ -434,7 +407,10 @@ fn improve_sets_usage_counts_and_reports_as_ticked() {
     let mut scene = scenes::improve();
     let drawn = screen(&mut scene, 110, 34);
     assert!(
-        drawn.contains("Never your prompts, code, or file names."),
+        drawn.contains(
+            "Usage counts help improve amux. Never your code or chats. You can disable anytime in \
+             Settings."
+        ),
         "{drawn}"
     );
     press(&mut scene, KeyCode::Down);
@@ -487,7 +463,7 @@ fn the_agent_the_phone_starts_lands_on_home() {
 fn a_step_done_elsewhere_moves_the_screen_on() {
     let mut scene = scenes::sign_in();
     let fleet = scene.fleet.clone();
-    let mut steps = scenes::steps([StepState::Needed; 6], true);
+    let mut steps = scenes::steps([StepState::Needed; 6]);
     steps.steps[2].state = StepState::Done as i32;
     let effects = scene.onboarding.steps_changed(steps, &fleet);
     assert_eq!(
@@ -499,23 +475,19 @@ fn a_step_done_elsewhere_moves_the_screen_on() {
 #[test]
 fn finishing_walks_the_skipped_steps_too() {
     let fleet = scenes::fleet(true);
-    let steps = scenes::steps(
-        [
-            StepState::Done,
-            StepState::NotNeeded,
-            StepState::Skipped,
-            StepState::Done,
-            StepState::Skipped,
-            StepState::Done,
-        ],
-        true,
-    );
+    let steps = scenes::steps([
+        StepState::Done,
+        StepState::NotNeeded,
+        StepState::Skipped,
+        StepState::Done,
+        StepState::Skipped,
+        StepState::Done,
+    ]);
     let (mut onboarding, _) = Onboarding::open(
         SetupStep::SignIn,
         true,
         steps,
         scenes::settings(),
-        scenes::notice(),
         "Mac",
         b"desk",
         &fleet,

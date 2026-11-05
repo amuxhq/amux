@@ -504,12 +504,12 @@ fn reach_host(journey: &mut PhoneJourney) -> Proved {
     let prompt = "Hello from the phone.";
     let reply = "The desk is reachable.";
     // A first run: the fleet says why iOS is about to ask for the local
-    // network before anything browses, and says once what usage amux sends.
+    // network before anything browses.
     journey.launch(Launch {
         first_run: true,
         ..Launch::plain()
     })?;
-    journey.wait_for(&["home.localNetwork.look", "home.usageNotice"])?;
+    journey.wait_for(&["home.localNetwork.look"])?;
     journey.screen("first-run", &[])?;
     journey.tap("home.localNetwork.look")?;
 
@@ -598,7 +598,7 @@ fn reach_host(journey: &mut PhoneJourney) -> Proved {
         "the fleet",
     )?;
     Ok(vec![
-        "a first run explained the local network before browsing and said what usage amux sends".to_owned(),
+        "a first run explained the local network before browsing".to_owned(),
         "the phone's own browser found the desk in the net's scope and said to open amux there".to_owned(),
         "the desk's open pairing window raised the keypad on the phone by itself".to_owned(),
         "the PIN the desk printed, typed on the keypad, reached the desk's name and key before trust".to_owned(),

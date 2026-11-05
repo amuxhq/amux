@@ -46,10 +46,6 @@ async fn desk(
     Some(tui::DeskConfig {
         installation: Arc::new(installation),
         profile: profile.clone(),
-        notice: tui::Notice {
-            words: analytics::NOTICE.to_owned(),
-            url: analytics::NOTICE_URL.to_owned(),
-        },
         machine: if cfg!(target_os = "macos") {
             "Mac"
         } else {

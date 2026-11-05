@@ -466,9 +466,6 @@
       {"literal": "\"pair.\\(host.name)\"", "context": "id: \"pair.\\(host.name)\", glyph: offer.waiting ? \"laptopcomputer\" : \"plus.circle\",", "reason": "Stable element/record identifier, not a displayed label.", "count": 2},
       {"literal": "\"laptopcomputer\"", "context": "id: \"pair.\\(host.name)\", glyph: offer.waiting ? \"laptopcomputer\" : \"plus.circle\",", "reason": "SF Symbol name, not a displayed label.", "count": 2},
       {"literal": "\"plus.circle\"", "context": "id: \"pair.\\(host.name)\", glyph: offer.waiting ? \"laptopcomputer\" : \"plus.circle\",", "reason": "SF Symbol asset name, not a displayed label.", "count": 2},
-      {"literal": "\"usage\"", "context": "id: \"usage\", glyph: \"chart.bar\",", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"chart.bar\"", "context": "id: \"usage\", glyph: \"chart.bar\",", "reason": "SF Symbol name, not a displayed label.", "count": 1},
-      {"literal": "\"home.usageNotice\"", "context": "button: nil, act: .usageDetails, identifier: \"home.usageNotice\",", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"home.localNetwork\"", "context": "LocalNetworkPrimer(identifier: \"home.localNetwork\") {", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"home\"", "context": "identifier: offer.identifier(\"home\", \"\\(id)\"), inert: offer.waiting)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"\\(id)\"", "context": "identifier: offer.identifier(\"home\", \"\\(id)\"), inert: offer.waiting)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
@@ -1177,8 +1174,7 @@
       {"literal": "\"settings.signed-in\"", "context": "id: \"settings.signed-in\", family: .settings, canvas: CGSize(width: 390, height: 844),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"first-run-on-the-account-free\"", "context": "fleet(\"first-run-on-the-account-free\") { StoryFleet.firstRun(found: [StoryFleet.onTheAccount], pro: false) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"first-run-window-open\"", "context": "fleet(\"first-run-window-open\") { StoryFleet.firstRun(found: [StoryFleet.laptopOpen]) },", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"first-run-explain\"", "context": "fleet(\"first-run-explain\", usageNotice: .shown(.firstRun)) {", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"usage-notice\"", "context": "fleet(\"usage-notice\", usageNotice: .shown(.callout)) { StoryFleet.busy(nearby: false) },", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
+      {"literal": "\"first-run-explain\"", "context": "fleet(\"first-run-explain\") { StoryFleet.firstRun(found: [], explained: false) },", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"192.168.1.\\(index):4433\"", "context": "addrs: candidate && !relayOnly ? [\"192.168.1.\\(index):4433\"] : [], relayOnly: relayOnly, pairingOpen: pairingOpen, current: true,", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift": [
@@ -1614,10 +1610,7 @@
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FirstRun.swift": [
       {"literal": "\"\\(identifier).primer\"", "context": ".identified(\"\\(identifier).primer\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"\\(identifier).look\"", "context": ".identified(\"\\(identifier).look\", label: \"Look for Hosts\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"home.usageNotice\"", "context": ".identified(\"home.usageNotice\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"home.usageNotice.details\"", "context": ".identified(\"home.usageNotice.details\", label: \"Details\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"https://github.com/amuxhq/amux/blob/main/docs/ANALYTICS.md\"", "context": "public static let page = URL(string: \"https://github.com/amuxhq/amux/blob/main/docs/ANALYTICS.md\")!", "reason": "Web address opened or shared, not a displayed label.", "count": 1}
+      {"literal": "\"\\(identifier).look\"", "context": ".identified(\"\\(identifier).look\", label: \"Look for Hosts\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift": [
       {"literal": "\"sign-in-offer.title\"", "context": "PairingPanel(title: title, detail: detail, identifier: \"sign-in-offer.title\") {", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},

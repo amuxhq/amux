@@ -40,11 +40,6 @@ struct SetupScreen: View {
                         .padding(.top, 12)
                 }
                 Spacer(minLength: 16)
-                if setup.noticeOn == step {
-                    UsageNoticeLine()
-                        .padding(.horizontal, 40)
-                        .padding(.bottom, 14)
-                }
                 Buttons(setup: setup, step: step)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -437,18 +432,19 @@ private struct Improve: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Tell us how amux is used and when it goes wrong, so we can fix what matters.")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 10) {
-                Toggle("Send usage counts", isOn: $setup.telemetry)
-                Toggle("Send a report automatically when something goes wrong", isOn: $setup.autoReports)
+            Toggle(isOn: $setup.telemetry) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Send usage counts")
+                    Text("Usage counts help improve amux. Never your code or chats. You can disable anytime in Settings.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            .toggleStyle(.checkbox)
-            .padding(.leading, 4)
-            Text("Never your prompts, code, or file names.")
-                .font(.callout.weight(.medium))
+            Toggle("Send a report automatically when something goes wrong", isOn: $setup.autoReports)
         }
+        .toggleStyle(.checkbox)
+        .padding(.leading, 4)
         .font(.title3)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -467,26 +463,6 @@ private struct FirstAgent: View {
                 Text("Waiting for an agent from your phone…").foregroundStyle(.secondary)
             }
         }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-// MARK: - The analytics notice
-
-/// What amux sends, said once on the first screen any client shows, in the
-/// words every client uses, with the page that says how to turn it off.
-struct UsageNoticeLine: View {
-    private let notice = Onboarding.notice
-
-    var body: some View {
-        VStack(spacing: 2) {
-            Text(notice.words).foregroundStyle(.secondary)
-            if let url = URL(string: notice.url) {
-                Link(notice.url, destination: url)
-            }
-        }
-        .font(.footnote)
-        .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)
     }
 }

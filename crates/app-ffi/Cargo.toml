@@ -18,7 +18,6 @@ default = []
 debug-tools = []
 
 [dependencies]
-analytics = { workspace = true }
 app-embedded = { workspace = true }
 app-runtime = { workspace = true }
 client = { workspace = true }
@@ -37,6 +36,7 @@ wire = { workspace = true }
 installer = { workspace = true }
 
 [dev-dependencies]
+analytics = { workspace = true }
 libc = { workspace = true }
 provider-fakes = { workspace = true }
 tempfile = { workspace = true }

@@ -60,13 +60,6 @@ final class Setup {
     private(set) var step: SetupStep?
     /// Opened from "Finish Setting Up": skipped steps are walked too.
     private(set) var finishing = false
-    /// The step the analytics notice is shown on: the first one shown,
-    /// when no client had shown it yet.
-    private(set) var noticeOn: SetupStep?
-    /// Setting up did not open and the notice was still to show: the main
-    /// window carries it.
-    private(set) var noticeOnMain = false
-
     private(set) var pairing = Pairing()
     /// The phone this run paired, for the screens after.
     private(set) var paired: PairedDevice?
@@ -140,9 +133,6 @@ final class Setup {
         decided = true
         if let at = now.view.opensAt {
             begin(at, finishing: false)
-        } else if now.view.notice {
-            noticeOnMain = true
-            answer(.noticeShown)
         }
     }
 
@@ -159,15 +149,8 @@ final class Setup {
         answer(.dismiss)
     }
 
-    /// The notice on the main window was read.
-    func noticeRead() {
-        noticeOnMain = false
-    }
-
     private func begin(_ at: SetupStep, finishing: Bool) {
         self.finishing = finishing
-        noticeOn = state?.noticeShown == false ? at : nil
-        if noticeOn != nil { answer(.noticeShown) }
         enter(at)
     }
 
@@ -238,7 +221,6 @@ final class Setup {
     /// selected when there is one.
     private func home(_ agent: AgentKey?) {
         step = nil
-        noticeOn = nil
         if let agent {
             let name = app.agents.first { $0.agent == agent }?.name ?? ""
             app.show(agent, saying: name.isEmpty ? "There it is." : "There it is: \(name)")

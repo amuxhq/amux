@@ -219,9 +219,6 @@ pub struct Home {
     /// How many onboarding steps are left to finish; none hides "Finish
     /// setting up".
     pub finish: u32,
-    /// The analytics notice, under the first lines while it has not been
-    /// shown anywhere else.
-    pub notice: Option<String>,
     /// The first list line drawn.
     top: usize,
     /// A key moved the highlight, so the list scrolls to keep it in view.
@@ -248,8 +245,6 @@ enum Item {
     New,
     /// "Finish setting up (n)".
     Finish(u32),
-    /// A faint paragraph: the analytics notice.
-    Words(String),
     /// A section's heading: its families, and whether it is folded.
     Heading(SectionKind, usize, bool),
     /// A blank line, unless the list already ends in one.
@@ -484,10 +479,6 @@ impl Home {
         let mut items = vec![Item::New];
         if self.finish > 0 && self.needle().is_none() {
             items.push(Item::Finish(self.finish));
-        }
-        if let Some(notice) = &self.notice {
-            items.push(Item::Gap);
-            items.push(Item::Words(notice.clone()));
         }
         if view.sections.is_empty() {
             items.push(Item::Gap);
@@ -1560,14 +1551,6 @@ impl Home {
                         line: tint(line, chosen, width, theme),
                         spots: vec![(Some((HEAD_COL, to)), Hit::Row(Target::Finish))],
                     });
-                }
-                Item::Words(words) => {
-                    for part in text::wrap(words, width.saturating_sub(MARK_COL + MARGIN)) {
-                        let mut line = Line::default();
-                        pad_to(&mut line, MARK_COL);
-                        push(&mut line, part, theme.faint(), width);
-                        laid.push(Laid::plain(line));
-                    }
                 }
                 Item::Gap => blank(&mut laid),
                 Item::Space => laid.push(Laid::default()),

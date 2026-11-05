@@ -57,7 +57,7 @@
     },
     {
       "name": "onboarding.improve",
-      "shows": "Usage counts and automatic reports, and what they never carry.",
+      "shows": "Usage counts and automatic reports, with what usage counts never carry.",
       "clients": ["terminal"],
       "why": "The phone's first run is its own: it pairs from the machine's screen and asks nothing of the machine."
     },

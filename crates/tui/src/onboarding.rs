@@ -38,6 +38,9 @@ pub const WINDOW_SECONDS: u64 = 10 * 60;
 /// How long before a window ends the screen renews it.
 const RENEW_BEFORE_MS: i64 = 30_000;
 
+/// What "Send usage counts" says under it.
+const USAGE_LINE: &str = "Usage counts help improve amux. Never your code or chats. You can disable anytime in Settings.";
+
 /// What the app does for the onboarding screen.
 #[derive(Clone, Debug, PartialEq)]
 pub enum SetupEffect {
@@ -1266,20 +1269,21 @@ impl Onboarding {
 
     fn improve_body(&self, screen: &mut Screen) {
         let theme = screen.theme;
-        screen.words(
-            "Tell us how amux is used and when it goes wrong, so we can fix what matters.",
-            theme.text(),
-        );
-        screen.blank();
         self.check_row(screen, 0, self.telemetry, "Send usage counts");
+        // Under the switch's words, past its focus mark and box.
+        let indent = MARGIN + 6;
+        for part in text::wrap(USAGE_LINE, screen.width.saturating_sub(indent + MARGIN)) {
+            let mut line = Line::from(Span::raw(" ".repeat(indent)));
+            push(&mut line, part, theme.muted(), screen.width);
+            screen.line(line);
+        }
+        screen.blank();
         self.check_row(
             screen,
             1,
             self.auto_reports,
             "Send a report automatically when something goes wrong",
         );
-        screen.blank();
-        screen.words("Never your prompts, code, or file names.", theme.muted());
     }
 }
 

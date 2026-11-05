@@ -1,12 +1,12 @@
 
   Help improve amux                                                                          setting up amux
 
-  Tell us how amux is used and when it goes wrong, so we can fix what matters.
-
   › [ ] Send usage counts
+        Usage counts help improve amux. Never your code or chats. You can disable anytime in Settings.
+
     [ ] Send a report automatically when something goes wrong
 
-  Never your prompts, code, or file names.
+
 
 
 

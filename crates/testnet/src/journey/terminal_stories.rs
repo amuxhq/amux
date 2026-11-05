@@ -2254,7 +2254,7 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
         &again,
         &[
             "Help improve amux",
-            "Never your prompts, code, or file names.",
+            "Usage counts help improve amux. Never your code or chats.",
         ],
     )?;
     journey.frame(&again, "improve")?;

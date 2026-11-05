@@ -432,18 +432,19 @@ private struct Improve: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Tell us how amux is used and when it goes wrong, so we can fix what matters.")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 10) {
-                Toggle("Send usage counts", isOn: $setup.telemetry)
-                Toggle("Send a report automatically when something goes wrong", isOn: $setup.autoReports)
+            Toggle(isOn: $setup.telemetry) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Send usage counts")
+                    Text("Usage counts help improve amux. Never your code or chats. You can disable anytime in Settings.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            .toggleStyle(.checkbox)
-            .padding(.leading, 4)
-            Text("Never your prompts, code, or file names.")
-                .font(.callout.weight(.medium))
+            Toggle("Send a report automatically when something goes wrong", isOn: $setup.autoReports)
         }
+        .toggleStyle(.checkbox)
+        .padding(.leading, 4)
         .font(.title3)
         .frame(maxWidth: .infinity, alignment: .leading)
     }

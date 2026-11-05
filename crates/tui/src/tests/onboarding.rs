@@ -407,7 +407,10 @@ fn improve_sets_usage_counts_and_reports_as_ticked() {
     let mut scene = scenes::improve();
     let drawn = screen(&mut scene, 110, 34);
     assert!(
-        drawn.contains("Never your prompts, code, or file names."),
+        drawn.contains(
+            "Usage counts help improve amux. Never your code or chats. You can disable anytime in \
+             Settings."
+        ),
         "{drawn}"
     );
     press(&mut scene, KeyCode::Down);

@@ -85,15 +85,14 @@ private struct SettingsForm: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section {
-                Toggle("Send usage counts", isOn: change(settings.telemetry) { .with(telemetry: $0) })
+            Section("Help improve amux") {
+                Toggle(isOn: change(settings.telemetry) { .with(telemetry: $0) }) {
+                    Text("Send usage counts")
+                    Text("Usage counts help improve amux. Never your code or chats.")
+                }
                 Toggle(
                     "Send a report automatically when something goes wrong",
                     isOn: change(settings.autoReports) { .with(autoReports: $0) })
-            } header: {
-                Text("Help improve amux")
-            } footer: {
-                Text("Never your prompts, code, or file names.").foregroundStyle(.secondary)
             }
 
             Section("Account") {

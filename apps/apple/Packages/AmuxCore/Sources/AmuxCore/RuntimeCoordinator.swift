@@ -107,6 +107,14 @@ public final class RuntimeCoordinator {
     public var autoReports = false {
         didSet { if autoReports != oldValue { runtime?.setAutoReports(autoReports) } }
     }
+    /// Whether the person has been told why amux looks at the network this
+    /// phone is on. iOS asks for local network access the first time the
+    /// browser starts, so it does not start until the person has read why:
+    /// on the first run, from the line just above the button that starts
+    /// it. A phone that already trusts a machine has been through that.
+    public private(set) var localNetworkExplained: Bool
+    /// Keeps `localNetworkExplained` across launches.
+    @ObservationIgnored private let keepExplained: @MainActor (Bool) -> Void
     /// Whether somebody is in front of the app, as the app last said.
     @ObservationIgnored public private(set) var active = true
     @ObservationIgnored private var found: [Found] = []
@@ -126,6 +134,8 @@ public final class RuntimeCoordinator {
     public init(
         registry: AccountRegistry, support: URL, deviceName: String,
         signedOut: StoreBundle, options: Options = Options(),
+        localNetworkExplained: Bool = true,
+        keepExplained: @escaping @MainActor (Bool) -> Void = { _ in },
         networkWatch: NetworkPathWatching = SystemNetworkWatch(),
         starter: @escaping Starter = { config, profilesMoved throws(RuntimeFailure) in
             try Runtime.start(config, profilesMoved: profilesMoved)
@@ -138,6 +148,8 @@ public final class RuntimeCoordinator {
         self.options = options
         self.starter = starter
         self.networkWatch = networkWatch
+        self.localNetworkExplained = localNetworkExplained
+        self.keepExplained = keepExplained
         shown = registry.stores ?? signedOut
         registry.switching = { [weak self] _ in self?.switched() }
     }
@@ -309,6 +321,8 @@ public final class RuntimeCoordinator {
                     Signposts.emit(.storeReadEnded)
                 }
                 stores.hosts.sawLocalNetwork(permission)
+                stores.hosts.explainedNetwork(localNetworkExplained)
+                stores.trusts = { [weak self] in self?.explainLocalNetwork() }
                 stores.attach(opened)
             } catch {
                 failure = error.description
@@ -435,7 +449,7 @@ public final class RuntimeCoordinator {
         self.active = active
         listSources()
         if active {
-            discovery?.start()
+            browse()
             if let runtime { feed(runtime, .foreground) }
             start()
         } else {
@@ -456,6 +470,23 @@ public final class RuntimeCoordinator {
     /// Records what only the app sees, on the account on screen.
     public func record(_ event: UsageEvent) {
         runtime?.record(event, profile: registry.profile)
+    }
+
+    /// Starts the phone's browser while somebody is in front of the app, once
+    /// the person has been told why it looks.
+    public func browse() {
+        guard active, localNetworkExplained else { return }
+        discovery?.start()
+    }
+
+    /// The person has read why amux looks at this network, or this phone
+    /// trusts a machine already: the browser starts, and iOS asks.
+    public func explainLocalNetwork() {
+        guard !localNetworkExplained else { return }
+        localNetworkExplained = true
+        keepExplained(true)
+        stores.hosts.explainedNetwork(true)
+        browse()
     }
 
     /// Brings one agent's chat current for a push, under an account whose

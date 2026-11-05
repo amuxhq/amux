@@ -53,6 +53,7 @@ const STORIES: &[(&str, Tell)] = &[
     ("new-agent-terminal", new_agent_terminal),
     ("new-agent-worktree", new_agent_worktree),
     ("report-a-problem", report_a_problem),
+    ("first-run", first_run),
 ];
 
 /// The bound one story runs under.
@@ -658,7 +659,7 @@ fn reach_host(journey: &mut TerminalJourney) -> Proved {
     let paired = journey.wait_terms(&asking, &["Paired with desk", "AMUX_EXIT_0"])?;
     identified(&paired, &desk_id)?;
     let control = negative_control(identified(&paired, "00000000-0000-0000-0000-000000000000"))?;
-    journey.wait_terms(&opened, &["Pairing mode ended.", "AMUX_EXIT_0"])?;
+    journey.wait_terms(&opened, &["Paired with laptop.", "AMUX_EXIT_0"])?;
     let desk_hosts = journey.launch("desk-hosts", "desk", &["hosts"])?;
     let trusted = journey.wait_terms(&desk_hosts, &["AMUX_EXIT_0"])?;
     let laptop_id = journey.host_id("laptop");
@@ -863,6 +864,13 @@ fn keep_authority(journey: &mut TerminalJourney) -> Proved {
     // A second profile on the laptop is a fleet of its own.
     let created = journey.launch("profile", "laptop", &["profile", "new", "work"])?;
     journey.wait_terms(&created, &["Created profile work", "AMUX_EXIT_0"])?;
+    journey.request(
+        Control::SetUp {
+            host: "laptop".to_owned(),
+            profile: Some("work".to_owned()),
+        },
+        None,
+    )?;
     let other = journey.launch("other", "laptop", &["--profile", "work"])?;
     journey.wait_terms(&other, &["no agents yet"])?;
     journey.keys(&other, &["h"])?;
@@ -1588,7 +1596,10 @@ fn composer_limits(journey: &mut TerminalJourney) -> Proved {
 }
 
 fn new_agent_terminal(journey: &mut TerminalJourney) -> Proved {
+    // Each machine runs its new Claude agents in the interface its own
+    // owner chats in, so the desk is set to the native one too.
     journey.configure("laptop", "[ui]\nchat_in = \"native\"")?;
+    journey.configure("desk", "[ui]\nchat_in = \"native\"")?;
     let before = ids(&journey.inventory("laptop", Some("inventory-before"))?);
     let pane = journey.launch("terminal", "laptop", &[])?;
     journey.wait(&pane, at_home, "home")?;
@@ -2077,6 +2088,279 @@ fn report_a_problem(journey: &mut TerminalJourney) -> Proved {
 }
 
 // --- door requests -------------------------------------------------------
+
+/// The six digits of setting up's `2. Enter 418 207 in the app`.
+fn pin_on(frame: &str) -> Option<String> {
+    let line = frame.lines().find(|line| line.contains("Or enter "))?;
+    let (_, after) = line.split_once("Or enter ")?;
+    let (pin, _) = after.split_once(" in the amux app.")?;
+    let digits: String = pin.chars().filter(char::is_ascii_digit).collect();
+    (digits.len() == 6).then_some(digits)
+}
+
+/// What a frame says between `before` and the next `after`.
+fn between<'a>(frame: &'a str, before: &str, after: &str) -> Option<&'a str> {
+    let (_, rest) = frame.split_once(before)?;
+    rest.split_once(after).map(|(said, _)| said)
+}
+
+/// A first `amux` on a new installation: setting up opens before home,
+/// pairs a second machine by the PIN it shows, signs in through the
+/// browser at the net's account service and offers the account to the
+/// machine just paired, keeps the repository chosen, resumes past the steps
+/// done after the client quits half way, and lands on the agent the
+/// other machine starts.
+fn first_run(journey: &mut TerminalJourney) -> Proved {
+    let cloud = journey
+        .ready
+        .cloud_url
+        .clone()
+        .ok_or("the topology declares no relay")?;
+    // Claude Code ran lately in the desk's repository: setting up offers
+    // it as a repository.
+    let desk = journey.host_dir("desk");
+    let repository = desk.join("repositories").join("amux");
+    let log = desk.join("home/.claude/projects/amux");
+    std::fs::create_dir_all(&log).map_err(|error| error.to_string())?;
+    std::fs::write(
+        log.join("session.jsonl"),
+        format!("{}\n", json!({ "cwd": repository })),
+    )
+    .map_err(|error| error.to_string())?;
+    // The browser a person would see: every link the client opens, kept.
+    let opened = journey.output.join("opened.txt");
+    let browser = journey.output.join("browser.sh");
+    std::fs::write(
+        &browser,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$1\" >> '{}'\n",
+            opened.display()
+        ),
+    )
+    .map_err(|error| error.to_string())?;
+    std::fs::set_permissions(&browser, std::fs::Permissions::from_mode(0o755))
+        .map_err(|error| error.to_string())?;
+    let browser = browser.display().to_string();
+    let args = ["--cloud-url", cloud.as_str()];
+    let env = [("BROWSER", browser.as_str())];
+    let opened_links = || std::fs::read_to_string(&opened).unwrap_or_default();
+
+    // Setting up opens before home, on pairing. The step draws "Or enter
+    // the code in the amux app." until the daemon answers the window's open,
+    // so the frame is read once the PIN has taken its place.
+    let pane = journey.launch_with("terminal", "desk", &args, &env)?;
+    let pairing = journey.wait(
+        &pane,
+        |frame| {
+            [
+                "Connect your iPhone",
+                "This machine is called desk.",
+                "Scan with your iPhone's camera to pair.",
+                "esc later",
+            ]
+            .iter()
+            .all(|term| frame.contains(term))
+                && pin_on(frame).is_some()
+        },
+        "setting up on pairing, with its PIN",
+    )?;
+    if at_home(&pairing) {
+        return Err(format!("setting up did not open on pairing:\n{pairing}"));
+    }
+    // The whole pairing code beside the PIN, not the page's alone (version
+    // 1, 11 rows): a desk's invitation is QR version 5, 19 rows of modules
+    // and a margin row above and below that is inked on a dark ground.
+    let code_rows = pairing
+        .lines()
+        .filter(|line| line.chars().filter(|c| "█▀▄".contains(*c)).count() > 10)
+        .count();
+    if !(19..=21).contains(&code_rows) {
+        return Err(format!(
+            "the pairing code is not the whole invitation's, {code_rows} rows:\n{pairing}"
+        ));
+    }
+    let pin = pin_on(&pairing).ok_or_else(|| format!("no PIN on the desk:\n{pairing}"))?;
+
+    // The laptop stands in for the phone and pairs with the PIN shown.
+    let asking = journey.launch("pair", "laptop", &["pair", "desk"])?;
+    journey.wait_terms(&asking, &["Pairing PIN shown on the other host:"])?;
+    journey.type_text(&asking, &pin)?;
+    journey.keys(&asking, &["Enter"])?;
+    journey.wait_terms(&asking, &["Paired with desk", "AMUX_EXIT_0"])?;
+    let keep = journey.wait_terms(&pane, &["Keep it connected", "Paired with laptop ✓"])?;
+    if keep.contains("Start amux when you log in") {
+        return Err(format!(
+            "a desk with no supervisor offered to start at login:\n{keep}"
+        ));
+    }
+    // The net's hosts never hold the machine running them awake.
+    journey.keys(&pane, &["Space", "Enter"])?;
+
+    // Signing in, with the laptop just paired ticked to sign in too.
+    journey.wait_terms(
+        &pane,
+        &[
+            "Reach it from anywhere",
+            "[x] Also sign in laptop",
+            "enter sign in",
+        ],
+    )?;
+    journey.frame(&pane, "sign-in")?;
+    journey.keys(&pane, &["Enter"])?;
+    let waiting = journey.wait_terms(&pane, &["Approve amux in your browser. It should show "])?;
+    let code = between(&waiting, "It should show ", ".")
+        .ok_or_else(|| format!("no code to check:\n{waiting}"))?
+        .to_owned();
+    if waiting.contains("did not open") {
+        return Err(format!("the browser was not opened:\n{waiting}"));
+    }
+    journey.frame(&pane, "sign-in-waiting")?;
+    let approval = format!("/device?user_code={code}");
+    if !opened_links().lines().any(|link| link.ends_with(&approval)) {
+        return Err(format!(
+            "the browser was not opened at the approval page {approval}: {}",
+            opened_links()
+        ));
+    }
+    journey.request(
+        Control::ApproveSignIn {
+            code: code.clone(),
+            account: "jordan".to_owned(),
+        },
+        Some("approved"),
+    )?;
+    let offer = journey.request(
+        Control::AnswerOffer {
+            host: "laptop".to_owned(),
+            accept: true,
+        },
+        Some("laptop-took-the-offer"),
+    )?;
+    if offer["from"] != "desk" || offer["signed_in_as"] != "jordan@example.com" {
+        return Err(format!(
+            "the laptop was not signed in by the desk's offer: {offer}"
+        ));
+    }
+
+    // The repository Claude Code ran in, offered and kept, with a folder
+    // of the person's own.
+    let repositories = journey.wait_terms(
+        &pane,
+        &[
+            "These are where Claude Code and Codex ran lately",
+            "+ Add a folder…",
+        ],
+    )?;
+    if !repositories.contains("[x] ") {
+        return Err(format!(
+            "the repository is not offered ticked:\n{repositories}"
+        ));
+    }
+    journey.frame(&pane, "repositories")?;
+    let work = desk.join("work").display().to_string();
+    journey.keys(&pane, &["Down", "Enter"])?;
+    journey.type_text(&pane, &work)?;
+    journey.keys(&pane, &["Enter"])?;
+    journey.wait_terms(&pane, &["[x] ", "enter continue"])?;
+    journey.keys(&pane, &["Enter"])?;
+    journey.wait_terms(&pane, &["Help improve amux"])?;
+    let midway = journey.request(
+        Control::Onboarding {
+            host: "desk".to_owned(),
+        },
+        Some("quit-midway"),
+    )?;
+
+    // Quit half way; the next `amux` resumes at the first step still to
+    // do. The laptop is no iPhone, so connecting one is still to do and
+    // is skipped; the steps done are not asked again.
+    journey.interrupt_client(&pane)?;
+    let again = journey.launch_with("again", "desk", &args, &env)?;
+    journey.wait_terms(&again, &["Connect your iPhone", "Or enter "])?;
+    journey.keys(&again, &["Escape"])?;
+    journey.wait_terms(
+        &again,
+        &[
+            "Help improve amux",
+            "amux sends usage counts to help improve it, never your code or chats.",
+        ],
+    )?;
+    journey.frame(&again, "improve")?;
+    journey.keys(&again, &["Space", "Enter"])?;
+    journey.wait_terms(&again, &["On your phone, tap + and pick a repository."])?;
+    journey.frame(&again, "first-agent")?;
+
+    // An agent the laptop starts on the desk, as the phone would, lands
+    // home selected.
+    journey.request(
+        Control::Create {
+            from: "laptop".to_owned(),
+            host: "desk".to_owned(),
+            name: "first-agent".to_owned(),
+        },
+        Some("created-from-the-laptop"),
+    )?;
+    // Connecting an iPhone is still to do, so the offer to finish stays.
+    // The setting-up count and the new agent's first turn reach home on
+    // their own, after the row lands; the frame is taken once both settle,
+    // the agent idle.
+    journey.wait(
+        &again,
+        |frame| {
+            at_home(frame)
+                && frame.contains("There it is")
+                && super::terminal::selected_row(frame, "first-agent")
+                && frame.contains("Finish setting up (1)")
+                && !frame.contains(" working")
+        },
+        "home with the first agent selected and idle, offering to finish setting up",
+    )?;
+    journey.frame(&again, "there-it-is")?;
+    let done = journey.request(
+        Control::Onboarding {
+            host: "desk".to_owned(),
+        },
+        Some("set-up"),
+    )?;
+    let state = |of: &Value, step: &str| of["steps"][step].as_str().unwrap_or_default().to_owned();
+    let expect = [
+        ("ONBOARDING_STEP_ID_SIGN_IN", "STEP_STATE_DONE"),
+        ("ONBOARDING_STEP_ID_REPOSITORIES", "STEP_STATE_DONE"),
+        ("ONBOARDING_STEP_ID_IMPROVE", "STEP_STATE_DONE"),
+        ("ONBOARDING_STEP_ID_FIRST_AGENT", "STEP_STATE_DONE"),
+        ("ONBOARDING_STEP_ID_PAIR_PHONE", "STEP_STATE_SKIPPED"),
+    ];
+    for (step, wanted) in expect {
+        if state(&done, step) != wanted {
+            return Err(format!("{step} is not {wanted}: {done}"));
+        }
+    }
+    if state(&midway, "ONBOARDING_STEP_ID_IMPROVE") != "STEP_STATE_NEEDED"
+        || state(&midway, "ONBOARDING_STEP_ID_REPOSITORIES") != "STEP_STATE_DONE"
+    {
+        return Err(format!("quitting half way left the wrong steps: {midway}"));
+    }
+    let kept = repository.display().to_string();
+    let repositories: Vec<&str> = done["repositories"]
+        .as_array()
+        .map(|paths| paths.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    if repositories != [kept.as_str(), work.as_str()] || done["auto_reports"] != true {
+        return Err(format!(
+            "the desk does not keep what setting up chose: {done}"
+        ));
+    }
+    journey.quit_client(&again)?;
+    Ok(vec![
+        format!("a first `amux` opened setting up on pairing, the whole pairing code ({code_rows} rows) beside the PIN, before home"),
+        "the six digits it showed paired the laptop, and it said `Paired with laptop ✓`".to_owned(),
+        format!("signing in opened the browser at the approval page for {code}; approved, the laptop was offered the account and signed in as jordan@example.com"),
+        "the repository Claude Code ran in was offered ticked and kept beside a typed folder".to_owned(),
+        "quit half way, the next `amux` resumed past the steps done".to_owned(),
+        "an agent the other machine started on the desk landed home selected, with `There it is`".to_owned(),
+        "the desk keeps sign-in, repositories, improve and first agent done, pairing an iPhone skipped, reports on".to_owned(),
+    ])
+}
 
 #[cfg(test)]
 mod tests {

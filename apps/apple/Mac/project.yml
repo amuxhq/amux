@@ -24,6 +24,16 @@ packages:
   AmuxCore:
     path: ../Packages/AmuxCore
 
+schemes:
+  AmuxMac:
+    build:
+      targets:
+        AmuxMac: all
+        AmuxMacTests: [test]
+    test:
+      targets:
+        - AmuxMacTests
+
 targets:
   AmuxMac:
     type: application
@@ -39,26 +49,6 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSApplicationCategoryType: public.app-category.developer-tools
         NSHumanReadableCopyright: ""
-    postBuildScripts:
-      # The app installs a copy of amux it carries when this Mac has none
-      # (InstallOptions.bundled). Contents/Helpers is where a bundle keeps a
-      # command-line tool it runs, so code signing seals it with the app.
-      # Development builds carry the checkout's own debug build, which the
-      # linker has already signed ad hoc. A release build carries none: the
-      # release adds the stable amux, signed, only to the disk image's copy,
-      # since an update never installs amux (docs/MAC.md).
-      - name: Bundle amux
-        basedOnDependencyAnalysis: true
-        inputFiles:
-          - "$(SRCROOT)/../../../target/debug/amux"
-        outputFiles:
-          - "$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/amux"
-        script: |
-          set -eu
-          [ "$CONFIGURATION" = Debug ] || exit 0
-          helpers="$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers"
-          mkdir -p "$helpers"
-          cp -f "$SCRIPT_INPUT_FILE_0" "$SCRIPT_OUTPUT_FILE_0"
     settings:
       base:
         PRODUCT_NAME: Amux
@@ -81,6 +71,31 @@ targets:
       configs:
         Debug:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+    dependencies:
+      - package: AmuxCore
+        product: AmuxCore
+      - package: AmuxCore
+        product: AmuxValues
+
+  # The app's screens and model, compiled without its entry point into a test
+  # bundle that runs in the test runner rather than in the app: the screens
+  # are drawn into windows that are never put on screen, so a run shows
+  # nothing on the desktop and needs nobody's input (docs/MAC.md).
+  AmuxMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Sources
+        excludes:
+          - AmuxMacApp.swift
+      - path: Tests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: sh.amux.desktop.tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_HARDENED_RUNTIME: NO
     dependencies:
       - package: AmuxCore
         product: AmuxCore

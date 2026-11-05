@@ -641,9 +641,8 @@ pub enum ShellWork {
         store: Box<crate::trust::TrustStore>,
         changed: Option<(HostId, crate::trust::TrustChanged)>,
     },
-    /// Whether the pairing window is open, and whether too many wrong
-    /// secrets closed the last one, said when either moves.
-    PairWindow { active: bool, locked_out: bool },
+    /// How the pairing window stands, said whenever that moves.
+    PairWindow(crate::pairing::WindowStatus),
     /// What a pairing did, for the audit log and analytics.
     Pairing(crate::pairing::PairingEvent),
 }
@@ -884,6 +883,7 @@ mod tests {
                     host: HostId([4; 16]),
                     name: "box".into(),
                     addrs: vec!["10.0.0.4:7000".into()],
+                    pairing_open: false,
                 }],
             },
             Input::Timer {

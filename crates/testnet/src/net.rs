@@ -182,9 +182,12 @@ impl NetAgent {
     }
 }
 
-/// The one repository root of a host that declares repositories, in its
-/// directory.
+/// Where a host's declared repositories are made, in its directory; each
+/// is one of the host's repositories.
 const REPOSITORIES: &str = "repositories";
+/// The home below a host's directory: where its repository suggestions read
+/// Claude Code's and Codex's session logs.
+pub const HOME: &str = "home";
 
 /// Everything a host is on disk and in process.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1616,9 +1619,12 @@ impl Net {
             launch.agent.facts_ring_mib = mib;
         }
         launch.core.stop_deadline_ms = 15_000;
-        if !own.decl.repositories.is_empty() {
-            launch.repository_roots = vec![own.dir.join(REPOSITORIES)];
-        }
+        launch.repositories = own
+            .decl
+            .repositories
+            .iter()
+            .map(|repository| own.dir.join(REPOSITORIES).join(repository))
+            .collect();
         if let Some(k) = own.decl.tail_rows {
             launch.core.tail_rows = k;
         }
@@ -1656,6 +1662,7 @@ impl Net {
         let data_dir = dir.join("data");
         let work = dir.join("work");
         std::fs::create_dir_all(&work)?;
+        std::fs::create_dir_all(dir.join(HOME))?;
         for repository in &decl.repositories {
             let path = dir.join(REPOSITORIES).join(repository);
             std::fs::create_dir_all(&path)?;
@@ -1784,10 +1791,12 @@ impl Net {
         if decl.runs_as_process() {
             text.push_str(&format!("releases_url = {:?}\n", self.feed_url()));
             if !decl.repositories.is_empty() {
-                text.push_str(&format!(
-                    "repository_roots = [{}]\n",
-                    quoted(&dir.join(REPOSITORIES))
-                ));
+                let repositories: Vec<String> = decl
+                    .repositories
+                    .iter()
+                    .map(|repository| quoted(&dir.join(REPOSITORIES).join(repository)))
+                    .collect();
+                text.push_str(&format!("repositories = [{}]\n", repositories.join(", ")));
             }
             let scope = decl
                 .scope
@@ -1892,6 +1901,7 @@ impl Net {
             // a network change either.
             interfaces: Some(Vec::new()),
             liveness: Default::default(),
+            sign_in_client: node::CLI_CLIENT_ID.to_owned(),
         };
         if let Some(relay) = &self.relay {
             edge.cloud = relay.cloud_options(&self.udp[name]);
@@ -1909,6 +1919,21 @@ impl Net {
         }
         let handed = edge.lan.as_ref().is_some_and(|lan| lan.socket.is_some());
         let options = node::StartOptions {
+            // The host's config file, as on a real install: what a journey
+            // lays over it is what the daemon serves its clients. Repository
+            // suggestions read the host's own home, never the home of
+            // whoever runs the net.
+            settings: node::SettingsOptions {
+                file: Some(host.info.config.clone()),
+                initial: settings::InstallationConfig::from_file(&host.info.config).map_err(
+                    |error| NetError::Host {
+                        host: name.to_owned(),
+                        error: format!("its config: {error}"),
+                    },
+                )?,
+                login: None,
+                home: Some(host.dir.join(HOME)),
+            },
             data_dir: host.info.data_dir.clone(),
             boot_id: Some(format!("boot-{}", host.boot)),
             launch: self.launch(&host.info, None),
@@ -2018,6 +2043,211 @@ impl Net {
         })
         .await?;
         Ok(self.ack(format!("{host} signed in to {account}")))
+    }
+
+    // --- setting up ----------------------------------------------------------
+
+    /// As a host set up long ago: setting up dismissed, so a client opens
+    /// on home. Its default profile, or the one labelled `profile`.
+    pub async fn set_up(&self, host: &str, profile: Option<&str>) -> Result<Ack, NetError> {
+        use wire::answer_onboarding_request::Answer;
+        let mut door = self.front_door(host).await?;
+        let profile_id = match profile {
+            None => Vec::new(),
+            Some(label) => door
+                .list_profiles(wire::Empty {})
+                .await
+                .map_err(|status| NetError::Refused(Box::new(status)))?
+                .into_inner()
+                .profiles
+                .into_iter()
+                .find(|profile| profile.label == label)
+                .map(|profile| profile.id)
+                .ok_or_else(|| NetError::Host {
+                    host: host.to_owned(),
+                    error: format!("no profile labelled {label:?}"),
+                })?,
+        };
+        door.answer_onboarding(wire::AnswerOnboardingRequest {
+            profile_id,
+            answer: Some(Answer::Dismiss(wire::Empty {})),
+            surface: wire::Surface::Terminal as i32,
+        })
+        .await
+        .map_err(|status| NetError::Refused(Box::new(status)))?;
+        Ok(self.ack(format!("{host} is set up")))
+    }
+
+    /// Approves the browser sign-in showing `code` as `account`, as the
+    /// person who opened the approval page and signed in does.
+    pub fn approve_sign_in(&self, code: &str, account: &str) -> Result<Ack, NetError> {
+        let relay = self.relay()?;
+        if !relay.device_codes().iter().any(|started| started == code) {
+            return Err(NetError::Host {
+                host: "relay".to_owned(),
+                error: format!(
+                    "no sign-in shows {code}; started: {:?}",
+                    relay.device_codes()
+                ),
+            });
+        }
+        if relay.user(account).is_none() {
+            return Err(TopologyError::UnknownAccount {
+                host: "relay".to_owned(),
+                account: account.to_owned(),
+            }
+            .into());
+        }
+        relay.approve_device(code, account);
+        Ok(self.ack(format!("{code} approved as {account}")))
+    }
+
+    /// Answers the account a paired host offered `host`'s profile, once
+    /// one is offered: what the offer named, and the profile after.
+    pub async fn answer_offer(
+        &self,
+        host: &str,
+        accept: bool,
+    ) -> Result<(wire::SignInOffer, wire::Profile), NetError> {
+        let refused = |status: tonic::Status| NetError::Refused(Box::new(status));
+        let mut admin = self.admin(host).await?;
+        let mut offers = admin
+            .subscribe_sign_in_offers(wire::Empty {})
+            .await
+            .map_err(refused)?
+            .into_inner();
+        let offer = tokio::time::timeout(PATIENCE, async {
+            loop {
+                match offers.message().await {
+                    Ok(Some(said)) => {
+                        if let Some(offer) = said.offers.into_iter().next() {
+                            return Ok(offer);
+                        }
+                    }
+                    Ok(None) => return Err("the offers stream ended".to_owned()),
+                    Err(status) => return Err(status.message().to_owned()),
+                }
+            }
+        })
+        .await
+        .map_err(|_| NetError::Host {
+            host: host.to_owned(),
+            error: "no paired host offered an account".to_owned(),
+        })?
+        .map_err(|error| NetError::Host {
+            host: host.to_owned(),
+            error,
+        })?;
+        let profile = admin
+            .answer_sign_in_offer(wire::AnswerSignInOfferRequest {
+                host_id: offer.host_id.clone(),
+                accept,
+            })
+            .await
+            .map_err(refused)?
+            .into_inner();
+        Ok((offer, profile))
+    }
+
+    /// The person on `host` offers its account to the device it trusts as
+    /// `to`, as the "Also sign in" choice does after pairing: the device is
+    /// a host of the net, or one outside it by the name it paired with;
+    /// with none, the one device outside the net `host` trusts. Answers the
+    /// device as `host` trusts it.
+    pub async fn offer_sign_in(
+        &self,
+        host: &str,
+        to: Option<&str>,
+    ) -> Result<wire::Peer, NetError> {
+        let refused = |status: tonic::Status| NetError::Refused(Box::new(status));
+        let in_net = |id: &[u8]| {
+            self.hosts
+                .values()
+                .any(|net| net.info.host_id.as_bytes() == id)
+        };
+        let wanted = to.and_then(|to| self.host(to).ok().map(|net| net.host_id));
+        let mut admin = self.admin(host).await?;
+        let peers = admin
+            .list_peers(wire::Empty {})
+            .await
+            .map_err(refused)?
+            .into_inner()
+            .peers;
+        let mut matching = peers.into_iter().filter(|peer| match (to, &wanted) {
+            (_, Some(id)) => peer.host_id == id.as_bytes(),
+            (Some(to), None) => peer.name == to,
+            (None, None) => !in_net(&peer.host_id),
+        });
+        let peer = match (matching.next(), matching.next()) {
+            (Some(peer), None) => peer,
+            (found, _) => {
+                return Err(NetError::Host {
+                    host: host.to_owned(),
+                    error: match found {
+                        Some(_) => format!("{host} trusts more than one device outside the net"),
+                        None => format!("{host} trusts no device {to:?}"),
+                    },
+                });
+            }
+        };
+        admin
+            .offer_sign_in(wire::OfferSignInRequest {
+                host_id: peer.host_id.clone(),
+            })
+            .await
+            .map_err(refused)?;
+        Ok(peer)
+    }
+
+    /// A person on `from` starts an agent named `name` on `host`, as a
+    /// client there does: through `from`'s own runtime, which forwards it.
+    pub async fn create_from(
+        &self,
+        from: &str,
+        host: &str,
+        name: &str,
+    ) -> Result<wire::Agent, NetError> {
+        let work = self.host(host)?.work.to_string_lossy().into_owned();
+        Ok(self
+            .client(from)?
+            .create_agent(tonic::Request::new(wire::CreateAgentRequest {
+                agent_id: Uuid::new_v4().as_bytes().to_vec(),
+                host: Some(wire::HostRef::named(host)),
+                name: Some(name.to_owned()),
+                cwd: work,
+                agent: wire::create_agent_request::Agent::defaults(wire::Kind::ClaudeSdk),
+                ..wire::CreateAgentRequest::default()
+            }))
+            .await
+            .map_err(|status| NetError::Refused(Box::new(status)))?
+            .into_inner())
+    }
+
+    /// The host's setting up as its daemon keeps it, and its settings.
+    pub async fn onboarding(
+        &self,
+        host: &str,
+    ) -> Result<(wire::Onboarding, wire::Settings), NetError> {
+        let refused = |status: tonic::Status| NetError::Refused(Box::new(status));
+        let mut door = self.front_door(host).await?;
+        let onboarding = door
+            .subscribe_onboarding(wire::OnboardingRequest::default())
+            .await
+            .map_err(refused)?
+            .into_inner()
+            .message()
+            .await
+            .map_err(refused)?
+            .ok_or_else(|| NetError::Host {
+                host: host.to_owned(),
+                error: "the onboarding stream ended".to_owned(),
+            })?;
+        let settings = door
+            .get_settings(wire::Empty {})
+            .await
+            .map_err(refused)?
+            .into_inner();
+        Ok((onboarding, settings))
     }
 
     /// Changes what `account` has bought, and has each host signed in to
@@ -2487,6 +2717,7 @@ impl Net {
                 .scope
                 .clone()
                 .unwrap_or_else(|| self.topology.scope.clone()),
+            pairing_open: false,
         });
     }
 

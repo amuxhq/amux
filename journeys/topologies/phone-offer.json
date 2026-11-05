@@ -1,0 +1,7 @@
+{
+  "scope": "phone-offer",
+  "relay": {"accounts": [{"name": "ada"}]},
+  "hosts": [
+    {"name": "desk", "account": "ada", "lan": true, "bonjour": true}
+  ]
+}

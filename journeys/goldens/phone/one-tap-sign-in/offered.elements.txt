@@ -1,0 +1,27 @@
+shell |  | hosts | 0,62,402,778
+home |  | signed-out | 0,174,402,617
+hosts |  | 1 reachable | 0,174,402,617
+hosts.row.<desk> | desk, macOS, reachable on this network | on-this-network | 16,180,370,65
+hosts.subtitle |  | 1 reachable | 16,144,370,22
+sign-in-offer |  | offered | 8,482,402,366
+sign-in-offer.title |  | Sign in as ada@example.com? | 23,498,354,32
+sign-in-offer.accept | Sign In |  | 23,724,370,44
+sign-in-offer.decline | Not Now |  | 23,776,370,44
+ | desk, macOS, reachable on this network |  | 16,180,370,65
+ | Hosts |  | 16,105,93,42
+ | 1 reachable |  | 16,148,77,18
+ | Agents |  | 111,795,94,54
+ | Agents |  | 140,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 229,830,29,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 230,830,29,12
+ | Sign in as ada@example.com? |  | 23,498,340,31
+ | desk offers its account, so this phone reaches it from anywhere. |  | 23,536,333,38
+ | Sign In |  | 23,724,355,42
+ | Not Now |  | 23,776,355,42
+ | Sign In |  | 175,441,52,20
+ | Agents |  | 111,795,94,54
+ | Hosts | selected | 197,795,94,54

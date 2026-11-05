@@ -126,15 +126,23 @@ targets:
         # the one chat it names current before the person taps it.
         UIBackgroundModes: [remote-notification]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-        # Pairing links printed by the CLI (`amux://pair?payload=...`) and the
-        # callback the web sign-in returns to. Arriving here pairs with nobody
-        # and signs nobody in; the app asks first.
+        # The callback the web sign-in returns to. Arriving here signs nobody
+        # in; the app asks first. Pairing links are amux.sh's page, which
+        # the associated domain below opens.
         CFBundleURLTypes:
           - CFBundleURLName: sh.amux.app
             CFBundleURLSchemes: [amux]
         # The transcript is measured against the display's full cadence; the
         # 120 Hz cap iOS applies by default would hide hitches behind it.
         CADisableMinimumFrameDurationOnPhone: true
+    # amux.sh's pairing page opens the app: the QR code a host shows is
+    # `https://amux.sh/p#<invitation>`, and amux.sh's
+    # apple-app-site-association names this app for `/p`. The App ID and the
+    # App Store profile must carry the Associated Domains capability too.
+    entitlements:
+      path: Amux/Amux.entitlements
+      properties:
+        com.apple.developer.associated-domains: [applinks:amux.sh]
     postBuildScripts:
       - name: Stamp build revision
         basedOnDependencyAnalysis: false

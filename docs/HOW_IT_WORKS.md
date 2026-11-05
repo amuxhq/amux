@@ -29,10 +29,12 @@ things; neither is a remote control for the other.
 ## Running amux on a computer
 
 `amux server start` starts amux in the background and `amux server stop`
-stops it. On a desktop install you rarely need either: `amux init` asks
-once whether amux should start when you log in, and any `amux` command that
-finds amux stopped starts it and waits for it. `amux status` says whether
-it is running, which version, and each profile's account.
+stops it. On a desktop install you rarely need either: bare `amux` and any
+other `amux` command that finds amux stopped start it and wait for it, and
+the first run asks whether amux should also start when you log in
+(`amux config set start_at_login true` says yes later). `amux status` says
+whether it is running, which version, whether it starts at login, and each
+profile's account.
 
 There, amux runs under a small supervisor (`amux supervise`) that restarts
 it if it ever crashes and installs releases as they come out. `amux update`
@@ -130,6 +132,34 @@ Every profile stays connected while amux runs, whichever one you are looking
 at. A failed sign-in in one leaves the others working. Profiles keep amux's
 own state apart; they do not sandbox the agents, which run as your user
 with your user's access to the machine.
+
+### Signing in a paired device
+
+The relay joins only devices on the same account, so a phone paired with a
+signed-in computer would otherwise have to sign in a second time before it
+could reach that computer from anywhere. Instead the signed-in side can
+offer the paired device its account, and the person there accepts with one
+tap:
+
+1. On the signed-in device, its person chooses to offer the paired device
+   the account (the first run does this for the phone it just paired, with
+   a box already ticked). That choice is the account owner's consent; no
+   paired device is offered an account without it.
+2. The offer waits on the signed-in device, in memory, and goes to the paired
+   device over their encrypted link whenever that device connects and says
+   it is signed out. A device already signed in is offered nothing.
+3. The paired device shows "Sign in as *email*?" with the account's email
+   and the offering machine's name.
+4. Accepting asks the offering device for a ticket. It asks amux.sh for one
+   bound to the paired device's host id, valid once and for a minute, and
+   sends it back over the link; the paired device trades it at once for
+   sign-in tokens of its own, under its own sign-in client, and signs in the
+   profile the offer reached.
+5. Dismissing ends the offer; it is not made again unless someone offers
+   again.
+
+It works in either direction: a phone signed in first can offer the
+computer it paired with.
 
 On the phone, each account you sign in to is a profile of the phone's own
 amux. Signing out keeps the account listed with Sign In beside it, and the
@@ -293,6 +323,13 @@ in** beside it wherever the relay was the way to it.
   a friend"), no central authority that can vouch for a host, no tokens
   that stand in for pairing. Each absence is a class of attack that cannot
   happen.
+- **An offered sign-in is not a token standing in for pairing.** It travels
+  only between devices already paired, over their pinned link, and what it
+  hands over is an account: a route through the relay and the account's
+  machine names, never trust in another machine. The ticket behind it is
+  bound to one host id, works once, and lives for a minute, so a copy is
+  worth nothing elsewhere. The offering person consents for one device, and
+  the receiving person sees whose account it is before accepting.
 - **Revocation is local.** Unpairing takes effect on your machine the moment
   you do it.
 

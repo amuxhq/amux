@@ -24,9 +24,6 @@ type Door = InstallationServiceClient<Channel>;
 /// The selected profile's administration, on its own socket.
 pub type Admin = ProfileAdminServiceClient<Channel>;
 
-/// How often a waiting pairing mode asks whether it is still open.
-const PAIRING_POLL: Duration = Duration::from_secs(1);
-
 fn plain(status: tonic::Status) -> anyhow::Error {
     crate::plain(status)
 }
@@ -111,25 +108,40 @@ pub async fn wait(mut admin: Admin, qr: bool, link: bool) -> Result<()> {
         "Pairing mode is open for {}; Ctrl+C closes it.",
         duration(started.ttl_seconds)
     );
-    let ttl = Duration::from_secs(started.ttl_seconds);
-    let deadline = tokio::time::Instant::now() + ttl;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(started.ttl_seconds);
+    let mut statuses = admin
+        .clone()
+        .watch_pairing(wire::Empty {})
+        .await
+        .map_err(plain)?
+        .into_inner();
+    let mut joining = false;
     loop {
         tokio::select! {
             () = &mut ended => return cancel(admin).await,
-            () = tokio::time::sleep(PAIRING_POLL) => {
-                let status = admin
-                    .get_pairing_status(wire::Empty {})
-                    .await
-                    .map_err(plain)?
-                    .into_inner();
+            () = tokio::time::sleep_until(deadline) => {
+                println!("Pairing mode ended.");
+                return Ok(());
+            }
+            status = statuses.message() => {
+                let Some(status) = status.map_err(plain)? else {
+                    bail!("the daemon stopped while pairing mode was open");
+                };
                 if status.locked_out {
                     bail!(
                         "Pairing mode closed after too many wrong PINs; \
                          run `amux pair` again for a new one."
                     );
                 }
-                if !status.active || tokio::time::Instant::now() >= deadline {
-                    println!("Pairing mode ended.");
+                if status.joining && !joining {
+                    println!("A device proved the code and is confirming…");
+                }
+                joining = status.joining;
+                if !status.active {
+                    match &status.paired {
+                        Some(peer) => println!("Paired with {}.", peer.name),
+                        None => println!("Pairing mode ended."),
+                    }
                     return Ok(());
                 }
             }
@@ -265,7 +277,18 @@ fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
                  instead.",
                 if name.is_empty() { "this host" } else { name }
             ));
-            let computer = match (name, started.addrs.first()) {
+            // The window's addresses are sorted, so loopback comes first on
+            // most networks; another computer can only use one it can reach.
+            let reachable = started
+                .addrs
+                .iter()
+                .find(|addr| {
+                    !addr
+                        .parse::<std::net::SocketAddr>()
+                        .is_ok_and(|addr| addr.ip().is_loopback())
+                })
+                .or(started.addrs.first());
+            let computer = match (name, reachable) {
                 ("", Some(addr)) => format!("`amux pair {addr}`"),
                 ("", None) => "`amux pair <this host>`".to_owned(),
                 (name, Some(addr)) => format!(
@@ -278,9 +301,12 @@ fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
                 "On another computer: run {computer} and enter the PIN."
             ));
         }
-        Some(pairing_window::Secret::QrSecret(secret)) => {
-            let payload = pair_link(started, secret)?;
-            lines.push(terminal_qr(&payload)?);
+        Some(pairing_window::Secret::QrSecret(_)) => {
+            let payload = &started.qr_link;
+            if payload.is_empty() {
+                bail!("the daemon opened a QR window without its link");
+            }
+            lines.push(terminal_qr(payload)?);
             lines.push("Scan it with the phone's camera.".to_owned());
             lines.push(
                 "Whoever scans this code can run agents on this machine as you. Scan it only \
@@ -290,6 +316,9 @@ fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
             if link {
                 lines.push(format!("Pairing link: {payload}"));
             }
+        }
+        Some(pairing_window::Secret::PinAndQr(_)) => {
+            bail!("the daemon opened a window `amux pair` did not ask for")
         }
         None => bail!("the daemon opened pairing mode without a secret"),
     }
@@ -318,29 +347,8 @@ fn duration(seconds: u64) -> String {
     }
 }
 
-fn pair_link(started: &PairingWindow, secret: &[u8]) -> Result<String> {
-    let identity = started
-        .identity
-        .as_ref()
-        .ok_or_else(|| anyhow!("the daemon opened pairing mode without its identity"))?;
-    let host = Uuid::from_slice(&identity.host_id).context("the pairing host id")?;
-    let addrs = started
-        .addrs
-        .iter()
-        .filter_map(|addr| addr.parse().ok())
-        .collect::<Vec<SocketAddr>>();
-    let json =
-        node::encode_qr_pairing_invitation(host, &addrs, started.cloud_url.as_deref(), secret)
-            .context("encoding the pairing invitation")?;
-    Ok(node::pair_link(&json))
-}
-
 fn terminal_qr(payload: &str) -> Result<String> {
-    let code = qrcode::QrCode::new(payload.as_bytes()).context("encoding the QR code")?;
-    Ok(code
-        .render::<qrcode::render::unicode::Dense1x2>()
-        .quiet_zone(true)
-        .build())
+    tui::qr::printed(payload).context("encoding the QR code")
 }
 
 /// Closes this host's pairing mode.
@@ -892,8 +900,14 @@ mod tests {
     }
 
     #[test]
-    fn a_qr_invitation_round_trips_through_its_link() {
+    fn a_qr_window_shows_the_link_the_daemon_composed() {
         let host = Uuid::from_bytes([3; 16]);
+        let offered = node::QrPairingPayload {
+            host_id: host,
+            secret: [9; 32],
+            port: 7420,
+            addrs: vec![[10, 0, 0, 2].into()],
+        };
         let started = PairingWindow {
             identity: Some(PairingIdentity {
                 host_id: host.as_bytes().to_vec(),
@@ -903,16 +917,16 @@ mod tests {
             addrs: vec!["10.0.0.2:7420".into()],
             cloud_url: None,
             secret: Some(pairing_window::Secret::QrSecret(vec![9; 32])),
+            qr_link: node::qr_link("https://amux.sh", &offered),
         };
         let lines = invitation(&started, true).unwrap();
         let link = lines
             .iter()
             .find_map(|line| line.strip_prefix("Pairing link: "))
             .unwrap();
+        assert!(link.starts_with("https://amux.sh/p#"), "{link}");
         let parsed = node::parse_pair_link(link).unwrap();
-        assert_eq!(parsed.host_id, host);
-        assert_eq!(parsed.secret, vec![9; 32]);
-        assert_eq!(parsed.addrs, vec!["10.0.0.2:7420".parse().unwrap()]);
+        assert_eq!(parsed, offered);
     }
 
     #[test]
@@ -923,7 +937,8 @@ mod tests {
                 ..PairingIdentity::default()
             }),
             ttl_seconds: 300,
-            addrs: vec!["10.0.0.2:7420".into()],
+            // Sorted, as a window's are: loopback first, and never offered.
+            addrs: vec!["127.0.0.1:7420".into(), "10.0.0.2:7420".into()],
             secret: Some(pairing_window::Secret::Pin("482913".into())),
             ..PairingWindow::default()
         };
@@ -1048,8 +1063,8 @@ mod tests {
     fn announced(name: &str, by: Vec<wire::Host>) -> HostEntry {
         HostEntry {
             standing: Some(wire::host_entry::Standing::Candidate(wire::Candidate {
-                addrs: Vec::new(),
                 announced_by: by,
+                ..wire::Candidate::default()
             })),
             ..HostEntry::candidate_host(vec![3; 16], name, Vec::new())
         }

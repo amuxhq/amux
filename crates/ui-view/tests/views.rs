@@ -472,7 +472,11 @@ fn a_settled_child_is_not_listed_under_its_family_nor_counted_there() {
     // Nor does the chat's family header name it.
     let header = family_header(&fleet, b"a", b"parent").unwrap();
     assert_eq!(
-        header.children.iter().map(|child| child.name.as_str()).collect::<Vec<_>>(),
+        header
+            .children
+            .iter()
+            .map(|child| child.name.as_str())
+            .collect::<Vec<_>>(),
         ["working"]
     );
 }

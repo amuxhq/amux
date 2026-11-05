@@ -1,0 +1,34 @@
+
+  Help improve amux                                                                          setting up amux
+
+  › [ ] Send a report automatically when something goes wrong
+        Never your chats, code, or file names.
+
+  amux sends usage counts to help improve it, never your code or chats. You can turn this off in Settings.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  enter continue   space change   esc later

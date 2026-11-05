@@ -582,7 +582,7 @@
     },
     {
       "id": "new-agent.no-repositories",
-      "shows": "Choosing a directory on a host with no repositories."
+      "shows": "Choosing a directory on a host with no repositories and no recent folders: where repositories are added."
     },
     {
       "id": "new-agent.unlisted",
@@ -627,6 +627,34 @@
     {
       "id": "fleet.notifications-offer",
       "shows": "The busy fleet offering notifications above its list, with a close mark to put the offer away."
+    },
+    {
+      "id": "fleet.first-run-window-open",
+      "shows": "Nothing paired yet, with a machine found whose pairing window is open, offered to pair by its code."
+    },
+    {
+      "id": "fleet.first-run-explain",
+      "shows": "A first run before anything is looked for: why iOS is about to ask for the local network."
+    },
+    {
+      "id": "pair.code-offered",
+      "shows": "The keypad raised by itself for a machine whose pairing window is open, asking to pair with it by name."
+    },
+    {
+      "id": "pair.sign-in-offered",
+      "shows": "A paired machine offering this phone its account, with the account's address in front of the person."
+    },
+    {
+      "id": "pair.sign-in-offered-accepting",
+      "shows": "The offered account accepted and signing in."
+    },
+    {
+      "id": "pair.sign-in-offered-offline",
+      "shows": "The offered account accepted while the machine that offered it was away: what to do, with the offer still standing."
+    },
+    {
+      "id": "pair.sign-in-offering",
+      "shows": "This phone, signed in, offering its account to a signed-out machine it just paired."
     },
     {
       "id": "fleet.first-run-two-found",

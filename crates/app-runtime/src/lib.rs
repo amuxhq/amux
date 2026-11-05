@@ -40,7 +40,7 @@ pub use values::{FleetDelta, HostView};
 pub use wire::Provider;
 use wire::{
     CreateAgentRequest, DeleteAgentRequest, DumpRequest, Filing, Kind, ListRepositoriesRequest,
-    ProjectEntry, RenameAgentRequest,
+    RenameAgentRequest, RepositoryEntry,
 };
 
 /// How many rows a chat opens with unless the host says otherwise.
@@ -233,7 +233,12 @@ impl AppRuntime {
                     .and_then(|candidate| candidate.through_paired().next())
                     .map(|through| through.name.clone()),
                 relay_only: host.candidate().is_some_and(wire::Candidate::relay_only),
+                pairing_open: host
+                    .candidate()
+                    .is_some_and(|candidate| candidate.pairing_open),
                 signed_in: host.account_signed_in(),
+                claude_kind: Some(host.claude_kind())
+                    .filter(|kind| *kind != wire::Kind::Unspecified),
                 current: host.current(),
                 providers: host
                     .providers
@@ -358,14 +363,13 @@ impl AppRuntime {
                 host_id: Some(host_id.to_vec()),
             })
             .await?;
-        let directory = |entry: ProjectEntry| Directory {
+        let directory = |entry: RepositoryEntry| Directory {
             path: entry.path,
             name: entry.name,
         };
         Ok(Directories {
             recent: listed.recent.into_iter().map(directory).collect(),
             repositories: listed.repositories.into_iter().map(directory).collect(),
-            roots: listed.roots,
         })
     }
 

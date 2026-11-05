@@ -23,6 +23,7 @@ const T0: i64 = 1_000_000_000;
 
 fn recording_options(install: &Install, boot: &str, recording: &Arc<Recording>) -> StartOptions {
     StartOptions {
+        settings: Default::default(),
         analytics: Telemetry::Record(recording.clone()),
         ..install.options(boot, quiet_launch())
     }
@@ -278,6 +279,7 @@ async fn a_profile_checks_in_a_minute_after_start_and_daily_after_that() {
     let recording = Recording::new();
     let daemon = node::start(
         StartOptions {
+            settings: Default::default(),
             clock: Arc::new(clock.clone()),
             ..recording_options(&install, "boot-1", &recording)
         },

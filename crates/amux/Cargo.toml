@@ -1,6 +1,6 @@
 [package]
 name = "amux"
-version = "0.8.5"
+version = "0.8.6"
 edition.workspace = true
 license.workspace = true
 description = "Agent multiplexer - CLI binary"
@@ -22,7 +22,6 @@ clap = { workspace = true }
 crossterm = { workspace = true }
 hyper-util = { workspace = true }
 node = { workspace = true }
-qrcode = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_ignored = { workspace = true }

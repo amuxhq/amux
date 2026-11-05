@@ -12,6 +12,7 @@ fn advert(name: &str) -> Advertisement {
         version: 7,
         addrs: vec![SocketAddr::from((Ipv4Addr::new(192, 0, 2, 8), 4819))],
         scope: String::new(),
+        pairing_open: false,
     }
 }
 
@@ -25,7 +26,11 @@ fn txt_encoding_carries_version_host_id_name_and_scope() {
     let service = mdns::service_info_for_test(&advert).unwrap();
     let properties = service.get_properties();
 
-    assert_eq!(properties.len(), 4);
+    assert_eq!(
+        properties.len(),
+        4,
+        "no pairing flag while no window is open"
+    );
     assert_eq!(service.get_property_val_str("name"), Some("Studio"));
     assert_eq!(service.get_property_val_str("scope"), Some("worktree-a"));
     assert_eq!(service.get_property_val_str("v"), Some("7"));
@@ -35,6 +40,14 @@ fn txt_encoding_carries_version_host_id_name_and_scope() {
     );
     assert_eq!(service.get_port(), 4819);
     assert!(service.get_fullname().ends_with(SERVICE_TYPE));
+
+    let open = Advertisement {
+        pairing_open: true,
+        ..advert
+    };
+    let service = mdns::service_info_for_test(&open).unwrap();
+    assert_eq!(service.get_properties().len(), 5);
+    assert_eq!(service.get_property_val_str("pair"), Some("1"));
 }
 
 /// The TXT record a Mac advertises, pinned in a file the iPhone app's
@@ -54,6 +67,7 @@ fn txt_encoding_matches_the_record_the_phone_reads() {
         version: fixture["version"].as_u64().unwrap() as u32,
         addrs: vec![SocketAddr::from((Ipv4Addr::new(192, 0, 2, 8), 4819))],
         scope: fixture["scope"].as_str().unwrap().to_owned(),
+        pairing_open: fixture["pairing_open"].as_bool().unwrap(),
     };
     let service = mdns::service_info_for_test(&advert).unwrap();
 
@@ -73,6 +87,7 @@ fn txt_encoding_matches_the_record_the_phone_reads() {
 fn txt_decoding_builds_an_advertisement() {
     let expected = Advertisement {
         scope: "run-7".to_owned(),
+        pairing_open: true,
         ..advert("Studio.local")
     };
     let resolved = mdns::service_info_for_test(&expected)

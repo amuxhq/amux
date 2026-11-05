@@ -47,6 +47,9 @@ impl RuntimeInstance {
 #[derive(Clone)]
 pub(crate) struct LiveLocalHost {
     host: Host,
+    /// The name, which a person may change while the host runs: each new
+    /// link and pairing says the one it has then.
+    name: Arc<std::sync::Mutex<String>>,
     signed_in: Arc<AtomicBool>,
     runtime_instance: RuntimeInstance,
     addresses: Arc<watch::Sender<OwnAddresses>>,
@@ -65,6 +68,7 @@ impl LiveLocalHost {
     pub(crate) fn new(host: Host) -> Self {
         Self {
             signed_in: Arc::new(AtomicBool::new(host.signed_in.unwrap_or(false))),
+            name: Arc::new(std::sync::Mutex::new(host.name.clone())),
             host,
             runtime_instance: RuntimeInstance::random(),
             addresses: Arc::new(watch::Sender::new(OwnAddresses::default())),
@@ -110,8 +114,17 @@ impl LiveLocalHost {
 
     pub(crate) fn snapshot(&self) -> Host {
         let mut host = self.host.clone();
+        host.name = self.name();
         host.signed_in = Some(self.signed_in.load(Ordering::Acquire));
         host
+    }
+
+    pub(crate) fn name(&self) -> String {
+        self.name.lock().unwrap().clone()
+    }
+
+    pub(crate) fn set_name(&self, name: &str) {
+        name.clone_into(&mut self.name.lock().unwrap());
     }
 
     pub(crate) fn set_signed_in(&self, signed_in: bool) {

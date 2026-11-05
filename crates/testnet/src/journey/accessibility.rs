@@ -140,10 +140,10 @@ impl Walk {
     fn pairing(&mut self) -> Result<(), String> {
         let desk = self.journey.host_id("desk");
         self.journey.tab("Hosts")?;
-        self.journey.wait_for(&[&format!("hosts.pair.{desk}")])?;
+        self.journey.wait_for(&[&format!("hosts.found.{desk}")])?;
         let mut process = self.journey.amux("desk", &["pair"])?;
         let pin = printed_pin(&mut process)?;
-        self.journey.tap(&format!("hosts.pair.{desk}"))?;
+        // The open pairing window raises the keypad by itself.
         self.journey.wait_for(&["pin.code"])?;
         self.journey.type_text("pin.code", &pin)?;
         self.journey.wait(

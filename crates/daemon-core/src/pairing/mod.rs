@@ -28,9 +28,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use crypto::{Entropy, Keys, Side, Spake2};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use wire::ErrorCode;
 use wire::pair_message::Body;
 use wire::pairing_error::Reason;
+use wire::{ErrorCode, PairingSecretKind};
 
 use crate::ids::{CallId, HostId, PairingId, TimerId};
 use crate::io::{Output, ShellWork};
@@ -64,6 +64,9 @@ pub enum WindowMethod {
     /// until it expires or is cancelled: for handing one PIN to someone
     /// with no access to this machine who may pair more than once.
     Demo(String),
+    /// A fresh PIN and a fresh QR secret at once: one window a person can
+    /// type into or scan, whichever their device offers.
+    PinOrQr,
 }
 
 /// The secret a window opened with.
@@ -71,6 +74,29 @@ pub enum WindowMethod {
 pub enum WindowSecret {
     Pin(String),
     Qr(Vec<u8>),
+    PinAndQr { pin: String, qr: Vec<u8> },
+}
+
+/// A host a window's pairing trusted.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PairedPeer {
+    pub host: HostId,
+    pub name: String,
+    pub pubkey: Vec<u8>,
+}
+
+/// The pairing window as people watching it see it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct WindowStatus {
+    pub active: bool,
+    /// Too many wrong secrets closed the last window.
+    pub locked_out: bool,
+    /// A joiner proved the secret: its person is confirming, or its key
+    /// is being written.
+    pub joining: bool,
+    /// The host the window's last pairing trusted, until another window
+    /// opens.
+    pub paired: Option<PairedPeer>,
 }
 
 /// How a secret travelled, as analytics and the reason log count it.
@@ -311,11 +337,14 @@ pub struct Initiate {
     pub method: Method,
 }
 
-/// The window: its secret and how its attempts stand.
+/// The window: its secrets and how its attempts stand. Every attempt
+/// counts against one budget, whichever secret it presents.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct Window {
-    secret: Vec<u8>,
-    method: Method,
+    pin: Option<Vec<u8>>,
+    qr: Option<Vec<u8>>,
+    /// The PIN is the operator's reusable demo PIN.
+    demo: bool,
     failed: u8,
     in_flight: BTreeSet<PairingId>,
     /// The conversation whose commit holds the window.
@@ -325,7 +354,33 @@ struct Window {
 
 impl Window {
     fn reusable(&self) -> bool {
-        self.method == Method::Demo
+        self.demo
+    }
+
+    fn pin_method(&self) -> Method {
+        if self.demo { Method::Demo } else { Method::Pin }
+    }
+
+    /// How the window counts before an attempt says which secret it holds.
+    fn method(&self) -> Method {
+        match self.pin {
+            Some(_) => self.pin_method(),
+            None => Method::Qr,
+        }
+    }
+
+    /// The secret an attempt presenting `kind` runs against, and how that
+    /// attempt counts. A window with one secret runs every attempt against
+    /// it; one with both takes the QR secret only when the joiner says it
+    /// holds that, so a joiner that says nothing is held to the PIN.
+    fn secret_for(&self, kind: PairingSecretKind) -> (Vec<u8>, Method) {
+        match (&self.pin, &self.qr) {
+            (_, Some(qr)) if kind == PairingSecretKind::Qr || self.pin.is_none() => {
+                (qr.clone(), Method::Qr)
+            }
+            (Some(pin), _) => (pin.clone(), self.pin_method()),
+            (None, _) => (Vec::new(), Method::Qr),
+        }
     }
 }
 
@@ -339,7 +394,10 @@ enum Stage {
     AwaitIdentity {
         keys: Keys,
     },
-    Committing,
+    /// The peer's key is being written.
+    Committing {
+        peer: PairedPeer,
+    },
     // The joining side.
     Started {
         spake: Spake2,
@@ -395,8 +453,10 @@ pub struct PairingState {
     abandoned: BTreeMap<PairingId, (Uuid, Option<TrustEntry>)>,
     /// Commits under way, with the entry they replace.
     committing: BTreeMap<PairingId, (Uuid, Option<TrustEntry>)>,
-    /// The window's state as the shell was last told.
-    published: (bool, bool),
+    /// The host the window's last pairing trusted, until another opens.
+    paired: Option<PairedPeer>,
+    /// The window's status as the shell was last told.
+    published: WindowStatus,
 }
 
 impl PairingState {
@@ -409,10 +469,35 @@ impl PairingState {
     pub fn locked_out(&self) -> bool {
         self.locked_out_until_ms.is_some()
     }
+
+    /// Whether a joiner proved the window's secret and the pairing is not
+    /// yet done: its person is confirming, or its key is being written.
+    pub fn joining(&self) -> bool {
+        self.sessions.values().any(|session| {
+            matches!(session.opened, Opened::Responder { .. })
+                && matches!(
+                    session.stage,
+                    Stage::AwaitIdentity { .. } | Stage::Committing { .. }
+                )
+        })
+    }
+
+    /// The window as people watching it see it.
+    pub fn status(&self) -> WindowStatus {
+        WindowStatus {
+            active: self.active(),
+            locked_out: self.locked_out(),
+            joining: self.joining(),
+            paired: self.paired.clone(),
+        }
+    }
 }
 
 fn message(body: Body) -> PairMessage {
-    PairMessage { body: Some(body) }
+    PairMessage {
+        body: Some(body),
+        ..PairMessage::default()
+    }
 }
 
 fn error(reason: Reason, detail: &str) -> PairMessage {
@@ -493,7 +578,7 @@ impl Daemon {
             && now >= window.expires_at_ms
             && window.reserved.is_none()
         {
-            let method = window.method;
+            let method = window.method();
             self.pairing.window = None;
             out.push(Output::Shell(ShellWork::Pairing(PairingEvent {
                 role: Role::Offerer,
@@ -507,17 +592,21 @@ impl Daemon {
         self.publish_window(out);
     }
 
-    /// Tells the shell whether the window is open or locked out, when that
-    /// moved, and arms the window's timer for its next change.
-    fn publish_window(&mut self, out: &mut Vec<Output>) {
-        let now = (self.pairing.active(), self.pairing.locked_out());
+    /// Tells the shell how the window stands, when that moved: after every
+    /// step a conversation took, since whether a joiner is confirming moves
+    /// with the conversations.
+    pub(crate) fn publish_status(&mut self, out: &mut Vec<Output>) {
+        let now = self.pairing.status();
         if self.pairing.published != now {
-            self.pairing.published = now;
-            out.push(Output::Shell(ShellWork::PairWindow {
-                active: now.0,
-                locked_out: now.1,
-            }));
+            self.pairing.published = now.clone();
+            out.push(Output::Shell(ShellWork::PairWindow(now)));
         }
+    }
+
+    /// Tells the shell how the window stands, when that moved, and arms
+    /// the window's timer for its next change.
+    fn publish_window(&mut self, out: &mut Vec<Output>) {
+        self.publish_status(out);
         let next = self
             .pairing
             .window
@@ -561,40 +650,38 @@ impl Daemon {
         if self.pairing.window.is_some() {
             return refused(out, WindowRefusal::AlreadyActive);
         }
-        let (secret, method, answer) = match method {
+        let demo = matches!(method, WindowMethod::Demo(_));
+        let answer = match method {
             WindowMethod::Demo(pin) if !valid_pin(&pin) => {
                 return refused(out, WindowRefusal::InvalidPinFormat);
             }
-            WindowMethod::Demo(pin) => (
-                pin.clone().into_bytes(),
-                Method::Demo,
-                WindowSecret::Pin(pin),
-            ),
-            WindowMethod::Pin => {
-                let Some(random) = self.pairing.entropy.draw() else {
-                    return refused(out, WindowRefusal::NoEntropy);
-                };
-                let value =
-                    u32::from_be_bytes(random[..4].try_into().expect("4 bytes")) % 1_000_000;
-                let pin = format!("{value:06}");
-                (
-                    pin.clone().into_bytes(),
-                    Method::Pin,
-                    WindowSecret::Pin(pin),
-                )
-            }
-            WindowMethod::Qr => {
-                let Some(random) = self.pairing.entropy.draw() else {
-                    return refused(out, WindowRefusal::NoEntropy);
-                };
-                let secret = random[..QR_SECRET_LEN].to_vec();
-                (secret.clone(), Method::Qr, WindowSecret::Qr(secret))
+            WindowMethod::Demo(pin) => WindowSecret::Pin(pin),
+            WindowMethod::Pin => match self.fresh_pin() {
+                Some(pin) => WindowSecret::Pin(pin),
+                None => return refused(out, WindowRefusal::NoEntropy),
+            },
+            WindowMethod::Qr => match self.fresh_qr() {
+                Some(qr) => WindowSecret::Qr(qr),
+                None => return refused(out, WindowRefusal::NoEntropy),
+            },
+            WindowMethod::PinOrQr => match (self.fresh_pin(), self.fresh_qr()) {
+                (Some(pin), Some(qr)) => WindowSecret::PinAndQr { pin, qr },
+                _ => return refused(out, WindowRefusal::NoEntropy),
+            },
+        };
+        let (pin, qr) = match &answer {
+            WindowSecret::Pin(pin) => (Some(pin.clone().into_bytes()), None),
+            WindowSecret::Qr(qr) => (None, Some(qr.clone())),
+            WindowSecret::PinAndQr { pin, qr } => {
+                (Some(pin.clone().into_bytes()), Some(qr.clone()))
             }
         };
         self.pairing.locked_out_until_ms = None;
+        self.pairing.paired = None;
         self.pairing.window = Some(Window {
-            secret,
-            method,
+            pin,
+            qr,
+            demo,
             failed: 0,
             in_flight: BTreeSet::new(),
             reserved: None,
@@ -602,6 +689,18 @@ impl Daemon {
         });
         self.publish_window(out);
         answered(call, Response::PairingWindow(answer), out);
+    }
+
+    /// A fresh six-digit PIN; none before any entropy arrived.
+    fn fresh_pin(&mut self) -> Option<String> {
+        let random = self.pairing.entropy.draw()?;
+        let value = u32::from_be_bytes(random[..4].try_into().expect("4 bytes")) % 1_000_000;
+        Some(format!("{value:06}"))
+    }
+
+    /// A fresh QR secret; none before any entropy arrived.
+    fn fresh_qr(&mut self) -> Option<Vec<u8>> {
+        Some(self.pairing.entropy.draw()?[..QR_SECRET_LEN].to_vec())
     }
 
     /// Closes the window, and lifts a lockout.
@@ -643,7 +742,7 @@ impl Daemon {
         let deadline = window
             .expires_at_ms
             .min(now.saturating_add(RESPONDER_PATIENCE_MS));
-        let method = window.method;
+        let method = window.method();
         self.pairing.sessions.insert(
             session,
             Session {
@@ -672,7 +771,13 @@ impl Daemon {
         let (spake, msg_b) = Spake2::start(Side::B, &initiate.secret, random);
         out.push(Output::Pair {
             session,
-            message: message(Body::Spake2Message(msg_b.clone())),
+            message: PairMessage {
+                secret_kind: match initiate.method {
+                    Method::Qr => PairingSecretKind::Qr,
+                    Method::Pin | Method::Demo | Method::Ssh => PairingSecretKind::Pin,
+                } as i32,
+                ..message(Body::Spake2Message(msg_b.clone()))
+            },
         });
         self.pairing.sessions.insert(
             session,
@@ -814,7 +919,10 @@ impl Daemon {
             return;
         };
         match &current.opened {
-            Opened::Responder { .. } => self.responder_message(session, message.body, out),
+            Opened::Responder { .. } => {
+                let kind = message.secret_kind();
+                self.responder_message(session, kind, message.body, out)
+            }
             Opened::Initiator(_) => self.initiator_message(session, message.body, out),
         }
     }
@@ -832,7 +940,7 @@ impl Daemon {
         };
         let method = current.method;
         match (&current.opened, &current.stage) {
-            (Opened::Responder { .. }, Stage::Committing) => {
+            (Opened::Responder { .. }, Stage::Committing { .. }) => {
                 // The commit goes on: the window's side owes nothing more
                 // to a peer that has gone.
             }
@@ -874,7 +982,7 @@ impl Daemon {
         match (&current.opened, &current.stage) {
             (Opened::Responder { .. }, stage) => {
                 let method = current.method;
-                if *stage == Stage::Committing {
+                if matches!(stage, Stage::Committing { .. }) {
                     // The commit that lands after this is undone.
                     if let Some(commit) = self.pairing.committing.remove(&session) {
                         self.pairing.abandoned.insert(session, commit);
@@ -896,9 +1004,15 @@ impl Daemon {
         }
     }
 
-    fn responder_message(&mut self, session: PairingId, body: Option<Body>, out: &mut Vec<Output>) {
+    fn responder_message(
+        &mut self,
+        session: PairingId,
+        kind: PairingSecretKind,
+        body: Option<Body>,
+        out: &mut Vec<Output>,
+    ) {
         let current = self.pairing.sessions.get(&session).expect("a session");
-        let method = current.method;
+        let mut method = current.method;
         let Opened::Responder {
             local,
             reachability,
@@ -949,12 +1063,16 @@ impl Daemon {
                         out,
                     );
                 };
-                let secret = self
+                let (secret, presented) = self
                     .pairing
                     .window
                     .as_ref()
-                    .map(|window| window.secret.clone())
-                    .unwrap_or_default();
+                    .map(|window| window.secret_for(kind))
+                    .unwrap_or((Vec::new(), method));
+                method = presented;
+                if let Some(current) = self.pairing.sessions.get_mut(&session) {
+                    current.method = method;
+                }
                 let (spake, msg_a) = Spake2::start(Side::A, &secret, random);
                 out.push(Output::Pair {
                     session,
@@ -1081,7 +1199,16 @@ impl Daemon {
         };
         window.in_flight.remove(&session);
         window.reserved = Some(session);
-        self.set_pairing_stage(session, Stage::Committing);
+        self.set_pairing_stage(
+            session,
+            Stage::Committing {
+                peer: PairedPeer {
+                    host,
+                    name: peer.name.clone(),
+                    pubkey: peer.pubkey.clone(),
+                },
+            },
+        );
         self.publish_window(out);
         self.commit_peer(session, host, peer, reachability, out);
     }
@@ -1149,8 +1276,8 @@ impl Daemon {
             return;
         };
         let method = current.method;
-        match (&current.opened, &current.stage, result) {
-            (Opened::Responder { .. }, _, Ok(_)) => {
+        match (&current.opened, current.stage.clone(), result) {
+            (Opened::Responder { .. }, stage, Ok(_)) => {
                 let consumed = match self.pairing.window.as_mut() {
                     Some(window) if window.reserved == Some(session) => {
                         if window.reusable() {
@@ -1181,6 +1308,9 @@ impl Daemon {
                     Self::offerer_failed(method, "INVALID_PIN", Some(Failure::Other), out);
                     return Self::end_pairing(session, Some(PairFailure::invalid_pin()), out);
                 }
+                if let Stage::Committing { peer } = stage {
+                    self.pairing.paired = Some(peer);
+                }
                 self.purge_window(out);
                 out.push(Output::Pair {
                     session,
@@ -1204,7 +1334,6 @@ impl Daemon {
                 Self::end_pairing(session, Some(failure), out);
             }
             (Opened::Initiator(initiate), Stage::Joining { call, host }, result) => {
-                let (call, host) = (*call, *host);
                 let method = initiate.method;
                 self.pairing.sessions.remove(&session);
                 Self::end_pairing(session, None, out);

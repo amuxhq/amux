@@ -2,13 +2,13 @@
   amux                                                                   signed out · amux login · desk away
 
   + New Agent
+  ○ Finish setting up (1)
 
 
   ▾ Live 1 ─────────────────────────────────────────────────────────────────────────────────────────────────
-
-  › ○ guarded  Claude · /tmp/j╭─ Hosts ───────────────────────────────────────╮                        [x]
-      Only this account reache│                                               │
-                              │ desk     offline · this machine is signed out │
+                              ╭─ Hosts ───────────────────────────────────────╮
+  › ○ guarded  Claude · /tmp/j│                                               │                        [x]
+      Only this account reache│ desk     offline · this machine is signed out │
                               │ laptop   this machine                         │
                               │                                               │
                               │ Pair another machine with amux pair           │

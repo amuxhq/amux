@@ -10,7 +10,7 @@ use crate::auth::{AccessToken, AuthError, CredentialProvider};
 
 #[derive(Debug, Error)]
 pub enum CloudError {
-    #[error("Not authenticated - run 'amux init' to authenticate")]
+    #[error("Not signed in: `amux login` signs this profile in")]
     NotAuthenticated,
     #[error("Connection failed: {0}")]
     Connection(String),

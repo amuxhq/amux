@@ -335,7 +335,7 @@ their own copies.
 ~/.config/amux/config.toml    the installation config ($XDG_CONFIG_HOME/amux; --config or AMUX_CONFIG name another)
 ~/.amux/bin/amux              the installed binary; an update stages amux.staged and keeps amux.prev beside it
 ~/Library/LaunchAgents/sh.amux.supervise.plist
-                              the login item `amux init` writes on macOS; ~/.config/systemd/user/amux.service
+                              the login item `start_at_login` writes on macOS; ~/.config/systemd/user/amux.service
                               on Linux, and a scheduled task named amux on Windows
 $TMPDIR/amux-<uid>/<hash>, <hash>.d
                               short addresses for sockets whose paths are too long (see above)
@@ -345,6 +345,8 @@ $TMPDIR/amux-<uid>/<hash>, <hash>.d
   installation.lock           one daemon per installation
   installation_id             what usage analytics count an install by; minted at the first start that sends them
   generation                  boot id, clean-shutdown flag and a counter a replica compares
+  onboarding.json             the onboarding steps a person confirmed or skipped, and whether a paired
+                              device made the first agent
   supervisor.lock             one supervisor per installation
   supervisor.sock             how the CLI reaches a running supervisor (`amux update`, and stop on Windows)
   daemon.log, daemon.log.1    the daemon's log, 8 MiB each; AMUX_LOG names another file
@@ -601,7 +603,7 @@ every message a provider sends or is sent.
 | [`redaction`](../crates/redaction/src/lib.rs) | The structural redactor for free text and JSON in reports, logs and captures. |
 | [`log-file`](../crates/log-file/src/lib.rs) | The capped log file every process writes, rotated to one `.1`, and the tail a dump reads. |
 | [`release`](../crates/release/src/lib.rs) | A release channel's signed manifest: signing, verification and the build a host installs, shared by the daemon, the installer and the release tool; the keys a build trusts and the target it was built for; and the version stamp in a built binary, with re-stamping a copy ([`version_stamp`](../crates/release/src/version_stamp.rs)). |
-| [`installer`](../crates/installer/src/lib.rs) | What every client calls first: finds amux at the front door, installs a bundled copy or a download checked against the signed manifest when it is missing, runs `amux init` and starts it. Does not link the daemon. |
+| [`installer`](../crates/installer/src/lib.rs) | What every client calls first: finds amux at the front door, downloads the channel's build and checks it against the signed manifest when it is missing, and starts it. Does not link the daemon. |
 | [`analytics`](../crates/analytics/src/lib.rs) | The usage events a device may send, typed so nothing but enums, numbers and ids fits; the per-profile handle and the installation's uploader. See [what amux sends](ANALYTICS.md). |
 
 **The agent side** — everything that reads a provider.

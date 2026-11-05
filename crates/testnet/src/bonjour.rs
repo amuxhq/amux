@@ -136,6 +136,7 @@ mod tests {
             version: 4,
             addrs: vec!["127.0.0.1:9".parse().unwrap()],
             scope: "testnet-bonjour-test".into(),
+            pairing_open: false,
         }
     }
 
@@ -212,6 +213,7 @@ mod tests {
             version: 4,
             addrs: vec!["127.0.0.1:52648".parse().unwrap()],
             scope: "journey".into(),
+            pairing_open: true,
         };
         assert_eq!(
             registration_arguments(&advert).unwrap(),
@@ -227,6 +229,7 @@ mod tests {
                 "hid=d6e6b93c-114e-4d20-b29a-6fac10bfb78d",
                 "name=desk",
                 "scope=journey",
+                "pair=1",
             ]
         );
         let bare = Advertisement {

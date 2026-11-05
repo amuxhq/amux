@@ -1289,6 +1289,7 @@ async fn retention_sweep() {
     launch.retention_chunk_bytes = 6 * 1024;
     launch.retention_interval_ms = 60_000;
     let options = StartOptions {
+        settings: Default::default(),
         clock: Arc::new(clock.clone()),
         ..install.options("boot-1", launch.clone())
     };

@@ -109,8 +109,12 @@ pub struct Launch {
     pub replica_budget_bytes: u64,
     /// The bytes replica blob files may hold.
     pub replica_blob_budget_bytes: u64,
-    /// Where the host looks for Git repositories to offer new agents.
-    pub repository_roots: Vec<PathBuf>,
+    /// The folders the host offers new agents first, as its person chose
+    /// them (`repositories`).
+    pub repositories: Vec<PathBuf>,
+    /// Which Claude a new agent on this host runs, as the host publishes it
+    /// to every client.
+    pub claude_kind: wire::Kind,
     /// How old the host's copy of what a provider offers may grow before
     /// it is asked again.
     pub catalogue_max_age_ms: i64,
@@ -162,7 +166,8 @@ impl Default for Launch {
             retention_interval_ms: 10 * 60_000,
             replica_budget_bytes: REPLICA_BUDGET_BYTES,
             replica_blob_budget_bytes: REPLICA_BLOB_BUDGET_BYTES,
-            repository_roots: Vec::new(),
+            repositories: Vec::new(),
+            claude_kind: wire::Kind::ClaudeSdk,
             catalogue_max_age_ms: 30 * 60_000,
             catalogue_recheck_ms: 60_000,
             step_budget: daemon_core::StepBudget::DAEMON,
@@ -398,13 +403,17 @@ pub struct ProfileRuntime {
     pub(crate) replicas: Mutex<crate::replicas::Replicas>,
     /// Replica blob files by last read, indexed at the first sweep.
     pub(crate) replica_blobs: Mutex<Option<store::BlobLru>>,
-    /// The host set as the core last published it on the inventory.
-    pub(crate) hosts: Mutex<Vec<wire::HostEntry>>,
+    /// The host set as the core last published it on the inventory,
+    /// watched by what derives from it (onboarding's paired phone).
+    pub(crate) hosts: watch::Sender<Vec<wire::HostEntry>>,
     analytics: analytics::Analytics,
     /// Turns ended since the last check-in.
     turns: crate::telemetry::Turns,
     /// What each provider offers on this host.
     offers: crate::offers::Offers,
+    /// The installation's onboarding state, which this profile's agents
+    /// move.
+    onboarding: Arc<crate::onboarding::Onboarding>,
 }
 
 /// A write waiting for its verdict: its number, and where the verdict
@@ -617,6 +626,8 @@ pub struct Profile {
     pub auto_reports: crate::reports::AutoReports,
     /// What makes the worktree an agent asked to start in one starts in.
     pub worktrees: crate::worktree::GitWorktrees,
+    /// The installation's onboarding state.
+    pub(crate) onboarding: Arc<crate::onboarding::Onboarding>,
 }
 
 impl ProfileRuntime {
@@ -637,6 +648,7 @@ impl ProfileRuntime {
             analytics,
             auto_reports,
             worktrees,
+            onboarding,
         } = profile;
         let options = daemon_core::StartOptions {
             generation,
@@ -679,11 +691,12 @@ impl ProfileRuntime {
             edge: std::sync::OnceLock::new(),
             replicas: Mutex::new(crate::replicas::Replicas::default()),
             replica_blobs: Mutex::new(None),
-            hosts: Mutex::new(Vec::new()),
+            hosts: watch::Sender::new(Vec::new()),
             offers: crate::offers::Offers::load(&dir),
             dir,
             analytics,
             turns: crate::telemetry::Turns::default(),
+            onboarding,
         });
         core.expect("built with the runtime").start(&runtime.driver);
         runtime.tell_own_host();
@@ -726,6 +739,10 @@ impl ProfileRuntime {
     }
 
     /// Where this profile records product analytics.
+    pub(crate) fn onboarding(&self) -> &crate::onboarding::Onboarding {
+        &self.onboarding
+    }
+
     pub fn analytics(&self) -> &analytics::Analytics {
         &self.analytics
     }
@@ -796,6 +813,11 @@ impl ProfileRuntime {
 
     pub fn launch(&self) -> Launch {
         self.launch.lock().unwrap().clone()
+    }
+
+    /// Which Claude a new agent here runs, as the host publishes it.
+    pub(crate) fn launch_claude_kind(&self) -> wire::Kind {
+        self.launch.lock().unwrap().claude_kind
     }
 
     /// The settings the profile's core reads, without the rest of
@@ -926,7 +948,7 @@ impl ProfileRuntime {
         };
         let kind = agent.kind();
         if let Some(edge) = self.edge() {
-            self.runs_kind(&edge.capabilities(), edge.host_name(), kind)?;
+            self.runs_kind(&edge.capabilities(), &edge.host_name(), kind)?;
         }
         let resolved = spec::resolve(agent);
         let mut request = request;
@@ -1001,7 +1023,7 @@ impl ProfileRuntime {
         query: Option<String>,
         limit: u32,
     ) -> wire::ListRepositoriesResponse {
-        let roots = self.launch().repository_roots;
+        let repositories = self.launch().repositories;
         let recent = self
             .driver()
             .read(|store| store.recent_directories())
@@ -1014,7 +1036,7 @@ impl ProfileRuntime {
             })
             .unwrap_or_default();
         tokio::task::spawn_blocking(move || {
-            crate::repositories::list(&roots, &recent, query.as_deref(), limit)
+            crate::repositories::list(&repositories, &recent, query.as_deref(), limit)
         })
         .await
         .expect("listing repositories does not panic")

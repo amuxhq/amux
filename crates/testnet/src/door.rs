@@ -54,6 +54,45 @@ pub enum Control {
         host: String,
         account: String,
     },
+    /// The host as one set up long ago: setting up dismissed, for its
+    /// default profile or the one with this label.
+    SetUp {
+        host: String,
+        #[serde(default)]
+        profile: Option<String>,
+    },
+    /// Approves the browser sign-in showing `code` as `account`, as the
+    /// person on the approval page does.
+    ApproveSignIn {
+        code: String,
+        account: String,
+    },
+    /// Waits for a paired host to offer `host`'s profile its account, and
+    /// accepts or declines it.
+    AnswerOffer {
+        host: String,
+        accept: bool,
+    },
+    /// A person on `host`, signed in, offers its account to the device
+    /// paired with it as `to`: a host of the net, or a device outside it by
+    /// the name it paired with; without `to`, the one device outside the
+    /// net it trusts (the phone). Answers the device's host id.
+    OfferSignIn {
+        host: String,
+        #[serde(default)]
+        to: Option<String>,
+    },
+    /// A person on `from` starts an agent named `name` on `host`, as that
+    /// host's client does; answers its id. In-process hosts only.
+    Create {
+        from: String,
+        host: String,
+        name: String,
+    },
+    /// The host's setting up, step by step, and the repositories it keeps.
+    Onboarding {
+        host: String,
+    },
     KillDaemon {
         host: String,
     },
@@ -646,6 +685,45 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
         Control::Trust { a, b } => value(net.trust(&a, &b).await?),
         Control::SetTier { account, tier } => value(net.set_tier(&account, tier).await?),
         Control::SignIn { host, account } => value(net.sign_in(&host, &account).await?),
+        Control::SetUp { host, profile } => value(net.set_up(&host, profile.as_deref()).await?),
+        Control::ApproveSignIn { code, account } => value(net.approve_sign_in(&code, &account)?),
+        Control::AnswerOffer { host, accept } => {
+            let (offer, profile) = net.answer_offer(&host, accept).await?;
+            json!({
+                "from": offer.host_name,
+                "email": offer.email,
+                "signed_in_as": profile.email,
+            })
+        }
+        Control::OfferSignIn { host, to } => {
+            let peer = net.offer_sign_in(&host, to.as_deref()).await?;
+            json!({ "host_id": Uuid::from_slice(&peer.host_id).unwrap_or_default() })
+        }
+        Control::Create { from, host, name } => {
+            let agent = net.create_from(&from, &host, &name).await?;
+            json!({ "id": Uuid::from_slice(&agent.agent_id).unwrap_or_default() })
+        }
+        Control::Onboarding { host } => {
+            let (onboarding, settings) = net.onboarding(&host).await?;
+            let steps: serde_json::Map<String, Value> = onboarding
+                .steps
+                .iter()
+                .map(|step| {
+                    (
+                        step.id().as_str_name().to_owned(),
+                        json!(step.state().as_str_name()),
+                    )
+                })
+                .collect();
+            json!({
+                "steps": steps,
+                "dismissed": onboarding.dismissed,
+                "repositories": settings.repositories,
+                "telemetry": settings.telemetry,
+                "auto_reports": settings.auto_reports,
+                "keep_awake": settings.keep_awake,
+            })
+        }
         Control::KillDaemon { host } => value(net.kill_daemon(&host).await?),
         Control::StopDaemon { host } => value(net.stop_daemon(&host).await?),
         Control::RestartDaemon { host } => {

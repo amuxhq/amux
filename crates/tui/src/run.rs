@@ -43,13 +43,26 @@ enum Leave {
 }
 
 /// Runs the terminal client until the person quits.
-pub async fn run(client: Arc<dyn Client>, config: TuiConfig, mut attach: AttachFn) -> Result<()> {
+/// Runs the terminal client until the person quits. With the
+/// installation's front door, it also runs onboarding and the settings
+/// screen.
+pub async fn run(
+    client: Arc<dyn Client>,
+    config: TuiConfig,
+    desk: Option<crate::app::DeskConfig>,
+    mut attach: AttachFn,
+) -> Result<()> {
     let fleet = Fleet::connect(client.clone(), SystemClock).await?;
     let mut app = App::new(client, fleet, config);
+    if let Some(desk) = desk {
+        app = app.with_desk(desk);
+    }
     loop {
         match session(&mut app).await? {
             Leave::Quit => {
+                let closing = app.desk_closing();
                 app.keep_drafts().await;
+                closing.await;
                 return Ok(());
             }
             Leave::Attach(agent) => match attach(*agent).await {

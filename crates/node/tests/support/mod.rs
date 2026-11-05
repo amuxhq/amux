@@ -98,6 +98,7 @@ impl Install {
 
     pub fn options(&self, boot_id: &str, launch: Launch) -> StartOptions {
         StartOptions {
+            settings: Default::default(),
             data_dir: self.data_dir.clone(),
             boot_id: Some(boot_id.to_owned()),
             launch,

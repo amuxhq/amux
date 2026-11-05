@@ -1,5 +1,5 @@
 shell |  | you | 0,62,402,778
-home |  | signed-out | 0,256,402,535
+home |  | signed-out | 0,196,402,595
 hosts |  | 1 offline | 0,196,402,595
 you |  | ada@example.com | 0,132,402,708
 account.ada@example.com | ada, Signed out | selected | 30,156,342,59
@@ -22,17 +22,17 @@ you.report | Report a Problem |  | 16,968,370,46
 you.dump | Export Diagnostics |  | 16,1014,370,46
 you.help.caption |  |  | 16,1068,310,32
 you.close | Close |  | 342,82,40,36
- | desk-work, desk is offline, Reached through the relay., desk, /private/tmp/amux-phone-journey/net/desk/work, <age> |  | 0,256,402,65
+ | desk-work, desk is offline, Reached through the relay., desk, /private/tmp/amux-phone-journey/net/desk/work, <age> |  | 0,196,402,65
  | Agents |  | 16,127,116,42
  | Nothing needs you |  | 16,170,130,18
  | Switch account | ada | 20,66,36,36
- | Search |  | 55,209,53,20
- | All |  | 16,258,123,32
- | All |  | 69,265,17,18
- | Needs you |  | 139,258,123,32
- | Needs you |  | 164,265,73,18
- | Working |  | 262,258,124,32
- | Working |  | 296,265,57,18
+ | All |  | 16,198,123,32
+ | All |  | 69,205,17,18
+ | Needs you |  | 139,198,123,32
+ | Needs you |  | 164,205,73,18
+ | Working |  | 262,198,124,32
+ | Working |  | 296,205,57,18
+ | Search |  | 16,197,370,0
  | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
  | Hosts |  | 197,795,94,54

@@ -41,11 +41,18 @@ public final class NewAgentStore {
             }
         }
 
-        /// Claude always starts on the SDK driver: the phone renders the chat
-        /// vocabulary, and only the SDK driver carries every row of it.
-        public var kind: Kind {
+        /// The kind an agent of this provider starts as on a host whose
+        /// settings resolve Claude to `claude`: the terminal or the SDK, as
+        /// that host's person chose, so an agent started from the phone is
+        /// the same kind as one started at the host. A host that has not
+        /// said gets the SDK, which carries every row the phone draws.
+        public func kind(claude: Kind?) -> Kind {
             switch self {
-            case .claude: .claudeSdk
+            case .claude:
+                switch claude {
+                case .claudePty: .claudePty
+                case .claudeSdk, .codex, .unspecified, nil: .claudeSdk
+                }
             case .codex: .codex
             }
         }
@@ -74,10 +81,14 @@ public final class NewAgentStore {
 
     public private(set) var machine: HostId?
     public private(set) var listing = Listing.none
-    public private(set) var recent: [Directory] = []
+    /// The folders the host's person chose as repositories, in their order.
     public private(set) var repositories: [Directory] = []
-    public private(set) var roots: [String] = []
+    /// Where agents on the host worked lately, newest first.
+    public private(set) var recent: [Directory] = []
     public private(set) var capped = false
+    /// Which Claude the chosen host starts, as its settings resolve it; nil
+    /// until it has said.
+    public private(set) var claudeKind: Kind?
     public private(set) var directory = ""
     public var query = ""
     public var typed = ""
@@ -132,8 +143,8 @@ public final class NewAgentStore {
         listing = .none
         recent = []
         repositories = []
-        roots = []
         capped = false
+        claudeKind = nil
         directory = ""
         query = ""
         typed = ""
@@ -159,8 +170,8 @@ public final class NewAgentStore {
         listing = .none
         recent = []
         repositories = []
-        roots = []
         capped = false
+        claudeKind = nil
         directory = ""
         query = ""
         failure = nil
@@ -168,6 +179,12 @@ public final class NewAgentStore {
         offers = [:]
         offerAsked = [:]
         startAfresh()
+    }
+
+    /// Which Claude the chosen host says a new agent runs. Told whenever the
+    /// host list moves, since a host says it once its link is up.
+    public func machineStarts(claude kind: Kind?) {
+        claudeKind = kind
     }
 
     /// What the fleet lists, for names and directories per host, and the
@@ -203,22 +220,26 @@ public final class NewAgentStore {
     public func listed(_ result: Result<Directories, RuntimeFailure>, asked number: Int) {
         guard number == asked else { return }
         let fallback = machine.flatMap { worked[$0] } ?? []
+        // Where an agent worked last, repository or not, is what is prefilled.
+        var last = fallback.first
         switch result {
         case .success(let directories):
-            recent = directories.recent.isEmpty ? fallback : directories.recent
             repositories = directories.repositories
-            roots = directories.roots
+            let lately = directories.recent.isEmpty ? fallback : directories.recent
+            last = lately.first
+            // A folder that is a repository is listed once, among the repositories.
+            let chosen = Set(repositories.map(\.path))
+            recent = lately.filter { !chosen.contains($0.path) }
             capped = UInt32(directories.recent.count + directories.repositories.count)
                 >= Self.limit
             listing = .ready
         case .failure:
             recent = fallback
             repositories = []
-            roots = []
             capped = false
             listing = .unavailable
         }
-        if directory.isEmpty, let first = recent.first ?? repositories.first {
+        if directory.isEmpty, let first = last ?? repositories.first {
             directory = first.path
         }
     }
@@ -285,13 +306,26 @@ public final class NewAgentStore {
         if let next = Bridge.newAgentPick(offered, chosen, pick) { chosen = next }
     }
 
-    /// What the chooser shows for the search typed so far.
+    /// Whether a search is typed: the chooser then lists what matches it
+    /// in place of its repositories and recent folders.
+    public var searching: Bool {
+        !query.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// What the chooser shows for the search typed so far: the repositories and
+    /// recent folders that match it, repositories first.
     public var found: [Directory] {
         let wanted = query.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !wanted.isEmpty else { return repositories }
-        return (recent + repositories).filter {
+        guard !wanted.isEmpty else { return [] }
+        return (repositories + recent).filter {
             $0.name.lowercased().contains(wanted) || $0.path.lowercased().contains(wanted)
         }
+    }
+
+    /// Where an agent is most likely wanted, for the chips under the chosen
+    /// directory: where agents worked lately, then the repositories.
+    public var likely: [Directory] {
+        recent + repositories
     }
 
     /// Whether a search has to ask the host, because the list it gave was cut.
@@ -332,7 +366,8 @@ public final class NewAgentStore {
     public var request: NewAgent? {
         guard ready, let machine else { return nil }
         return NewAgent(
-            hostId: machine.bytes, kind: provider.kind, cwd: directory, name: chosenName,
+            hostId: machine.bytes, kind: provider.kind(claude: claudeKind), cwd: directory,
+            name: chosenName,
             effort: effort, mode: provider == .codex ? mode : nil, model: model,
             newWorktree: newWorktree ? true : nil, permission: permission)
     }

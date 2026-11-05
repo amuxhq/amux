@@ -27,8 +27,6 @@ use std::process::{Child, Command, ExitCode, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use base64::Engine as _;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use clap::ValueEnum;
 use serde::Serialize;
 use serde::ser::{SerializeMap as _, Serializer};
@@ -1388,21 +1386,20 @@ fn export_tables(trace: &Path) -> Result<Vec<String>, String> {
 
 /// The pairing link with the gate's address in place of the machine's.
 fn gated_link(link: &str, gate: &str) -> Result<String, String> {
-    let (prefix, encoded) = match link.split_once('=') {
-        Some((prefix, encoded)) => (Some(prefix), encoded),
-        None => (None, link),
+    let (page, _) = link
+        .split_once("/p#")
+        .ok_or_else(|| format!("the pairing link {link} is no pairing page"))?;
+    let mut invitation =
+        node::parse_pair_link(link).map_err(|error| format!("the pairing link: {error}"))?;
+    let gate: std::net::SocketAddr = gate
+        .parse()
+        .map_err(|error| format!("the gate {gate}: {error}"))?;
+    let std::net::IpAddr::V4(ip) = gate.ip() else {
+        return Err(format!("the gate {gate} is not IPv4"));
     };
-    let decoded = URL_SAFE_NO_PAD
-        .decode(encoded.trim_end_matches('='))
-        .map_err(|error| format!("the pairing link: {error}"))?;
-    let mut payload: Value =
-        serde_json::from_slice(&decoded).map_err(|error| format!("the pairing link: {error}"))?;
-    payload["addrs"] = json!([gate]);
-    let rewritten = URL_SAFE_NO_PAD.encode(payload.to_string());
-    Ok(match prefix {
-        Some(prefix) => format!("{prefix}={rewritten}"),
-        None => rewritten,
-    })
+    invitation.port = gate.port();
+    invitation.addrs = vec![ip];
+    Ok(node::qr_link(page, &invitation))
 }
 
 // --- judging -------------------------------------------------------------
@@ -2150,16 +2147,27 @@ mod tests {
 
     #[test]
     fn a_link_rewritten_to_its_gate_changes_only_the_addresses() {
-        let payload = json!({"host_id": "h", "secret": [1, 2], "addrs": ["127.0.0.1:5000"], "cloud_url": "https://c"});
-        let encoded = URL_SAFE_NO_PAD.encode(payload.to_string());
-        let link = gated_link(&format!("amux://pair?payload={encoded}"), "127.0.0.1:6000").unwrap();
-        let (prefix, rewritten) = link.split_once('=').unwrap();
-        assert_eq!(prefix, "amux://pair?payload");
-        let decoded: Value =
-            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(rewritten).unwrap()).unwrap();
-        let mut expected = payload;
-        expected["addrs"] = json!(["127.0.0.1:6000"]);
-        assert_eq!(decoded, expected);
+        let invitation = node::QrPairingPayload {
+            host_id: uuid::Uuid::from_u128(1),
+            secret: [7; 32],
+            port: 5000,
+            addrs: vec![[192, 168, 1, 24].into(), [100, 64, 0, 1].into()],
+        };
+        let link = node::qr_link("http://127.0.0.1:9", &invitation);
+        let rewritten = gated_link(&link, "127.0.0.1:6000").unwrap();
+        assert!(
+            rewritten.starts_with("http://127.0.0.1:9/p#"),
+            "{rewritten}"
+        );
+        let read = node::parse_pair_link(&rewritten).unwrap();
+        assert_eq!(
+            read,
+            node::QrPairingPayload {
+                port: 6000,
+                addrs: vec![[127, 0, 0, 1].into()],
+                ..invitation
+            }
+        );
     }
 
     fn samples(given: &[(&str, &[f64])]) -> Samples {

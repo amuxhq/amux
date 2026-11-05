@@ -739,6 +739,7 @@ mod tests {
             host: crate::HostId(*OTHER),
             name: "box".into(),
             addrs: Vec::new(),
+            pairing_open: false,
         };
         assert_eq!(
             answers(step(

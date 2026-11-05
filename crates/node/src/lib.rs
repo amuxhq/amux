@@ -12,6 +12,7 @@
 
 mod activation;
 mod auth;
+mod awake;
 mod blobs;
 mod connection;
 mod daemon;
@@ -25,6 +26,8 @@ mod front_door;
 pub use front_door::{FrontDoor, info as profile_info};
 mod generation;
 mod grpc;
+mod host_settings;
+pub use host_settings::{SettingsOptions, claude_kind};
 mod hosts;
 mod identity;
 mod install;
@@ -32,6 +35,7 @@ mod link;
 mod names;
 mod net_error;
 mod offers;
+mod onboarding;
 mod outbox;
 mod pairing;
 mod profile_admin;
@@ -49,6 +53,7 @@ mod runtime;
 mod serve;
 mod services;
 mod spec;
+mod suggestions;
 #[cfg(not(target_os = "ios"))]
 pub mod supervisor;
 mod telemetry;
@@ -58,6 +63,7 @@ mod window;
 mod worktree;
 
 pub use activation::{ActivationError, ActivationPipe, InheritedPipe, PIPE_ENV, PREPARED};
+pub use auth::oauth::CLI_CLIENT_ID;
 pub use blobs::{BlobError, PATCH_MIME};
 pub use daemon::{Daemon, STOP_TARGET, StartError, StartOptions, start};
 pub use daemon_core::names::word_pairs;
@@ -79,7 +85,7 @@ pub use edge::{
 };
 pub use forward::Owner;
 pub use generation::{Generation, boot_id};
-pub use grpc::{ClientApi, status};
+pub use grpc::{ClientApi, SURFACE_HEADER, status};
 pub use identity::LinkLiveness;
 pub use install::{
     AGENTS, CORE_RING, GENERATION, INSTALLATION_LOCK, LockError, PROFILES, REPLICAS, REPORTS,
@@ -88,7 +94,7 @@ pub use install::{
 pub use link::{Cursor, PeerClient, TRUST_REVOKED, forwarder, framed, link_log, paths, socket};
 pub use offers::{HostCatalogue, PROVIDERS, Provider};
 pub use outbox::{DrainReport, HttpSender, NoopSender, Push, PushFuture, PushSender};
-pub use pairing::qr::{QrPairingError, encode_qr_pairing_invitation, pair_link, parse_pair_link};
+pub use pairing::qr::{QrPairingError, QrPairingPayload, parse_pair_link, qr_link};
 #[cfg(unix)]
 pub use pairing::ssh::relay_stdio_to_unix_socket;
 pub use pairing::ssh::{exchange_over_ssh, read_ssh_identity, ssh_stdio, write_ssh_identity};

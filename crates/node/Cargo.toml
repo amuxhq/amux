@@ -1,6 +1,6 @@
 [package]
 name = "node"
-version = "0.8.5"
+version = "0.8.6"
 edition.workspace = true
 license.workspace = true
 description = "The amux daemon: installation, profile runtimes, the agent registry and startup"
@@ -47,6 +47,8 @@ settings = { workspace = true }
 sha2 = { workspace = true }
 store = { workspace = true }
 thiserror = { workspace = true }
+toml = { workspace = true }
+toml_edit = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }

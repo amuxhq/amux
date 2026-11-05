@@ -24,6 +24,8 @@ public final class StoreBundle {
     public let hosts: HostsStore
     public let pairing: PairingStore
     public let newAgent: NewAgentStore
+    /// The account offered across a pairing, either way round.
+    public let offers: SignInOffers
     /// How many times the fleet moved, for a driver waiting on it.
     public private(set) var applied = 0
     /// The launch's reconciliation is marked once: the first read in which
@@ -54,6 +56,8 @@ public final class StoreBundle {
     /// Told how many machines this account has paired and how many of its
     /// agents need the person, each time the fleet moves.
     @ObservationIgnored public var saw: (@MainActor (_ hosts: Int, _ attention: Int) -> Void)?
+    /// Told whenever the fleet moves while this profile trusts a machine.
+    @ObservationIgnored public var trusts: (@MainActor () -> Void)?
     /// What moved in the fleet while the launch's first frame was going up,
     /// applied once it is up.
     @ObservationIgnored private var held: FleetDelta?
@@ -80,6 +84,7 @@ public final class StoreBundle {
         self.hosts = HostsStore(clock: clock)
         self.pairing = PairingStore(clock: clock)
         self.newAgent = NewAgentStore()
+        self.offers = SignInOffers()
         // Applied after the refresh that put the frame up, not inside it.
         fleet.presented = { [weak self] in
             guard let self, self.held != nil else { return }
@@ -123,6 +128,11 @@ public final class StoreBundle {
             held = FleetDelta(hosts: delta.hosts ?? held?.hosts, view: delta.view ?? held?.view)
         case .chat(let delta):
             chats[delta.chat]?.moved(delta)
+        case .signInOffers(let listed):
+            offers.listed(listed)
+        case .onboarding, .pairing:
+            // The phone sets up on its own, and follows neither.
+            break
         }
     }
 
@@ -133,6 +143,7 @@ public final class StoreBundle {
         fleet.show(view, hosts: views)
         if delta.hosts != nil {
             hosts.show(views)
+            if !hosts.hosts.isEmpty { trusts?() }
             if !markedReconciled {
                 let trusted = views.filter { $0.trusted && !$0.local }
                 if !trusted.isEmpty, trusted.allSatisfy(\.current) {
@@ -142,6 +153,9 @@ public final class StoreBundle {
             }
         }
         newAgent.remember(fleet.rows)
+        if let machine = newAgent.machine {
+            newAgent.machineStarts(claude: hosts.host(machine)?.claudeKind)
+        }
         saw?(fleet.machines.filter(\.trusted).count, fleet.needYou)
         applied += 1
         keepSessions()
@@ -320,6 +334,9 @@ public final class StoreBundle {
         let attempt = pairing.checking()
         Task {
             let paired = await profile.confirmPair(pending)
+            if case .success = paired, let host = HostId(bytes: pending.hostId) {
+                offers.paired(host)
+            }
             pairing.paired(paired.map { _ in pending.name }, attempt: attempt)
             await refreshRoster()
         }
@@ -329,6 +346,28 @@ public final class StoreBundle {
         pairing.abandoned()
         guard let profile else { return }
         Task { _ = await profile.abandonPair(pending) }
+    }
+
+    // MARK: - Offering the account across a pairing
+
+    /// Answers a paired machine's offer of its account: accepting signs
+    /// this profile in to it, and the profile list moving puts the account
+    /// on screen; declining ends the offer there too.
+    public func answer(_ offer: SignInOfferView, accept: Bool) {
+        guard let profile, offers.answering == nil else { return }
+        offers.answers(offer.hostId)
+        Task {
+            let outcome = await profile.answerSignInOffer(from: offer.hostId, accept: accept)
+            offers.answered(outcome, from: offer.hostId)
+        }
+    }
+
+    /// Offers a machine just paired this phone's account, as the person
+    /// here consented.
+    public func offerAccount(to host: HostView) {
+        guard let profile, let id = host.id, offers.answering == nil else { return }
+        offers.answers(host.hostId)
+        Task { offers.offered(await profile.offerSignIn(to: id), to: id) }
     }
 
     /// Stops trusting a machine at once; the row leaves when the profile
@@ -347,6 +386,7 @@ public final class StoreBundle {
         newAgent.open(on: host)
         newAgent.remember(fleet.rows)
         guard let host else { return }
+        newAgent.machineStarts(claude: hosts.host(host)?.claudeKind)
         listDirectories(on: host, matching: "")
         askOffers(on: host)
     }
@@ -354,6 +394,7 @@ public final class StoreBundle {
     public func point(at host: HostId) {
         guard newAgent.machine != host else { return }
         newAgent.point(at: host)
+        newAgent.machineStarts(claude: hosts.host(host)?.claudeKind)
         listDirectories(on: host, matching: "")
         askOffers(on: host)
     }

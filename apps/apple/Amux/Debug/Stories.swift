@@ -30,6 +30,8 @@ extension ComponentCatalog {
         fleet("first-run-refused") { StoryFleet.firstRun(found: [], network: .denied) },
         fleet("first-run-signed-out") { StoryFleet.firstRun(found: [], accounts: 0) },
         fleet("first-run-signed-out-found") { StoryFleet.firstRun(accounts: 0) },
+        fleet("first-run-window-open") { StoryFleet.firstRun(found: [StoryFleet.laptopOpen]) },
+        fleet("first-run-explain") { StoryFleet.firstRun(found: [], explained: false) },
         fleet("large-text", size: .accessibility3) { StoryFleet.busy() },
         fleet("two-accounts") { StoryFleet.busy(accounts: 2) },
         fleet("signed-out") { StoryFleet.busy(accounts: 0) },
@@ -117,6 +119,8 @@ enum StoryFleet {
     static let laptop = host(4, "laptop", platform: .macos, trusted: false, candidate: true)
     static let studioFound = host(5, "studio", platform: .macos, trusted: false, candidate: true)
     static let onTheAccount = host(6, "nova-test", platform: .linux, trusted: false, candidate: true, relayOnly: true)
+    /// The laptop with its pairing window open, as `amux pair` holds it.
+    static let laptopOpen = host(4, "laptop", platform: .macos, trusted: false, candidate: true, pairingOpen: true)
 
     /// - Parameter nearby: whether a machine this phone has not paired is
     ///   on its network, offering itself above the list.
@@ -177,11 +181,14 @@ enum StoryFleet {
     }
 
     /// Nothing paired, with what this phone has found on its network.
+    /// - Parameter explained: whether the person was told why amux looks on
+    ///   the local network; until then nothing is looked for.
     static func firstRun(
         found: [HostView] = [laptop], network: LocalNetworkPermission = .granted, accounts: Int = 1,
-        pro: Bool? = nil
+        pro: Bool? = nil, explained: Bool = true
     ) -> Stores {
         let stores = Self.stores(hosts: found, accounts: accounts)
+        stores.hosts.explainedNetwork(explained)
         stores.hosts.sawLocalNetwork(network)
         if let pro { stores.hosts.show(CatalogFixtures.account(pro: pro)) }
         stores.fleet.show(FleetView(sections: [], needYou: 0, working: 0), hosts: found)
@@ -214,14 +221,14 @@ enum StoryFleet {
     /// the relay reaches it.
     static func host(
         _ index: UInt8, _ name: String, platform: Platform, trusted: Bool = true, candidate: Bool = false,
-        relayOnly: Bool = false
+        relayOnly: Bool = false, pairingOpen: Bool = false
     ) -> HostView {
         HostView(
             hostId: Array(repeating: index, count: 16), name: name, local: false, trusted: trusted,
             candidate: candidate, reach: .online(.direct),
-            addrs: candidate && !relayOnly ? ["192.168.1.\(index):4433"] : [], relayOnly: relayOnly, current: true,
+            addrs: candidate && !relayOnly ? ["192.168.1.\(index):4433"] : [], relayOnly: relayOnly, pairingOpen: pairingOpen, current: true,
             providers: [ProviderSignIn(provider: .claude, signedIn: true), ProviderSignIn(provider: .codex, signedIn: true)],
-            lastDialError: nil, platform: platform, signedIn: nil, through: nil, version: nil)
+            claudeKind: nil, lastDialError: nil, platform: platform, signedIn: nil, through: nil, version: nil)
     }
 
     static func key(_ index: UInt8, on host: HostView) -> AgentKey {

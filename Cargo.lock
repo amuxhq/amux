@@ -98,7 +98,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "amux"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "agent",
  "agent-dir",
@@ -120,7 +120,6 @@ dependencies = [
  "prost",
  "provider-fakes",
  "pty-host",
- "qrcode",
  "rcgen",
  "release",
  "ring",
@@ -253,6 +252,7 @@ dependencies = [
 name = "app-ffi"
 version = "0.2.0"
 dependencies = [
+ "analytics",
  "app-embedded",
  "app-runtime",
  "cbindgen",
@@ -2109,7 +2109,7 @@ dependencies = [
 
 [[package]]
 name = "node"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "agent-dir",
  "analytics",
@@ -2154,6 +2154,8 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-util",
+ "toml",
+ "toml_edit",
  "tonic",
  "tower",
  "tracing",
@@ -3440,6 +3442,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "toml",
+ "toml_edit",
  "wire",
 ]
 
@@ -3811,6 +3814,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "settings",
  "sha2",
  "shot",
  "store",
@@ -4293,6 +4297,7 @@ dependencies = [
  "prost",
  "provider-fakes",
  "pulldown-cmark",
+ "qrcode",
  "ratatui",
  "serde",
  "serde_json",

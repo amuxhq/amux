@@ -361,7 +361,10 @@ impl Daemon {
                 | Body::LinkClose(_)
                 | Body::Addresses(_)
                 | Body::ObservedAddress(_)
-                | Body::ForwardRefused(_),
+                | Body::ForwardRefused(_)
+                | Body::SignInOffer(_)
+                | Body::SignInAnswer(_)
+                | Body::SignInTicket(_),
             )
             | None => return,
         }
@@ -423,7 +426,10 @@ impl Daemon {
             | Body::NeighborDown(_)
             | Body::Reauth(_)
             | Body::LinkClose(_)
-            | Body::RefreshCredential(_) => {}
+            | Body::RefreshCredential(_)
+            | Body::SignInOffer(_)
+            | Body::SignInAnswer(_)
+            | Body::SignInTicket(_) => {}
         }
     }
 

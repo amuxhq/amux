@@ -1,0 +1,7 @@
+{
+  "relay": {"accounts": [{"name": "jordan"}]},
+  "hosts": [
+    {"name": "desk", "lan": true, "discovery": true, "repositories": ["amux"]},
+    {"name": "laptop", "lan": true, "discovery": true}
+  ]
+}

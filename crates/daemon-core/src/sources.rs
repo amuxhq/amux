@@ -622,6 +622,7 @@ impl Daemon {
                 if !caught_up {
                     inventory.generation = Some(entry.generation);
                 }
+                self.claude_kind_said(host, entry.claude_kind);
                 self.providers_said(host, entry.providers);
                 return;
             }

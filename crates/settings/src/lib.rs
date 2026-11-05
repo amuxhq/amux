@@ -1,3 +1,5 @@
+pub mod edit;
+
 use std::fmt;
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
@@ -252,10 +254,54 @@ impl Default for AgentSettings {
 /// changes them in the config file, and starting one beside a running chat
 /// copies that chat's instead. A file that sets some of an agent's values
 /// keeps the shipped ones for the rest.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewAgentSettings {
     pub claude: NewAgentDefaults,
     pub codex: NewAgentDefaults,
+    /// Which Claude a new agent runs (`new_agent.claude.kind`); unset
+    /// follows `ui.chat_in`. Read it through
+    /// [`InstallationConfig::claude_kind`].
+    pub claude_kind: Option<ClaudeKindSetting>,
+}
+
+/// Which Claude a new agent runs: headless behind amux's chat, or in its
+/// own terminal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ClaudeKindSetting {
+    Sdk,
+    Terminal,
+}
+
+impl Serialize for NewAgentSettings {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Claude<'a> {
+            model: &'a str,
+            effort: &'a str,
+            permission: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            kind: Option<ClaudeKindSetting>,
+        }
+        #[derive(Serialize)]
+        struct Both<'a> {
+            claude: Claude<'a>,
+            codex: &'a NewAgentDefaults,
+        }
+        Both {
+            claude: Claude {
+                model: &self.claude.model,
+                effort: &self.claude.effort,
+                permission: &self.claude.permission,
+                kind: self.claude_kind,
+            },
+            codex: &self.codex,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl<'de> Deserialize<'de> for NewAgentSettings {
@@ -271,8 +317,16 @@ impl<'de> Deserialize<'de> for NewAgentSettings {
         }
         #[derive(Default, Deserialize)]
         #[serde(default)]
+        struct GivenClaude {
+            model: Option<String>,
+            effort: Option<String>,
+            permission: Option<String>,
+            kind: Option<ClaudeKindSetting>,
+        }
+        #[derive(Default, Deserialize)]
+        #[serde(default)]
         struct Both {
-            claude: Given,
+            claude: GivenClaude,
             codex: Given,
         }
         fn over(given: Given, shipped: NewAgentDefaults) -> NewAgentDefaults {
@@ -284,9 +338,15 @@ impl<'de> Deserialize<'de> for NewAgentSettings {
         }
         let given = Both::deserialize(deserializer)?;
         let shipped = Self::default();
+        let claude = Given {
+            model: given.claude.model,
+            effort: given.claude.effort,
+            permission: given.claude.permission,
+        };
         Ok(Self {
-            claude: over(given.claude, shipped.claude),
+            claude: over(claude, shipped.claude),
             codex: over(given.codex, shipped.codex),
+            claude_kind: given.claude.kind,
         })
     }
 }
@@ -314,6 +374,7 @@ impl Default for NewAgentSettings {
                 effort: "medium".into(),
                 permission: "default".into(),
             },
+            claude_kind: None,
         }
     }
 }
@@ -359,7 +420,8 @@ pub enum ChatInSetting {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UiSettings {
-    /// A shipped theme name or a path resolved beside the config file.
+    /// The palette: the terminal's own colours, or the shipped dark or
+    /// light theme.
     pub theme: ThemeSetting,
     /// Whether to detect, force, or disable truecolor output.
     pub color: ColorSetting,
@@ -374,7 +436,13 @@ pub struct InstallationConfig {
     /// What paired hosts and the phone call this machine. Absent means
     /// [`default_host_name`], resolved once by the daemon.
     pub host_name: Option<String>,
-    pub repository_roots: Vec<PathBuf>,
+    /// The folders new-agent pickers offer first, on this machine and from
+    /// every paired device. A leading `~/` is the home directory.
+    pub repositories: Vec<PathBuf>,
+    /// Whether amux starts when the person logs in: the login item that
+    /// runs `amux supervise`, written or removed when this changes. Only an
+    /// install with a supervisor has one.
+    pub start_at_login: bool,
     /// Whether this install runs the daemon under `amux supervise`. A host
     /// whose service manager runs `amux daemon` directly sets it false.
     pub supervisor: bool,
@@ -383,15 +451,16 @@ pub struct InstallationConfig {
     /// supervisor is an error. Read it through [`InstallationConfig::updates`].
     pub updates: Option<Updates>,
     pub channel: Channel,
-    /// Whether the supervisor holds the machine's sleep assertion.
+    /// Whether amux keeps the machine awake: on power whenever it runs, on
+    /// battery only while an agent is working.
     pub keep_awake: bool,
     /// Whether a published build sends product analytics to amux.sh. The
     /// `DO_NOT_TRACK` environment variable turns it off as well.
     pub telemetry: bool,
-    /// Whether the dumps amux writes when one of its checks breaks are sent
-    /// to the account the profile is signed in to. They hold what agents
-    /// were told and said, redacted of secrets, so only a person turns this
-    /// on.
+    /// Whether the reports amux writes when one of its checks breaks are
+    /// sent to the account the profile is signed in to. A report holds the
+    /// records of what amux's parts concluded and amux's own masked logs,
+    /// never what anybody wrote; still, only a person turns this on.
     pub auto_reports: bool,
     pub ui: UiSettings,
     pub keybinds: Keybinds,
@@ -416,7 +485,8 @@ impl Default for InstallationConfig {
     fn default() -> Self {
         Self {
             host_name: None,
-            repository_roots: Vec::new(),
+            repositories: Vec::new(),
+            start_at_login: false,
             supervisor: true,
             updates: None,
             channel: Channel::default(),
@@ -511,6 +581,28 @@ impl InstallationConfig {
         }
     }
 
+    /// Which Claude a new agent runs: the configured one, else the one the
+    /// chat interface implies (amux's chat runs it headless, the agent's
+    /// own interface in its terminal).
+    pub fn claude_kind(&self) -> ClaudeKindSetting {
+        self.new_agent.claude_kind.unwrap_or(match self.ui.chat_in {
+            ChatInSetting::Amux => ClaudeKindSetting::Sdk,
+            ChatInSetting::Native => ClaudeKindSetting::Terminal,
+        })
+    }
+
+    /// The repository list with a leading `~/` made the home directory.
+    pub fn repositories(&self) -> Vec<PathBuf> {
+        let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" });
+        self.repositories
+            .iter()
+            .map(|path| match (path.strip_prefix("~"), &home) {
+                (Ok(rest), Some(home)) => PathBuf::from(home).join(rest),
+                _ => path.clone(),
+            })
+            .collect()
+    }
+
     /// The configured channel as the manifests name it.
     pub fn channel_name(&self) -> &'static str {
         match self.channel {
@@ -530,8 +622,8 @@ impl InstallationConfig {
 }
 
 /// Every key the installation's file takes, dotted as `amux config` names
-/// them, in alphabetical order: the leaves of a default config, and the two
-/// that are absent until set.
+/// them, in alphabetical order: the leaves of a default config, and the
+/// three that are absent until set.
 pub fn installation_keys() -> Vec<String> {
     fn leaves(prefix: &str, table: &toml::Table, out: &mut Vec<String>) {
         for (key, value) in table {
@@ -548,10 +640,25 @@ pub fn installation_keys() -> Vec<String> {
     }
     let default = toml::Table::try_from(InstallationConfig::default())
         .expect("the default config serialises");
-    let mut keys = vec!["host_name".to_owned(), "updates".to_owned()];
+    let mut keys = vec![
+        "host_name".to_owned(),
+        "new_agent.claude.kind".to_owned(),
+        "updates".to_owned(),
+    ];
     leaves("", &default, &mut keys);
     keys.sort();
     keys
+}
+
+/// Whether a key is about how amux is deployed or developed rather than an
+/// everyday preference: the supervisor and updates, where releases and data
+/// live, discovery's scope and the agent processes' tunables. They stay in
+/// the file and `amux config`, but no settings screen shows them.
+pub fn is_deployment_key(key: &str) -> bool {
+    matches!(
+        key,
+        "supervisor" | "updates" | "releases_url" | "discovery.scope" | "root"
+    ) || key.starts_with("agent.")
 }
 
 // Resolve aliases in the existing ancestor, even before a socket or state file
@@ -889,6 +996,76 @@ mod tests {
                 facts_ring_mib: 2,
             }
         );
+    }
+
+    #[test]
+    fn the_claude_kind_follows_the_interface_until_set() {
+        let config = installation("").unwrap();
+        assert_eq!(config.claude_kind(), ClaudeKindSetting::Sdk);
+        let native = installation("[ui]\nchat_in = \"native\"\n").unwrap();
+        assert_eq!(native.claude_kind(), ClaudeKindSetting::Terminal);
+        let set = installation(
+            "[ui]\nchat_in = \"native\"\n[new_agent.claude]\nkind = \"sdk\"\nmodel = \"haiku\"\n",
+        )
+        .unwrap();
+        assert_eq!(set.claude_kind(), ClaudeKindSetting::Sdk);
+        assert_eq!(set.new_agent.claude.model, "haiku");
+        assert!(set.ignored.is_empty(), "{:?}", set.ignored);
+        // It writes back where it was read from.
+        let again = installation(&toml::to_string(&set).unwrap()).unwrap();
+        assert_eq!(again.new_agent, set.new_agent);
+        assert!(installation_keys().contains(&"new_agent.claude.kind".to_owned()));
+        assert!(!installation_keys().contains(&"new_agent.codex.kind".to_owned()));
+    }
+
+    #[test]
+    fn repositories_and_start_at_login_parse_and_default() {
+        let defaults = installation("").unwrap();
+        assert!(defaults.repositories.is_empty());
+        assert!(!defaults.start_at_login);
+        let set =
+            installation("repositories = [\"/srv/app\", \"~/code\"]\nstart_at_login = true\n")
+                .unwrap();
+        assert!(set.start_at_login);
+        let repositories = set.repositories();
+        assert_eq!(repositories[0], Path::new("/srv/app"));
+        assert!(repositories[1].is_absolute() && repositories[1].ends_with("code"));
+        assert!(
+            installation("repository_roots = [\"/srv\"]\n")
+                .unwrap()
+                .ignored
+                == ["repository_roots"]
+        );
+    }
+
+    #[test]
+    fn deployment_keys_are_told_from_everyday_ones() {
+        for key in [
+            "supervisor",
+            "updates",
+            "releases_url",
+            "discovery.scope",
+            "root",
+            "agent.grace_secs",
+        ] {
+            assert!(is_deployment_key(key), "{key}");
+        }
+        for key in [
+            "host_name",
+            "repositories",
+            "keep_awake",
+            "telemetry",
+            "ui.chat_in",
+            "channel",
+        ] {
+            assert!(!is_deployment_key(key), "{key}");
+        }
+        for key in installation_keys() {
+            assert!(
+                is_deployment_key(&key) || !key.starts_with("agent."),
+                "{key}"
+            );
+        }
     }
 
     #[test]

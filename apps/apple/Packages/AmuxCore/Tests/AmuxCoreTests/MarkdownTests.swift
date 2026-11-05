@@ -107,8 +107,8 @@ final class MarkdownTests: XCTestCase {
     func testOnlyWebAndMailLinksStayLinks() {
         let source = """
             [page](https://example.com) [plain](http://example.com) \
-            [mail](mailto:ada@example.com) [pair](amux://pair?payload=e30) \
-            [call](tel:123) [file](file:///etc/hosts) <amux://pair?payload=e30>
+            [mail](mailto:ada@example.com) [sign-in](amux://callback?code=abc) \
+            [call](tel:123) [file](file:///etc/hosts) <amux://callback?code=abc>
             """
         guard case .paragraph(let text) = blocks(source)[0] else {
             return XCTFail("expected prose")
@@ -117,13 +117,13 @@ final class MarkdownTests: XCTestCase {
             text.runs.compactMap(\.link?.absoluteString),
             ["https://example.com", "http://example.com", "mailto:ada@example.com"])
         XCTAssertEqual(text.runs.compactMap(\.underlineStyle).count, 3)
-        XCTAssertTrue(String(text.characters).contains("pair"))
+        XCTAssertTrue(String(text.characters).contains("sign-in"))
     }
 
     func testAnOpenableLinkIsAWebPageOrAnEmailAddress() {
         XCTAssertNotNil(OpenableLink(string: "HTTPS://example.com"))
         XCTAssertNotNil(OpenableLink(string: "mailto:ada@example.com"))
-        XCTAssertNil(OpenableLink(string: "amux://pair?payload=e30"))
+        XCTAssertNil(OpenableLink(string: "amux://callback?code=abc"))
         XCTAssertNil(OpenableLink(string: "shortcuts://run-shortcut?name=x"))
         XCTAssertNil(OpenableLink(string: "javascript:alert(1)"))
         XCTAssertNil(OpenableLink(string: "example.com"))

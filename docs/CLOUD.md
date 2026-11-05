@@ -48,7 +48,7 @@ any client that calls `InstallationService.SignIn`.
 | --- | --- | --- | --- |
 | `/connect/authorize` | browser | app | Sign-in in the system browser, with a PKCE challenge and a state. Every sign-in sends `prompt=select_account`; signing back into a listed account adds `login_hint=<its address>`. |
 | `/connect/deviceauthorization` | POST | daemon | The device-code sign-in a client asks the daemon for (`SignIn`; `amux login` is one such client). Sends `device_name`, the machine's host name, which the approval page shows. |
-| `/connect/token` | POST | app, profile runtime | The app redeems its code here. A profile refreshes here as the client the token was issued to. Refresh tokens rotate: the one that comes back replaces the one spent. |
+| `/connect/token` | POST | app, profile runtime | The app redeems its code here. A profile refreshes here as the client the token was issued to. Refresh tokens rotate: the one that comes back replaces the one spent. A profile accepting a paired device's offer of its account redeems the ticket here (`grant_type=urn:amux:sign-in-ticket`, `ticket`, `host_id`, its own `client_id`, `cli` on a computer and `mobile` on the phone, and the sign-in scopes) for tokens of its own; a used, expired or other host's ticket is `invalid_grant`. |
 | `/connect/revocation` | POST | profile runtime | A sign-out revokes the profile's refresh token here first (`token`, `token_type_hint=refresh_token`, the client it was issued to), so a copy taken earlier stops working. A failure is logged and the sign-out goes ahead. |
 | `/connect/userinfo` | GET | app, profile runtime | Who signed in: `sub`, `email`, `name`, `picture`. `sub` is the account identifier everything else is keyed by. The runtime reads it at sign-in and again at every token refresh, so a renamed account or a new picture reaches clients within the hour. |
 | `/api/graphql` | POST | app, profile runtime | The access read, below. The runtime makes it at sign-in, at every token refresh and when a client calls `RefreshProfile`, and publishes the answer on the profile. |
@@ -57,6 +57,8 @@ any client that calls `InstallationService.SignIn`.
 | `/api/account` | DELETE | app | Deletes the account. `409` while a subscription is still set to renew. |
 | `/api/billing/stripe/portal` | POST | app | A one-time link to stop a web subscription, asked for only when a deletion is blocked, because the link expires. |
 | `/api/reports` | POST | profile runtime | A report bundle, below. |
+| `/api/sign-in-tickets` | POST | profile runtime | A one-time sign-in ticket for a paired device whose person accepted this profile's offer of its account: `{"host_id": "<that device's host id, lowercase hex>"}` answers `{"ticket": "...", "expires_in": 60}`, bound to the account and that host id, good once. The ticket goes to the device over the paired link and nowhere else ([signing in a paired device](HOW_IT_WORKS.md#signing-in-a-paired-device)). |
+| `/api/web-sign-in-links` | POST | profile runtime | A one-time link that signs a browser in to the account and opens one of amux.sh's own pages: `{"path": "/offer"}` (relative, same site) answers `{"url": "https://amux.sh/..."}`, good once for five minutes. A computer signed in from its phone opens the after-sign-in offer page through it (`InstallationService.WebSignInLink`), so the browser needs no sign-in of its own. |
 | `/api/events` | POST | profile runtime | Usage events, batched per host, with the account's bearer when the profile is signed in to this service and none otherwise. `202` on success; the runtime retries `408`, `429` and `5xx` twice and drops anything else. The body and every event are in [what amux sends](ANALYTICS.md). |
 | `/.well-known/openid-configuration/jwks` | GET | relay | The keys relay credentials are signed with. |
 
@@ -419,10 +421,10 @@ login form is missing, a recipe names which and exits non-zero.
 
 ## Which cloud a pairing invitation names
 
-A QR invitation (`amux://pair?payload=...`) carries the offering machine's
-host id, a one-shot secret, the addresses it can be dialled at directly, and
-its configured `cloud_url` when it has one; the six printed digits carry none
-of that. The cloud is the account service, normally `https://amux.sh`, which
+A QR invitation (`https://<cloud>/p#<invitation>`) carries the offering
+machine's host id, a one-shot secret, and the addresses it can be dialled at
+directly; the cloud is the link's own origin, the profile's configured cloud or
+amux.sh. The six printed digits carry none of that. The cloud is the account service, normally `https://amux.sh`, which
 assigns a relay through `/api/connect`; the relay address is only where
 traffic goes and is never written into configuration.
 

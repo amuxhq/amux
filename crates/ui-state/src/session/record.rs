@@ -370,6 +370,7 @@ fn host(host: HostEntry) -> HostEntry {
             Standing::Trusted(_) => Standing::Trusted(Default::default()),
             Standing::Candidate(_) => Standing::Candidate(Default::default()),
         }),
+        claude_kind: host.claude_kind,
     }
 }
 

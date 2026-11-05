@@ -19,6 +19,9 @@ public enum HostsAction: Equatable, Sendable {
     case openSystemSettings
     /// Offer the subscription that pairs a machine only the relay reaches.
     case subscribe
+    /// The person read why amux looks at this network and asked it to look,
+    /// which is when iOS asks for local network access.
+    case lookOnNetwork
 }
 
 /// What a card offers for a machine this phone has not paired, by how the
@@ -28,16 +31,26 @@ public enum HostsAction: Equatable, Sendable {
 struct PairOffer: Equatable {
     let title: String
     let detail: String
-    let button: String
+    /// The verb on its button; none when there is nothing to do here yet.
+    let button: String?
     /// Only the relay reaches it and the account does not buy the relay: no
     /// code typed here gets a pairing through, and subscribing does.
     let subscribe: Bool
+    /// Found nearby with no pairing window open: its advertisement says a
+    /// code typed now could only fail, so the card says where pairing
+    /// starts instead of offering a keypad.
+    let waiting: Bool
 
     init(_ host: HostView, pro: Bool?) {
         let pairIt = String(localized: "Pair it to see its agents here")
-        if !host.addrs.isEmpty {
+        waiting = host.windowClosed
+        if host.windowOpen {
+            title = String(localized: "Pair with \(host.name)?")
+            detail = String(localized: "Enter the code amux shows there")
+            subscribe = false
+        } else if host.windowClosed {
             title = String(localized: "\(host.name) is nearby")
-            detail = pairIt
+            detail = String(localized: "Open amux on \(host.name) to pair")
             subscribe = false
         } else if let through = host.through {
             // Words that fit the card's one line beside its button, as
@@ -58,7 +71,14 @@ struct PairOffer: Equatable {
             detail = pairIt
             subscribe = false
         }
-        button = subscribe ? String(localized: "Subscribe") : String(localized: "Pair")
+        button = waiting
+            ? nil : subscribe ? String(localized: "Subscribe") : String(localized: "Pair")
+    }
+
+    /// What a driver names the card by, from what it offers.
+    func identifier(_ screen: String, _ key: String) -> String {
+        if waiting { return "\(screen).found.\(key)" }
+        return subscribe ? "\(screen).subscribe.\(key)" : "\(screen).pair.\(key)"
     }
 }
 
@@ -185,11 +205,10 @@ public struct HostsTab: View {
             guard let id = host.id else { return nil }
             let offer = PairOffer(host, pro: model.account?.pro)
             return Callout(
-                id: "pair.\(host.name)", glyph: "plus.circle",
+                id: "pair.\(host.name)", glyph: offer.waiting ? "laptopcomputer" : "plus.circle",
                 title: offer.title, detail: offer.detail, button: offer.button,
                 act: offer.subscribe ? .subscribe : .pair(id),
-                identifier: offer.subscribe
-                    ? "hosts.subscribe.\(key(host))" : "hosts.pair.\(key(host))")
+                identifier: offer.identifier("hosts", key(host)), inert: offer.waiting)
         }
     }
 
@@ -335,6 +354,11 @@ public struct HostsTab: View {
                             .foregroundStyle(design.ink.color)
                             .identified("hosts.empty", value: "No hosts yet")
                         Explain("A computer running amux on this network appears here, ready to pair.")
+                    }
+                    if !model.networkExplained {
+                        LocalNetworkPrimer(identifier: "hosts.localNetwork") {
+                            actions(.lookOnNetwork)
+                        }
                     }
                 }
                 PairingHint()

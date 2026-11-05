@@ -1,11 +1,11 @@
 shell |  | hosts | 0,62,402,778
 home |  | ready | 0,174,402,617
 hosts |  |  | 0,174,402,617
-hosts.empty |  | No hosts yet | 21,204,146,32
-hosts.empty.howToPair |  |  | 21,299,360,37
- | No hosts yet |  | 21,204,146,32
- | A computer running amux on this network appears here, ready to pair. |  | 21,244,351,37
- | Run amux pair on a host on this network, or scan the code from amux pair --qr with the camera. |  | 21,299,360,37
+hosts.empty |  | No hosts yet | 16,204,146,32
+hosts.empty.howToPair |  |  | 16,299,370,37
+ | No hosts yet |  | 16,204,146,32
+ | A computer running amux on this network appears here, ready to pair. |  | 16,244,351,37
+ | Open amux on a host on this network to pair it, or scan the code it shows with the Camera app. |  | 16,299,370,37
  | Hosts |  | 16,127,93,42
  | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12

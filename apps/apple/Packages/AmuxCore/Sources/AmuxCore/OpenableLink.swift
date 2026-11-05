@@ -5,9 +5,9 @@ import Foundation
 ///
 /// Whatever an agent writes may have been put in its mouth by a page or a
 /// file it read, and a tap hands the link to whichever app claims its
-/// scheme, this one included: an `amux://pair` link would start pairing
-/// with a machine somebody else chose, and another app's link performs that
-/// app's action. Those schemes are drawn as text and do nothing.
+/// scheme, this one included: an `amux://` link would hand this app a
+/// sign-in callback somebody else wrote, and another app's link performs
+/// that app's action. Those schemes are drawn as text and do nothing.
 public struct OpenableLink: Equatable, Sendable {
     public let url: URL
 

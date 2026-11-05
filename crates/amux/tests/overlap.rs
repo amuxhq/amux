@@ -146,6 +146,7 @@ async fn a_tui_of_the_previous_build_works_on_after_an_update() {
     let desk = Desk::new(true, LONG_GRACE_SECS, &previous, channel.url(), turns);
     let work = desk.work.to_string_lossy().into_owned();
     desk.run(&["server", "start"]).await;
+    desk.set_up().await;
     let agent = created_id(
         &desk
             .run(&[

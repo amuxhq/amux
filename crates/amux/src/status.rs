@@ -61,6 +61,7 @@ pub async fn run(config_path: Option<&Path>) -> Result<bool> {
             ));
         }
         println!("{updates}");
+        println!("{}", login_line(&config, config_path));
     }
     if let Some(door) = door
         && daemon.is_some()
@@ -111,6 +112,26 @@ fn running_line(
             "amux {this} is not running; this host's service manager starts it \
              (`amux server start` starts one by hand)."
         ),
+    }
+}
+
+/// Whether amux starts at login: what the setting says, and the login item
+/// when the two disagree (one written or removed by hand).
+fn login_line(config: &InstallationConfig, config_path: Option<&Path>) -> String {
+    let named = config_path.filter(|path| *path != InstallationConfig::default_path());
+    let on = node::supervisor::login::StartAtLogin::here(&config.root, named)
+        .is_ok_and(|login| login.is_on());
+    match (config.start_at_login, on) {
+        (true, true) => "Starts at login.".to_owned(),
+        (false, false) => {
+            "Does not start at login; `amux config set start_at_login true` makes it.".to_owned()
+        }
+        (true, false) => "start_at_login is on, but its login item is missing; \
+             `amux config set start_at_login true` writes it again."
+            .to_owned(),
+        (false, true) => "start_at_login is off, but a login item starts amux; \
+             `amux config set start_at_login false` removes it."
+            .to_owned(),
     }
 }
 

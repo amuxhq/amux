@@ -23,8 +23,11 @@ amux --profile work         # on a profile named by label or id
 amux --config path/to.toml  # with another installation config (or AMUX_CONFIG)
 ```
 
-`amux` connects to the selected profile's local socket with the gRPC client, opens home, and draws. If the daemon
-is not running, start it with `amux server start` (see [SUPERVISOR.md](SUPERVISOR.md)).
+`amux` connects to the selected profile's local socket with the gRPC client, opens home, and draws. On a profile
+still setting up it opens [setting up](#setting-up) first. If the daemon
+is not running it starts it first, as every verb does: the supervisor on a desktop install, which starts the
+daemon, and then waits for it (see [SUPERVISOR.md](SUPERVISOR.md)). On a server whose service manager runs the
+daemon it starts nothing and waits.
 
 The client redraws only when something changed: a key, a change from the fleet or the open chat, or a finished
 task. It ticks on a clock only while something on screen moves with time: every 250 ms while the open agent is
@@ -45,6 +48,43 @@ you look up (ages, folders, hosts, counts). Colour marks meaning only: the atten
 what needs you, red for failure, the terminal's cyan for code and paths inside the agent's text, and green and red
 for lines added and removed wherever you read a diff. Anything that looks like a control can be clicked, and every
 key in a key line too.
+
+### Setting up
+
+While the profile has a step of setting up still to do that nobody skipped, bare `amux` opens it full screen before
+home, at the first such step, and each step asks the daemon whether it is still needed, so a step finished on the
+phone or another terminal is not asked again. The top line is the step's title, with `setting up amux` faint at the
+right; Esc on every step is `later`, which skips it, and the last one goes home. The steps, in order:
+
+- **Connect your iPhone.** The machine's name (`This machine is called desk.`; `r` renames it in place), then
+  `Scan with your iPhone's camera to pair.` and `Or enter 418 207 in the amux app.` beside a QR code. The code
+  holds the pairing link: scanned by a phone without amux it opens the App Store, with amux it pairs at once, with
+  no PIN. The code takes 41 columns by 21 rows, so it shows beside the steps from about 83 columns by 32 rows; a usual 80 by 24
+  window shows the code of the page alone instead, which still sends the phone to the App Store, with the steps
+  numbered `1. Scan to get amux on your iPhone` and `2. Enter 418 207 in the app`, and one too small even for that
+  says how many columns and rows it needs. The
+  pairing window is asked for ten minutes and renewed half a minute before it ends, with a fresh PIN, except while
+  a phone is confirming; leaving the step, or quitting, closes it. While a phone proves the PIN it reads `Your
+  iPhone is pairing…`; five wrong PINs close the window and `n` opens a new one.
+- **Keep it connected.** `Paired with Jordan's iPhone ✓`, then `Start amux when you log in` (only where a supervisor
+  can) and `Keep this Mac awake while it's plugged in` (`computer` off a Mac), both ticked; Space changes one,
+  Enter applies them. It follows a pairing made on this screen.
+- **Reach it from anywhere.** Signing in, so the phone reaches this machine off the local network. When the phone
+  just paired is signed out, `Also sign in Jordan's iPhone` is ticked and, once signed in, the phone is offered
+  the account. Enter opens the browser at the approval page (`$BROWSER` when set, else the system's handler) and
+  shows the code to check; when no browser opens it shows the link. When a paired host already signed in offers
+  its account, the step asks `Sign in as jordan@example.com (from Jordan's iPhone)?` instead: Enter accepts and
+  opens the account's offer page, `n` declines and the browser sign-in is offered.
+- **Repositories.** The folders Claude Code and Codex ran in lately, ticked, and `+ Add a folder…` for a typed path,
+  which the daemon checks as it saves. Enter adds the ticked ones to the repositories already chosen.
+- **Help improve amux.** `Send a report automatically when something goes wrong`, unticked, with `Never your
+  chats, code, or file names.` under it, then one line: `amux sends usage counts to help improve it, never your
+  code or chats. You can turn this off in Settings.`
+- **Try starting an agent from your phone.** `On your phone, tap + and pick a repository.` When an agent starts on
+  this machine, the client goes home with it selected and says `There it is`.
+
+Steps skipped stay on home as a quiet `Finish setting up (n)` row under `+ New Agent`: Enter walks the skipped and
+needed steps again, and `x` dismisses it for good.
 
 ### Home
 
@@ -98,8 +138,8 @@ chats with their agents, the installation's `ui.chat_in`:
   does the same. The models, efforts, permissions and modes are what the chosen host says that agent offers there,
   asked of the host before any agent runs on it; until it answers a model can be typed by name. Another model starts
   at its own default effort, and a permission it does not take gives way to the normal one. A provider the host
-  says is signed out reads `Codex (not signed in)`. Long lists filter as you type; the folder's panel lists that
-  host's recent folders and takes a typed path; hosts that are away cannot be picked. Shift+Tab steps Codex's mode,
+  says is signed out reads `Codex (not signed in)`. Long lists filter as you type; the folder's panel lists the
+  host's repositories, then the folders its agents ran in lately, and takes a typed path; hosts that are away cannot be picked. Shift+Tab steps Codex's mode,
   or Claude's permissions that still ask, as in a chat. Claude runs headless here, Codex on its app server.
 - **In each agent's own interface** (`native`): a small window over home with the name, the agent (Claude or
   Codex, each marked `not signed in` where the chosen host says so), the folder and the host, and no prompt or model,
@@ -306,7 +346,15 @@ lists what the report holds.
 
 ### Settings
 
-The terminal client has no settings screen; everything it offers comes from the agent's catalogue. Shift+Tab
+`,` on home, or the leader then `,`, opens the settings screen: this machine's name, starting amux at login (where
+a supervisor can), keeping the machine awake while plugged in, the repositories (Enter on `+ Add a folder…` types one,
+`x` removes the highlighted one), where you chat with agents (`amux's chat` or each agent's own interface),
+usage counts, automatic reports, and the account: who is signed in and on which plan, Enter to sign out, or to
+sign in through the browser as on [setting up](#setting-up). These are the daemon's settings for the profile, so
+the phone and every terminal see a change at once; Enter or Space changes the highlighted one, and Esc, `q` or
+`,` goes back.
+
+An agent's own settings come from its catalogue. Shift+Tab
 moves the agent to its next mode where it offers modes (Codex: default and plan), and otherwise to its next
 permission that still asks before acting (terminal Claude: Claude's own cycle key). `ctrl+s` then `m`, `e` or `p`
 changes a running agent's model, effort or permission where it lets a client change them, and otherwise says how
@@ -380,8 +428,21 @@ stops the agent or answers an ask; clearing a field and stopping the agent are n
 | `p` | Pin or unpin an agent with no parent |
 | `h` | Hosts |
 | `b` | Report a problem |
+| `,` | Settings |
+| `x` on `Finish setting up` | Dismiss it |
 | `d`, `q` | Leave for the shell; agents keep running |
 | `?` | Every key |
+
+### Setting up
+
+| Key | Action |
+|---|---|
+| ↑ ↓ or `k` `j` | Move between choices |
+| Space | Tick or untick the highlighted choice |
+| Enter | The step's action: apply, sign in, accept, add a folder |
+| `r` | Rename this machine, on the pairing step |
+| `n` | A new pairing window after too many wrong PINs; decline an offered account |
+| Esc | Later: skip the step |
 
 ### Chat
 
@@ -453,6 +514,7 @@ clicked.
 | `<leader> n` | A new agent, starting from this chat's agent, folder and host |
 | `<leader> h` | Hosts |
 | `<leader> b` | Report a problem |
+| `<leader> ,` | Settings |
 | `<leader> d` | Leave for the shell; agents keep running |
 | `<leader> ?` | Every key |
 | `<leader> r` | Review the working tree; comments go in the draft |
@@ -519,23 +581,22 @@ these; the entries amux and service managers run are hidden from it and listed a
 | `amux rename <agent> <name>` | Renames an agent. |
 | `amux rm <agent>` | Deletes an agent and its history; its children follow on their own hosts, a host that is away once it is back. |
 | `amux dump` | Writes this host's debug report, with an optional `--reason`, and prints its path; `--send` also sends it to the profile's amux account. See [DEBUGGING.md](DEBUGGING.md). |
-| `amux pair [target]` | Pairs with another host by name (one found nearby or announced by the relay or a paired host), an address, or `user@host` over SSH; on the free plan it refuses a host only the relay reaches before asking for the PIN, and says Pro pairs it. With no target this host opens pairing mode and shows a PIN with what the phone and another computer do with it, or with `--qr` a QR code for the phone's camera. |
+| `amux pair [target]` | Pairs with another host by name (one found nearby or announced by the relay or a paired host), an address, or `user@host` over SSH; on the free plan it refuses a host only the relay reaches before asking for the PIN, and says Pro pairs it. With no target this host opens pairing mode and shows a PIN with what the phone and another computer do with it, or with `--qr` a QR code for the phone's camera: a link to amux.sh's pairing page, which opens the app, or the App Store when the app is not installed yet. It says when a device has proved the code and is confirming, and which one paired, as it happens. |
 | `amux hosts` | Lists the paired hosts and the hosts that could be paired: found nearby, through a paired host, or on the account through the relay, which on the free plan says Pro pairs it. |
 | `amux unpair <host>` | Stops trusting a paired host, asking first unless `--force`. |
 | `amux login` | Signs the profile in to an amux account so its hosts reach each other through the relay. |
 | `amux logout` | Signs the profile out; its agents and paired hosts stay. |
 | `amux profile ls\|new [label]\|rename <profile> <name>\|rm <profile>` | Lists and manages the installation's profiles. |
-| `amux status` | Says whether amux is running and under what, its version and this command's, how updates arrive, each profile's account and relay link, telemetry, and the config file's path. Starts nothing; exits 0 when the daemon answers and 3 when it does not. |
-| `amux init` | Sets up this install, including whether amux starts at login (`--login-item yes\|no`, asked on a terminal when omitted; without a terminal it asks nothing and adds nothing). |
+| `amux status` | Says whether amux is running and under what, its version and this command's, how updates arrive, whether it starts at login, each profile's account and relay link, telemetry, and the config file's path. Starts nothing; exits 0 when the daemon answers and 3 when it does not. |
 | `amux uninstall` | Stops this machine's running agents (asking first on a terminal; `--yes` without one), removes this installation's login item, stops amux, and deletes `~/.amux/bin/amux` and the PATH lines the install script added; with `--delete-data`, the installation's root and config file too. An installation named by `--config` keeps the installed binary, which serves the default one. |
 | `amux update` | Asks the supervisor to install the channel's release now and says whether it started; `--retry` installs it even if it was rolled back here. |
-| `amux config get\|set\|unset <key>` | Reads a setting (its default when the file does not set it), sets one, or removes one so its default applies. A key is dotted (`ui.chat_in`, `new_agent.claude.model`); a value is read as TOML where it is one and as a string otherwise. A write changes that key alone, comments and layout kept, and only when the file still reads after it. |
+| `amux config get\|set\|unset <key>` | Reads a setting (its default when the file does not set it), sets one, or removes one so its default applies. A key is dotted (`ui.chat_in`, `new_agent.claude.model`); a value is read as TOML where it is one and as a string otherwise. A write changes that key alone, comments and layout kept, and only when the file still reads after it; a running amux takes it up within seconds, and `start_at_login` writes or removes the login item at once. An unknown key is answered with the everyday settings; the deployment ones (`supervisor`, `updates`, `releases_url`, `discovery.scope`, `root`, `agent.*`) are still accepted. |
 | `amux config edit\|path` | Opens the config file in `$VISUAL` or `$EDITOR` and checks it after, or prints where it is. |
 | `amux server start` | Starts amux detached from the terminal: the supervisor where the install has one, the daemon otherwise. |
 | `amux server stop` | Stops amux cleanly, the supervisor first where one runs; agents keep running. |
 
 Hidden flags serve tests and demos: the global `--config <path>` (or `AMUX_CONFIG`) names another config file;
-`amux pair --qr --print-link` also prints the QR code's link, to paste into a simulator;
+`amux pair --qr --print-link` also prints the QR code's link (`https://amux.sh/p#…`), to paste into a simulator;
 `amux pair --demo --pin <digits> --for <duration>` holds a PIN you choose open for an
 unattended demo (`30d`, `12h`, `45m`; at most 90 days) and returns at once, and `amux pair --cancel` closes it;
 `amux login --cloud-url` signs in to another account service.
@@ -561,20 +622,21 @@ only with all of its callers:
 | What | Where | Run |
 |---|---|---|
 | Behaviour: keys, effects, layout, paging, asks, the queue, home, the review page | `crates/tui/src/tests.rs` | `just test-tui` |
+| Setting up and the settings screen: each step's effects and words, the QR code at each size, renewing the pairing window, home's `Finish setting up`, the new-agent folders | `crates/tui/src/tests/onboarding.rs` | `just test-tui` |
 | Component goldens, text and style classes: every row kind as the feed draws it, each ask in its box, the queue, the composer's states and the row above it, the sign-in box, the review page | `crates/tui/tests/golden.rs`, `crates/tui/tests/golden/` | `just test-tui`; rewrite with `UPDATE_GOLDENS=1 just test-tui` |
 | Against served hosts: drafts across leaving a chat and the client closing, chats on agents a far host deleted or stopped linking | `crates/tui/tests/served.rs` | `just test-tui` |
 | PNG renderings of the components | [`crates/shot`](../crates/shot/README.md) | `just shot -- render --out DIR` |
 | The storybook: exactly the terminal stories of `tests/stories.json`, in its order, each drawing at every size in both palettes | `crates/shot/src/stories.rs` | `just test-crate shot` |
 | Raw attach, the CLI and the binary against real daemons | `crates/amux/tests/` | `just test-crate amux` |
-| Journeys through the real terminal client: deciding asks and plans, the queue, sending, the composer's states, starting and managing agents, attachments and review, reaching hosts, recovering, reporting a problem | `journeys/`, `crates/testnet/src/journey` | `just journey terminal <name>` |
+| Journeys through the real terminal client: deciding asks and plans, the queue, sending, the composer's states, starting and managing agents, attachments and review, reaching hosts, recovering, reporting a problem, a first run set up from pairing to the first agent | `journeys/`, `crates/testnet/src/journey` | `just journey terminal <name>` |
 
 [TESTING.md](TESTING.md) places these in the suite catalogue.
 
 ## Storybook
 
 The storybook is this client's whole screens, each drawn from data by the real views. A story is one whole
-screen a person reaches, in one state that changes how the screen is put together: the agent list first run,
-busy, filtered and narrowed to nothing, with the stop, delete and rename windows; the hosts window; the new-agent
+screen a person reaches, in one state that changes how the screen is put together: each step of setting up and the settings
+screen; the agent list first run, busy, filtered and narrowed to nothing, with the stop, delete and rename windows; the hosts window; the new-agent
 composers and the folder picker; a chat loading, at work, finished, asking, proposing a plan, with prompts
 queued, with its host away, exited, signed out, with the overview open and with a setting being changed; the
 review page; and reporting a problem. One piece in one variant, such as a row kind, an ask card or a message

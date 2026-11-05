@@ -315,12 +315,19 @@ impl Daemon {
             } => self.relay_retry_due(out),
             Input::PairingOpened { session, opened } => self.pairing_opened(session, opened, out),
             Input::PairingMessage { session, message } => {
-                self.pairing_message(session, message, out)
+                self.pairing_message(session, message, out);
+                self.publish_status(out);
             }
-            Input::PairingClosed { session, status } => self.pairing_closed(session, status, out),
+            Input::PairingClosed { session, status } => {
+                self.pairing_closed(session, status, out);
+                self.publish_status(out);
+            }
             Input::Timer {
                 id: TimerId::Pairing(session),
-            } => self.pairing_timer(session, out),
+            } => {
+                self.pairing_timer(session, out);
+                self.publish_status(out);
+            }
             Input::Timer {
                 id: TimerId::PairWindow,
             } => self.window_timer(out),

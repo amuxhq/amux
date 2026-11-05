@@ -39,6 +39,8 @@ pub struct Candidate {
     pub host: HostId,
     pub name: String,
     pub addrs: Vec<String>,
+    /// Its advertisement says a pairing window is open on it.
+    pub pairing_open: bool,
 }
 
 /// What the providers on a trusted host offer, as its own entry said.
@@ -54,6 +56,10 @@ pub struct HostSet {
     /// Why the last dial to each host failed, until a route to it comes up.
     dial_errors: BTreeMap<HostId, String>,
     providers: BTreeMap<HostId, Providers>,
+    /// Which Claude a new agent on each trusted host runs, as its own entry
+    /// said.
+    #[serde(default)]
+    claude_kinds: BTreeMap<HostId, i32>,
     /// The set as last published, by host id.
     #[serde(with = "codec::messages")]
     published: Vec<HostEntry>,
@@ -126,6 +132,14 @@ impl Daemon {
         let providers = Providers(providers);
         if self.host_set.providers.get(&host) != Some(&providers) {
             self.host_set.providers.insert(host, providers);
+            self.touched.host_set = true;
+        }
+    }
+
+    /// What a trusted host's own entry said a new Claude agent runs there.
+    pub(crate) fn claude_kind_said(&mut self, host: HostId, kind: i32) {
+        if self.host_set.claude_kinds.get(&host) != Some(&kind) {
+            self.host_set.claude_kinds.insert(host, kind);
             self.touched.host_set = true;
         }
     }
@@ -206,6 +220,12 @@ impl Daemon {
                         reach: Some(self.reads(host)),
                         current: self.sources.ready(host),
                     })),
+                    claude_kind: self
+                        .host_set
+                        .claude_kinds
+                        .get(&host)
+                        .copied()
+                        .unwrap_or_default(),
                 },
             );
         }
@@ -246,7 +266,8 @@ impl Daemon {
                 }),
                 standing: Some(Standing::Candidate(wire::Candidate {
                     addrs: candidate.addrs.clone(),
-                    announced_by: Vec::new(),
+                    pairing_open: candidate.pairing_open,
+                    ..wire::Candidate::default()
                 })),
                 ..HostEntry::default()
             });

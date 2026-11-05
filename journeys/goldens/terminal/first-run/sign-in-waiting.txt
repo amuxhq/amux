@@ -1,0 +1,34 @@
+
+  Reach it from anywhere                                                                     setting up amux
+
+  Sign in to reach desk from your phone when you are away from this network.
+
+  › [x] Also sign in laptop
+
+  Approve amux in your browser. It should show CODE-1.
+
+  Waiting for you to sign in…
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  esc later

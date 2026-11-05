@@ -1,6 +1,7 @@
-//! The CLI around the supervisor, driving the real binary: `amux init`
-//! declining a login item, stop going to the owner in both install cells, a
-//! client starting the supervisor only where the install has one, the sleep
+//! The CLI around the supervisor, driving the real binary: the login item
+//! `start_at_login` keeps, stop going to the owner in both install cells, a
+//! client starting the supervisor only where the install has one, stop
+//! reaching an amux started with its stop signals blocked, the sleep
 //! assertion, `amux update` and `amux config channel`.
 
 #![cfg(unix)]
@@ -171,6 +172,40 @@ async fn stop_goes_to_the_supervisor_first_where_the_install_has_one() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn stop_reaches_an_amux_started_with_its_stop_signals_blocked() {
+    use std::os::unix::process::CommandExt;
+
+    // The Mac app starts amux from a Grand Central Dispatch worker, which
+    // blocks signals, and a spawned process inherits its launcher's mask.
+    let install = Install::new(true, "");
+    let mut start = install.command(&["server", "start"]);
+    // SAFETY: sigemptyset, sigaddset and pthread_sigmask are
+    // async-signal-safe and touch only this child's own state.
+    unsafe {
+        start.pre_exec(|| {
+            let mut blocked = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+            libc::sigemptyset(blocked.as_mut_ptr());
+            libc::sigaddset(blocked.as_mut_ptr(), libc::SIGTERM);
+            libc::sigaddset(blocked.as_mut_ptr(), libc::SIGINT);
+            libc::pthread_sigmask(libc::SIG_BLOCK, blocked.as_ptr(), std::ptr::null_mut());
+            Ok(())
+        });
+    }
+    assert!(start.output().unwrap().status.success());
+    let supervisor = install
+        .supervisor_pid()
+        .expect("server start ran amux supervise");
+
+    let stopped = install.amux(&["server", "stop"]);
+    assert!(
+        stdout(&stopped).contains("Stopped amux supervise and its daemon."),
+        "{}",
+        stdout(&stopped)
+    );
+    until("the supervisor to exit", || !alive(supervisor)).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn stop_goes_to_the_daemon_where_the_install_has_no_supervisor() {
     let install = Install::new(false, "");
     install.amux(&["server", "start"]);
@@ -240,7 +275,7 @@ async fn a_client_starts_the_supervisor_only_where_the_install_has_one() {
     ignore = "only macOS holds a sleep assertion"
 )]
 #[tokio::test(flavor = "multi_thread")]
-async fn the_supervisor_holds_the_sleep_assertion_under_keep_awake() {
+async fn the_supervisor_holds_the_power_sleep_assertion_under_keep_awake() {
     fn assertions_of(pid: u32) -> Vec<String> {
         let output = Command::new("pmset")
             .args(["-g", "assertions"])
@@ -259,16 +294,45 @@ async fn the_supervisor_holds_the_sleep_assertion_under_keep_awake() {
     let awake = Install::new(true, "keep_awake = true\n");
     awake.amux(&["server", "start"]);
     let pid = awake.supervisor_pid().unwrap();
-    let held = assertions_of(pid);
+    until_within(
+        "the supervisor to hold the assertion for power",
+        PATIENCE,
+        || {
+            let held = assertions_of(pid);
+            async move {
+                held.iter()
+                    .any(|line| line.contains("PreventSystemSleep"))
+                    .then_some(())
+                    .ok_or(format!("{held:?}"))
+            }
+        },
+    )
+    .await
+    .unwrap();
+    // The one battery honours is the daemon's, and only while an agent
+    // works.
     assert!(
-        held.iter().any(|line| line.contains("PreventSystemSleep")),
-        "{held:?}"
-    );
-    assert!(
-        held.iter()
+        !assertions_of(pid)
+            .iter()
             .any(|line| line.contains("PreventUserIdleSystemSleep")),
-        "{held:?}"
+        "{:?}",
+        assertions_of(pid)
     );
+    // Turned off, it lets go without a restart.
+    awake.amux(&["config", "set", "keep_awake", "false"]);
+    until_within("the supervisor to let go", PATIENCE, || {
+        let held = assertions_of(pid);
+        async move { held.is_empty().then_some(()).ok_or(format!("{held:?}")) }
+    })
+    .await
+    .unwrap();
+    awake.amux(&["config", "set", "keep_awake", "true"]);
+    until_within("the supervisor to hold it again", PATIENCE, || {
+        let held = assertions_of(pid);
+        async move { (!held.is_empty()).then_some(()).ok_or(format!("{held:?}")) }
+    })
+    .await
+    .unwrap();
     awake.amux(&["server", "stop"]);
     assert!(
         assertions_of(pid).is_empty(),
@@ -281,15 +345,42 @@ async fn the_supervisor_holds_the_sleep_assertion_under_keep_awake() {
     assert!(assertions_of(pid).is_empty());
 }
 
+/// Where a login item for `install` would be, under its test home.
+fn login_item(install: &Install) -> PathBuf {
+    let home = install.root.path().join("home");
+    if cfg!(target_os = "macos") {
+        home.join("Library/LaunchAgents/sh.amux.supervise.plist")
+    } else {
+        home.join(".config/systemd/user/amux.service")
+    }
+}
+
+/// `start_at_login` writes the login item for the next login and removes
+/// it, with amux stopped; an install without a supervisor has none.
+#[cfg_attr(
+    not(target_os = "macos"),
+    ignore = "registering the systemd unit needs a user session"
+)]
 #[test]
-fn init_adds_no_login_item_when_declined_or_without_a_supervisor() {
+fn start_at_login_writes_and_removes_the_login_item() {
     let install = Install::new(true, "");
-    let declined = install.amux(&["init", "--login-item", "no"]);
-    assert!(stdout(&declined).contains("No login item"));
-    assert!(!install.root.path().join("home").exists());
+    let on = install.amux(&["config", "set", "start_at_login", "true"]);
+    assert!(
+        stdout(&on).contains("amux starts at login"),
+        "{}",
+        stdout(&on)
+    );
+    let item = std::fs::read_to_string(login_item(&install)).unwrap();
+    assert!(item.contains("supervise") && item.contains(&*install.data.to_string_lossy()));
+    assert!(
+        install.supervisor_pid().is_none(),
+        "the item waits for the next login"
+    );
+    install.amux(&["config", "set", "start_at_login", "false"]);
+    assert!(!login_item(&install).exists());
 
     let without = Install::new(false, "");
-    let output = without.amux(&["init", "--login-item", "yes"]);
+    let output = without.amux(&["config", "set", "start_at_login", "true"]);
     assert!(
         stdout(&output).contains("no login item to add"),
         "{}",

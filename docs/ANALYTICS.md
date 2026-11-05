@@ -8,13 +8,18 @@ into the free tier. They are counts and choices, never content: what you
 type, what your agents say and the names of your machines, folders and
 files stay on your machines.
 
-It is on by default. To turn it off:
+It is on by default, with nothing to accept first. Setting up a computer, in
+the terminal client or the Mac app, says so in one line on its "Help improve
+amux" step; **Send usage counts** in Settings turns it off on every client,
+and the iPhone app's App Store privacy label says what it collects.
+A signed-in profile's events are linked to its account, as
+[where it goes](#where-it-goes) says. To turn it off:
 
 - **On a computer:** `amux config set telemetry false`. A running daemon stops
   sending at once, and nothing it records while off is sent later.
-  `amux config set telemetry true` resumes it, or, if the daemon started with
-  telemetry off, takes effect when it next starts. `amux status` says
-  whether it is on and where it goes.
+  `amux config set telemetry true` resumes it at once too, including on a
+  daemon that started with it off. `amux status` says whether it is on and
+  where it goes.
 - **`DO_NOT_TRACK`:** a daemon started with `DO_NOT_TRACK` set to anything
   but empty or `0` sends nothing, whatever the setting says. It must be set
   where the daemon starts: a daemon started at login, or by a service
@@ -85,19 +90,22 @@ a field for free text.
 | `updated` | amux starts on a newer version than last time. | `from_version`, `to_version` |
 | `update_rolled_back` | amux starts on an older version than last time, because the newer one was put back. | `from_version`, `to_version` |
 | `daemon_crashed` | amux starts and finds that its last run stopped without shutting down, with the machine still up. | `crashed_version`: the version that stopped. |
-| `client_opened` | The terminal client starts, or the iPhone app comes to the front; at most once an hour. | `surface`: `terminal` or `phone`. |
+| `client_opened` | The terminal client starts, the Mac app opens, or the iPhone app comes to the front; at most once an hour. | `surface`: `terminal`, `mac` or `phone`. |
 | `agent_created` | A new agent is started. | `kind`; `on`: `this_host` or `paired_host`, with `remote_host` for a paired one; `by`: `person` or `agent` (an agent starting a helper). |
 | `prompt_sent` | A prompt you sent is accepted. | `kind`; `on` and `remote_host` as above; `queued`: whether it waits behind a turn already running. |
 | `ask_answered` | Your answer to an agent's question or request is accepted. | `kind`; `on` and `remote_host` as above; `ask`: `question`, `permission`, `plan`, `form`, `link` or `grant`. |
-| `pairing_started` | This machine shows a pairing code, or enters one. | `role`: `offerer` (showed the code) or `joiner` (entered it); `method`: `pin`, `qr` or `ssh`. |
+| `pairing_started` | This machine shows a pairing code, or enters one. | `role`: `offerer` (showed the code) or `joiner` (entered it); `method`: `pin`, `qr` or `ssh` (a window showing both a PIN and a QR code counts as `pin`; the pairing's success or failure says which was used). |
 | `pairing_succeeded` | A pairing finished and each machine trusts the other. | `role`, `method`, and `remote_host`: the machine paired with. |
 | `pairing_failed` | A pairing did not finish. | `role`, `method`, and `reason`: `wrong_secret`, `no_window`, `unreachable`, `timed_out`, `abandoned`, `self_pairing` or `other`. |
-| `signed_in` | A profile signs in to an amux.sh account. | — |
+| `signed_in` | A profile signs in to an amux.sh account. | `via`: `browser` (the account service's pages, from this device) or `paired_device` (it accepted a paired device's offer of its account). |
 | `sign_in_failed` | Signing a profile in did not work. | `reason`: `rejected`, `unreachable`, `account_elsewhere`, `profile_conflict` or `other`. |
+| `sign_in_offer` | A signed-in device offered a paired one its account, and the offer was shown, accepted or dismissed. | `role`: `offerer` (the signed-in side) or `receiver` (the side offered the account); `outcome`: `shown` (a client put it in front of its person), `accepted` or `dismissed`. |
 | `signed_out` | A profile signs out. | — |
 | `relay_refused` | The relay refused to carry traffic because the account is on the free tier; at most once an hour. | — |
 | `paywall_viewed` | The iPhone app's subscription page opens. | `from`: the tab it was opened from, `agents`, `hosts` or `you`. |
 | `purchase_started` | The iPhone app starts a purchase with the App Store. | `interval`: `monthly` or `yearly`. |
+| `onboarding_step` | A step of the first-run setup is shown, confirmed or skipped. | `step`: `pair_phone`, `keep_reachable`, `sign_in`, `repositories`, `improve` or `first_agent`. `outcome`: `shown`, `done` or `skipped`. `surface`: `terminal`, `mac` or `phone`. |
+| `repositories_chosen` | The repositories step is confirmed. | `kept`: how many folders were kept; `suggested`: how many were suggested. Numbers only, never the folders. |
 | `check_failed` | One of amux's internal checks broke: a rule the daemon, an agent process, the relay or a connection's path choice holds after every step failed, a step took longer than allowed, or a chat's transcript failed its own check on a client. At most once per check every ten minutes. | `core`: `daemon`, `agent`, `relay`, `path` or `transcript`. `check`: which check, as the name amux's code gives it, such as `daemon.generation_fell`. `cause`: `invariant` or `over_budget`. `held_back`: how many more times the same check broke since the last one was sent. |
 
 A prompt or answer sent to another machine's agent is counted once, by the

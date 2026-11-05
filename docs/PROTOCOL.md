@@ -88,9 +88,13 @@ relay cannot read.
 ## Chapter 0: Discovery
 
 A listening profile advertises `_amux._udp` through DNS-SD. Its SRV record
-names the ephemeral or configured QUIC port; its TXT record carries three
-properties: `v` (the protocol version), `hid` (the host id, hyphenated) and
-`scope` (the discovery scope). Resolving it produces a name and socket-address
+names the ephemeral or configured QUIC port; its TXT record carries `v` (the
+protocol version), `hid` (the host id, hyphenated), `name` (the host's own
+name, which a renamed instance such as "desk (2)" does not change), `scope`
+(the discovery scope) and, only while a pairing window is open, `pair=1`. The
+host advertises again whenever its window opens or closes, so a phone that
+finds it knows whether a PIN can work now: a found candidate carries the flag
+as `Candidate.pairing_open`. Resolving it produces a name and socket-address
 dial hints. Browsing is a standing subscription: a goodbye or TTL expiry
 removes a result, while a fresh resolution updates its addresses. On iOS the
 app browses with `NWBrowser` and feeds the results in; `node` itself does
@@ -135,10 +139,29 @@ process. None of them is ever a peer call.
 ## Chapter 2: Pairing
 
 PIN and QR pairing use one SPAKE2 exchange. The PIN is six digits. The QR
-contains JSON `{host_id, secret, addrs, cloud_url?}` inside an
-`amux://pair?payload=...` deep link (URL-safe base64, no padding); `secret` is
-a one-shot 256-bit value and `addrs` let pairing work when multicast is
-unavailable. A found advertisement, a typed address, the QR addresses, SSH, or
+holds the cloud's pairing page, `https://<cloud>/p#<invitation>`: the
+profile's cloud, amux.sh when it has none. The invitation is bytes in URL-safe
+base64 with no padding: a version byte (1), the host id (16 bytes), the
+one-shot 256-bit secret (32), the LAN listener's port (2, big-endian; 0 with no
+listener) and then zero or more IPv4 addresses (4 bytes each), all at that
+port. A link of another version, shorter than the 51 bytes before the
+addresses, with a partial address, or with addresses at port 0 is refused.
+There is no cloud field: the link's origin is the cloud. The daemon composes
+that link (`PairingWindow.qr_link`) for every window with a QR secret; a first
+run's is about 97 characters, QR version 5 at the lowest error correction.
+The invitation is a fragment, so it never reaches the server: a phone with the
+app opens the link in the app, and one without lands on the page, which sends
+it to the App Store.
+
+For a listener on every interface, the addresses are at most one private
+home-network IPv4 address (RFC 1918; the one the default route leaves by when
+it is one of them, else the first listed) and at most one Tailscale address
+(100.64.0.0/10), and nothing else: no loopback, link-local or IPv6 address. A
+listener bound to one IPv4 address answers there alone and is named at it,
+as a test network's hosts and a driven phone on loopback are. A joiner dials the hosts discovery
+found under the invitation's host id first, which covers the home network;
+the home address is for a network that blocks discovery's multicast, and the
+Tailscale address travels in the code because Tailscale carries no multicast. A found advertisement, a typed address, the QR addresses, SSH, or
 a neighbor that forwards can all lead to the same exchange. Direct candidates
 are tried with a two-second QUIC dial each, so a silent address does not
 prevent trying the next one. After them, each neighbor announcing the other
@@ -154,7 +177,11 @@ messages B to A then A to B. Both sides hash the big-endian
 `amux-pair-spake2-v1` derives confirmation keys (`kc/A`, `kc/B`) and
 ChaCha20-Poly1305 keys (`aead/A→B`, `aead/B→A`). The sealed identity contains
 the public key and a host name, with direction and transcript in the
-additional authenticated data. `PairingComplete` commits both stores.
+additional authenticated data. `PairingComplete` commits both stores. The
+joiner's first message names the kind of secret it presents
+(`PairMessage.secret_kind`, a PIN or a QR secret), never the secret, so a
+window that takes both runs the exchange against that one; a window with one
+secret ignores it.
 Every secret failure is the same opaque `INVALID_PIN`. A side that ends the
 stream with a refusal sends a status whose details carry a `PairingError`
 naming its reason (`INVALID_PIN`, `LOCKED` once too many wrong secrets closed
@@ -176,7 +203,10 @@ anonymous channel to `PairingService`. SPAKE2 authenticates that exchange and
 creates the pins later channel handshakes check. A window lasts the length
 its `StartPairing` names, five minutes when it names none, and never more
 than 90 days, whatever its method. PIN and QR windows are one-shot and allow
-five attempts. A demo PIN window holds a PIN the operator chose
+five attempts. A `pin_or_qr` window, the one a first run opens, holds a fresh
+PIN and a fresh QR secret at once (`PairingWindow.pin_and_qr`): either pairs,
+one pairing uses both up, and every attempt counts against its one budget of
+five. A demo PIN window holds a PIN the operator chose
 (`amux pair --demo`) and is reusable: success does not consume it and failed
 attempts do not close it. A window lives in the daemon's memory, so none
 survives a restart, and a start run again afterwards opens a fresh one.
@@ -195,7 +225,12 @@ reason `HOST_UNREACHABLE`, naming what it tried, never `UNAVAILABLE`, which
 means this daemon is not answering.
 Neither trust store changes during this phase. The profile's pairing
 administration holds the open stream behind the single-use token until that
-expiry, and holds at most 32 at once. The token is a local capability, not a
+expiry, and holds at most 32 at once. While a joiner holds the window's secret
+proven and its person confirms, the window's `PairingStatus.joining` is set;
+once the pairing commits, `PairingStatus.paired` names the peer the window
+trusted until another window opens. `WatchPairing` streams the status now and
+on every change, so a screen showing the code moves to "pairing…" and then
+"paired" without polling. The token is a local capability, not a
 trust decision a client could recreate from the identity fields it displays.
 `ConfirmPair` sends the initiator's sealed identity, waits for the responder's
 trust commit, stores the peer and dials it. A `ConfirmPair` or `AbandonPair`
@@ -503,6 +538,26 @@ to one. The complete control vocabulary is:
   token, because another link of the same account has just presented a paid
   one. The host fetches one and sends it as `Reauth`, as its own refresh
   would; nothing else answers it.
+- `SignInOfferMade`, `SignInOfferAnswer` and `SignInTicket`: one-tap sign-in
+  between paired hosts, only ever on a link between the two. A signed-in host
+  whose person offered a peer its account (`ProfileAdminService.OfferSignIn`)
+  keeps that offer in memory until the peer dismisses it, a link from the
+  peer says it is signed in, or the peer is unpaired, and sends `SignInOfferMade` (the account's email and name, and
+  the account service it is at) on each link to the peer whose handshake says
+  the peer is signed out (`Host.account_signed_in`). The peer shows it to its
+  clients (`SubscribeSignInOffers`) while it is signed out; its person answers
+  with `AnswerSignInOffer`, which sends `SignInOfferAnswer`. Declining ends the
+  offer; a peer that declined answers any later offer from that host, such as
+  one that crossed its answer on a fresh link, by declining again rather than
+  showing it, until it restarts. Accepting makes the offerer ask the account service for a one-time
+  ticket bound to the peer's host id (`POST /api/sign-in-tickets`) and answer
+  `SignInTicket` with it, or with the status of why it could not; the peer
+  redeems the ticket at once under its own sign-in client and binds the
+  profile the offer reached. Accepting ends nothing by itself: the offer
+  stands on both hosts until the peer is signed in, so an acceptance that
+  failed anywhere (the account service, the link, the redemption) can be made
+  again. An acceptance with no offer standing is answered with
+  `FAILED_PRECONDITION`, and the peer drops that offer.
 - `LinkClose`: an immediate close with a reason and optional error.
 
 After the handshake a receiver ignores a control message it does not know,
@@ -773,14 +828,22 @@ silently: `BindProfile` refuses with `FAILED_PRECONDITION` and keeps the login
 a while, so binding again with the same token and `adopt_non_pristine` needs
 no second login; `SignIn` sends an `adopt` event and waits for
 `AnswerSignIn`. Closing the `SignIn` stream abandons it. `RefreshProfile`
-reads the account again now, as after a purchase. The rules behind these calls are `node::Registry`'s; the front
+reads the account again now, as after a purchase. `WebSignInLink` answers a
+one-time link (from `POST /api/web-sign-in-links`) that signs a browser in to
+a signed-in profile's account and opens a page of its account service, such
+as the after-sign-in offer page (`/offer`); a path that is not that
+service's own is refused. The rules behind these calls are `node::Registry`'s; the front
 door (`crates/node/src/front_door.rs`) converts.
 
 `ProfileAdminService`, on each profile's own socket, is that profile's
 administration, so none of its calls names a profile: it signs the profile
 out (`SignOut`); opens, reports and cancels pairing
-windows (`StartPairing`, `GetPairingStatus`, `CancelPairing`); runs the
+windows (`StartPairing`, `GetPairingStatus`, `WatchPairing`,
+`CancelPairing`); runs the
 initiator's side of pairing (`BeginPair`, `ConfirmPair`, `AbandonPair`);
+offers a paired host the profile's account and answers the offers paired
+hosts made it (`OfferSignIn`, `SubscribeSignInOffers`, `AnswerSignInOffer`,
+[link control](#link-control));
 reports this device's identity; records a peer an SSH exchange
 authenticated (`TrustSshPeer`); lists and unpairs peers; and
 writes the profile's debug report and sends a person's report (`Dump`,
@@ -880,8 +943,8 @@ amux never removes a worktree or its branch.
 ### The client services on a link
 
 A paired daemon calls the same `AgentService` and `SessionService` over a link
-stream (`crates/node/src/edge/peer.rs` serves them, `ClientApi::for_peer` in
-`crates/node/src/grpc.rs` answers); replication is a daemon being a client of
+stream (`PeerApi` in `crates/node/src/edge/peer.rs` serves and answers them,
+apart from the local sockets' `ClientApi`); replication is a daemon being a client of
 its peer. The caller is the host whose pinned key the stream's handshake
 presented, and a call without one is refused as `UNAUTHENTICATED`. Only amux
 daemons call them, and each stamps what it says on behalf of its own callers,

@@ -52,6 +52,7 @@ impl Rig {
         let mut launch = quiet_launch();
         launch.core.notify_delay_ms = DELAY;
         let options = StartOptions {
+            settings: Default::default(),
             clock: Arc::new(clock.clone()),
             push: pushes.clone(),
             ..install.options("boot-1", launch)

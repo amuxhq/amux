@@ -33,6 +33,51 @@ final class DiscoveryTests: XCTestCase {
         XCTAssertEqual(claim?.host, HostId(try XCTUnwrap(UUID(uuidString: fixture.hostId))))
         XCTAssertEqual(claim?.version, fixture.version)
         XCTAssertEqual(claim?.name, fixture.txt["name"])
+        XCTAssertEqual(claim?.pairing, fixture.pairingOpen)
+    }
+
+    /// `pair=1` is a pairing window open on the machine; anything else,
+    /// and no flag at all, is none.
+    func testAnOpenPairingWindowIsReadFromTheRecord() {
+        for (value, open) in [("1", true), ("0", false), ("", false), ("yes", false)] {
+            let record = NWTXTRecord(["hid": host.description, "v": "7", "pair": value])
+            XCTAssertEqual(LocalDiscovery.claim(from: record)?.pairing, open, value)
+        }
+        XCTAssertEqual(
+            LocalDiscovery.claim(from: NWTXTRecord(["hid": host.description, "v": "7"]))?.pairing,
+            false)
+    }
+
+    /// A window opening or closing is the same machine at the same address:
+    /// it is handed over at once, without resolving the machine again.
+    @MainActor
+    func testAWindowOpeningIsHandedOverWithoutResolvingAgain() {
+        let browser = Browser()
+        browser.discovery.saw([browser.sighting(routes: ["wifi"])])
+        browser.lookups[0].settle("192.168.1.24:41234")
+        XCTAssertEqual(browser.handedOver.last, [browser.found("192.168.1.24:41234")])
+
+        browser.discovery.saw([browser.sighting(pairing: true, routes: ["wifi"])])
+        XCTAssertEqual(browser.lookups.count, 1, "a window opening resolved the machine again")
+        XCTAssertEqual(
+            browser.handedOver.last, [browser.found("192.168.1.24:41234", pairing: true)])
+
+        browser.discovery.saw([browser.sighting(routes: ["wifi"])])
+        XCTAssertEqual(browser.lookups.count, 1)
+        XCTAssertEqual(browser.handedOver.last, [browser.found("192.168.1.24:41234")])
+    }
+
+    /// A machine first seen with its window open is handed over open once it
+    /// resolves, and one that opens its window while resolving too.
+    @MainActor
+    func testAWindowOpenWhileResolvingIsHandedOverOpen() {
+        let browser = Browser()
+        browser.discovery.saw([browser.sighting(routes: ["wifi"])])
+        browser.discovery.saw([browser.sighting(pairing: true, routes: ["wifi"])])
+        XCTAssertEqual(browser.lookups.count, 1)
+        browser.lookups[0].settle("192.168.1.24:41234")
+        XCTAssertEqual(
+            browser.handedOver.last, [browser.found("192.168.1.24:41234", pairing: true)])
     }
 
     @MainActor
@@ -261,16 +306,20 @@ private final class Browser {
         handOver: { [unowned self] in self.handedOver.append($0) })
 
     func sighting(
-        version: UInt32 = 7, instance: String = "kitchen", routes: [String]
+        version: UInt32 = 7, instance: String = "kitchen", pairing: Bool = false, routes: [String]
     ) -> LocalDiscovery.Sighting {
-        LocalDiscovery.Sighting(
+        var record = ["hid": host.description, "v": String(version), "name": "kitchen"]
+        if pairing { record["pair"] = "1" }
+        return LocalDiscovery.Sighting(
             endpoint: .service(name: instance, type: LocalDiscovery.service, domain: "local.", interface: nil),
-            record: NWTXTRecord(["hid": host.description, "v": String(version), "name": "kitchen"]),
+            record: NWTXTRecord(record),
             routes: routes.map { .hostPort(host: .name($0, nil), port: 1) })
     }
 
-    func found(_ address: String, version: UInt32 = 7) -> Found {
-        Found(hostId: host.bytes, name: "kitchen", version: version, addrs: [address], scope: "")
+    func found(_ address: String, version: UInt32 = 7, pairing: Bool = false) -> Found {
+        Found(
+            hostId: host.bytes, name: "kitchen", version: version, addrs: [address], scope: "",
+            pairingOpen: pairing)
     }
 
     func resume() {
@@ -288,9 +337,11 @@ private final class Browser {
 private struct AdvertisedRecord: Decodable {
     let hostId: String
     let version: UInt32
+    let pairingOpen: Bool
     let txt: [String: String]
 
     enum CodingKeys: String, CodingKey {
         case hostId = "host_id", version, txt
+        case pairingOpen = "pairing_open"
     }
 }

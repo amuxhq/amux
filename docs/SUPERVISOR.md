@@ -5,7 +5,7 @@
 `amux supervise` is a small parent process for the daemon. It starts `amux
 daemon` as its child, restarts it whenever it exits, and, when the install
 allows it, installs new releases and rolls back a release that never comes up.
-It also holds the machine's sleep assertion. Agents do not depend on it: every
+It also keeps the machine awake while it is on power. Agents do not depend on it: every
 agent is its own process and outlives any daemon (see [the agent
 process](AGENT_PROCESS.md)), so the supervisor's job is to make sure a daemon
 comes back to adopt them.
@@ -28,7 +28,8 @@ independent:
 | `supervisor` | `true`, `false` | `true` | Whether the daemon runs under `amux supervise`. A host whose service manager runs `amux daemon` directly sets it `false`. |
 | `updates` | `"auto"`, `"manual"` | `auto` with a supervisor, `manual` without | Whether the supervisor installs releases on its own hourly check. |
 | `channel` | `"stable"`, `"preview"` | `stable` | Which release manifest the supervisor follows. |
-| `keep_awake` | `true`, `false` | `true` | Whether the supervisor holds the sleep assertion. |
+| `keep_awake` | `true`, `false` | `true` | Whether amux keeps the machine awake: on power whenever it runs, on battery while an agent works. Read again as it changes. |
+| `start_at_login` | `true`, `false` | `false` | Whether a login item starts the supervisor at login ([login items](#login-items)). |
 | `releases_url` | URL | `https://amux.sh/releases` | Where the channel manifests live. |
 
 The four cells of `supervisor` × `updates`:
@@ -86,12 +87,17 @@ first invariant broken (see
 
 ## Login items
 
-`amux init` asks once, on a terminal, whether amux should start at login.
-`amux init --login-item yes` or `--login-item no` answers without asking;
-without a terminal and without the flag it asks nothing and adds nothing. On
-yes it writes a login item that runs `amux supervise` and registers it with
-the platform's service manager. An install with `supervisor = false` gets no
-login item: its service manager already starts the daemon at boot.
+Whether amux starts at login is the `start_at_login` setting, off until a
+person turns it on: in a client's onboarding or settings, or with
+`amux config set start_at_login true`. Turning it on writes a login item that
+runs `amux supervise` for the next login; turning it off removes this
+installation's item. Neither touches the amux running now: registering the
+item at once would start a second supervisor, which finds the first one's
+lock and exits, and a service manager told to restart failures would start it
+again and again. Until the next login the running supervisor keeps the
+machine reachable, and `amux server stop` stops it as before. An install with
+`supervisor = false` gets no login item: its service manager already starts
+the daemon at boot. `amux status` says whether amux starts at login.
 
 Every login item follows the same three rules:
 
@@ -103,31 +109,30 @@ Every login item follows the same three rules:
   kills every process in the unit's cgroup and launchd's kills the job's
   process group, agents and their providers included. The generated units opt
   out of both.
-- **Carry the PATH `amux init` ran with.** Service managers start jobs with a
-  sparse environment, and agents find their provider binaries through PATH.
+- **Carry the PATH of whoever turned it on.** Service managers start jobs
+  with a sparse environment, and agents find their provider binaries through
+  PATH: the item records the PATH of the daemon or the command that wrote it.
 
-What `amux init` installs on each platform
-([`crates/node/src/supervisor/login.rs`](../crates/node/src/supervisor/login.rs),
-registration in [`crates/amux/src/setup.rs`](../crates/amux/src/setup.rs)):
+What the item is on each platform
+([`crates/node/src/supervisor/login.rs`](../crates/node/src/supervisor/login.rs)):
 
 | Platform | File | Registered with | How it restarts, and how it spares agents |
 | --- | --- | --- | --- |
-| macOS | `~/Library/LaunchAgents/sh.amux.supervise.plist`, a LaunchAgent labelled `sh.amux.supervise` | `launchctl bootout` (ignored if not loaded), `launchctl bootstrap gui/<uid>`, then `launchctl kickstart` so it starts now rather than whenever launchd gets to it | `RunAtLoad`, `KeepAlive` with `SuccessfulExit` false; `AbandonProcessGroup` true |
-| Linux | `$XDG_CONFIG_HOME/systemd/user/amux.service` (`~/.config/systemd/user/amux.service` by default), a systemd user unit | `systemctl --user daemon-reload`, then `systemctl --user enable --now amux.service` | `Restart=on-failure`, `WantedBy=default.target`; `KillMode=process` |
-| Windows | `<data_dir>/amux-task.xml`, a Task Scheduler definition in UTF-16 with a byte-order mark | `schtasks /Create /F /TN amux /XML <file>`, then `schtasks /Run /TN amux` | A logon trigger, `RestartOnFailure` every minute up to 999 times, no execution time limit, and battery power neither blocks nor stops it |
+| macOS | `~/Library/LaunchAgents/sh.amux.supervise.plist`, a LaunchAgent labelled `sh.amux.supervise` | Nothing: launchd loads every LaunchAgent at login | `RunAtLoad`, `KeepAlive` with `SuccessfulExit` false; `AbandonProcessGroup` true |
+| Linux | `$XDG_CONFIG_HOME/systemd/user/amux.service` (`~/.config/systemd/user/amux.service` by default), a systemd user unit | `systemctl --user daemon-reload`, then `systemctl --user enable amux.service`; off is `disable` | `Restart=on-failure`, `WantedBy=default.target`; `KillMode=process` |
+| Windows | `<data_dir>/amux-task.xml`, a Task Scheduler definition in UTF-16 with a byte-order mark | `schtasks /Create /F /TN amux /XML <file>`; off is `schtasks /Delete` | A logon trigger, `RestartOnFailure` every minute up to 999 times, no execution time limit, and battery power neither blocks nor stops it |
 
 Each item runs `<binary> [--config <path>] supervise`, where `<binary>` is the
-running `amux` executable, and sends the supervisor's own output to
-`<data_dir>/supervisor.log`. If a supervisor started by hand is already
-running, `amux init` stops it first so the login item's supervisor owns the
-install; agents keep running and the new daemon adopts them.
+`amux` executable that wrote it, and sends the supervisor's own output to
+`<data_dir>/supervisor.log`. An item is this installation's when it names this
+installation's `supervisor.log`, so turning the setting off in a worktree's
+installation leaves the real one starting at login.
 
-`amux uninstall` undoes it: it unregisters the login item (`launchctl
-bootout`, `systemctl --user disable --now`, or `schtasks /End` and `/Delete`)
-and deletes its file, but only when the item names this installation's
-`supervisor.log`, so uninstalling a worktree's installation leaves the real one
-starting at login. It stops this machine's agents first and amux after, so
-nothing is left running without its binary.
+`amux uninstall` removes it at once: it unregisters the login item
+(`launchctl bootout`, `systemctl --user disable --now`, or `schtasks /End` and
+`/Delete`) and deletes its file, again only when it is this installation's.
+It stops this machine's agents first and amux after, so nothing is left
+running without its binary.
 
 ## Stop goes to the owner
 
@@ -330,31 +335,43 @@ it never restarts the daemon to update itself.
 
 ## Keep-awake
 
-Under `keep_awake = true`, the default, the supervisor holds a sleep assertion for
-its whole lifetime, so a phone can start an agent on the machine while nobody
-is at it, whether or not any agent is working. Neither the daemon nor any agent
-holds one, so the assertion survives daemon restarts and the gap during an
-update. An install without a supervisor holds none.
+Under `keep_awake = true`, the default, the machine stays awake on power
+whenever amux runs, so a phone can start an agent on it while nobody is at
+it, and on battery only while one of its agents is working, so a laptop
+unplugged and idle is not drained by amux. The setting takes effect when it
+changes, through a client's settings or `amux config`, with nothing
+restarted.
 
-| Platform | What it takes |
-| --- | --- |
-| macOS | Two IOKit assertions named `amux keeps this machine reachable`: `PreventSystemSleep`, honoured on AC power only, and `PreventUserIdleSystemSleep`, honoured on battery too. `pmset -g assertions` shows both against the supervisor's pid. |
-| Windows | `SetThreadExecutionState(ES_CONTINUOUS \| ES_SYSTEM_REQUIRED)` on a thread kept for the purpose. |
-| Linux | Nothing. |
+The two halves have two holders. The supervisor holds the one for power for
+its whole lifetime, so it survives daemon restarts and the gap during an
+update; it reads `keep_awake` again every two seconds. The daemon holds the
+one battery honours while any profile has one of its own agents working,
+which it learns from each profile's own inventory, and drops it as the last
+turn ends or the setting goes off. An install without a supervisor holds
+neither.
 
-What this gives on a Mac is that the machine stays awake while it is **plugged
-in with the lid open**. Whether the assertion holds a Mac awake with the lid
-closed on AC power has not been measured. `pmset disablesleep` is the owner's
-setting to make; amux never changes it. A failure to take an assertion is
-logged and leaves the machine free to sleep, which is no worse than
-`keep_awake = false`.
+| Platform | Supervisor (on power) | Daemon (while an agent works) |
+| --- | --- | --- |
+| macOS | The IOKit assertion `PreventSystemSleep`, which the system honours on AC power only. | `PreventUserIdleSystemSleep`, honoured on battery too. |
+| Windows | `SetThreadExecutionState(ES_CONTINUOUS \| ES_SYSTEM_REQUIRED)` on a thread kept for the purpose, set while the machine reports AC power (looked at every 30 seconds) and cleared on battery. | The same state on a thread of the daemon's, while an agent works. |
+| Linux | Nothing. | Nothing. |
+
+Both are named `amux keeps this machine reachable`; `pmset -g assertions`
+shows the supervisor's against its pid, and the daemon's against its pid
+while an agent works. What this gives on a Mac is that the machine stays
+awake while it is **plugged in with the lid open**. Whether the assertion
+holds a Mac awake with the lid closed on AC power has not been measured.
+`pmset disablesleep` is the owner's setting to make; amux never changes it.
+A failure to take an assertion is logged and leaves the machine free to
+sleep, which is no worse than `keep_awake = false`.
 
 ## Tests
 
 | Where | What it shows |
 | --- | --- |
 | [`crates/node/tests/supervisor.rs`](../crates/node/tests/supervisor.rs) | The real supervisor driving a stand-in binary (`fake-amux`) whose daemon mode is scripted per version, against a local manifest server, with releases signed by the test key. Restart on every exit and stop on request; install a newer signed release and exec it keeping pid, child, pipe and lock; refuse a bad hash or signature; roll back after K starts that never prepare and skip the rejected build; stop a daemon that hangs before `prepared` at the start deadline; restart without rollback after `go`; kill at the stop deadline; the three recovery cases above; the real `amux daemon` exiting when its supervisor dies; rollout and version choice. |
-| [`crates/amux/tests/supervise_cli.rs`](../crates/amux/tests/supervise_cli.rs) | The CLI around it, with the real binary: `amux init` declining a login item or finding no supervisor to register one for, stop going to the supervisor first or to the daemon when there is none, a client starting the supervisor only where the install has one, the sleep assertion under `keep_awake` (macOS), `amux config set channel`, and `amux update` reporting a build that never started and leaving it alone after, and `amux update --retry` installing a build this machine had rolled back. |
+| [`crates/amux/tests/supervise_cli.rs`](../crates/amux/tests/supervise_cli.rs) | The CLI around it, with the real binary: `start_at_login` writing the login item for the next login and removing it, and finding no supervisor to write one for, stop going to the supervisor first or to the daemon when there is none, a client starting the supervisor only where the install has one, the supervisor's power assertion under `keep_awake`, let go and taken again as the setting changes (macOS), `amux config set channel`, and `amux update` reporting a build that never started and leaving it alone after, and `amux update --retry` installing a build this machine had rolled back. |
+| [`crates/node/tests/settings.rs`](../crates/node/tests/settings.rs) | The daemon's half of keep-awake: wanted while an agent works under `keep_awake`, not once the turn ends or the setting goes off. |
 | [`crates/amux/tests/overlap.rs`](../crates/amux/tests/overlap.rs) | Releases overlapping on one machine. Agents started by the previous build work on after an update; a terminal client of the previous build keeps working and names the newer daemon; the previous build reopens and works in a store the new build opened before it was killed ahead of `prepared`; restarting the generated LaunchAgent under a running turn leaves the agent running. "The previous build" is a copy of the build under test re-stamped one version lower (`node::release::restamp`). |
 | [`crates/amux/tests/process.rs`](../crates/amux/tests/process.rs) | A daemon killed mid-turn loses nothing: agents finish without it and the next daemon adopts them. |
 

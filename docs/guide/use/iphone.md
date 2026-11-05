@@ -101,8 +101,9 @@ signing in and the rest.
 
 ## Notifications
 
-The App Store version doesn't send notifications yet. Open the app to see
-which agents need you.
+With [Pro](https://amux.sh/docs/account/plans-and-billing/), the app notifies
+you when an agent needs you. Your computer encrypts each notification for your
+phone before it leaves, so neither amux.sh nor Apple can read it.
 
 ## Settings and help
 

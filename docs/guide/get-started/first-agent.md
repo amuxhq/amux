@@ -35,6 +35,7 @@ change one:
 | **a** | the agent: Claude or Codex |
 | **d** | the folder |
 | **h** | the computer it runs on |
+| **w** | a new worktree, so it works without touching your checkout |
 | **m**, **e**, **p** | the model, the effort, the permission |
 | **n** | the name (amux names it for you otherwise) |
 

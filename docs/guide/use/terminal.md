@@ -68,6 +68,7 @@ letter to change one:
 | `m`, `e`, `p` | The model, the reasoning effort, and the permission |
 | `d` | The folder. Your repositories come first, then folders your agents used lately, or type a path. |
 | `h` | The host, to start the agent on another of your machines |
+| `w` | A new worktree of the folder's repository, so the agent works without touching your checkout |
 | `n` | The name. amux names the agent for you if you don't. |
 
 The models and permissions on offer are whatever that agent offers on the host

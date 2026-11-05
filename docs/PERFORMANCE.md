@@ -245,13 +245,13 @@ never reach the phone, rather than reporting a number about an idle screen or a 
 
 | Metric | Group | What is measured | Budget | Worst | Tolerance |
 | --- | --- | --- | --- | --- | --- |
-| `cold first frame` | cold | Kernel process start to the first presented frame carrying the remembered fleet's rows, the app terminated between the five launches, the machines up | 850 ms | 900 ms | 15% |
+| `cold first frame` | cold | Kernel process start to the first presented frame carrying the remembered fleet's rows, the app terminated between the five launches, the machines up | 950 ms | 1000 ms | 15% |
 | `cold store read` | cold | Inside each of those launches, the store's own share: the embedded node's start (opening every profile's store, the listener, the identity) plus the profile on screen opening its fleet from the store and catching up with it, before any host is reached; the main thread's wait between the two is not counted | 50 ms | | 15% |
-| `cold fleet render` | cold | From the fleet on screen having caught up with its store to the first presented frame carrying its rows: building the home from what the store held, and the rest of the shell's first frame around it | 250 ms | | 15% |
-| `reconciliation at 0 ms` | reconciliation | From that point to the first presented frame after every trusted machine's agents were current with the machine, over loopback | 250 ms | | 15% |
-| `reconciliation at 100 ms` | reconciliation | The same, with every gate holding each packet 100 ms | 336 ms | | 15% |
+| `cold fleet render` | cold | From the fleet on screen having caught up with its store to the first presented frame carrying its rows: building the home from what the store held, and the rest of the shell's first frame around it | 350 ms | | 15% |
+| `reconciliation at 0 ms` | reconciliation | From that point to the first presented frame after every trusted machine's agents were current with the machine, over loopback | 350 ms | | 15% |
+| `reconciliation at 100 ms` | reconciliation | The same, with every gate holding each packet 100 ms | 500 ms | | 15% |
 | `reconciliation through the relay at 100 ms` | reconciliation | The same, the phone away from home: signed in to the machines' account at the served relay, every direct dial lost, and every way to the relay, the phone's and each machine's, holding each packet 100 ms | 566 ms | | 15% |
-| `opening hitch time` | opening | Missed frame time per second from just before a tap on the working agent's row on home until 2.5 s later: the chat's push, its transcript's first build and its activity line starting. The push is the render server's; what this counts is the main thread's stall building the page, during which nothing it animates moves | 120 ms/s | | ceiling only |
+| `opening hitch time` | opening | Missed frame time per second from just before a tap on the working agent's row on home until 2.5 s later: the chat's push, its transcript's first build and its activity line starting. The push is the render server's; what this counts is the main thread's stall building the page, during which nothing it animates moves | 140 ms/s | | ceiling only |
 | `opening main-thread CPU` | opening | The main thread's share of one core over the same 2.5 s | 20 % | | 15% |
 | `streaming hitch time` | streaming | Missed frame time per second while fifty rows a second arrive for twenty seconds into the conversation on screen, resting at its tail | 5 ms/s | | ceiling only |
 | `streaming main-thread CPU` | streaming | The main thread's share of one core over the same stream | 60 % | | 15% |
@@ -290,6 +290,19 @@ while the main thread builds the tab bar, and 40 is the redrawn list. No one pie
 two runs of the same build differ. The budget is now 850 ms median and 900 worst, and the fleet render's 250: that
 cost, with room for the 40 to 60 ms by which runs of one build move on this Mac. A phone has budgets of its own
 (below).
+
+The fleet is a system list, for the system's swipe actions and row menus, and on the simulator that list costs what
+the hand-built one did not. Fifteen launches and fifteen openings of each build, measured back to back on the pinned
+Mac: the fleet render took 317 ms against 228 with the hand-built list and the first frame 1218 against 1120, and
+opening a chat cost 120 ms/s of hitch time against 100. Rows that skip unchanged redraws, rows without their swipe
+actions and menus, and a list without its animation each moved none of it; the hand-built list in its place took
+back nearly all of it, so it is the list's own. On an iPhone 14 Pro the same comparison put no cost on the first
+frame (a fleet render of 54 ms either way) and about 22 ms/s on opening, inside the phone's budgets. The simulator's
+first frame, fleet render, reconciliation at 0 and 100 ms and opening hitch budgets were raised by those amounts:
+950 and 1000 ms, 350, 350 and 500 ms, and 140 ms/s; at 100 ms the hosts answer before or after the slower first
+frame from run to run, so that one measured between 280 and 445 ms. The list is not redrawn while a chat covers it: the home shows a
+still copy of the fleet until it is back on screen, without which streaming missed 5.8 ms/s of frames on the
+simulator.
 
 Where reconciliation goes, over a gate that holds each packet 100 ms (a 200 ms round trip): one round trip. A
 launch resumes each host's link with the TLS ticket and address-validation token its last process kept, so no Retry

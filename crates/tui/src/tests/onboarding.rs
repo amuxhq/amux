@@ -82,10 +82,13 @@ fn a_first_run_opens_the_pairing_window_and_shows_the_notice_once() {
     let drawn = screen(&mut scene, 110, 34);
     assert!(drawn.contains("This machine is called desk."), "{drawn}");
     assert!(
-        drawn.contains("1. Scan to get amux on your iPhone"),
+        drawn.contains("Scan with your iPhone's camera to pair."),
         "{drawn}"
     );
-    assert!(drawn.contains("2. Enter 418 207 in the app"), "{drawn}");
+    assert!(
+        drawn.contains("Or enter 418 207 in the amux app."),
+        "{drawn}"
+    );
     assert!(drawn.contains("amux sends usage counts"), "{drawn}");
     // The next screen has no notice: it was shown.
     let mut paired = scenes::paired();
@@ -106,21 +109,38 @@ fn a_first_run_opens_the_pairing_window_and_shows_the_notice_once() {
     assert!(!screen(&mut scene, 110, 34).contains("amux sends usage counts"));
 }
 
-/// A window tall enough shows the whole pairing code; a usual one, the
-/// code of the page alone, which still sends the phone to the App Store;
-/// a small one says how much room the code needs.
+/// A window with room shows the whole pairing code, which pairs a phone
+/// that scans it, beside the PIN; a usual 80 by 24 one, the code of the
+/// page alone, which still sends the phone to the App Store; a small one
+/// says how much room the code needs. The whole code of a realistic
+/// invitation is QR version 5: 37 modules, 41 columns by 21 rows with its
+/// margin.
 #[test]
 fn the_qr_code_fits_the_window_or_it_says_how_to_make_room() {
     let window = scenes::window();
+    assert_eq!(window.qr_link.len(), 97, "{}", window.qr_link);
     let whole = crate::qr::Code::encode(&window.qr_link).unwrap().cells();
+    assert_eq!(whole, (41, 21));
     let page = crate::qr::Code::encode("https://amux.sh/p")
         .unwrap()
         .cells();
     let mut scene = scenes::pair();
-    let tall = screen(&mut scene, 140, 60);
-    assert_eq!(code_rows(&tall), whole.1, "{tall}");
+    for size in [(110, 34), (140, 60)] {
+        let roomy = screen(&mut scene, size.0, size.1);
+        assert_eq!(code_rows(&roomy), whole.1, "{roomy}");
+        assert!(
+            roomy.contains("Scan with your iPhone's camera to pair."),
+            "{roomy}"
+        );
+        assert!(!roomy.contains("Scan to get amux"), "{roomy}");
+    }
     let usual = screen(&mut scene, 80, 24);
     assert_eq!(code_rows(&usual), page.1, "{usual}");
+    assert!(
+        usual.contains("1. Scan to get amux on your iPhone"),
+        "{usual}"
+    );
+    assert!(usual.contains("2. Enter 418 207 in the app"), "{usual}");
     assert!(!usual.contains("Make this window"));
     let small = screen(&mut scene, 60, 24);
     assert_eq!(code_rows(&small), 0, "{small}");
@@ -129,9 +149,10 @@ fn the_qr_code_fits_the_window_or_it_says_how_to_make_room() {
         "{small}"
     );
     // The PIN is there at every size.
-    for drawn in [&tall, &usual, &small] {
+    for drawn in [&usual, &small] {
         assert!(drawn.contains("418 207"), "{drawn}");
     }
+    assert!(screen(&mut scene, 110, 34).contains("418 207"));
 }
 
 #[test]

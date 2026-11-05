@@ -3,7 +3,7 @@
   "stories": [
     {
       "name": "onboarding.pair",
-      "shows": "The first screen of a first run: this machine's name, a QR code that gets amux on the phone beside the PIN to enter in it, and the analytics notice.",
+      "shows": "The first screen of a first run: this machine's name, the QR code that pairs the phone scanning it beside the PIN to enter instead (on a usual 80 by 24 terminal, the code of the page that gets amux on the phone), and the analytics notice.",
       "clients": ["terminal"],
       "why": "The phone's first run is its own: it pairs from the machine's screen and asks nothing of the machine."
     },

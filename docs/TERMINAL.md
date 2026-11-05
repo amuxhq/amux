@@ -58,11 +58,13 @@ right; Esc on every step is `later`, which skips it, and the last one goes home.
 sent and the link to how to turn it off) is drawn under the first step shown, once for the profile across every
 client. The steps, in order:
 
-- **Connect your iPhone.** The machine's name (`This machine is called desk.`; `r` renames it in place), then two
-  numbered steps: `1. Scan to get amux on your iPhone` beside a QR code and `2. Enter 418 207 in the app`. The code
-  holds the pairing link: scanned by a phone without amux it opens the App Store, with amux it pairs at once. The
-  whole code is tall (about 37 rows); a window too short for it shows the code of the page alone, which still
-  sends the phone to the App Store, and one too small even for that says how many columns and rows it needs. The
+- **Connect your iPhone.** The machine's name (`This machine is called desk.`; `r` renames it in place), then
+  `Scan with your iPhone's camera to pair.` and `Or enter 418 207 in the amux app.` beside a QR code. The code
+  holds the pairing link: scanned by a phone without amux it opens the App Store, with amux it pairs at once, with
+  no PIN. The code takes 41 columns by 21 rows, so it shows beside the steps from about 83 columns by 32 rows; a usual 80 by 24
+  window shows the code of the page alone instead, which still sends the phone to the App Store, with the steps
+  numbered `1. Scan to get amux on your iPhone` and `2. Enter 418 207 in the app`, and one too small even for that
+  says how many columns and rows it needs. The
   pairing window is asked for ten minutes and renewed half a minute before it ends, with a fresh PIN, except while
   a phone is confirming; leaving the step, or quitting, closes it. While a phone proves the PIN it reads `Your
   iPhone is pairing…`; five wrong PINs close the window and `n` opens a new one.

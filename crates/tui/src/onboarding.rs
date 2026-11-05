@@ -86,9 +86,11 @@ struct Pairing {
     window: Option<wire::PairingWindow>,
     /// When the window was opened, in Unix milliseconds.
     opened_ms: i64,
-    /// The codes the window's link makes: the whole link, and the page
-    /// alone, which still sends a phone to the App Store when the whole
-    /// code does not fit.
+    /// The codes the window's link makes: the whole link, which pairs a
+    /// phone that scans it, and the page alone, which still sends a phone
+    /// to the App Store when the whole code does not fit (it takes 41
+    /// columns by 21 rows, more than a usual 80 by 24 terminal has room
+    /// for beside the steps).
     codes: Option<(Code, Option<Code>)>,
     status: Option<wire::PairingStatus>,
     /// A fresh window was asked for: the old one closing is not an end.
@@ -989,11 +991,9 @@ impl Onboarding {
         screen.blank();
         let rows = rows.saturating_sub(2);
 
-        // The two steps, then what the window is doing.
-        let mut steps: Vec<Line<'static>> = Vec::new();
-        let words = |text: &str, style| Line::from(Span::styled(text.to_owned(), style));
-        steps.push(words("1. Scan to get amux on your iPhone", theme.text()));
-        steps.push(Line::default());
+        // The steps, then what the window is doing. Beside the whole code,
+        // scanning pairs and the PIN is the other way; beside the page's
+        // code or none, scanning only gets the app and the PIN pairs.
         let pin = self
             .pairing
             .window
@@ -1003,15 +1003,6 @@ impl Onboarding {
                 Some(wire::pairing_window::Secret::Pin(pin)) => Some(pin.clone()),
                 _ => None,
             });
-        match &pin {
-            Some(pin) => steps.push(Line::from(vec![
-                Span::styled("2. Enter ", theme.text()),
-                Span::styled(spaced(pin), theme.emphasis()),
-                Span::styled(" in the app", theme.text()),
-            ])),
-            None => steps.push(words("2. Enter the code in the app", theme.text())),
-        }
-        steps.push(Line::default());
         let (status, style) = if let Some(why) = &self.pairing.failed {
             (format!("Pairing could not open: {why}"), theme.warning())
         } else if self.locked_out() {
@@ -1026,21 +1017,49 @@ impl Onboarding {
         } else {
             ("Opening pairing…".to_owned(), theme.faint())
         };
-        steps.push(words(&status, style));
-        steps.push(Line::default());
-        steps.push(words(
-            "Whoever enters this code can run agents on this machine as you.",
-            theme.faint(),
-        ));
+        let steps = |scan_pairs: bool| {
+            let words = |text: &str, style| Line::from(Span::styled(text.to_owned(), style));
+            let (scan, enter, then, warning) = if scan_pairs {
+                (
+                    "Scan with your iPhone's camera to pair.",
+                    "Or enter ",
+                    " in the amux app.",
+                    "Whoever scans this code or enters the PIN can run agents on this machine \
+                     as you.",
+                )
+            } else {
+                (
+                    "1. Scan to get amux on your iPhone",
+                    "2. Enter ",
+                    " in the app",
+                    "Whoever enters this code can run agents on this machine as you.",
+                )
+            };
+            let mut steps: Vec<Line<'static>> = vec![words(scan, theme.text()), Line::default()];
+            steps.push(Line::from(vec![
+                Span::styled(enter, theme.text()),
+                match &pin {
+                    Some(pin) => Span::styled(spaced(pin), theme.emphasis()),
+                    None => Span::styled("the code", theme.text()),
+                },
+                Span::styled(then, theme.text()),
+            ]));
+            steps.push(Line::default());
+            steps.push(words(&status, style));
+            steps.push(Line::default());
+            steps.push(words(warning, theme.faint()));
+            steps
+        };
 
         let dark_ground = crate::theme::luminance(theme.tokens.background.rgb) < 0.18;
         let ink = theme.text();
         let room = width - 2 * MARGIN;
         let codes = self.pairing.codes.as_ref();
-        let candidates = codes
-            .into_iter()
-            .flat_map(|(whole, page)| std::iter::once(whole).chain(page.as_ref()));
-        for code in candidates {
+        let candidates = codes.into_iter().flat_map(|(whole, page)| {
+            std::iter::once((whole, true)).chain(page.as_ref().map(|page| (page, false)))
+        });
+        for (code, scan_pairs) in candidates {
+            let steps = steps(scan_pairs);
             let (columns, height) = code.cells();
             // Beside the steps, the text wrapped to what is left.
             if room >= TEXT_LEAST + GAP + columns && rows >= height {
@@ -1075,7 +1094,7 @@ impl Onboarding {
             }
         }
         // Too small for any code: the steps, and how to make room.
-        screen.indented(rewrap(&steps, room));
+        screen.indented(rewrap(&steps(false), room));
         if let Some((_, Some(page))) = codes {
             let (columns, height) = page.cells();
             screen.blank();

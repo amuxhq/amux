@@ -77,9 +77,9 @@ right; Esc on every step is `later`, which skips it, and the last one goes home.
   opens the account's offer page, `n` declines and the browser sign-in is offered.
 - **Repositories.** The folders Claude Code and Codex ran in lately, ticked, and `+ Add a folder…` for a typed path,
   which the daemon checks as it saves. Enter adds the ticked ones to the repositories already chosen.
-- **Help improve amux.** `Send usage counts`, ticked, with `Usage counts help improve amux. Never your code or
-  chats. You can disable anytime in Settings.` under it, and `Send a report automatically when something goes
-  wrong`.
+- **Help improve amux.** `Send a report automatically when something goes wrong`, unticked, with `Never your
+  chats, code, or file names.` under it, then one line: `amux sends usage counts to help improve it, never your
+  code or chats. You can turn this off in Settings.`
 - **Try starting an agent from your phone.** `On your phone, tap + and pick a repository.` When an agent starts on
   this machine, the client goes home with it selected and says `There it is`.
 

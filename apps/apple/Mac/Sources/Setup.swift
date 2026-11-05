@@ -80,7 +80,6 @@ final class Setup {
     var repositories: [RepositoryRow] = []
     private(set) var repositoriesLoaded = false
 
-    var telemetry = true
     var autoReports = false
 
     /// The agents on this Mac when the last step opened: one that is not
@@ -179,7 +178,6 @@ final class Setup {
         case .repositories:
             if !repositoriesLoaded { suggest() }
         case .improve:
-            telemetry = app.settings?.telemetry ?? true
             autoReports = app.settings?.autoReports ?? false
         case .first_agent:
             agentsBefore = Set(app.localAgents)
@@ -288,7 +286,7 @@ final class Setup {
 
     /// Continue on "Help improve amux".
     func confirmImprove() {
-        confirm(.with(telemetry: telemetry, autoReports: autoReports))
+        confirm(.with(autoReports: autoReports))
     }
 
     // MARK: - Pairing

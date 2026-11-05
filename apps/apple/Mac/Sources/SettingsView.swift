@@ -88,7 +88,7 @@ private struct SettingsForm: View {
             Section("Help improve amux") {
                 Toggle(isOn: change(settings.telemetry) { .with(telemetry: $0) }) {
                     Text("Send usage counts")
-                    Text("Usage counts help improve amux. Never your code or chats.")
+                    Text("Never your code or chats.")
                 }
                 Toggle(
                     "Send a report automatically when something goes wrong",

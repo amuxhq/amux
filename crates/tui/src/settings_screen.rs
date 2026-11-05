@@ -533,7 +533,7 @@ impl SettingsScreen {
                     theme.faint(),
                 )],
                 Row::Telemetry => vec![(
-                    "Usage counts help improve amux. Never your code or chats.".to_owned(),
+                    "Never your code or chats.".to_owned(),
                     theme.faint(),
                 )],
                 Row::Account => match &self.signing_in {

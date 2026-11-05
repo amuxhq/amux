@@ -2275,11 +2275,11 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
         &again,
         &[
             "Help improve amux",
-            "Usage counts help improve amux. Never your code or chats.",
+            "amux sends usage counts to help improve it, never your code or chats.",
         ],
     )?;
     journey.frame(&again, "improve")?;
-    journey.keys(&again, &["Down", "Space", "Enter"])?;
+    journey.keys(&again, &["Space", "Enter"])?;
     journey.wait_terms(&again, &["On your phone, tap + and pick a repository."])?;
     journey.frame(&again, "first-agent")?;
 

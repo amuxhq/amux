@@ -27,7 +27,7 @@ and Escape or Later skips it.
 | Keep it connected | "Paired with <phone> ✓" once a phone paired, then start at login and keep awake, both ticked, applied on Continue. |
 | Reach it from anywhere | Sign In runs `WebSignIn`. "Also sign in <phone>" is ticked when the phone just paired is signed out; after the sign-in the Mac offers it the account and opens the account service's offer page. When a paired machine offers its account instead, the screen asks "Sign in as <email> (from <machine>)?". |
 | Repositories | The repositories Claude Code and Codex ran in lately, ticked, and Add a Folder. |
-| Help improve amux | "Send usage counts", ticked, with "Usage counts help improve amux. Never your code or chats. You can disable anytime in Settings." under it, and automatic reports. |
+| Help improve amux | "Send a report automatically when something goes wrong", unticked, with "Never your chats, code, or file names." under it, then one line: "amux sends usage counts to help improve it, never your code or chats. You can turn this off in Settings." |
 | Try starting an agent from your phone | Waits for an agent a phone starts here, then lands on the agent list with it selected. |
 
 Steps left skipped show as "Finish Setting Up (n)" above the agent list,

@@ -38,8 +38,12 @@ pub const WINDOW_SECONDS: u64 = 10 * 60;
 /// How long before a window ends the screen renews it.
 const RENEW_BEFORE_MS: i64 = 30_000;
 
-/// What "Send usage counts" says under it.
-const USAGE_LINE: &str = "Usage counts help improve amux. Never your code or chats. You can disable anytime in Settings.";
+/// What automatic reports say under their switch.
+const REPORTS_LINE: &str = "Never your chats, code, or file names.";
+/// The one line that says usage counts are sent: they are on unless turned
+/// off in Settings, and nothing waits for this line.
+const USAGE_NOTICE: &str =
+    "amux sends usage counts to help improve it, never your code or chats. You can turn this off in Settings.";
 
 /// What the app does for the onboarding screen.
 #[derive(Clone, Debug, PartialEq)]
@@ -148,7 +152,6 @@ pub struct Onboarding {
     keep_awake: bool,
     sign_in: SignIn,
     repositories: Repositories,
-    telemetry: bool,
     auto_reports: bool,
     /// The agents on this machine when the last step opened: one that is
     /// not among them came from the phone.
@@ -215,7 +218,6 @@ impl Onboarding {
             step,
             finishing,
             steps,
-            telemetry: settings.telemetry,
             auto_reports: settings.auto_reports,
             settings,
             machine: machine.to_owned(),
@@ -269,10 +271,7 @@ impl Onboarding {
                     effects.push(SetupEffect::Suggest);
                 }
             }
-            SetupStep::Improve => {
-                self.telemetry = self.settings.telemetry;
-                self.auto_reports = self.settings.auto_reports;
-            }
+            SetupStep::Improve => self.auto_reports = self.settings.auto_reports,
             SetupStep::FirstAgent => {
                 self.agents_before = fleet
                     .agents()
@@ -606,7 +605,7 @@ impl Onboarding {
                 usize::from(self.sign_in.also.is_some())
             }
             SetupStep::Repositories => self.repositories.rows.len() + 1,
-            SetupStep::Improve => 2,
+            SetupStep::Improve => 1,
             _ => 0,
         }
     }
@@ -699,10 +698,7 @@ impl Onboarding {
                 Some((.., ticked)) => *ticked = !*ticked,
                 None => self.repositories.adding = Some(Editor::default()),
             },
-            SetupStep::Improve => match row {
-                0 => self.telemetry = !self.telemetry,
-                _ => self.auto_reports = !self.auto_reports,
-            },
+            SetupStep::Improve => self.auto_reports = !self.auto_reports,
             _ => {}
         }
     }
@@ -755,7 +751,6 @@ impl Onboarding {
                 })
             }
             SetupStep::Improve => self.confirm(wire::UpdateSettingsRequest {
-                telemetry: Some(self.telemetry),
                 auto_reports: Some(self.auto_reports),
                 ..Default::default()
             }),
@@ -1292,21 +1287,21 @@ impl Onboarding {
 
     fn improve_body(&self, screen: &mut Screen) {
         let theme = screen.theme;
-        self.check_row(screen, 0, self.telemetry, "Send usage counts");
+        self.check_row(
+            screen,
+            0,
+            self.auto_reports,
+            "Send a report automatically when something goes wrong",
+        );
         // Under the switch's words, past its focus mark and box.
         let indent = MARGIN + 6;
-        for part in text::wrap(USAGE_LINE, screen.width.saturating_sub(indent + MARGIN)) {
+        for part in text::wrap(REPORTS_LINE, screen.width.saturating_sub(indent + MARGIN)) {
             let mut line = Line::from(Span::raw(" ".repeat(indent)));
             push(&mut line, part, theme.muted(), screen.width);
             screen.line(line);
         }
         screen.blank();
-        self.check_row(
-            screen,
-            1,
-            self.auto_reports,
-            "Send a report automatically when something goes wrong",
-        );
+        screen.words(USAGE_NOTICE, theme.faint());
     }
 }
 

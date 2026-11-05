@@ -8,9 +8,10 @@ into the free tier. They are counts and choices, never content: what you
 type, what your agents say and the names of your machines, folders and
 files stay on your machines.
 
-It is on by default. Setting up a computer, in the terminal client or the
-Mac app, shows it as **Send usage counts**, ticked, to untick there or later
-in Settings; the iPhone app's App Store privacy label says what it collects.
+It is on by default, with nothing to accept first. Setting up a computer, in
+the terminal client or the Mac app, says so in one line on its "Help improve
+amux" step; **Send usage counts** in Settings turns it off on every client,
+and the iPhone app's App Store privacy label says what it collects.
 A signed-in profile's events are linked to its account, as
 [where it goes](#where-it-goes) says. To turn it off:
 

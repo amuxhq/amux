@@ -435,21 +435,25 @@ private struct Improve: View {
     @Bindable var setup: Setup
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Toggle(isOn: $setup.telemetry) {
+        VStack(alignment: .leading, spacing: 28) {
+            Toggle(isOn: $setup.autoReports) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Send usage counts")
-                    Text("Usage counts help improve amux. Never your code or chats. You can disable anytime in Settings.")
+                    Text("Send a report automatically when something goes wrong")
+                    Text("Never your chats, code, or file names.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            Toggle("Send a report automatically when something goes wrong", isOn: $setup.autoReports)
+            .toggleStyle(.checkbox)
+            .padding(.leading, 4)
+            .font(.title3)
+            // Usage counts are on unless turned off in Settings; this only
+            // says so, and nothing waits for it.
+            Text("amux sends usage counts to help improve it, never your code or chats. You can turn this off in Settings.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .toggleStyle(.checkbox)
-        .padding(.leading, 4)
-        .font(.title3)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

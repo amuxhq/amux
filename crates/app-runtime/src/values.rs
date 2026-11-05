@@ -538,11 +538,11 @@ pub struct Directory {
 }
 
 /// What a host offers to start an agent in: where agents ran lately and the
-/// projects its person chose.
+/// repositories its person chose.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Directories {
     pub recent: Vec<Directory>,
-    pub projects: Vec<Directory>,
+    pub repositories: Vec<Directory>,
 }
 
 /// An act on an open chat. Its answer is a `SendOutcome` for `Send` (as
@@ -702,7 +702,7 @@ pub struct MachineSettings {
     /// while an agent works.
     pub keep_awake: bool,
     /// The folders new-agent pickers offer first, as absolute paths.
-    pub projects: Vec<String>,
+    pub repositories: Vec<String>,
     /// Usage counts are sent.
     pub telemetry: bool,
     /// A report is sent on its own when something goes wrong.
@@ -715,7 +715,7 @@ impl From<&wire::Settings> for MachineSettings {
             host_name: settings.host_name.clone(),
             start_at_login: settings.start_at_login,
             keep_awake: settings.keep_awake,
-            projects: settings.projects.clone(),
+            repositories: settings.repositories.clone(),
             telemetry: settings.telemetry,
             auto_reports: settings.auto_reports,
         }
@@ -735,7 +735,7 @@ pub struct SettingsChange {
     pub keep_awake: Option<bool>,
     /// The whole new list.
     #[serde(default)]
-    pub projects: Option<Vec<String>>,
+    pub repositories: Option<Vec<String>>,
     #[serde(default)]
     pub telemetry: Option<bool>,
     #[serde(default)]
@@ -748,7 +748,9 @@ impl From<SettingsChange> for wire::UpdateSettingsRequest {
             host_name: change.host_name,
             start_at_login: change.start_at_login,
             keep_awake: change.keep_awake,
-            projects: change.projects.map(|paths| wire::ProjectList { paths }),
+            repositories: change
+                .repositories
+                .map(|paths| wire::RepositoryList { paths }),
             telemetry: change.telemetry,
             auto_reports: change.auto_reports,
             ..wire::UpdateSettingsRequest::default()
@@ -756,10 +758,10 @@ impl From<SettingsChange> for wire::UpdateSettingsRequest {
     }
 }
 
-/// A folder worth offering as a project: where Claude Code or Codex ran
+/// A folder worth offering as a repository: where Claude Code or Codex ran
 /// lately.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct ProjectSuggestion {
+pub struct RepositorySuggestion {
     pub path: String,
     pub name: String,
 }
@@ -868,7 +870,7 @@ pub enum OnboardingAnswer {
     /// The step is on screen: counted, nothing kept.
     Shown(SetupStep),
     /// The person confirmed a step only they can confirm: keeping it
-    /// reachable, the projects, helping improve amux.
+    /// reachable, the repositories, helping improve amux.
     Done(SetupStep),
     /// "Later".
     Skip(SetupStep),

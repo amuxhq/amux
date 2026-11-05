@@ -38,7 +38,7 @@ pub(crate) const STEPS: [Id; 6] = [
     Id::PairPhone,
     Id::KeepReachable,
     Id::SignIn,
-    Id::Projects,
+    Id::Repositories,
     Id::Improve,
     Id::FirstAgent,
 ];
@@ -46,7 +46,7 @@ pub(crate) const STEPS: [Id; 6] = [
 /// Whether a step is done when the person says so, rather than when the
 /// daemon sees it happen.
 pub(crate) fn confirmed_by_person(step: Id) -> bool {
-    matches!(step, Id::KeepReachable | Id::Projects | Id::Improve)
+    matches!(step, Id::KeepReachable | Id::Repositories | Id::Improve)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -55,7 +55,7 @@ enum Step {
     PairPhone,
     KeepReachable,
     SignIn,
-    Projects,
+    Repositories,
     Improve,
     FirstAgent,
 }
@@ -66,7 +66,7 @@ impl Step {
             Id::PairPhone => Step::PairPhone,
             Id::KeepReachable => Step::KeepReachable,
             Id::SignIn => Step::SignIn,
-            Id::Projects => Step::Projects,
+            Id::Repositories => Step::Repositories,
             Id::Improve => Step::Improve,
             Id::FirstAgent => Step::FirstAgent,
             Id::Unspecified => return None,
@@ -111,7 +111,7 @@ pub(crate) struct Onboarding {
     stored: Mutex<Stored>,
     /// Rings whenever what is kept changes.
     changed: watch::Sender<()>,
-    /// How many folders the last suggestion offered, which the projects
+    /// How many folders the last suggestion offered, which the repositories
     /// step's usage event counts what was kept against.
     suggested: AtomicU32,
 }
@@ -310,7 +310,7 @@ fn usage_step(step: Id) -> Option<analytics::Step> {
         Id::PairPhone => analytics::Step::PairPhone,
         Id::KeepReachable => analytics::Step::KeepReachable,
         Id::SignIn => analytics::Step::SignIn,
-        Id::Projects => analytics::Step::Projects,
+        Id::Repositories => analytics::Step::Repositories,
         Id::Improve => analytics::Step::Improve,
         Id::FirstAgent => analytics::Step::FirstAgent,
         Id::Unspecified => return None,
@@ -476,11 +476,11 @@ impl Registry {
                 }
                 kept(onboarding.confirm(done))?;
                 record(done, analytics::StepOutcome::Done);
-                if done == Id::Projects && surface.is_some() {
+                if done == Id::Repositories && surface.is_some() {
                     runtime
                         .analytics()
-                        .record(analytics::Event::ProjectsChosen {
-                            kept: u32::try_from(runtime.launch().projects.len())
+                        .record(analytics::Event::RepositoriesChosen {
+                            kept: u32::try_from(runtime.launch().repositories.len())
                                 .unwrap_or(u32::MAX),
                             suggested: onboarding.suggested.load(Ordering::Relaxed),
                         });
@@ -556,7 +556,7 @@ mod tests {
         );
 
         onboarding.skip(desk, Id::PairPhone).unwrap();
-        onboarding.skip(desk, Id::Projects).unwrap();
+        onboarding.skip(desk, Id::Repositories).unwrap();
         onboarding.confirm(Id::Improve).unwrap();
         onboarding.agent_from_device(desk).unwrap();
         let facts = Facts {
@@ -590,7 +590,7 @@ mod tests {
             [Skipped, Needed, Done, Skipped, Done, Done]
         );
         // Confirming a skipped step makes it done.
-        again.confirm(Id::Projects).unwrap();
+        again.confirm(Id::Repositories).unwrap();
         assert_eq!(states(&again, desk, facts)[3], Done);
 
         // Dismissing covers the steps skipped then; one skipped after

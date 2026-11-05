@@ -28,7 +28,7 @@ instead.
 | Connect your iPhone | The Mac's name, with Rename to change it at once; a QR code the app draws for the window's link; "2. Enter 418 207 in the app"; then "Your iPhone is pairing…" as a phone joins, and a lockout with a new code after wrong PINs. The window is renewed before it ends unless a phone is joining, and closed when the screen leaves or the app quits. |
 | Keep it connected | "Paired with <phone> ✓" once a phone paired, then start at login and keep awake, both ticked, applied on Continue. |
 | Reach it from anywhere | Sign In runs `WebSignIn`. "Also sign in <phone>" is ticked when the phone just paired is signed out; after the sign-in the Mac offers it the account and opens the account service's offer page. When a paired machine offers its account instead, the screen asks "Sign in as <email> (from <machine>)?". |
-| Projects | The repositories Claude Code and Codex ran in lately, ticked, and Add a Folder. |
+| Repositories | The repositories Claude Code and Codex ran in lately, ticked, and Add a Folder. |
 | Help improve amux | Usage counts and automatic reports. |
 | Try starting an agent from your phone | Waits for an agent a phone starts here, then lands on the agent list with it selected. |
 
@@ -38,7 +38,7 @@ which walks them again or, dismissed, stops offering them.
 ## Settings
 
 Settings (⌘,) holds the Mac's name, start at login (on an install with a
-supervisor), keep awake, the project list, usage counts, automatic reports
+supervisor), keep awake, the repository list, usage counts, automatic reports
 and the account. Every change is applied at once through `UpdateSettings`,
 so `amux config` and the terminal see it as soon as it is made.
 
@@ -67,7 +67,7 @@ generated values (`AmuxValues`), which build for macOS as well as iOS:
 
 - `Runtime.checkForUpdate(_:)` looks for a newer version of the app itself
   ([Updates](#updates)).
-- The setting-up calls: the installation's settings, project suggestions, a
+- The setting-up calls: the installation's settings, repository suggestions, a
   profile's steps and their answers, a pairing window and its status, and a
   web sign-in link (`crates/app-ffi/README.md`). An attached runtime names
   itself `mac` to the daemon, which counts the app opening and each step as

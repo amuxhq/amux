@@ -144,7 +144,7 @@ pub struct Setup {
     /// Which Claude the chosen host says a new agent runs there, taken as
     /// the agent starts; unspecified follows where the person chats.
     pub host_claude_kind: Kind,
-    /// The folders the chosen host offers, once it has said: its projects,
+    /// The folders the chosen host offers, once it has said: its repositories,
     /// then the folders its agents ran in lately.
     pub folders: Option<(Vec<u8>, Vec<String>)>,
 }
@@ -470,7 +470,7 @@ impl Setup {
         }
     }
 
-    /// What the chosen host offers as folders: its projects, then where its
+    /// What the chosen host offers as folders: its repositories, then where its
     /// agents ran lately, with the folder chosen now first when it is
     /// neither.
     pub fn folder_choices(&self) -> Vec<String> {
@@ -486,11 +486,11 @@ impl Setup {
         folders
     }
 
-    /// The host's folders, when they are for the chosen host: its projects
+    /// The host's folders, when they are for the chosen host: its repositories
     /// first, then its recent folders.
     pub fn take_folders(&mut self, host: &[u8], answer: &wire::ListRepositoriesResponse) {
         let folders = answer
-            .projects
+            .repositories
             .iter()
             .chain(&answer.recent)
             .map(|entry| entry.path.clone())

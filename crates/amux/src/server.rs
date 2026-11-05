@@ -64,13 +64,13 @@ pub(crate) fn log_to_stderr() {
 }
 
 /// What agents start with: this binary as the canonical install path, the
-/// installation's agent settings, its projects and which Claude it runs.
+/// installation's agent settings, its repositories and which Claude it runs.
 fn launch(config: &InstallationConfig) -> Result<Launch> {
     let install_path = std::env::current_exe().context("finding the amux binary")?;
     Ok(Launch {
         install_path,
         agent: config.agent,
-        projects: config.projects(),
+        repositories: config.repositories(),
         claude_kind: node::claude_kind(config),
         ..Launch::default()
     })

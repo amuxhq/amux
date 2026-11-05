@@ -63,13 +63,13 @@ pub fn notice() -> Notice {
 }
 
 /// The desk's settings on a first run: a supervisor, so starting at login
-/// is a choice; usage counts on; no projects yet.
+/// is a choice; usage counts on; no repositories yet.
 pub fn settings() -> wire::Settings {
     wire::Settings {
         host_name: "desk".to_owned(),
         start_at_login: Some(false),
         keep_awake: false,
-        projects: Vec::new(),
+        repositories: Vec::new(),
         chat_in: wire::ChatIn::Amux as i32,
         claude_kind: wire::Kind::Unspecified as i32,
         telemetry: true,
@@ -83,7 +83,7 @@ pub fn steps(states: [StepState; 6], notice_shown: bool) -> wire::Onboarding {
         Id::PairPhone,
         Id::KeepReachable,
         Id::SignIn,
-        Id::Projects,
+        Id::Repositories,
         Id::Improve,
         Id::FirstAgent,
     ];
@@ -304,8 +304,8 @@ fn later_steps() -> wire::Onboarding {
     )
 }
 
-fn entry(path: &str) -> wire::ProjectEntry {
-    wire::ProjectEntry {
+fn entry(path: &str) -> wire::RepositoryEntry {
+    wire::RepositoryEntry {
         path: path.to_owned(),
         name: path.rsplit('/').next().unwrap_or(path).to_owned(),
         last_used_ms: Some(NOW),
@@ -313,8 +313,8 @@ fn entry(path: &str) -> wire::ProjectEntry {
 }
 
 /// The folders Claude Code and Codex ran in lately, all ticked.
-pub fn projects() -> SetupScene {
-    let mut scene = opened(SetupStep::Projects, later_steps(), fleet(true));
+pub fn repositories() -> SetupScene {
+    let mut scene = opened(SetupStep::Repositories, later_steps(), fleet(true));
     scene.onboarding.suggestions(vec![
         entry("/Users/jordan/src/amux"),
         entry("/Users/jordan/src/amuxcloud"),
@@ -328,8 +328,8 @@ pub fn projects() -> SetupScene {
 }
 
 /// A folder of the person's own being typed.
-pub fn projects_add() -> SetupScene {
-    let mut scene = projects();
+pub fn repositories_add() -> SetupScene {
+    let mut scene = repositories();
     for _ in 0..4 {
         scene.key(KeyCode::Down);
     }
@@ -404,7 +404,7 @@ pub fn settings_page(signed_in: bool) -> SettingsScene {
     let settings = wire::Settings {
         start_at_login: Some(true),
         keep_awake: true,
-        projects: vec![
+        repositories: vec![
             "/Users/jordan/src/amux".to_owned(),
             "/Users/jordan/src/amuxcloud".to_owned(),
         ],

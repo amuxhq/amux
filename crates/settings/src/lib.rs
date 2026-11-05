@@ -438,7 +438,7 @@ pub struct InstallationConfig {
     pub host_name: Option<String>,
     /// The folders new-agent pickers offer first, on this machine and from
     /// every paired device. A leading `~/` is the home directory.
-    pub projects: Vec<PathBuf>,
+    pub repositories: Vec<PathBuf>,
     /// Whether amux starts when the person logs in: the login item that
     /// runs `amux supervise`, written or removed when this changes. Only an
     /// install with a supervisor has one.
@@ -485,7 +485,7 @@ impl Default for InstallationConfig {
     fn default() -> Self {
         Self {
             host_name: None,
-            projects: Vec::new(),
+            repositories: Vec::new(),
             start_at_login: false,
             supervisor: true,
             updates: None,
@@ -591,10 +591,10 @@ impl InstallationConfig {
         })
     }
 
-    /// The project list with a leading `~/` made the home directory.
-    pub fn projects(&self) -> Vec<PathBuf> {
+    /// The repository list with a leading `~/` made the home directory.
+    pub fn repositories(&self) -> Vec<PathBuf> {
         let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" });
-        self.projects
+        self.repositories
             .iter()
             .map(|path| match (path.strip_prefix("~"), &home) {
                 (Ok(rest), Some(home)) => PathBuf::from(home).join(rest),
@@ -1019,16 +1019,17 @@ mod tests {
     }
 
     #[test]
-    fn projects_and_start_at_login_parse_and_default() {
+    fn repositories_and_start_at_login_parse_and_default() {
         let defaults = installation("").unwrap();
-        assert!(defaults.projects.is_empty());
+        assert!(defaults.repositories.is_empty());
         assert!(!defaults.start_at_login);
         let set =
-            installation("projects = [\"/srv/app\", \"~/code\"]\nstart_at_login = true\n").unwrap();
+            installation("repositories = [\"/srv/app\", \"~/code\"]\nstart_at_login = true\n")
+                .unwrap();
         assert!(set.start_at_login);
-        let projects = set.projects();
-        assert_eq!(projects[0], Path::new("/srv/app"));
-        assert!(projects[1].is_absolute() && projects[1].ends_with("code"));
+        let repositories = set.repositories();
+        assert_eq!(repositories[0], Path::new("/srv/app"));
+        assert!(repositories[1].is_absolute() && repositories[1].ends_with("code"));
         assert!(
             installation("repository_roots = [\"/srv\"]\n")
                 .unwrap()
@@ -1051,7 +1052,7 @@ mod tests {
         }
         for key in [
             "host_name",
-            "projects",
+            "repositories",
             "keep_awake",
             "telemetry",
             "ui.chat_in",

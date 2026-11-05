@@ -60,16 +60,16 @@ private struct SettingsForm: View {
             }
 
             Section {
-                if settings.projects.isEmpty {
-                    Text("No projects yet.").foregroundStyle(.secondary)
+                if settings.repositories.isEmpty {
+                    Text("No repositories yet.").foregroundStyle(.secondary)
                 }
-                ForEach(settings.projects, id: \.self) { path in
+                ForEach(settings.repositories, id: \.self) { path in
                     HStack {
                         Image(systemName: "folder").foregroundStyle(.secondary)
                         Text(tilde(path)).lineLimit(1).truncationMode(.middle).help(path)
                         Spacer()
                         Button {
-                            apply(.with(projects: settings.projects.filter { $0 != path }))
+                            apply(.with(repositories: settings.repositories.filter { $0 != path }))
                         } label: {
                             Image(systemName: "minus.circle")
                         }
@@ -79,9 +79,9 @@ private struct SettingsForm: View {
                 }
                 Button("Add a Folder…", action: addFolder)
             } header: {
-                Text("Projects")
+                Text("Repositories")
             } footer: {
-                Text("New agents start in a project, here and from your phone.")
+                Text("New agents start in a repository, here and from your phone.")
                     .foregroundStyle(.secondary)
             }
 
@@ -137,12 +137,12 @@ private struct SettingsForm: View {
         panel.allowsMultipleSelection = true
         panel.prompt = "Add"
         guard panel.runModal() == .OK else { return }
-        var paths = settings.projects
+        var paths = settings.repositories
         for folder in panel.urls {
             let path = folder.standardizedFileURL.path
             if !paths.contains(path) { paths.append(path) }
         }
-        apply(.with(projects: paths))
+        apply(.with(repositories: paths))
     }
 }
 

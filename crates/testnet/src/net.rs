@@ -183,9 +183,9 @@ impl NetAgent {
 }
 
 /// Where a host's declared repositories are made, in its directory; each
-/// is one of the host's projects.
+/// is one of the host's repositories.
 const REPOSITORIES: &str = "repositories";
-/// The home below a host's directory: where its project suggestions read
+/// The home below a host's directory: where its repository suggestions read
 /// Claude Code's and Codex's session logs.
 pub const HOME: &str = "home";
 
@@ -1618,7 +1618,7 @@ impl Net {
             launch.agent.facts_ring_mib = mib;
         }
         launch.core.stop_deadline_ms = 15_000;
-        launch.projects = own
+        launch.repositories = own
             .decl
             .repositories
             .iter()
@@ -1790,12 +1790,12 @@ impl Net {
         if decl.runs_as_process() {
             text.push_str(&format!("releases_url = {:?}\n", self.feed_url()));
             if !decl.repositories.is_empty() {
-                let projects: Vec<String> = decl
+                let repositories: Vec<String> = decl
                     .repositories
                     .iter()
                     .map(|repository| quoted(&dir.join(REPOSITORIES).join(repository)))
                     .collect();
-                text.push_str(&format!("projects = [{}]\n", projects.join(", ")));
+                text.push_str(&format!("repositories = [{}]\n", repositories.join(", ")));
             }
             let scope = decl
                 .scope
@@ -1919,7 +1919,7 @@ impl Net {
         let handed = edge.lan.as_ref().is_some_and(|lan| lan.socket.is_some());
         let options = node::StartOptions {
             // The host's config file, as on a real install: what a journey
-            // lays over it is what the daemon serves its clients. Project
+            // lays over it is what the daemon serves its clients. Repository
             // suggestions read the host's own home, never the home of
             // whoever runs the net.
             settings: node::SettingsOptions {

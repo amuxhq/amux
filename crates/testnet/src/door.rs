@@ -90,7 +90,7 @@ pub enum Control {
         host: String,
         name: String,
     },
-    /// The host's setting up, step by step, and the projects it keeps.
+    /// The host's setting up, step by step, and the repositories it keeps.
     Onboarding {
         host: String,
     },
@@ -720,7 +720,7 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                 "steps": steps,
                 "notice_shown": onboarding.notice_shown,
                 "dismissed": onboarding.dismissed,
-                "projects": settings.projects,
+                "repositories": settings.repositories,
                 "telemetry": settings.telemetry,
                 "auto_reports": settings.auto_reports,
                 "keep_awake": settings.keep_awake,

@@ -7,7 +7,7 @@ import XCTest
 final class NewAgentTests: XCTestCase {
     private let listed = Directories(
         recent: [Directory(path: "/src/amux", name: "amux")],
-        projects: [
+        repositories: [
             Directory(path: "/src/web", name: "web"),
             Directory(path: "/src/relay", name: "relay"),
         ])
@@ -86,9 +86,9 @@ final class NewAgentTests: XCTestCase {
         XCTAssertEqual(store.request?.kind, .claudeSdk, "another host has not said yet")
     }
 
-    /// The chooser lists the host's projects, in its person's order, then
-    /// where agents worked lately; a project is not listed twice.
-    func testProjectsComeBeforeRecentFoldersAndAreListedOnce() {
+    /// The chooser lists the host's repositories, in its person's order, then
+    /// where agents worked lately; a repository is not listed twice.
+    func testRepositoriesComeBeforeRecentFoldersAndAreListedOnce() {
         let store = NewAgentStore()
         store.open(on: Cards.desk)
         store.listed(.success(Directories(
@@ -96,14 +96,14 @@ final class NewAgentTests: XCTestCase {
                 Directory(path: "/src/relay", name: "relay"),
                 Directory(path: "/src/scratch", name: "scratch"),
             ],
-            projects: [
+            repositories: [
                 Directory(path: "/src/web", name: "web"),
                 Directory(path: "/src/relay", name: "relay"),
             ])), asked: store.asking())
-        XCTAssertEqual(store.projects.map(\.name), ["web", "relay"])
+        XCTAssertEqual(store.repositories.map(\.name), ["web", "relay"])
         XCTAssertEqual(store.recent.map(\.name), ["scratch"])
         XCTAssertEqual(store.likely.map(\.name), ["scratch", "web", "relay"])
-        XCTAssertEqual(store.directory, "/src/relay", "where an agent worked last is prefilled, project or not")
+        XCTAssertEqual(store.directory, "/src/relay", "where an agent worked last is prefilled, repository or not")
         XCTAssertFalse(store.searching)
         XCTAssertEqual(store.found, [])
         store.query = "a"
@@ -111,11 +111,11 @@ final class NewAgentTests: XCTestCase {
         XCTAssertEqual(store.found.map(\.name), ["relay", "scratch"])
     }
 
-    func testAHostWithOnlyProjectsPrefillsTheFirst() {
+    func testAHostWithOnlyRepositoriesPrefillsTheFirst() {
         let store = NewAgentStore()
         store.open(on: Cards.desk)
         store.listed(.success(Directories(
-            recent: [], projects: [Directory(path: "/src/web", name: "web")])),
+            recent: [], repositories: [Directory(path: "/src/web", name: "web")])),
             asked: store.asking())
         XCTAssertEqual(store.directory, "/src/web")
     }

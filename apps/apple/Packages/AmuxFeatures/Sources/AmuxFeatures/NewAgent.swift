@@ -127,7 +127,7 @@ public struct NewAgent: View {
                 if !chips.isEmpty { recent }
             }
             if model.listing == .unavailable {
-                Explain("\(machineName) could not list its projects. Choose where its agents work, or type a path.")
+                Explain("\(machineName) could not list its repositories. Choose where its agents work, or type a path.")
                     .identified("new-agent.directory.unavailable")
             }
         }
@@ -187,7 +187,7 @@ public struct NewAgent: View {
     }
 
     /// The other directories this machine was used in recently, then its
-    /// projects — the chosen one is in the row above and is not repeated as
+    /// repositories — the chosen one is in the row above and is not repeated as
     /// a chip.
     private var chips: [Directory] {
         model.likely.filter { $0.path != model.directory }.prefix(4).map { $0 }
@@ -196,9 +196,9 @@ public struct NewAgent: View {
     private var recent: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 7) {
-                ForEach(chips) { project in
-                    Button { model.choose(directory: project.path) } label: {
-                        Text(project.name)
+                ForEach(chips) { repository in
+                    Button { model.choose(directory: repository.path) } label: {
+                        Text(repository.name)
                             .designFont(.monoSmall, design)
                             .foregroundStyle(design.ink.color)
                             .padding(.horizontal, 10)
@@ -211,10 +211,10 @@ public struct NewAgent: View {
                             .thumbTarget(y: 8)
                     }
                     .buttonStyle(.amuxControl)
-                    .accessibilityLabel("Start in \(project.name)")
+                    .accessibilityLabel("Start in \(repository.name)")
                     .identified(
-                        "new-agent.recent.\(project.name)", label: "Start in \(project.name)",
-                        value: project.path)
+                        "new-agent.recent.\(repository.name)", label: "Start in \(repository.name)",
+                        value: repository.path)
                     .reclaimingThumbTarget(y: 8)
                 }
             }
@@ -521,7 +521,7 @@ public struct NewAgentDirectories: View {
         }
     }
 
-    /// The host's projects first, as its person chose and ordered them,
+    /// The host's repositories first, as its person chose and ordered them,
     /// then where its agents worked lately; a search lists what matches
     /// either in their place.
     @ViewBuilder
@@ -530,39 +530,39 @@ public struct NewAgentDirectories: View {
             if model.searching {
                 if !model.found.isEmpty {
                     SectionHead(title: "Found")
-                    RowGroup(items: model.found) { project in
-                        row(project, recent: false)
+                    RowGroup(items: model.found) { repository in
+                        row(repository, recent: false)
                     }
                 } else if model.listing != .asking {
                     Explain("No matching folders on this host.")
                         .identified("new-agent.browse.none")
                 }
             } else {
-                if !model.projects.isEmpty {
-                    SectionHead(title: "Projects")
-                    RowGroup(items: model.projects) { project in
-                        row(project, recent: false)
+                if !model.repositories.isEmpty {
+                    SectionHead(title: "Repositories")
+                    RowGroup(items: model.repositories) { repository in
+                        row(repository, recent: false)
                     }
                 }
                 if !model.recent.isEmpty {
                     SectionHead(title: "Recent")
-                    RowGroup(items: model.recent) { project in
-                        row(project, recent: true)
+                    RowGroup(items: model.recent) { repository in
+                        row(repository, recent: true)
                     }
                 }
-                if model.listing == .ready && model.projects.isEmpty && model.recent.isEmpty {
-                    // Projects are the host's own setting, chosen where amux
+                if model.listing == .ready && model.repositories.isEmpty && model.recent.isEmpty {
+                    // Repositories are the host's own setting, chosen where amux
                     // runs; this phone only reads them.
-                    Explain("Add projects in amux on this host, or type a path.")
+                    Explain("Add repositories in amux on this host, or type a path.")
                         .identified("new-agent.browse.none")
                 }
             }
             switch model.listing {
             case .asking:
-                Explain("Reading this host’s projects…")
+                Explain("Reading this host’s repositories…")
                     .identified("new-agent.browse.reading")
             case .unavailable:
-                Explain("This host could not list its projects.")
+                Explain("This host could not list its repositories.")
                     .identified("new-agent.browse.unavailable")
             case .none, .ready:
                 EmptyView()
@@ -570,9 +570,9 @@ public struct NewAgentDirectories: View {
         }
     }
 
-    private func row(_ project: Directory, recent: Bool) -> some View {
+    private func row(_ repository: Directory, recent: Bool) -> some View {
         Button {
-            model.choose(directory: project.path)
+            model.choose(directory: repository.path)
             model.browsing = false
         } label: {
             HStack(spacing: 11) {
@@ -581,17 +581,17 @@ public struct NewAgentDirectories: View {
                     .foregroundStyle(design.inkFaint.color)
                     .frame(width: 20)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(project.name)
+                    Text(repository.name)
                         .designFont(.identifier, design)
                         .foregroundStyle(design.ink.color)
-                    Text(PlaceNames.path(project.path))
+                    Text(PlaceNames.path(repository.path))
                         .designFont(.monoSmall, design)
                         .foregroundStyle(design.inkFaint.color)
                         .lineLimit(1)
                         .truncationMode(.head)
                 }
                 Spacer(minLength: 6)
-                if model.directory == project.path {
+                if model.directory == repository.path {
                     Image(systemName: "checkmark")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(design.accent.color)
@@ -603,10 +603,10 @@ public struct NewAgentDirectories: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.amuxRow)
-        .accessibilityLabel(project.path)
+        .accessibilityLabel(repository.path)
         .identified(
-            "new-agent.project.\(project.name)", label: project.path,
-            value: model.directory == project.path ? "chosen" : "")
+            "new-agent.repository.\(repository.name)", label: repository.path,
+            value: model.directory == repository.path ? "chosen" : "")
     }
 
     /// A path typed by hand, for a directory the machine did not list. The

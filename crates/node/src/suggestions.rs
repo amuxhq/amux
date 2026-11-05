@@ -1,4 +1,4 @@
-//! Folders worth offering as projects: where Claude Code and Codex ran on
+//! Folders worth offering as repositories: where Claude Code and Codex ran on
 //! this machine lately, read from the session logs each keeps under the
 //! person's home. Each log names the directory its session ran in; that
 //! directory's Git repository is what is offered, and only while it still
@@ -15,7 +15,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use wire::ProjectEntry;
+use wire::RepositoryEntry;
 
 /// How far back a session counts.
 pub(crate) const WITHIN: Duration = Duration::from_secs(30 * 24 * 60 * 60);
@@ -31,12 +31,12 @@ const LINES_READ: usize = 64;
 /// The Git repositories sessions ran in within [`WITHIN`] of `now`, newest
 /// first, at most [`MOST`]. Reads the file system: call it off the async
 /// workers.
-pub(crate) fn suggest(home: &Path, now: SystemTime) -> Vec<ProjectEntry> {
+pub(crate) fn suggest(home: &Path, now: SystemTime) -> Vec<RepositoryEntry> {
     suggest_outside(home, now, &temporary_dirs())
 }
 
 /// [`suggest`], leaving out repositories under `temporary`.
-fn suggest_outside(home: &Path, now: SystemTime, temporary: &[PathBuf]) -> Vec<ProjectEntry> {
+fn suggest_outside(home: &Path, now: SystemTime, temporary: &[PathBuf]) -> Vec<RepositoryEntry> {
     let since = now.checked_sub(WITHIN).unwrap_or(UNIX_EPOCH);
     let mut ran: Vec<(SystemTime, PathBuf)> = Vec::new();
     claude_sessions(&home.join(".claude").join("projects"), since, &mut ran);
@@ -51,7 +51,7 @@ fn suggest_outside(home: &Path, now: SystemTime, temporary: &[PathBuf]) -> Vec<P
         .filter(|dir| !home.starts_with(dir))
         .collect();
     let mut repositories: HashMap<PathBuf, Option<PathBuf>> = HashMap::new();
-    let mut offered: Vec<ProjectEntry> = Vec::new();
+    let mut offered: Vec<RepositoryEntry> = Vec::new();
     for (at, cwd) in ran {
         if offered.len() == MOST {
             break;
@@ -64,7 +64,7 @@ fn suggest_outside(home: &Path, now: SystemTime, temporary: &[PathBuf]) -> Vec<P
             continue;
         };
         // A home that is itself a repository (its dotfiles) would claim
-        // every session outside a project of its own.
+        // every session outside a repository of its own.
         if root == home || temporary.iter().any(|dir| root.starts_with(dir)) {
             continue;
         }
@@ -74,7 +74,7 @@ fn suggest_outside(home: &Path, now: SystemTime, temporary: &[PathBuf]) -> Vec<P
         if offered.iter().any(|entry| entry.path == path) {
             continue;
         }
-        offered.push(ProjectEntry {
+        offered.push(RepositoryEntry {
             path: path.to_owned(),
             name: root.file_name().map_or_else(
                 || path.to_owned(),
@@ -176,7 +176,7 @@ fn cwd_in(path: &Path, lines: usize, cwd: impl Fn(Line) -> Option<PathBuf>) -> O
 
 /// The repository a directory is in, as it is now: the nearest directory
 /// up from it holding `.git`, and for a linked worktree the repository it
-/// was made from, which is the project a person means.
+/// was made from, which is the one a person means.
 fn repository(dir: &Path) -> Option<PathBuf> {
     let dir = dir.canonicalize().ok()?;
     let root = dir.ancestors().find(|dir| dir.join(".git").exists())?;

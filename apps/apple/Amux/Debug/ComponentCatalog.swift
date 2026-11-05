@@ -1422,8 +1422,8 @@ extension ComponentCatalog {
             store.starts()
             store.started(.failure(RuntimeFailure("desk refused: ~/src/amux is not a git repository")))
         },
-        newAgent("no-projects", provider: .claude, signedIn: true, browsing: true) { store in
-            store.listed(.success(Directories(recent: [], projects: [])), asked: store.asking())
+        newAgent("no-repositories", provider: .claude, signedIn: true, browsing: true) { store in
+            store.listed(.success(Directories(recent: [], repositories: [])), asked: store.asking())
         },
         newAgent("unlisted", provider: .claude, signedIn: true, browsing: true) { store in
             store.listed(.failure(RuntimeFailure("desk did not answer")), asked: store.asking())
@@ -1485,7 +1485,7 @@ extension CatalogFixtures {
                 Directory(path: "~/src/amuxcloud", name: "amuxcloud"),
                 Directory(path: "~/src/promo", name: "promo"),
             ],
-            projects: [
+            repositories: [
                 Directory(path: "~/src/amux", name: "amux"),
                 Directory(path: "~/src/dotfiles", name: "dotfiles"),
                 Directory(path: "~/src/skills", name: "skills"),

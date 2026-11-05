@@ -135,10 +135,10 @@ so the client opening and each step counted say which app it was.
 
 The installation's settings are the runtime's: `amux_runtime_settings`
 answers `MachineSettings` (the machine's name, start at login where the
-install has a supervisor, keep awake, projects, usage counts and automatic
+install has a supervisor, keep awake, repositories, usage counts and automatic
 reports) and `amux_runtime_update_settings` applies a `SettingsChange` at
-once, answering the settings it left. `amux_runtime_suggest_projects`
-answers the `ProjectSuggestion`s, the repositories Claude Code and Codex ran
+once, answering the settings it left. `amux_runtime_suggest_repositories`
+answers the `RepositorySuggestion`s, the repositories Claude Code and Codex ran
 in lately, and `amux_runtime_web_sign_in_link(rt, profile, path)` a
 one-time link that signs the browser in to the profile's account and opens
 `path` (`/offer` after a sign-in on this computer).

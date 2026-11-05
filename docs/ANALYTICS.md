@@ -104,8 +104,8 @@ a field for free text.
 | `relay_refused` | The relay refused to carry traffic because the account is on the free tier; at most once an hour. | — |
 | `paywall_viewed` | The iPhone app's subscription page opens. | `from`: the tab it was opened from, `agents`, `hosts` or `you`. |
 | `purchase_started` | The iPhone app starts a purchase with the App Store. | `interval`: `monthly` or `yearly`. |
-| `onboarding_step` | A step of the first-run setup is shown, confirmed or skipped. | `step`: `pair_phone`, `keep_reachable`, `sign_in`, `projects`, `improve` or `first_agent`. `outcome`: `shown`, `done` or `skipped`. `surface`: `terminal`, `mac` or `phone`. |
-| `projects_chosen` | The projects step is confirmed. | `kept`: how many folders were kept; `suggested`: how many were suggested. Numbers only, never the folders. |
+| `onboarding_step` | A step of the first-run setup is shown, confirmed or skipped. | `step`: `pair_phone`, `keep_reachable`, `sign_in`, `repositories`, `improve` or `first_agent`. `outcome`: `shown`, `done` or `skipped`. `surface`: `terminal`, `mac` or `phone`. |
+| `repositories_chosen` | The repositories step is confirmed. | `kept`: how many folders were kept; `suggested`: how many were suggested. Numbers only, never the folders. |
 | `check_failed` | One of amux's internal checks broke: a rule the daemon, an agent process, the relay or a connection's path choice holds after every step failed, a step took longer than allowed, or a chat's transcript failed its own check on a client. At most once per check every ten minutes. | `core`: `daemon`, `agent`, `relay`, `path` or `transcript`. `check`: which check, as the name amux's code gives it, such as `daemon.generation_fell`. `cause`: `invariant` or `over_budget`. `held_back`: how many more times the same check broke since the last one was sent. |
 
 A prompt or answer sent to another machine's agent is counted once, by the

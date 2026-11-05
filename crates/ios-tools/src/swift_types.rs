@@ -86,7 +86,7 @@ pub fn definitions() -> Map<String, Value> {
         app_runtime::values::SignInOfferOutcome,
         app_runtime::values::MachineSettings,
         app_runtime::values::SettingsChange,
-        app_runtime::values::ProjectSuggestion,
+        app_runtime::values::RepositorySuggestion,
         app_runtime::values::OnboardingState,
         app_runtime::values::OnboardingAnswer,
         app_runtime::values::PairingWindowView,

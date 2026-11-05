@@ -74,7 +74,7 @@ pub enum SetupEffect {
     OfferPage,
     /// Open a link in the browser.
     OpenUrl(String),
-    /// Ask for the folders worth offering as projects.
+    /// Ask for the folders worth offering as repositories.
     Suggest,
     /// Onboarding is over: home, with this agent selected when one is named.
     Home(Option<AgentKey>),
@@ -124,7 +124,7 @@ struct SignIn {
 }
 
 #[derive(Debug, Default)]
-struct Projects {
+struct Repositories {
     /// Each folder: its path, as shown, and whether it is ticked.
     rows: Vec<(String, String, bool)>,
     adding: Option<Editor>,
@@ -153,7 +153,7 @@ pub struct Onboarding {
     start_at_login: bool,
     keep_awake: bool,
     sign_in: SignIn,
-    projects: Projects,
+    repositories: Repositories,
     telemetry: bool,
     auto_reports: bool,
     /// The agents on this machine when the last step opened: one that is
@@ -185,7 +185,7 @@ pub fn title(step: SetupStep) -> &'static str {
         SetupStep::PairPhone => "Connect your iPhone",
         SetupStep::KeepReachable => "Keep it connected",
         SetupStep::SignIn => "Reach it from anywhere",
-        SetupStep::Projects => "Projects",
+        SetupStep::Repositories => "Repositories",
         SetupStep::Improve => "Help improve amux",
         SetupStep::FirstAgent => "Try starting an agent from your phone",
     }
@@ -235,7 +235,7 @@ impl Onboarding {
             start_at_login: true,
             keep_awake: true,
             sign_in: SignIn::default(),
-            projects: Projects::default(),
+            repositories: Repositories::default(),
             agents_before: HashSet::new(),
             focus: 0,
             error: None,
@@ -277,8 +277,8 @@ impl Onboarding {
                 self.sign_in.also_ticked = self.sign_in.also.is_some();
                 effects.extend(self.count_offer());
             }
-            SetupStep::Projects => {
-                if !self.projects.loaded {
+            SetupStep::Repositories => {
+                if !self.repositories.loaded {
                     effects.push(SetupEffect::Suggest);
                 }
             }
@@ -351,7 +351,7 @@ impl Onboarding {
     }
 
     pub fn paste(&mut self, pasted: &str) {
-        if let Some(editor) = self.rename.as_mut().or(self.projects.adding.as_mut()) {
+        if let Some(editor) = self.rename.as_mut().or(self.repositories.adding.as_mut()) {
             editor.insert_str(pasted.trim());
         }
     }
@@ -365,12 +365,12 @@ impl Onboarding {
     pub fn field_text(&self) -> bool {
         self.rename
             .as_ref()
-            .or(self.projects.adding.as_ref())
+            .or(self.repositories.adding.as_ref())
             .is_some_and(|editor| !editor.is_empty())
     }
 
     pub fn kill_field(&mut self) {
-        if let Some(editor) = self.rename.as_mut().or(self.projects.adding.as_mut()) {
+        if let Some(editor) = self.rename.as_mut().or(self.repositories.adding.as_mut()) {
             editor.kill_all();
         }
     }
@@ -581,8 +581,8 @@ impl Onboarding {
         effects
     }
 
-    pub fn suggestions(&mut self, suggested: Vec<wire::ProjectEntry>) {
-        self.projects.loaded = true;
+    pub fn suggestions(&mut self, suggested: Vec<wire::RepositoryEntry>) {
+        self.repositories.loaded = true;
         let mut rows: Vec<(String, String, bool)> = suggested
             .into_iter()
             .map(|entry| {
@@ -590,9 +590,9 @@ impl Onboarding {
                 (entry.path, shown, true)
             })
             .collect();
-        // Projects already chosen stay; they are not asked about again.
-        rows.retain(|(path, ..)| !self.settings.projects.contains(path));
-        self.projects.rows = rows;
+        // Repositories already chosen stay; they are not asked about again.
+        rows.retain(|(path, ..)| !self.settings.repositories.contains(path));
+        self.repositories.rows = rows;
     }
 
     /// The step's settings were taken and it is confirmed.
@@ -618,7 +618,7 @@ impl Onboarding {
             SetupStep::SignIn if self.sign_in.offers.is_empty() => {
                 usize::from(self.sign_in.also.is_some())
             }
-            SetupStep::Projects => self.projects.rows.len() + 1,
+            SetupStep::Repositories => self.repositories.rows.len() + 1,
             SetupStep::Improve => 2,
             _ => 0,
         }
@@ -640,16 +640,18 @@ impl Onboarding {
             }
             return Vec::new();
         }
-        if let Some(editor) = &mut self.projects.adding {
+        if let Some(editor) = &mut self.repositories.adding {
             match key.code {
-                KeyCode::Esc => self.projects.adding = None,
+                KeyCode::Esc => self.repositories.adding = None,
                 KeyCode::Enter => {
                     let path = editor.text().trim().to_owned();
-                    self.projects.adding = None;
-                    if !path.is_empty() && !self.projects.rows.iter().any(|(at, ..)| *at == path) {
+                    self.repositories.adding = None;
+                    if !path.is_empty()
+                        && !self.repositories.rows.iter().any(|(at, ..)| *at == path)
+                    {
                         let shown = text::tilde(&path);
-                        self.projects.rows.push((path, shown, true));
-                        self.focus = self.projects.rows.len() - 1;
+                        self.repositories.rows.push((path, shown, true));
+                        self.focus = self.repositories.rows.len() - 1;
                     }
                 }
                 _ => {
@@ -706,9 +708,9 @@ impl Onboarding {
                 }
             }
             SetupStep::SignIn => self.sign_in.also_ticked = !self.sign_in.also_ticked,
-            SetupStep::Projects => match self.projects.rows.get_mut(row) {
+            SetupStep::Repositories => match self.repositories.rows.get_mut(row) {
                 Some((.., ticked)) => *ticked = !*ticked,
-                None => self.projects.adding = Some(Editor::default()),
+                None => self.repositories.adding = Some(Editor::default()),
             },
             SetupStep::Improve => match row {
                 0 => self.telemetry = !self.telemetry,
@@ -749,19 +751,19 @@ impl Onboarding {
                 self.sign_in.waiting = true;
                 vec![SetupEffect::SignIn]
             }
-            SetupStep::Projects => {
-                if self.focus == self.projects.rows.len() {
-                    self.projects.adding = Some(Editor::default());
+            SetupStep::Repositories => {
+                if self.focus == self.repositories.rows.len() {
+                    self.repositories.adding = Some(Editor::default());
                     return Vec::new();
                 }
-                let mut paths = self.settings.projects.clone();
-                for (path, _, ticked) in &self.projects.rows {
+                let mut paths = self.settings.repositories.clone();
+                for (path, _, ticked) in &self.repositories.rows {
                     if *ticked && !paths.contains(path) {
                         paths.push(path.clone());
                     }
                 }
                 self.confirm(wire::UpdateSettingsRequest {
-                    projects: Some(wire::ProjectList { paths }),
+                    repositories: Some(wire::RepositoryList { paths }),
                     ..Default::default()
                 })
             }
@@ -810,7 +812,7 @@ impl Onboarding {
     /// The keys the screen's bottom line offers, most needed first.
     fn hints(&self) -> Vec<(&'static str, &'static str, KeyEvent)> {
         let key = plain;
-        if self.rename.is_some() || self.projects.adding.is_some() {
+        if self.rename.is_some() || self.repositories.adding.is_some() {
             let what = if self.rename.is_some() { "save" } else { "add" };
             return vec![
                 ("enter", what, key(KeyCode::Enter)),
@@ -838,12 +840,14 @@ impl Onboarding {
                 vec![("enter", "sign in", key(KeyCode::Enter)), change, later]
             }
             SetupStep::SignIn => vec![("enter", "sign in", key(KeyCode::Enter)), later],
-            SetupStep::Projects if self.focus == self.projects.rows.len() => vec![
+            SetupStep::Repositories if self.focus == self.repositories.rows.len() => vec![
                 ("enter", "add a folder", key(KeyCode::Enter)),
                 ("↑↓", "move", key(KeyCode::Up)),
                 later,
             ],
-            SetupStep::Projects => vec![next, ("space", "tick", key(KeyCode::Char(' '))), later],
+            SetupStep::Repositories => {
+                vec![next, ("space", "tick", key(KeyCode::Char(' '))), later]
+            }
             SetupStep::FirstAgent => vec![later],
         }
     }
@@ -897,13 +901,13 @@ impl Onboarding {
                 self.sign_in_body(&mut screen);
                 None
             }
-            SetupStep::Projects => self.projects_body(&mut screen),
+            SetupStep::Repositories => self.repositories_body(&mut screen),
             SetupStep::Improve => {
                 self.improve_body(&mut screen);
                 None
             }
             SetupStep::FirstAgent => {
-                screen.words("On your phone, tap + and pick a project.", theme.text());
+                screen.words("On your phone, tap + and pick a repository.", theme.text());
                 screen.blank();
                 screen.words("Waiting for an agent from your phone…", theme.faint());
                 None
@@ -1234,27 +1238,27 @@ impl Onboarding {
         }
     }
 
-    fn projects_body(&self, screen: &mut Screen) -> Option<(usize, usize)> {
+    fn repositories_body(&self, screen: &mut Screen) -> Option<(usize, usize)> {
         let theme = screen.theme;
         let mut cursor = None;
         screen.words(
-            "New agents start in a project. These are where Claude Code and Codex ran lately:",
+            "New agents start in a repository. These are where Claude Code and Codex ran lately:",
             theme.text(),
         );
         screen.blank();
-        if !self.projects.loaded {
+        if !self.repositories.loaded {
             screen.words("Looking for recent folders…", theme.faint());
             return None;
         }
-        if self.projects.rows.is_empty() {
+        if self.repositories.rows.is_empty() {
             screen.words("No recent folders found.", theme.faint());
             screen.blank();
         }
-        for (row, (_, shown, ticked)) in self.projects.rows.iter().enumerate() {
+        for (row, (_, shown, ticked)) in self.repositories.rows.iter().enumerate() {
             self.check_row(screen, row, *ticked, shown);
         }
-        let add = self.projects.rows.len();
-        match &self.projects.adding {
+        let add = self.repositories.rows.len();
+        match &self.repositories.adding {
             Some(editor) => {
                 let (mut line, at) = Self::field(editor, "    Folder ", screen.width, theme);
                 if editor.is_empty() {

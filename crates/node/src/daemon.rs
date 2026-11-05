@@ -131,13 +131,14 @@ impl Installation {
     }
 
     /// Puts what changed in the settings into force: every profile's
-    /// projects, Claude kind and name. Only what changed since they were
+    /// repositories, Claude kind and name. Only what changed since they were
     /// last applied moves, so what an embedder gave a host at start stands
     /// until the person changes that setting.
     pub(crate) fn apply(&self, config: &settings::InstallationConfig) {
-        let (projects, kind, renamed) = {
+        let (repositories, kind, renamed) = {
             let mut last = self.applied.lock().unwrap();
-            let projects = (last.projects != config.projects).then(|| config.projects());
+            let repositories =
+                (last.repositories != config.repositories).then(|| config.repositories());
             let kind = (crate::host_settings::claude_kind(&last)
                 != crate::host_settings::claude_kind(config))
             .then(|| crate::host_settings::claude_kind(config));
@@ -147,10 +148,10 @@ impl Installation {
                 name
             });
             *last = config.clone();
-            (projects, kind, renamed)
+            (repositories, kind, renamed)
         };
         self.awake.keep_awake(config.keep_awake);
-        if projects.is_none() && kind.is_none() && renamed.is_none() {
+        if repositories.is_none() && kind.is_none() && renamed.is_none() {
             return;
         }
         let runtimes: Vec<Arc<ProfileRuntime>> = self
@@ -162,8 +163,8 @@ impl Installation {
             .collect();
         for runtime in runtimes {
             let mut launch = runtime.launch();
-            if let Some(projects) = &projects {
-                launch.projects.clone_from(projects);
+            if let Some(repositories) = &repositories {
+                launch.repositories.clone_from(repositories);
             }
             if let Some(kind) = kind {
                 launch.claude_kind = kind;

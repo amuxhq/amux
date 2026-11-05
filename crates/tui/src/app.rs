@@ -246,7 +246,7 @@ pub enum AppEvent {
     },
     /// Onboarding's and the settings screen's calls came back.
     Desk(desk::DeskEvent),
-    /// The folders a host offers a new agent: its projects, then recent.
+    /// The folders a host offers a new agent: its repositories, then recent.
     Folders {
         host: Vec<u8>,
         answer: wire::ListRepositoriesResponse,
@@ -1451,7 +1451,7 @@ impl App {
     }
 
     /// While a new agent is being set up: the folders its host offers,
-    /// from what it said last time at once and asked again, so a project
+    /// from what it said last time at once and asked again, so a repository
     /// added since shows.
     fn ask_folders(&mut self) {
         let Some(setup) = self.home.open_setup() else {
@@ -1462,7 +1462,7 @@ impl App {
         }
         let host = setup.host.clone();
         if let Some(answer) = self.host_folders.get(&host) {
-            // Offered at once; asked again, as projects may have changed.
+            // Offered at once; asked again, as repositories may have changed.
             let answer = answer.clone();
             self.home.take_folders(&host, &answer);
         }

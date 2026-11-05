@@ -28,7 +28,7 @@ async fn desk_with_file(install: &Install, text: &str) -> (node::Daemon, std::pa
 
 /// A change through the front door is written to the file, keeping the rest
 /// of it, and is in force at once: the host's own entry says its new name
-/// and Claude kind, and its listing offers its new projects.
+/// and Claude kind, and its listing offers its new repositories.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_settings_change_is_written_and_in_force_at_once() {
     let desk = Install::new();
@@ -46,7 +46,7 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
         settings.start_at_login, None,
         "no supervisor, no login item"
     );
-    assert!(settings.keep_awake && settings.projects.is_empty());
+    assert!(settings.keep_awake && settings.repositories.is_empty());
     assert_eq!(settings.claude_kind, wire::Kind::Unspecified as i32);
     assert_eq!(
         runtime.host_entry().claude_kind(),
@@ -54,14 +54,14 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
         "unset follows amux's chat"
     );
 
-    let project = desk.work.join("app");
-    std::fs::create_dir_all(&project).unwrap();
+    let repository = desk.work.join("app");
+    std::fs::create_dir_all(&repository).unwrap();
     let changed = door
         .update_settings(Request::new(UpdateSettingsRequest {
             host_name: Some("study".into()),
             claude_kind: Some(wire::Kind::ClaudePty as i32),
-            projects: Some(wire::ProjectList {
-                paths: vec![project.to_str().unwrap().to_owned()],
+            repositories: Some(wire::RepositoryList {
+                paths: vec![repository.to_str().unwrap().to_owned()],
             }),
             ..UpdateSettingsRequest::default()
         }))
@@ -86,8 +86,8 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(listed.projects.len(), 1);
-    assert_eq!(listed.projects[0].name, "app");
+    assert_eq!(listed.repositories.len(), 1);
+    assert_eq!(listed.repositories[0].name, "app");
 
     let refused = door
         .update_settings(Request::new(UpdateSettingsRequest {

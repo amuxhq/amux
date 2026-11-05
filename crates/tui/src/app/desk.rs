@@ -52,7 +52,7 @@ pub enum DeskEvent {
     SignedIn,
     SignInFailed(String),
     OfferAnswered(Result<bool, String>),
-    Suggested(Vec<wire::ProjectEntry>),
+    Suggested(Vec<wire::RepositoryEntry>),
     Confirmed(SetupStep),
     ConfirmFailed(String),
     /// A settings change was refused.
@@ -769,7 +769,10 @@ impl App {
             }
             SetupEffect::Suggest => {
                 tokio::spawn(async move {
-                    let suggested = installation.suggest_projects().await.unwrap_or_default();
+                    let suggested = installation
+                        .suggest_repositories()
+                        .await
+                        .unwrap_or_default();
                     send(DeskEvent::Suggested(suggested));
                 });
             }

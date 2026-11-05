@@ -581,8 +581,8 @@
       "shows": "A host refusing to start the agent, and why."
     },
     {
-      "id": "new-agent.no-projects",
-      "shows": "Choosing a directory on a host with no projects and no recent folders: where projects are added."
+      "id": "new-agent.no-repositories",
+      "shows": "Choosing a directory on a host with no repositories and no recent folders: where repositories are added."
     },
     {
       "id": "new-agent.unlisted",

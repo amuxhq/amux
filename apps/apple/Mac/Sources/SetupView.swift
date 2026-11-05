@@ -59,7 +59,7 @@ struct SetupScreen: View {
         case .pair_phone: PairPhone(setup: setup, model: model)
         case .keep_reachable: KeepReachable(setup: setup, model: model)
         case .sign_in: SignIn(setup: setup, model: model)
-        case .projects: Projects(setup: setup)
+        case .repositories: Repositories(setup: setup)
         case .improve: Improve(setup: setup)
         case .first_agent: FirstAgent()
         }
@@ -70,7 +70,7 @@ struct SetupScreen: View {
         case .pair_phone: "laptopcomputer.and.iphone"
         case .keep_reachable: "powerplug"
         case .sign_in: "globe"
-        case .projects: "folder"
+        case .repositories: "folder"
         case .improve: "chart.bar"
         case .first_agent: "iphone"
         }
@@ -83,7 +83,7 @@ func title(_ step: SetupStep) -> String {
     case .pair_phone: "Connect your iPhone"
     case .keep_reachable: "Keep it connected"
     case .sign_in: "Reach it from anywhere"
-    case .projects: "Projects"
+    case .repositories: "Repositories"
     case .improve: "Help improve amux"
     case .first_agent: "Try starting an agent from your phone"
     }
@@ -129,10 +129,10 @@ private struct Buttons: View {
             Button(setup.offers.isEmpty ? "Sign In…" : "Sign In") { setup.signIn() }
                 .keyboardShortcut(.defaultAction)
                 .disabled(setup.signingIn || setup.accepting)
-        case .projects:
-            Button("Continue") { setup.confirmProjects() }
+        case .repositories:
+            Button("Continue") { setup.confirmRepositories() }
                 .keyboardShortcut(.defaultAction)
-                .disabled(setup.busy || !setup.projectsLoaded)
+                .disabled(setup.busy || !setup.repositoriesLoaded)
         case .improve:
             Button("Continue") { setup.confirmImprove() }
                 .keyboardShortcut(.defaultAction)
@@ -367,18 +367,18 @@ private struct SignIn: View {
     }
 }
 
-// MARK: - Projects
+// MARK: - Repositories
 
-private struct Projects: View {
+private struct Repositories: View {
     @Bindable var setup: Setup
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("New agents start in a project. These are where Claude Code and Codex ran lately:")
+            Text("New agents start in a repository. These are where Claude Code and Codex ran lately:")
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if !setup.projectsLoaded {
+            if !setup.repositoriesLoaded {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Looking for recent folders…").foregroundStyle(.secondary)
@@ -386,10 +386,10 @@ private struct Projects: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
-                        if setup.projects.isEmpty {
+                        if setup.repositories.isEmpty {
                             Text("No recent folders found.").foregroundStyle(.secondary)
                         }
-                        ForEach($setup.projects) { $row in
+                        ForEach($setup.repositories) { $row in
                             Toggle(isOn: $row.ticked) {
                                 Text(tilde(row.path))
                                     .lineLimit(1)
@@ -459,7 +459,7 @@ private struct Improve: View {
 private struct FirstAgent: View {
     var body: some View {
         VStack(spacing: 18) {
-            Text("On your phone, tap + and pick a project.")
+            Text("On your phone, tap + and pick a repository.")
                 .font(.title3)
                 .foregroundStyle(.secondary)
             HStack(spacing: 8) {

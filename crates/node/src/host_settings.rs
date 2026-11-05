@@ -46,7 +46,7 @@ pub struct SettingsOptions {
     /// The login item `start_at_login` keeps, on an install whose
     /// supervisor a login item would start; none has nothing to start.
     pub login: Option<StartAtLogin>,
-    /// Where project suggestions read the session logs: the person's home
+    /// Where repository suggestions read the session logs: the person's home
     /// when none.
     pub home: Option<PathBuf>,
 }
@@ -130,7 +130,7 @@ impl HostSettings {
         }
     }
 
-    /// Where project suggestions look; none on a system with no home.
+    /// Where repository suggestions look; none on a system with no home.
     pub(crate) fn home(&self) -> Option<&Path> {
         self.home.as_deref()
     }
@@ -231,8 +231,8 @@ pub(crate) fn to_wire(
         host_name: host_name.to_owned(),
         start_at_login: supervised.then_some(config.start_at_login),
         keep_awake: config.keep_awake,
-        projects: config
-            .projects()
+        repositories: config
+            .repositories()
             .iter()
             .filter_map(|path| path.to_str().map(str::to_owned))
             .collect(),
@@ -263,16 +263,16 @@ fn changes(request: &UpdateSettingsRequest) -> Result<Vec<Change<'static>>, Sett
     if let Some(on) = request.keep_awake {
         changes.push(("keep_awake", Some(on.into())));
     }
-    if let Some(projects) = &request.projects {
+    if let Some(repositories) = &request.repositories {
         let mut array = toml_edit::Array::new();
         let mut seen = std::collections::BTreeSet::new();
-        for path in &projects.paths {
-            let path = project(path)?;
+        for path in &repositories.paths {
+            let path = repository(path)?;
             if seen.insert(path.clone()) {
                 array.push(path);
             }
         }
-        changes.push(("projects", Some(array.into())));
+        changes.push(("repositories", Some(array.into())));
     }
     if let Some(chat_in) = request.chat_in {
         let word = match wire::ChatIn::try_from(chat_in) {
@@ -304,12 +304,12 @@ fn changes(request: &UpdateSettingsRequest) -> Result<Vec<Change<'static>>, Sett
     Ok(changes)
 }
 
-/// A project as the file keeps it: absolute, and canonical where it exists.
-fn project(path: &str) -> Result<String, SettingsError> {
+/// A repository as the file keeps it: absolute, and canonical where it exists.
+fn repository(path: &str) -> Result<String, SettingsError> {
     let given = Path::new(path.trim());
     if !given.is_absolute() {
         return Err(SettingsError::Invalid(format!(
-            "a project is an absolute path, not {path:?}"
+            "a repository is an absolute path, not {path:?}"
         )));
     }
     let path = given.canonicalize().unwrap_or_else(|_| given.to_owned());
@@ -350,8 +350,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
         std::fs::write(&path, "# mine\nchannel = \"preview\"\nkeep_awake = true\n").unwrap();
-        let project = dir.path().join("app");
-        std::fs::create_dir(&project).unwrap();
+        let repository = dir.path().join("app");
+        std::fs::create_dir(&repository).unwrap();
         let settings = HostSettings::new(SettingsOptions {
             file: Some(path.clone()),
             initial: InstallationConfig::from_file(&path).unwrap(),
@@ -361,10 +361,10 @@ mod tests {
         let config = settings
             .update(&UpdateSettingsRequest {
                 keep_awake: Some(false),
-                projects: Some(wire::ProjectList {
+                repositories: Some(wire::RepositoryList {
                     paths: vec![
-                        project.to_str().unwrap().to_owned(),
-                        project.join("../app").to_str().unwrap().to_owned(),
+                        repository.to_str().unwrap().to_owned(),
+                        repository.join("../app").to_str().unwrap().to_owned(),
                     ],
                 }),
                 claude_kind: Some(wire::Kind::ClaudePty as i32),
@@ -373,7 +373,7 @@ mod tests {
             })
             .unwrap();
         assert!(!config.keep_awake);
-        assert_eq!(config.projects, [project.canonicalize().unwrap()]);
+        assert_eq!(config.repositories, [repository.canonicalize().unwrap()]);
         assert_eq!(claude_kind(&config), wire::Kind::ClaudePty);
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(
@@ -403,7 +403,7 @@ mod tests {
 
         for refused in [
             UpdateSettingsRequest {
-                projects: Some(wire::ProjectList {
+                repositories: Some(wire::RepositoryList {
                     paths: vec!["relative/app".into()],
                 }),
                 ..request()

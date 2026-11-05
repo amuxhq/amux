@@ -74,12 +74,12 @@ final class SetupShots: XCTestCase {
         setup.offersMoved([])
 
         setup.later()
-        XCTAssertEqual(setup.step, .projects)
-        try await until("the suggestions") { setup.projectsLoaded }
+        XCTAssertEqual(setup.step, .repositories)
+        try await until("the suggestions") { setup.repositoriesLoaded }
         XCTAssertEqual(
-            setup.projects.map { URL(filePath: $0.path).lastPathComponent }, ["website", "amux"],
+            setup.repositories.map { URL(filePath: $0.path).lastPathComponent }, ["website", "amux"],
             "where Claude Code and Codex ran, newest first")
-        try await shoot("04-projects", stage)
+        try await shoot("04-repositories", stage)
 
         setup.later()
         XCTAssertEqual(setup.step, .improve)
@@ -200,7 +200,7 @@ final class SetupShots: XCTestCase {
 /// home of its own, so nothing it does reaches the person's: discovery is
 /// off, updates are manual, and a login item, should one be written, lands
 /// in the scratch home. Its home holds two repositories Claude Code and
-/// Codex ran in, for the projects step to suggest.
+/// Codex ran in, for the repositories step to suggest.
 final class ScratchDaemon {
     let dir: URL
     let home: URL
@@ -225,7 +225,7 @@ final class ScratchDaemon {
         dir = try Self.directory()
         home = dir.appending(path: "home")
         config = dir.appending(path: "config.toml")
-        let projects = try seedSessions()
+        let repositories = try seedSessions()
         let settings = """
             host_name = "Jordan’s MacBook Pro"
             root = "\(dir.appending(path: "data").path)"
@@ -236,7 +236,7 @@ final class ScratchDaemon {
 
             """
         try settings.write(to: config, atomically: true, encoding: .utf8)
-        XCTAssertEqual(projects.count, 2)
+        XCTAssertEqual(repositories.count, 2)
         let started = Self.run(Self.amux, ["server", "start"], environment: environment)
         XCTAssertTrue(started.contains("Started"), started)
     }

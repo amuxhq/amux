@@ -2025,7 +2025,7 @@ pub fn help_rows() -> Vec<(&'static str, String)> {
         ("h", "hosts".into()),
         (
             ",",
-            "settings: this machine, projects, chats, usage counts, the account".into(),
+            "settings: this machine, repositories, chats, usage counts, the account".into(),
         ),
         (
             "b",

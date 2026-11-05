@@ -6974,10 +6974,10 @@ impl ::prost::Name for ListRepositoriesRequest {
 pub struct ListRepositoriesResponse {
     /// Folders this host's agents ran in lately that still exist.
     #[prost(message, repeated, tag = "1")]
-    pub recent: ::prost::alloc::vec::Vec<ProjectEntry>,
-    /// The host's project list, as its person chose it.
+    pub recent: ::prost::alloc::vec::Vec<RepositoryEntry>,
+    /// The host's repository list, as its person chose it.
     #[prost(message, repeated, tag = "2")]
-    pub projects: ::prost::alloc::vec::Vec<ProjectEntry>,
+    pub repositories: ::prost::alloc::vec::Vec<RepositoryEntry>,
 }
 impl ::prost::Name for ListRepositoriesResponse {
     const NAME: &'static str = "ListRepositoriesResponse";
@@ -6990,7 +6990,7 @@ impl ::prost::Name for ListRepositoriesResponse {
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ProjectEntry {
+pub struct RepositoryEntry {
     #[prost(string, tag = "1")]
     pub path: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
@@ -6998,14 +6998,14 @@ pub struct ProjectEntry {
     #[prost(int64, optional, tag = "3")]
     pub last_used_ms: ::core::option::Option<i64>,
 }
-impl ::prost::Name for ProjectEntry {
-    const NAME: &'static str = "ProjectEntry";
+impl ::prost::Name for RepositoryEntry {
+    const NAME: &'static str = "RepositoryEntry";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ProjectEntry".into()
+        "amux.v1.RepositoryEntry".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ProjectEntry".into()
+        "type.googleapis.com/amux.v1.RepositoryEntry".into()
     }
 }
 /// Generated client implementations.
@@ -8215,9 +8215,9 @@ pub struct Settings {
     /// an agent works.
     #[prost(bool, tag = "3")]
     pub keep_awake: bool,
-    /// The project list new-agent pickers offer, as canonical paths.
+    /// The repository list new-agent pickers offer, as canonical paths.
     #[prost(string, repeated, tag = "4")]
-    pub projects: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    pub repositories: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(enumeration = "ChatIn", tag = "5")]
     pub chat_in: i32,
     /// Which Claude a new agent runs; KIND_UNSPECIFIED follows chat_in.
@@ -8250,7 +8250,7 @@ pub struct UpdateSettingsRequest {
     pub keep_awake: ::core::option::Option<bool>,
     /// The whole new list.
     #[prost(message, optional, tag = "4")]
-    pub projects: ::core::option::Option<ProjectList>,
+    pub repositories: ::core::option::Option<RepositoryList>,
     #[prost(enumeration = "ChatIn", optional, tag = "5")]
     pub chat_in: ::core::option::Option<i32>,
     #[prost(enumeration = "Kind", optional, tag = "6")]
@@ -8271,18 +8271,18 @@ impl ::prost::Name for UpdateSettingsRequest {
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ProjectList {
+pub struct RepositoryList {
     #[prost(string, repeated, tag = "1")]
     pub paths: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-impl ::prost::Name for ProjectList {
-    const NAME: &'static str = "ProjectList";
+impl ::prost::Name for RepositoryList {
+    const NAME: &'static str = "RepositoryList";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ProjectList".into()
+        "amux.v1.RepositoryList".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ProjectList".into()
+        "type.googleapis.com/amux.v1.RepositoryList".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -8389,18 +8389,18 @@ impl ::prost::Name for AnswerOnboardingRequest {
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SuggestProjectsResponse {
+pub struct SuggestRepositoriesResponse {
     #[prost(message, repeated, tag = "1")]
-    pub suggestions: ::prost::alloc::vec::Vec<ProjectEntry>,
+    pub suggestions: ::prost::alloc::vec::Vec<RepositoryEntry>,
 }
-impl ::prost::Name for SuggestProjectsResponse {
-    const NAME: &'static str = "SuggestProjectsResponse";
+impl ::prost::Name for SuggestRepositoriesResponse {
+    const NAME: &'static str = "SuggestRepositoriesResponse";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.SuggestProjectsResponse".into()
+        "amux.v1.SuggestRepositoriesResponse".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.SuggestProjectsResponse".into()
+        "type.googleapis.com/amux.v1.SuggestRepositoriesResponse".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -8882,7 +8882,7 @@ pub enum OnboardingStepId {
     PairPhone = 1,
     KeepReachable = 2,
     SignIn = 3,
-    Projects = 4,
+    Repositories = 4,
     Improve = 5,
     FirstAgent = 6,
 }
@@ -8897,7 +8897,7 @@ impl OnboardingStepId {
             Self::PairPhone => "ONBOARDING_STEP_ID_PAIR_PHONE",
             Self::KeepReachable => "ONBOARDING_STEP_ID_KEEP_REACHABLE",
             Self::SignIn => "ONBOARDING_STEP_ID_SIGN_IN",
-            Self::Projects => "ONBOARDING_STEP_ID_PROJECTS",
+            Self::Repositories => "ONBOARDING_STEP_ID_REPOSITORIES",
             Self::Improve => "ONBOARDING_STEP_ID_IMPROVE",
             Self::FirstAgent => "ONBOARDING_STEP_ID_FIRST_AGENT",
         }
@@ -8909,7 +8909,7 @@ impl OnboardingStepId {
             "ONBOARDING_STEP_ID_PAIR_PHONE" => Some(Self::PairPhone),
             "ONBOARDING_STEP_ID_KEEP_REACHABLE" => Some(Self::KeepReachable),
             "ONBOARDING_STEP_ID_SIGN_IN" => Some(Self::SignIn),
-            "ONBOARDING_STEP_ID_PROJECTS" => Some(Self::Projects),
+            "ONBOARDING_STEP_ID_REPOSITORIES" => Some(Self::Repositories),
             "ONBOARDING_STEP_ID_IMPROVE" => Some(Self::Improve),
             "ONBOARDING_STEP_ID_FIRST_AGENT" => Some(Self::FirstAgent),
             _ => None,
@@ -9540,13 +9540,13 @@ pub mod installation_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Folders worth offering as projects: where Claude Code and Codex ran
+        /// Folders worth offering as repositories: where Claude Code and Codex ran
         /// lately, Git repositories that still exist.
-        pub async fn suggest_projects(
+        pub async fn suggest_repositories(
             &mut self,
             request: impl tonic::IntoRequest<super::Empty>,
         ) -> std::result::Result<
-            tonic::Response<super::SuggestProjectsResponse>,
+            tonic::Response<super::SuggestRepositoriesResponse>,
             tonic::Status,
         > {
             self.inner
@@ -9559,12 +9559,12 @@ pub mod installation_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.InstallationService/SuggestProjects",
+                "/amux.v1.InstallationService/SuggestRepositories",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
-                    GrpcMethod::new("amux.v1.InstallationService", "SuggestProjects"),
+                    GrpcMethod::new("amux.v1.InstallationService", "SuggestRepositories"),
                 );
             self.inner.unary(req, path, codec).await
         }
@@ -9713,13 +9713,13 @@ pub mod installation_service_server {
             &self,
             request: tonic::Request<super::AnswerOnboardingRequest>,
         ) -> std::result::Result<tonic::Response<super::Onboarding>, tonic::Status>;
-        /// Folders worth offering as projects: where Claude Code and Codex ran
+        /// Folders worth offering as repositories: where Claude Code and Codex ran
         /// lately, Git repositories that still exist.
-        async fn suggest_projects(
+        async fn suggest_repositories(
             &self,
             request: tonic::Request<super::Empty>,
         ) -> std::result::Result<
-            tonic::Response<super::SuggestProjectsResponse>,
+            tonic::Response<super::SuggestRepositoriesResponse>,
             tonic::Status,
         >;
         /// A one-time link that signs the browser in to the profile's account and
@@ -10510,14 +10510,14 @@ pub mod installation_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.v1.InstallationService/SuggestProjects" => {
+                "/amux.v1.InstallationService/SuggestRepositories" => {
                     #[allow(non_camel_case_types)]
-                    struct SuggestProjectsSvc<T: InstallationService>(pub Arc<T>);
+                    struct SuggestRepositoriesSvc<T: InstallationService>(pub Arc<T>);
                     impl<
                         T: InstallationService,
                     > tonic::server::UnaryService<super::Empty>
-                    for SuggestProjectsSvc<T> {
-                        type Response = super::SuggestProjectsResponse;
+                    for SuggestRepositoriesSvc<T> {
+                        type Response = super::SuggestRepositoriesResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -10528,7 +10528,7 @@ pub mod installation_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as InstallationService>::suggest_projects(
+                                <T as InstallationService>::suggest_repositories(
                                         &inner,
                                         request,
                                     )
@@ -10543,7 +10543,7 @@ pub mod installation_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = SuggestProjectsSvc(inner);
+                        let method = SuggestRepositoriesSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -2100,7 +2100,7 @@ fn between<'a>(frame: &'a str, before: &str, after: &str) -> Option<&'a str> {
 /// A first `amux` on a new installation: setting up opens before home,
 /// pairs a second machine by the PIN it shows, signs in through the
 /// browser at the net's account service and offers the account to the
-/// machine just paired, keeps the project chosen, resumes past the steps
+/// machine just paired, keeps the repository chosen, resumes past the steps
 /// done after the client quits half way, and lands on the agent the
 /// other machine starts.
 fn first_run(journey: &mut TerminalJourney) -> Proved {
@@ -2110,7 +2110,7 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
         .clone()
         .ok_or("the topology declares no relay")?;
     // Claude Code ran lately in the desk's repository: setting up offers
-    // it as a project.
+    // it as a repository.
     let desk = journey.host_dir("desk");
     let repository = desk.join("repositories").join("amux");
     let log = desk.join("home/.claude/projects/amux");
@@ -2220,17 +2220,19 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
 
     // The repository Claude Code ran in, offered and kept, with a folder
     // of the person's own.
-    let projects = journey.wait_terms(
+    let repositories = journey.wait_terms(
         &pane,
         &[
             "These are where Claude Code and Codex ran lately",
             "+ Add a folder…",
         ],
     )?;
-    if !projects.contains("[x] ") {
-        return Err(format!("the repository is not offered ticked:\n{projects}"));
+    if !repositories.contains("[x] ") {
+        return Err(format!(
+            "the repository is not offered ticked:\n{repositories}"
+        ));
     }
-    journey.frame(&pane, "projects")?;
+    journey.frame(&pane, "repositories")?;
     let work = desk.join("work").display().to_string();
     journey.keys(&pane, &["Down", "Enter"])?;
     journey.type_text(&pane, &work)?;
@@ -2264,7 +2266,7 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
     )?;
     journey.frame(&again, "improve")?;
     journey.keys(&again, &["Down", "Space", "Enter"])?;
-    journey.wait_terms(&again, &["On your phone, tap + and pick a project."])?;
+    journey.wait_terms(&again, &["On your phone, tap + and pick a repository."])?;
     journey.frame(&again, "first-agent")?;
 
     // An agent the laptop starts on the desk, as the phone would, lands
@@ -2303,7 +2305,7 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
     let state = |of: &Value, step: &str| of["steps"][step].as_str().unwrap_or_default().to_owned();
     let expect = [
         ("ONBOARDING_STEP_ID_SIGN_IN", "STEP_STATE_DONE"),
-        ("ONBOARDING_STEP_ID_PROJECTS", "STEP_STATE_DONE"),
+        ("ONBOARDING_STEP_ID_REPOSITORIES", "STEP_STATE_DONE"),
         ("ONBOARDING_STEP_ID_IMPROVE", "STEP_STATE_DONE"),
         ("ONBOARDING_STEP_ID_FIRST_AGENT", "STEP_STATE_DONE"),
         ("ONBOARDING_STEP_ID_PAIR_PHONE", "STEP_STATE_SKIPPED"),
@@ -2314,16 +2316,16 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
         }
     }
     if state(&midway, "ONBOARDING_STEP_ID_IMPROVE") != "STEP_STATE_NEEDED"
-        || state(&midway, "ONBOARDING_STEP_ID_PROJECTS") != "STEP_STATE_DONE"
+        || state(&midway, "ONBOARDING_STEP_ID_REPOSITORIES") != "STEP_STATE_DONE"
     {
         return Err(format!("quitting half way left the wrong steps: {midway}"));
     }
     let kept = repository.display().to_string();
-    let projects: Vec<&str> = done["projects"]
+    let repositories: Vec<&str> = done["repositories"]
         .as_array()
         .map(|paths| paths.iter().filter_map(Value::as_str).collect())
         .unwrap_or_default();
-    if projects != [kept.as_str(), work.as_str()]
+    if repositories != [kept.as_str(), work.as_str()]
         || done["auto_reports"] != true
         || !done["notice_shown"].as_bool().unwrap_or(false)
     {
@@ -2336,10 +2338,10 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
         "a first `amux` opened setting up on pairing, with the analytics notice, before home".to_owned(),
         "the six digits it showed paired the laptop, and it said `Paired with laptop ✓`".to_owned(),
         format!("signing in opened the browser at the approval page for {code}; approved, the laptop was offered the account and signed in as jordan@example.com"),
-        "the repository Claude Code ran in was offered ticked and kept as a project with a typed folder".to_owned(),
+        "the repository Claude Code ran in was offered ticked and kept beside a typed folder".to_owned(),
         "quit half way, the next `amux` resumed past the steps done, without the notice again".to_owned(),
         "an agent the other machine started on the desk landed home selected, with `There it is`".to_owned(),
-        "the desk keeps sign-in, projects, improve and first agent done, pairing an iPhone skipped, reports on".to_owned(),
+        "the desk keeps sign-in, repositories, improve and first agent done, pairing an iPhone skipped, reports on".to_owned(),
     ])
 }
 

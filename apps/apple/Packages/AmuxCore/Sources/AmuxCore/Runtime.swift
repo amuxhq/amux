@@ -278,10 +278,10 @@ public final class Runtime: @unchecked Sendable {
         }
     }
 
-    /// The folders worth offering as projects: where Claude Code and Codex
+    /// The folders worth offering as repositories: where Claude Code and Codex
     /// ran lately, newest first.
-    public func suggestProjects() async -> Result<[ProjectSuggestion], RuntimeFailure> {
-        await act([ProjectSuggestion].self) { amux_runtime_suggest_projects($0) }
+    public func suggestRepositories() async -> Result<[RepositorySuggestion], RuntimeFailure> {
+        await act([RepositorySuggestion].self) { amux_runtime_suggest_repositories($0) }
     }
 
     /// A one-time link that signs the browser in to a profile's account and

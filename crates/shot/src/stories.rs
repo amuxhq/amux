@@ -153,11 +153,11 @@ pub fn all() -> Vec<Story> {
         story("onboarding.sign-in-offer", || {
             Scene::Setup(Box::new(setup::sign_in_offer()))
         }),
-        story("onboarding.projects", || {
-            Scene::Setup(Box::new(setup::projects()))
+        story("onboarding.repositories", || {
+            Scene::Setup(Box::new(setup::repositories()))
         }),
-        story("onboarding.projects-add", || {
-            Scene::Setup(Box::new(setup::projects_add()))
+        story("onboarding.repositories-add", || {
+            Scene::Setup(Box::new(setup::repositories_add()))
         }),
         story("onboarding.improve", || {
             Scene::Setup(Box::new(setup::improve()))

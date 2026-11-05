@@ -90,7 +90,7 @@ pub struct HostDecl {
     #[serde(default)]
     pub script: Option<Script>,
     /// Git repositories the net makes in the host's directory, by path
-    /// below it; each is one of the host's projects.
+    /// below it; each is one of the host's repositories.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub repositories: Vec<String>,
     /// Files committed when the repositories are made, by path below the

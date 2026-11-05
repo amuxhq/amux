@@ -33,8 +33,8 @@ enum Row {
     Name,
     StartAtLogin,
     KeepAwake,
-    Project(usize),
-    AddProject,
+    Repository(usize),
+    AddRepository,
     ChatIn,
     Telemetry,
     AutoReports,
@@ -124,9 +124,9 @@ impl SettingsScreen {
             rows.push(Row::StartAtLogin);
         }
         rows.push(Row::KeepAwake);
-        rows.extend((0..self.settings.projects.len()).map(Row::Project));
+        rows.extend((0..self.settings.repositories.len()).map(Row::Repository));
         rows.extend([
-            Row::AddProject,
+            Row::AddRepository,
             Row::ChatIn,
             Row::Telemetry,
             Row::AutoReports,
@@ -225,10 +225,10 @@ impl SettingsScreen {
                     if path.is_empty() {
                         return Vec::new();
                     }
-                    let mut paths = self.settings.projects.clone();
+                    let mut paths = self.settings.repositories.clone();
                     paths.push(path);
                     return self.update(wire::UpdateSettingsRequest {
-                        projects: Some(wire::ProjectList { paths }),
+                        repositories: Some(wire::RepositoryList { paths }),
                         ..Default::default()
                     });
                 }
@@ -254,11 +254,11 @@ impl SettingsScreen {
             KeyCode::End | KeyCode::Char('G') => self.focus = rows - 1,
             KeyCode::Enter | KeyCode::Char(' ') => return self.change(),
             KeyCode::Char('x') | KeyCode::Backspace | KeyCode::Delete => {
-                if let Row::Project(at) = self.focused() {
-                    let mut paths = self.settings.projects.clone();
+                if let Row::Repository(at) = self.focused() {
+                    let mut paths = self.settings.repositories.clone();
                     paths.remove(at);
                     return self.update(wire::UpdateSettingsRequest {
-                        projects: Some(wire::ProjectList { paths }),
+                        repositories: Some(wire::RepositoryList { paths }),
                         ..Default::default()
                     });
                 }
@@ -279,11 +279,11 @@ impl SettingsScreen {
                 self.rename = Some(editor);
                 return Vec::new();
             }
-            Row::AddProject => {
+            Row::AddRepository => {
                 self.adding = Some(Editor::default());
                 return Vec::new();
             }
-            Row::Project(_) => return Vec::new(),
+            Row::Repository(_) => return Vec::new(),
             Row::StartAtLogin => wire::UpdateSettingsRequest {
                 start_at_login: settings.start_at_login.map(|on| !on),
                 ..Default::default()
@@ -346,8 +346,8 @@ impl SettingsScreen {
             Row::Name => "This machine's name".to_owned(),
             Row::StartAtLogin => "Start amux when you log in".to_owned(),
             Row::KeepAwake => format!("Keep this {} awake while it's plugged in", self.machine),
-            Row::Project(at) => text::tilde(&self.settings.projects[at]),
-            Row::AddProject => "+ Add a folder…".to_owned(),
+            Row::Repository(at) => text::tilde(&self.settings.repositories[at]),
+            Row::AddRepository => "+ Add a folder…".to_owned(),
             Row::ChatIn => "Chat with agents in".to_owned(),
             Row::Telemetry => "Send usage counts".to_owned(),
             Row::AutoReports => "Send reports automatically".to_owned(),
@@ -382,7 +382,7 @@ impl SettingsScreen {
                 Some(profile) if signed_in(profile) => plan_words(profile.access.as_ref()),
                 _ => String::new(),
             },
-            Row::Project(_) | Row::AddProject => String::new(),
+            Row::Repository(_) | Row::AddRepository => String::new(),
         }
     }
 
@@ -390,7 +390,7 @@ impl SettingsScreen {
     fn heading(row: Row, previous: Option<Row>) -> Option<&'static str> {
         let section = |row: Row| match row {
             Row::Name | Row::StartAtLogin | Row::KeepAwake => "This machine",
-            Row::Project(_) | Row::AddProject => "Projects",
+            Row::Repository(_) | Row::AddRepository => "Repositories",
             Row::ChatIn => "Chats",
             Row::Telemetry | Row::AutoReports => "Help improve amux",
             Row::Account => "Account",
@@ -410,9 +410,9 @@ impl SettingsScreen {
         let back = ("esc", "back", key(KeyCode::Esc));
         let account_signed_in = self.profile.as_ref().is_some_and(signed_in);
         match self.focused() {
-            Row::Project(_) => vec![("x", "remove", key(KeyCode::Char('x'))), back],
+            Row::Repository(_) => vec![("x", "remove", key(KeyCode::Char('x'))), back],
             Row::Name => vec![("enter", "rename", key(KeyCode::Enter)), back],
-            Row::AddProject => vec![("enter", "add a folder", key(KeyCode::Enter)), back],
+            Row::AddRepository => vec![("enter", "add a folder", key(KeyCode::Enter)), back],
             Row::Account if account_signed_in => {
                 vec![("enter", "sign out", key(KeyCode::Enter)), back]
             }
@@ -439,7 +439,7 @@ impl SettingsScreen {
         let focus = self.focus.min(rows.len() - 1);
         let column = rows
             .iter()
-            .filter(|row| !matches!(row, Row::Project(_) | Row::AddProject))
+            .filter(|row| !matches!(row, Row::Repository(_) | Row::AddRepository))
             .map(|row| text::str_width(&self.label(*row)))
             .max()
             .unwrap_or(0)
@@ -481,13 +481,13 @@ impl SettingsScreen {
                 width,
             );
             let label_ink = match row {
-                Row::AddProject if !chosen => theme.muted(),
+                Row::AddRepository if !chosen => theme.muted(),
                 _ if chosen => theme.bright(),
                 _ => theme.text(),
             };
             let field = match row {
                 Row::Name => self.rename.as_ref(),
-                Row::AddProject => self.adding.as_ref(),
+                Row::AddRepository => self.adding.as_ref(),
                 _ => None,
             };
             match field {

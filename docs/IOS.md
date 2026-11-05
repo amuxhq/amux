@@ -323,8 +323,8 @@ opens each one.
 
 ## Starting an agent
 
-New Agent lists the host's projects (the folders its amux settings name)
-first, then the folders its agents worked in lately that are not projects, and
+New Agent lists the host's repositories (the folders its amux settings name)
+first, then the folders its agents worked in lately that are not among them, and
 prefills where an agent worked last. Typing searches both, asking the host
 when the list it gave was cut short. A new Claude agent runs the kind the
 host's settings resolve to (`HostView.claude_kind`), the terminal one or the

@@ -40,7 +40,7 @@ pub use values::{FleetDelta, HostView};
 pub use wire::Provider;
 use wire::{
     CreateAgentRequest, DeleteAgentRequest, DumpRequest, Kind, ListRepositoriesRequest,
-    ProjectEntry, RenameAgentRequest,
+    RenameAgentRequest, RepositoryEntry,
 };
 
 /// How many rows a chat opens with unless the host says otherwise.
@@ -363,13 +363,13 @@ impl AppRuntime {
                 host_id: Some(host_id.to_vec()),
             })
             .await?;
-        let directory = |entry: ProjectEntry| Directory {
+        let directory = |entry: RepositoryEntry| Directory {
             path: entry.path,
             name: entry.name,
         };
         Ok(Directories {
             recent: listed.recent.into_iter().map(directory).collect(),
-            projects: listed.projects.into_iter().map(directory).collect(),
+            repositories: listed.repositories.into_iter().map(directory).collect(),
         })
     }
 

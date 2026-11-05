@@ -294,10 +294,10 @@ impl InstallationService for FrontDoor {
         Ok(Response::new(answered))
     }
 
-    async fn suggest_projects(
+    async fn suggest_repositories(
         &self,
         _request: Request<Empty>,
-    ) -> Result<Response<wire::SuggestProjectsResponse>, Status> {
+    ) -> Result<Response<wire::SuggestRepositoriesResponse>, Status> {
         let installation = self.registry.installation()?;
         let suggestions = tokio::task::spawn_blocking(move || {
             let suggestions = installation
@@ -310,7 +310,9 @@ impl InstallationService for FrontDoor {
         })
         .await
         .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
-        Ok(Response::new(wire::SuggestProjectsResponse { suggestions }))
+        Ok(Response::new(wire::SuggestRepositoriesResponse {
+            suggestions,
+        }))
     }
 
     async fn web_sign_in_link(

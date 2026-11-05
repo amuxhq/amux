@@ -1429,7 +1429,7 @@ fn exit(code: i32) -> provider_fakes::script::Step {
     provider_fakes::script::Step::Exit { code }
 }
 
-fn names(entries: &[wire::ProjectEntry]) -> Vec<&str> {
+fn names(entries: &[wire::RepositoryEntry]) -> Vec<&str> {
     entries.iter().map(|entry| entry.name.as_str()).collect()
 }
 
@@ -1445,29 +1445,29 @@ fn listing(
     })
 }
 
-/// Where a host offers to start an agent: its projects, in the order its
+/// Where a host offers to start an agent: its repositories, in the order its
 /// person chose them, then the directories its agents ran in, newest first
 /// and still after the agents are deleted. A paired host naming it gets the
 /// same answer through it; once it no longer trusts that host, nothing.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_host_lists_its_projects_and_where_its_agents_ran_for_trusted_hosts() {
+async fn a_host_lists_its_repositories_and_where_its_agents_ran_for_trusted_hosts() {
     use wire::agent_service_server::AgentService as _;
 
     let desk = Install::new();
     let code = desk.path("code");
-    for project in ["site", "amux", "amux-review"] {
-        std::fs::create_dir_all(code.join(project)).unwrap();
+    for repository in ["site", "amux", "amux-review"] {
+        std::fs::create_dir_all(code.join(repository)).unwrap();
     }
     let (older, newer) = (desk.work.join("older"), desk.work.join("newer"));
     std::fs::create_dir_all(&older).unwrap();
     std::fs::create_dir_all(&newer).unwrap();
     let mut launch = desk.launch("idle", Vec::new());
-    launch.projects = vec![
+    launch.repositories = vec![
         code.join("site"),
         code.join("amux"),
         desk.path("missing"),
         code.join("amux-review"),
-        // A project an agent also ran in is listed once, as a project.
+        // A repository an agent also ran in is listed once, among the chosen ones.
         newer.clone(),
     ];
     let desk_daemon = desk.start("boot-1", launch).await;
@@ -1495,20 +1495,20 @@ async fn a_host_lists_its_projects_and_where_its_agents_ran_for_trusted_hosts() 
         .into_inner();
     println!("local listing: {local:#?}");
     assert_eq!(
-        names(&local.projects),
+        names(&local.repositories),
         ["site", "amux", "amux-review", "newer"],
         "as chosen, gone ones left out"
     );
     assert!(
         local
-            .projects
+            .repositories
             .iter()
             .all(|entry| entry.last_used_ms.is_none())
     );
     assert_eq!(
         names(&local.recent),
         ["older"],
-        "deleted agents' folders too, projects once"
+        "deleted agents' folders too, repositories once"
     );
     assert_eq!(
         local.recent[0].path,
@@ -1521,13 +1521,13 @@ async fn a_host_lists_its_projects_and_where_its_agents_ran_for_trusted_hosts() 
         .unwrap()
         .into_inner();
     assert!(found.recent.is_empty());
-    assert_eq!(names(&found.projects), ["amux-review"]);
+    assert_eq!(names(&found.repositories), ["amux-review"]);
     let capped = person
         .list_repositories(listing(None, 3, None))
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(names(&capped.projects), ["site", "amux", "amux-review"]);
+    assert_eq!(names(&capped.repositories), ["site", "amux", "amux-review"]);
     assert!(capped.recent.is_empty(), "the limit counts both lists");
 
     // A paired laptop asks the desk by its host id.
@@ -1556,7 +1556,7 @@ async fn a_host_lists_its_projects_and_where_its_agents_ran_for_trusted_hosts() 
         .await
         .unwrap()
         .into_inner();
-    assert!(own.recent.is_empty() && own.projects.is_empty());
+    assert!(own.recent.is_empty() && own.repositories.is_empty());
     let stranger = from_laptop
         .list_repositories(listing(None, 50, Some(uuid::Uuid::new_v4())))
         .await

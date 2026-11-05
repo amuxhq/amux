@@ -75,10 +75,10 @@ client. The steps, in order:
   shows the code to check; when no browser opens it shows the link. When a paired host already signed in offers
   its account, the step asks `Sign in as jordan@example.com (from Jordan's iPhone)?` instead: Enter accepts and
   opens the account's offer page, `n` declines and the browser sign-in is offered.
-- **Projects.** The folders Claude Code and Codex ran in lately, ticked, and `+ Add a folder…` for a typed path,
-  which the daemon checks as it saves. Enter adds the ticked ones to the projects already chosen.
+- **Repositories.** The folders Claude Code and Codex ran in lately, ticked, and `+ Add a folder…` for a typed path,
+  which the daemon checks as it saves. Enter adds the ticked ones to the repositories already chosen.
 - **Help improve amux.** Usage counts and automatic reports, with `Never your prompts, code, or file names.`
-- **Try starting an agent from your phone.** `On your phone, tap + and pick a project.` When an agent starts on
+- **Try starting an agent from your phone.** `On your phone, tap + and pick a repository.` When an agent starts on
   this machine, the client goes home with it selected and says `There it is`.
 
 Steps skipped stay on home as a quiet `Finish setting up (n)` row under `+ New Agent`: Enter walks the skipped and
@@ -133,7 +133,7 @@ chats with their agents, the installation's `ui.chat_in`:
   asked of the host before any agent runs on it; until it answers a model can be typed by name. Another model starts
   at its own default effort, and a permission it does not take gives way to the normal one. A provider the host
   says is signed out reads `Codex (not signed in)`. Long lists filter as you type; the folder's panel lists the
-  host's projects, then the folders its agents ran in lately, and takes a typed path; hosts that are away cannot be picked. Shift+Tab steps Codex's mode,
+  host's repositories, then the folders its agents ran in lately, and takes a typed path; hosts that are away cannot be picked. Shift+Tab steps Codex's mode,
   or Claude's permissions that still ask, as in a chat. Claude runs headless here, Codex on its app server.
 - **In each agent's own interface** (`native`): a small window over home with the name, the agent (Claude or
   Codex, each marked `not signed in` where the chosen host says so), the folder and the host, and no prompt or model,
@@ -341,7 +341,7 @@ lists what the report holds.
 ### Settings
 
 `,` on home, or the leader then `,`, opens the settings screen: this machine's name, starting amux at login (where
-a supervisor can), keeping the machine awake while plugged in, the projects (Enter on `+ Add a folder…` types one,
+a supervisor can), keeping the machine awake while plugged in, the repositories (Enter on `+ Add a folder…` types one,
 `x` removes the highlighted one), where you chat with agents (`amux's chat` or each agent's own interface),
 usage counts, automatic reports, and the account: who is signed in and on which plan, Enter to sign out, or to
 sign in through the browser as on [setting up](#setting-up). These are the daemon's settings for the profile, so

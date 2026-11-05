@@ -20,7 +20,7 @@ pub enum SetupStep {
     /// Reach it from anywhere: sign in to an account.
     SignIn,
     /// Pick the folders new agents are offered.
-    Projects,
+    Repositories,
     /// Usage counts and automatic reports.
     Improve,
     /// Start an agent from the phone.
@@ -34,7 +34,7 @@ impl SetupStep {
             OnboardingStepId::PairPhone => SetupStep::PairPhone,
             OnboardingStepId::KeepReachable => SetupStep::KeepReachable,
             OnboardingStepId::SignIn => SetupStep::SignIn,
-            OnboardingStepId::Projects => SetupStep::Projects,
+            OnboardingStepId::Repositories => SetupStep::Repositories,
             OnboardingStepId::Improve => SetupStep::Improve,
             OnboardingStepId::FirstAgent => SetupStep::FirstAgent,
             OnboardingStepId::Unspecified => return None,
@@ -47,7 +47,7 @@ impl SetupStep {
             SetupStep::PairPhone => OnboardingStepId::PairPhone,
             SetupStep::KeepReachable => OnboardingStepId::KeepReachable,
             SetupStep::SignIn => OnboardingStepId::SignIn,
-            SetupStep::Projects => OnboardingStepId::Projects,
+            SetupStep::Repositories => OnboardingStepId::Repositories,
             SetupStep::Improve => OnboardingStepId::Improve,
             SetupStep::FirstAgent => OnboardingStepId::FirstAgent,
         }
@@ -129,7 +129,7 @@ mod tests {
             OnboardingStepId::PairPhone,
             OnboardingStepId::KeepReachable,
             OnboardingStepId::SignIn,
-            OnboardingStepId::Projects,
+            OnboardingStepId::Repositories,
             OnboardingStepId::Improve,
             OnboardingStepId::FirstAgent,
         ];
@@ -163,7 +163,7 @@ mod tests {
         );
         assert_eq!(
             next_step(&now, Some(SetupStep::SignIn), true),
-            Some(SetupStep::Projects),
+            Some(SetupStep::Repositories),
             "finishing walks the skipped steps too"
         );
         assert_eq!(next_step(&now, Some(SetupStep::FirstAgent), true), None);

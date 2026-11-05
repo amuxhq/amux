@@ -110,8 +110,8 @@ pub struct Launch {
     /// The bytes replica blob files may hold.
     pub replica_blob_budget_bytes: u64,
     /// The folders the host offers new agents first, as its person chose
-    /// them (`projects`).
-    pub projects: Vec<PathBuf>,
+    /// them (`repositories`).
+    pub repositories: Vec<PathBuf>,
     /// Which Claude a new agent on this host runs, as the host publishes it
     /// to every client.
     pub claude_kind: wire::Kind,
@@ -166,7 +166,7 @@ impl Default for Launch {
             retention_interval_ms: 10 * 60_000,
             replica_budget_bytes: REPLICA_BUDGET_BYTES,
             replica_blob_budget_bytes: REPLICA_BLOB_BUDGET_BYTES,
-            projects: Vec::new(),
+            repositories: Vec::new(),
             claude_kind: wire::Kind::ClaudeSdk,
             catalogue_max_age_ms: 30 * 60_000,
             catalogue_recheck_ms: 60_000,
@@ -1019,7 +1019,7 @@ impl ProfileRuntime {
         query: Option<String>,
         limit: u32,
     ) -> wire::ListRepositoriesResponse {
-        let projects = self.launch().projects;
+        let repositories = self.launch().repositories;
         let recent = self
             .driver()
             .read(|store| store.recent_directories())
@@ -1032,7 +1032,7 @@ impl ProfileRuntime {
             })
             .unwrap_or_default();
         tokio::task::spawn_blocking(move || {
-            crate::repositories::list(&projects, &recent, query.as_deref(), limit)
+            crate::repositories::list(&repositories, &recent, query.as_deref(), limit)
         })
         .await
         .expect("listing repositories does not panic")

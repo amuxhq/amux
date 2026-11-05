@@ -4921,14 +4921,14 @@
         }
       }
     },
-    "Reading this host’s projects…" : {
+    "Reading this host’s repositories…" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reading this host’s projects…"
+            "value" : "Reading this host’s repositories…"
           }
         }
       }
@@ -10417,14 +10417,14 @@
         }
       }
     },
-    "%@ could not list its projects. Choose where its agents work, or type a path." : {
+    "%@ could not list its repositories. Choose where its agents work, or type a path." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ could not list its projects. Choose where its agents work, or type a path."
+            "value" : "%@ could not list its repositories. Choose where its agents work, or type a path."
           }
         }
       }
@@ -10453,38 +10453,38 @@
         }
       }
     },
-    "Projects" : {
+    "Repositories" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Projects"
+            "value" : "Repositories"
           }
         }
       }
     },
-    "Add projects in amux on this host, or type a path." : {
+    "Add repositories in amux on this host, or type a path." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add projects in amux on this host, or type a path."
+            "value" : "Add repositories in amux on this host, or type a path."
           }
         }
       }
     },
-    "This host could not list its projects." : {
+    "This host could not list its repositories." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This host could not list its projects."
+            "value" : "This host could not list its repositories."
           }
         }
       }

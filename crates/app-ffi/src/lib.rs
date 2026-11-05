@@ -45,7 +45,7 @@ use app_embedded::{
 use app_runtime::values::{
     AgentAct, AnalyticsNotice, ChatAct, ChatDelta, Draft, FleetDelta, Found, FrozenReview,
     MachineSettings, NewAgent, OnboardingAnswer, OnboardingState, PairingStatusView,
-    PairingWindowView, ProjectSuggestion, SettingsChange, SignInAnswer, SignInOfferOutcome,
+    PairingWindowView, RepositorySuggestion, SettingsChange, SignInAnswer, SignInOfferOutcome,
     SignInOfferView,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
@@ -1917,14 +1917,14 @@ pub unsafe extern "C" fn amux_runtime_update_settings(
     })
 }
 
-/// The folders worth offering as projects: the Git repositories Claude
+/// The folders worth offering as repositories: the Git repositories Claude
 /// Code and Codex ran in lately, newest first. The ticket answers
-/// `{"Ok": [ProjectSuggestion]}` or `{"Err": ..}`.
+/// `{"Ok": [RepositorySuggestion]}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// `runtime` is from `amux_runtime_start`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_runtime_suggest_projects(runtime: *const AmuxRuntime) -> u64 {
+pub unsafe extern "C" fn amux_runtime_suggest_repositories(runtime: *const AmuxRuntime) -> u64 {
     guard(0, || {
         // SAFETY: the caller's contract.
         let Some(runtime) = (unsafe { live_runtime(runtime) }) else {
@@ -1932,10 +1932,10 @@ pub unsafe extern "C" fn amux_runtime_suggest_projects(runtime: *const AmuxRunti
         };
         let installation = runtime.shared.installation.clone();
         runtime.act(async move {
-            Answered::from(installation.suggest_projects().await.map(|suggested| {
+            Answered::from(installation.suggest_repositories().await.map(|suggested| {
                 suggested
                     .into_iter()
-                    .map(|entry| ProjectSuggestion {
+                    .map(|entry| RepositorySuggestion {
                         path: entry.path,
                         name: entry.name,
                     })

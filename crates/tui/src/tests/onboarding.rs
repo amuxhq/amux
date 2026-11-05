@@ -293,7 +293,7 @@ fn signing_in_offers_the_phone_just_paired_the_account_when_ticked() {
         effects,
         [
             SetupEffect::OfferSignIn(b"phone".to_vec()),
-            shown(SetupStep::Projects),
+            shown(SetupStep::Repositories),
             SetupEffect::Suggest,
         ]
     );
@@ -337,7 +337,7 @@ fn a_phone_signed_in_first_offers_its_account_and_the_offer_page_opens() {
     let fleet = scene.fleet.clone();
     let effects = scene.onboarding.offer_answered(true, &fleet);
     assert_eq!(effects[0], SetupEffect::OfferPage);
-    assert_eq!(scene.onboarding.step, SetupStep::Projects);
+    assert_eq!(scene.onboarding.step, SetupStep::Repositories);
     // Not now: the browser sign-in is offered in its place.
     let mut scene = scenes::sign_in_offer();
     assert_eq!(
@@ -388,13 +388,13 @@ fn the_shown_offer_is_counted_for_the_side_it_is_on() {
 }
 
 #[test]
-fn projects_keep_the_ticked_folders_and_the_ones_typed_with_those_chosen_before() {
-    let mut scene = scenes::projects();
+fn repositories_keep_the_ticked_folders_and_the_ones_typed_with_those_chosen_before() {
+    let mut scene = scenes::repositories();
     let drawn = screen(&mut scene, 110, 34);
     assert!(drawn.contains("[ ] "), "one is unticked: {drawn}");
     assert!(drawn.contains("+ Add a folder…"), "{drawn}");
     let mut chosen = scenes::settings();
-    chosen.projects = vec!["/srv/kept".into()];
+    chosen.repositories = vec!["/srv/kept".into()];
     scene.onboarding.settings_changed(chosen);
     for _ in 0..4 {
         press(&mut scene, KeyCode::Down);
@@ -408,9 +408,9 @@ fn projects_keep_the_ticked_folders_and_the_ones_typed_with_those_chosen_before(
     let SetupEffect::Confirm { settings, step } = &effects[0] else {
         panic!("{effects:?}");
     };
-    assert_eq!(*step, Some(SetupStep::Projects));
+    assert_eq!(*step, Some(SetupStep::Repositories));
     assert_eq!(
-        settings.projects.as_ref().unwrap().paths,
+        settings.repositories.as_ref().unwrap().paths,
         [
             "/srv/kept",
             "/Users/jordan/src/amux",
@@ -425,7 +425,7 @@ fn projects_keep_the_ticked_folders_and_the_ones_typed_with_those_chosen_before(
         .confirm_failed("/srv/typed does not exist".into());
     assert!(screen(&mut scene, 110, 34).contains("/srv/typed does not exist"));
     let fleet = scene.fleet.clone();
-    let effects = scene.onboarding.confirmed(SetupStep::Projects, &fleet);
+    let effects = scene.onboarding.confirmed(SetupStep::Repositories, &fleet);
     assert_eq!(effects, [shown(SetupStep::Improve)]);
 }
 
@@ -458,7 +458,7 @@ fn the_agent_the_phone_starts_lands_on_home() {
     let mut scene = scenes::first_agent();
     let drawn = screen(&mut scene, 110, 34);
     assert!(
-        drawn.contains("On your phone, tap + and pick a project."),
+        drawn.contains("On your phone, tap + and pick a repository."),
         "{drawn}"
     );
     let fleet = scene.fleet.clone();
@@ -490,7 +490,10 @@ fn a_step_done_elsewhere_moves_the_screen_on() {
     let mut steps = scenes::steps([StepState::Needed; 6], true);
     steps.steps[2].state = StepState::Done as i32;
     let effects = scene.onboarding.steps_changed(steps, &fleet);
-    assert_eq!(effects, [shown(SetupStep::Projects), SetupEffect::Suggest]);
+    assert_eq!(
+        effects,
+        [shown(SetupStep::Repositories), SetupEffect::Suggest]
+    );
 }
 
 #[test]
@@ -564,12 +567,12 @@ fn every_setting_changes_at_once() {
             ..Default::default()
         })]
     );
-    // The first project, removed.
+    // The first repository, removed.
     page.key(key(KeyCode::Down));
     assert_eq!(
         page.key(key(KeyCode::Char('x'))),
         [update(wire::UpdateSettingsRequest {
-            projects: Some(wire::ProjectList {
+            repositories: Some(wire::RepositoryList {
                 paths: vec!["/Users/jordan/src/amuxcloud".into()],
             }),
             ..Default::default()
@@ -585,7 +588,7 @@ fn every_setting_changes_at_once() {
     assert_eq!(
         page.key(key(KeyCode::Enter)),
         [update(wire::UpdateSettingsRequest {
-            projects: Some(wire::ProjectList {
+            repositories: Some(wire::RepositoryList {
                 paths: vec![
                     "/Users/jordan/src/amux".into(),
                     "/Users/jordan/src/amuxcloud".into(),
@@ -687,7 +690,7 @@ fn home_offers_to_finish_setting_up_and_takes_the_settings_key() {
 }
 
 #[test]
-fn the_picker_offers_the_hosts_projects_then_its_recent_folders() {
+fn the_picker_offers_the_hosts_repositories_then_its_recent_folders() {
     let mut setup = crate::setup::Setup::defaults(
         settings::ChatInSetting::Amux,
         "/src/here",
@@ -695,20 +698,20 @@ fn the_picker_offers_the_hosts_projects_then_its_recent_folders() {
         &settings::NewAgentSettings::default(),
     );
     assert!(setup.wants_folders());
-    let entry = |path: &str| wire::ProjectEntry {
+    let entry = |path: &str| wire::RepositoryEntry {
         path: path.into(),
         ..Default::default()
     };
     let answer = wire::ListRepositoriesResponse {
         recent: vec![entry("/src/recent"), entry("/src/app")],
-        projects: vec![entry("/src/app"), entry("/src/lib")],
+        repositories: vec![entry("/src/app"), entry("/src/lib")],
     };
     setup.take_folders(b"desk", &answer);
     assert!(!setup.wants_folders());
     assert_eq!(
         setup.folder_choices(),
         ["/src/here", "/src/app", "/src/lib", "/src/recent"],
-        "the folder the client started in, then the projects, then recent ones"
+        "the folder the client started in, then the repositories, then recent ones"
     );
     // A folder the host lists keeps its place among the others.
     setup.pick(crate::setup::Item::Folder, "/src/lib");
@@ -729,7 +732,7 @@ fn every_step_has_a_title() {
         Id::PairPhone,
         Id::KeepReachable,
         Id::SignIn,
-        Id::Projects,
+        Id::Repositories,
         Id::Improve,
         Id::FirstAgent,
     ] {

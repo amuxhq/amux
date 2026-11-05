@@ -2620,19 +2620,19 @@ public struct DiffLine: Codable, Hashable, Sendable {
 }
 
 /// What a host offers to start an agent in: where agents ran lately and the
-/// projects its person chose.
+/// repositories its person chose.
 public struct Directories: Codable, Hashable, Sendable {
     public var recent: [Directory]
-    public var projects: [Directory]
+    public var repositories: [Directory]
 
-    public init(recent: [Directory], projects: [Directory]) {
+    public init(recent: [Directory], repositories: [Directory]) {
         self.recent = recent
-        self.projects = projects
+        self.repositories = repositories
     }
 
     private enum CodingKeys: String, CodingKey {
         case recent
-        case projects
+        case repositories
     }
 }
 
@@ -4317,7 +4317,7 @@ public struct MachineSettings: Codable, Hashable, Sendable {
     /// while an agent works.
     public var keepAwake: Bool
     /// The folders new-agent pickers offer first, as absolute paths.
-    public var projects: [String]
+    public var repositories: [String]
     /// Usage counts are sent.
     public var telemetry: Bool
     /// A report is sent on its own when something goes wrong.
@@ -4326,10 +4326,10 @@ public struct MachineSettings: Codable, Hashable, Sendable {
     /// supervisor, which has nothing to start.
     public var startAtLogin: Bool?
 
-    public init(hostName: String, keepAwake: Bool, projects: [String], telemetry: Bool, autoReports: Bool, startAtLogin: Bool?) {
+    public init(hostName: String, keepAwake: Bool, repositories: [String], telemetry: Bool, autoReports: Bool, startAtLogin: Bool?) {
         self.hostName = hostName
         self.keepAwake = keepAwake
-        self.projects = projects
+        self.repositories = repositories
         self.telemetry = telemetry
         self.autoReports = autoReports
         self.startAtLogin = startAtLogin
@@ -4338,7 +4338,7 @@ public struct MachineSettings: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case hostName = "host_name"
         case keepAwake = "keep_awake"
-        case projects
+        case repositories
         case telemetry
         case autoReports = "auto_reports"
         case startAtLogin = "start_at_login"
@@ -4692,7 +4692,7 @@ public enum OnboardingAnswer: Codable, Hashable, Sendable {
     /// The step is on screen: counted, nothing kept.
     case shown(SetupStep)
     /// The person confirmed a step only they can confirm: keeping it
-    /// reachable, the projects, helping improve amux.
+    /// reachable, the repositories, helping improve amux.
     case done(SetupStep)
     /// "Later".
     case skip(SetupStep)
@@ -5405,23 +5405,6 @@ public struct ProfileView: Codable, Hashable, Sendable {
     }
 }
 
-/// A folder worth offering as a project: where Claude Code or Codex ran
-/// lately.
-public struct ProjectSuggestion: Codable, Hashable, Sendable {
-    public var path: String
-    public var name: String
-
-    public init(path: String, name: String) {
-        self.path = path
-        self.name = name
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case path
-        case name
-    }
-}
-
 /// Which provider's program a host runs: the vocabulary amux uses to ask a
 /// host what it offers with no agent running. Distinct from Kind, which is
 /// the interpreter.
@@ -5678,6 +5661,23 @@ public struct ReportSent: Codable, Hashable, Sendable {
         case id
         case receivedAtMs = "received_at_ms"
         case notSent = "not_sent"
+    }
+}
+
+/// A folder worth offering as a repository: where Claude Code or Codex ran
+/// lately.
+public struct RepositorySuggestion: Codable, Hashable, Sendable {
+    public var path: String
+    public var name: String
+
+    public init(path: String, name: String) {
+        self.path = path
+        self.name = name
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case path
+        case name
     }
 }
 
@@ -6795,15 +6795,15 @@ public struct SettingsChange: Codable, Hashable, Sendable {
     public var hostName: String?
     public var keepAwake: Bool?
     /// The whole new list.
-    public var projects: [String]?
+    public var repositories: [String]?
     public var startAtLogin: Bool?
     public var telemetry: Bool?
 
-    public init(autoReports: Bool?, hostName: String?, keepAwake: Bool?, projects: [String]?, startAtLogin: Bool?, telemetry: Bool?) {
+    public init(autoReports: Bool?, hostName: String?, keepAwake: Bool?, repositories: [String]?, startAtLogin: Bool?, telemetry: Bool?) {
         self.autoReports = autoReports
         self.hostName = hostName
         self.keepAwake = keepAwake
-        self.projects = projects
+        self.repositories = repositories
         self.startAtLogin = startAtLogin
         self.telemetry = telemetry
     }
@@ -6812,7 +6812,7 @@ public struct SettingsChange: Codable, Hashable, Sendable {
         case autoReports = "auto_reports"
         case hostName = "host_name"
         case keepAwake = "keep_awake"
-        case projects
+        case repositories
         case startAtLogin = "start_at_login"
         case telemetry
     }
@@ -6862,7 +6862,7 @@ public enum SetupStep: String, Codable, Hashable, Sendable, CaseIterable {
     /// Reach it from anywhere: sign in to an account.
     case sign_in = "sign_in"
     /// Pick the folders new agents are offered.
-    case projects = "projects"
+    case repositories = "repositories"
     /// Usage counts and automatic reports.
     case improve = "improve"
     /// Start an agent from the phone.

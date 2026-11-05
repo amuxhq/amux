@@ -81,8 +81,8 @@ public final class NewAgentStore {
 
     public private(set) var machine: HostId?
     public private(set) var listing = Listing.none
-    /// The folders the host's person chose as projects, in their order.
-    public private(set) var projects: [Directory] = []
+    /// The folders the host's person chose as repositories, in their order.
+    public private(set) var repositories: [Directory] = []
     /// Where agents on the host worked lately, newest first.
     public private(set) var recent: [Directory] = []
     public private(set) var capped = false
@@ -142,7 +142,7 @@ public final class NewAgentStore {
         machineOnline = nil
         listing = .none
         recent = []
-        projects = []
+        repositories = []
         capped = false
         claudeKind = nil
         directory = ""
@@ -169,7 +169,7 @@ public final class NewAgentStore {
         machineOnline = nil
         listing = .none
         recent = []
-        projects = []
+        repositories = []
         capped = false
         claudeKind = nil
         directory = ""
@@ -220,26 +220,26 @@ public final class NewAgentStore {
     public func listed(_ result: Result<Directories, RuntimeFailure>, asked number: Int) {
         guard number == asked else { return }
         let fallback = machine.flatMap { worked[$0] } ?? []
-        // Where an agent worked last, project or not, is what is prefilled.
+        // Where an agent worked last, repository or not, is what is prefilled.
         var last = fallback.first
         switch result {
         case .success(let directories):
-            projects = directories.projects
+            repositories = directories.repositories
             let lately = directories.recent.isEmpty ? fallback : directories.recent
             last = lately.first
-            // A folder that is a project is listed once, among the projects.
-            let chosen = Set(projects.map(\.path))
+            // A folder that is a repository is listed once, among the repositories.
+            let chosen = Set(repositories.map(\.path))
             recent = lately.filter { !chosen.contains($0.path) }
-            capped = UInt32(directories.recent.count + directories.projects.count)
+            capped = UInt32(directories.recent.count + directories.repositories.count)
                 >= Self.limit
             listing = .ready
         case .failure:
             recent = fallback
-            projects = []
+            repositories = []
             capped = false
             listing = .unavailable
         }
-        if directory.isEmpty, let first = last ?? projects.first {
+        if directory.isEmpty, let first = last ?? repositories.first {
             directory = first.path
         }
     }
@@ -307,25 +307,25 @@ public final class NewAgentStore {
     }
 
     /// Whether a search is typed: the chooser then lists what matches it
-    /// in place of its projects and recent folders.
+    /// in place of its repositories and recent folders.
     public var searching: Bool {
         !query.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
-    /// What the chooser shows for the search typed so far: the projects and
-    /// recent folders that match it, projects first.
+    /// What the chooser shows for the search typed so far: the repositories and
+    /// recent folders that match it, repositories first.
     public var found: [Directory] {
         let wanted = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !wanted.isEmpty else { return [] }
-        return (projects + recent).filter {
+        return (repositories + recent).filter {
             $0.name.lowercased().contains(wanted) || $0.path.lowercased().contains(wanted)
         }
     }
 
     /// Where an agent is most likely wanted, for the chips under the chosen
-    /// directory: where agents worked lately, then the projects.
+    /// directory: where agents worked lately, then the repositories.
     public var likely: [Directory] {
-        recent + projects
+        recent + repositories
     }
 
     /// Whether a search has to ask the host, because the list it gave was cut.

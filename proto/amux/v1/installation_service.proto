@@ -43,9 +43,9 @@ service InstallationService {
   // One profile's onboarding steps, now and on every change.
   rpc SubscribeOnboarding(OnboardingRequest) returns (stream Onboarding);
   rpc AnswerOnboarding(AnswerOnboardingRequest) returns (Onboarding);
-  // Folders worth offering as projects: where Claude Code and Codex ran
+  // Folders worth offering as repositories: where Claude Code and Codex ran
   // lately, Git repositories that still exist.
-  rpc SuggestProjects(Empty) returns (SuggestProjectsResponse);
+  rpc SuggestRepositories(Empty) returns (SuggestRepositoriesResponse);
   // A one-time link that signs the browser in to the profile's account and
   // opens `path` on amux.sh.
   rpc WebSignInLink(WebSignInLinkRequest) returns (WebSignInLinkResponse);
@@ -60,8 +60,8 @@ message Settings {
   // On power the machine stays awake while amux runs; on battery only while
   // an agent works.
   bool keep_awake = 3;
-  // The project list new-agent pickers offer, as canonical paths.
-  repeated string projects = 4;
+  // The repository list new-agent pickers offer, as canonical paths.
+  repeated string repositories = 4;
   ChatIn chat_in = 5;
   // Which Claude a new agent runs; KIND_UNSPECIFIED follows chat_in.
   Kind claude_kind = 6;
@@ -85,14 +85,14 @@ message UpdateSettingsRequest {
   optional bool start_at_login = 2;
   optional bool keep_awake = 3;
   // The whole new list.
-  optional ProjectList projects = 4;
+  optional RepositoryList repositories = 4;
   optional ChatIn chat_in = 5;
   optional Kind claude_kind = 6;
   optional bool telemetry = 7;
   optional bool auto_reports = 8;
 }
 
-message ProjectList {
+message RepositoryList {
   repeated string paths = 1;
 }
 
@@ -124,7 +124,7 @@ enum OnboardingStepId {
   ONBOARDING_STEP_ID_PAIR_PHONE = 1;
   ONBOARDING_STEP_ID_KEEP_REACHABLE = 2;
   ONBOARDING_STEP_ID_SIGN_IN = 3;
-  ONBOARDING_STEP_ID_PROJECTS = 4;
+  ONBOARDING_STEP_ID_REPOSITORIES = 4;
   ONBOARDING_STEP_ID_IMPROVE = 5;
   ONBOARDING_STEP_ID_FIRST_AGENT = 6;
 }
@@ -172,8 +172,8 @@ enum Surface {
   SURFACE_MAC = 3;
 }
 
-message SuggestProjectsResponse {
-  repeated ProjectEntry suggestions = 1;
+message SuggestRepositoriesResponse {
+  repeated RepositoryEntry suggestions = 1;
 }
 
 message WebSignInLinkRequest {

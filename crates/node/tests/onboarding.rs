@@ -1,6 +1,6 @@
 //! First-run onboarding as the front door serves it: the steps derived
 //! from what the daemon knows, the answers a client gives kept across a
-//! restart, their usage counted, and the projects worth suggesting.
+//! restart, their usage counted, and the repositories worth suggesting.
 
 use std::sync::Arc;
 
@@ -63,7 +63,7 @@ async fn answers_move_the_steps_and_outlive_a_restart() {
             (Id::PairPhone, Needed),
             (Id::KeepReachable, NotNeeded),
             (Id::SignIn, Needed),
-            (Id::Projects, Needed),
+            (Id::Repositories, Needed),
             (Id::Improve, Needed),
             (Id::FirstAgent, Needed),
         ],
@@ -90,7 +90,7 @@ async fn answers_move_the_steps_and_outlive_a_restart() {
     assert_eq!(refused.code(), tonic::Code::InvalidArgument, "{refused:?}");
 
     let done = door
-        .answer_onboarding(answer(Answer::Done(Id::Projects as i32)))
+        .answer_onboarding(answer(Answer::Done(Id::Repositories as i32)))
         .await
         .unwrap()
         .into_inner();
@@ -138,15 +138,15 @@ async fn answers_move_the_steps_and_outlive_a_restart() {
         [
             step(Step::PairPhone, StepOutcome::Shown),
             step(Step::PairPhone, StepOutcome::Skipped),
-            step(Step::Projects, StepOutcome::Done),
+            step(Step::Repositories, StepOutcome::Done),
             step(Step::SignIn, StepOutcome::Skipped),
             step(Step::Improve, StepOutcome::Skipped),
             step(Step::FirstAgent, StepOutcome::Skipped),
         ]
     );
     assert_eq!(
-        recording.named("projects_chosen"),
-        [Event::ProjectsChosen {
+        recording.named("repositories_chosen"),
+        [Event::RepositoriesChosen {
             kept: 0,
             suggested: 0
         }]
@@ -170,7 +170,7 @@ async fn answers_move_the_steps_and_outlive_a_restart() {
     daemon.shutdown().await.unwrap();
 }
 
-/// The projects suggested are the repositories Claude Code ran in lately,
+/// The repositories suggested are those Claude Code ran in lately,
 /// read from the home the daemon was given.
 #[tokio::test(flavor = "multi_thread")]
 async fn suggestions_come_from_the_session_logs_in_the_home() {
@@ -189,7 +189,7 @@ async fn suggestions_come_from_the_session_logs_in_the_home() {
     let daemon = node::start(options, None).await.unwrap();
     let suggested = daemon
         .front_door()
-        .suggest_projects(Request::new(wire::Empty {}))
+        .suggest_repositories(Request::new(wire::Empty {}))
         .await
         .unwrap()
         .into_inner()

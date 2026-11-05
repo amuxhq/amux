@@ -44,8 +44,8 @@ final class Setup {
         var lockedOut: Bool { status.map { $0.lockedOut && !$0.active } ?? false }
     }
 
-    /// A folder offered as a project, ticked to keep.
-    struct ProjectRow: Identifiable, Equatable {
+    /// A folder offered as a repository, ticked to keep.
+    struct RepositoryRow: Identifiable, Equatable {
         let path: String
         var ticked: Bool
         var id: String { path }
@@ -84,8 +84,8 @@ final class Setup {
     private(set) var offers: [SignInOfferView] = []
     @ObservationIgnored private var offerCounted: [UInt8]?
 
-    var projects: [ProjectRow] = []
-    private(set) var projectsLoaded = false
+    var repositories: [RepositoryRow] = []
+    private(set) var repositoriesLoaded = false
 
     var telemetry = true
     var autoReports = false
@@ -193,8 +193,8 @@ final class Setup {
             }
             alsoTicked = also != nil
             countOffer()
-        case .projects:
-            if !projectsLoaded { suggest() }
+        case .repositories:
+            if !repositoriesLoaded { suggest() }
         case .improve:
             telemetry = app.settings?.telemetry ?? true
             autoReports = app.settings?.autoReports ?? false
@@ -529,38 +529,38 @@ final class Setup {
         Task { _ = await profile.answerSignInOffer(from: offer.hostId, accept: false) }
     }
 
-    // MARK: - Projects
+    // MARK: - Repositories
 
     private func suggest() {
         guard let runtime = app.runtime else { return }
         Task {
-            let suggested = (try? await runtime.suggestProjects().get()) ?? []
-            projectsLoaded = true
-            // Projects already chosen stay; they are not asked about again.
-            let chosen = Set(app.settings?.projects ?? [])
-            projects = suggested.filter { !chosen.contains($0.path) }
-                .map { ProjectRow(path: $0.path, ticked: true) }
+            let suggested = (try? await runtime.suggestRepositories().get()) ?? []
+            repositoriesLoaded = true
+            // Repositories already chosen stay; they are not asked about again.
+            let chosen = Set(app.settings?.repositories ?? [])
+            repositories = suggested.filter { !chosen.contains($0.path) }
+                .map { RepositoryRow(path: $0.path, ticked: true) }
         }
     }
 
     /// A folder the person picked, ticked.
     func add(_ folder: URL) {
         let path = folder.standardizedFileURL.path
-        if let at = projects.firstIndex(where: { $0.path == path }) {
-            projects[at].ticked = true
+        if let at = repositories.firstIndex(where: { $0.path == path }) {
+            repositories[at].ticked = true
         } else {
-            projects.append(ProjectRow(path: path, ticked: true))
+            repositories.append(RepositoryRow(path: path, ticked: true))
         }
     }
 
-    /// Continue on "Projects": the ticked folders join those already
+    /// Continue on "Repositories": the ticked folders join those already
     /// chosen.
-    func confirmProjects() {
-        var paths = app.settings?.projects ?? []
-        for row in projects where row.ticked && !paths.contains(row.path) {
+    func confirmRepositories() {
+        var paths = app.settings?.repositories ?? []
+        for row in repositories where row.ticked && !paths.contains(row.path) {
             paths.append(row.path)
         }
-        confirm(.with(projects: paths))
+        confirm(.with(repositories: paths))
     }
 
     // MARK: - The first agent
@@ -579,10 +579,10 @@ extension SettingsChange {
     /// A change to only the settings named.
     static func with(
         hostName: String? = nil, startAtLogin: Bool? = nil, keepAwake: Bool? = nil,
-        projects: [String]? = nil, telemetry: Bool? = nil, autoReports: Bool? = nil
+        repositories: [String]? = nil, telemetry: Bool? = nil, autoReports: Bool? = nil
     ) -> SettingsChange {
         SettingsChange(
             autoReports: autoReports, hostName: hostName, keepAwake: keepAwake,
-            projects: projects, startAtLogin: startAtLogin, telemetry: telemetry)
+            repositories: repositories, startAtLogin: startAtLogin, telemetry: telemetry)
     }
 }

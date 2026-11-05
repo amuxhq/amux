@@ -246,7 +246,7 @@ mod tests {
                 "onboarding_step",
                 json!({"step": "pair_phone", "outcome": "done", "surface": "mac"}),
             ),
-            ("projects_chosen", json!({"kept": 3, "suggested": 5})),
+            ("repositories_chosen", json!({"kept": 3, "suggested": 5})),
             (
                 "sign_in_offer",
                 json!({"role": "receiver", "outcome": "accepted"}),

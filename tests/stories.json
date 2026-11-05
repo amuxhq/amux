@@ -44,14 +44,14 @@
       "why": "The phone's first run is its own: it pairs from the machine's screen and asks nothing of the machine."
     },
     {
-      "name": "onboarding.projects",
-      "shows": "The folders Claude Code and Codex ran in lately, offered as projects, one unticked.",
+      "name": "onboarding.repositories",
+      "shows": "The folders Claude Code and Codex ran in lately, offered as repositories, one unticked.",
       "clients": ["terminal"],
       "why": "The phone's first run is its own: it pairs from the machine's screen and asks nothing of the machine."
     },
     {
-      "name": "onboarding.projects-add",
-      "shows": "A folder of the person's own being typed into the projects.",
+      "name": "onboarding.repositories-add",
+      "shows": "A folder of the person's own being typed into the repositories.",
       "clients": ["terminal"],
       "why": "The phone's first run is its own: it pairs from the machine's screen and asks nothing of the machine."
     },
@@ -390,7 +390,7 @@
     },
     {
       "name": "settings.machine",
-      "shows": "The terminal's settings: this machine's name, starting at login, keeping awake, projects, where chats open, usage counts and reports, and the account on a Pro trial.",
+      "shows": "The terminal's settings: this machine's name, starting at login, keeping awake, repositories, where chats open, usage counts and reports, and the account on a Pro trial.",
       "clients": ["terminal"],
       "why": "The phone does not change a machine's settings; it has settings of its own."
     },

@@ -390,7 +390,7 @@ file first.
 | `host_name` | What paired devices and the phone call this machine; never empty. Setting it empty returns to the machine's own name. A rename shows in discovery and in every pairing from then on; a device already paired keeps the name it paired with. |
 | `start_at_login` | Whether amux starts at login. Absent on an install without a supervisor, which has nothing to start. Turning it on writes the login item for the next login and leaves the running amux alone. |
 | `keep_awake` | On power the machine stays awake while amux runs; on battery only while an agent works. |
-| `projects` | The folders new-agent pickers offer first, as absolute paths; `UpdateSettings` takes the whole new list. `ListRepositories` answers them, then the folders agents ran in lately. |
+| `repositories` | The folders new-agent pickers offer first, as absolute paths; `UpdateSettings` takes the whole new list. `ListRepositories` answers them, then the folders agents ran in lately. |
 | `chat_in` | Where the terminal client chats: amux's chat or each agent's own interface. |
 | `claude_kind` | Which Claude a new agent runs; unspecified follows `chat_in` (its own interface means terminal Claude). Every host publishes what this resolves to as `HostEntry.claude_kind`; create Claude agents of that kind. |
 | `telemetry`, `auto_reports` | Usage events and automatic reports. |
@@ -399,7 +399,7 @@ How amux is deployed (the supervisor, updates, where releases and data
 live, discovery's scope, the agents' tunables) stays in the file and
 `amux config`, not on this call.
 
-`SuggestProjects` offers folders for the `projects` setting: the Git
+`SuggestRepositories` offers folders for the `repositories` setting: the Git
 repositories Claude Code and Codex ran in on this machine in the last 30
 days that still exist, newest first, at most eight. A session in a linked
 worktree suggests the repository it was made from.
@@ -415,12 +415,12 @@ opens, the oldest. Each step is `needed`, `done`, `skipped` or
 | `pair_phone` | the profile trusts a phone |
 | `keep_reachable` | the person confirms starting at login and keeping awake; not needed on an install without a supervisor |
 | `sign_in` | the profile is signed in |
-| `projects` | the person confirms the project list |
+| `repositories` | the person confirms the repository list |
 | `improve` | the person confirms the telemetry and automatic-reports choice |
 | `first_agent` | a paired device created an agent on this machine |
 
 `AnswerOnboarding` takes one answer and returns the steps after it:
-`done` for a step the person confirms (only `keep_reachable`, `projects`
+`done` for a step the person confirms (only `keep_reachable`, `repositories`
 and `improve`: the others are done when they happen), `skip` for "Later",
 `dismiss` when the person dismisses an offer to finish setting up, which
 skips every needed step, `shown` when the client shows a step,

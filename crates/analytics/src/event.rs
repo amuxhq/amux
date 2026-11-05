@@ -63,7 +63,7 @@ tokens! {
         PairPhone => "pair_phone",
         KeepReachable => "keep_reachable",
         SignIn => "sign_in",
-        Projects => "projects",
+        Repositories => "repositories",
         Improve => "improve",
         FirstAgent => "first_agent",
     }
@@ -425,9 +425,9 @@ pub enum Event {
         outcome: StepOutcome,
         surface: Client,
     },
-    /// The projects step was confirmed: how many folders were kept of how
+    /// The repositories step was confirmed: how many folders were kept of how
     /// many suggested. Numbers only, never the folders.
-    ProjectsChosen {
+    RepositoriesChosen {
         kept: u32,
         suggested: u32,
     },
@@ -464,7 +464,7 @@ impl Event {
             Event::PurchaseStarted { .. } => "purchase_started",
             Event::CheckFailed { .. } => "check_failed",
             Event::OnboardingStep { .. } => "onboarding_step",
-            Event::ProjectsChosen { .. } => "projects_chosen",
+            Event::RepositoriesChosen { .. } => "repositories_chosen",
             Event::SignInOffer { .. } => "sign_in_offer",
         }
     }
@@ -494,7 +494,7 @@ impl Event {
             Event::PurchaseStarted { .. } => 17,
             Event::CheckFailed { .. } => 18,
             Event::OnboardingStep { .. } => 19,
-            Event::ProjectsChosen { .. } => 20,
+            Event::RepositoriesChosen { .. } => 20,
             Event::SignInOffer { .. } => 21,
         }
     }
@@ -592,7 +592,7 @@ impl Event {
                 put("outcome", token(*outcome));
                 put("surface", token(*surface));
             }
-            Event::ProjectsChosen { kept, suggested } => {
+            Event::RepositoriesChosen { kept, suggested } => {
                 put("kept", json!(kept));
                 put("suggested", json!(suggested));
             }
@@ -692,7 +692,7 @@ impl Event {
                 outcome: StepOutcome::Done,
                 surface: Client::Mac,
             },
-            Event::ProjectsChosen {
+            Event::RepositoriesChosen {
                 kept: 3,
                 suggested: 5,
             },

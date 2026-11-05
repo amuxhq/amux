@@ -1,5 +1,5 @@
 shell |  | you | 0,62,402,778
-home |  | signed-out | 0,221,402,570
+home |  | signed-out | 0,333,402,458
 hosts |  | 1 reachable | 0,221,402,570
 you |  | none | 0,132,402,708
 you.signIn | Sign In |  | 16,176,370,69
@@ -18,18 +18,19 @@ you.report | Report a Problem |  | 16,1580,370,69
 you.dump | Export Diagnostics |  | 16,1650,370,112
 you.help.caption |  |  | 16,1769,366,106
 you.close | Close |  | 342,82,40,36
- | decision-sdk, Idle, The deploy check passed., desk, /private/tmp/amux-phone-journey/net/desk/work, <age> |  | 0,221,402,150
+ | Switch account |  | 21,66,34,36
+ | decision-sdk, Idle, The deploy check passed., desk, /private/tmp/amux-phone-journey/net/desk/work, <age> |  | 0,333,402,150
  | Agents |  | 16,124,174,62
  | Nothing needs you |  | 16,191,155,22
  | Switch account |  | 21,66,34,36
  | New Agent |  | 348,66,33,36
- | All |  | 16,223,123,32
- | All |  | 69,230,17,18
- | Needs you |  | 139,223,123,32
- | Needs you |  | 164,230,73,18
- | Working |  | 262,223,124,32
- | Working |  | 296,230,57,18
- | Search |  | 16,222,370,0
+ | Search |  | 73,246,120,48
+ | All |  | 16,335,123,32
+ | All |  | 69,342,17,18
+ | Needs you |  | 139,335,123,32
+ | Needs you |  | 164,342,73,18
+ | Working |  | 262,335,124,32
+ | Working |  | 296,342,57,18
  | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
  | Hosts |  | 197,795,94,54

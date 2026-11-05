@@ -122,6 +122,26 @@ public final class FleetStore {
         }
     }
 
+    /// The fleet as it stands, in a store nothing moves: what a screen shows
+    /// while something covers it. The fleet moves several times a second
+    /// while an agent works, and a list redrawn under an open chat costs
+    /// that chat its frames for rows nobody can see.
+    public func still() -> FleetStore {
+        let still = FleetStore(now: orderedAt)
+        still.rows = rows
+        still.sections = sections
+        still.needYou = needYou
+        still.working = working
+        still.hosts = hosts
+        still.flipped = flipped
+        still.filter = filter
+        still.loaded = loaded
+        still.relay = relay
+        still.heldAway = heldAway
+        still.markedFirstFrame = true
+        return still
+    }
+
     /// The first frame is on screen, or waiting for it was given up.
     public func finishPresenting() {
         guard presenting else { return }

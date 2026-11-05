@@ -75,7 +75,12 @@ public struct AgentsHome: View {
     @Environment(\.photographed) private var photographed
     @Environment(\.reducesMotion) private var reducesMotion
     @Environment(\.scenePhase) private var phase
-    private let model: FleetStore
+    private let store: FleetStore
+    /// The fleet as it stood when something covered this screen: a chat
+    /// pushed over it, another tab. Shown instead of the live fleet until
+    /// the screen is back, so nothing under the cover is redrawn.
+    @State private var covered: FleetStore?
+    private var model: FleetStore { covered ?? store }
     private let accounts: AccountRegistry
     /// The machines, for the one thing this screen says about them: a phone
     /// with no agents yet is a phone that has not paired, and what it has
@@ -116,7 +121,7 @@ public struct AgentsHome: View {
         actions: @escaping @MainActor (HomeAction) -> Void
     ) {
         self.scope = scope
-        self.model = model
+        self.store = model
         self.accounts = accounts
         self.hosts = hosts
         self.offerNotifications = offerNotifications
@@ -193,7 +198,11 @@ public struct AgentsHome: View {
                 }
             }
         }
-        .onAppear { actions(.refresh) }
+        .onAppear {
+            covered = nil
+            actions(.refresh)
+        }
+        .onDisappear { covered = store.still() }
         // Signing in is offered once a machine has stood out of reach for a
         // while on screen: a reopened app reads every machine unreached until
         // it has dialled them. Away is certain when it is read, so its offer
@@ -439,7 +448,10 @@ public struct AgentsHome: View {
             }
             .listRowInsets(EdgeInsets())
             .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
+            // Opaque, in the ground's colour: a row moving to its new
+            // place slides over the rows it passes, as in any list, and a
+            // clear one would show their text through its own.
+            .listRowBackground(design.ground.color)
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -464,8 +476,14 @@ public struct AgentsHome: View {
             .overlay(alignment: .bottom) {
                 if !last { rule(row) }
             }
-            .swipeActions(edge: .trailing, allowsFullSwipe: true) { trailing(row) }
-            .swipeActions(edge: .leading, allowsFullSwipe: true) { leading(row) }
+            // A swipe shows its symbols alone, as Messages does: the
+            // words are for VoiceOver, which reads them as the actions'.
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                trailing(row).labelStyle(.iconOnly)
+            }
+            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                leading(row).labelStyle(.iconOnly)
+            }
             .contextMenu { menu(row) }
     }
 
@@ -1144,18 +1162,20 @@ struct AgentRowView: View {
                         .lineLimit(1)
                         .layoutPriority(1)
                     Spacer(minLength: Space.xs)
-                    if row.pinned {
-                        Image(systemName: "pin.fill")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(design.inkFaint.color)
-                            .accessibilityLabel(String(localized: "Pinned"))
-                    }
                     Text(facts)
                         .designFont(.caption, design)
                         .foregroundStyle(design.inkFaint.color)
                         .lineLimit(1)
                         // An age moves with the clock: a compared screenshot masks it.
                         .reported("home.row.\(row.id).age.volatile")
+                    // Last on the line, against the margin, so every pin
+                    // sits in one column whatever the facts before it say.
+                    if row.pinned {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(design.inkFaint.color)
+                            .accessibilityLabel(String(localized: "Pinned"))
+                    }
                 }
                 if let preview {
                     Text(withCode(preview.text))

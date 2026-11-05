@@ -1,34 +1,38 @@
-# What amux sends
+---
+title: What amux sends
+description: The usage counts amux sends to amux.sh, every event and every field, what it never sends, and how to turn it off.
+sidebar:
+  order: 3
+---
 
-*For anyone running amux who wants to know what it tells amux.sh about how it is used, and how to turn that off.*
-
-amux sends a small number of usage events so we can tell whether people
+amux sends a small number of usage events, so we can tell whether people
 install it, get it working across their machines, come back to it, and run
-into the free tier. They are counts and choices, never content: what you
-type, what your agents say and the names of your machines, folders and
-files stay on your machines.
+into the limits of the free plan. They are counts and choices, never content.
+What you type, what your agents say, and the names of your machines, folders
+and files stay on your machines.
 
-It is on by default, with nothing to accept first. Setting up a computer, in
-the terminal client or the Mac app, says so in one line on its "Help improve
-amux" step; **Send usage counts** in Settings turns it off on every client,
-and the iPhone app's App Store privacy label says what it collects.
-A signed-in profile's events are linked to its account, as
-[where it goes](#where-it-goes) says. To turn it off:
+This page lists everything that's sent, field by field.
 
-- **On a computer:** `amux config set telemetry false`. A running daemon stops
-  sending at once, and nothing it records while off is sent later.
-  `amux config set telemetry true` resumes it at once too, including on a
-  daemon that started with it off. `amux status` says whether it is on and
-  where it goes.
-- **`DO_NOT_TRACK`:** a daemon started with `DO_NOT_TRACK` set to anything
-  but empty or `0` sends nothing, whatever the setting says. It must be set
-  where the daemon starts: a daemon started at login, or by a service
-  manager, does not see a variable set in a shell profile, so on a desktop
-  install the setting above is the switch that always reaches it.
-- **On the iPhone:** turn off **Share Usage** under **You**, in **This phone**.
+## Turning it off
 
-Development builds, test runs and test networks never send anything. Only
-the published `amux` binary and the App Store app do.
+Usage counts are on by default, with nothing to accept first. Setting up a
+computer says so in one line, on its **Help improve amux** step. To turn them
+off:
+
+- **On a computer:** turn off **Send usage counts** in the terminal
+  app's Settings, or run `amux config set telemetry false`. amux
+  stops sending at once, and nothing it records while off is sent later.
+  `amux status` says whether it's on.
+- **On the iPhone:** turn off **Share Usage** under **You**, in
+  **This phone**. The app's App Store privacy label lists what it collects.
+- **With `DO_NOT_TRACK`:** amux started with `DO_NOT_TRACK` set to anything
+  but empty or `0` sends nothing, whatever the setting says. It has to be set
+  where amux starts, though. amux started at login, or by a service manager,
+  doesn't see a variable set in your shell profile, so on a desktop the
+  setting above is the switch that always works.
+
+Only the published `amux` and the App Store app send anything. Builds from
+source and test runs never do.
 
 ## Where it goes
 
@@ -126,19 +130,30 @@ before that is not counted.
 - Your IP address beyond what is needed to find a country, as described
   above.
 
-The daemon's own log on each machine names machines and gives reasons in
-words; it leaves the machine only inside a report you send, or one amux
-sends when you turned on automatic reports, redacted, and has nothing to do
-with these events (see [sending reports](DEBUGGING.md#sending-reports)).
+## Problem reports
 
-## For developers
+Problem reports are separate from usage counts. A report goes to amux.sh only
+when you send one yourself, from the terminal app or the phone, or
+automatically when amux catches one of its own bugs, if you turned on
+automatic reports. Automatic reports are off unless you turn them on: setting
+up asks, and you can change it later with **Send reports automatically** in
+Settings, **Send Automatic Reports** on the phone, or
+`amux config set auto_reports true`.
 
-The events are the `Event` type in
-[`crates/analytics`](../crates/analytics/src/lib.rs): every field is an
-enum, a number, a bool, a version or a host id, so the type is the list of
-what can be sent, and a test fails when an event or a property is missing
-from this page. Setting `AMUX_ANALYTICS_URL` to a base URL sends a
-development build's events to `<base>/api/events` instead of nowhere, for
-trying the uploader against a server of your own; `DO_NOT_TRACK` and the
-setting still turn it off. The tunable values are in
-[parameters](PARAMETERS.md).
+A report you send yourself includes the screen you froze to report it, as
+you saw it, with your marks and your note. If a chat was on screen, its
+visible text goes with the report, so look before you send.
+
+Everything else in a report, and the whole of an automatic one, carries the
+shape of what went wrong, not its content. Which steps ran, in what order,
+how big things were and how long they took are kept. Every word of your
+chats, your code, and the names of your machines, folders and files are
+emptied out or masked before the report leaves your machine. amux's own logs
+go with it, with paths, email addresses and machine and user names masked. A signed-out profile sends no reports. If you delete your
+account, its reports are deleted with it.
+
+The [debugging guide](../../DEBUGGING.md#sending-reports) describes a
+report's contents in full.
+
+A test in amux's source checks that this page names every event and every
+field a device can send, so the list above can't fall behind the code.

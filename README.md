@@ -114,8 +114,8 @@ and another Claude to rewrite the error messages, and hears back from each one w
   </picture>
 </p>
 
-[How amux works](docs/HOW_IT_WORKS.md) explains what each device, the account and the relay
-can and cannot do.
+[How amux works](docs/guide/understand/how-amux-works.md) explains what each device and the account do, and
+[Security and privacy](docs/guide/understand/security-and-privacy.md) what the relay can and cannot see.
 
 ## amux in 50 seconds
 
@@ -148,7 +148,10 @@ anywhere, securely, when your machines are apart.
 
 ## Learn more
 
-- [How amux works](docs/HOW_IT_WORKS.md): devices, accounts, pairing and the relay
+- [How amux works](docs/guide/understand/how-amux-works.md): devices, accounts, pairing and the relay
+- [Security and privacy](docs/guide/understand/security-and-privacy.md): what pairing protects and what the relay sees
+- [What amux sends](docs/guide/understand/what-amux-sends.md): the usage counts, and how to turn them off
+- [Build an amux client](docs/guide/build/build-a-client.md): write your own client on amux's protocol or crates
 - [The terminal app](docs/TERMINAL.md): screens, keys and commands
 - [All documentation](docs/README.md)
 

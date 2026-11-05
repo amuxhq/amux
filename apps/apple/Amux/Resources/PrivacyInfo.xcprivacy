@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   The app's privacy manifest. It must agree with the App Privacy answers in
-  App Store Connect and with docs/ANALYTICS.md: the account (name, email, user
+  App Store Connect and with docs/guide/understand/what-amux-sends.md: the account (name, email, user
   id) serves the app itself; usage events, the random installation and host
   ids, purchase starts, error codes and the country amux.sh derives from a
   shortened address serve analytics. Nothing is used for tracking.

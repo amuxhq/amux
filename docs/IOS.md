@@ -360,7 +360,7 @@ phone that kept its links would find each dead only when it next wrote to
 it, and a link through the relay not even then until the relay link came
 back; dialling afresh costs one round trip.
 
-The same moments drive [product analytics](ANALYTICS.md), which the
+The same moments drive [product analytics](guide/understand/what-amux-sends.md), which the
 runtime keeps and sends: coming to the front counts the app as opened (at
 most once an hour), and going to the back sends what is waiting before the
 system may suspend the app. The paywall opening and a purchase starting are

@@ -6,7 +6,7 @@ This page covers how amux hosts find, trust and reach each other, and the
 `amux.v1` services that ride on those connections and on the local sockets.
 The processes around it are described in [Architecture](ARCHITECTURE.md);
 the session stream a client reads is described in [the wire](WIRE.md); the
-user-facing behaviour is in [How amux works](HOW_IT_WORKS.md).
+user-facing behaviour is in [How amux works](guide/understand/how-amux-works.md).
 
 The driver's code lives in the `node` crate: `crates/node/src/link/` (the link
 socket and its paths, carriers, the link runtime, the channel pool, the

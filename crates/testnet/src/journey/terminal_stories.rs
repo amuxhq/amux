@@ -2138,17 +2138,24 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
     let env = [("BROWSER", browser.as_str())];
     let opened_links = || std::fs::read_to_string(&opened).unwrap_or_default();
 
-    // Setting up opens before home, on pairing.
+    // Setting up opens before home, on pairing. The step draws "2. Enter
+    // the code in the app" until the daemon answers the window's open, so
+    // the frame is read once the PIN has taken its place.
     let pane = journey.launch_with("terminal", "desk", &args, &env)?;
-    let pairing = journey.wait_terms(
+    let pairing = journey.wait(
         &pane,
-        &[
-            "Connect your iPhone",
-            "This machine is called desk.",
-            "1. Scan to get amux on your iPhone",
-            "2. Enter ",
-            "esc later",
-        ],
+        |frame| {
+            [
+                "Connect your iPhone",
+                "This machine is called desk.",
+                "1. Scan to get amux on your iPhone",
+                "esc later",
+            ]
+            .iter()
+            .all(|term| frame.contains(term))
+                && pin_on(frame).is_some()
+        },
+        "setting up on pairing, with its PIN",
     )?;
     if at_home(&pairing) {
         return Err(format!("setting up did not open on pairing:\n{pairing}"));

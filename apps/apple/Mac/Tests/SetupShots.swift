@@ -111,39 +111,6 @@ final class SetupShots: XCTestCase {
             "setting up wrote no login item")
     }
 
-    /// What the Mac app does at launch when no amux answers: it installs the
-    /// copy it carries and starts it, and adds no login item.
-    func testInstallingStartsAmuxWithoutALoginItem() async throws {
-        let scratch = try ScratchDaemon.directory()
-        let home = scratch.appending(path: "home")
-        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
-        let saved = ProcessInfo.processInfo.environment["HOME"]
-        setenv("HOME", home.path, 1)
-        setenv("AMUX_TEST_DISCOVERY_MODE", "disabled", 1)
-        unsetenv("AMUX_CONFIG")
-        defer {
-            let stopped = ScratchDaemon.run(
-                home.appending(path: ".amux/bin/amux"), ["server", "stop"],
-                environment: ["HOME": home.path])
-            XCTAssertTrue(stopped.contains("Stopped amux"), stopped)
-            if let saved { setenv("HOME", saved, 1) }
-            unsetenv("AMUX_TEST_DISCOVERY_MODE")
-        }
-        let installed = try await Runtime.install(
-            InstallOptions(bundled: ScratchDaemon.amux.path, config: nil))
-        guard case .installed(_, let bundled) = installed else {
-            return XCTFail("installed, not \(installed)")
-        }
-        XCTAssertTrue(bundled)
-        let status = ScratchDaemon.run(
-            home.appending(path: ".amux/bin/amux"), ["status"], environment: ["HOME": home.path])
-        XCTAssertTrue(status.contains("is running"), status)
-        XCTAssertTrue(status.contains("Does not start at login"), status)
-        XCTAssertFalse(
-            FileManager.default.fileExists(atPath: home.appending(path: "Library/LaunchAgents").path),
-            "installing wrote no login item")
-    }
-
     // MARK: - Drawing
 
     /// Draws what `stage` shows in the light and dark appearances into

@@ -477,8 +477,14 @@ impl EmbeddedRuntime {
                 let invitation = node::parse_pair_link(link)?;
                 BeginPairRequest {
                     host_id: invitation.host_id.as_bytes().to_vec(),
-                    secret: Some(begin_pair_request::Secret::QrSecret(invitation.secret)),
-                    addrs: invitation.addrs.iter().map(ToString::to_string).collect(),
+                    secret: Some(begin_pair_request::Secret::QrSecret(
+                        invitation.secret.to_vec(),
+                    )),
+                    addrs: invitation
+                        .dial_addrs()
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect(),
                 }
             }
         };

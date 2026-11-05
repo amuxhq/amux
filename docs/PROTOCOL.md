@@ -139,15 +139,29 @@ process. None of them is ever a peer call.
 ## Chapter 2: Pairing
 
 PIN and QR pairing use one SPAKE2 exchange. The PIN is six digits. The QR
-contains JSON `{host_id, secret, addrs, cloud_url?}`, URL-safe base64 with no
-padding, after the `#` of the cloud's pairing page,
-`https://<cloud>/p#<payload>`: the profile's cloud, amux.sh when it has none.
-The daemon composes that link (`PairingWindow.qr_link`) for every window with
-a QR secret. The payload is a fragment, so it never reaches the server: a
-phone with the app opens the link in the app, and one without lands on the
-page, which sends it to the App Store. Phones also accept the app's own
-`amux://pair?payload=...` link. `secret` is a one-shot 256-bit value and
-`addrs` let pairing work when multicast is unavailable. A found advertisement, a typed address, the QR addresses, SSH, or
+holds the cloud's pairing page, `https://<cloud>/p#<invitation>`: the
+profile's cloud, amux.sh when it has none. The invitation is bytes in URL-safe
+base64 with no padding: a version byte (1), the host id (16 bytes), the
+one-shot 256-bit secret (32), the LAN listener's port (2, big-endian; 0 with no
+listener) and then zero or more IPv4 addresses (4 bytes each), all at that
+port. A link of another version, shorter than the 51 bytes before the
+addresses, with a partial address, or with addresses at port 0 is refused.
+There is no cloud field: the link's origin is the cloud. The daemon composes
+that link (`PairingWindow.qr_link`) for every window with a QR secret; a first
+run's is about 97 characters, QR version 5 at the lowest error correction.
+The invitation is a fragment, so it never reaches the server: a phone with the
+app opens the link in the app, and one without lands on the page, which sends
+it to the App Store.
+
+For a listener on every interface, the addresses are at most one private
+home-network IPv4 address (RFC 1918; the one the default route leaves by when
+it is one of them, else the first listed) and at most one Tailscale address
+(100.64.0.0/10), and nothing else: no loopback, link-local or IPv6 address. A
+listener bound to one IPv4 address answers there alone and is named at it,
+as a test network's hosts and a driven phone on loopback are. A joiner dials the hosts discovery
+found under the invitation's host id first, which covers the home network;
+the home address is for a network that blocks discovery's multicast, and the
+Tailscale address travels in the code because Tailscale carries no multicast. A found advertisement, a typed address, the QR addresses, SSH, or
 a neighbor that forwards can all lead to the same exchange. Direct candidates
 are tried with a two-second QUIC dial each, so a silent address does not
 prevent trying the next one. After them, each neighbor announcing the other

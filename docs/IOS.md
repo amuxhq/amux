@@ -290,9 +290,10 @@ key's fingerprint underneath, and the sheet closes itself once the machine
 is trusted. Signing in or subscribing from it opens on the tab beneath, and
 the sheet comes back with its pairing where it was when that is put away.
 
-An invitation reaches the app as `https://amux.sh/p#<payload>` (the address a
-machine's QR code holds, which the Camera app opens) or as
-`amux://pair?payload=<payload>`. The app claims `applinks:amux.sh` in its
+An invitation reaches the app as `https://amux.sh/p#<invitation>`, the address
+a machine's QR code holds, which the Camera app opens; the app reads the
+invitation's bytes only to refuse a malformed link before it becomes a screen,
+and hands the link whole to the runtime. The app claims `applinks:amux.sh` in its
 Associated Domains, so the web address opens the app when it is installed,
 whether it is running (`onContinueUserActivity`) or not; the payload stays in
 the fragment, which no web server sees. The same `/p#` page on another host

@@ -2084,9 +2084,9 @@ fn report_a_problem(journey: &mut TerminalJourney) -> Proved {
 
 /// The six digits of setting up's `2. Enter 418 207 in the app`.
 fn pin_on(frame: &str) -> Option<String> {
-    let line = frame.lines().find(|line| line.contains("2. Enter "))?;
-    let (_, after) = line.split_once("2. Enter ")?;
-    let (pin, _) = after.split_once(" in the app")?;
+    let line = frame.lines().find(|line| line.contains("Or enter "))?;
+    let (_, after) = line.split_once("Or enter ")?;
+    let (pin, _) = after.split_once(" in the amux app.")?;
     let digits: String = pin.chars().filter(char::is_ascii_digit).collect();
     (digits.len() == 6).then_some(digits)
 }
@@ -2138,9 +2138,9 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
     let env = [("BROWSER", browser.as_str())];
     let opened_links = || std::fs::read_to_string(&opened).unwrap_or_default();
 
-    // Setting up opens before home, on pairing. The step draws "2. Enter
-    // the code in the app" until the daemon answers the window's open, so
-    // the frame is read once the PIN has taken its place.
+    // Setting up opens before home, on pairing. The step draws "Or enter
+    // the code in the amux app." until the daemon answers the window's open,
+    // so the frame is read once the PIN has taken its place.
     let pane = journey.launch_with("terminal", "desk", &args, &env)?;
     let pairing = journey.wait(
         &pane,
@@ -2148,7 +2148,7 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
             [
                 "Connect your iPhone",
                 "This machine is called desk.",
-                "1. Scan to get amux on your iPhone",
+                "Scan with your iPhone's camera to pair.",
                 "esc later",
             ]
             .iter()
@@ -2159,6 +2159,18 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
     )?;
     if at_home(&pairing) {
         return Err(format!("setting up did not open on pairing:\n{pairing}"));
+    }
+    // The whole pairing code beside the PIN, not the page's alone (version
+    // 1, 11 rows): a desk's invitation is QR version 5, 19 rows of modules
+    // and a margin row above and below that is inked on a dark ground.
+    let code_rows = pairing
+        .lines()
+        .filter(|line| line.chars().filter(|c| "█▀▄".contains(*c)).count() > 10)
+        .count();
+    if !(19..=21).contains(&code_rows) {
+        return Err(format!(
+            "the pairing code is not the whole invitation's, {code_rows} rows:\n{pairing}"
+        ));
     }
     let pin = pin_on(&pairing).ok_or_else(|| format!("no PIN on the desk:\n{pairing}"))?;
 
@@ -2257,7 +2269,7 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
     // is skipped; the steps done are not asked again.
     journey.interrupt_client(&pane)?;
     let again = journey.launch_with("again", "desk", &args, &env)?;
-    journey.wait_terms(&again, &["Connect your iPhone", "2. Enter "])?;
+    journey.wait_terms(&again, &["Connect your iPhone", "Or enter "])?;
     journey.keys(&again, &["Escape"])?;
     journey.wait_terms(
         &again,
@@ -2333,7 +2345,7 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
     }
     journey.quit_client(&again)?;
     Ok(vec![
-        "a first `amux` opened setting up on pairing, before home".to_owned(),
+        format!("a first `amux` opened setting up on pairing, the whole pairing code ({code_rows} rows) beside the PIN, before home"),
         "the six digits it showed paired the laptop, and it said `Paired with laptop ✓`".to_owned(),
         format!("signing in opened the browser at the approval page for {code}; approved, the laptop was offered the account and signed in as jordan@example.com"),
         "the repository Claude Code ran in was offered ticked and kept beside a typed folder".to_owned(),

@@ -2614,7 +2614,7 @@ fn local_network(journey: &mut PhoneJourney) -> Proved {
     Ok(lines(&[
         "with the local network refused the Hosts tab said so, offered Settings and listed no machine",
         "granted, the phone's browser found the desk and offered it",
-        "the desk's amux://pair link started the app on the desk's name and key before trust, and paired it",
+        "the desk's pairing link started the app on the desk's name and key before trust, and paired it",
         "the desk received 'Hello from the phone.' once and answered",
     ]))
 }

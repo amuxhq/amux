@@ -641,6 +641,28 @@ impl Edge {
         }
     }
 
+    /// What a QR invitation names to dial: the LAN listener's port and, for
+    /// a listener on every interface, at most one home and one Tailscale
+    /// address of the machine's (see
+    /// [`crate::pairing::qr::invitation_addrs`]). A listener bound to one
+    /// IPv4 address answers there alone, so that address is named whatever
+    /// it is: a test network's hosts and a driven phone listen on loopback,
+    /// and two of them pair by the link. Port 0 without a listener.
+    pub fn invitation_reach(&self) -> (u16, Vec<std::net::Ipv4Addr>) {
+        let Some(lan) = self.lan_addr else {
+            return (0, Vec::new());
+        };
+        let addrs = match lan.ip() {
+            ip if ip.is_unspecified() => crate::pairing::qr::invitation_addrs(
+                &local_pairing_addrs(lan.port()),
+                crate::discovery::default_route_ipv4(),
+            ),
+            std::net::IpAddr::V4(ip) => vec![ip],
+            std::net::IpAddr::V6(_) => Vec::new(),
+        };
+        (lan.port(), addrs)
+    }
+
     /// Advertises again with the pairing window open or closed, so a phone
     /// browsing nearby knows whether a PIN can work. The registration may
     /// block on the system's responder, so it runs off the caller's task;

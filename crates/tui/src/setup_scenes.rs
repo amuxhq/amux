@@ -123,21 +123,22 @@ pub fn fleet(with_phone: bool) -> FleetState {
 }
 
 /// A pairing window as the desk opens one: the PIN and the link its QR
-/// code shows, an invitation of the usual length.
+/// code shows, an invitation of the usual length. The invitation names a
+/// home address and a Tailscale one, the most a desk's names, so the link
+/// is as long as a real one gets: 97 characters.
 pub fn window() -> wire::PairingWindow {
-    let invitation = concat!(
-        "eyJob3N0X2lkIjoiOGMzZTFhMmItNGQ1Zi00YTZiLThjN2QtOWUwZjFhMmIzYzRkIiwic2VjcmV0IjpbMTIs",
-        "MjU1LDcsODgsMTQwLDMsMjE5LDY2LDE3LDIwMCw5OSw0NSwxMjgsNiwyMzMsNzEsMTUsMTkwLDQyLDE2Miw4",
-        "LDIxNCw1NSwxMDcsMjQ0LDMxLDE3OCwyLDk0LDE1MywyNywxMjFdLCJhZGRycyI6WyIxOTIuMTY4LjEuMjQ6",
-        "NzQyMCJdLCJjbG91ZF91cmwiOiJodHRwczovL2FtdXguc2gifQ"
-    );
+    let invitation =
+        "AYw-GitNX0prjH2eDxorPE0M_wdYjAPbQhHIYy2ABulHD74qogjWN2v0H7ICXpkbeRz8wKgBGGRYDgM";
     wire::PairingWindow {
         identity: Some(wire::PairingIdentity {
             name: "desk".to_owned(),
             ..Default::default()
         }),
         ttl_seconds: crate::onboarding::WINDOW_SECONDS,
-        addrs: vec!["192.168.1.24:7420".to_owned()],
+        addrs: vec![
+            "192.168.1.24:7420".to_owned(),
+            "100.88.14.3:7420".to_owned(),
+        ],
         cloud_url: None,
         secret: Some(wire::pairing_window::Secret::PinAndQr(wire::PinAndQr {
             pin: "418207".to_owned(),

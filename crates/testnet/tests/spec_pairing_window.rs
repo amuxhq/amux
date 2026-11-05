@@ -1,7 +1,8 @@
 //! The pairing window as a first run uses it: one window that takes the
-//! PIN or the QR code, a QR code that is the cloud's pairing page, the
-//! network advertisement saying while it is open, and its status as a
-//! stream that says when a joiner is confirming and whom it paired.
+//! PIN or the QR code, a QR code that is the cloud's pairing page naming
+//! the desk and the one address it listens on, the network advertisement
+//! saying while it is open, and its status as a stream that says when a
+//! joiner is confirming and whom it paired.
 
 #![cfg(unix)]
 
@@ -85,7 +86,16 @@ async fn one_window_takes_the_qr_code_and_says_who_paired() {
     );
     let invitation = node::parse_pair_link(&started.qr_link).unwrap();
     assert_eq!(invitation.host_id, desk);
-    assert_eq!(invitation.secret, secrets.qr_secret);
+    assert_eq!(invitation.secret.as_slice(), secrets.qr_secret);
+    // The desk listens on one loopback address, so that is the one address
+    // its code names.
+    assert_eq!(
+        invitation.dial_addrs(),
+        edge(&net, "desk")
+            .lan_addr()
+            .into_iter()
+            .collect::<Vec<_>>()
+    );
     assert!(next(&mut statuses).await.active);
     candidate_open(&net, "laptop", "desk", true).await;
 
@@ -93,8 +103,12 @@ async fn one_window_takes_the_qr_code_and_says_who_paired() {
         &net,
         "laptop",
         Some(desk),
-        begin_pair_request::Secret::QrSecret(invitation.secret),
-        invitation.addrs.iter().map(ToString::to_string).collect(),
+        begin_pair_request::Secret::QrSecret(invitation.secret.to_vec()),
+        invitation
+            .dial_addrs()
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
     )
     .await
     .expect("the QR secret pairs");

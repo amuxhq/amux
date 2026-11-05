@@ -891,8 +891,12 @@ mod tests {
     #[test]
     fn a_qr_window_shows_the_link_the_daemon_composed() {
         let host = Uuid::from_bytes([3; 16]);
-        let addrs = ["10.0.0.2:7420".parse().unwrap()];
-        let json = node::encode_qr_pairing_invitation(host, &addrs, None, &[9; 32]).unwrap();
+        let offered = node::QrPairingPayload {
+            host_id: host,
+            secret: [9; 32],
+            port: 7420,
+            addrs: vec![[10, 0, 0, 2].into()],
+        };
         let started = PairingWindow {
             identity: Some(PairingIdentity {
                 host_id: host.as_bytes().to_vec(),
@@ -902,7 +906,7 @@ mod tests {
             addrs: vec!["10.0.0.2:7420".into()],
             cloud_url: None,
             secret: Some(pairing_window::Secret::QrSecret(vec![9; 32])),
-            qr_link: node::qr_link("https://amux.sh", &json),
+            qr_link: node::qr_link("https://amux.sh", &offered),
         };
         let lines = invitation(&started, true).unwrap();
         let link = lines
@@ -911,9 +915,7 @@ mod tests {
             .unwrap();
         assert!(link.starts_with("https://amux.sh/p#"), "{link}");
         let parsed = node::parse_pair_link(link).unwrap();
-        assert_eq!(parsed.host_id, host);
-        assert_eq!(parsed.secret, vec![9; 32]);
-        assert_eq!(parsed.addrs, vec!["10.0.0.2:7420".parse().unwrap()]);
+        assert_eq!(parsed, offered);
     }
 
     #[test]

@@ -83,6 +83,27 @@ pub(crate) fn local_pairing_addrs(_port: u16) -> Vec<SocketAddr> {
     Vec::new()
 }
 
+/// The IPv4 address the default route leaves this machine by, or none
+/// without one. Connecting a UDP socket only asks the routing table; no
+/// datagram is sent. The destination is a documentation address, which no
+/// route but the default one covers.
+#[cfg(not(target_os = "ios"))]
+pub(crate) fn default_route_ipv4() -> Option<std::net::Ipv4Addr> {
+    let socket = std::net::UdpSocket::bind((std::net::Ipv4Addr::UNSPECIFIED, 0)).ok()?;
+    socket
+        .connect((std::net::Ipv4Addr::new(198, 51, 100, 1), 9))
+        .ok()?;
+    match socket.local_addr().ok()?.ip() {
+        std::net::IpAddr::V4(ip) if !ip.is_unspecified() => Some(ip),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "ios")]
+pub(crate) fn default_route_ipv4() -> Option<std::net::Ipv4Addr> {
+    None
+}
+
 /// The untrusted connection hints published by one host.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Advertisement {

@@ -213,13 +213,16 @@ impl Edge {
             .map(|service| service.as_str().to_owned());
         let qr_link = match &secret {
             Secret::QrSecret(qr) | Secret::PinAndQr(wire::PinAndQr { qr_secret: qr, .. }) => {
-                let invitation = crate::pairing::qr::encode_qr_pairing_invitation(
-                    self.host_id(),
-                    &addrs,
-                    cloud_url.as_deref(),
-                    qr,
-                )
-                .map_err(|error| Status::internal(error.to_string()))?;
+                let secret = qr.as_slice().try_into().map_err(|_| {
+                    Status::internal(format!("the core opened a {}-byte QR secret", qr.len()))
+                })?;
+                let (port, addrs) = self.invitation_reach();
+                let invitation = crate::pairing::qr::QrPairingPayload {
+                    host_id: self.host_id(),
+                    secret,
+                    port,
+                    addrs,
+                };
                 crate::pairing::qr::qr_link(&self.pairing_page_cloud(), &invitation)
             }
             Secret::Pin(_) => String::new(),

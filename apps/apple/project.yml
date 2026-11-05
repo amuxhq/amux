@@ -126,9 +126,9 @@ targets:
         # the one chat it names current before the person taps it.
         UIBackgroundModes: [remote-notification]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-        # Pairing links printed by the CLI (`amux://pair?payload=...`) and the
-        # callback the web sign-in returns to. Arriving here pairs with nobody
-        # and signs nobody in; the app asks first.
+        # The callback the web sign-in returns to. Arriving here signs nobody
+        # in; the app asks first. Pairing links are amux.sh's page, which
+        # the associated domain below opens.
         CFBundleURLTypes:
           - CFBundleURLName: sh.amux.app
             CFBundleURLSchemes: [amux]

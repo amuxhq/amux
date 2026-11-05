@@ -53,6 +53,8 @@ def walk(seed: int | None, seeds: int | None, filters: list[str]) -> int:
     # Each story's output whole as it ends, unindented, so its walked line
     # reads as the story printed it; the stories still run side by side.
     command += ["--success-output", "immediate", "--failure-output", "immediate", "--no-output-indent"]
+    if seeds is not None:
+        command += ["--profile", "seeds"]
     command += ["--", *filters]
     shown = ["TESTNET_MODE=simulated"] + [f"{k}={env[k]}" for k in ("TESTNET_SEED", "TESTNET_SEEDS") if k in env]
     print("$", *shown, *command, flush=True)

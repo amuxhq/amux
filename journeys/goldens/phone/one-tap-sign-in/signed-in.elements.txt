@@ -22,7 +22,6 @@ you.report | Report a Problem |  | 16,968,370,46
 you.dump | Export Diagnostics |  | 16,1014,370,46
 you.help.caption |  |  | 16,1068,310,32
 you.close | Close |  | 342,82,40,36
- | Switch account | ada | 20,66,36,36
  | No agents yet |  | 16,204,162,32
  | Start an agent on a host and it appears here. |  | 16,244,299,18
  | New Agent |  | 16,280,370,44

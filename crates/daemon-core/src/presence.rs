@@ -133,11 +133,13 @@ impl Daemon {
                 // A route coming up says the last dial error is out of date.
                 self.dial_error(host, None);
             }
-            let own = now.iter().any(Route::is_direct);
+            let own_came_up = now
+                .iter()
+                .any(|route| route.is_direct() && !was.contains(route));
             if let Some(known) = self.presence.hosts.get_mut(&host)
                 && known
                     .refused_by
-                    .is_some_and(|forwarder| own || !now.contains(&Route::Via(forwarder)))
+                    .is_some_and(|forwarder| own_came_up || !now.contains(&Route::Via(forwarder)))
             {
                 known.refused_by = None;
             }
@@ -544,6 +546,39 @@ mod tests {
         let out = forward_refused(&mut daemon, 1, DESK, ForwardRefusal::PaymentRequired);
         assert_eq!(out, Vec::new());
         assert_eq!(view(&daemon, DESK), HostView::default());
+    }
+
+    /// A claim going while the host's own link is up is not that link
+    /// coming up, so it leaves the refusal standing for when the link goes.
+    #[test]
+    fn a_refusal_heard_beside_a_hosts_own_link_reads_away_once_that_link_goes() {
+        let mut daemon = dialling();
+        up(&mut daemon, 1, RELAY, CarrierKind::Relay);
+        claims(&mut daemon, 1, &[DESK]);
+        up(&mut daemon, 2, LAPTOP, CarrierKind::Direct);
+        claims(&mut daemon, 2, &[DESK]);
+        up(&mut daemon, 3, DESK, CarrierKind::Direct);
+        forward_refused(&mut daemon, 1, DESK, ForwardRefusal::PaymentRequired);
+        assert_eq!(view(&daemon, DESK).presence, Presence::Online);
+
+        frame(
+            &mut daemon,
+            2,
+            Body::NeighborDown(NeighborDown {
+                host_id: DESK.0.to_vec(),
+            }),
+        );
+        down(&mut daemon, 3);
+        // Its own address is dialled again first, and that failing is what
+        // leaves paying the only way to it.
+        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
+        let attempt = daemon.reach().attempt(DESK).expect("the desk is dialled");
+        ended(
+            &mut daemon,
+            attempt,
+            crate::AttemptOutcome::Failed("no answer".to_owned()),
+        );
+        assert_eq!(view(&daemon, DESK).presence, Presence::Away);
     }
 
     const DESK_ADDR: &str = "192.168.1.20:7000";

@@ -43,6 +43,11 @@ fail-fast = false
 [profile.ci.junit]
 path = "junit.xml"
 
+# `just sim --seeds N`: a story walks every seed inside its one test, so its
+# time grows with N and the default bound, sized for one walk, would end it.
+[profile.seeds]
+slow-timeout = { period = "300s", terminate-after = 6 }
+
 # `just models-nightly`: the models' ignored tests at their nightly bounds,
 # which run for hours; the workflow's job guard bounds them.
 [profile.nightly]

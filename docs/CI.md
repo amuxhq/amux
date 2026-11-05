@@ -158,7 +158,10 @@ few seeds per story. A failing seed is printed with the
 `just sim --seed N <story>` that reruns it. The
 nightly workflow's seeds job walks 2000 seeds per story the same way
 (`just sim --seeds 2000`, under a bound of its own); the models are its
-matrix's.
+matrix's. A story walks its seeds inside one test, so a walk of many seeds runs
+under nextest's `seeds` profile, which ends a story after half an hour rather
+than three minutes. On the Mac the slowest story takes four and a half minutes
+at 2000 seeds, with the others running beside it.
 
 ### The iOS gate
 

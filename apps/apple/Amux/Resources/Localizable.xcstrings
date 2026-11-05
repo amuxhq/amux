@@ -10309,18 +10309,6 @@
         }
       }
     },
-    "Usage counts, never content" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Usage counts, never content"
-          }
-        }
-      }
-    },
     "Get amux on your computer." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState" : "manual",
@@ -10365,30 +10353,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Look for Hosts"
-          }
-        }
-      }
-    },
-    "amux sends usage counts, never content. Once you sign in, they’re linked to your account. Share Usage in Settings turns them off." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FirstRun.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "amux sends usage counts, never content. Once you sign in, they’re linked to your account. Share Usage in Settings turns them off."
-          }
-        }
-      }
-    },
-    "Details" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FirstRun.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Details"
           }
         }
       }
@@ -10593,18 +10557,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Signing in didn’t work. Sign in from Settings instead."
-          }
-        }
-      }
-    },
-    "See what amux sends" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "See what amux sends"
           }
         }
       }

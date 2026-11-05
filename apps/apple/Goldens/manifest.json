@@ -634,11 +634,7 @@
     },
     {
       "id": "fleet.first-run-explain",
-      "shows": "A first run before anything is looked for: why iOS is about to ask for the local network, and what usage amux sends."
-    },
-    {
-      "id": "fleet.usage-notice",
-      "shows": "The busy fleet saying once, above its list, that amux sends usage counts and never content, with a close mark."
+      "shows": "A first run before anything is looked for: why iOS is about to ask for the local network."
     },
     {
       "id": "pair.code-offered",

@@ -10,8 +10,6 @@ pair.close | Close |  | 20,82,40,36
  | Pair with desk?, Enter the code amux shows there, Pair |  | 16,305,370,60
  | Have an amux account? |  | 16,389,164,18
  | Sign In |  | 184,376,48,44
- | amux sends usage counts, never content. Once you sign in, they’re linked to your account. Share Usage in Settings turns them off. |  | 16,431,359,48
- | Details |  | 16,467,43,44
  | Switch account |  | 24,66,29,36
  | Agents |  | 16,127,116,42
  | Agents |  | 111,795,94,54

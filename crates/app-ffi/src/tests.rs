@@ -920,32 +920,6 @@ fn the_profile_registry_through_the_c_abi() {
     assert!(phone.result()["Err"].is_string());
 }
 
-/// The analytics notice through the C functions: a fresh installation has
-/// shown none, so it sends nothing; marking it is kept by the installation,
-/// in its own state, and answers the same from then on.
-#[test]
-#[cfg_attr(
-    miri,
-    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
-)]
-fn the_analytics_notice_is_read_and_kept_through_the_c_abi() {
-    let phone = Phone::start();
-    // SAFETY: the runtime is live.
-    assert!(!unsafe { amux_runtime_notice_shown(phone.runtime) });
-    // SAFETY: as above.
-    assert!(unsafe { amux_runtime_mark_notice_shown(phone.runtime) });
-    // SAFETY: as above.
-    assert!(unsafe { amux_runtime_notice_shown(phone.runtime) });
-    // SAFETY: as above; marking again changes nothing.
-    assert!(unsafe { amux_runtime_mark_notice_shown(phone.runtime) });
-    assert!(node::notice_shown_in(&phone.dir.path().join("data")));
-    // A handle that is not live reads as nothing shown and keeps nothing.
-    // SAFETY: null is a handle the library refuses.
-    assert!(!unsafe { amux_runtime_notice_shown(std::ptr::null()) });
-    // SAFETY: as above.
-    assert!(!unsafe { amux_runtime_mark_notice_shown(std::ptr::null()) });
-}
-
 /// Answering an offer of an account no machine made is a refusal, not a
 /// machine out of reach: only an offerer that cannot be reached is said
 /// apart, since the person's next step is on that machine.
@@ -1858,7 +1832,6 @@ fn an_attached_mac_app_sets_up_through_the_c_abi() {
     unsafe { amux_profile_watch_onboarding(profile) };
     let first = kept.until(&queue, fleet, "the steps", |kept| kept.onboarding.pop());
     assert_eq!(first["view"]["opens_at"], "pair_phone", "{first}");
-    assert_eq!(first["view"]["notice"], true, "{first}");
     assert!(
         first["open"]
             .as_array()
@@ -1878,17 +1851,18 @@ fn an_attached_mac_app_sets_up_through_the_c_abi() {
 
     // Answers are counted as the Mac app's, and the steps after each come
     // back with it and with the next step.
-    for answer in [json!("NoticeShown"), json!({"Shown": "pair_phone"})] {
+    for answer in [json!({"Shown": "pair_phone"}), json!({"Skip": "projects"})] {
         let answer = c(&answer.to_string());
         // SAFETY: the profile is open; the string lives for the call.
         let ticket = unsafe { amux_profile_answer_onboarding(profile, answer.as_ptr()) };
         let answered = kept.answer(&queue, fleet, ticket);
         assert!(answered["Ok"]["steps"].is_array(), "{answered}");
     }
-    kept.until(&queue, fleet, "the notice shown", |kept| {
+    kept.until(&queue, fleet, "the projects skipped", |kept| {
         kept.onboarding
             .iter()
-            .any(|state| state["notice_shown"] == true)
+            .flat_map(|state| state["steps"].as_array().into_iter().flatten())
+            .any(|step| step["step"] == "projects" && step["state"] == "skipped")
             .then_some(())
     });
     assert!(

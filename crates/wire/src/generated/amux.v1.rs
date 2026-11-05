@@ -8308,10 +8308,6 @@ pub struct Onboarding {
     /// In the order they are shown.
     #[prost(message, repeated, tag = "2")]
     pub steps: ::prost::alloc::vec::Vec<OnboardingStep>,
-    /// Whether a client has shown the analytics notice; nothing is sent to
-    /// amux.sh before it has.
-    #[prost(bool, tag = "3")]
-    pub notice_shown: bool,
     /// The person dismissed "Finish setting up": every step skipped now was
     /// skipped when they did, so a client stops offering to finish them. A
     /// step skipped later offers it again.
@@ -8352,7 +8348,7 @@ pub struct AnswerOnboardingRequest {
     /// The client answering, for the usage event.
     #[prost(enumeration = "Surface", tag = "6")]
     pub surface: i32,
-    #[prost(oneof = "answer_onboarding_request::Answer", tags = "2, 3, 4, 5, 7, 8")]
+    #[prost(oneof = "answer_onboarding_request::Answer", tags = "2, 3, 5, 7, 8")]
     pub answer: ::core::option::Option<answer_onboarding_request::Answer>,
 }
 /// Nested message and enum types in `AnswerOnboardingRequest`.
@@ -8364,8 +8360,6 @@ pub mod answer_onboarding_request {
         Done(i32),
         #[prost(enumeration = "super::OnboardingStepId", tag = "3")]
         Skip(i32),
-        #[prost(message, tag = "4")]
-        NoticeShown(super::Empty),
         /// "Finish setting up" dismissed: every needed step is skipped.
         #[prost(message, tag = "5")]
         Dismiss(super::Empty),

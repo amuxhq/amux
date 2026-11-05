@@ -40,11 +40,6 @@ struct SetupScreen: View {
                         .padding(.top, 12)
                 }
                 Spacer(minLength: 16)
-                if setup.noticeOn == step {
-                    UsageNoticeLine()
-                        .padding(.horizontal, 40)
-                        .padding(.bottom, 14)
-                }
                 Buttons(setup: setup, step: step)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -467,26 +462,6 @@ private struct FirstAgent: View {
                 Text("Waiting for an agent from your phone…").foregroundStyle(.secondary)
             }
         }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-// MARK: - The analytics notice
-
-/// What amux sends, said once on the first screen any client shows, in the
-/// words every client uses, with the page that says how to turn it off.
-struct UsageNoticeLine: View {
-    private let notice = Onboarding.notice
-
-    var body: some View {
-        VStack(spacing: 2) {
-            Text(notice.words).foregroundStyle(.secondary)
-            if let url = URL(string: notice.url) {
-                Link(notice.url, destination: url)
-            }
-        }
-        .font(.footnote)
-        .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)
     }
 }

@@ -511,12 +511,12 @@ verb without fields is a bare string (`"Shutdown"`).
 | `{"Trust": {"a", "b"}}` | Trust as pairing does. |
 | `{"SetTier": {"account", "tier"}}` | Change what an account has bought (`pro` or `free`). |
 | `{"SignIn": {"host", "account"}}` | Sign a host's profile in to a declared account. |
-| `{"SetUp": {"host", "profile"}}` | Leave the host's default profile, or the one with the label `profile`, as set up long ago: setting up dismissed and the analytics notice shown, so a client opens on home. The terminal driver does this for every host's default profile unless the story is a `first_run`. |
+| `{"SetUp": {"host", "profile"}}` | Leave the host's default profile, or the one with the label `profile`, as set up long ago: setting up dismissed, so a client opens on home. The terminal driver does this for every host's default profile unless the story is a `first_run`. |
 | `{"ApproveSignIn": {"code", "account"}}` | Approve the browser sign-in that shows `code` as a declared account, as the person on the approval page does. |
 | `{"AnswerOffer": {"host", "accept"}}` | Wait for a paired host to offer the host's profile its account, and accept or decline it: `{"from", "email", "signed_in_as"}`. |
 | `{"OfferSignIn": {"host", "to"?}}` | The signed-in host offers its account to the device it paired with as `to`: a host of the net, or a device outside it by the name it paired with; without `to`, the one device outside the net it trusts, such as the phone. Answers `{"host_id"}`. |
 | `{"Create": {"from", "host", "name"}}` | A person on `from` starts an agent on `host`, as that host's client does: `{"id": "…"}`. In-process hosts only. |
-| `{"Onboarding": {"host"}}` | The host's setting up as its daemon keeps it: `{"steps": {"<step id>": "<state>"}, "notice_shown", "dismissed", "projects", "telemetry", "auto_reports", "keep_awake"}`. |
+| `{"Onboarding": {"host"}}` | The host's setting up as its daemon keeps it: `{"steps": {"<step id>": "<state>"}, "dismissed", "projects", "telemetry", "auto_reports", "keep_awake"}`. |
 | `{"KillDaemon": {"host"}}`, `{"StopDaemon": {"host"}}` | Crash or cleanly stop a host's daemon. |
 | `{"RestartDaemon": {"host"}}` | Kill it if it is running, then start it again. |
 | `{"Checkpoint": {"host"}}`, `{"Rewind": {"host", "cuts": [{"agent", "byte"}]}}` | Record what reached the drive; lose power back to it. |

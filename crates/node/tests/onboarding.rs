@@ -56,7 +56,6 @@ async fn answers_move_the_steps_and_outlive_a_restart() {
         .into_inner();
     let first = steps.next().await.expect("the steps now").unwrap();
     assert_eq!(first.profile_id, main.as_bytes(), "the oldest profile's");
-    assert!(!first.notice_shown);
     assert_eq!(
         states(&first),
         [
@@ -95,13 +94,6 @@ async fn answers_move_the_steps_and_outlive_a_restart() {
         .unwrap()
         .into_inner();
     assert_eq!(done.steps[3].state(), StepState::Done);
-    let noticed = door
-        .answer_onboarding(answer(Answer::NoticeShown(wire::Empty {})))
-        .await
-        .unwrap()
-        .into_inner();
-    assert!(noticed.notice_shown);
-    assert!(node::notice_shown_in(&install.data_dir));
     let dismissed = door
         .answer_onboarding(answer(Answer::Dismiss(wire::Empty {})))
         .await
@@ -166,7 +158,7 @@ async fn answers_move_the_steps_and_outlive_a_restart() {
         .unwrap()
         .unwrap();
     assert_eq!(states(&again), states(&dismissed));
-    assert!(again.notice_shown && again.dismissed);
+    assert!(again.dismissed);
     daemon.shutdown().await.unwrap();
 }
 

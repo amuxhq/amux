@@ -105,9 +105,7 @@ message Onboarding {
   bytes profile_id = 1;
   // In the order they are shown.
   repeated OnboardingStep steps = 2;
-  // Whether a client has shown the analytics notice; nothing is sent to
-  // amux.sh before it has.
-  bool notice_shown = 3;
+  reserved 3;
   // The person dismissed "Finish setting up": every step skipped now was
   // skipped when they did, so a client stops offering to finish them. A
   // step skipped later offers it again.
@@ -138,12 +136,12 @@ enum StepState {
 }
 
 message AnswerOnboardingRequest {
+  reserved 4;
   bytes profile_id = 1;
   oneof answer {
     // A confirmation step the person confirmed.
     OnboardingStepId done = 2;
     OnboardingStepId skip = 3;
-    Empty notice_shown = 4;
     // "Finish setting up" dismissed: every needed step is skipped.
     Empty dismiss = 5;
     // The client showed the step: counted for usage, nothing kept.

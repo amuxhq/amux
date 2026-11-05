@@ -29,15 +29,6 @@ pub use event::{
     Method, OfferOutcome, OfferRole, On, PairingFailure, PaywallFrom, Recorded, RelayCarrier, Role,
     Route, SignInFailure, SignInVia, Step, StepOutcome, Tier, Token,
 };
-
-/// The public page saying what amux sends and how to turn it off, which the
-/// notice every first-party client shows links to.
-pub const NOTICE_URL: &str = "https://github.com/amuxhq/amux/blob/main/docs/ANALYTICS.md";
-
-/// The notice a person sees before anything is sent, in the words every
-/// client uses.
-pub const NOTICE: &str = "amux sends usage counts, never content; a signed-in profile's are \
-                          linked to its account. What's sent and how to turn it off:";
 pub use upload::{
     Accounts, Flusher, Gate, Http, MAX_EVENTS_PER_REQUEST, Params, Posted, Transport, Upload,
     Uploader,

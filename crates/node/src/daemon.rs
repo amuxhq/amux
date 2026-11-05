@@ -447,10 +447,6 @@ impl Installation {
                         endpoint,
                         default_base: settings::DEFAULT_CLOUD_URL.to_owned(),
                         gate,
-                        notice: {
-                            let onboarding = self.onboarding.clone();
-                            Arc::new(move || onboarding.notice_shown())
-                        },
                     },
                     Arc::new(telemetry::Profiles(Arc::downgrade(self))),
                     Arc::new(analytics::Http::new(

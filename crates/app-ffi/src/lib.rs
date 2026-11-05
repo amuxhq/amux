@@ -43,10 +43,9 @@ use app_embedded::{
     UsageEvent,
 };
 use app_runtime::values::{
-    AgentAct, AnalyticsNotice, ChatAct, ChatDelta, Draft, FleetDelta, Found, FrozenReview,
-    MachineSettings, NewAgent, OnboardingAnswer, OnboardingState, PairingStatusView,
-    PairingWindowView, ProjectSuggestion, SettingsChange, SignInAnswer, SignInOfferOutcome,
-    SignInOfferView,
+    AgentAct, ChatAct, ChatDelta, Draft, FleetDelta, Found, FrozenReview, MachineSettings,
+    NewAgent, OnboardingAnswer, OnboardingState, PairingStatusView, PairingWindowView,
+    ProjectSuggestion, SettingsChange, SignInAnswer, SignInOfferOutcome, SignInOfferView,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
 use node::SourcePolicy;
@@ -883,19 +882,6 @@ pub unsafe extern "C" fn amux_new_agent_pick(
             owned(&ui_view::new_agent_pick(&catalogue, &chosen, &pick))
         }
         _ => std::ptr::null_mut(),
-    })
-}
-
-/// The analytics notice as an `AnalyticsNotice`: the words every client shows
-/// before anything is sent, and the page that says what is sent and how to
-/// turn it off.
-#[unsafe(no_mangle)]
-pub extern "C" fn amux_analytics_notice() -> *mut c_char {
-    guard(std::ptr::null_mut(), || {
-        owned(&AnalyticsNotice {
-            words: analytics::NOTICE.to_owned(),
-            url: analytics::NOTICE_URL.to_owned(),
-        })
     })
 }
 
@@ -1818,43 +1804,6 @@ pub unsafe extern "C" fn amux_runtime_record(
             embedded.record(profile, event);
         }
     });
-}
-
-/// Whether the app has shown the analytics notice on the installation it
-/// hosts: until it has, nothing recorded is sent. Reads at once. An
-/// attached runtime answers false: the daemon it attaches to keeps its own
-/// notice, answered through that daemon.
-///
-/// # Safety
-/// `runtime` is from `amux_runtime_start`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_runtime_notice_shown(runtime: *const AmuxRuntime) -> bool {
-    guard(false, || {
-        // SAFETY: the caller's contract.
-        unsafe { live_runtime(runtime) }
-            .and_then(|runtime| runtime.embedded().cloned())
-            .is_some_and(|embedded| embedded.notice_shown().unwrap_or(false))
-    })
-}
-
-/// The app has put the analytics notice in front of the person: what was
-/// recorded meanwhile may be sent from now on. Kept in the installation's
-/// state, so it is said once; false when it could not be kept, or the
-/// runtime is attached.
-///
-/// # Safety
-/// `runtime` is from `amux_runtime_start`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_runtime_mark_notice_shown(runtime: *const AmuxRuntime) -> bool {
-    guard(false, || {
-        // SAFETY: the caller's contract.
-        let Some(embedded) =
-            unsafe { live_runtime(runtime) }.and_then(|runtime| runtime.embedded().cloned())
-        else {
-            return false;
-        };
-        embedded.mark_notice_shown().is_ok()
-    })
 }
 
 // --- settings ----------------------------------------------------------------

@@ -24,8 +24,6 @@ you.close | Close |  | 342,82,40,36
  | Pair your first host |  | 16,204,214,32
  | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
  | desk is online, Pair it from anywhere, Pair |  | 16,305,370,60
- | amux sends usage counts, never content. Once you sign in, they’re linked to your account. Share Usage in Settings turns them off. |  | 16,389,359,48
- | Details |  | 16,424,43,44
  | Agents |  | 16,127,116,42
  | Switch account |  | 20,66,36,36
  | Agents |  | 111,795,94,54

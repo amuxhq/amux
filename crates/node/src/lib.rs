@@ -28,7 +28,6 @@ mod generation;
 mod grpc;
 mod host_settings;
 pub use host_settings::{SettingsOptions, claude_kind};
-pub use onboarding::{ONBOARDING, mark_notice_shown_in, notice_shown_in};
 mod hosts;
 mod identity;
 mod install;

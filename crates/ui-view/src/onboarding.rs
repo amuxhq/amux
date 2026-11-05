@@ -63,9 +63,6 @@ pub struct OnboardingView {
     /// How many steps home offers to finish: those still needed, and those
     /// skipped unless the person dismissed finishing them.
     pub to_finish: u32,
-    /// The analytics notice has not been shown by any client yet: the
-    /// first screen this client shows carries it.
-    pub notice: bool,
 }
 
 fn steps(onboarding: &wire::Onboarding) -> impl Iterator<Item = (SetupStep, StepState)> + '_ {
@@ -94,7 +91,6 @@ pub fn onboarding_view(onboarding: &wire::Onboarding) -> OnboardingView {
     OnboardingView {
         opens_at,
         to_finish: u32::try_from(left).unwrap_or(u32::MAX),
-        notice: !onboarding.notice_shown,
     }
 }
 
@@ -143,7 +139,6 @@ mod tests {
                     state: state as i32,
                 })
                 .collect(),
-            notice_shown: true,
             dismissed,
         }
     }

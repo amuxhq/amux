@@ -54,9 +54,8 @@ pub enum Control {
         host: String,
         account: String,
     },
-    /// The host as one set up long ago: setting up dismissed and the
-    /// analytics notice shown, for its default profile or the one with
-    /// this label.
+    /// The host as one set up long ago: setting up dismissed, for its
+    /// default profile or the one with this label.
     SetUp {
         host: String,
         #[serde(default)]
@@ -718,7 +717,6 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                 .collect();
             json!({
                 "steps": steps,
-                "notice_shown": onboarding.notice_shown,
                 "dismissed": onboarding.dismissed,
                 "projects": settings.projects,
                 "telemetry": settings.telemetry,

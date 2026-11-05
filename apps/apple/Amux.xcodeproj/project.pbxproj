@@ -163,7 +163,6 @@
 		535214124528FA1C8905BB6A /* components.chat-exited-light.png in Resources */ = {isa = PBXBuildFile; fileRef = CE92EE78A028D2E5D5B9EED3 /* components.chat-exited-light.png */; };
 		5388C24BA3733FC4B4577ED8 /* components.row-compaction-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = F18F5890E56F6711B4E26F1A /* components.row-compaction-dark.png */; };
 		546E08243B4B5BE2BDFDAB84 /* DoorServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 590B62F0B4C074AA2233FC70 /* DoorServer.swift */; };
-		547281DB71BA385D65182E52 /* components.fleet-usage-notice-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 0D88B6F1CF66CC6459AB33C1 /* components.fleet-usage-notice-dark.png */; };
 		551FEB46A5D8FE0A0BD12829 /* components.fleet-large-text-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 4781FF5569A680DF1B1D63BA /* components.fleet-large-text-dark.png */; };
 		553BF8DD2498F7F22153BE30 /* ComponentCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37F1F76966F0F1B7A14313E7 /* ComponentCatalog.swift */; };
 		560F305E61EE6F249B6B2255 /* components.chat-conversation-light.png in Resources */ = {isa = PBXBuildFile; fileRef = CC55377610CE77AA86C2B449 /* components.chat-conversation-light.png */; };
@@ -196,7 +195,6 @@
 		67E6F12821DD9DD3BFDD7D4D /* components.settings-large-text-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 7BA81CC640D58C6D052692AD /* components.settings-large-text-dark.png */; };
 		6805234D9DC817A50B5F83BD /* AmuxDesign in Frameworks */ = {isa = PBXBuildFile; productRef = C0C0812086F76FDC86EC6F93 /* AmuxDesign */; };
 		68408AF830C5474F58AABEAA /* components.fleet-first-run-window-open-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 78FFC38C576D007D3CE103C0 /* components.fleet-first-run-window-open-dark.png */; };
-		6872D3FC5554E7DBB6AB9CA6 /* components.fleet-usage-notice-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 49457E82A80F65769F560B11 /* components.fleet-usage-notice-light.png */; };
 		687D6AFC158EA02B38F25433 /* SnapshotTesting in Frameworks */ = {isa = PBXBuildFile; productRef = 452D6B5733E5F7617EFF32B3 /* SnapshotTesting */; };
 		69F3AA5D8B8A6772CF013575 /* components.fleet-picture-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 47A38E63B9CFC143F12C12D5 /* components.fleet-picture-dark.png */; };
 		6B0E85DB1DB5AC0F55A2B0EC /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = 945602D9376D08934B80A0F1 /* manifest.json */; };
@@ -546,7 +544,6 @@
 		0BD5021F3FE99EA1720EEC9F /* components.chat-changes-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.chat-changes-light.png"; sourceTree = "<group>"; };
 		0BDFBF20215F3DB1EDDABEB4 /* components.pair-code-offered-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.pair-code-offered-light.png"; sourceTree = "<group>"; };
 		0C2110ACF27270605BC9C2AA /* components.report-signed-out-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.report-signed-out-dark.png"; sourceTree = "<group>"; };
-		0D88B6F1CF66CC6459AB33C1 /* components.fleet-usage-notice-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.fleet-usage-notice-dark.png"; sourceTree = "<group>"; };
 		0D956881E6C814094C241719 /* components.row-ask-plan-approved-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-ask-plan-approved-dark.png"; sourceTree = "<group>"; };
 		0DD418FB7C0219E3625974C3 /* components.fleet-busy-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.fleet-busy-dark.png"; sourceTree = "<group>"; };
 		0DF2E59F9EC5A836BBCA582A /* components.settings-signing-in-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.settings-signing-in-dark.png"; sourceTree = "<group>"; };
@@ -680,7 +677,6 @@
 		486F76DA98062E7842CD375E /* components.new-agent-large-text-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.new-agent-large-text-dark.png"; sourceTree = "<group>"; };
 		487EECCEF2A57670F0A7C120 /* components.ask-question-other-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.ask-question-other-light.png"; sourceTree = "<group>"; };
 		48E1F0310CDECC2DE70B3C52 /* components.composer-dictation-listening-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.composer-dictation-listening-dark.png"; sourceTree = "<group>"; };
-		49457E82A80F65769F560B11 /* components.fleet-usage-notice-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.fleet-usage-notice-light.png"; sourceTree = "<group>"; };
 		49AD796E9CE095BEB4462249 /* Stories.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stories.swift; sourceTree = "<group>"; };
 		49B830B877B1BF8DA3F666A1 /* components.chat-landing-waiting-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.chat-landing-waiting-dark.png"; sourceTree = "<group>"; };
 		4A3B1B8B4F22384C3629917D /* components.new-agent-no-projects-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.new-agent-no-projects-light.png"; sourceTree = "<group>"; };
@@ -1367,8 +1363,6 @@
 				367E18F54F025E97D97A6360 /* components.fleet-stopped-open-light.png */,
 				3DD15594B32E482D25B818E9 /* components.fleet-two-accounts-dark.png */,
 				C14C42A781DC9365F02DB3EE /* components.fleet-two-accounts-light.png */,
-				0D88B6F1CF66CC6459AB33C1 /* components.fleet-usage-notice-dark.png */,
-				49457E82A80F65769F560B11 /* components.fleet-usage-notice-light.png */,
 				387E8DBDBE2BCCE273C8E129 /* components.host-page-dark.png */,
 				0F6A5844733D617C57EB6815 /* components.host-page-light.png */,
 				E192D8F44244DB8CA4066906 /* components.host-revoked-dark.png */,
@@ -2046,8 +2040,6 @@
 				A3FEDD90894818E5B702FD61 /* components.fleet-stopped-open-light.png in Resources */,
 				ACE6F4471ED4DD0D5CC1B0BB /* components.fleet-two-accounts-dark.png in Resources */,
 				FCB4B51CDD343AFD44BE2C38 /* components.fleet-two-accounts-light.png in Resources */,
-				547281DB71BA385D65182E52 /* components.fleet-usage-notice-dark.png in Resources */,
-				6872D3FC5554E7DBB6AB9CA6 /* components.fleet-usage-notice-light.png in Resources */,
 				80B9D5A261F411E2B8C6E804 /* components.host-page-dark.png in Resources */,
 				B32D548EC47809A8542823AA /* components.host-page-light.png in Resources */,
 				44EB50A8AF34576823C41EDE /* components.host-revoked-dark.png in Resources */,

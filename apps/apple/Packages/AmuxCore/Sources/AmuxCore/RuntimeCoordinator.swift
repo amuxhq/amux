@@ -115,10 +115,6 @@ public final class RuntimeCoordinator {
     public private(set) var localNetworkExplained: Bool
     /// Keeps `localNetworkExplained` across launches.
     @ObservationIgnored private let keepExplained: @MainActor (Bool) -> Void
-    /// Where the analytics notice stands this launch.
-    public private(set) var usageNotice = UsageNotice.hidden
-    /// Whether the notice drawn has been told to the runtime this launch.
-    @ObservationIgnored private var toldUsageNotice = false
     /// Whether somebody is in front of the app, as the app last said.
     @ObservationIgnored public private(set) var active = true
     @ObservationIgnored private var found: [Found] = []
@@ -240,7 +236,6 @@ public final class RuntimeCoordinator {
             // The setting may have moved while the runtime was starting.
             runtime.setTelemetry(shareUsage)
             runtime.setAutoReports(autoReports)
-            if !runtime.noticeShown, usageNotice == .hidden { usageNotice = .due }
             if active { feed(runtime, .foreground) }
             networkWatch.start { [weak self] in
                 Task { @MainActor in self?.networkChanged() }
@@ -494,20 +489,6 @@ public final class RuntimeCoordinator {
         browse()
     }
 
-    /// The analytics notice is on screen, there: what the runtime holds may
-    /// be sent from now on.
-    public func usageNoticeDrawn(_ place: UsageNotice.Place) {
-        if usageNotice == .due { usageNotice = .shown(place) }
-        guard usageNotice != .hidden, !toldUsageNotice, let runtime else { return }
-        toldUsageNotice = runtime.markNoticeShown()
-    }
-
-    /// The person put the analytics notice away.
-    public func putAwayUsageNotice() {
-        usageNoticeDrawn(.callout)
-        usageNotice = .hidden
-    }
-
     /// Brings one agent's chat current for a push, under an account whose
     /// profile trusts the agent's host. In the background that account goes
     /// on screen first when the one there does not trust the host (see
@@ -568,34 +549,6 @@ public final class RuntimeCoordinator {
               case .success = await runtime.refreshEntitlement(entry.profile)
         else { return false }
         return true
-    }
-}
-
-/// The analytics notice, which every first-party client puts in front of
-/// the person before the installation sends anything.
-public enum UsageNotice: Equatable, Sendable {
-    /// Shown on this installation before this launch, or put away.
-    case hidden
-    /// Never shown: the first screen that can draw it does.
-    case due
-    /// Shown during this launch, where it was first drawn. It stays there
-    /// for the rest of the launch so it can be read, and only there.
-    case shown(Place)
-
-    public enum Place: Equatable, Sendable {
-        /// Under the home's first-run screen.
-        case firstRun
-        /// A card above the home's list, for a phone that has a fleet.
-        case callout
-    }
-
-    /// Whether a place draws the notice now.
-    public func drawn(at place: Place) -> Bool {
-        switch self {
-        case .hidden: false
-        case .due: true
-        case .shown(let first): first == place
-        }
     }
 }
 

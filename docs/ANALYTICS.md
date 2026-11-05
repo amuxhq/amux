@@ -8,12 +8,11 @@ into the free tier. They are counts and choices, never content: what you
 type, what your agents say and the names of your machines, folders and
 files stay on your machines.
 
-It is on by default, and nothing is sent until you have been told so: the
-first screen of the terminal client, the Mac app and the iPhone app says
-"amux sends usage counts, never content", says that a signed-in profile's
-events are linked to its account, and links here, and the first `amux`
-command you run prints the same once on standard error. Until one of them
-has, events wait in memory and nothing leaves the machine. To turn it off:
+It is on by default. Setting up a computer, in the terminal client or the
+Mac app, shows it as **Send usage counts**, ticked, to untick there or later
+in Settings; the iPhone app's App Store privacy label says what it collects.
+A signed-in profile's events are linked to its account, as
+[where it goes](#where-it-goes) says. To turn it off:
 
 - **On a computer:** `amux config set telemetry false`. A running daemon stops
   sending at once, and nothing it records while off is sent later.

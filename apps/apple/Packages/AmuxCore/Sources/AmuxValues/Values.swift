@@ -339,23 +339,6 @@ public enum AgentNameProblem: String, Codable, Hashable, Sendable, CaseIterable 
     case characters = "Characters"
 }
 
-/// The analytics notice, in the words every client shows, and the page
-/// that says what is sent and how to turn it off.
-public struct AnalyticsNotice: Codable, Hashable, Sendable {
-    public var words: String
-    public var url: String
-
-    public init(words: String, url: String) {
-        self.words = words
-        self.url = url
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case words
-        case url
-    }
-}
-
 /// One question's answer: the picked options, a typed answer, or a secret
 /// answer that reads "answered (hidden)"; skipped when it is none of them.
 public struct AnswerView: Codable, Hashable, Sendable {
@@ -4696,8 +4679,6 @@ public enum OnboardingAnswer: Codable, Hashable, Sendable {
     case done(SetupStep)
     /// "Later".
     case skip(SetupStep)
-    /// The analytics notice was put in front of the person.
-    case noticeShown
     /// "Finish setting up" dismissed: every step still needed is skipped.
     case dismiss
     /// A one-tap sign-in was put in front of the person, on this side.
@@ -4715,7 +4696,6 @@ public enum OnboardingAnswer: Codable, Hashable, Sendable {
            let _name = try? _single.decode(String.self)
         {
             switch _name {
-            case "NoticeShown": self = .noticeShown
             case "Dismiss": self = .dismiss
             default:
                 throw DecodingError.dataCorruptedError(
@@ -4753,9 +4733,6 @@ public enum OnboardingAnswer: Codable, Hashable, Sendable {
         case .skip(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .skip)
-        case .noticeShown:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("NoticeShown")
         case .dismiss:
             var _container = encoder.singleValueContainer()
             try _container.encode("Dismiss")
@@ -4767,22 +4744,20 @@ public enum OnboardingAnswer: Codable, Hashable, Sendable {
 }
 
 /// A profile's setting up as the daemon serves it, with what the shared
-/// rules make of it: where onboarding opens, how many steps "Finish setting
-/// up" offers, and whether the analytics notice is still to show.
+/// rules make of it: where onboarding opens and how many steps "Finish
+/// setting up" offers.
 public struct OnboardingState: Codable, Hashable, Sendable {
     /// In the order they are shown; steps this build has no name for are
     /// left out.
     public var steps: [OnboardingStepState]
-    public var noticeShown: Bool
     /// The person dismissed finishing what they skipped.
     public var dismissed: Bool
     public var view: OnboardingView
     /// The steps still to do: needed, or skipped.
     public var open: [SetupStep]
 
-    public init(steps: [OnboardingStepState], noticeShown: Bool, dismissed: Bool, view: OnboardingView, open: [SetupStep]) {
+    public init(steps: [OnboardingStepState], dismissed: Bool, view: OnboardingView, open: [SetupStep]) {
         self.steps = steps
-        self.noticeShown = noticeShown
         self.dismissed = dismissed
         self.view = view
         self.open = open
@@ -4790,7 +4765,6 @@ public struct OnboardingState: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case steps
-        case noticeShown = "notice_shown"
         case dismissed
         case view
         case open
@@ -4817,22 +4791,17 @@ public struct OnboardingView: Codable, Hashable, Sendable {
     /// How many steps home offers to finish: those still needed, and those
     /// skipped unless the person dismissed finishing them.
     public var toFinish: UInt32
-    /// The analytics notice has not been shown by any client yet: the
-    /// first screen this client shows carries it.
-    public var notice: Bool
     /// Onboarding opens full-screen before home, at this step: the first
     /// one still needed. None once every step is done or skipped.
     public var opensAt: SetupStep?
 
-    public init(toFinish: UInt32, notice: Bool, opensAt: SetupStep?) {
+    public init(toFinish: UInt32, opensAt: SetupStep?) {
         self.toFinish = toFinish
-        self.notice = notice
         self.opensAt = opensAt
     }
 
     private enum CodingKeys: String, CodingKey {
         case toFinish = "to_finish"
-        case notice
         case opensAt = "opens_at"
     }
 }

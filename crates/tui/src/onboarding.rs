@@ -38,17 +38,10 @@ pub const WINDOW_SECONDS: u64 = 10 * 60;
 /// How long before a window ends the screen renews it.
 const RENEW_BEFORE_MS: i64 = 30_000;
 
-/// The analytics notice, in the words every client shows.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Notice {
-    pub words: String,
-    pub url: String,
-}
-
 /// What the app does for the onboarding screen.
 #[derive(Clone, Debug, PartialEq)]
 pub enum SetupEffect {
-    /// Answer the daemon: a step shown, done or skipped, the notice shown.
+    /// Answer the daemon: a step shown, done or skipped.
     Answer(Answer),
     /// Change settings, then confirm the step when one is named; the
     /// screen moves on once both are taken.
@@ -139,10 +132,6 @@ pub struct Onboarding {
     finishing: bool,
     steps: wire::Onboarding,
     settings: wire::Settings,
-    notice: Notice,
-    /// The step the analytics notice is drawn on: the first one shown,
-    /// when no client had shown it yet.
-    notice_on: Option<SetupStep>,
     /// What this machine is, in "Keep this Mac awake": "Mac" or "computer".
     machine: String,
     local_host: Vec<u8>,
@@ -213,7 +202,6 @@ impl Onboarding {
         finishing: bool,
         steps: wire::Onboarding,
         settings: wire::Settings,
-        notice: Notice,
         machine: &str,
         local_host: &[u8],
         fleet: &FleetState,
@@ -221,12 +209,10 @@ impl Onboarding {
         let mut onboarding = Onboarding {
             step,
             finishing,
-            notice_on: (!steps.notice_shown).then_some(step),
             steps,
             telemetry: settings.telemetry,
             auto_reports: settings.auto_reports,
             settings,
-            notice,
             machine: machine.to_owned(),
             local_host: local_host.to_vec(),
             rename: None,
@@ -242,11 +228,7 @@ impl Onboarding {
             busy: false,
             spots: Vec::new(),
         };
-        let mut effects = Vec::new();
-        if onboarding.notice_on.is_some() {
-            effects.push(SetupEffect::Answer(Answer::NoticeShown(wire::Empty {})));
-        }
-        effects.extend(onboarding.enter(step, fleet));
+        let effects = onboarding.enter(step, fleet);
         (onboarding, effects)
     }
 
@@ -874,18 +856,8 @@ impl Onboarding {
         screen.line(top);
         screen.blank();
 
-        // The notice and the keys below the body: a blank between.
-        let mut tail: Vec<Line<'static>> = Vec::new();
-        if self.notice_on == Some(self.step) {
-            let words = format!("{} {}", self.notice.words, self.notice.url);
-            for part in text::wrap(&words, room) {
-                let mut line = Line::from(Span::raw(" ".repeat(MARGIN)));
-                push(&mut line, part, theme.faint(), width);
-                tail.push(line);
-            }
-        }
-        // The body keeps a blank above the notice, and one above the keys.
-        let below = tail.len() + 2 + usize::from(!tail.is_empty());
+        // The keys below the body, a blank above them.
+        let below = 2;
         let body_rows = height.saturating_sub(screen.lines.len() + below);
         let cursor = match self.step {
             SetupStep::PairPhone => self.pair_body(&mut screen, body_rows),
@@ -913,11 +885,10 @@ impl Onboarding {
             screen.blank();
             screen.words(error, theme.warning());
         }
-        let keep = height.saturating_sub(below - usize::from(!tail.is_empty()));
+        let keep = height.saturating_sub(below);
         screen.lines.truncate(keep);
         screen.spots.retain(|(row, ..)| usize::from(*row) < keep);
         screen.lines.resize(keep, Line::default());
-        screen.lines.extend(tail);
         screen.blank();
         // The key line, or the app's notice in its place.
         let mut keys = Line::from(Span::raw(" ".repeat(MARGIN)));

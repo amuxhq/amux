@@ -3,10 +3,9 @@
 //! already knows wherever it can be, so no client's copy can drift.
 //!
 //! Only what cannot be derived is kept: the steps a person confirmed or
-//! skipped, whether an agent here was ever created from a paired device,
-//! and whether a client has shown the analytics notice. They live in
-//! `<root>/onboarding.json`, the installation's state rather than its
-//! config file, since none of them is a preference. Confirmations are the
+//! skipped and whether an agent here was ever created from a paired
+//! device. They live in `<root>/onboarding.json`, the installation's state
+//! rather than its config file, since neither is a preference. Confirmations are the
 //! installation's, as the settings they confirm are; a skip of a step whose
 //! state depends on the profile (pairing, signing in, the first agent) is
 //! that profile's.
@@ -31,7 +30,7 @@ use crate::registry::{ProfileRefusal, Registry};
 use crate::runtime::ProfileRuntime;
 
 /// The file in the root.
-pub const ONBOARDING: &str = "onboarding.json";
+const ONBOARDING: &str = "onboarding.json";
 
 /// Every step, in the order clients show them.
 pub(crate) const STEPS: [Id; 6] = [
@@ -77,7 +76,6 @@ impl Step {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 struct Stored {
-    notice_shown: bool,
     confirmed: BTreeSet<Step>,
     skipped: BTreeSet<Step>,
     profiles: BTreeMap<Uuid, OfProfile>,
@@ -136,10 +134,6 @@ impl Onboarding {
 
     pub(crate) fn subscribe(&self) -> watch::Receiver<()> {
         self.changed.subscribe()
-    }
-
-    pub(crate) fn notice_shown(&self) -> bool {
-        self.stored.lock().unwrap().notice_shown
     }
 
     /// The steps for `profile` as they stand.
@@ -230,10 +224,6 @@ impl Onboarding {
         })
     }
 
-    pub(crate) fn mark_notice_shown(&self) -> io::Result<()> {
-        self.change(|stored| !std::mem::replace(&mut stored.notice_shown, true))
-    }
-
     /// An agent on this host was created on a paired device's request.
     pub(crate) fn agent_from_device(&self, profile: ProfileId) -> io::Result<()> {
         self.change(|stored| {
@@ -256,26 +246,6 @@ impl Onboarding {
         self.changed.send_replace(());
         Ok(())
     }
-}
-
-/// Whether a client has shown the analytics notice on the installation at
-/// `root`, read from its file: for a command that runs while the daemon
-/// does not.
-pub fn notice_shown_in(root: &Path) -> bool {
-    read(&root.join(ONBOARDING)).notice_shown
-}
-
-/// Records that the notice was shown, in the file: only while no daemon
-/// runs on `root`, since a running one keeps the file and would write over
-/// it.
-pub fn mark_notice_shown_in(root: &Path) -> io::Result<()> {
-    let path = root.join(ONBOARDING);
-    let mut stored = read(&path);
-    if stored.notice_shown {
-        return Ok(());
-    }
-    stored.notice_shown = true;
-    write(&path, &stored)
 }
 
 fn read(path: &Path) -> Stored {
@@ -368,7 +338,6 @@ impl Registry {
             profile_id: runtime.profile().as_bytes().to_vec(),
             dismissed: onboarding.dismissed(runtime.profile(), &steps),
             steps,
-            notice_shown: onboarding.notice_shown(),
         }
     }
 
@@ -492,7 +461,6 @@ impl Registry {
                 record(skipped, analytics::StepOutcome::Skipped);
             }
             Some(Answer::Shown(raw)) => record(step(raw)?, analytics::StepOutcome::Shown),
-            Some(Answer::NoticeShown(_)) => kept(onboarding.mark_notice_shown())?,
             Some(Answer::SignInOfferShown(raw)) => {
                 let role = match wire::OfferRole::try_from(raw) {
                     Ok(wire::OfferRole::Offerer) => analytics::OfferRole::Offerer,
@@ -580,11 +548,8 @@ mod tests {
         };
         assert_eq!(states(&onboarding, desk, paired)[0], Done);
 
-        // All of it survives a restart, the notice too.
-        assert!(!onboarding.notice_shown() && !notice_shown_in(dir.path()));
-        onboarding.mark_notice_shown().unwrap();
+        // All of it survives a restart.
         let again = Onboarding::open(dir.path());
-        assert!(again.notice_shown() && notice_shown_in(dir.path()));
         assert_eq!(
             states(&again, desk, facts),
             [Skipped, Needed, Done, Skipped, Done, Done]
@@ -602,16 +567,5 @@ mod tests {
         again.skip(desk, Id::KeepReachable).unwrap();
         assert!(!again.dismissed(desk, &again.steps(desk, facts)));
         assert!(!again.dismissed(work, &again.steps(work, supervised)));
-    }
-
-    #[test]
-    fn a_command_marks_the_notice_in_the_file_while_no_daemon_runs() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(!notice_shown_in(dir.path()));
-        mark_notice_shown_in(dir.path()).unwrap();
-        assert!(notice_shown_in(dir.path()));
-        assert!(Onboarding::open(dir.path()).notice_shown());
-        std::fs::write(dir.path().join(ONBOARDING), "not json").unwrap();
-        assert!(!notice_shown_in(dir.path()), "a file that does not read");
     }
 }

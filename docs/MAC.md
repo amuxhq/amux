@@ -19,9 +19,7 @@ a design of its own.
 A profile whose setting up has steps still needed opens on them, in the order
 the daemon keeps and the terminal shows, at the first one not done; a launch
 part way through resumes there. Every step a screen shows is answered `shown`,
-and Escape or Later skips it. The first screen carries the analytics notice
-and answers `notice_shown`; when no step is needed, the main window carries it
-instead.
+and Escape or Later skips it.
 
 | Screen | What it does |
 | --- | --- |

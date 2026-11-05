@@ -93,12 +93,7 @@ private struct SettingsForm: View {
             } header: {
                 Text("Help improve amux")
             } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Never your prompts, code, or file names.").foregroundStyle(.secondary)
-                    if let url = URL(string: Onboarding.notice.url) {
-                        Link("What’s sent", destination: url)
-                    }
-                }
+                Text("Never your prompts, code, or file names.").foregroundStyle(.secondary)
             }
 
             Section("Account") {

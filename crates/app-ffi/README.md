@@ -108,11 +108,6 @@ runtime's; the app tells it what only the app knows.
 what is waiting too. `amux_runtime_set_auto_reports(rt, on)` follows the
 app's Send Automatic Reports setting (first value `StartConfig.auto_reports`):
 whether a report a check takes is sent to the account on its own.
-`amux_runtime_notice_shown(rt)` reads whether this installation has shown its
-person the analytics notice, and `amux_runtime_mark_notice_shown(rt)` records
-that it has; until then the runtime holds every count. Both answer false on an
-attached runtime, whose daemon keeps the notice with the computer's own
-onboarding.
 `amux_runtime_feed(rt, input_json, &error)` feeds the
 app's life as a `Lifecycle`: `"Foreground"` says the app came to the front,
 counted at most once an hour; `"Background"` sends what is waiting, for a
@@ -144,15 +139,14 @@ one-time link that signs the browser in to the profile's account and opens
 `path` (`/offer` after a sign-in on this computer).
 
 The steps are a profile's: `amux_profile_watch_onboarding` follows them,
-handing over an `OnboardingState` (each step's state, whether the
-analytics notice was shown, whether finishing was dismissed, and the
+handing over an `OnboardingState` (each step's state, whether finishing
+was dismissed, and the
 shared `OnboardingView` with where it opens and how many steps are left)
 whenever they move; `amux_profile_answer_onboarding` tells the daemon an
-`OnboardingAnswer` (a step shown, done or skipped, the notice shown,
-finishing dismissed, a sign-in offer shown) and answers the state after it.
-`amux_onboarding_next` applies the shared rule for the step after another,
-and `amux_analytics_notice` answers the notice's words and link as an
-`AnalyticsNotice`. Pairing a phone opens a window that takes the PIN or the
+`OnboardingAnswer` (a step shown, done or skipped, finishing dismissed, a
+sign-in offer shown) and answers the state after it.
+`amux_onboarding_next` applies the shared rule for the step after another.
+Pairing a phone opens a window that takes the PIN or the
 QR code's secret: `amux_profile_open_pairing(profile, ttl_seconds)` closes
 any window open, opens one and answers its `PairingWindowView` (PIN, QR
 link, lifetime), and hands over a `PairingStatusView` (open, a phone

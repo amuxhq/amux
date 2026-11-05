@@ -345,8 +345,8 @@ $TMPDIR/amux-<uid>/<hash>, <hash>.d
   installation.lock           one daemon per installation
   installation_id             what usage analytics count an install by; minted at the first start that sends them
   generation                  boot id, clean-shutdown flag and a counter a replica compares
-  onboarding.json             the onboarding steps a person confirmed or skipped, whether a paired device
-                              made the first agent, and whether the analytics notice was shown
+  onboarding.json             the onboarding steps a person confirmed or skipped, and whether a paired
+                              device made the first agent
   supervisor.lock             one supervisor per installation
   supervisor.sock             how the CLI reaches a running supervisor (`amux update`, and stop on Windows)
   daemon.log, daemon.log.1    the daemon's log, 8 MiB each; AMUX_LOG names another file

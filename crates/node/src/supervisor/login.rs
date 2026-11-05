@@ -516,11 +516,19 @@ mod tests {
         assert!(!login.is_on());
         login.set(true).unwrap();
         assert!(login.is_on(), "{}", login.file().display());
+        // Unix installations share the service manager's directory; on
+        // Windows each keeps its definition in its own root.
+        let elsewhere = home.path().join("elsewhere");
         let other = StartAtLogin {
-            root: home.path().join("elsewhere"),
+            root: elsewhere.clone(),
+            items: if cfg!(windows) {
+                elsewhere
+            } else {
+                login.items.clone()
+            },
             ..login.clone()
         };
-        assert!(cfg!(windows) || !other.is_on());
+        assert!(!other.is_on());
         other.set(false).unwrap();
         assert!(login.is_on());
         login.set(false).unwrap();

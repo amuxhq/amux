@@ -145,7 +145,7 @@ impl RelayHost {
             true,
         );
         let ctx = LinkCtx::new_live(LiveLocalHost::new(host), Arc::new(LinkRegistry::new(id)));
-        let auth = LinkConnectorAuth::with_free_refresh_interval(
+        let auth = LinkConnectorAuth::new(
             LinkConnectorToken {
                 token,
                 expires_at,
@@ -153,7 +153,6 @@ impl RelayHost {
                 tier: Tier::Pro,
             },
             Arc::new(NoRefresh),
-            None,
         );
         let (shutdown, shutdown_rx) = watch::channel(false);
         let (relay_link, established) = spawn_connector(

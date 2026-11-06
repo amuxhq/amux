@@ -311,10 +311,10 @@ The router stories in `spec_links.rs` put two paid hosts behind routers with not
 | --- | --- |
 | `punch_ordinary_routers_…` | Behind `Ordinary` routers each host probes the address the relay saw the other at, both routers open, and the link moves from `relay_udp` to `punched` with the session streaming. |
 | `punch_strict_routers_…` | Behind `Strict` routers both hosts learn the other's observed address, every probe is dropped, and the link stays on `relay_udp`. |
-| `punch_free_never_…` | Two hosts on one free account on the same network: neither learns where the relay sees the other, so neither has anything to punch to, and the link stays on `lan`. |
+| `punch_free_never_…` | Two hosts on one free account on the same network: neither punches to where the relay saw the other while the account paid, and the link stays on `lan`. |
 | `another_network_strict_routers_…` | Two paid hosts declared behind `strict` routers: each end's link stays on `relay_udp` after every punch has given up, never `punched` or `lan`. |
 | `another_network_ordinary_routers_…` | The same declaration with `ordinary` routers: the link moves onto `punched`. |
-| `punch_lapse_drops_…` | A lapse takes the punched path away: the link leaves `punched`, and with no free path between the routers goes down. |
+| `punch_lapse_keeps_…` | A lapse leaves the link on its punched path: it stays `punched` while that path answers, and once the link is off it (a daemon restarts) nothing punches again, so with no free path between the routers the link stays down. |
 | `path_change_lan_relay_lan_…` | One subscription stays open while the LAN between two signed-in hosts is cut (the link moves to `relay_udp`) and restored (back to `lan`): every line once, one opening, no reset, lag or detach, and the link never goes down. |
 | `path_change_phone_network_…` | `change_network` under a host mid-stream: the same subscription reads on with no gap and the link stays up. |
 

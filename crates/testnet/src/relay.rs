@@ -466,7 +466,6 @@ impl Relay {
                 addr: gate.addr(),
                 roots: self.quic_roots.clone(),
             }),
-            ..CloudOptions::default()
         }
     }
 

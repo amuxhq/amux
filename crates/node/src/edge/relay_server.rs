@@ -714,7 +714,7 @@ mod tests {
             true,
         );
         let ctx = LinkCtx::new_live(LiveLocalHost::new(host), registry);
-        let auth = LinkConnectorAuth::with_free_refresh_interval(
+        let auth = LinkConnectorAuth::new(
             LinkConnectorToken {
                 token: token.to_owned(),
                 expires_at: SystemTime::now() + Duration::from_secs(3600),
@@ -722,7 +722,6 @@ mod tests {
                 tier: Tier::Pro,
             },
             Arc::new(NoRefresh),
-            None,
         );
         let (shutdown, shutdown_rx) = watch::channel(false);
         let (task, established) = spawn_connector(

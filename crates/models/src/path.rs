@@ -376,6 +376,9 @@ pub struct State {
     /// A paired daemon's forwarding link is up.
     via_up: bool,
     paid: bool,
+    /// The punched path the link was on as the plan lapsed, for as long as
+    /// the link has stayed on it since.
+    kept: Option<Path>,
     /// The relay refused the link's packets for the plan since it was last
     /// bought and since the relay link last came up.
     relay_refused: bool,
@@ -389,9 +392,13 @@ pub struct State {
     chose_framed: bool,
     chose_via: bool,
     chose_v6: bool,
+    /// The link stayed on a punched path through a lapse.
+    kept_through: bool,
     /// The first time the machine put a packet on a path across networks
     /// after a lapse.
     crossed: Option<String>,
+    /// The first time a lapse took the link off the punched path it was on.
+    cut: Option<String>,
     /// The first time it carried the link on a path no probe was answered on.
     unanswered: Option<String>,
     /// The first time it left a path that still worked, as far as it could
@@ -440,10 +447,13 @@ impl State {
     }
 
     /// Whether the machine may use the path at all: an address it was
-    /// told and still holds, punching only while paid, and the relay while
-    /// up and not refusing the plan.
+    /// told and still holds, punching only while paid or on the path kept
+    /// through a lapse, and the relay while up and not refusing the plan.
     fn usable(&self, candidate: Candidate) -> bool {
-        self.learned.contains(&candidate) && (candidate != Candidate::Punch || self.paid)
+        let kept = self
+            .kept
+            .is_some_and(|path| PathKey::from(path) == PathKey::Addr(candidate.addr()));
+        self.learned.contains(&candidate) && (candidate != Candidate::Punch || self.paid || kept)
     }
 
     /// The paths the world would carry the link on now, that the machine
@@ -462,10 +472,11 @@ impl State {
     }
 
     /// Whether a packet on `path` crosses networks after a lapse: a punched
-    /// path, or the relay once it refused the plan.
+    /// path other than the one kept through it, or the relay once it
+    /// refused the plan.
     fn crosses(&self, path: Path) -> bool {
         !self.paid
-            && (matches!(path, Path::Punched(_))
+            && ((matches!(path, Path::Punched(_)) && self.kept != Some(path))
                 || (path == Path::Forwarded(RELAY) && self.relay_refused))
     }
 
@@ -531,10 +542,12 @@ impl fmt::Debug for State {
             .field("moved", &self.moved)
             .field("relay_up", &self.relay_up)
             .field("paid", &self.paid)
+            .field("kept", &self.kept)
             .field("relay_refused", &self.relay_refused)
             .field("link_up", &self.link_up)
             .field("rested", &self.rested)
             .field("crossed", &self.crossed)
+            .field("cut", &self.cut)
             .field("unanswered", &self.unanswered)
             .field("swung", &self.swung)
             .field("via_up", &self.via_up)
@@ -600,7 +613,7 @@ impl PathModel {
                 }
                 Output::SendOnAll { paths } => s.on_all = paths,
                 // The world still knows an address the machine forgot: only
-                // a lapse may take one away, and only one reached by
+                // a free plan may take one away, and only one reached by
                 // punching. Any other drop leaves the address usable, so a
                 // machine that gave up on it fails to come back to it.
                 Output::DropCandidate { addr } => {
@@ -618,6 +631,9 @@ impl PathModel {
             }
         }
         let after = s.carrying();
+        if s.kept != after {
+            s.kept = None;
+        }
         if let (Some(from), Some(to)) = (before, after)
             && PathKey::from(from) != PathKey::from(to)
             && let Some((_, since)) = s.since
@@ -691,6 +707,7 @@ impl Machine for PathModel {
             relay_up: true,
             via_up: false,
             paid: true,
+            kept: None,
             relay_refused: false,
             link_up: false,
             rested: false,
@@ -700,7 +717,9 @@ impl Machine for PathModel {
             chose_framed: false,
             chose_via: false,
             chose_v6: false,
+            kept_through: false,
             crossed: None,
+            cut: None,
             unanswered: None,
             swung: None,
             chose_v4: None,
@@ -973,11 +992,21 @@ impl Machine for PathModel {
             Action::Plan { paid } => {
                 next.used.lapses += 1;
                 next.paid = *paid;
+                next.kept = None;
                 if *paid {
                     next.relay_refused = false;
                     next.relay_ready_ms = Some(next.now_ms);
+                    Input::Plan { paid: true }
+                } else {
+                    let on = s.carrying().filter(|path| matches!(path, Path::Punched(_)));
+                    next.kept = on;
+                    self.step(&mut next, Input::Plan { paid: false });
+                    if on.is_some() && next.carrying() != on && next.cut.is_none() {
+                        next.cut = Some(format!("{on:?} left on the lapse"));
+                    }
+                    next.kept_through |= next.kept.is_some();
+                    return Some(next);
                 }
-                Input::Plan { paid: *paid }
             }
             Action::RelayRefuses => {
                 next.relay_refused = true;
@@ -1018,6 +1047,10 @@ impl Machine for PathModel {
             Property::always(NO_CROSS_NETWORK_AFTER_LAPSE.sentence, |_, s: &State| {
                 s.crossed.is_none()
             }),
+            Property::always(
+                "a lapse leaves the link on the punched path it is on",
+                |_, s: &State| s.cut.is_none(),
+            ),
             Property::eventually(
                 "if any path works the link eventually uses one",
                 |_, s: &State| {
@@ -1056,6 +1089,10 @@ impl Machine for PathModel {
             Property::always("the path machine never asks for a dump", |_, s: &State| {
                 s.dumped.is_none()
             }),
+            Property::sometimes(
+                "the link sometimes stays on a punched path through a lapse",
+                |_, s: &State| s.kept_through,
+            ),
             Property::sometimes(
                 "direct and relayed are each sometimes chosen",
                 |_, s: &State| s.chose_direct && s.chose_relayed,

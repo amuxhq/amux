@@ -1,5 +1,6 @@
 import AmuxCore
 import AmuxDesign
+import AmuxPush
 import SwiftUI
 import UIKit
 import UserNotifications
@@ -107,13 +108,22 @@ final class AppDelegate: NSObject, UIApplicationDelegate, ObservableObject,
         suspendTime = .invalid
     }
 
+    /// The platform's token for this phone, which comes at every launch that
+    /// asks, since it can change.
+    func application(
+        _ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken token: Data
+    ) {
+        composition.pushes.token(token)
+    }
+
     /// Brings the chat the notification names current, and nothing else,
-    /// before the app is put away again.
+    /// before the app is put away again. What the system hands over here is
+    /// the push as it arrived, sealed, not the extension's rewrite.
     func application(
         _ application: UIApplication,
         didReceiveRemoteNotification payload: [AnyHashable: Any]
     ) async -> UIBackgroundFetchResult {
-        guard let agent = PushPayload.agent(payload) else { return .noData }
+        guard let agent = PushPayload.agent(payload, keys: PushKeychain()) else { return .noData }
         Signposts.emit(.pushWoke)
         let background = application.applicationState == .background
         let warmed = await composition.runtime.warm(agent, inBackground: background)
@@ -134,7 +144,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, ObservableObject,
 
     /// A tap on the notification opens the chat it names, under the account
     /// whose profile trusts its host; coming to the foreground lists every
-    /// agent again.
+    /// agent again. One the extension couldn't open is tried here, since a
+    /// phone that has since been unlocked can read its key, and one that
+    /// still can't be opened names nobody, so the tap opens the fleet.
     ///
     /// The completion handler's form, finished on the main actor: UIKit
     /// takes the async form's return as the handler being called, off the
@@ -143,21 +155,31 @@ final class AppDelegate: NSObject, UIApplicationDelegate, ObservableObject,
         _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
         withCompletionHandler completion: @escaping @Sendable () -> Void
     ) {
-        guard let agent = PushPayload.agent(response.notification.request.content.userInfo)
-        else { return completion() }
+        let agent = PushPayload.agent(
+            response.notification.request.content.userInfo, keys: PushKeychain())
         Task { @MainActor in
             await openPushed(agent)
             completion()
         }
     }
 
-    private func openPushed(_ agent: AgentKey) async {
+    private func openPushed(_ agent: AgentKey?) async {
+        guard let agent else { return composition.router.openFleet() }
         await composition.open(pushed: agent)
     }
 
+    /// A push about the chat somebody is reading tells them nothing the chat
+    /// doesn't, so it stays quiet; any other shows over the app.
+    ///
+    /// The completion handler's form, for the same reason as a tap's.
     nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter, willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
-        [.banner, .list]
+        _ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+        withCompletionHandler completion: @escaping @Sendable (UNNotificationPresentationOptions) -> Void
+    ) {
+        let agent = PushPayload.agent(notification.request.content.userInfo, keys: PushKeychain())
+        Task { @MainActor in
+            let reading = agent != nil && agent == composition.router.chatOnScreen
+            completion(reading ? [] : [.banner, .list])
+        }
     }
 }

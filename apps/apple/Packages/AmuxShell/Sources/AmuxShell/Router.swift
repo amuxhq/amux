@@ -90,6 +90,14 @@ public final class Router {
     /// The page on show, or nothing when a tab is showing its own root.
     public var top: Route? { path.last }
 
+    /// The chat somebody is reading: the page on show, when nothing is over
+    /// it. A sheet hides the chat beneath it, so a notification about that
+    /// chat still has something to tell them.
+    public var chatOnScreen: AgentKey? {
+        guard !composing, !showsPairing, case .conversation(let agent)? = top else { return nil }
+        return agent
+    }
+
     /// Goes to a tab, or — when it is the tab already on show — back to the
     /// top of it.
     ///
@@ -102,6 +110,12 @@ public final class Router {
         } else {
             self.tab = tab
         }
+    }
+
+    /// Goes to the fleet, whatever was on show.
+    public func openFleet() {
+        setPath([], for: .agents)
+        tab = .agents
     }
 
     /// Pushes a page. Synchronous, and deliberately not `async`: the frame the

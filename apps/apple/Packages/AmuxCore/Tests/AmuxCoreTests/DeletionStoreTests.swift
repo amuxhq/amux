@@ -33,6 +33,12 @@ private struct OneDeletion: CloudService, @unchecked Sendable {
         throw .unauthenticated
     }
 
+    func registerDevice(
+        _ id: AccountId, host: HostId, device: PushDevice
+    ) async throws(CloudError) {}
+
+    func removeDevice(_ id: AccountId, host: HostId) async throws(CloudError) {}
+
     func requestDeletion(
         _ id: AccountId, confirmedEmail: String
     ) async throws(CloudError) -> DeletionOutcome {

@@ -231,6 +231,40 @@ final class AmuxCloudTests: XCTestCase {
         }
     }
 
+    func testAPhonesDeviceIsPutUnderItsHostIdWithTheBearerTheRuntimeLends() async throws {
+        let host = HostId(UUID(uuidString: "AAAAAAAA-1111-1111-1111-111111111111")!)
+        let answers = Answers([
+            "/api/devices/aaaaaaaa-1111-1111-1111-111111111111": .init(status: 204, body: ""),
+        ])
+        let service = service(answers)
+        await service.lend { _ in "lent-1" }
+        try await service.registerDevice(
+            AccountId("ada"), host: host,
+            device: PushDevice(token: Data([0xab, 0x01]), environment: .sandbox))
+        let request = try XCTUnwrap(answers.asked.last)
+        XCTAssertEqual(request.httpMethod, "PUT")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer lent-1")
+        let body = try JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody))
+        XCTAssertEqual(
+            body as? [String: String],
+            ["transport": "apns", "environment": "sandbox", "token": "ab01"])
+
+        try await service.removeDevice(AccountId("ada"), host: host)
+        XCTAssertEqual(answers.asked.last?.httpMethod, "DELETE")
+        XCTAssertEqual(
+            answers.asked.last?.url?.path(), "/api/devices/aaaaaaaa-1111-1111-1111-111111111111")
+    }
+
+    func testADeviceTheServiceRefusesIsAFailure() async {
+        let host = HostId(UUID())
+        let service = service(Answers([:]))
+        await service.lend { _ in "lent-1" }
+        do {
+            try await service.removeDevice(AccountId("ada"), host: host)
+            XCTFail("a 404 is no success")
+        } catch {}
+    }
+
     func testAPurchasePostedWithAnUnusableSessionIsUnauthenticated() async throws {
         let answers = signedIn
         answers.plus("/api/purchases", status: 401, body: "")

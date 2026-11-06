@@ -1,4 +1,5 @@
 import AmuxCore
+import AmuxPush
 import AmuxValues
 import Foundation
 import XCTest
@@ -32,6 +33,25 @@ final class FleetWordsTests: XCTestCase {
         XCTAssertEqual(
             FleetWords.secondLine(.ask(AskSummary(subject: .plan, count: 1)), kind: .codex, now: now)?.ink,
             .ask)
+    }
+
+    /// A notification is written by an extension that can't link these words,
+    /// so its own are held to them here.
+    func testANotificationSaysWhatTheRowSays() {
+        let same: [(AskSubject, PushWants)] = [
+            (.command(command: "cargo test\n--all"), .run(command: "cargo test\n--all")),
+            (.edit(path: "src/a.rs", files: 1, created: false), .change(path: "src/a.rs", files: 1)),
+            (.edit(path: "src/a.rs", files: 3, created: false), .change(path: "src/a.rs", files: 3)),
+            (.tool(server: "github", tool: "create_issue"), .use(server: "github", tool: "create_issue")),
+            (.tool(server: "", tool: "Bash"), .use(server: "", tool: "Bash")),
+            (.question(question: "Which base?\nPick", count: 1), .question(text: "Which base?\nPick")),
+            (.plan, .plan(title: "")),
+        ]
+        for (subject, wants) in same {
+            XCTAssertEqual(
+                PushWords.body(.ask(wants: wants, why: "", more: 0)),
+                FleetWords.ask(AskSummary(subject: subject, count: 1)))
+        }
     }
 
     /// Background jobs lead an idle or working line, as the terminal's row

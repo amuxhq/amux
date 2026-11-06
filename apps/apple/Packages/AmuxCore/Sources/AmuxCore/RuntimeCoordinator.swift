@@ -540,6 +540,34 @@ public final class RuntimeCoordinator {
         return bearer.bearer
     }
 
+    /// Every account on this phone as notifications see it: the relay link's
+    /// word on what it buys first, then what the account service last said.
+    public var pushAccounts: [PushAccount] {
+        registry.accounts.map { entry in
+            PushAccount(
+                account: entry.id, profile: entry.profile,
+                wanted: PushAccount.wanted(
+                    signedIn: entry.signedIn,
+                    pro: profiles.first { $0.id == entry.profile }?.account.pro,
+                    entitlement: entry.entitlement))
+        }
+    }
+
+    /// The id a profile's notifications are addressed to.
+    public func pushHost(of profile: String) async -> HostId? {
+        guard let runtime, case .success(let bytes) = await runtime.hostId(profile) else {
+            return nil
+        }
+        return HostId(bytes: bytes)
+    }
+
+    /// Says a profile's public push key, or that it wants none.
+    public func wantNotifications(_ profile: String, key: [UInt8]?) async -> Bool {
+        guard let runtime, case .success = await runtime.wantNotifications(profile, key: key)
+        else { return false }
+        return true
+    }
+
     /// Asks the account service what an account buys now, over its
     /// profile's relay link.
     @discardableResult

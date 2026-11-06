@@ -106,8 +106,29 @@ signing in and the rest.
 ## Notifications
 
 With [Pro](https://amux.sh/docs/account/plans-and-billing/), the app notifies
-you when an agent needs you. Your computer encrypts each notification for your
-phone before it leaves, so neither amux.sh nor Apple can read it.
+you when an agent needs you, wherever you are and whether or not the app is
+open. Turn them on from the card on the agent list or from **Notifications** in
+**Settings**. Your phone and your computer have to be signed in to the same
+account.
+
+A notification names the agent and says what it needs:
+
+- It wants to do something: "Wants to run deploy --prod", or to edit a file or
+  use a tool, and how many more requests are waiting.
+- It has a question, or a plan for you to decide.
+- It can't go on: it reached a usage limit, with the time it resets, it needs
+  signing in on its host, or its turn failed.
+- It stopped unexpectedly.
+
+Tap one to open the chat. You won't get one for the chat you're reading.
+
+Your computer encrypts each notification for your phone before it leaves, so
+neither amux.sh nor Apple can read it. If your phone can't decrypt one, as just
+after a restart until you first unlock it, it says only "An agent needs you",
+and a tap opens your agents.
+
+Signing out, or the account leaving Pro, stops that account's notifications. To
+turn them all off, use the phone's own **Settings**.
 
 ## Settings and help
 

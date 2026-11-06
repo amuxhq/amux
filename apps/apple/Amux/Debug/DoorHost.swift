@@ -422,6 +422,8 @@ final class DoorHost {
         case .entitlement(let id): "entitlement \(id)"
         case .recordPurchase(let id): "recordPurchase \(id)"
         case .requestDeletion(let id, let email): "requestDeletion \(id) as \(email)"
+        case .registerDevice(let id, let host, _): "registerDevice \(id) on \(host)"
+        case .removeDevice(let id, let host): "removeDevice \(id) on \(host)"
         }
     }
 
@@ -989,5 +991,15 @@ final class DoorCloud: CloudService, @unchecked Sendable {
         _ id: AccountId, confirmedEmail: String
     ) async throws(CloudError) -> DeletionOutcome {
         try await script.requestDeletion(id, confirmedEmail: confirmedEmail)
+    }
+
+    func registerDevice(
+        _ id: AccountId, host: HostId, device: PushDevice
+    ) async throws(CloudError) {
+        try await script.registerDevice(id, host: host, device: device)
+    }
+
+    func removeDevice(_ id: AccountId, host: HostId) async throws(CloudError) {
+        try await script.removeDevice(id, host: host)
     }
 }

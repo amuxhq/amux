@@ -383,14 +383,30 @@ beside it, off by default, is handed over the same way: with it on, the
 runtime sends the report one of amux's checks takes to the account on screen
 ([sending reports](DEBUGGING.md#sending-reports)).
 
-A "needs you" notification's payload names a host and an agent under its
-`amux` key (`PushPayload`). When one wakes the app in the background,
-`RuntimeCoordinator.warm` brings the account whose profile trusts that host
-on screen, opens that one chat, waits for it to be current, and returns. A tap on the
-notification opens the chat. A push for a host no profile trusts is left
-alone. In front of somebody the account on screen never changes under them;
-a tap on a notification for another account's host brings that account
-forward.
+A push arrives sealed to one profile: an alert saying only "An agent needs
+you", and under its `amux` key the host id of the profile it is for (`to`) and
+what the daemon sealed (`sealed`; [the service's side](CLOUD.md#push-notifications)
+has the format). The notification extension picks that profile's key, opens it,
+and writes the agent's name over the title and what it wants over the body,
+in the words of its fleet row (`PushWords`). It leaves `amux` naming the host and
+agent, which is what the rest of the app reads (`PushPayload`), and sets a
+thread per agent. A push it can't open stays the plain alert, as it does between
+a restart and the first unlock. The extension has a few megabytes to live in, so
+it links `AmuxPush` and nothing else; `just ios scope-audit` checks that none of
+the Rust bridge reached it.
+
+When one wakes the app in the background, the system hands over the raw
+payload rather than the extension's rewrite, so `PushPayload` opens `sealed`
+itself, and `RuntimeCoordinator.warm` brings the account whose profile trusts
+that host on screen, opens that one chat, waits for it to be current, and
+returns. A tap on the notification opens the chat. One the extension couldn't
+open is tried again then, since the phone may have been unlocked since, and one
+that still names nobody opens the fleet. A push for a host no profile trusts is
+left alone. In front of somebody the account on screen never changes under
+them; a tap on a notification for another account's host brings that account
+forward. A push about the chat on screen shows nothing, since the chat already
+says it (`Router.chatOnScreen`), and a sheet over the chat means it isn't on
+screen.
 
 A notification only opens its chat; it carries no Allow or Deny, since the
 request makes sense only beside what the agent was doing. The app asks for
@@ -402,9 +418,30 @@ agents waiting on somebody changes, it removes the delivered notifications
 whose agent no longer needs anyone (`PushPayload.stale`). The tap is handled
 with the completion-handler form of `didReceive`, on the main actor: its
 async form ran off the main thread and crashed the app as it came forward.
-The card and the row show only in Debug and Measured builds until amux.sh
-sends pushes; the App Store build neither shows them nor registers for
-remote notifications.
+Both are offered only to an account on screen that is signed in with Pro, since
+a push is sent for nobody else; Debug and Measured builds offer them to anybody,
+for a push handed to the simulator.
+
+`PushRegistrar` keeps each profile's notifications as they should be. A profile
+wants them when iOS allows them and its account is signed in with Pro, by the
+relay link's word or else what the account service last said. It then has a
+dedicated Curve25519 key, never the identity key, kept in a keychain group the
+extension shares, on this device only and readable after the first unlock so a
+locked phone can open a push. The public half is said to the runtime
+(`want_notifications`), which puts it on the profile's own inventory entry, and
+the token goes to the account service (`PUT /api/devices/{hostId}`), `sandbox`
+from a Debug build and `production` otherwise.
+
+The runtime keeps the key in memory only, so it is said at every start, and
+before anything else is known: a host that reads this phone's entry without it
+forgets the key. Holding a key is also how the app knows, across launches, that
+a profile was registered. The token is registered at every launch, since it can
+change. The permission being turned off, signing out, leaving and losing Pro all
+take the key back, delete it and `DELETE` the row, signing out and leaving first,
+while there is still a bearer. A profile nothing is known about yet keeps what it
+has: a phone just started has heard nothing of an account not on screen. If the
+`DELETE` fails, the row stays, and receives nothing once the phone's next link
+tells its hosts the key is gone.
 
 ## The store
 

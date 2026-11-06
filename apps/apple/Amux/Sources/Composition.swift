@@ -1,6 +1,7 @@
 import AmuxCore
 import AmuxDesign
 import AmuxFeatures
+import AmuxPush
 import AmuxShell
 import Foundation
 import Observation
@@ -69,8 +70,16 @@ final class Composition {
     private static let localNetworkKey = "localNetworkExplained"
     /// Notifications as iOS has them, read at launch and whenever the app
     /// comes back to the front, since they are changed in the system's
-    /// settings. None in a build that does not offer them.
-    private(set) var notifications: NotificationsSetting?
+    /// settings.
+    private var notificationsPermission: NotificationsSetting?
+    /// What the screens say about notifications: nothing to an account they
+    /// aren't offered to.
+    var notifications: NotificationsSetting? {
+        offersNotifications ? notificationsPermission : nil
+    }
+    /// Keeps each account's notifications as what it may have says they
+    /// should be.
+    let pushes: PushRegistrar
     /// Whether the home's offer of notifications was put away. Kept across
     /// launches: the offer is made once, and Settings has them after.
     private var notificationsOfferDeclined =
@@ -80,15 +89,16 @@ final class Composition {
         }
     }
     private static let notificationsOfferKey = "notificationsOfferDeclined"
-    /// Whether this build offers notifications at all. Nothing sends them to
-    /// a phone yet, so the App Store build keeps them out of sight rather
-    /// than ask for something that never arrives; the debug build offers
-    /// them, for a push handed to the simulator.
-    #if AMUX_DEBUG_TOOLS
-    static let offersNotifications = true
-    #else
-    static let offersNotifications = false
-    #endif
+    /// Whether notifications are offered. A push needs Pro, so nobody else is
+    /// asked for something that won't arrive. A driven build offers them to
+    /// everybody, for a push handed to the simulator.
+    private var offersNotifications: Bool {
+        #if AMUX_DEBUG_TOOLS
+        true
+        #else
+        accounts.gate == .ready
+        #endif
+    }
 
     /// Whether the home offers notifications above its list.
     var offerNotifications: Bool { notifications == .notAsked && !notificationsOfferDeclined }
@@ -144,6 +154,20 @@ final class Composition {
             keepExplained: { UserDefaults.standard.set($0, forKey: Composition.localNetworkKey) },
             networkWatch: SystemNetworkWatch())
         self.runtime = runtime
+        let environment: PushDevice.Environment
+        #if DEBUG
+        environment = .sandbox
+        #else
+        environment = .production
+        #endif
+        let pushes = PushRegistrar(
+            keys: PushKeychain(), cloud: cloud, environment: environment,
+            host: { [weak runtime] in await runtime?.pushHost(of: $0) },
+            say: { [weak runtime] in await runtime?.wantNotifications($0, key: $1) ?? false })
+        self.pushes = pushes
+        accounts.changed = { [weak runtime] in
+            if let runtime { pushes.accounts(runtime.pushAccounts) }
+        }
         // Only the system may look at the network a phone is on, so the
         // browser is the app's and the runtime is handed what it saw.
         discovery = LocalDiscovery(only: only) { [weak runtime] found in
@@ -254,7 +278,8 @@ final class Composition {
         // profile stays, signed out: the machines on this network are still
         // reachable.
         case .signOutAccount(let id):
-            Task { [cloud, runtime] in
+            Task { [cloud, runtime, pushes] in
+                await pushes.withdraw(id)
                 try? await cloud.forgetSession(id)
                 await runtime.signOut(id)
             }
@@ -282,7 +307,7 @@ final class Composition {
         // Once iOS has asked, its own settings are the only place they are
         // changed: an app may ask once and never turn them off.
         case .notificationSettings:
-            if notifications == .notAsked {
+            if notificationsPermission == .notAsked {
                 askForNotifications()
             } else if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
                 UIApplication.shared.open(url)
@@ -319,18 +344,22 @@ final class Composition {
         }
     }
 
-    /// Reads what iOS says about notifications into `notifications`.
+    /// Reads what iOS says about notifications, whoever is on screen: an
+    /// account that isn't offered them may still have other accounts' to look
+    /// after. Having them on is when this phone asks for its token.
     func readNotifications() {
-        guard Self.offersNotifications else { return }
         Task {
             let status = await UNUserNotificationCenter.current().notificationSettings()
                 .authorizationStatus
-            notifications = switch status {
+            notificationsPermission = switch status {
             case .notDetermined: .notAsked
             case .authorized, .provisional, .ephemeral: .on
             case .denied: .off
             @unknown default: .off
             }
+            let permitted = notificationsPermission == .on
+            pushes.permitted(permitted)
+            if permitted { UIApplication.shared.registerForRemoteNotifications() }
         }
     }
 
@@ -348,7 +377,6 @@ final class Composition {
     /// lists as settled are cleared; one it does not list, on another
     /// account or folded into a family, is left for when it is.
     func clearSettledNotifications() {
-        guard Self.offersNotifications else { return }
         let settled = Set(stores.fleet.rows.filter { !$0.needsYou }.map(\.id))
         guard !settled.isEmpty else { return }
         Task {
@@ -377,7 +405,10 @@ final class Composition {
     }
 
     private func forget(_ id: AccountId) {
-        Task { [runtime] in await runtime.remove(id) }
+        Task { [pushes, runtime] in
+            await pushes.withdraw(id)
+            await runtime.remove(id)
+        }
     }
 
     /// Keeps an account that signed in: binds its profile with the

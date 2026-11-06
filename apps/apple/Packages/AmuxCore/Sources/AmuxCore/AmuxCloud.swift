@@ -64,6 +64,7 @@ public struct CloudEndpoint: Sendable, Equatable {
     var purchases: URL { base.appending(path: "api/purchases") }
     var account: URL { base.appending(path: "api/account") }
     var stripePortal: URL { base.appending(path: "api/billing/stripe/portal") }
+    func device(_ host: HostId) -> URL { base.appending(path: "api/devices/\(host)") }
 }
 
 /// How a request actually leaves the phone.
@@ -260,6 +261,33 @@ public actor AmuxCloudService: CloudService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONEncoder().encode(
             Purchase(signed_transaction: signedTransaction))
+        let (data, response) = try await send(request, for: id)
+        guard (200..<300).contains(response.statusCode) else {
+            throw Self.refusal(data, response)
+        }
+    }
+
+    // MARK: - Notifications
+
+    /// Says where a profile's notifications go. The profile's own host id
+    /// names the row, which is what a daemon addresses them to.
+    public func registerDevice(
+        _ id: AccountId, host: HostId, device: PushDevice
+    ) async throws(CloudError) {
+        var request = URLRequest(url: endpoint.device(host))
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONEncoder().encode(Device(
+            transport: "apns", environment: device.environment.rawValue, token: device.token))
+        let (data, response) = try await send(request, for: id)
+        guard (200..<300).contains(response.statusCode) else {
+            throw Self.refusal(data, response)
+        }
+    }
+
+    public func removeDevice(_ id: AccountId, host: HostId) async throws(CloudError) {
+        var request = URLRequest(url: endpoint.device(host))
+        request.httpMethod = "DELETE"
         let (data, response) = try await send(request, for: id)
         guard (200..<300).contains(response.statusCode) else {
             throw Self.refusal(data, response)
@@ -485,6 +513,12 @@ private struct Who: Decodable {
 /// transaction, whole.
 private struct Purchase: Encodable {
     let signed_transaction: String
+}
+
+private struct Device: Encodable {
+    let transport: String
+    let environment: String
+    let token: String
 }
 
 private struct Refused: Decodable {

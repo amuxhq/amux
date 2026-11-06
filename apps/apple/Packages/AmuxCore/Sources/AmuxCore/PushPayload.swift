@@ -1,20 +1,39 @@
+import AmuxPush
 import AmuxValues
 import Foundation
 
-/// What a "needs you" notification names: the agent, and the host it runs
-/// on, each as its UUID under the payload's `amux` key:
+/// What a "needs you" notification names: the agent, and the host it runs on.
+///
+/// A push arrives sealed, addressed to the profile it is for:
 ///
 ///     {"aps": {"content-available": 1, "alert": {…}},
-///      "amux": {"host": "<uuid>", "agent": "<uuid>"}}
+///      "amux": {"to": "<host id>", "sealed": "<base64>"}}
 ///
-/// The account service builds the payload from what the agent's daemon
-/// hands it; the phone reads nothing else from it.
+/// The notification extension opens it and leaves the two ids in its place,
+/// under the same key, which is what a tap and the clearing of answered
+/// notifications read:
+///
+///     {"amux": {"host": "<uuid>", "agent": "<uuid>"}}
+///
+/// A background wake gets the raw payload, the extension's work being on a
+/// copy, so the app opens that itself.
 public enum PushPayload {
-    public static func agent(_ payload: [AnyHashable: Any]) -> AgentKey? {
-        guard let amux = payload["amux"] as? [String: Any],
-              let host = (amux["host"] as? String).flatMap(HostId.init),
-              let agent = (amux["agent"] as? String).flatMap(UUID.init(uuidString:))
-        else { return nil }
+    /// The agent a payload names. `keys` opens a payload still sealed, and
+    /// without them, or with none that fits, a sealed payload names nobody.
+    public static func agent(
+        _ payload: [AnyHashable: Any], keys: (any PushKeys)? = nil
+    ) -> AgentKey? {
+        if let amux = payload["amux"] as? [String: Any],
+           let named = key(host: amux["host"] as? String, agent: amux["agent"] as? String) {
+            return named
+        }
+        guard let keys, let opened = SealedPush.open(payload, keys: keys) else { return nil }
+        return key(host: opened.host, agent: opened.agent)
+    }
+
+    private static func key(host: String?, agent: String?) -> AgentKey? {
+        guard let host = host.flatMap(HostId.init),
+              let agent = agent.flatMap(UUID.init(uuidString:)) else { return nil }
         return AgentKey(host: host, agent: agent)
     }
 

@@ -10,10 +10,13 @@ let package = Package(
     dependencies: [
         .package(path: "../AmuxCore"),
         .package(path: "../AmuxDesign"),
+        .package(path: "../AmuxPush"),
     ],
     targets: [
         .target(name: "AmuxFeatures", dependencies: ["AmuxCore", "AmuxDesign"]),
-        .testTarget(name: "AmuxFeaturesTests", dependencies: ["AmuxFeatures"]),
+        .testTarget(
+            name: "AmuxFeaturesTests",
+            dependencies: ["AmuxFeatures", .product(name: "AmuxPush", package: "AmuxPush")]),
     ],
     swiftLanguageModes: [.v6]
 )

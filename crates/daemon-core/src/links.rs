@@ -20,8 +20,8 @@ use std::net::SocketAddr;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use wire::HelloAck;
 use wire::message::Body;
-use wire::{HelloAck, hello_ack};
 
 use crate::Daemon;
 use crate::ids::{ChannelId, HostId, LinkId, TimerId};
@@ -328,7 +328,7 @@ impl Daemon {
                 claims = hosts(&hello.neighbors).filter(other).collect();
             }
             Some(Body::HelloAck(HelloAck {
-                outcome: Some(hello_ack::Outcome::Accepted(accepted)),
+                accepted: Some(accepted),
             })) => {
                 claims = hosts(&accepted.neighbors).filter(other).collect();
             }
@@ -391,7 +391,7 @@ impl Daemon {
                 self.peer_listed(peer, kind, &hello.addrs, hello.public_addr.as_deref(), out)
             }
             Body::HelloAck(HelloAck {
-                outcome: Some(hello_ack::Outcome::Accepted(accepted)),
+                accepted: Some(accepted),
             }) => {
                 self.peer_listed(
                     peer,
@@ -909,10 +909,10 @@ mod tests {
         assert_eq!(daemon.peer_addresses().get(&PEER), Some(&now));
 
         let accepted = Body::HelloAck(HelloAck {
-            outcome: Some(hello_ack::Outcome::Accepted(wire::Hello {
+            accepted: Some(wire::Hello {
                 addrs: Vec::new(),
                 ..Default::default()
-            })),
+            }),
         });
         assert_eq!(
             listed(&mut daemon, accepted),
@@ -1068,10 +1068,10 @@ mod tests {
             )
         };
         let accepted = Body::HelloAck(HelloAck {
-            outcome: Some(hello_ack::Outcome::Accepted(wire::Hello {
+            accepted: Some(wire::Hello {
                 observed_addr: Some("203.0.113.7:4433".to_string()),
                 ..Default::default()
-            })),
+            }),
         });
         let first: SocketAddr = "203.0.113.7:4433".parse().unwrap();
         assert!(on_relay(&mut daemon, accepted).contains(&Output::ObservedAddress { addr: first }));

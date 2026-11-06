@@ -89,6 +89,18 @@ in the way:
 - **The relay refuses this version.** `amux status` says so. Run
   `amux update`.
 
+## A machine needs updating
+
+A newer amux can ask an older machine for something it doesn't know. Two
+messages mean that, and neither loses your words:
+
+| What it says | What to do |
+|---|---|
+| **that host needs updating to do this** | Update amux on that machine. |
+| **not sent: one of its attachments is of a kind this host can't read** | Update amux on the agent's machine and send it again. Your words are back in the composer. |
+
+[Updates and channels](updates.md) says how.
+
 ## An update didn't happen
 
 `amux status` says if the latest release failed to start on this machine and

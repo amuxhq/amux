@@ -11,7 +11,7 @@ use support::*;
 use tonic::Request;
 use wire::answer_onboarding_request::Answer;
 use wire::installation_service_server::InstallationService as _;
-use wire::{AnswerOnboardingRequest, OnboardingStepId as Id, StepState, Surface};
+use wire::{AnswerOnboardingRequest, OnboardingStepId as Id, StepState};
 
 use crate::support;
 
@@ -19,7 +19,6 @@ fn answer(answer: Answer) -> Request<AnswerOnboardingRequest> {
     Request::new(AnswerOnboardingRequest {
         profile_id: Vec::new(),
         answer: Some(answer),
-        surface: Surface::Terminal as i32,
     })
 }
 
@@ -50,11 +49,17 @@ async fn answers_move_the_steps_and_outlive_a_restart() {
     let main = runtime(&daemon, &install).profile();
 
     let mut steps = door
-        .subscribe_onboarding(Request::new(wire::OnboardingRequest::default()))
+        .subscribe_onboarding(Request::new(wire::SubscribeOnboardingRequest::default()))
         .await
         .unwrap()
         .into_inner();
-    let first = steps.next().await.expect("the steps now").unwrap();
+    let first = steps
+        .next()
+        .await
+        .expect("the steps now")
+        .unwrap()
+        .onboarding
+        .unwrap();
     assert_eq!(first.profile_id, main.as_bytes(), "the oldest profile's");
     assert_eq!(
         states(&first),
@@ -76,10 +81,18 @@ async fn answers_move_the_steps_and_outlive_a_restart() {
         .answer_onboarding(answer(Answer::Skip(Id::PairPhone as i32)))
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .onboarding
+        .unwrap();
     assert_eq!(skipped.steps[0].state(), Skipped);
     assert!(!skipped.dismissed, "skipping is not dismissing");
-    let streamed = steps.next().await.expect("the change").unwrap();
+    let streamed = steps
+        .next()
+        .await
+        .expect("the change")
+        .unwrap()
+        .onboarding
+        .unwrap();
     assert_eq!(streamed, skipped);
 
     let refused = door
@@ -92,13 +105,17 @@ async fn answers_move_the_steps_and_outlive_a_restart() {
         .answer_onboarding(answer(Answer::Done(Id::Repositories as i32)))
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .onboarding
+        .unwrap();
     assert_eq!(done.steps[3].state(), StepState::Done);
     let dismissed = door
         .answer_onboarding(answer(Answer::Dismiss(wire::Empty {})))
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .onboarding
+        .unwrap();
     assert!(
         dismissed.steps.iter().all(|step| step.state() != Needed),
         "{dismissed:?}"
@@ -149,13 +166,15 @@ async fn answers_move_the_steps_and_outlive_a_restart() {
     let daemon = start(&install, "boot-2", &recording).await;
     let again = daemon
         .front_door()
-        .subscribe_onboarding(Request::new(wire::OnboardingRequest::default()))
+        .subscribe_onboarding(Request::new(wire::SubscribeOnboardingRequest::default()))
         .await
         .unwrap()
         .into_inner()
         .next()
         .await
         .unwrap()
+        .unwrap()
+        .onboarding
         .unwrap();
     assert_eq!(states(&again), states(&dismissed));
     assert!(again.dismissed);
@@ -181,7 +200,7 @@ async fn suggestions_come_from_the_session_logs_in_the_home() {
     let daemon = node::start(options, None).await.unwrap();
     let suggested = daemon
         .front_door()
-        .suggest_repositories(Request::new(wire::Empty {}))
+        .suggest_repositories(Request::new(wire::SuggestRepositoriesRequest {}))
         .await
         .unwrap()
         .into_inner()

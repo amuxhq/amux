@@ -201,8 +201,7 @@ pub fn choice_label(choice: &Choice) -> String {
         ChoiceOutcome::AllowNetwork { hosts } => {
             format!("Allow network access to {}", hosts.join(", "))
         }
-        ChoiceOutcome::Deny { stops: true } => "Deny and stop".to_owned(),
-        ChoiceOutcome::Deny { stops: false } => "Deny".to_owned(),
+        ChoiceOutcome::Deny => "Deny".to_owned(),
         ChoiceOutcome::DenyAndStop => "Deny and stop".to_owned(),
         ChoiceOutcome::ApprovePlan { mode, mode_name } if !mode.is_empty() => {
             format!(
@@ -367,10 +366,7 @@ pub fn boxed(card: &AskCard) -> bool {
 /// Whether a choice is the box's one way to refuse: a denial, or sending a
 /// plan back.
 fn refuses(outcome: &ChoiceOutcome) -> bool {
-    matches!(
-        outcome,
-        ChoiceOutcome::Deny { .. } | ChoiceOutcome::SendBack
-    )
+    matches!(outcome, ChoiceOutcome::Deny | ChoiceOutcome::SendBack)
 }
 
 /// The box's choices, as indices into the card's: the ways to allow in the
@@ -381,7 +377,7 @@ fn box_choices(card: &AskCard) -> Vec<usize> {
     let mut deny = None;
     for (i, choice) in card.choices.iter().enumerate() {
         match choice.outcome {
-            ChoiceOutcome::Deny { .. } | ChoiceOutcome::SendBack => {
+            ChoiceOutcome::Deny | ChoiceOutcome::SendBack => {
                 deny.get_or_insert(i);
             }
             ChoiceOutcome::DenyAndStop => {}
@@ -409,10 +405,8 @@ fn box_label(choice: &Choice, kind: wire::Kind) -> String {
                 crate::words::named(mode_name, mode)
             )
         }
-        ChoiceOutcome::Deny { stops: true } | ChoiceOutcome::DenyAndStop => {
-            "No, and stop".to_owned()
-        }
-        ChoiceOutcome::Deny { stops: false } => "No".to_owned(),
+        ChoiceOutcome::DenyAndStop => "No, and stop".to_owned(),
+        ChoiceOutcome::Deny => "No".to_owned(),
         ChoiceOutcome::ApprovePlan { mode, mode_name } if !mode.is_empty() => {
             format!(
                 "Yes, and switch to {}",
@@ -714,9 +708,7 @@ impl AskUi {
                     {
                         "Sending…".to_owned()
                     }
-                    Some(ChoiceOutcome::Deny { .. } | ChoiceOutcome::DenyAndStop) => {
-                        "Denying…".to_owned()
-                    }
+                    Some(ChoiceOutcome::Deny | ChoiceOutcome::DenyAndStop) => "Denying…".to_owned(),
                     Some(ChoiceOutcome::SendBack) => "Sending the plan back…".to_owned(),
                     Some(ChoiceOutcome::ApprovePlan { .. }) => "Approving the plan…".to_owned(),
                     _ => format!("Allowing {}…", short_subject(card)),

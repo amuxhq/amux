@@ -97,11 +97,11 @@ embedded runtime reads no configuration file and runs with the defaults.
 1. **Facts ring segments.** The ring always keeps two segments, each half of
    `facts_ring_mib`; the count is not a setting.
 
-2. **Push delay.** The shipped daemon and the phone runtime install
-   `NoopSender` as their push sender, so notification rows fall due after this
-   delay and are deleted without a push being sent. `HttpSender` in
-   [`crates/node/src/outbox.rs`](../crates/node/src/outbox.rs) is the sender
-   that posts to the account service.
+2. **Push delay.** Notification rows fall due after this delay. The shipped
+   daemon's `HttpSender`, in
+   [`crates/node/src/outbox.rs`](../crates/node/src/outbox.rs), then posts them
+   to the account service; the phone runtime installs `NoopSender`, so its rows
+   are deleted without a push being sent.
 
 3. **Latency.** The daemon relays an input's verdict only after the step that
    explains it is committed and broadcast, so the budget is the agent's journal

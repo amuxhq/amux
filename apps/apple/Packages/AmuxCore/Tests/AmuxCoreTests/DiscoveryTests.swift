@@ -14,10 +14,9 @@ final class DiscoveryTests: XCTestCase {
     private let host = HostId(UUID(uuidString: "6D7A4B1E-3C2F-4A58-9B0D-1E2F3A4B5C6D")!)
 
     func testAnAdvertisementIsReadFromItsOwnRecord() {
-        let record = NWTXTRecord(["hid": host.description, "v": "7"])
+        let record = NWTXTRecord(["hid": host.description])
         let claim = LocalDiscovery.claim(from: record)
         XCTAssertEqual(claim?.host, host)
-        XCTAssertEqual(claim?.version, 7)
     }
 
     func testTheRecordAMacAdvertisesIsRead() throws {
@@ -31,7 +30,6 @@ final class DiscoveryTests: XCTestCase {
 
         let claim = LocalDiscovery.claim(from: NWTXTRecord(fixture.txt))
         XCTAssertEqual(claim?.host, HostId(try XCTUnwrap(UUID(uuidString: fixture.hostId))))
-        XCTAssertEqual(claim?.version, fixture.version)
         XCTAssertEqual(claim?.name, fixture.txt["name"])
         XCTAssertEqual(claim?.pairing, fixture.pairingOpen)
     }
@@ -40,11 +38,11 @@ final class DiscoveryTests: XCTestCase {
     /// and no flag at all, is none.
     func testAnOpenPairingWindowIsReadFromTheRecord() {
         for (value, open) in [("1", true), ("0", false), ("", false), ("yes", false)] {
-            let record = NWTXTRecord(["hid": host.description, "v": "7", "pair": value])
+            let record = NWTXTRecord(["hid": host.description, "pair": value])
             XCTAssertEqual(LocalDiscovery.claim(from: record)?.pairing, open, value)
         }
         XCTAssertEqual(
-            LocalDiscovery.claim(from: NWTXTRecord(["hid": host.description, "v": "7"]))?.pairing,
+            LocalDiscovery.claim(from: NWTXTRecord(["hid": host.description]))?.pairing,
             false)
     }
 
@@ -92,13 +90,10 @@ final class DiscoveryTests: XCTestCase {
     }
 
     func testAnIncompleteOrUnreadableRecordIsPassedOver() {
-        // Some other service answering on the same name, or an amux old enough
-        // to have advertised itself differently. Neither is guessed at.
+        // Some other service answering on the same name is not guessed at.
         for record in [
-            NWTXTRecord(["v": "7"]),
-            NWTXTRecord(["hid": host.description]),
-            NWTXTRecord(["hid": "kitchen", "v": "7"]),
-            NWTXTRecord(["hid": host.description, "v": "soon"]),
+            NWTXTRecord(["name": "kitchen"]),
+            NWTXTRecord(["hid": "kitchen"]),
         ] {
             XCTAssertNil(LocalDiscovery.claim(from: record))
         }
@@ -200,13 +195,13 @@ final class DiscoveryTests: XCTestCase {
         browser.discovery.saw([browser.sighting(routes: ["wifi"])])
         XCTAssertEqual(browser.lookups.count, 1, "an unchanged advertisement was looked up again")
 
-        browser.discovery.saw([browser.sighting(version: 8, routes: ["wifi"])])
+        browser.discovery.saw([browser.sighting(scope: "elsewhere", routes: ["wifi"])])
         XCTAssertEqual(browser.lookups.count, 2)
         browser.lookups[1].settle("192.168.1.24:50000")
         XCTAssertEqual(
-            browser.handedOver.last, [browser.found("192.168.1.24:50000", version: 8)])
+            browser.handedOver.last, [browser.found("192.168.1.24:50000", scope: "elsewhere")])
 
-        browser.discovery.saw([browser.sighting(version: 8, routes: ["wifi", "ethernet"])])
+        browser.discovery.saw([browser.sighting(scope: "elsewhere", routes: ["wifi", "ethernet"])])
         XCTAssertEqual(browser.lookups.count, 3, "a newly seen interface was not tried")
     }
 
@@ -234,14 +229,14 @@ final class DiscoveryTests: XCTestCase {
     func testAnAnswerForALookupThatWasReplacedIsIgnored() {
         let browser = Browser()
         browser.discovery.saw([browser.sighting(routes: ["wifi"])])
-        browser.discovery.saw([browser.sighting(version: 8, routes: ["wifi"])])
+        browser.discovery.saw([browser.sighting(scope: "elsewhere", routes: ["wifi"])])
         XCTAssertTrue(browser.lookups[0].abandoned)
 
         browser.lookups[0].settle("192.168.1.24:41234")
         XCTAssertEqual(browser.handedOver.last, [])
         browser.lookups[1].settle("192.168.1.24:50000")
         XCTAssertEqual(
-            browser.handedOver.last, [browser.found("192.168.1.24:50000", version: 8)])
+            browser.handedOver.last, [browser.found("192.168.1.24:50000", scope: "elsewhere")])
     }
 
     @MainActor
@@ -249,7 +244,7 @@ final class DiscoveryTests: XCTestCase {
         let browser = Browser()
         browser.discovery.saw([browser.sighting(routes: ["wifi"])])
         browser.lookups[0].settle("192.168.1.24:41234")
-        browser.discovery.saw([browser.sighting(version: 8, routes: ["wifi"])])
+        browser.discovery.saw([browser.sighting(scope: "elsewhere", routes: ["wifi"])])
 
         browser.discovery.saw([])
         XCTAssertTrue(browser.lookups[1].abandoned)
@@ -306,9 +301,9 @@ private final class Browser {
         handOver: { [unowned self] in self.handedOver.append($0) })
 
     func sighting(
-        version: UInt32 = 7, instance: String = "kitchen", pairing: Bool = false, routes: [String]
+        scope: String = "", instance: String = "kitchen", pairing: Bool = false, routes: [String]
     ) -> LocalDiscovery.Sighting {
-        var record = ["hid": host.description, "v": String(version), "name": "kitchen"]
+        var record = ["hid": host.description, "name": "kitchen", "scope": scope]
         if pairing { record["pair"] = "1" }
         return LocalDiscovery.Sighting(
             endpoint: .service(name: instance, type: LocalDiscovery.service, domain: "local.", interface: nil),
@@ -316,9 +311,9 @@ private final class Browser {
             routes: routes.map { .hostPort(host: .name($0, nil), port: 1) })
     }
 
-    func found(_ address: String, version: UInt32 = 7, pairing: Bool = false) -> Found {
+    func found(_ address: String, scope: String = "", pairing: Bool = false) -> Found {
         Found(
-            hostId: host.bytes, name: "kitchen", version: version, addrs: [address], scope: "",
+            hostId: host.bytes, name: "kitchen", addrs: [address], scope: scope,
             pairingOpen: pairing)
     }
 
@@ -336,12 +331,11 @@ private final class Browser {
 
 private struct AdvertisedRecord: Decodable {
     let hostId: String
-    let version: UInt32
     let pairingOpen: Bool
     let txt: [String: String]
 
     enum CodingKeys: String, CodingKey {
-        case hostId = "host_id", version, txt
+        case hostId = "host_id", txt
         case pairingOpen = "pairing_open"
     }
 }

@@ -56,7 +56,7 @@ there is one definition of each. [EMBEDDED.md](EMBEDDED.md) covers the bridge.
 `list_items`, `get_item`, `send_input`, `create_agent`, `rename_agent`, `file_agent`, `resume_agent`, `delete_agent`,
 `send_message`, `put_blob`, `get_blob`, `get_diff`, `get_catalogue`, `list_repositories`, `dump`, `update_draft` and
 `get_draft`, and of the profile's administration `sign_out`, `get_device_identity`, the pairing window
-(`start_pairing`, `cancel_pairing`, and `watch_pairing`, its status now and on every change) and the one-tap
+(`start_pairing`, `cancel_pairing`, and `subscribe_pairing`, its status now and on every change) and the one-tap
 sign-in a paired host offers: `offer_sign_in`, `subscribe_sign_in_offers` and `answer_sign_in_offer`. The last six
 have default bodies that answer `UNIMPLEMENTED`, so a test's stand-in client need not serve them. Streams come back as `EventStream<T>`, a boxed stream of
 `Result<T, RpcError>`.

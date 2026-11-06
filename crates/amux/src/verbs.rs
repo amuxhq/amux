@@ -21,14 +21,14 @@ type Client = wire::ClientStubs;
 pub async fn inventory(client: &mut Client) -> Result<(Vec<HostEntry>, Vec<Agent>)> {
     let mut stream = client
         .agents
-        .subscribe_inventory(wire::Empty {})
+        .subscribe_inventory(wire::SubscribeInventoryRequest {})
         .await
         .map_err(crate::plain)?
         .into_inner();
     let mut hosts = BTreeMap::new();
     let mut agents = BTreeMap::new();
-    while let Some(event) = stream.message().await.map_err(crate::plain)? {
-        match event.of {
+    while let Some(response) = stream.message().await.map_err(crate::plain)? {
+        match response.event.and_then(|event| event.of) {
             Some(inventory_event::Of::Host(host)) => {
                 hosts.insert(host.host_id().to_vec(), host);
             }
@@ -64,8 +64,8 @@ pub async fn resolve(client: &mut Client, reference: &str) -> Result<Agent> {
             name: reference.to_owned(),
         })
         .await
-        .map(tonic::Response::into_inner)
         .map_err(crate::plain)
+        .and_then(|answer| crate::held(answer.into_inner().agent))
 }
 
 fn short_id(id: &[u8]) -> String {
@@ -374,7 +374,9 @@ pub async fn create(
         })
         .await
         .map_err(crate::plain)?
-        .into_inner();
+        .into_inner()
+        .agent;
+    let agent = crate::held(agent)?;
     println!(
         "Created {} ({}): {}",
         agent.name,
@@ -474,7 +476,9 @@ pub async fn resume(client: &mut Client, reference: &str, text: Option<&str>) ->
         })
         .await
         .map_err(crate::plain)?
-        .into_inner();
+        .into_inner()
+        .agent;
+    let resumed = crate::held(resumed)?;
     println!("Resumed {}: {}", resumed.name, state(&resumed));
     Ok(())
 }
@@ -489,7 +493,9 @@ pub async fn rename(client: &mut Client, reference: &str, name: &str) -> Result<
         })
         .await
         .map_err(crate::plain)?
-        .into_inner();
+        .into_inner()
+        .agent;
+    let renamed = crate::held(renamed)?;
     println!("Renamed {} to {}.", agent.name, renamed.name);
     Ok(())
 }

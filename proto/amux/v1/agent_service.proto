@@ -23,20 +23,20 @@ import "amux/v1/session_service.proto";
 // ResolveAgent is refused, as a paired daemon resolves names itself.
 
 service AgentService {
-  rpc SubscribeInventory(Empty) returns (stream InventoryEvent);
+  rpc SubscribeInventory(SubscribeInventoryRequest) returns (stream SubscribeInventoryResponse);
   // Fleet-wide name to row: NOT_FOUND, or FAILED_PRECONDITION when the name
   // is ambiguous. Every other call takes an agent id.
-  rpc ResolveAgent(ResolveAgentRequest) returns (Agent);
-  rpc CreateAgent(CreateAgentRequest) returns (Agent);
-  rpc RenameAgent(RenameAgentRequest) returns (Agent);
+  rpc ResolveAgent(ResolveAgentRequest) returns (ResolveAgentResponse);
+  rpc CreateAgent(CreateAgentRequest) returns (CreateAgentResponse);
+  rpc RenameAgent(RenameAgentRequest) returns (RenameAgentResponse);
   // Pins, settles or returns the agent to active. Settling a live agent
   // stops it, resumable, and settles its children with it.
-  rpc FileAgent(FileAgentRequest) returns (Agent);
+  rpc FileAgent(FileAgentRequest) returns (FileAgentResponse);
   // Spawn the directory again, filed active when it was settled.
-  rpc ResumeAgent(ResumeAgentRequest) returns (Agent);
+  rpc ResumeAgent(ResumeAgentRequest) returns (ResumeAgentResponse);
   // Removes the agent for good, stopping it first when it is live. Its
   // children, on any host, follow on their own hosts by the family rule.
-  rpc DeleteAgent(DeleteAgentRequest) returns (Empty);
+  rpc DeleteAgent(DeleteAgentRequest) returns (DeleteAgentResponse);
   // Also called by the tool server with the agent's identity. The daemon
   // stamps the sender from the caller and never from the request.
   // A message to an agent. `id` is the caller's, so the recipient's daemon
@@ -46,20 +46,30 @@ service AgentService {
   // call; a paired daemon's envelope comes stamped by its host. A child's
   // reports to its parent are the daemon's own and a client cannot submit
   // one.
-  rpc SendMessage(Envelope) returns (SendMessageResponse);
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
   // The only put: written into that agent's directory.
-  rpc PutBlob(PutBlobRequest) returns (BlobRef);
+  rpc PutBlob(PutBlobRequest) returns (PutBlobResponse);
   rpc GetBlob(GetBlobRequest) returns (GetBlobResponse);
   // The changed files; with_patch also puts the patch blob on the host.
-  rpc GetDiff(GetDiffRequest) returns (Diff);
+  rpc GetDiff(GetDiffRequest) returns (GetDiffResponse);
   // What a provider on a host offers with no agent running, read from the
   // host's own copy; an agent's catalogue is a blob named by its snapshot.
   rpc GetCatalogue(GetCatalogueRequest) returns (GetCatalogueResponse);
   rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
 }
 
+message SubscribeInventoryRequest {}
+
+message SubscribeInventoryResponse {
+  InventoryEvent event = 1;
+}
+
 message ResolveAgentRequest {
   string name = 1;
+}
+
+message ResolveAgentResponse {
+  Agent agent = 1;
 }
 
 message CreateAgentRequest {
@@ -91,11 +101,19 @@ message CreateAgentRequest {
   bool new_worktree = 10;
 }
 
+message CreateAgentResponse {
+  Agent agent = 1;
+}
+
 message RenameAgentRequest {
   bytes agent_id = 1;
   // As CreateAgentRequest's name. The agent's branch keeps the name it
   // was made with.
   string name = 2;
+}
+
+message RenameAgentResponse {
+  Agent agent = 1;
 }
 
 // FILING_SETTLED ends a live agent now: the running turn is cancelled the
@@ -108,14 +126,28 @@ message FileAgentRequest {
   Filing filing = 2;
 }
 
+message FileAgentResponse {
+  Agent agent = 1;
+}
+
 // The composer of an exited chat sends its draft through initial_prompt.
 message ResumeAgentRequest {
   bytes agent_id = 1;
   optional PromptSubmission initial_prompt = 2;
 }
 
+message ResumeAgentResponse {
+  Agent agent = 1;
+}
+
 message DeleteAgentRequest {
   bytes agent_id = 1;
+}
+
+message DeleteAgentResponse {}
+
+message SendMessageRequest {
+  Envelope envelope = 1;
 }
 
 message SendMessageResponse {
@@ -127,6 +159,10 @@ message PutBlobRequest {
   string name = 2;
   string mime = 3;
   bytes bytes = 4;
+}
+
+message PutBlobResponse {
+  BlobRef blob = 1;
 }
 
 message GetBlobRequest {
@@ -144,6 +180,10 @@ message GetDiffRequest {
   DiffBase base = 2;
   // Also build the patch and store it as the agent's blob.
   bool with_patch = 3;
+}
+
+message GetDiffResponse {
+  Diff diff = 1;
 }
 
 message GetCatalogueRequest {
@@ -171,7 +211,6 @@ message ListRepositoriesResponse {
   repeated RepositoryEntry recent = 1;
   // The host's repository list, as its person chose it.
   repeated RepositoryEntry repositories = 2;
-  reserved 3;
 }
 
 message RepositoryEntry {

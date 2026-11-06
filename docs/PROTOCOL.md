@@ -73,8 +73,8 @@ The layers have separate jobs:
 - A **link** is one QUIC connection between two hosts, and there is one per
   pair of hosts that trust each other, end to end whichever path carries
   it. Its handshake is pinned mutual TLS 1.3 with the keys exchanged at
-  pairing; its control stream exchanges protocol version, adjacency,
-  addresses and link lifetime.
+  pairing; its control stream exchanges adjacency, addresses and link
+  lifetime.
 - A **stream** is one QUIC stream on the link. It carries no preface: it
   belongs to the host at the other end of its link.
 - A **channel** is one HTTP/2 call connection inside a stream. The link's
@@ -88,8 +88,8 @@ relay cannot read.
 ## Chapter 0: Discovery
 
 A listening profile advertises `_amux._udp` through DNS-SD. Its SRV record
-names the ephemeral or configured QUIC port; its TXT record carries `v` (the
-protocol version), `hid` (the host id, hyphenated), `name` (the host's own
+names the ephemeral or configured QUIC port; its TXT record carries `hid` (the
+host id, hyphenated), `name` (the host's own
 name, which a renamed instance such as "desk (2)" does not change), `scope`
 (the discovery scope) and, only while a pairing window is open, `pair=1`. The
 host advertises again whenever its window opens or closes, so a phone that
@@ -172,8 +172,8 @@ the same reason. A host that answers a pairing forwarded by a paired host
 keeps no address for it: that host announcing it is the route.
 
 SPAKE2 follows RFC 9382 over edwards25519, responder B and initiator A, with
-messages B to A then A to B. Both sides hash the big-endian
-`PROTOCOL_VERSION` and length-prefixed SPAKE2 messages. HKDF-SHA256 with salt
+messages B to A then A to B. Both sides hash the length-prefixed SPAKE2
+messages. HKDF-SHA256 with salt
 `amux-pair-spake2-v1` derives confirmation keys (`kc/A`, `kc/B`) and
 ChaCha20-Poly1305 keys (`aead/A→B`, `aead/B→A`). The sealed identity contains
 the public key and a host name, with direction and transcript in the
@@ -204,7 +204,7 @@ creates the pins later channel handshakes check. A window lasts the length
 its `StartPairing` names, five minutes when it names none, and never more
 than 90 days, whatever its method. PIN and QR windows are one-shot and allow
 five attempts. A `pin_or_qr` window, the one a first run opens, holds a fresh
-PIN and a fresh QR secret at once (`PairingWindow.pin_and_qr`): either pairs,
+PIN and a fresh QR secret at once (`PairingWindow.pin` and `qr_link`): either pairs,
 one pairing uses both up, and every attempt counts against its one budget of
 five. A demo PIN window holds a PIN the operator chose
 (`amux pair --demo`) and is reusable: success does not consume it and failed
@@ -228,7 +228,7 @@ administration holds the open stream behind the single-use token until that
 expiry, and holds at most 32 at once. While a joiner holds the window's secret
 proven and its person confirms, the window's `PairingStatus.joining` is set;
 once the pairing commits, `PairingStatus.paired` names the peer the window
-trusted until another window opens. `WatchPairing` streams the status now and
+trusted until another window opens. `SubscribePairing` streams the status now and
 on every change, so a screen showing the code moves to "pairing…" and then
 "paired" without polling. The token is a local capability, not a
 trust decision a client could recreate from the identity fields it displays.
@@ -359,7 +359,7 @@ additional streams, finish and typed reset, and link close.
 
 | Link | Paths it may take | Link admission |
 | --- | --- | --- |
-| Between two paired hosts | direct, punched, through the relay over UDP or TCP, through a paired daemon, SSH | pinned mutual TLS, ALPN `amux/2` |
+| Between two paired hosts | direct, punched, through the relay over UDP or TCP, through a paired daemon, SSH | pinned mutual TLS, ALPN `amux/1` |
 | A host's link to the relay | UDP, or framed inside TLS over TCP | WebPKI certificate, then the `Hello` token |
 
 Device QUIC permits only bidirectional application streams, at most 64
@@ -521,17 +521,17 @@ local discovery refuse any other name, and a configured `host_name` is held to
 the same rule, while a name taken from the system or a phone is cut and cleaned
 to one. The complete control vocabulary is:
 
-- `Hello`: supported protocol versions, this host, the current neighbor
+- `Hello`: this host, the current neighbor
   snapshot, the sender's runtime instance id, every interface address the
   sender can be reached at with its listener's port (`addrs`, as `host:port`,
   never loopback or link-local), the address the relay last told it its
   packets come from (`public_addr`, only a paid host has one), and an
   authentication token only for a cloud link. A host lists no addresses on its
   link to the relay.
-- `HelloAck`: either the acceptor's own `Hello` (no token), or an error. A
-  relay accepting a paid host also fills that `Hello`'s `observed_addr`, the
-  address it saw that host's packets come from. A dialler of another version
-  never gets one: the acceptor closes with `VERSION_MISMATCH` instead.
+- `HelloAck`: the acceptor's own `Hello` (no token), and nothing else: an
+  acceptor that refuses sends `LinkClose` instead. A relay accepting a paid
+  host also fills that `Hello`'s `observed_addr`, the address it saw that
+  host's packets come from.
 - `NeighborUp` and `NeighborDown`: adjacency deltas after the handshake.
 - `Addresses`: the sender's whole new address list and public address,
   replacing the ones its `Hello` or an earlier `Addresses` carried; sent
@@ -572,8 +572,9 @@ to one. The complete control vocabulary is:
 After the handshake a receiver ignores a control message it does not know,
 and the link carries on: a later version may add one only when a host that
 predates it loses nothing by ignoring it, and the two ends need not update
-together. A message both ends must understand moves `PROTOCOL_VERSION`
-instead. A second `Hello` or `HelloAck`, or a frame that does not decode,
+together. A neighbor outside this build's limits is logged and skipped, in a
+`Hello` or a `NeighborUp`, since a later build may widen them; a host's own
+`Hello` is held to them. A second `Hello` or `HelloAck`, or a frame that does not decode,
 closes the link as a protocol error. Before the handshake is done, anything but
 the `Hello` or `HelloAck` expected is a protocol error.
 
@@ -607,11 +608,13 @@ dials from the same QUIC endpoint it listens on. A dialler whose direct link
 closes within a second of coming up waits out that second before dialling
 again, so a refused link is not redialled in a loop.
 
-Versioning is equality, not feature negotiation: both peers must speak
-`PROTOCOL_VERSION` (`crates/wire/src/lib.rs`, currently 1). A `Hello` naming
-another version is closed with `VERSION_MISMATCH`, which the dialler reads as
-the error reason `VERSION_MISMATCH`; clients show that host as "the other
-machine needs updating", never as a silent absence. A failed or expired cloud token closes
+No version number crosses a link: protobuf carries compatibility, and builds
+of different versions speak to each other. A later relay can refuse a build
+too old for it, by its `Host.version`, closing with `VERSION_MISMATCH`, which
+the dialler reads as the error reason `VERSION_MISMATCH`; clients show that
+host as "the other machine needs updating", never as a silent absence. A
+method a host does not have reads as "that host needs updating to do this".
+A failed or expired cloud token closes
 the link with `AUTH_EXPIRED`. Reauthentication is not acknowledged; success is
 silence and failure is a close.
 
@@ -666,7 +669,7 @@ around it.
 
 ### Compression
 
-Every channel to a paired host is compressed, in all three classes, on every
+Every channel to a paired host is compressed, in both classes, on every
 route: one streaming zstd compressor each way, between HTTP/2 and the stream,
 inside the link's encryption, so a forwarder carries it without knowing it is
 there (`crates/node/src/transport/compress.rs`). The opener wraps its end in
@@ -836,8 +839,7 @@ named for either that already holds agents or paired hosts is not adopted
 silently: `BindProfile` refuses with `FAILED_PRECONDITION` and keeps the login
 a while, so binding again with the same token and `adopt_non_pristine` needs
 no second login; `SignIn` sends an `adopt` event and waits for
-`AnswerSignIn`. Closing the `SignIn` stream abandons it. `RefreshProfile`
-reads the account again now, as after a purchase. `WebSignInLink` answers a
+`AnswerSignIn`. Closing the `SignIn` stream abandons it. `WebSignInLink` answers a
 one-time link (from `POST /api/web-sign-in-links`) that signs a browser in to
 a signed-in profile's account and opens a page of its account service, such
 as the after-sign-in offer page (`/offer`); a path that is not that
@@ -847,8 +849,7 @@ door (`crates/node/src/front_door.rs`) converts.
 `ProfileAdminService`, on each profile's own socket, is that profile's
 administration, so none of its calls names a profile: it signs the profile
 out (`SignOut`); opens, reports and cancels pairing
-windows (`StartPairing`, `GetPairingStatus`, `WatchPairing`,
-`CancelPairing`); runs the
+windows (`StartPairing`, `SubscribePairing`, `CancelPairing`); runs the
 initiator's side of pairing (`BeginPair`, `ConfirmPair`, `AbandonPair`);
 offers a paired host the profile's account and answers the offers paired
 hosts made it (`OfferSignIn`, `SubscribeSignInOffers`, `AnswerSignInOffer`,
@@ -1109,8 +1110,7 @@ The protobuf files change only as
 [their README](../proto/amux/v1/README.md) and
 [the wire](WIRE.md#compatibility) allow: added to, never renumbered, with a
 removed field's number reserved; `just proto-compat` checks it against the
-latest release. `PROTOCOL_VERSION` exists only in the link handshake. The
-local sockets carry no version at all.
+latest release. No link or local socket carries a version number.
 
 ## Chapter 8: Diagnostics
 

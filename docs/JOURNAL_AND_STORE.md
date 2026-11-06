@@ -432,22 +432,27 @@ mime type and size are on the attachment in the item that references it, and it
 lives as long as that directory. See [attachments](ATTACHMENTS.md).
 
 The outbox drains are in [`crates/node/src/outbox.rs`](../crates/node/src/outbox.rs).
-The shipped daemon and the phone runtime install `NoopSender` as the push
-sender, so notification rows are written, fall due and are deleted without a
-push being sent.
+The shipped daemon installs `HttpSender` as the push sender, which posts each
+notification row that falls due to the account service. The phone runtime
+installs `NoopSender`, so its rows fall due and are deleted without a push
+being sent.
 
 ### Schema version
 
-The schema is one text and there are no migrations. Every table is `STRICT`, so a value of the wrong
-type is refused rather than stored. Opening a fresh file takes the write lock
-and creates the whole schema in one transaction, stamping the file's
-`application_id` (an amux store) and `user_version` (`SCHEMA_VERSION`). Any
-other SQLite file is refused as foreign, and a store stamped with another
-version fails with `OpenError::OtherSchema`: the error names the file, the
-daemon does not start, and the file is left exactly as it was, for the person
-to move aside. `SCHEMA_VERSION` stays 1 until 0.9.0, the first release that
-promises to open stores an older one wrote; until then a schema change keeps
-the version, and stores written under the old schema are deleted by hand.
+The schema is one text and it only grows, so there are no migrations. Every
+table is `STRICT`, so a value of the wrong type is refused rather than stored.
+Opening a fresh file takes the write lock and creates the whole schema in one
+transaction, stamping the file's `application_id` (an amux store) and
+`user_version` (`SCHEMA_VERSION`). Any other SQLite file is refused as foreign,
+and a store stamped with another version fails with `OpenError::OtherSchema`:
+the error names the file and says to run the build that wrote it, the daemon
+does not start, and the file is left exactly as it was.
+
+From 0.9.0 a build may add a table, or a column that is nullable or has a
+default, and adds whichever of those a file lacks when it opens it. Nothing is
+dropped, renamed or retyped, so an older build can still read a newer build's
+file. `SCHEMA_VERSION` stays 1 through all of this. `just store-check` fails if
+a table or column the last release had is gone or changed type.
 
 ### Own rows and replica rows
 

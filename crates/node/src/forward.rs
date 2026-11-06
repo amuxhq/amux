@@ -139,21 +139,28 @@ peer_rpc! {
     wire::SendInputRequest => SendInput, wire::SendInputResponse
         => PeerReply::SendInput(reply) => reply;
     wire::CreateAgentRequest => CreateAgent, wire::Agent => PeerReply::Agent(agent) => agent;
-    wire::RenameAgentRequest => RenameAgent, wire::Agent => PeerReply::Agent(agent) => agent;
-    wire::FileAgentRequest => FileAgent, wire::Agent => PeerReply::Agent(agent) => agent;
-    wire::ResumeAgentRequest => ResumeAgent, wire::Agent => PeerReply::Agent(agent) => agent;
-    wire::DeleteAgentRequest => DeleteAgent, wire::Empty => PeerReply::Done => wire::Empty {};
+    wire::RenameAgentRequest => RenameAgent, wire::RenameAgentResponse
+        => PeerReply::Agent(agent) => wire::RenameAgentResponse { agent: Some(agent) };
+    wire::FileAgentRequest => FileAgent, wire::FileAgentResponse
+        => PeerReply::Agent(agent) => wire::FileAgentResponse { agent: Some(agent) };
+    wire::ResumeAgentRequest => ResumeAgent, wire::ResumeAgentResponse
+        => PeerReply::Agent(agent) => wire::ResumeAgentResponse { agent: Some(agent) };
+    wire::DeleteAgentRequest => DeleteAgent, wire::DeleteAgentResponse
+        => PeerReply::Done => wire::DeleteAgentResponse {};
     wire::Envelope => SendMessage, wire::SendMessageResponse
         => PeerReply::SendMessage(reply) => reply;
-    wire::PutBlobRequest => PutBlob, wire::BlobRef => PeerReply::Blob(blob) => blob;
+    wire::PutBlobRequest => PutBlob, wire::PutBlobResponse
+        => PeerReply::Blob(blob) => wire::PutBlobResponse { blob: Some(blob) };
     wire::GetBlobRequest => GetBlob, wire::GetBlobResponse => PeerReply::GetBlob(reply) => reply;
-    wire::GetDiffRequest => GetDiff, wire::Diff => PeerReply::Diff(diff) => diff;
+    wire::GetDiffRequest => GetDiff, wire::GetDiffResponse
+        => PeerReply::Diff(diff) => wire::GetDiffResponse { diff: Some(diff) };
     wire::GetCatalogueRequest => GetCatalogue, wire::GetCatalogueResponse
         => PeerReply::Catalogue(catalogue) => catalogue;
     wire::ListRepositoriesRequest => ListRepositories, wire::ListRepositoriesResponse
         => PeerReply::Repositories(repositories) => repositories;
     wire::ListItemsRequest => ListItems, wire::ListItemsResponse => PeerReply::Fetched(page) => page;
-    wire::GetItemRequest => GetItem, wire::Item => PeerReply::Item(item) => item;
+    wire::GetItemRequest => GetItem, wire::GetItemResponse
+        => PeerReply::Item(item) => wire::GetItemResponse { item: Some(item) };
 }
 
 /// A spawn's host name that answers to no trusted host, or to several.
@@ -186,6 +193,10 @@ fn from_status(uncertain: ForwardError, status: &Status) -> ForwardError {
     }
     match status.code() {
         Code::Unavailable | Code::DeadlineExceeded | Code::Cancelled | Code::Unknown => uncertain,
+        Code::Unimplemented if status.message().is_empty() => ForwardError::Remote(wire_error(
+            ErrorCode::Unimplemented,
+            wire::HOST_NEEDS_UPDATE,
+        )),
         code => ForwardError::Remote(wire_error(
             match code {
                 Code::NotFound => ErrorCode::NotFound,
@@ -381,48 +392,77 @@ async fn dispatch(
     ) -> Result<PeerReply, Status> {
         answer.map(|answer| reply(answer.into_inner()))
     }
+    /// A reply that holds one value, which an answer without it has lost.
+    fn holding<T, V>(
+        answer: Result<Response<T>, Status>,
+        value: fn(T) -> Option<V>,
+        reply: fn(V) -> PeerReply,
+    ) -> Result<PeerReply, Status> {
+        value(answer?.into_inner())
+            .map(reply)
+            .ok_or_else(|| Status::internal("the host's answer held nothing"))
+    }
     match request {
         PeerRequest::ListItems(request) => unary(
             client.sessions.list_items(request).await,
             PeerReply::Fetched,
         ),
-        PeerRequest::GetItem(request) => {
-            unary(client.sessions.get_item(request).await, PeerReply::Item)
-        }
+        PeerRequest::GetItem(request) => holding(
+            client.sessions.get_item(request).await,
+            |response| response.item,
+            PeerReply::Item,
+        ),
         PeerRequest::SendInput(request) => unary(
             client.sessions.send_input(request).await,
             PeerReply::SendInput,
         ),
-        PeerRequest::CreateAgent(request) => {
-            unary(client.agents.create_agent(request).await, PeerReply::Agent)
-        }
-        PeerRequest::RenameAgent(request) => {
-            unary(client.agents.rename_agent(request).await, PeerReply::Agent)
-        }
-        PeerRequest::FileAgent(request) => {
-            unary(client.agents.file_agent(request).await, PeerReply::Agent)
-        }
-        PeerRequest::ResumeAgent(request) => {
-            unary(client.agents.resume_agent(request).await, PeerReply::Agent)
-        }
+        PeerRequest::CreateAgent(request) => holding(
+            client.agents.create_agent(request).await,
+            |response| response.agent,
+            PeerReply::Agent,
+        ),
+        PeerRequest::RenameAgent(request) => holding(
+            client.agents.rename_agent(request).await,
+            |response| response.agent,
+            PeerReply::Agent,
+        ),
+        PeerRequest::FileAgent(request) => holding(
+            client.agents.file_agent(request).await,
+            |response| response.agent,
+            PeerReply::Agent,
+        ),
+        PeerRequest::ResumeAgent(request) => holding(
+            client.agents.resume_agent(request).await,
+            |response| response.agent,
+            PeerReply::Agent,
+        ),
         PeerRequest::DeleteAgent(request) => {
             unary(client.agents.delete_agent(request).await, |_| {
                 PeerReply::Done
             })
         }
         PeerRequest::SendMessage(envelope) => unary(
-            client.agents.send_message(envelope).await,
+            client
+                .agents
+                .send_message(wire::SendMessageRequest {
+                    envelope: Some(envelope),
+                })
+                .await,
             PeerReply::SendMessage,
         ),
-        PeerRequest::PutBlob(request) => {
-            unary(client.agents.put_blob(request).await, PeerReply::Blob)
-        }
+        PeerRequest::PutBlob(request) => holding(
+            client.agents.put_blob(request).await,
+            |response| response.blob,
+            PeerReply::Blob,
+        ),
         PeerRequest::GetBlob(request) => {
             unary(client.agents.get_blob(request).await, PeerReply::GetBlob)
         }
-        PeerRequest::GetDiff(request) => {
-            unary(client.agents.get_diff(request).await, PeerReply::Diff)
-        }
+        PeerRequest::GetDiff(request) => holding(
+            client.agents.get_diff(request).await,
+            |response| response.diff,
+            PeerReply::Diff,
+        ),
         PeerRequest::GetCatalogue(request) => unary(
             client.agents.get_catalogue(request).await,
             PeerReply::Catalogue,

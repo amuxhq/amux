@@ -8,7 +8,7 @@
 
 use support::*;
 use testnet::{Net, PATIENCE, Topology};
-use wire::{Empty, StartPairingRequest, begin_pair_request, pairing_window, start_pairing_request};
+use wire::{Empty, StartPairingRequest, begin_pair_request, start_pairing_request};
 
 use crate::support;
 
@@ -22,12 +22,16 @@ fn either_window() -> StartPairingRequest {
 }
 
 /// The next status the stream says, within the patience.
-async fn next(statuses: &mut tonic::Streaming<wire::PairingStatus>) -> wire::PairingStatus {
+async fn status(
+    statuses: &mut tonic::Streaming<wire::SubscribePairingResponse>,
+) -> wire::PairingStatus {
     tokio::time::timeout(PATIENCE, statuses.message())
         .await
         .expect("the status stream says something")
         .expect("the status stream stays up")
         .expect("the status stream does not end")
+        .status
+        .expect("a response holds a status")
 }
 
 /// Whether the candidate `host` shows on `on`'s inventory has its window
@@ -68,17 +72,14 @@ async fn one_window_takes_the_qr_code_and_says_who_paired() {
 
     let mut statuses = admin(&net, "desk")
         .await
-        .watch_pairing(Empty {})
+        .subscribe_pairing(wire::SubscribePairingRequest {})
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(next(&mut statuses).await, wire::PairingStatus::default());
+    assert_eq!(status(&mut statuses).await, wire::PairingStatus::default());
 
     let started = start_pairing(&net, "desk", either_window()).await.unwrap();
-    let Some(pairing_window::Secret::PinAndQr(secrets)) = started.secret.clone() else {
-        panic!("the window answers both secrets: {started:?}");
-    };
-    assert_eq!(secrets.pin.len(), 6);
+    assert_eq!(pin_of(&started).len(), 6);
     assert!(
         started.qr_link.starts_with("https://amux.sh/p#"),
         "a signed-out desk's QR code is amux.sh's page: {}",
@@ -86,7 +87,6 @@ async fn one_window_takes_the_qr_code_and_says_who_paired() {
     );
     let invitation = node::parse_pair_link(&started.qr_link).unwrap();
     assert_eq!(invitation.host_id, desk);
-    assert_eq!(invitation.secret.as_slice(), secrets.qr_secret);
     // The desk listens on one loopback address, so that is the one address
     // its code names.
     assert_eq!(
@@ -96,7 +96,7 @@ async fn one_window_takes_the_qr_code_and_says_who_paired() {
             .into_iter()
             .collect::<Vec<_>>()
     );
-    assert!(next(&mut statuses).await.active);
+    assert!(status(&mut statuses).await.active);
     candidate_open(&net, "laptop", "desk", true).await;
 
     let pending = begin_pair(
@@ -112,24 +112,19 @@ async fn one_window_takes_the_qr_code_and_says_who_paired() {
     )
     .await
     .expect("the QR secret pairs");
-    let joining = next(&mut statuses).await;
+    let joining = status(&mut statuses).await;
     assert!(joining.active && joining.joining, "{joining:?}");
     let peer = confirm_pair(&net, "laptop", pending.token).await.unwrap();
     assert_eq!(peer.host_id, desk.as_bytes());
 
-    let mut done = next(&mut statuses).await;
+    let mut done = status(&mut statuses).await;
     while done.active || done.joining {
-        done = next(&mut statuses).await;
+        done = status(&mut statuses).await;
     }
     let paired = done.paired.expect("the window says whom it paired");
     assert_eq!(paired.host_id, host_id(&net, "laptop").as_bytes());
     assert_eq!(paired.name, "laptop");
-    let polled = admin(&net, "desk")
-        .await
-        .get_pairing_status(Empty {})
-        .await
-        .unwrap()
-        .into_inner();
+    let polled = pairing_status(&net, "desk").await;
     assert_eq!(
         polled.paired.map(|peer| peer.name).as_deref(),
         Some("laptop")
@@ -152,15 +147,12 @@ async fn one_window_takes_the_pin_and_the_advertisement_follows_it() {
     .unwrap();
     let desk = host_id(&net, "desk");
     let started = start_pairing(&net, "desk", either_window()).await.unwrap();
-    let Some(pairing_window::Secret::PinAndQr(secrets)) = started.secret.clone() else {
-        panic!("the window answers both secrets: {started:?}");
-    };
     candidate_open(&net, "tablet", "desk", true).await;
     let pending = begin_pair(
         &net,
         "laptop",
         Some(desk),
-        begin_pair_request::Secret::Pin(secrets.pin),
+        begin_pair_request::Secret::Pin(pin_of(&started)),
         started.addrs.clone(),
     )
     .await
@@ -171,7 +163,7 @@ async fn one_window_takes_the_pin_and_the_advertisement_follows_it() {
         &net,
         "tablet",
         Some(desk),
-        begin_pair_request::Secret::QrSecret(secrets.qr_secret),
+        begin_pair_request::Secret::QrSecret(qr_secret_of(&started)),
         started.addrs,
     )
     .await

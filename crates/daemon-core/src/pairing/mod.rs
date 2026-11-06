@@ -259,7 +259,7 @@ impl PairFailure {
     /// What the other side's error says, as this side reports it.
     fn from_peer(error: &wire::PairingError) -> PairFailure {
         let reason = Reason::try_from(error.reason).unwrap_or(Reason::Unspecified);
-        if matches!(reason, Reason::InvalidPin | Reason::NotInPairingMode) {
+        if reason == Reason::InvalidPin {
             return PairFailure::invalid_pin();
         }
         // Its detail is already the sentence the person is shown.
@@ -267,7 +267,6 @@ impl PairFailure {
             return PairFailure::because(ErrorCode::AlreadyExists, reason, error.detail.clone());
         }
         let code = match reason {
-            Reason::NotInPairingMode => ErrorCode::FailedPrecondition,
             Reason::InvalidPin | Reason::Locked => ErrorCode::PermissionDenied,
             Reason::ProtocolViolation | Reason::SelfPairing | Reason::Unspecified => {
                 ErrorCode::InvalidArgument
@@ -513,7 +512,6 @@ fn failure_words(reason: Reason, detail: &str) -> String {
         Reason::InvalidPin => "invalid PIN".to_owned(),
         Reason::Locked => "pairing locked".to_owned(),
         Reason::SelfPairing => "self pairing is not allowed".to_owned(),
-        Reason::NotInPairingMode => "not in pairing mode".to_owned(),
         Reason::Timeout => "pairing timed out".to_owned(),
         Reason::UserRejected => "pairing rejected by peer".to_owned(),
         Reason::ProtocolViolation | Reason::AlreadyPaired => detail.to_owned(),

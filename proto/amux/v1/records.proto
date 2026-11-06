@@ -133,72 +133,72 @@ message IncarnationEnd {
 // and revision are zero in the journal and assigned by the owning daemon at
 // commit: order once per key, revision on every upsert.
 message Item {
-  string key = 2;
-  uint64 order = 3;
-  uint64 revision = 4;
+  string key = 1;
+  uint64 order = 2;
+  uint64 revision = 3;
   // Set on a prompt's reflection, and on an agent message's item (the
   // envelope id).
-  bytes input_id = 6;
+  bytes input_id = 4;
   // The one appendable field; U+FFFC marks each attachment's position.
-  string text = 7;
-  repeated Attachment attachments = 8;
+  string text = 5;
+  repeated Attachment attachments = 6;
   // Which per-kind item message `body` holds.
-  Kind kind = 9;
-  bytes body = 10;
+  Kind kind = 7;
+  bytes body = 8;
   // When the item happened: the provider's own timestamp where it has one,
   // else the interpreter's clock. Durations are differences of two of these.
-  int64 at_ms = 11;
+  int64 at_ms = 9;
 }
 
 // The one delta: extends `text` on an open item. Sent only live, after
 // CaughtUp; a base mismatch makes the client call GetItem.
 message Append {
-  string key = 2;
-  uint64 base_revision = 3;
-  uint64 revision = 4;
-  string text = 5;
+  string key = 1;
+  uint64 base_revision = 2;
+  uint64 revision = 3;
+  string text = 4;
 }
 
 // Everything a client needs to draw the agent without items. Every field of
 // the per-kind body is present in every snapshot, at an explicit unknown
 // until the interpreter learns it.
 message Snapshot {
-  uint64 revision = 2;
-  repeated QueuedInput queue = 3;
+  uint64 revision = 1;
+  repeated QueuedInput queue = 2;
   // Which per-kind snapshot `body` holds. Before the interpreter's first
   // snapshot is ingested, SubscribeSession answers with the kind and an empty body.
-  Kind kind = 4;
-  bytes body = 5;
+  Kind kind = 3;
+  bytes body = 4;
   // STARTING until the provider accepts input; NEEDS_YOU whenever an ask is
   // open. The daemon copies phase and working_on onto the inventory row.
-  Phase phase = 6;
+  Phase phase = 5;
   // From the status tool call or the spawn prompt; never cleared
   // automatically.
-  optional string working_on = 7;
+  optional string working_on = 6;
   // The interpreter's clock when the step that produced this snapshot ran.
-  int64 at_ms = 8;
+  int64 at_ms = 7;
   // The interpreter's clock when `phase` last changed; streamed output and
   // other changes within one phase leave it alone. The daemon copies it onto
   // the inventory row.
-  int64 phase_since_ms = 9;
+  int64 phase_since_ms = 8;
   // The branch and change totals of the agent's folder, read by the agent
   // process at start and at each turn end. Absent outside a repository. The
   // daemon copies it onto the inventory row.
-  optional Git git = 10;
+  optional Git git = 9;
   // The SHA-256 of the Catalogue blob the agent offers now, in its
   // directory; absent until its provider says what it offers. Not copied
   // onto the row.
-  optional bytes catalogue = 11;
+  optional bytes catalogue = 10;
   // How many jobs the body's background list holds; zero while the list is
   // unknown. The daemon copies it onto the inventory row, so a fleet row
   // counts what a stop would cut without decoding a body.
-  uint32 background_jobs = 12;
+  uint32 background_jobs = 11;
   // What the agent wants of the person now, made small enough for a
   // notification; absent when it wants nothing. The interpreter projects it
   // from its own state, so the daemon can hold and send it without decoding
   // a body. Never an exit: a process that has gone says nothing, and its
   // daemon writes that notice itself.
-  optional Notice notice = 13;
+  optional Notice notice = 12;
 }
 
 // What a notification says, in data rather than sentences: each client words

@@ -24,8 +24,8 @@ use ring::signature::{KeyPair as _, RSA_PKCS1_SHA256, RsaKeyPair, RsaPublicKeyCo
 use support::desk::{Desk, GRACE_SECS};
 use support::{amux_binary, grpc_channel, until};
 use tokio::io::{AsyncBufReadExt as _, BufReader};
+use wire::BindProfileRequest;
 use wire::installation_service_client::InstallationServiceClient;
-use wire::{BindProfileRequest, RelayCarrier};
 
 use crate::support;
 
@@ -201,26 +201,26 @@ fn free_port() -> u16 {
 }
 
 /// The daemon dials TLS too once QUIC has had a moment, and on a busy
-/// machine that dial can win; here it fails, so the link says QUIC works.
+/// machine that dial can win; here it fails, so a link says QUIC works.
 /// Which carrier wins the race is the race's own unit tests'.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_signed_in_daemon_links_to_the_relay_over_quic() {
-    assert_eq!(link_through_relay(true).await, RelayCarrier::Quic);
+    link_through_relay(true).await;
 }
 
-/// With no QUIC listener where the token points, the daemon's fallback
-/// dials the relay's TLS-over-TCP carrier.
+/// With no QUIC listener where the token points, only the daemon's
+/// fallback can link, over the relay's TLS-over-TCP carrier.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_signed_in_daemon_links_to_the_relay_over_tls_when_quic_is_away() {
-    assert_eq!(link_through_relay(false).await, RelayCarrier::Tcp);
+    link_through_relay(false).await;
 }
 
 /// Starts the relay as its deployment does, signs a daemon in to the
-/// stand-in cloud, waits for its cloud link to connect through the relay,
-/// and says which carrier it took. `quic` puts the relay's QUIC listener on
-/// the port tokens name and has the daemon's TLS dial fail; otherwise the
-/// QUIC listener is on another port.
-async fn link_through_relay(quic: bool) -> RelayCarrier {
+/// stand-in cloud and waits for its cloud link to connect through the
+/// relay. `quic` puts the relay's QUIC listener on the port tokens name and
+/// has the daemon's TLS dial fail; otherwise the QUIC listener is on
+/// another port. Either way one carrier can work, so linking is the proof.
+async fn link_through_relay(quic: bool) {
     let dir = tempfile::tempdir().unwrap();
     let rcgen::CertifiedKey { cert, signing_key } =
         rcgen::generate_simple_self_signed(vec![RELAY_HOST.into()]).unwrap();
@@ -292,7 +292,7 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
     );
     let mut profiles = InstallationServiceClient::new(grpc_channel(&desk.socket).await.unwrap());
     let profile = profiles
-        .list_profiles(wire::Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .unwrap()
         .into_inner()
@@ -314,7 +314,7 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
         let profile = &profile;
         async move {
             let listed = profiles
-                .list_profiles(wire::Empty {})
+                .list_profiles(wire::ListProfilesRequest {})
                 .await
                 .unwrap()
                 .into_inner()
@@ -329,7 +329,7 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
     .await
     .unwrap();
     let linked = profiles
-        .list_profiles(wire::Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .unwrap()
         .into_inner()
@@ -350,8 +350,8 @@ async fn link_through_relay(quic: bool) -> RelayCarrier {
     );
     drop(desk);
     relay.kill().await.unwrap();
-    linked
-        .relay_connected()
-        .expect("the profile's relay link is connected")
-        .carrier()
+    assert!(
+        linked.relay_connected().is_some(),
+        "the profile's relay link is connected"
+    );
 }

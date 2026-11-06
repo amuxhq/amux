@@ -260,10 +260,6 @@ fn relay_outcome_from_fetch(error: CloudError, status: &RuntimeStatus) -> RelayO
                 "the cloud refused this profile's credentials; sign in again".to_string(),
             )
         }
-        error @ CloudError::Rejected(_) => {
-            status.report(Relay::SignInAgain);
-            RelayOutcome::Final(error.to_string())
-        }
         error @ CloudError::Connection(_) => {
             RelayOutcome::Lost(format!("Connection failed: {error}"))
         }
@@ -804,7 +800,6 @@ fn cloud_token_refresh_status(error: CloudError) -> tonic::Status {
         CloudError::NotAuthenticated | CloudError::Auth(_) => {
             tonic::Status::unauthenticated("invalid cloud credentials")
         }
-        CloudError::Rejected(message) => tonic::Status::permission_denied(message),
         CloudError::Connection(message) => tonic::Status::unavailable(message),
     }
 }
@@ -812,7 +807,6 @@ fn cloud_token_refresh_status(error: CloudError) -> tonic::Status {
 fn cloud_error_from_refresh_status(status: tonic::Status) -> CloudError {
     match status.code() {
         tonic::Code::Unauthenticated => CloudError::Auth(status.message().to_string()),
-        tonic::Code::PermissionDenied => CloudError::Rejected(status.message().to_string()),
         _ => CloudError::Connection(status.message().to_string()),
     }
 }

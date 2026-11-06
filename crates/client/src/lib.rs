@@ -28,7 +28,8 @@ use wire::{
     GetItemRequest, InventoryEvent, Item, ListItemsRequest, ListItemsResponse,
     ListRepositoriesRequest, ListRepositoriesResponse, PutBlobRequest, RenameAgentRequest,
     ResolveAgentRequest, ResumeAgentRequest, SendInputRequest, SendInputResponse,
-    SendMessageResponse, SessionEvent, SubscribeSessionRequest,
+    SendMessageRequest, SendMessageResponse, SessionEvent, SubscribeInventoryRequest,
+    SubscribeSessionRequest,
 };
 
 /// A server stream. An `Err` item or the end of the stream both mean the
@@ -87,6 +88,9 @@ impl From<Status> for RpcError {
             | Code::Internal
             | Code::Aborted
             | Code::Ok => RpcError::Transport(status.message().to_owned()),
+            Code::Unimplemented if status.message().is_empty() => RpcError::Refused(
+                wire::Error::new(ErrorCode::Unimplemented, wire::HOST_NEEDS_UPDATE),
+            ),
             // tonic's codes are gRPC's, as an error's are.
             code => RpcError::Refused(wire::Error::new(
                 ErrorCode::try_from(code as i32).unwrap_or(ErrorCode::Unknown),
@@ -158,8 +162,8 @@ pub trait Client: Send + Sync + 'static {
         Err(not_served("cancel_pairing"))
     }
     /// The profile's pairing window, now and on every change.
-    async fn watch_pairing(&self) -> Result<EventStream<wire::PairingStatus>, RpcError> {
-        Err(not_served("watch_pairing"))
+    async fn subscribe_pairing(&self) -> Result<EventStream<wire::PairingStatus>, RpcError> {
+        Err(not_served("subscribe_pairing"))
     }
     /// Offers the paired host `host_id` this profile's account.
     async fn offer_sign_in(&self, host_id: Vec<u8>) -> Result<(), RpcError> {
@@ -167,7 +171,9 @@ pub trait Client: Send + Sync + 'static {
         Err(not_served("offer_sign_in"))
     }
     /// The offers paired hosts made this profile, now and on every change.
-    async fn subscribe_sign_in_offers(&self) -> Result<EventStream<wire::SignInOffers>, RpcError> {
+    async fn subscribe_sign_in_offers(
+        &self,
+    ) -> Result<EventStream<wire::SubscribeSignInOffersResponse>, RpcError> {
         Err(not_served("subscribe_sign_in_offers"))
     }
     /// Accepts an offer, which signs this profile in, or dismisses it.
@@ -196,18 +202,26 @@ macro_rules! client_impl {
         #[async_trait]
         impl<$($generics)*> Client for $ty {
             async fn subscribe_inventory(&self) -> Result<EventStream<InventoryEvent>, RpcError> {
-                Ok(events($call!(self, agents, subscribe_inventory, wire::Empty {}).await?.into_inner()))
+                Ok(held_events(
+                    $call!(self, agents, subscribe_inventory, SubscribeInventoryRequest {})
+                        .await?
+                        .into_inner(),
+                    |response| response.event,
+                ))
             }
 
             async fn resolve_agent(&self, request: ResolveAgentRequest) -> Result<Agent, RpcError> {
-                Ok($call!(self, agents, resolve_agent, request).await?.into_inner())
+                held($call!(self, agents, resolve_agent, request).await?.into_inner().agent)
             }
 
             async fn subscribe_session(
                 &self,
                 request: SubscribeSessionRequest,
             ) -> Result<EventStream<SessionEvent>, RpcError> {
-                Ok(events($call!(self, sessions, subscribe_session, request).await?.into_inner()))
+                Ok(held_events(
+                    $call!(self, sessions, subscribe_session, request).await?.into_inner(),
+                    |response| response.event,
+                ))
             }
 
             async fn list_items(&self, request: ListItemsRequest) -> Result<ListItemsResponse, RpcError> {
@@ -215,7 +229,7 @@ macro_rules! client_impl {
             }
 
             async fn get_item(&self, request: GetItemRequest) -> Result<Item, RpcError> {
-                Ok($call!(self, sessions, get_item, request).await?.into_inner())
+                held($call!(self, sessions, get_item, request).await?.into_inner().item)
             }
 
             async fn send_input(
@@ -226,19 +240,19 @@ macro_rules! client_impl {
             }
 
             async fn create_agent(&self, request: CreateAgentRequest) -> Result<Agent, RpcError> {
-                Ok($call!(self, agents, create_agent, request).await?.into_inner())
+                held($call!(self, agents, create_agent, request).await?.into_inner().agent)
             }
 
             async fn rename_agent(&self, request: RenameAgentRequest) -> Result<Agent, RpcError> {
-                Ok($call!(self, agents, rename_agent, request).await?.into_inner())
+                held($call!(self, agents, rename_agent, request).await?.into_inner().agent)
             }
 
             async fn file_agent(&self, request: FileAgentRequest) -> Result<Agent, RpcError> {
-                Ok($call!(self, agents, file_agent, request).await?.into_inner())
+                held($call!(self, agents, file_agent, request).await?.into_inner().agent)
             }
 
             async fn resume_agent(&self, request: ResumeAgentRequest) -> Result<Agent, RpcError> {
-                Ok($call!(self, agents, resume_agent, request).await?.into_inner())
+                held($call!(self, agents, resume_agent, request).await?.into_inner().agent)
             }
 
             async fn delete_agent(&self, request: DeleteAgentRequest) -> Result<(), RpcError> {
@@ -250,11 +264,14 @@ macro_rules! client_impl {
                 &self,
                 request: Envelope,
             ) -> Result<SendMessageResponse, RpcError> {
+                let request = SendMessageRequest {
+                    envelope: Some(request),
+                };
                 Ok($call!(self, agents, send_message, request).await?.into_inner())
             }
 
             async fn put_blob(&self, request: PutBlobRequest) -> Result<BlobRef, RpcError> {
-                Ok($call!(self, agents, put_blob, request).await?.into_inner())
+                held($call!(self, agents, put_blob, request).await?.into_inner().blob)
             }
 
             async fn get_blob(&self, request: GetBlobRequest) -> Result<GetBlobResponse, RpcError> {
@@ -262,7 +279,7 @@ macro_rules! client_impl {
             }
 
             async fn get_diff(&self, request: GetDiffRequest) -> Result<Diff, RpcError> {
-                Ok($call!(self, agents, get_diff, request).await?.into_inner())
+                held($call!(self, agents, get_diff, request).await?.into_inner().diff)
             }
 
             async fn get_catalogue(
@@ -294,39 +311,49 @@ macro_rules! client_impl {
                 &self,
                 request: wire::UpdateDraftRequest,
             ) -> Result<wire::Draft, RpcError> {
-                Ok($call!(self, sessions, update_draft, request).await?.into_inner())
+                held($call!(self, sessions, update_draft, request).await?.into_inner().draft)
             }
 
             async fn get_draft(
                 &self,
                 request: wire::GetDraftRequest,
             ) -> Result<wire::Draft, RpcError> {
-                Ok($call!(self, sessions, get_draft, request).await?.into_inner())
+                held($call!(self, sessions, get_draft, request).await?.into_inner().draft)
             }
 
             async fn sign_out(&self) -> Result<(), RpcError> {
-                $call!(self, admin, sign_out, wire::Empty {}).await?;
+                $call!(self, admin, sign_out, wire::SignOutRequest {}).await?;
                 Ok(())
             }
 
             async fn get_device_identity(&self) -> Result<wire::DeviceIdentity, RpcError> {
-                Ok($call!(self, admin, get_device_identity, wire::Empty {}).await?.into_inner())
+                held(
+                    $call!(self, admin, get_device_identity, wire::GetDeviceIdentityRequest {})
+                        .await?
+                        .into_inner()
+                        .identity,
+                )
             }
 
             async fn start_pairing(
                 &self,
                 request: wire::StartPairingRequest,
             ) -> Result<wire::PairingWindow, RpcError> {
-                Ok($call!(self, admin, start_pairing, request).await?.into_inner())
+                held($call!(self, admin, start_pairing, request).await?.into_inner().window)
             }
 
             async fn cancel_pairing(&self) -> Result<(), RpcError> {
-                $call!(self, admin, cancel_pairing, wire::Empty {}).await?;
+                $call!(self, admin, cancel_pairing, wire::CancelPairingRequest {}).await?;
                 Ok(())
             }
 
-            async fn watch_pairing(&self) -> Result<EventStream<wire::PairingStatus>, RpcError> {
-                Ok(events($call!(self, admin, watch_pairing, wire::Empty {}).await?.into_inner()))
+            async fn subscribe_pairing(&self) -> Result<EventStream<wire::PairingStatus>, RpcError> {
+                Ok(held_events(
+                    $call!(self, admin, subscribe_pairing, wire::SubscribePairingRequest {})
+                        .await?
+                        .into_inner(),
+                    |response| response.status,
+                ))
             }
 
             async fn offer_sign_in(&self, host_id: Vec<u8>) -> Result<(), RpcError> {
@@ -336,9 +363,11 @@ macro_rules! client_impl {
 
             async fn subscribe_sign_in_offers(
                 &self,
-            ) -> Result<EventStream<wire::SignInOffers>, RpcError> {
+            ) -> Result<EventStream<wire::SubscribeSignInOffersResponse>, RpcError> {
                 Ok(events(
-                    $call!(self, admin, subscribe_sign_in_offers, wire::Empty {}).await?.into_inner(),
+                    $call!(self, admin, subscribe_sign_in_offers, wire::SubscribeSignInOffersRequest {})
+                        .await?
+                        .into_inner(),
                 ))
             }
 
@@ -346,7 +375,7 @@ macro_rules! client_impl {
                 &self,
                 request: wire::AnswerSignInOfferRequest,
             ) -> Result<wire::Profile, RpcError> {
-                Ok($call!(self, admin, answer_sign_in_offer, request).await?.into_inner())
+                held($call!(self, admin, answer_sign_in_offer, request).await?.into_inner().profile)
             }
         }
     };
@@ -357,6 +386,28 @@ where
     S: Stream<Item = Result<T, Status>> + Send + 'static,
 {
     Box::pin(stream.map(|item| item.map_err(RpcError::from)))
+}
+
+/// A stream of what each of its responses holds. A response holding nothing
+/// is dropped, as an event this build does not know is.
+fn held_events<R, T, S>(stream: S, event: fn(R) -> Option<T>) -> EventStream<T>
+where
+    R: 'static,
+    T: Send + 'static,
+    S: Stream<Item = Result<R, Status>> + Send + 'static,
+{
+    Box::pin(stream.filter_map(move |item| {
+        futures_util::future::ready(match item {
+            Ok(response) => event(response).map(Ok),
+            Err(status) => Some(Err(RpcError::from(status))),
+        })
+    }))
+}
+
+/// The value a response holds. A response without it never came from a
+/// runtime that answered the call, so it says nothing of whether it landed.
+fn held<T>(value: Option<T>) -> Result<T, RpcError> {
+    value.ok_or_else(|| RpcError::Transport("the answer held nothing".to_owned()))
 }
 
 /// A gRPC channel over the local socket at `path`, which redials it on the
@@ -439,8 +490,10 @@ client_impl!(impl[] Client for GrpcClient, grpc_call);
 /// A profile's administration served in process, its streams boxed so one
 /// trait object can stand for any implementation.
 pub type DynProfileAdmin = dyn ProfileAdminService<
-        WatchPairingStream = tonic::codegen::BoxStream<wire::PairingStatus>,
-        SubscribeSignInOffersStream = tonic::codegen::BoxStream<wire::SignInOffers>,
+        SubscribePairingStream = tonic::codegen::BoxStream<wire::SubscribePairingResponse>,
+        SubscribeSignInOffersStream = tonic::codegen::BoxStream<
+            wire::SubscribeSignInOffersResponse,
+        >,
     >;
 
 /// The client services hosted in this process, called directly: the
@@ -509,6 +562,19 @@ mod tests {
         assert_eq!(rpc, RpcError::Refused(error));
         assert_eq!(rpc.code(), Some(ErrorCode::FailedPrecondition));
         assert_eq!(rpc.reason(), Some(wire::ErrorReason::HostUnreachable));
+    }
+
+    /// gRPC answers a method the server does not have with no words at all.
+    #[test]
+    fn an_unknown_method_says_the_host_needs_updating() {
+        let rpc = RpcError::from(Status::unimplemented(""));
+        assert_eq!(rpc.code(), Some(ErrorCode::Unimplemented));
+        assert_eq!(rpc.to_string(), wire::HOST_NEEDS_UPDATE);
+        assert_eq!(
+            RpcError::from(Status::unimplemented("no such thing here")).to_string(),
+            "no such thing here",
+            "a refusal with its own words keeps them"
+        );
     }
 
     #[test]

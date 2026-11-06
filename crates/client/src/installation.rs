@@ -13,26 +13,24 @@ use tonic::Request;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::installation_service_server::InstallationService;
 use wire::{
-    AnswerSignInRequest, BindProfileRequest, CreateProfileRequest, DeleteProfileRequest,
-    ListProfilesResponse, Profile, RefreshProfileRequest, RenameProfileRequest, SignInEvent,
-    SignInRequest,
+    AnswerSignInRequest, BindProfileRequest, CreateProfileRequest, DeleteProfileRequest, Profile,
+    RenameProfileRequest, SignInEvent, SignInRequest, SubscribeProfilesResponse,
 };
 
-use crate::{Client, EventStream, GrpcClient, RpcError, events};
+use crate::{Client, EventStream, GrpcClient, RpcError, events, held, held_events};
 
 #[async_trait]
 pub trait Installation: Send + Sync + 'static {
     async fn get_installation(&self) -> Result<wire::Installation, RpcError>;
     async fn list_profiles(&self) -> Result<Vec<Profile>, RpcError>;
     /// The whole list now, then again whenever any profile changes.
-    async fn subscribe_profiles(&self) -> Result<EventStream<ListProfilesResponse>, RpcError>;
+    async fn subscribe_profiles(&self) -> Result<EventStream<SubscribeProfilesResponse>, RpcError>;
     async fn create_profile(&self, request: CreateProfileRequest) -> Result<Profile, RpcError>;
     async fn bind_profile(&self, request: BindProfileRequest) -> Result<Profile, RpcError>;
     async fn rename_profile(&self, request: RenameProfileRequest) -> Result<Profile, RpcError>;
     async fn delete_profile(&self, request: DeleteProfileRequest) -> Result<(), RpcError>;
     async fn sign_in(&self, request: SignInRequest) -> Result<EventStream<SignInEvent>, RpcError>;
     async fn answer_sign_in(&self, request: AnswerSignInRequest) -> Result<(), RpcError>;
-    async fn refresh_profile(&self, request: RefreshProfileRequest) -> Result<Profile, RpcError>;
     /// The everyday settings, as the config file resolves them.
     async fn get_settings(&self) -> Result<wire::Settings, RpcError>;
     /// Changes the named settings and applies each at once.
@@ -43,7 +41,7 @@ pub trait Installation: Send + Sync + 'static {
     /// One profile's onboarding steps now, then again on every change.
     async fn subscribe_onboarding(
         &self,
-        request: wire::OnboardingRequest,
+        request: wire::SubscribeOnboardingRequest,
     ) -> Result<EventStream<wire::Onboarding>, RpcError>;
     async fn answer_onboarding(
         &self,
@@ -69,35 +67,47 @@ macro_rules! installation_impl {
         #[async_trait]
         impl<$($generics)*> Installation for $ty {
             async fn get_installation(&self) -> Result<wire::Installation, RpcError> {
-                Ok($call!(self, get_installation, wire::Empty {}).await?.into_inner())
+                held(
+                    $call!(self, get_installation, wire::GetInstallationRequest {})
+                        .await?
+                        .into_inner()
+                        .installation,
+                )
             }
 
             async fn list_profiles(&self) -> Result<Vec<Profile>, RpcError> {
-                Ok($call!(self, list_profiles, wire::Empty {}).await?.into_inner().profiles)
+                Ok($call!(self, list_profiles, wire::ListProfilesRequest {})
+                    .await?
+                    .into_inner()
+                    .profiles)
             }
 
             async fn subscribe_profiles(
                 &self,
-            ) -> Result<EventStream<ListProfilesResponse>, RpcError> {
-                Ok(events($call!(self, subscribe_profiles, wire::Empty {}).await?.into_inner()))
+            ) -> Result<EventStream<SubscribeProfilesResponse>, RpcError> {
+                Ok(events(
+                    $call!(self, subscribe_profiles, wire::SubscribeProfilesRequest {})
+                        .await?
+                        .into_inner(),
+                ))
             }
 
             async fn create_profile(
                 &self,
                 request: CreateProfileRequest,
             ) -> Result<Profile, RpcError> {
-                Ok($call!(self, create_profile, request).await?.into_inner())
+                held($call!(self, create_profile, request).await?.into_inner().profile)
             }
 
             async fn bind_profile(&self, request: BindProfileRequest) -> Result<Profile, RpcError> {
-                Ok($call!(self, bind_profile, request).await?.into_inner())
+                held($call!(self, bind_profile, request).await?.into_inner().profile)
             }
 
             async fn rename_profile(
                 &self,
                 request: RenameProfileRequest,
             ) -> Result<Profile, RpcError> {
-                Ok($call!(self, rename_profile, request).await?.into_inner())
+                held($call!(self, rename_profile, request).await?.into_inner().profile)
             }
 
             async fn delete_profile(&self, request: DeleteProfileRequest) -> Result<(), RpcError> {
@@ -109,7 +119,10 @@ macro_rules! installation_impl {
                 &self,
                 request: SignInRequest,
             ) -> Result<EventStream<SignInEvent>, RpcError> {
-                Ok(events($call!(self, sign_in, request).await?.into_inner()))
+                Ok(held_events(
+                    $call!(self, sign_in, request).await?.into_inner(),
+                    |response| response.event,
+                ))
             }
 
             async fn answer_sign_in(&self, request: AnswerSignInRequest) -> Result<(), RpcError> {
@@ -117,40 +130,44 @@ macro_rules! installation_impl {
                 Ok(())
             }
 
-            async fn refresh_profile(
-                &self,
-                request: RefreshProfileRequest,
-            ) -> Result<Profile, RpcError> {
-                Ok($call!(self, refresh_profile, request).await?.into_inner())
-            }
-
             async fn get_settings(&self) -> Result<wire::Settings, RpcError> {
-                Ok($call!(self, get_settings, wire::Empty {}).await?.into_inner())
+                held(
+                    $call!(self, get_settings, wire::GetSettingsRequest {})
+                        .await?
+                        .into_inner()
+                        .settings,
+                )
             }
 
             async fn update_settings(
                 &self,
                 request: wire::UpdateSettingsRequest,
             ) -> Result<wire::Settings, RpcError> {
-                Ok($call!(self, update_settings, request).await?.into_inner())
+                held($call!(self, update_settings, request).await?.into_inner().settings)
             }
 
             async fn subscribe_onboarding(
                 &self,
-                request: wire::OnboardingRequest,
+                request: wire::SubscribeOnboardingRequest,
             ) -> Result<EventStream<wire::Onboarding>, RpcError> {
-                Ok(events($call!(self, subscribe_onboarding, request).await?.into_inner()))
+                Ok(held_events(
+                    $call!(self, subscribe_onboarding, request).await?.into_inner(),
+                    |response| response.onboarding,
+                ))
             }
 
             async fn answer_onboarding(
                 &self,
                 request: wire::AnswerOnboardingRequest,
             ) -> Result<wire::Onboarding, RpcError> {
-                Ok($call!(self, answer_onboarding, request).await?.into_inner())
+                held($call!(self, answer_onboarding, request).await?.into_inner().onboarding)
             }
 
             async fn suggest_repositories(&self) -> Result<Vec<wire::RepositoryEntry>, RpcError> {
-                Ok($call!(self, suggest_repositories, wire::Empty {}).await?.into_inner().suggestions)
+                Ok($call!(self, suggest_repositories, wire::SuggestRepositoriesRequest {})
+                    .await?
+                    .into_inner()
+                    .suggestions)
             }
 
             async fn web_sign_in_link(
@@ -185,17 +202,31 @@ impl GrpcInstallation {
         })
     }
 
-    /// Names the client of every profile opened from here as `surface`
-    /// ([`GrpcClient::naming`]).
+    /// Names this client as `surface` on every call, and the client of
+    /// every profile opened from here ([`GrpcClient::naming`]).
     pub fn naming(mut self, surface: &'static str) -> GrpcInstallation {
         self.surface = Some(surface);
         self
+    }
+
+    fn request<T>(&self, message: T) -> Request<T> {
+        let mut request = Request::new(message);
+        if let Some(surface) = self.surface {
+            request.metadata_mut().insert(
+                wire::SURFACE_HEADER,
+                tonic::metadata::AsciiMetadataValue::from_static(surface),
+            );
+        }
+        request
     }
 }
 
 macro_rules! grpc_call {
     ($installation:expr, $name:ident, $request:expr) => {
-        $installation.door.clone().$name($request)
+        $installation
+            .door
+            .clone()
+            .$name($installation.request($request))
     };
 }
 

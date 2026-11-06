@@ -760,7 +760,7 @@ impl Install {
         .await
         .ok_or("its front door never answered")?;
         let profile = InstallationServiceClient::new(door)
-            .list_profiles(wire::Empty {})
+            .list_profiles(wire::ListProfilesRequest {})
             .await
             .map_err(|status| status.to_string())?
             .into_inner()
@@ -983,7 +983,9 @@ impl Install {
             })
             .await
             .map_err(|status| status.to_string())?
-            .into_inner();
+            .into_inner()
+            .agent
+            .unwrap();
         self.created(scenario, &agent.agent_id);
         Ok(agent.agent_id)
     }
@@ -1008,7 +1010,7 @@ impl Install {
                         let mut stream = stream.into_inner();
                         while let Ok(Some(event)) = stream.message().await {
                             let mut log = log.lock().unwrap();
-                            match event.of {
+                            match event.event.and_then(|event| event.of) {
                                 Some(session_event::Of::Item(item)) => log.item(item),
                                 Some(session_event::Of::Snapshot(snapshot)) => {
                                     log.snapshots.push(snapshot)
@@ -1883,7 +1885,10 @@ fn known(state: &AgentState) -> BTreeSet<&'static str> {
         ("approval_policy", state.approval_policy.is_some()),
         ("session", state.provider_session.is_some()),
         ("context", state.context.known),
-        ("usage", state.usage.state() != wire::UsageState::Unknown),
+        (
+            "usage",
+            state.usage.state() != wire::UsageState::Unspecified,
+        ),
         ("servers", !state.servers.is_empty()),
         ("sign_in", state.sign_in.state != 0),
     ]
@@ -1936,7 +1941,7 @@ impl Follow {
     fn signed_out(&self) -> Option<String> {
         let state = self.snapshot().state(self.kind);
         match state.sign_in.state() {
-            wire::SignInState::SignedOut | wire::SignInState::Expired => Some(format!(
+            wire::SignInState::SignedOut => Some(format!(
                 "the provider is not signed in: {}",
                 state.sign_in.message
             )),

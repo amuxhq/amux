@@ -17,13 +17,24 @@ use wire::{
     create_agent_request,
 };
 
-use crate::runtime::Launch;
+use crate::runtime::{Launch, RegistryError};
 
 /// A client's first prompt as what seeds the new incarnation's queue.
-pub fn prompt_bootstrap(prompt: PromptSubmission) -> Bootstrap {
-    Bootstrap {
-        of: Some(bootstrap::Of::Prompt(prompt)),
+///
+/// Daemons never read a later prompt, which goes to the interpreter as it
+/// is, but a first prompt starts with them: one holding an attachment this
+/// build cannot read is refused here, before any agent starts for it.
+pub fn prompt_bootstrap(prompt: PromptSubmission) -> Result<Bootstrap, RegistryError> {
+    let readable = prompt
+        .prompt
+        .as_ref()
+        .is_none_or(|input| attachments::all_readable(&input.attachments));
+    if !readable {
+        return Err(RegistryError::UnreadableAttachment);
     }
+    Ok(Bootstrap {
+        of: Some(bootstrap::Of::Prompt(prompt)),
+    })
 }
 
 /// What a creation asked for, resolved into provider arguments and the

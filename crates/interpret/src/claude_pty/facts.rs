@@ -600,8 +600,6 @@ impl State {
                         scopes: permission_scopes(&offered),
                         reason: String::new(),
                         description: String::new(),
-                        deny_stops: false,
-                        deny_can_stop: true,
                         default_to_no: false,
                         server: server.clone(),
                     }),

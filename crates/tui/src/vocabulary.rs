@@ -1722,7 +1722,7 @@ fn cards() -> Vec<CardSet> {
             choice(ChoiceOutcome::AllowForSession),
             Choice {
                 takes_note: true,
-                ..choice(ChoiceOutcome::Deny { stops: false })
+                ..choice(ChoiceOutcome::Deny)
             },
             choice(ChoiceOutcome::DenyAndStop),
         ]
@@ -1828,7 +1828,7 @@ fn cards() -> Vec<CardSet> {
                 vec![
                     choice(ChoiceOutcome::AllowOnce),
                     choice(ChoiceOutcome::AllowForSession),
-                    choice(ChoiceOutcome::Deny { stops: false }),
+                    choice(ChoiceOutcome::Deny),
                 ],
             ),
             false,
@@ -1845,7 +1845,7 @@ fn cards() -> Vec<CardSet> {
                 },
                 vec![
                     choice(ChoiceOutcome::AllowOnce),
-                    choice(ChoiceOutcome::Deny { stops: false }),
+                    choice(ChoiceOutcome::Deny),
                 ],
             ),
             false,
@@ -1869,7 +1869,7 @@ fn cards() -> Vec<CardSet> {
                     choice(ChoiceOutcome::AllowNetwork {
                         hosts: vec!["localhost".into()],
                     }),
-                    choice(ChoiceOutcome::Deny { stops: false }),
+                    choice(ChoiceOutcome::Deny),
                     choice(ChoiceOutcome::DenyAndStop),
                 ],
             ),
@@ -2077,7 +2077,7 @@ fn cards() -> Vec<CardSet> {
                 vec![
                     choice(ChoiceOutcome::GrantForTurn),
                     choice(ChoiceOutcome::GrantForSession),
-                    choice(ChoiceOutcome::Deny { stops: false }),
+                    choice(ChoiceOutcome::Deny),
                 ],
             ),
             false,

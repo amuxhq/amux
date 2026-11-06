@@ -3216,7 +3216,6 @@ fn sign_in_lines(
     lines.push(head);
     lines.push(Line::default());
     let what = match sign_in.state {
-        wire::SignInState::Expired => "Sign-in expired",
         wire::SignInState::Failed => "Sign-in failed",
         _ => "Signed out",
     };

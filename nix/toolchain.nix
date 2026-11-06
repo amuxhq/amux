@@ -31,6 +31,7 @@ in
   pkgs.git
   pkgs.gitleaks
   pkgs.just
+  pkgs.buf
   pkgs.python3
   pkgs.tmux
 ]

@@ -6,12 +6,12 @@
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
 ## 4 fact {"channel":"stream","json":{"request":{"decision_reason":"Every Bash call that deletes is reviewed","default_to_no":true,"input":{"command":"rm -rf target"},"permission_suggestions":[{"behavior":"allow","destination":"localSettings","rules":[{"ruleContent":"rm -rf target","toolName":"Bash"}],"type":"addRules"}],"subtype":"can_use_tool","suppress_always_allow_rule":true,"tool_name":"Bash","too…
   ask req-1 -> "t1" 1/1 Open
-    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, Deny+note, DenyAndStop+note
     body Command { command: "rm -rf target", cwd: "", reason: "Every Bash call that deletes is reviewed", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 5 input {"answer":{"answer":{"allow":{"scope":1}},"ask":"req-1"},"id":"a1"}
   ask req-1 -> "t1" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
-    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, Deny+note, DenyAndStop+note
     body Command { command: "rm -rf target", cwd: "", reason: "Every Bash call that deletes is reviewed", description: "" }
 ## 6 input {"answer":{"answer":{"allow":{}},"ask":"req-1"},"id":"a2"}
   ask none

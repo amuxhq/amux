@@ -102,6 +102,27 @@ fn stream(line: Value) -> Event {
     })
 }
 
+/// A prompt holding an attachment this build cannot read is refused with
+/// its reason, and nothing is written: Claude would lose it without a word.
+#[test]
+fn a_prompt_with_an_attachment_this_build_cannot_read_is_refused() {
+    let mut state = started();
+    let input = wire::Input::new(
+        b"x1".to_vec(),
+        wire::ClaudeSdkInput {
+            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+                text: "see this".into(),
+                attachments: vec![wire::Attachment { of: None }],
+            })),
+        },
+    );
+    let stepped = ClaudeSdk::step(&mut state, Event::Input(input));
+    let [Effect::Reply { verdict, .. }] = stepped.effects.as_slice() else {
+        panic!("only the refusal: {:?}", stepped.effects);
+    };
+    assert!(format!("{verdict:?}").contains(attachments::UNREADABLE));
+}
+
 fn started() -> State {
     let spec = wire::AgentSpec {
         agent_id: b"agent".to_vec(),

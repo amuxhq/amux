@@ -970,11 +970,7 @@ impl Onboarding {
             .pairing
             .window
             .as_ref()
-            .and_then(|window| match &window.secret {
-                Some(wire::pairing_window::Secret::PinAndQr(both)) => Some(both.pin.clone()),
-                Some(wire::pairing_window::Secret::Pin(pin)) => Some(pin.clone()),
-                _ => None,
-            });
+            .and_then(|window| window.pin.clone());
         let (status, style) = if let Some(why) = &self.pairing.failed {
             (format!("Pairing could not open: {why}"), theme.warning())
         } else if self.locked_out() {

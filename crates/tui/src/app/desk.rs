@@ -148,7 +148,7 @@ impl App {
             move || {
                 let installation = installation.clone();
                 let settings_send = settings_send.clone();
-                let request = wire::OnboardingRequest {
+                let request = wire::SubscribeOnboardingRequest {
                     profile_id: profile_id.clone(),
                 };
                 async move {
@@ -167,7 +167,7 @@ impl App {
                 let installation = installation.clone();
                 async move { installation.subscribe_profiles().await }
             },
-            move |listed: wire::ListProfilesResponse| {
+            move |listed: wire::SubscribeProfilesResponse| {
                 profiles_send(DeskEvent::Profiles(listed.profiles));
             },
         );
@@ -177,7 +177,7 @@ impl App {
                 let client = client.clone();
                 async move { client.subscribe_sign_in_offers().await }
             },
-            move |now: wire::SignInOffers| send(DeskEvent::Offers(now.offers)),
+            move |now: wire::SubscribeSignInOffersResponse| send(DeskEvent::Offers(now.offers)),
         );
     }
 
@@ -564,7 +564,6 @@ impl App {
         let request = wire::AnswerOnboardingRequest {
             profile_id: desk.config.profile.id.clone(),
             answer: Some(answer),
-            surface: wire::Surface::Terminal as i32,
         };
         // The steps come back on their stream.
         tokio::spawn(async move {
@@ -661,7 +660,6 @@ impl App {
                         let answer = wire::AnswerOnboardingRequest {
                             profile_id,
                             answer: Some(Answer::Done(step.id() as i32)),
-                            surface: wire::Surface::Terminal as i32,
                         };
                         if let Err(error) = installation.answer_onboarding(answer).await {
                             return send(DeskEvent::ConfirmFailed(error.to_string()));
@@ -683,7 +681,7 @@ impl App {
                     let task = follow(
                         move || {
                             let client = client.clone();
-                            async move { client.watch_pairing().await }
+                            async move { client.subscribe_pairing().await }
                         },
                         move |status| watched(DeskEvent::Pairing(status)),
                     );

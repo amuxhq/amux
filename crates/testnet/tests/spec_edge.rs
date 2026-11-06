@@ -24,9 +24,8 @@ use wire::cloud_standing::Standing;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
-    BeginPairRequest, BindProfileRequest, Empty, HostRef, InventoryEvent, StartPairingRequest,
-    UnpairRequest, begin_pair_request, host_ref, inventory_event, pairing_window,
-    start_pairing_request,
+    BeginPairRequest, BindProfileRequest, Empty, HostRef, StartPairingRequest, UnpairRequest,
+    begin_pair_request, host_ref, inventory_event, start_pairing_request,
 };
 
 /// The discovery scope the paired hosts share.
@@ -68,7 +67,7 @@ async fn info(net: &Net, host: &str) -> wire::Profile {
     let profile = id(net, host);
     door(net, host)
         .await
-        .list_profiles(wire::Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .unwrap()
         .into_inner()
@@ -152,18 +151,18 @@ async fn peer_inventory_hosts(from: &Edge, to: Uuid) -> Vec<Vec<u8>> {
     let mut client = from.peer(to).await.expect("a route to the peer");
     let mut events = client
         .agents
-        .subscribe_inventory(wire::Empty {})
+        .subscribe_inventory(wire::SubscribeInventoryRequest {})
         .await
         .expect("the peer answers a trusted caller")
         .into_inner();
     let mut hosts = Vec::new();
     loop {
-        let InventoryEvent { of } = events
+        let response = events
             .message()
             .await
             .expect("the inventory streams")
             .expect("the inventory reaches CaughtUp");
-        match of {
+        match response.event.and_then(|event| event.of) {
             Some(inventory_event::Of::Host(host)) => hosts.push(host.host_id().to_vec()),
             Some(inventory_event::Of::CaughtUp(_)) => return hosts,
             _ => {}
@@ -182,10 +181,10 @@ async fn pair(net: &Net, initiator: &str, responder: &str) -> wire::Peer {
         })
         .await
         .expect("the responder enters pairing mode")
-        .into_inner();
-    let Some(pairing_window::Secret::Pin(pin)) = started.secret else {
-        panic!("a PIN pairing hands out a PIN");
-    };
+        .into_inner()
+        .window
+        .unwrap();
+    let pin = started.pin.expect("a PIN pairing hands out a PIN");
     assert_eq!(
         started.addrs,
         vec![edge(net, responder).lan_addr().unwrap().to_string()],
@@ -200,7 +199,9 @@ async fn pair(net: &Net, initiator: &str, responder: &str) -> wire::Peer {
         })
         .await
         .expect("the SPAKE2 exchange completes")
-        .into_inner();
+        .into_inner()
+        .pending
+        .unwrap();
     assert_eq!(
         pending.peer.as_ref().unwrap().pubkey,
         edge(net, responder).public_key(),
@@ -215,6 +216,8 @@ async fn pair(net: &Net, initiator: &str, responder: &str) -> wire::Peer {
         .await
         .expect("the person confirms the peer")
         .into_inner()
+        .peer
+        .unwrap()
 }
 
 #[tokio::test]
@@ -262,10 +265,12 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     // The device identity the profile reports is the one pairing pins.
     let identity = admin(&net, "desk")
         .await
-        .get_device_identity(wire::Empty {})
+        .get_device_identity(wire::GetDeviceIdentityRequest {})
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .identity
+        .unwrap();
     assert_eq!(identity.host_id, desk_id.as_bytes());
     assert_eq!(identity.pubkey, edge(&net, "desk").public_key());
 
@@ -300,7 +305,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     .unwrap();
     let desk_peers = admin(&net, "desk")
         .await
-        .list_peers(wire::Empty {})
+        .list_peers(wire::ListPeersRequest {})
         .await
         .unwrap()
         .into_inner()
@@ -343,7 +348,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     let desk_addr = edge(&net, "desk").lan_addr().unwrap();
     let outside_pairing = match edge(&net, "stranger").unpinned_channel(desk_addr).await {
         Ok(channel) => wire::agent_service_client(channel)
-            .subscribe_inventory(wire::Empty {})
+            .subscribe_inventory(wire::SubscribeInventoryRequest {})
             .await
             .map(|_| ())
             .expect_err("a stranger reaches no agent service")
@@ -366,7 +371,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
             .await
             .expect("pairing mode admits an unpinned stream"),
     )
-    .subscribe_inventory(wire::Empty {})
+    .subscribe_inventory(wire::SubscribeInventoryRequest {})
     .await
     .map(|_| ())
     .expect_err("pairing mode serves only pairing")
@@ -374,7 +379,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     assert_eq!(in_pairing, tonic::Code::Unimplemented);
     admin(&net, "desk")
         .await
-        .cancel_pairing(wire::Empty {})
+        .cancel_pairing(wire::CancelPairingRequest {})
         .await
         .unwrap();
     println!(
@@ -392,7 +397,9 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
         })
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .peer
+        .unwrap();
     assert_eq!(removed.name, "laptop");
     until("the link to close both ways", || async {
         let via = (
@@ -407,7 +414,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     .unwrap();
     let peers = admin(&net, "desk")
         .await
-        .list_peers(wire::Empty {})
+        .list_peers(wire::ListPeersRequest {})
         .await
         .unwrap()
         .into_inner()
@@ -702,7 +709,9 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
         })
         .await
         .expect("the profile binds to the account")
-        .into_inner();
+        .into_inner()
+        .profile
+        .unwrap();
     assert!(matches!(bound.standing(), Some(Standing::SignedIn(_))));
     assert_eq!(bound.email, "ada@example.com");
     assert_eq!(bound.account_name, "ada");
@@ -792,10 +801,12 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
     // Signing out forgets the credential and keeps the binding.
     let signed_out = admin(&net, "desk")
         .await
-        .sign_out(wire::Empty {})
+        .sign_out(wire::SignOutRequest {})
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .profile
+        .unwrap();
     assert!(matches!(
         signed_out.standing(),
         Some(Standing::SignedOut(_))

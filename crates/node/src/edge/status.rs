@@ -54,7 +54,7 @@ pub enum Relay {
     Retrying,
     /// The account service refused the profile's credentials.
     SignInAgain,
-    /// The relay speaks no protocol version this build does.
+    /// The relay refused this build as too old.
     VersionMismatch,
 }
 

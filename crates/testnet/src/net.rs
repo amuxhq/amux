@@ -638,8 +638,9 @@ impl Net {
             })
             .await
             .map_err(refused)?
-            .into_inner();
-        let Some(wire::pairing_window::Secret::Pin(pin)) = window.secret else {
+            .into_inner()
+            .window;
+        let Some(pin) = window.and_then(|window| window.pin) else {
             return Err(NetError::Host {
                 host: b.to_owned(),
                 error: "its pairing window has no PIN".to_owned(),
@@ -654,7 +655,9 @@ impl Net {
             })
             .await
             .map_err(refused)?
-            .into_inner();
+            .into_inner()
+            .pending
+            .expect("a begun pairing is answered");
         admin_a
             .confirm_pair(wire::ConfirmPairRequest {
                 token: pending.token,
@@ -1059,7 +1062,9 @@ impl Net {
                 .create_agent(request)
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
-                .into_inner(),
+                .into_inner()
+                .agent
+                .expect("a created agent is answered"),
             None => {
                 let runtime = self.runtime(&decl.host)?;
                 runtime.set_launch(self.launch(&host, Some((decl.kind, &script, provider))));
@@ -1217,7 +1222,9 @@ impl Net {
                 })
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
-                .into_inner());
+                .into_inner()
+                .agent
+                .expect("a resumed agent is answered"));
         }
         let runtime = self.runtime(&agent.host)?;
         runtime.set_launch(self.launch(&host, Some((agent.kind, &script, agent.provider))));
@@ -1454,7 +1461,9 @@ impl Net {
         target.set_launch(self.launch(&host, None));
         let agent = spawned
             .map_err(|status| NetError::Refused(Box::new(status)))?
-            .into_inner();
+            .into_inner()
+            .agent
+            .expect("a created agent is answered");
         self.agents.insert(
             decl.name.clone(),
             NetAgent {
@@ -2017,7 +2026,7 @@ impl Net {
                     .front_door(host)
                     .await
                     .map_err(|error| error.to_string())?
-                    .list_profiles(wire::Empty {})
+                    .list_profiles(wire::ListProfilesRequest {})
                     .await
                     .map_err(|status| status.message().to_owned())?
                     .into_inner()
@@ -2055,7 +2064,7 @@ impl Net {
         let profile_id = match profile {
             None => Vec::new(),
             Some(label) => door
-                .list_profiles(wire::Empty {})
+                .list_profiles(wire::ListProfilesRequest {})
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
                 .into_inner()
@@ -2071,7 +2080,6 @@ impl Net {
         door.answer_onboarding(wire::AnswerOnboardingRequest {
             profile_id,
             answer: Some(Answer::Dismiss(wire::Empty {})),
-            surface: wire::Surface::Terminal as i32,
         })
         .await
         .map_err(|status| NetError::Refused(Box::new(status)))?;
@@ -2112,7 +2120,7 @@ impl Net {
         let refused = |status: tonic::Status| NetError::Refused(Box::new(status));
         let mut admin = self.admin(host).await?;
         let mut offers = admin
-            .subscribe_sign_in_offers(wire::Empty {})
+            .subscribe_sign_in_offers(wire::SubscribeSignInOffersRequest {})
             .await
             .map_err(refused)?
             .into_inner();
@@ -2145,7 +2153,9 @@ impl Net {
             })
             .await
             .map_err(refused)?
-            .into_inner();
+            .into_inner()
+            .profile
+            .expect("an answered offer names the profile");
         Ok((offer, profile))
     }
 
@@ -2168,7 +2178,7 @@ impl Net {
         let wanted = to.and_then(|to| self.host(to).ok().map(|net| net.host_id));
         let mut admin = self.admin(host).await?;
         let peers = admin
-            .list_peers(wire::Empty {})
+            .list_peers(wire::ListPeersRequest {})
             .await
             .map_err(refused)?
             .into_inner()
@@ -2220,7 +2230,9 @@ impl Net {
             }))
             .await
             .map_err(|status| NetError::Refused(Box::new(status)))?
-            .into_inner())
+            .into_inner()
+            .agent
+            .expect("a created agent is answered"))
     }
 
     /// The host's setting up as its daemon keeps it, and its settings.
@@ -2231,22 +2243,25 @@ impl Net {
         let refused = |status: tonic::Status| NetError::Refused(Box::new(status));
         let mut door = self.front_door(host).await?;
         let onboarding = door
-            .subscribe_onboarding(wire::OnboardingRequest::default())
+            .subscribe_onboarding(wire::SubscribeOnboardingRequest::default())
             .await
             .map_err(refused)?
             .into_inner()
             .message()
             .await
             .map_err(refused)?
+            .and_then(|response| response.onboarding)
             .ok_or_else(|| NetError::Host {
                 host: host.to_owned(),
                 error: "the onboarding stream ended".to_owned(),
             })?;
         let settings = door
-            .get_settings(wire::Empty {})
+            .get_settings(wire::GetSettingsRequest {})
             .await
             .map_err(refused)?
-            .into_inner();
+            .into_inner()
+            .settings
+            .expect("settings are answered");
         Ok((onboarding, settings))
     }
 
@@ -2285,7 +2300,7 @@ impl Net {
             let info = self
                 .front_door(&host)
                 .await?
-                .list_profiles(wire::Empty {})
+                .list_profiles(wire::ListProfilesRequest {})
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
                 .into_inner()
@@ -2310,7 +2325,7 @@ impl Net {
             } else {
                 self.admin(&host)
                     .await?
-                    .sign_out(wire::Empty {})
+                    .sign_out(wire::SignOutRequest {})
                     .await
                     .map_err(|status| NetError::Refused(Box::new(status)))?;
                 self.sign_in(&host, account).await?;
@@ -2321,7 +2336,7 @@ impl Net {
                     .front_door(&host)
                     .await
                     .map_err(|error| error.to_string())?
-                    .list_profiles(wire::Empty {})
+                    .list_profiles(wire::ListProfilesRequest {})
                     .await
                     .map_err(|status| status.message().to_owned())?
                     .into_inner()
@@ -2710,7 +2725,6 @@ impl Net {
         self.bus.announce(node::discovery::Advertisement {
             host_id: host.info.host_id,
             name: name.to_owned(),
-            version: node::PROTOCOL_VERSION,
             addrs: vec![SocketAddr::from(([127, 0, 0, 1], port))],
             scope: host
                 .decl
@@ -3059,8 +3073,10 @@ impl Net {
                 .into_inner();
             let (sender, incoming) = mpsc::unbounded_channel();
             let reader = tokio::spawn(async move {
-                while let Ok(Some(event)) = stream.message().await {
-                    if sender.send(event).is_err() {
+                while let Ok(Some(response)) = stream.message().await {
+                    if let Some(event) = response.event
+                        && sender.send(event).is_err()
+                    {
                         return;
                     }
                 }
@@ -3101,14 +3117,16 @@ impl Net {
                     why,
                 })?
                 .agents
-                .subscribe_inventory(wire::Empty {})
+                .subscribe_inventory(wire::SubscribeInventoryRequest {})
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
                 .into_inner();
             let (sender, incoming) = mpsc::unbounded_channel();
             let reader = tokio::spawn(async move {
-                while let Ok(Some(event)) = stream.message().await {
-                    if sender.send(event).is_err() {
+                while let Ok(Some(response)) = stream.message().await {
+                    if let Some(event) = response.event
+                        && sender.send(event).is_err()
+                    {
                         return;
                     }
                 }
@@ -3386,7 +3404,7 @@ impl Net {
                         .into());
                     }
                 };
-                match event.of {
+                match event.event.and_then(|event| event.of) {
                     Some(wire::session_event::Of::Item(item)) => {
                         rows.insert(item.key.clone(), item);
                     }

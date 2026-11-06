@@ -434,7 +434,7 @@ capabilities = ["desktop", "Unix for the agent-process cases"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "node", modules = ["addresses", "agent_names", "analytics", "blobs", "catalogue", "diff", "dump", "forwarded_send", "front_door", "host_catalogue", "hosts", "messaging", "onboarding", "peer_service", "push", "registry", "resumption", "settings", "single_daemon", "worktree"], features = [] }]
+cargo = [{ package = "node", modules = ["addresses", "agent_names", "analytics", "blobs", "catalogue", "diff", "dump", "forwarded_send", "front_door", "host_catalogue", "hosts", "messaging", "onboarding", "peer_service", "push", "registry", "resumption", "settings", "single_daemon", "upgrade", "worktree"], features = [] }]
 
 [[suite]]
 name = "client-install"
@@ -936,12 +936,12 @@ cargo = [
 ]
 
 [[suite]]
-name = "protocol-and-release-tools"
-contract = "The protocol compatibility check accepts additions and renames but refuses a renumbered, retyped or unreserved field, enum value or method in amux.v1, and a release cut moves only the crates' version lines and reads the workflow's signing key."
+name = "release-tools"
+contract = "A release cut moves only the crates' version lines and reads the workflow's signing key."
 paths = ["crates/xtask/src"]
-recipe = "just suite protocol-and-release-tools"
+recipe = "just suite release-tools"
 boundary = "System composition"
-oracle = "Exact verdicts over hand-built descriptor sets, and the exact text a cut writes."
+oracle = "The exact text a cut writes."
 real = []
 substituted = []
 time = "none"
@@ -949,10 +949,7 @@ capabilities = []
 lane = "tool"
 evidence = ""
 update = ""
-cargo = [
-  { package = "xtask", kind = "lib", targets = ["xtask"], features = [] },
-  { package = "xtask", kind = "bin", targets = ["xtask"], features = [] },
-]
+cargo = [{ package = "xtask", kind = "bin", targets = ["xtask"], features = [] }]
 
 [[suite]]
 name = "phone-unit-tests"

@@ -240,12 +240,11 @@ message NetworkHosts {
 
 enum DecisionOutcome {
   DECISION_OUTCOME_UNSPECIFIED = 0;
-  DECISION_OUTCOME_NONE = 1;
-  DECISION_OUTCOME_ALLOWED = 2;
-  DECISION_OUTCOME_DENIED = 3;
-  DECISION_OUTCOME_AUTO_APPROVED = 4;
+  DECISION_OUTCOME_ALLOWED = 1;
+  DECISION_OUTCOME_DENIED = 2;
+  DECISION_OUTCOME_AUTO_APPROVED = 3;
   // Closed by a later fact that did not carry the outcome; drawn dismissed.
-  DECISION_OUTCOME_UNKNOWN = 5;
+  DECISION_OUTCOME_UNKNOWN = 4;
 }
 
 message SubagentProgress {
@@ -257,8 +256,8 @@ message SubagentProgress {
 message Boundary {
   BoundaryKind kind = 1;
   // For EXITED: why, and the cause's own words.
-  ExitCause cause = 4;
-  optional string cause_detail = 5;
+  ExitCause cause = 2;
+  optional string cause_detail = 3;
 }
 
 enum BoundaryKind {
@@ -275,17 +274,16 @@ enum BoundaryKind {
 
 // A message between agents; the text is in the envelope.
 message AgentMessage {
-  bytes envelope_id = 1;
-  EnvelopeKind kind = 2;
-  Sender from = 3;
-  bytes context = 4;
+  EnvelopeKind kind = 1;
+  Sender from = 2;
+  bytes context = 3;
   // Set on a message this agent sent with amux's send tool: the recipient as
   // the model named it. Empty on a message this agent received.
-  string to = 5;
+  string to = 4;
   // How a sent message's send went; unspecified on a received message.
-  SendState send_state = 6;
+  SendState send_state = 5;
   // For SEND_STATE_REJECTED: why, as the send reported it.
-  string rejection = 7;
+  string rejection = 6;
 }
 
 // What a received agent message was, from its envelope's body: a message,
@@ -303,7 +301,7 @@ enum EnvelopeKind {
 
 enum SendState {
   SEND_STATE_UNSPECIFIED = 0;
-  // The send is in flight; envelope_id is still empty.
+  // The send is in flight.
   SEND_STATE_SENDING = 1;
   // The recipient's provider has it.
   SEND_STATE_SENT = 2;
@@ -457,15 +455,11 @@ message PermissionAsk {
   repeated ClaudeGrant scopes = 3;
   string reason = 4;
   string description = 5;
-  // Denying always ends the turn (terminal Claude).
-  bool deny_stops = 6;
-  // Deny can be sent with or without stopping the turn.
-  bool deny_can_stop = 7;
-  string server = 8;
+  string server = 6;
   // The ask must not be approved by one stray keystroke: a keyboard view
   // opens it on deny and takes no digit shortcut, and nothing pre-selects
   // approve.
-  bool default_to_no = 9;
+  bool default_to_no = 7;
 }
 
 message QuestionAsk {
@@ -631,7 +625,7 @@ message ContextMeter {
 }
 
 enum UsageState {
-  USAGE_STATE_UNKNOWN = 0;
+  USAGE_STATE_UNSPECIFIED = 0;
   USAGE_STATE_OK = 1;
   USAGE_STATE_NEAR_LIMIT = 2;
   USAGE_STATE_BLOCKED = 3;
@@ -681,11 +675,10 @@ message SignIn {
 }
 
 enum SignInState {
-  SIGN_IN_STATE_UNKNOWN = 0;
+  SIGN_IN_STATE_UNSPECIFIED = 0;
   SIGN_IN_STATE_SIGNED_IN = 1;
   SIGN_IN_STATE_SIGNED_OUT = 2;
-  SIGN_IN_STATE_EXPIRED = 3;
-  SIGN_IN_STATE_FAILED = 4;
+  SIGN_IN_STATE_FAILED = 3;
 }
 
 // What the provider runs in the background: commands and tasks that

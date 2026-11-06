@@ -6,7 +6,7 @@
   composer Send activity=Some(Running { key: "exec-5ff2f133-cc87-467f-aa15-7c73d982419d" }) queue=[] underway=[] refused=[]
 ## 68 recorded 67: fact Rpc method=item/fileChange/requestApproval
   ask 0 -> "exec-5ff2f133-cc87-467f-aa15-7c73d982419d" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: ["<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowAlways { subjects: ["<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session }, Deny, DenyAndStop
     body Edit { path: "<MACHINE_PATH>", files: 1, added: 1, removed: 0, lines: [Line(PatchLine { number: Some(1), kind: Added, text: "one" })], line: Some(1), reason: "", created: Some(true) }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 70 recorded 69: input stdin-9
@@ -18,7 +18,7 @@
   composer Send activity=Some(Running { key: "exec-7c6ab08f-68df-428a-aeec-65458706ef7c" }) queue=[] underway=[] refused=[]
 ## 84 recorded 83: fact Rpc method=item/fileChange/requestApproval
   ask 1 -> "exec-7c6ab08f-68df-428a-aeec-65458706ef7c" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: ["<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowAlways { subjects: ["<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session }, Deny, DenyAndStop
     body Edit { path: "<MACHINE_PATH>", files: 1, added: 1, removed: 1, lines: [Hunk { old_start: 1, new_start: 1 }, Line(PatchLine { number: Some(1), kind: Removed, text: "one" }), Line(PatchLine { number: Some(1), kind: Added, text: "two" })], line: Some(1), reason: "", created: Some(false) }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 86 recorded 85: input stdin-10
@@ -30,7 +30,7 @@
   composer Send activity=Some(Running { key: "exec-f4ca4732-ccb1-44aa-b77e-a1eb9c472fc7" }) queue=[] underway=[] refused=[]
 ## 100 recorded 99: fact Rpc method=item/fileChange/requestApproval
   ask 2 -> "exec-f4ca4732-ccb1-44aa-b77e-a1eb9c472fc7" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: ["<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowAlways { subjects: ["<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session }, Deny, DenyAndStop
     body Edit { path: "<MACHINE_PATH>", files: 1, added: 0, removed: 1, lines: [Line(PatchLine { number: Some(1), kind: Removed, text: "old" })], line: None, reason: "", created: Some(false) }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 102 recorded 101: input stdin-11

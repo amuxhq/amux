@@ -760,7 +760,7 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
         },
     ];
     let sign_in = wire::SignIn {
-        state: wire::SignInState::Expired as i32,
+        state: wire::SignInState::Failed as i32,
         account: "me@example.com".into(),
         message: "Log in again".into(),
     };
@@ -2293,7 +2293,6 @@ fn an_agent_message_carries_its_attachments_as_chips() {
             1,
             1,
             wire::claude_item::Kind::AgentMessage(wire::AgentMessage {
-                envelope_id: b"envelope".to_vec(),
                 from: Some(wire::Sender {
                     value: Some(wire::sender::Value::Agent(wire::AgentSender {
                         name: "cl".into(),

@@ -6,7 +6,7 @@
   composer Send activity=Some(Running { key: "exec-d0bc90d4-d37d-4483-805e-c99964f83982" }) queue=[] underway=[] refused=[]
 ## 90 recorded 89: fact Rpc method=mcpServer/elicitation/request
   ask 0 -> "exec-d0bc90d4-d37d-4483-805e-c99964f83982" 1/1 Open
-    choices AllowOnce*, AllowForSession, AllowAlways { subjects: ["ask_the_operator"], directories: [], mode: "", mode_name: "", scope: User }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowForSession, AllowAlways { subjects: ["ask_the_operator"], directories: [], mode: "", mode_name: "", scope: User }, Deny, DenyAndStop
     body Tool { server: "spec", tool: "ask_the_operator", arguments: "{\n  \"word\": \"BLUE\"\n}" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 92 recorded 91: input stdin-9
@@ -26,7 +26,7 @@
   composer Send activity=Some(Running { key: "exec-9425b7ae-82a9-4099-b7aa-d3f6392c670c" }) queue=[] underway=[] refused=[]
 ## 113 recorded 112: fact Rpc method=mcpServer/elicitation/request
   ask 2 -> "exec-9425b7ae-82a9-4099-b7aa-d3f6392c670c" 1/1 Open
-    choices AllowOnce*, AllowForSession, AllowAlways { subjects: ["ask_the_operator"], directories: [], mode: "", mode_name: "", scope: User }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowForSession, AllowAlways { subjects: ["ask_the_operator"], directories: [], mode: "", mode_name: "", scope: User }, Deny, DenyAndStop
     body Tool { server: "spec", tool: "ask_the_operator", arguments: "{\n  \"word\": \"LINK\"\n}" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 115 recorded 114: input stdin-11

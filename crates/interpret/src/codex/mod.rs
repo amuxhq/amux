@@ -988,6 +988,9 @@ impl State {
                 )
             }
             codex_input::Of::Prompt(prompt) => {
+                if self.shared.refuse_unreadable(emit, &id, &prompt) {
+                    return;
+                }
                 if let Some(key) = self.plan_ask() {
                     self.shared.close_ask(&key);
                     self.decide_plan(emit, wire::PlanVerdict::Dismissed, None);
@@ -2218,7 +2221,7 @@ fn describe_ask(ask: &CodexAsk) -> String {
 /// Codex's usage as goldens print it: the overall state, each window by
 /// its limit (its length when unrecognised), use and state, and credits.
 fn describe_codex_usage(usage: &wire::CodexUsage) -> String {
-    if usage.state() == wire::UsageState::Unknown && usage.windows.is_empty() {
+    if usage.state() == wire::UsageState::Unspecified && usage.windows.is_empty() {
         return "?".into();
     }
     let mut text = crate::shared::describe_usage_state(usage.state).to_owned();
@@ -2278,7 +2281,7 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
             describe_codex_usage(&usage),
             crate::shared::describe_servers(&servers),
             match wire::SignInState::try_from(sign_in.state).unwrap_or_default() {
-                wire::SignInState::Unknown => "?".to_owned(),
+                wire::SignInState::Unspecified => "?".to_owned(),
                 state => format!(
                     "{} {}{}",
                     state.as_str_name(),

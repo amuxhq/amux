@@ -348,7 +348,9 @@ impl Server {
         };
         let sent = self
             .daemon_once(format!("the message to {to}"), |mut client| {
-                let request = request.clone();
+                let request = wire::SendMessageRequest {
+                    envelope: Some(request.clone()),
+                };
                 async move { client.agents.send_message(request).await }
             })
             .await
@@ -403,7 +405,9 @@ impl Server {
                 async move { client.agents.create_agent(request).await }
             })
             .await
-            .map_err(|refusal| refusal.or_else(|status| Refusal(plain(&status))))?;
+            .map_err(|refusal| refusal.or_else(|status| Refusal(plain(&status))))?
+            .agent
+            .ok_or_else(|| Refusal("the daemon's answer named no agent".to_owned()))?;
         Ok(json!({
             "name": agent.name,
             "id": interpret::to_hex(&agent.agent_id),
@@ -442,7 +446,9 @@ impl Server {
             async move { client.agents.resolve_agent(request).await }
         })
         .await
-        .map_err(|status| refused(&status, name))
+        .map_err(|status| refused(&status, name))?
+        .agent
+        .ok_or_else(|| Refusal("the daemon's answer named no agent".to_owned()))
     }
 
     /// The inventory read to CaughtUp: every host entry and agent row.
@@ -450,12 +456,12 @@ impl Server {
         self.daemon(|mut client| async move {
             let mut stream = client
                 .agents
-                .subscribe_inventory(wire::Empty {})
+                .subscribe_inventory(wire::SubscribeInventoryRequest {})
                 .await?
                 .into_inner();
             let (mut hosts, mut agents) = (Vec::<HostEntry>::new(), Vec::<Agent>::new());
-            while let Some(event) = stream.message().await? {
-                match event.of {
+            while let Some(response) = stream.message().await? {
+                match response.event.and_then(|event| event.of) {
                     Some(inventory_event::Of::Host(host)) => {
                         hosts.retain(|known| known.host_id() != host.host_id());
                         hosts.push(host);

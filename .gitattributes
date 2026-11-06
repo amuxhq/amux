@@ -7,4 +7,7 @@
 
 # The committed protobuf descriptor set is binary outright.
 crates/wire/src/generated/*.bin binary
+# So is a released build's profile, which an upgrade test opens as it shipped:
+# a store or a journal that reads as text would have its line endings changed.
+crates/node/tests/fixtures/upgrade/** binary
 crates/wire/src/generated/*.rs linguist-generated=true

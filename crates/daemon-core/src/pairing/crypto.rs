@@ -196,7 +196,6 @@ impl Keys {
 
 fn transcript_hash(msg_b: &[u8], msg_a: &[u8]) -> [u8; 32] {
     let mut ctx = digest::Context::new(&digest::SHA256);
-    ctx.update(&wire::PROTOCOL_VERSION.to_be_bytes());
     for message in [msg_b, msg_a] {
         ctx.update(&(message.len() as u32).to_be_bytes());
         ctx.update(message);

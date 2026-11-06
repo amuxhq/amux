@@ -236,7 +236,9 @@ fn a_prompt_with_attachments_leaves_them_to_the_agent_process() {
             wire::CodexInput {
                 of: Some(wire::codex_input::Of::Prompt(wire::PromptInput {
                     text: "What is this? \u{FFFC}".into(),
-                    attachments: vec![wire::Attachment::default()],
+                    attachments: vec![wire::Attachment {
+                        of: Some(wire::attachment::Of::Image(wire::BlobRef::default())),
+                    }],
                 })),
             },
         )),
@@ -1448,6 +1450,33 @@ fn plan_sets_the_collaboration_mode() {
     assert!(
         !sent_as_words && mode == Some(json!("plan")),
         "/plan sent as words: {sent_as_words}; the next turn's mode: {mode:?}"
+    );
+}
+
+/// A prompt holding an attachment this build cannot read is refused with
+/// its reason, and Codex is sent nothing: it would lose the attachment
+/// without a word.
+#[test]
+fn a_prompt_with_an_attachment_this_build_cannot_read_is_refused() {
+    let mut state = idle_codex();
+    let input = wire::Input::new(
+        b"x1".to_vec(),
+        wire::CodexInput {
+            of: Some(wire::codex_input::Of::Prompt(wire::PromptInput {
+                text: "see this".into(),
+                attachments: vec![wire::Attachment { of: None }],
+            })),
+        },
+    );
+    let stepped = Codex::step(&mut state, Event::Input(input));
+    assert!(writes(&stepped.effects).is_empty());
+    assert!(
+        stepped.effects.iter().any(|effect| matches!(
+            effect,
+            Effect::Reply { verdict, .. } if format!("{verdict:?}").contains(attachments::UNREADABLE)
+        )),
+        "{:?}",
+        stepped.effects
     );
 }
 

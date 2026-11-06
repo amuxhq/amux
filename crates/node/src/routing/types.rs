@@ -297,7 +297,6 @@ mod tests {
         let address = "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535".to_owned();
         let hello = wire::Message {
             body: Some(wire::message::Body::Hello(wire::Hello {
-                protocol_version: wire::PROTOCOL_VERSION,
                 host: Some(widest(1)),
                 neighbors: (2..130).map(widest).collect(),
                 auth_token: Some("t".repeat(4 * 1024)),

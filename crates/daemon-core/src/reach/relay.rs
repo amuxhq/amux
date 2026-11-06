@@ -62,7 +62,7 @@ pub enum RelayOutcome {
     /// The relay refused a token kept from an earlier fetch.
     KeptTokenRefused,
     /// The relay or the account service refused this profile for good:
-    /// its credentials, or the protocol version.
+    /// its credentials, or this build as too old.
     Final(String),
 }
 

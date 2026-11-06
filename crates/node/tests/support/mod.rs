@@ -51,6 +51,27 @@ impl Install {
         }
     }
 
+    /// An installation holding a copy of `data_dir`, as its one profile.
+    pub fn holding(data_dir: &Path) -> Self {
+        let root = tempfile::tempdir().expect("a temp dir");
+        let copy = root.path().join("data");
+        let work = root.path().join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        copy_files(data_dir, &copy);
+        let profiles = node::profile_dir(&copy, ProfileId::nil());
+        let profile = std::fs::read_dir(profiles.parent().unwrap())
+            .unwrap()
+            .find_map(|entry| entry.unwrap().file_name().to_str()?.parse().ok())
+            .expect("the data directory holds a profile");
+        Self {
+            root,
+            data_dir: copy,
+            work,
+            profile,
+            core_dumps_expected: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
     /// A path under the installation's scratch directory, for gates.
     pub fn path(&self, name: &str) -> PathBuf {
         self.root.path().join(name)
@@ -241,6 +262,21 @@ pub fn create(cwd: &Path, name: &str, prompt: Option<&str>) -> CreateAgentReques
         agent: wire::create_agent_request::Agent::defaults(Kind::ClaudeSdk),
         initial_prompt: prompt.map(|text| submission(b"p0", text)),
         new_worktree: false,
+    }
+}
+
+/// Copies the regular files under `from`: a socket means nothing once its
+/// process is gone.
+pub fn copy_files(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let kind = entry.file_type().unwrap();
+        if kind.is_dir() {
+            copy_files(&entry.path(), &to.join(entry.file_name()));
+        } else if kind.is_file() {
+            std::fs::copy(entry.path(), to.join(entry.file_name())).unwrap();
+        }
     }
 }
 

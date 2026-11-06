@@ -109,6 +109,20 @@ impl fmt::Display for ShapeError {
 
 impl std::error::Error for ShapeError {}
 
+/// What a refusal says when [`all_readable`] is false, as the end of "not
+/// sent: ...".
+pub const UNREADABLE: &str =
+    "one of its attachments is of a kind this host can't read; the host needs updating";
+
+/// Whether this build can read every attachment. An arm a later build added
+/// decodes here as no arm at all, and [`format`] would drop it without a
+/// word, so a send holding one is refused instead. Only this is refused:
+/// the placeholder count is not, because a person's words can hold the
+/// placeholder character by themselves, pasted from a rich text view.
+pub fn all_readable(attachments: &[Attachment]) -> bool {
+    attachments.iter().all(|attachment| attachment.of.is_some())
+}
+
 /// Checks the shape every input and item must have before it reaches an
 /// agent: one placeholder per attachment, each attachment set, each blob
 /// named by a SHA-256 digest.

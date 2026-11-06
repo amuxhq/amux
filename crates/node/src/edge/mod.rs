@@ -492,7 +492,6 @@ impl Edge {
             let advertised = Advertisement {
                 host_id: identity.host_id,
                 name: host_name.clone(),
-                version: crate::PROTOCOL_VERSION,
                 addrs,
                 scope: options.discovery_scope.clone(),
                 pairing_open: pair_mode.is_active(),

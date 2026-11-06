@@ -23,9 +23,10 @@ pub const PROFILE_SOCKET: &str = "sock";
 /// The file in a profile's directory that says what it is called.
 pub const PROFILE_FILE: &str = "profile";
 
-/// One profile as its directory describes it.
+/// One profile as its directory describes it. Unknown keys are ignored: a
+/// later build may add one, and this build must still start on a file that
+/// build wrote.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ProfileEntry {
     /// The directory's name; the file does not repeat it.
     #[serde(skip)]
@@ -175,6 +176,19 @@ pub(crate) fn discard(data_dir: &Path, profile: ProfileId) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A file a later build wrote still opens, as 0.8.4 did not with an
+    /// account file holding a key it had dropped.
+    #[test]
+    fn a_profile_file_with_a_key_this_build_does_not_know_still_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(PROFILE_FILE),
+            r#"{"label": "main", "created_ms": 1, "added_later": true}"#,
+        )
+        .unwrap();
+        assert_eq!(read_entry(dir.path()).unwrap().label, "main");
+    }
 
     #[test]
     fn profiles_are_their_directories_oldest_first_and_a_discarded_one_is_gone() {

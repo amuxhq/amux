@@ -5,9 +5,9 @@
 use support::synthetic::*;
 use support::*;
 use tonic::Request;
+use wire::UpdateSettingsRequest;
 use wire::agent_service_server::AgentService as _;
 use wire::installation_service_server::InstallationService as _;
-use wire::{Empty, UpdateSettingsRequest};
 
 use crate::support;
 
@@ -37,10 +37,12 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
     let runtime = runtime(&daemon, &desk);
 
     let settings = door
-        .get_settings(Request::new(Empty {}))
+        .get_settings(Request::new(wire::GetSettingsRequest {}))
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .settings
+        .unwrap();
     assert_eq!(settings.host_name, "desk");
     assert_eq!(
         settings.start_at_login, None,
@@ -67,7 +69,9 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
         }))
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .settings
+        .unwrap();
     assert_eq!(changed.host_name, "study");
     assert_eq!(changed.claude_kind, wire::Kind::ClaudePty as i32);
     let text = std::fs::read_to_string(&file).unwrap();
@@ -96,7 +100,9 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
         }))
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .profile
+        .unwrap();
     let spare = daemon
         .profile(uuid::Uuid::from_slice(&created.id).unwrap())
         .expect("the new profile runs");

@@ -55,6 +55,10 @@ The workspace has one lockfile. Build and verification recipes pass
 the same Rust dependencies and wire code on every machine. Protobuf
 generation uses a vendored `protoc`, so none needs installing.
 
+`just proto-compat` needs [buf](https://buf.build/docs/cli/installation/),
+which `nix/toolchain.nix` provides and CI pins to 1.75.0 in
+`.github/actions/setup-buf`; outside Nix, `brew install bufbuild/buf/buf`.
+
 ## Profiles
 
 Four profiles are defined in the workspace [`Cargo.toml`](../Cargo.toml):
@@ -139,9 +143,9 @@ just codegen-check
 
 `just protobuf` runs `cargo run -p xtask -- codegen`. `just codegen-check`
 regenerates and fails if the committed result differs. `just proto-compat`
-fails when the schema no longer reads what the latest release wrote: a field
-removed without reserving its number, a number reused or retyped, a call
-renamed; [the wire](WIRE.md#compatibility) has the rules.
+lints the schemas with buf, and fails when they no longer read what the latest
+release wrote: a field removed without reserving its number, a number reused
+or retyped, a name changed; [the wire](WIRE.md#compatibility) has the rules.
 
 **Swift value types.** The Swift mirrors of the view values the phone reads,
 `apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift`, are generated

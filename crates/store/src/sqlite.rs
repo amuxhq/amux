@@ -25,11 +25,13 @@ pub enum OpenError {
     Sqlite(#[from] rusqlite::Error),
     #[error("{0} is not an amux profile store")]
     Foreign(String),
-    /// The store was written under another schema version than this
-    /// build's. The file is left exactly as it is.
+    /// The store carries another stamp than this build's. The schema only
+    /// grows, so the stamp never moves and only a build outside that rule
+    /// can have written this. The file is left exactly as it is: the data
+    /// in it is the person's, and the build that wrote it can still read it.
     #[error(
         "{path} holds store schema {version}, not this build's {SCHEMA_VERSION}; \
-         amux leaves it untouched: move it aside to start this profile's store afresh"
+         amux leaves it untouched: run the amux build that wrote it"
     )]
     OtherSchema { path: String, version: u32 },
 }

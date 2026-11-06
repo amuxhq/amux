@@ -23,12 +23,15 @@ use wire::agent_service_server::AgentService;
 use wire::profile_admin_service_server::ProfileAdminServiceServer;
 use wire::session_service_server::SessionService;
 use wire::{
-    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, Empty, ErrorCode, FileAgentRequest,
-    GetBlobRequest, GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent, Item,
-    ListItemsRequest, ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse,
-    PutBlobRequest, RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
-    SendInputResponse, SendMessageResponse, SessionEvent, SubscribeSessionRequest,
-    subscribe_session_request,
+    CreateAgentRequest, CreateAgentResponse, DeleteAgentRequest, DeleteAgentResponse, ErrorCode,
+    FileAgentRequest, FileAgentResponse, GetBlobRequest, GetBlobResponse, GetDiffRequest,
+    GetDiffResponse, GetItemRequest, GetItemResponse, InventoryEvent, ListItemsRequest,
+    ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse, PutBlobRequest,
+    PutBlobResponse, RenameAgentRequest, RenameAgentResponse, ResolveAgentRequest,
+    ResolveAgentResponse, ResumeAgentRequest, ResumeAgentResponse, SendInputRequest,
+    SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent,
+    SubscribeInventoryRequest, SubscribeInventoryResponse, SubscribeSessionRequest,
+    SubscribeSessionResponse, subscribe_session_request,
 };
 
 use crate::blobs::BlobError;
@@ -185,6 +188,32 @@ pub(crate) async fn own_catalogue(
         .map_err(|error| status(error.to_wire()))
 }
 
+/// The client a call says it is in [`SURFACE_HEADER`], else `otherwise`:
+/// the Mac app opens the same sockets as the terminal and says which it is
+/// in a header.
+pub(crate) fn surface_named(
+    metadata: &tonic::metadata::MetadataMap,
+    otherwise: analytics::Client,
+) -> analytics::Client {
+    match metadata
+        .get(SURFACE_HEADER)
+        .and_then(|value| value.to_str().ok())
+    {
+        Some("mac") => analytics::Client::Mac,
+        _ => otherwise,
+    }
+}
+
+/// The message a send carries.
+pub(crate) fn envelope_of(request: SendMessageRequest) -> Result<wire::Envelope, Status> {
+    request.envelope.ok_or_else(|| {
+        status(wire_error(
+            ErrorCode::InvalidArgument,
+            "a send carries an envelope",
+        ))
+    })
+}
+
 /// One call made on another host's daemon, answered with its answer.
 pub(crate) async fn forwarded<R: crate::forward::PeerRpc>(
     runtime: &ProfileRuntime,
@@ -220,24 +249,15 @@ pub(crate) type EventStream<T> = Pin<Box<dyn Stream<Item = Result<T, Status>> + 
 
 #[tonic::async_trait]
 impl AgentService for ClientApi {
-    type SubscribeInventoryStream = EventStream<InventoryEvent>;
+    type SubscribeInventoryStream = EventStream<SubscribeInventoryResponse>;
 
     async fn subscribe_inventory(
         &self,
-        request: Request<wire::Empty>,
+        request: Request<SubscribeInventoryRequest>,
     ) -> Result<Response<Self::SubscribeInventoryStream>, Status> {
-        // The Mac app opens the same socket as the terminal and says which
-        // it is in a header.
-        let opened = self.opened.map(|client| {
-            match request
-                .metadata()
-                .get(SURFACE_HEADER)
-                .and_then(|value| value.to_str().ok())
-            {
-                Some("mac") => analytics::Client::Mac,
-                _ => client,
-            }
-        });
+        let opened = self
+            .opened
+            .map(|client| surface_named(request.metadata(), client));
         let runtime = self.runtime()?;
         let subscription = runtime
             .subscribe_inventory()
@@ -251,7 +271,10 @@ impl AgentService for ClientApi {
         }
         let stream = futures_util::stream::unfold(subscription, |mut subscription| async move {
             let event = subscription.next().await?;
-            Some((Ok(InventoryEvent::clone(&event)), subscription))
+            let response = SubscribeInventoryResponse {
+                event: Some(InventoryEvent::clone(&event)),
+            };
+            Some((Ok(response), subscription))
         });
         Ok(Response::new(Box::pin(stream)))
     }
@@ -259,18 +282,18 @@ impl AgentService for ClientApi {
     async fn resolve_agent(
         &self,
         request: Request<ResolveAgentRequest>,
-    ) -> Result<Response<Agent>, Status> {
+    ) -> Result<Response<ResolveAgentResponse>, Status> {
         self.runtime()?
             .resolve_agent(&request.into_inner().name)
             .await
-            .map(Response::new)
+            .map(|agent| Response::new(ResolveAgentResponse { agent: Some(agent) }))
             .map_err(|error| status(error.to_wire()))
     }
 
     async fn create_agent(
         &self,
         request: Request<CreateAgentRequest>,
-    ) -> Result<Response<Agent>, Status> {
+    ) -> Result<Response<CreateAgentResponse>, Status> {
         let request = request.into_inner();
         // An agent starts children as its spawn tool does, with the kind's
         // defaults: a permission mode or provider arguments are the
@@ -315,13 +338,15 @@ impl AgentService for ClientApi {
                 .record(analytics::Event::AgentCreated { kind, on, by });
             self.record_input(&runtime, first, on, Some(false));
         }
-        Ok(Response::new(spawned))
+        Ok(Response::new(CreateAgentResponse {
+            agent: Some(spawned),
+        }))
     }
 
     async fn rename_agent(
         &self,
         request: Request<RenameAgentRequest>,
-    ) -> Result<Response<Agent>, Status> {
+    ) -> Result<Response<RenameAgentResponse>, Status> {
         let request = request.into_inner();
         let runtime = self.runtime()?;
         self.lineage(
@@ -336,14 +361,14 @@ impl AgentService for ClientApi {
         runtime
             .rename(agent_id(&request.agent_id)?, &request.name)
             .await
-            .map(Response::new)
+            .map(|agent| Response::new(RenameAgentResponse { agent: Some(agent) }))
             .map_err(|error| status(error.to_wire()))
     }
 
     async fn file_agent(
         &self,
         request: Request<FileAgentRequest>,
-    ) -> Result<Response<Agent>, Status> {
+    ) -> Result<Response<FileAgentResponse>, Status> {
         let request = request.into_inner();
         let Some(filing) = daemon_core::Filing::from_wire(request.filing()) else {
             return Err(status(wire_error(
@@ -369,7 +394,7 @@ impl AgentService for ClientApi {
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             let filed = runtime.on_peer(host, request).await;
             return match filed {
-                Ok(agent) => Ok(Response::new(agent)),
+                Ok(filed) => Ok(Response::new(filed)),
                 // Never left, and the lapse is why: answered as unreachable
                 // in the lapse's words, so a client holds the settle as it
                 // holds a send and says the reason.
@@ -383,14 +408,14 @@ impl AgentService for ClientApi {
         runtime
             .file(agent_id(&request.agent_id)?, filing)
             .await
-            .map(Response::new)
+            .map(|agent| Response::new(FileAgentResponse { agent: Some(agent) }))
             .map_err(|error| status(error.to_wire()))
     }
 
     async fn resume_agent(
         &self,
         request: Request<ResumeAgentRequest>,
-    ) -> Result<Response<Agent>, Status> {
+    ) -> Result<Response<ResumeAgentResponse>, Status> {
         let request = request.into_inner();
         let runtime = self.runtime()?;
         self.lineage(
@@ -415,19 +440,25 @@ impl AgentService for ClientApi {
             self.record_input(&runtime, first, on, Some(false));
             return Ok(resumed);
         }
-        let bootstrap = request.initial_prompt.map(crate::spec::prompt_bootstrap);
+        let bootstrap = request
+            .initial_prompt
+            .map(crate::spec::prompt_bootstrap)
+            .transpose()
+            .map_err(|error| status(error.to_wire()))?;
         let resumed = runtime
             .resume(agent_id(&request.agent_id)?, bootstrap)
             .await
             .map_err(|error| status(error.to_wire()))?;
         self.record_input(&runtime, first, analytics::On::ThisHost, Some(false));
-        Ok(Response::new(resumed))
+        Ok(Response::new(ResumeAgentResponse {
+            agent: Some(resumed),
+        }))
     }
 
     async fn delete_agent(
         &self,
         request: Request<DeleteAgentRequest>,
-    ) -> Result<Response<Empty>, Status> {
+    ) -> Result<Response<DeleteAgentResponse>, Status> {
         let request = request.into_inner();
         let runtime = self.runtime()?;
         self.lineage(
@@ -442,15 +473,15 @@ impl AgentService for ClientApi {
         runtime
             .delete(agent_id(&request.agent_id)?)
             .await
-            .map(|()| Response::new(Empty {}))
+            .map(|()| Response::new(DeleteAgentResponse {}))
             .map_err(|error| status(error.to_wire()))
     }
 
     async fn send_message(
         &self,
-        request: Request<wire::Envelope>,
+        request: Request<SendMessageRequest>,
     ) -> Result<Response<SendMessageResponse>, Status> {
-        let envelope = request.into_inner();
+        let envelope = envelope_of(request.into_inner())?;
         // A child's reports are its daemon's own.
         if matches!(envelope.body, Some(wire::envelope::Body::Report(_))) {
             return Err(status(wire_error(
@@ -468,7 +499,7 @@ impl AgentService for ClientApi {
     async fn put_blob(
         &self,
         request: Request<PutBlobRequest>,
-    ) -> Result<Response<BlobRef>, Status> {
+    ) -> Result<Response<PutBlobResponse>, Status> {
         let request = request.into_inner();
         crate::blobs::within_limit(&request).map_err(|error| status(error.to_wire()))?;
         let runtime = self.runtime()?;
@@ -484,7 +515,7 @@ impl AgentService for ClientApi {
         runtime
             .put_blob(request)
             .await
-            .map(Response::new)
+            .map(|blob| Response::new(PutBlobResponse { blob: Some(blob) }))
             .map_err(|error| status(error.to_wire()))
     }
 
@@ -527,7 +558,7 @@ impl AgentService for ClientApi {
     async fn get_diff(
         &self,
         request: Request<GetDiffRequest>,
-    ) -> Result<Response<wire::Diff>, Status> {
+    ) -> Result<Response<GetDiffResponse>, Status> {
         let request = request.into_inner();
         let runtime = self.runtime()?;
         self.lineage(
@@ -543,7 +574,7 @@ impl AgentService for ClientApi {
         runtime
             .get_diff(request)
             .await
-            .map(Response::new)
+            .map(|diff| Response::new(GetDiffResponse { diff: Some(diff) }))
             .map_err(|error| status(error.to_wire()))
     }
 
@@ -582,7 +613,7 @@ impl AgentService for ClientApi {
 
 #[tonic::async_trait]
 impl SessionService for ClientApi {
-    type SubscribeSessionStream = EventStream<SessionEvent>;
+    type SubscribeSessionStream = EventStream<SubscribeSessionResponse>;
 
     async fn subscribe_session(
         &self,
@@ -612,7 +643,10 @@ impl SessionService for ClientApi {
             .map_err(|error| status(error.to_wire()))?;
         let stream = futures_util::stream::unfold(subscription, |mut subscription| async move {
             let event = subscription.next().await?;
-            Some((Ok(SessionEvent::clone(&event)), subscription))
+            let response = SubscribeSessionResponse {
+                event: Some(SessionEvent::clone(&event)),
+            };
+            Some((Ok(response), subscription))
         });
         Ok(Response::new(Box::pin(stream)))
     }
@@ -636,7 +670,10 @@ impl SessionService for ClientApi {
             .map_err(|error| status(error.to_wire()))
     }
 
-    async fn get_item(&self, request: Request<GetItemRequest>) -> Result<Response<Item>, Status> {
+    async fn get_item(
+        &self,
+        request: Request<GetItemRequest>,
+    ) -> Result<Response<GetItemResponse>, Status> {
         let request = request.into_inner();
         let runtime = self.runtime()?;
         self.lineage(
@@ -648,7 +685,7 @@ impl SessionService for ClientApi {
         runtime
             .get_item(&request)
             .await
-            .map(Response::new)
+            .map(|item| Response::new(GetItemResponse { item: Some(item) }))
             .map_err(|error| status(error.to_wire()))
     }
 
@@ -703,7 +740,7 @@ impl SessionService for ClientApi {
     async fn update_draft(
         &self,
         request: Request<wire::UpdateDraftRequest>,
-    ) -> Result<Response<wire::Draft>, Status> {
+    ) -> Result<Response<wire::UpdateDraftResponse>, Status> {
         let request = request.into_inner();
         let runtime = self.runtime()?;
         self.lineage(
@@ -714,13 +751,15 @@ impl SessionService for ClientApi {
         .await?;
         let draft = request.draft.unwrap_or_default();
         runtime.update_draft(&request.agent_id, &draft).await;
-        Ok(Response::new(draft))
+        Ok(Response::new(wire::UpdateDraftResponse {
+            draft: Some(draft),
+        }))
     }
 
     async fn get_draft(
         &self,
         request: Request<wire::GetDraftRequest>,
-    ) -> Result<Response<wire::Draft>, Status> {
+    ) -> Result<Response<wire::GetDraftResponse>, Status> {
         let request = request.into_inner();
         let runtime = self.runtime()?;
         self.lineage(
@@ -729,7 +768,9 @@ impl SessionService for ClientApi {
             "an agent keeps drafts only for its own children",
         )
         .await?;
-        Ok(Response::new(runtime.draft(&request.agent_id).await))
+        Ok(Response::new(wire::GetDraftResponse {
+            draft: Some(runtime.draft(&request.agent_id).await),
+        }))
     }
 }
 

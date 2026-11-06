@@ -6,7 +6,7 @@
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[SentPrompt { input_id: [112, 49], text: [Text("clean up")], lands: Feed, underway: Sending { waiting: false } }] refused=[]
 ## 6 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"command":"rm -rf build"},"tool_name":"Bash"}}
   ask ask:1 -> "" 1/1 Open
-    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, Deny+note, DenyAndStop+note
     body Command { command: "rm -rf build", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 49], text: [Text("clean up")], lands: Feed, underway: Sending { waiting: false } }] refused=[]
 ## 7 fact {"channel":"transcript","json":{"message":{"content":"clean up","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}

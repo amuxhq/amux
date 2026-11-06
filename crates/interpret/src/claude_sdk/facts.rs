@@ -506,7 +506,7 @@ impl State {
             "allowed" => UsageState::Ok,
             "allowed_warning" => UsageState::NearLimit,
             "rejected" => UsageState::Blocked,
-            _ => UsageState::Unknown,
+            _ => UsageState::Unspecified,
         };
         let usage = self.usage.get_or_insert_with(crate::unknown::claude_usage);
         usage.state = state as i32;
@@ -1387,8 +1387,6 @@ impl State {
                                 .or_else(|| written_opt(asked.title.as_deref()))
                                 .unwrap_or_default(),
                         ),
-                        deny_stops: false,
-                        deny_can_stop: true,
                         default_to_no: asked.default_to_no == Some(true),
                         server: server.clone(),
                     }),
@@ -1592,7 +1590,7 @@ fn report_window(meter: &mut UsageMeter, utilization: Option<f64>, resets_at_ms:
     if let (Some(held), Some(reported)) = (meter.resets_at_ms, resets_at_ms)
         && reported > held
     {
-        meter.state = UsageState::Unknown as i32;
+        meter.state = UsageState::Unspecified as i32;
     }
     if let Some(utilization) = utilization {
         meter.used_percent = utilization * 100.0;

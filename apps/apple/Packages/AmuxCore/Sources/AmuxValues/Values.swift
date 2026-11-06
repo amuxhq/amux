@@ -1819,8 +1819,8 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
     /// Codex: the exact command prefix it would allow.
     case allowSimilar(prefix: [String])
     case allowNetwork(hosts: [String])
-    /// Deny and let it carry on; `stops` when denying always ends the turn.
-    case deny(stops: Bool)
+    /// Deny and let it carry on.
+    case deny
     /// Approve the plan; with a `mode`, switching to that permission, which
     /// `mode_name` names as the agent's catalogue does.
     case approvePlan(mode: String, modeName: String)
@@ -1829,7 +1829,6 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
         case allowAlways = "AllowAlways"
         case allowSimilar = "AllowSimilar"
         case allowNetwork = "AllowNetwork"
-        case deny = "Deny"
         case approvePlan = "ApprovePlan"
     }
 
@@ -1847,10 +1846,6 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
 
     private enum AllowNetworkKeys: String, CodingKey {
         case hosts
-    }
-
-    private enum DenyKeys: String, CodingKey {
-        case stops
     }
 
     private enum ApprovePlanKeys: String, CodingKey {
@@ -1872,6 +1867,7 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
             case "OpenLink": self = .openLink
             case "GrantForTurn": self = .grantForTurn
             case "GrantForSession": self = .grantForSession
+            case "Deny": self = .deny
             default:
                 throw DecodingError.dataCorruptedError(
                     in: _single, debugDescription: "no ChoiceOutcome is named \(_name)")
@@ -1905,11 +1901,6 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
                 keyedBy: AllowNetworkKeys.self, forKey: .allowNetwork)
             self = .allowNetwork(
                 hosts: try _fields.decode([String].self, forKey: .hosts))
-        case .deny:
-            let _fields = try _container.nestedContainer(
-                keyedBy: DenyKeys.self, forKey: .deny)
-            self = .deny(
-                stops: try _fields.decode(Bool.self, forKey: .stops))
         case .approvePlan:
             let _fields = try _container.nestedContainer(
                 keyedBy: ApprovePlanKeys.self, forKey: .approvePlan)
@@ -1964,10 +1955,9 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: AllowNetworkKeys.self, forKey: .allowNetwork)
             try _fields.encode(hosts, forKey: .hosts)
-        case .deny(let stops):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: DenyKeys.self, forKey: .deny)
-            try _fields.encode(stops, forKey: .stops)
+        case .deny:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Deny")
         case .approvePlan(let mode, let modeName):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: ApprovePlanKeys.self, forKey: .approvePlan)
@@ -3550,17 +3540,15 @@ public enum FormValue: Codable, Hashable, Sendable {
 public struct Found: Codable, Hashable, Sendable {
     public var hostId: [UInt8]
     public var name: String
-    public var version: UInt32
     /// Resolved addresses as `ip:port`, IPv6 in brackets.
     public var addrs: [String]
     public var scope: String
     /// Its TXT record carries `pair=1`: a pairing window is open on it.
     public var pairingOpen: Bool?
 
-    public init(hostId: [UInt8], name: String, version: UInt32, addrs: [String], scope: String, pairingOpen: Bool?) {
+    public init(hostId: [UInt8], name: String, addrs: [String], scope: String, pairingOpen: Bool?) {
         self.hostId = hostId
         self.name = name
-        self.version = version
         self.addrs = addrs
         self.scope = scope
         self.pairingOpen = pairingOpen
@@ -3569,7 +3557,6 @@ public struct Found: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case hostId = "host_id"
         case name
-        case version
         case addrs
         case scope
         case pairingOpen = "pairing_open"
@@ -6470,7 +6457,7 @@ public struct SendOutcome: Codable, Hashable, Sendable {
 public enum SendState: String, Codable, Hashable, Sendable, CaseIterable {
     case unspecified = "Unspecified"
     case rejected = "Rejected"
-    /// The send is in flight; envelope_id is still empty.
+    /// The send is in flight.
     case sending = "Sending"
     /// The recipient's provider has it.
     case sent = "Sent"
@@ -6768,10 +6755,9 @@ public struct SignInOfferView: Codable, Hashable, Sendable {
 }
 
 public enum SignInState: String, Codable, Hashable, Sendable, CaseIterable {
-    case unknown = "Unknown"
+    case unspecified = "Unspecified"
     case signedIn = "SignedIn"
     case signedOut = "SignedOut"
-    case expired = "Expired"
     case failed = "Failed"
 }
 
@@ -7140,7 +7126,7 @@ public enum UsageLabel: Codable, Hashable, Sendable {
 }
 
 public enum UsageState: String, Codable, Hashable, Sendable, CaseIterable {
-    case unknown = "Unknown"
+    case unspecified = "Unspecified"
     case ok = "Ok"
     case nearLimit = "NearLimit"
     case blocked = "Blocked"

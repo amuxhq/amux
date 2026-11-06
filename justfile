@@ -113,10 +113,21 @@ protobuf:
 codegen-check:
     {{bounded}} 600 scripts/codegen-check.sh
 
-# Check that amux.v1 still reads what the latest release wrote; with a ref,
-# check against that ref instead.
+# Lint amux.v1, and check it still reads what the latest release wrote; with
+# a ref, check against that ref instead. Needs buf (docs/BUILD.md).
 proto-compat *ARGS:
-    {{bounded}} 600 cargo run --locked -p xtask -- proto-compat "$@"
+    {{bounded}} 120 scripts/proto-compat.sh "$@"
+
+# Check the store only grew since the latest release; with a ref, since that
+# ref instead.
+store-check *ARGS:
+    {{bounded}} 60 scripts/py scripts/store-check.py "$@"
+
+# Write the profile the upgrade test opens, as this commit's build leaves it,
+# under crates/node/tests/fixtures/upgrade/. Run once at a release's tag and
+# commit the result.
+upgrade-fixture: nextest
+    {{bounded}} 600 cargo nextest run --locked -p node --run-ignored only -E 'test(write_this_releases_profile)'
 
 # Build the shipping binary and enforce the release dependency policy.
 release-check *ARGS:
@@ -312,7 +323,7 @@ no-update-flags:
     scripts/no-update-flags.sh
 
 # Run the same task sequence exercised across continuous-integration jobs.
-ci: no-update-flags lint fmt-check codegen-check proto-compat dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test doctest release-check mobile-check
+ci: no-update-flags lint fmt-check codegen-check proto-compat store-check dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test doctest release-check mobile-check
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,

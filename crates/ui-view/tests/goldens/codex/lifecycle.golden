@@ -4,7 +4,7 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 6 fact {"channel":"rpc","json":{"id":7,"method":"item/commandExecution/requestApproval","params":{"availableDecisions":["accept",{"acceptWithExecpolicyAmendment":{"execpolicy_amendment":["curl","-s"]}},{"applyNetworkPolicyAmendment":{"network_policy_amendment":{"action":"allow","host":"api.example.com"}}},"decline","cancel"],"command":"/bin/zsh -lc 'curl -s https://api.example.com/status'","cwd":"/w…
   ask 7 -> "cmd-1" 1/1 Open
-    choices AllowOnce*, AllowSimilar { prefix: ["curl", "-s"] }, AllowNetwork { hosts: ["api.example.com"] }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowSimilar { prefix: ["curl", "-s"] }, AllowNetwork { hosts: ["api.example.com"] }, Deny, DenyAndStop
     body Command { command: "curl -s https://api.example.com/status", cwd: "/work", reason: "Reach the status API.", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 10 exiting "stopped"

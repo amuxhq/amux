@@ -434,8 +434,10 @@ fn pin(net: &Net, tokio: &tokio::runtime::Runtime) -> (String, Vec<String>) {
             .await
             .unwrap()
             .into_inner()
+            .window
+            .unwrap()
     });
-    let Some(wire::pairing_window::Secret::Pin(pin)) = started.secret else {
+    let Some(pin) = started.pin else {
         panic!("the desk shows a PIN");
     };
     (pin, started.addrs)

@@ -98,7 +98,7 @@ final class FleetWordsTests: XCTestCase {
         XCTAssertEqual(
             ChatWords.usageDetail(near, now: now),
             "near · resets \(now.addingTimeInterval(4 * 86_400).formatted(.dateTime.weekday(.abbreviated)))")
-        let unknown = UsageWindowView(label: .fiveHour, state: .unknown, resetsAtMs: nil, usedPercent: 10)
+        let unknown = UsageWindowView(label: .fiveHour, state: .unspecified, resetsAtMs: nil, usedPercent: 10)
         XCTAssertNil(ChatWords.usageDetail(unknown, now: now))
         XCTAssertEqual(ChatWords.comparison(.uncommitted, base: "main"), "Uncommitted")
         XCTAssertEqual(ChatWords.comparison(.onBranch, base: "main"), "vs main")

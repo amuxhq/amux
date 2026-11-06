@@ -218,6 +218,8 @@ pub enum RegistryError {
     Worktree(#[from] git_facts::WorktreeError),
     #[error("spawning on another host goes through that host's daemon")]
     OtherHost,
+    #[error("{}", attachments::UNREADABLE)]
+    UnreadableAttachment,
     #[error("{}", kind_not_run_words(.host, *.kind, *.runs_none))]
     KindNotRun {
         host: String,
@@ -302,9 +304,10 @@ impl RegistryError {
             | Self::NoFarCwd(_)
             | Self::BadName(_) => ErrorCode::InvalidArgument,
             Self::OtherHost => ErrorCode::Unimplemented,
-            Self::KindNotRun { .. } | Self::ParentEnded(_) | Self::HasParent(_) => {
-                ErrorCode::FailedPrecondition
-            }
+            Self::KindNotRun { .. }
+            | Self::ParentEnded(_)
+            | Self::HasParent(_)
+            | Self::UnreadableAttachment => ErrorCode::FailedPrecondition,
             Self::StartTimeout(_) | Self::StopTimeout(_) => ErrorCode::Aborted,
             Self::Worktree(error) => match error {
                 git_facts::WorktreeError::BranchExists(_)
@@ -955,7 +958,11 @@ impl ProfileRuntime {
         }
         let resolved = spec::resolve(agent);
         let mut request = request;
-        let bootstrap = request.initial_prompt.take().map(spec::prompt_bootstrap);
+        let bootstrap = request
+            .initial_prompt
+            .take()
+            .map(spec::prompt_bootstrap)
+            .transpose()?;
         if request.cwd.is_empty()
             && let Some(caller) = caller
         {

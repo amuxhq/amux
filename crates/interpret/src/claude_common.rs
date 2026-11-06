@@ -526,7 +526,7 @@ pub(crate) fn claude_limit(name: &str) -> Option<(Limit, Option<&'static str>)> 
 /// Claude's usage as goldens print it: the overall state, then each window
 /// as its limit (Claude's own name when unrecognised), use and state.
 pub(crate) fn describe_claude_usage(usage: &ClaudeUsage) -> String {
-    if usage.state() == UsageState::Unknown && usage.windows.is_empty() {
+    if usage.state() == UsageState::Unspecified && usage.windows.is_empty() {
         return "?".into();
     }
     let mut text = crate::shared::describe_usage_state(usage.state).to_owned();
@@ -1337,10 +1337,6 @@ pub(crate) fn describe_asks(asks: &[Ask]) -> String {
                             Value::String(permission.description.clone())
                         )),
                         permission
-                            .deny_can_stop
-                            .then(|| " deny-can-stop".to_owned()),
-                        permission.deny_stops.then(|| " deny-stops".to_owned()),
-                        permission
                             .default_to_no
                             .then(|| " default-to-no".to_owned()),
                     ]
@@ -2038,7 +2034,7 @@ pub(crate) fn describe_snapshot(body: &[u8]) -> SnapshotView {
             describe_claude_usage(&usage),
             crate::shared::describe_servers(&servers),
             match wire::SignInState::try_from(sign_in.state).unwrap_or_default() {
-                wire::SignInState::Unknown => "?".to_owned(),
+                wire::SignInState::Unspecified => "?".to_owned(),
                 state => format!("{} {}", state.as_str_name(), or_dash(&sign_in.account)),
             },
             crate::shared::describe_jobs(snapshot.background_jobs.as_ref())

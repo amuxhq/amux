@@ -1,0 +1,23 @@
+# `just proto-compat` runs both checks: `buf lint` on the tree, and `buf
+# breaking` against the latest release (docs/WIRE.md says what they guard).
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+  ignore:
+    # Vendored: the googleapis files, as Google wrote them.
+    - proto/google
+breaking:
+  use:
+    - PACKAGE
+    # A retired field or enum value may go, but only if its number is left
+    # `reserved`; plain PACKAGE would refuse any deletion at all.
+    - FIELD_NO_DELETE_UNLESS_NUMBER_RESERVED
+    - ENUM_VALUE_NO_DELETE_UNLESS_NUMBER_RESERVED
+  except:
+    - FIELD_NO_DELETE
+    - ENUM_VALUE_NO_DELETE
+  ignore:
+    - proto/google

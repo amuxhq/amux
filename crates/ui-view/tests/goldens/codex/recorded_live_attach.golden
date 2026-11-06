@@ -6,7 +6,7 @@
   composer Send activity=Some(Running { key: "exec-5788e0c2-60be-4442-a34d-bc1463f128c2" }) queue=[] underway=[] refused=[]
 ## 43 recorded 42: fact Rpc method=item/commandExecution/requestApproval
   ask 0 -> "exec-5788e0c2-60be-4442-a34d-bc1463f128c2" 1/1 Open
-    choices AllowOnce*, AllowSimilar { prefix: ["touch", "attached.txt"] }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowSimilar { prefix: ["touch", "attached.txt"] }, Deny, DenyAndStop
     body Command { command: "touch attached.txt", cwd: "<MACHINE_PATH>", reason: "May I create attached.txt with the requested command?", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 45 recorded 44: input stdin-8

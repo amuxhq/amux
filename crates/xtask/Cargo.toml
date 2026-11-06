@@ -3,7 +3,7 @@ name = "xtask"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-description = "Developer tasks: protobuf codegen, cutting, signing and deploying releases, and the protobuf compatibility check"
+description = "Developer tasks: protobuf codegen, and cutting, signing and deploying releases"
 publish = false
 autotests = false
 
@@ -12,8 +12,6 @@ release = { workspace = true }
 semver = { workspace = true }
 tonic-prost-build = { workspace = true }
 protoc-bin-vendored = { workspace = true }
-prost = { workspace = true }
-prost-types = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]

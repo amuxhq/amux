@@ -29,27 +29,37 @@ application channels on separate native streams.
 `amux.v1` is the released protocol. From amux 0.9.0 on, builds of different
 versions meet: paired hosts, third-party clients, agent processes that
 outlive a daemon upgrade, and the stores and journals an earlier build left
-on disk. So every change keeps what a released build wrote decoding as it
-meant:
+on disk. So every change only adds, and keeps what a released build wrote
+decoding as it meant:
 
 - Fields, oneof arms, enum values, messages, methods and services are only
   added.
 - A number is never renumbered, retyped or reused; one that goes is left
   `reserved`. A field never moves into, out of or between oneofs.
-- Names are not on the binary wire and may change, but for two: a service's
-  and a method's, which are the gRPC path, and an error detail message's,
-  which is its `Any` type URL. A field or method may take another message
-  that reads the same numbers.
+- Names are frozen too. Three kinds are on the wire: a service's and a
+  method's, which are the gRPC path, an error detail message's, which is its
+  `Any` type URL, and an `ErrorReason` value's, which is `ErrorInfo.reason`.
+  The rest are what every client's generated code calls these things.
+- A new field's zero value means what builds without it did.
+- Existing data never moves to a new arm. An agent row in an arm an older host
+  cannot read is a row its next listing no longer names, so it drops the
+  replica and stops the children.
+- A new kind of message adds a field to `MessageBody`, keeping `text`, rather
+  than an arm to `Envelope.body`. An older host then still delivers the words.
+- New meaning goes in the per-kind body where it fits: bodies pass through a
+  daemon byte for byte, and a new envelope field is lost at any older daemon.
 
 A host-to-host control message (`link.proto`'s `Message.body`) may be added
 only if a peer that predates it can ignore it and lose nothing it needs: a
 receiver drops a control message it does not know once the handshake is
-done, so the link carries on. A message the other end must understand is a
-break both ends take, and moves `PROTOCOL_VERSION`.
+done, so the link carries on.
 
-`just proto-compat` checks all of this against the latest release.
-`PROTOCOL_VERSION` (`Hello.protocol_version`) moves only for a
-break both ends of a link must take.
+A change that cannot be made this way, or a sweeping clean-up, is the next
+protocol: a new ALPN, `amux/2`, served beside `amux/1`, which TLS settles
+before any amux message. There is no version number to move.
+
+`just proto-compat`, which CI runs, lints these files with buf and checks them
+against the latest release.
 
 What a client writes into a dump is `amux.dump` (`crates/wire/proto/amux/dump/session.proto`),
 read only by the build that wrote it and outside these promises.

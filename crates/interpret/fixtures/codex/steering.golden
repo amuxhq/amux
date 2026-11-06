@@ -36,7 +36,7 @@ snapshot WORKING queue=[] working_on="Plan it." at=1800000000000 asks=[] thread=
 ## 14 agent_message {"envelope":"e1","from":"lead","text":"Status?"}
 effect write "{\"id\":\"amux-3\",\"method\":\"thread/inject_items\",\"params\":{\"items\":[{\"content\":[{\"text\":\"[message from agent lead]\\nStatus?\",\"type\":\"input_text\"}],\"role\":\"user\",\"type\":\"message\"}],\"threadId\":\"t1\"}}"
 effect reply e1 accepted
-item agent-message:6531 agent_message final input=e1 at=1800000000000 text="Status?" envelope=6531
+item agent-message:6531 agent_message final input=e1 at=1800000000000 text="Status?"
 pending [e1]
 ## 15 input {"id":"n4","send_now":{"target":"e1"}}
 effect reply n4 rejected:NOT_QUEUED

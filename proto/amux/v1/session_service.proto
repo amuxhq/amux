@@ -15,15 +15,15 @@ import "amux/v1/records.proto";
 // agents, as AgentService is, and the drafts are refused.
 
 service SessionService {
-  rpc SubscribeSession(SubscribeSessionRequest) returns (stream SessionEvent);
+  rpc SubscribeSession(SubscribeSessionRequest) returns (stream SubscribeSessionResponse);
   rpc ListItems(ListItemsRequest) returns (ListItemsResponse);
-  rpc GetItem(GetItemRequest) returns (Item);
+  rpc GetItem(GetItemRequest) returns (GetItemResponse);
   rpc SendInput(SendInputRequest) returns (SendInputResponse);
   // The unsent draft of an agent's composer, kept by this machine's daemon
   // for its clients so it outlives a client closing. Never synced to other
   // machines; an empty draft forgets it.
-  rpc UpdateDraft(UpdateDraftRequest) returns (Draft);
-  rpc GetDraft(GetDraftRequest) returns (Draft);
+  rpc UpdateDraft(UpdateDraftRequest) returns (UpdateDraftResponse);
+  rpc GetDraft(GetDraftRequest) returns (GetDraftResponse);
 }
 
 // Clients tail. A paired daemon's replica sends `after` toward its origin
@@ -35,6 +35,10 @@ message SubscribeSessionRequest {
     uint32 tail = 2;
     After after = 3;
   }
+}
+
+message SubscribeSessionResponse {
+  SessionEvent event = 1;
 }
 
 // The delta if it is at most cap rows and the origin still runs the
@@ -98,6 +102,10 @@ message GetItemRequest {
   string key = 2;
 }
 
+message GetItemResponse {
+  Item item = 1;
+}
+
 message SendInputRequest {
   bytes agent_id = 1;
   Input input = 2;
@@ -114,8 +122,16 @@ message UpdateDraftRequest {
   Draft draft = 2;
 }
 
+message UpdateDraftResponse {
+  Draft draft = 1;
+}
+
 message GetDraftRequest {
   bytes agent_id = 1;
+}
+
+message GetDraftResponse {
+  Draft draft = 1;
 }
 
 // A client-generated input id, the agent's kind, and that kind's input

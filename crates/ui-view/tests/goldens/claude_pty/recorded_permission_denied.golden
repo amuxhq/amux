@@ -6,12 +6,12 @@
   composer Send activity=Some(Running { key: "toolu_0194mxpNygZJxCovWPkqucvj" }) queue=[] underway=[] refused=[]
 ## 40 recorded 38: fact Hook hook_event_name=PermissionRequest
   ask ask:1 -> "" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, Deny+note, DenyAndStop+note
     body Command { command: "printf denied > denied.txt", cwd: "", reason: "", description: "Write \"denied\" to denied.txt in the working directory" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 44 recorded 42: fact Transcript type=assistant uuid=138a7a7c-8329-4f55-82fb-05f113418310
   ask ask:1 -> "toolu_0194mxpNygZJxCovWPkqucvj" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, Deny+note, DenyAndStop+note
     body Command { command: "printf denied > denied.txt", cwd: "", reason: "", description: "Write \"denied\" to denied.txt in the working directory" }
 ## 48 recorded 46: fact Transcript type=user uuid=85ee69cb-5779-40f4-951e-4c8c28434360
   ask none

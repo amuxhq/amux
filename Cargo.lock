@@ -2270,6 +2270,7 @@ dependencies = [
  "agent-dir",
  "analytics",
  "async-trait",
+ "attachments",
  "base64 0.22.1",
  "bytes",
  "chrono",
@@ -2294,6 +2295,7 @@ dependencies = [
  "redaction",
  "relay-core",
  "release",
+ "replay-support",
  "reqwest",
  "ring",
  "rustls",
@@ -5126,8 +5128,6 @@ dependencies = [
 name = "xtask"
 version = "0.1.0"
 dependencies = [
- "prost",
- "prost-types",
  "protoc-bin-vendored",
  "release",
  "semver",

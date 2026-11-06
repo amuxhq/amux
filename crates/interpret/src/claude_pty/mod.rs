@@ -1260,6 +1260,9 @@ impl State {
                     .reject(emit, &id, Refusal::ConversationElsewhere)
             }
             claude_pty_input::Of::Prompt(prompt) => {
+                if self.shared.refuse_unreadable(emit, &id, &prompt) {
+                    return;
+                }
                 self.dismiss_plan(emit);
                 if let Some(entry) = self.shared.admit_prompt(emit, &id, prompt, human()) {
                     self.typed(emit, entry);

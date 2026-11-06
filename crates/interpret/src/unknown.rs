@@ -29,14 +29,14 @@ pub fn context_meter() -> ContextMeter {
 
 pub fn claude_usage() -> ClaudeUsage {
     ClaudeUsage {
-        state: UsageState::Unknown as i32,
+        state: UsageState::Unspecified as i32,
         windows: Vec::new(),
     }
 }
 
 pub fn codex_usage() -> CodexUsage {
     CodexUsage {
-        state: UsageState::Unknown as i32,
+        state: UsageState::Unspecified as i32,
         windows: Vec::new(),
         credits: None,
     }
@@ -44,7 +44,7 @@ pub fn codex_usage() -> CodexUsage {
 
 pub fn sign_in() -> SignIn {
     SignIn {
-        state: SignInState::Unknown as i32,
+        state: SignInState::Unspecified as i32,
         account: String::new(),
         message: String::new(),
     }

@@ -15,7 +15,6 @@ use daemon_core::payload::{CallError, ClientRequest, Response};
 use daemon_core::trust::{TrustChange, TrustChanged, TrustError};
 use tonic::Status;
 use uuid::Uuid;
-use wire::pairing_window::Secret;
 use wire::start_pairing_request::Method;
 use wire::{
     BeginPairRequest, DeviceIdentity, HostRef, PairingIdentity, PairingWindow, RouteKind,
@@ -182,11 +181,11 @@ impl Edge {
                 ttl_ms: u64::try_from(ttl.as_millis()).unwrap_or(u64::MAX),
             })
             .await?;
-        let secret = match opened {
-            Some(Response::PairingWindow(WindowSecret::Pin(pin))) => Secret::Pin(pin),
-            Some(Response::PairingWindow(WindowSecret::Qr(secret))) => Secret::QrSecret(secret),
+        let (pin, qr) = match opened {
+            Some(Response::PairingWindow(WindowSecret::Pin(pin))) => (Some(pin), None),
+            Some(Response::PairingWindow(WindowSecret::Qr(secret))) => (None, Some(secret)),
             Some(Response::PairingWindow(WindowSecret::PinAndQr { pin, qr })) => {
-                Secret::PinAndQr(wire::PinAndQr { pin, qr_secret: qr })
+                (Some(pin), Some(qr))
             }
             other => return Err(Status::internal(format!("the core opened {other:?}"))),
         };
@@ -206,13 +205,8 @@ impl Edge {
             },
         });
         let addrs = self.pairing_addrs();
-        let cloud_url = self
-            .account
-            .service()
-            .filter(|_| self.account.wants_cloud())
-            .map(|service| service.as_str().to_owned());
-        let qr_link = match &secret {
-            Secret::QrSecret(qr) | Secret::PinAndQr(wire::PinAndQr { qr_secret: qr, .. }) => {
+        let qr_link = match &qr {
+            Some(qr) => {
                 let secret = qr.as_slice().try_into().map_err(|_| {
                     Status::internal(format!("the core opened a {}-byte QR secret", qr.len()))
                 })?;
@@ -225,7 +219,7 @@ impl Edge {
                 };
                 crate::pairing::qr::qr_link(&self.pairing_page_cloud(), &invitation)
             }
-            Secret::Pin(_) => String::new(),
+            None => String::new(),
         };
         Ok(PairingWindow {
             identity: Some(PairingIdentity {
@@ -236,8 +230,7 @@ impl Edge {
             }),
             ttl_seconds: ttl.as_secs(),
             addrs: addrs.into_iter().map(|addr| addr.to_string()).collect(),
-            cloud_url,
-            secret: Some(secret),
+            pin,
             qr_link,
         })
     }
@@ -252,7 +245,9 @@ impl Edge {
     }
 
     /// The pairing window now and on every change, as the wire says it.
-    pub fn watch_pairing(&self) -> impl futures_util::Stream<Item = wire::PairingStatus> + use<> {
+    pub fn subscribe_pairing(
+        &self,
+    ) -> impl futures_util::Stream<Item = wire::PairingStatus> + use<> {
         let watched = self.pair_mode.watch();
         futures_util::stream::unfold((watched, true), |(mut watched, first)| async move {
             if !first && watched.changed().await.is_err() {
@@ -261,11 +256,6 @@ impl Edge {
             let status = pairing::status_to_wire(&watched.borrow_and_update());
             Some((status, (watched, false)))
         })
-    }
-
-    /// The pairing window now, as the wire says it.
-    pub fn pairing_status(&self) -> wire::PairingStatus {
-        pairing::status_to_wire(&self.pair_mode.status())
     }
 
     pub fn pairing_active(&self) -> bool {

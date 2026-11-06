@@ -182,7 +182,7 @@ impl Install {
     async fn client(&self) -> wire::ClientStubs {
         let door = self.front_door().await.expect("a daemon answers");
         let profile = InstallationServiceClient::new(door)
-            .list_profiles(wire::Empty {})
+            .list_profiles(wire::ListProfilesRequest {})
             .await
             .unwrap()
             .into_inner()
@@ -256,7 +256,7 @@ async fn chat(client: &mut wire::ClientStubs, agent: &[u8]) -> Vec<(String, Stri
         .expect("the chat catches up")
         .expect("the chat streams")
     {
-        match event.of {
+        match event.event.and_then(|event| event.of) {
             Some(session_event::Of::Item(item)) => {
                 if let Some(old) = order.insert(item.key.clone(), item.order) {
                     items.remove(&old);

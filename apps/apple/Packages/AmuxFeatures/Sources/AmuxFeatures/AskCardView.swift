@@ -860,7 +860,7 @@ private struct AskBodyView: View {
 
     private func stops(_ choice: Choice) -> Bool {
         switch choice.outcome {
-        case .denyAndStop, .deny(stops: true): true
+        case .denyAndStop: true
         default: false
         }
     }

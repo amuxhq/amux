@@ -43,7 +43,7 @@ reach a shipped binary.
 | --- | --- | --- |
 | Check and Clippy | `ubuntu-latest` | `just lint` |
 | Format | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30` |
-| Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat` |
+| Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat`, `just store-check` |
 | Test | `ubuntu-latest`, `macos-latest`, `windows-latest` | `scripts/no-update-flags.sh`, `just test -- --profile ci --exclude models` |
 | Simulated stories and doctests | `ubuntu-latest` | `just sim`, `just doctest`: what reads the same on every platform, run once |
 | Models | `ubuntu-latest`, one job per protocol model | `just test-crate models` filtered to one model's module of the integration test binary: one model at its CI bounds |
@@ -267,7 +267,8 @@ stopping at the first failure:
 | `lint` | Clippy, warnings denied |
 | `fmt-check` | Formatting, with the pinned nightly |
 | `codegen-check` | The committed protobuf output matches the schemas |
-| `proto-compat` | `amux.v1` still reads what the latest release from 0.9.0 wrote; with a ref, what that ref wrote |
+| `proto-compat` | The schemas pass buf's lint, and `amux.v1` still reads what the latest release from 0.9.0 wrote; with a ref, what that ref wrote ([`buf.yaml`](../buf.yaml)) |
+| `store-check` | No table or column the latest release from 0.9.0 had is gone or changed type, and any new column is one an existing store can take; with a ref, against that ref ([`scripts/store-check.py`](../scripts/store-check.py)) |
 | `dependency-policy` | Production and test-infrastructure dependency boundaries ([`scripts/check-dependency-policy.py`](../scripts/check-dependency-policy.py)) |
 | `deny` | No dependency has an open security advisory or is a yanked release, every licence is one [`deny.toml`](../deny.toml) allows, and every crate comes from crates.io or the rustls patch; each advisory it sets aside says why it does not reach amux |
 | `shear` | Every dependency a manifest lists is used by that crate's code; one only the code cannot show, such as a crate named only to pass on a feature, is listed in that crate's manifest as one to skip, with why |

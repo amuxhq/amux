@@ -7,12 +7,12 @@ snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_nam
 ## 2 agent_message {"envelope":"env-idle","from":"probe","text":"A2A_SOCKET_IDLE_21240"}
 effect inject env-idle via MessagingSocket
 effect reply env-idle queued
-item agent-message:656e762d69646c65 agent_message final input=env-idle at=0 text="A2A_SOCKET_IDLE_21240" envelope=656e762d69646c65
+item agent-message:656e762d69646c65 agent_message final input=env-idle at=0 text="A2A_SOCKET_IDLE_21240"
 pending [env-idle]
 ## 3 agent_message {"envelope":"env-busy","from":"probe","text":"A2A_SOCKET_BUSY_21240"}
 effect inject env-busy via MessagingSocket
 effect reply env-busy queued
-item agent-message:656e762d62757379 agent_message final input=env-busy at=0 text="A2A_SOCKET_BUSY_21240" envelope=656e762d62757379
+item agent-message:656e762d62757379 agent_message final input=env-busy at=0 text="A2A_SOCKET_BUSY_21240"
 pending [env-busy,env-idle]
 ## 4 recorded 0: fact Transcript type=custom-title
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?

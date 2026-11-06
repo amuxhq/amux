@@ -592,6 +592,11 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
     })
 }
 
+/// What a response holds, which an answer without it has lost.
+pub(crate) fn held<T>(value: Option<T>) -> anyhow::Result<T> {
+    value.ok_or_else(|| anyhow::anyhow!("the daemon's answer held nothing"))
+}
+
 /// A daemon error as a person reads it: the daemon's own message, or what
 /// a transport failure means.
 pub(crate) fn plain(status: tonic::Status) -> anyhow::Error {
@@ -648,6 +653,32 @@ mod tests {
                 assert_eq!(r#for, Some(std::time::Duration::from_secs(30 * 86_400)));
             }
             other => panic!("not a pairing: {other:?}"),
+        }
+    }
+
+    /// These names are a contract between builds: a peer over SSH runs
+    /// whichever `amux` it finds, an agent's hooks and its tool server name
+    /// the build that launched them, and an agent outlives a daemon update.
+    #[test]
+    fn amux_internal_keeps_the_names_other_builds_call() {
+        for args in [
+            &["amux", "internal", "agent", "dir"][..],
+            &[
+                "amux",
+                "internal",
+                "catalogue",
+                "claude",
+                "--command",
+                "c",
+                "--out",
+                "o",
+            ],
+            &["amux", "internal", "mcp", "dir"],
+            &["amux", "internal", "hook", "claude"],
+            &["amux", "internal", "ssh-pair"],
+            &["amux", "internal", "ssh-link"],
+        ] {
+            Cli::try_parse_from(args).unwrap_or_else(|error| panic!("{args:?}: {error}"));
         }
     }
 

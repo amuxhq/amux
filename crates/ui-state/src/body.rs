@@ -443,7 +443,7 @@ impl Usage {
     /// Whether the agent can work at all.
     pub fn state(&self) -> UsageState {
         match self {
-            Usage::Unknown => UsageState::Unknown,
+            Usage::Unknown => UsageState::Unspecified,
             Usage::Claude(usage) => usage.state(),
             Usage::Codex(usage) => usage.state(),
         }

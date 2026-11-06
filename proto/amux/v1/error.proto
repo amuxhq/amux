@@ -15,7 +15,7 @@ enum ErrorReason {
   ERROR_REASON_HOST_UNREACHABLE = 1;
   // The account's plan does not cover it, on code PERMISSION_DENIED.
   ERROR_REASON_PAYMENT_REQUIRED = 2;
-  // The far end of a link speaks another protocol version and one of the
-  // two machines needs updating, on code FAILED_PRECONDITION.
+  // The far end of a link refused this build as too old, so it needs
+  // updating, on code FAILED_PRECONDITION.
   ERROR_REASON_VERSION_MISMATCH = 3;
 }

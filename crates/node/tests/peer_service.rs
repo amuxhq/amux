@@ -319,17 +319,19 @@ async fn inventory_is_origin_only() {
         .laptop_peer()
         .await
         .agents
-        .subscribe_inventory(wire::Empty {})
+        .subscribe_inventory(wire::SubscribeInventoryRequest {})
         .await
         .unwrap()
         .into_inner();
     let mut seen = Vec::new();
-    let next = async |stream: &mut tonic::Streaming<InventoryEvent>| {
+    let next = async |stream: &mut tonic::Streaming<wire::SubscribeInventoryResponse>| {
         tokio::time::timeout(PATIENCE, stream.message())
             .await
             .expect("the inventory stream answers")
             .unwrap()
             .expect("the inventory stream stays open")
+            .event
+            .expect("a response holds an event")
     };
     loop {
         let event = next(&mut stream).await;

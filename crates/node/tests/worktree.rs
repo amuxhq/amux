@@ -261,7 +261,9 @@ async fn an_agent_created_from_another_host_gets_its_worktree_on_its_own_host() 
         .create_agent(tonic::Request::new(on_desk("from-laptop")))
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .agent
+        .unwrap();
     let expected = desk
         .data_dir
         .join(node::WORKTREES)

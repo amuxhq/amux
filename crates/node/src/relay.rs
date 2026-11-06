@@ -105,6 +105,30 @@ fn rejection(verdict: &SendInputResponse) -> Option<&Rejected> {
     }
 }
 
+/// Refuses a message the recipient could not read whole. Where a later
+/// build added a body or an attachment, this build decodes nothing in its
+/// place: delivered, it would read as an empty message, or as one with a
+/// file missing.
+fn readable(envelope: &Envelope) -> Result<(), RelayError> {
+    let refused = |detail: &str| {
+        RelayError::Rejected(Rejected {
+            refusal: Refusal::Unsupported as i32,
+            detail: Some(detail.to_owned()),
+        })
+    };
+    match &envelope.body {
+        None => Err(refused(
+            "this host can't read what the message holds; the host needs updating",
+        )),
+        Some(envelope::Body::Message(message))
+            if !attachments::all_readable(&message.attachments) =>
+        {
+            Err(refused(attachments::UNREADABLE))
+        }
+        Some(_) => Ok(()),
+    }
+}
+
 /// A refusal as an error says it: its own words, else a sentence a sending
 /// agent's model can act on. The recipient goes unnamed because the sender
 /// already knows whom it addressed.
@@ -284,6 +308,7 @@ impl ProfileRuntime {
             return self.forward_message(envelope, from, &to.host_id).await;
         }
         let id = self.own_agent(&to.agent_id).await?;
+        readable(&envelope)?;
         let sender = match &from {
             MessageFrom::Agent(caller) => {
                 Some((self.host().as_bytes().to_vec(), caller.0.to_vec()))

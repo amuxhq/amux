@@ -18,10 +18,11 @@ pub async fn run(config_path: Option<&Path>) -> Result<bool> {
     let door = connect::front_door_now(&config).await;
     let daemon = match &door {
         Some(door) => connect::installation(door.clone())
-            .get_installation(wire::Empty {})
+            .get_installation(wire::GetInstallationRequest {})
             .await
             .ok()
-            .map(|installation| installation.into_inner().version),
+            .and_then(|answer| answer.into_inner().installation)
+            .map(|installation| installation.version),
         None => None,
     };
     let supervisor = if config.supervisor {
@@ -67,7 +68,7 @@ pub async fn run(config_path: Option<&Path>) -> Result<bool> {
         && daemon.is_some()
     {
         let profiles = connect::installation(door)
-            .list_profiles(wire::Empty {})
+            .list_profiles(wire::ListProfilesRequest {})
             .await
             .map_err(crate::plain)?
             .into_inner()

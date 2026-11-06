@@ -224,8 +224,9 @@ Generate stubs with `proto` as the include root, compiling
 beside them in `proto/google/rpc`: `link.proto` imports
 `google/rpc/status.proto`, and the services import one another. A project
 that already depends on a published copy of the Google protos uses that
-instead. Request and reply types live beside their services; `Empty` is
-`amux.v1.Empty`, in `records.proto`.
+instead. Every call has its own request and response message, beside its
+service; a response around one value holds it in one field, and each response
+on a stream holds one event.
 
 Every socket speaks gRPC over plaintext HTTP/2, with no TLS and no
 credentials: only the person's own account can reach it.
@@ -447,8 +448,9 @@ and `improve`: the others are done when they happen), `skip` for "Later",
 skips every needed step, `shown` when the client shows a step,
 `sign_in_offer_shown` when it puts a one-tap sign-in in front of the
 person (`offerer` for "Also sign in" on the signed-in side, `receiver` for
-the offer on the signed-out side). Name the client in `surface` so the answer is
-counted for it; unspecified counts nothing. After a dismissal the steps
+the offer on the signed-out side). Name the client in the `amux-surface`
+request header so the answer is counted for it; with none it counts as the
+terminal. After a dismissal the steps
 carry `dismissed`: every step skipped now was skipped when the person
 dismissed, so a client stops offering to finish them; a step skipped
 afterwards clears it.

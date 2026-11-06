@@ -139,11 +139,7 @@ pub fn window() -> wire::PairingWindow {
             "192.168.1.24:7420".to_owned(),
             "100.88.14.3:7420".to_owned(),
         ],
-        cloud_url: None,
-        secret: Some(wire::pairing_window::Secret::PinAndQr(wire::PinAndQr {
-            pin: "418207".to_owned(),
-            qr_secret: vec![7; 32],
-        })),
+        pin: Some("418207".to_owned()),
         qr_link: format!("https://amux.sh/p#{invitation}"),
     }
 }

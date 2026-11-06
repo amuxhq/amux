@@ -431,6 +431,49 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
     crash(daemon, runtime).await;
 }
 
+/// A later build's body or attachment arrives here as nothing. Refused in
+/// words, it does not reach the recipient as an empty message.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_message_this_build_cannot_read_is_refused() {
+    let install = Install::new();
+    let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
+    recipient.register(&install);
+    recipient.go_live();
+    let (daemon, runtime) = start(&install, "boot-1").await;
+
+    let api = ClientApi::new(&runtime, None);
+    let cases = [
+        (
+            None,
+            "this host can't read what the message holds; the host needs updating",
+        ),
+        (
+            Some(wire::envelope::Body::Message(wire::MessageBody {
+                text: "see this".into(),
+                attachments: vec![wire::Attachment { of: None }],
+            })),
+            attachments::UNREADABLE,
+        ),
+    ];
+    for (body, words) in cases {
+        let refused = api
+            .send_message(Request::new(wire::SendMessageRequest {
+                envelope: Some(Envelope {
+                    from: None,
+                    id: b"unread".to_vec(),
+                    to: to(&recipient, &install),
+                    body,
+                    context: None,
+                }),
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(refused.code(), tonic::Code::FailedPrecondition);
+        assert_eq!(refused.message(), words);
+    }
+    crash(daemon, runtime).await;
+}
+
 /// The sender on what the recipient is handed is whoever called: the agent
 /// whose tools socket the call came in on, or the person on the profile
 /// socket. The request has nowhere to name anyone else, and what it sends
@@ -452,15 +495,17 @@ async fn send_message_sender_is_the_caller() {
         (&on_profile, b"from-the-person".as_slice()),
     ] {
         let sent = api
-            .send_message(Request::new(Envelope {
-                from: None,
-                id: id.to_vec(),
-                to: to(&recipient, &install),
-                body: Some(wire::envelope::Body::Message(wire::MessageBody {
-                    text: "a word".into(),
-                    ..Default::default()
-                })),
-                context: None,
+            .send_message(Request::new(wire::SendMessageRequest {
+                envelope: Some(Envelope {
+                    from: None,
+                    id: id.to_vec(),
+                    to: to(&recipient, &install),
+                    body: Some(wire::envelope::Body::Message(wire::MessageBody {
+                        text: "a word".into(),
+                        ..Default::default()
+                    })),
+                    context: None,
+                }),
             }))
             .await
             .unwrap();
@@ -534,7 +579,9 @@ async fn resend_with_same_id_is_one_item() {
     };
     for _ in 0..2 {
         let sent = api
-            .send_message(Request::new(request.clone()))
+            .send_message(Request::new(wire::SendMessageRequest {
+                envelope: Some(request.clone()),
+            }))
             .await
             .unwrap();
         assert_eq!(sent.get_ref().envelope_id, request.id);

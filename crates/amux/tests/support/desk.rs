@@ -109,7 +109,6 @@ impl Desk {
             answer: Some(wire::answer_onboarding_request::Answer::Dismiss(
                 wire::Empty {},
             )),
-            surface: wire::Surface::Terminal as i32,
         })
         .await
         .unwrap();

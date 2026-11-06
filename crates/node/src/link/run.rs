@@ -15,7 +15,6 @@ use bytes::Bytes;
 use daemon_core::payload::CarrierKind;
 use tokio::sync::{mpsc, oneshot, watch};
 use uuid::Uuid;
-use wire::{self, PROTOCOL_VERSION};
 
 use super::link_log::{EarlyData, LinkEvent, LinkTransition};
 use super::{QuicCarrier, read_message, write_message};
@@ -232,6 +231,10 @@ pub struct LinkCtx {
     /// The attempt this link's handshake spent of its source's limit,
     /// given back once the link is accepted.
     refund: Option<crate::resource_limits::Spent>,
+    /// A copy of what the link tells its core, for a test: a link under
+    /// test has no profile behind it.
+    #[cfg(test)]
+    told_core: Option<mpsc::UnboundedSender<daemon_core::Input>>,
 }
 
 /// A link resuming a session, served before its handshake has finished.
@@ -268,12 +271,18 @@ impl LinkCtx {
             refresh_rx: None,
             observes: None,
             refund: None,
+            #[cfg(test)]
+            told_core: None,
         }
     }
 
     /// Tells the profile's core, when the links are a profile's, what a
     /// link did or what its peer said it reaches.
     fn report(&self, input: daemon_core::Input) {
+        #[cfg(test)]
+        if let Some(told) = &self.told_core {
+            told.send(input.clone()).ok();
+        }
         if let Some(core) = self.links.core() {
             core.report(input);
         }
@@ -414,7 +423,7 @@ pub async fn run_link(mut ctx: LinkCtx, carrier: Arc<QuicCarrier>) -> Result<(),
     let peer_frame;
     let mut held_ack = None;
     let dialled = !carrier.accepted();
-    let ((peer_host, peer_instance), peer_neighbors, snapshot) = if dialled {
+    let ((peer_host, peer_instance), snapshot) = if dialled {
         // A dial to the relay wrote its Hello itself, as it started.
         let opened = carrier.take_opened();
         let wrote = opened.is_some();
@@ -440,32 +449,24 @@ pub async fn run_link(mut ctx: LinkCtx, carrier: Arc<QuicCarrier>) -> Result<(),
                 });
                 return Err(status.into());
             }
-            let frame = first.body.clone();
-            match first.body {
-                Some(wire::message::Body::HelloAck(wire::HelloAck {
-                    outcome: Some(wire::hello_ack::Outcome::Accepted(accepted)),
-                })) => {
-                    let (peer, neighbors, runtime_instance) =
-                        accept_peer_hello(&ctx, accepted, ctx.expected_peer)
-                            .map_err(protocol_status)?;
-                    Ok((frame, (peer, runtime_instance), neighbors))
-                }
-                Some(wire::message::Body::HelloAck(wire::HelloAck {
-                    outcome: Some(wire::hello_ack::Outcome::Error(error)),
-                })) => Err(protocol_status(error).into()),
-                Some(wire::message::Body::HelloAck(wire::HelloAck { outcome: None })) => {
-                    Err(tonic::Status::invalid_argument(
-                        "hello_ack is missing an accepted/error outcome",
-                    )
-                    .into())
-                }
-                _ => Err(tonic::Status::invalid_argument("expected hello_ack").into()),
-            }
+            let Some(wire::message::Body::HelloAck(wire::HelloAck {
+                accepted: Some(mut accepted),
+            })) = first.body
+            else {
+                return Err(tonic::Status::invalid_argument("expected hello_ack").into());
+            };
+            keep_neighbors_in_limits(&mut accepted.neighbors);
+            let frame = wire::message::Body::HelloAck(wire::HelloAck {
+                accepted: Some(accepted.clone()),
+            });
+            let peer =
+                accept_peer_hello(&ctx, accepted, ctx.expected_peer).map_err(protocol_status)?;
+            Ok((frame, peer))
         };
         match answered.await {
-            Ok((frame, peer, neighbors)) => {
+            Ok((frame, peer)) => {
                 peer_frame = frame;
-                (peer, neighbors, snapshot)
+                (peer, snapshot)
             }
             // A host that no longer trusts this one can say so by its
             // connection's end rather than a LinkClose: refusing this
@@ -495,8 +496,8 @@ pub async fn run_link(mut ctx: LinkCtx, carrier: Arc<QuicCarrier>) -> Result<(),
                 }
             };
         let hello_bytes = prost::Message::encoded_len(&first);
-        let Some(wire::message::Body::Hello(hello)) = first.body else {
-            write_message(&mut sink, &protocol_error_hello_ack("expected hello")).await?;
+        let Some(wire::message::Body::Hello(mut hello)) = first.body else {
+            write_message(&mut sink, &protocol_error_link_close("expected hello")).await?;
             carrier.close(wire::LinkCloseReason::ProtocolError);
             return Ok(());
         };
@@ -509,12 +510,13 @@ pub async fn run_link(mut ctx: LinkCtx, carrier: Arc<QuicCarrier>) -> Result<(),
                 "a link's hello arrived"
             );
         }
+        keep_neighbors_in_limits(&mut hello.neighbors);
         // The core records its inputs on the drive, so the credential
         // stays here.
-        peer_frame = Some(wire::message::Body::Hello(wire::Hello {
+        peer_frame = wire::message::Body::Hello(wire::Hello {
             auth_token: None,
             ..hello.clone()
-        }));
+        });
         let session = match authenticate_hello(&ctx, &hello).await {
             Ok(session) => session,
             Err(status) => {
@@ -524,12 +526,6 @@ pub async fn run_link(mut ctx: LinkCtx, carrier: Arc<QuicCarrier>) -> Result<(),
                 return Ok(());
             }
         };
-        if hello.protocol_version != PROTOCOL_VERSION {
-            let reason = wire::LinkCloseReason::VersionMismatch;
-            write_message(&mut sink, &link_close(reason)).await?;
-            carrier.close(reason);
-            return Ok(());
-        }
         if let (Some(accounts), Some(session)) = (ctx.accounts.clone(), session.as_ref()) {
             let (links, incoming) = accounts.account(session.user().user_id).await;
             ctx.links = links;
@@ -540,14 +536,14 @@ pub async fn run_link(mut ctx: LinkCtx, carrier: Arc<QuicCarrier>) -> Result<(),
         let peer = match accept_peer_hello(&ctx, hello, ctx.authenticated_peer) {
             Ok(peer) => peer,
             Err(error) => {
-                write_message(&mut sink, &error_hello_ack(error)).await?;
+                write_message(&mut sink, &refused_link_close(error)).await?;
                 carrier.close(wire::LinkCloseReason::ProtocolError);
                 return Ok(());
             }
         };
         tracing::debug!(
             peer = %peer.0.id,
-            runtime_instance = ?peer.2,
+            runtime_instance = ?peer.1,
             "accepted a link from a peer"
         );
         observed = ctx.observed(carrier.as_ref(), session.as_ref());
@@ -561,7 +557,7 @@ pub async fn run_link(mut ctx: LinkCtx, carrier: Arc<QuicCarrier>) -> Result<(),
             write_message(&mut sink, &ack).await?;
         }
         ctx.acceptor_session = session;
-        ((peer.0, peer.2), peer.1, snapshot)
+        (peer, snapshot)
     };
 
     run_established(
@@ -570,13 +566,7 @@ pub async fn run_link(mut ctx: LinkCtx, carrier: Arc<QuicCarrier>) -> Result<(),
         sink,
         source,
         held_ack,
-        (
-            peer_host,
-            peer_instance,
-            peer_neighbors,
-            dialled,
-            peer_frame,
-        ),
+        (peer_host, peer_instance, dialled, peer_frame),
         Told {
             neighbors: snapshot.into_iter().map(|host| host.id).collect(),
             addresses,
@@ -661,16 +651,10 @@ async fn run_established(
     mut sink: super::ControlSink,
     mut source: super::ControlSource,
     held_ack: Option<wire::Message>,
-    peer: (
-        Host,
-        RuntimeInstance,
-        Vec<Host>,
-        bool,
-        Option<wire::message::Body>,
-    ),
+    peer: (Host, RuntimeInstance, bool, wire::message::Body),
     mut told: Told,
 ) -> Result<(), LinkError> {
-    let (peer_host, peer_instance, _neighbors, dialled, peer_frame) = peer;
+    let (peer_host, peer_instance, dialled, peer_frame) = peer;
     if ctx
         .shutdown_rx
         .as_ref()
@@ -795,9 +779,7 @@ async fn run_established(
         first_packet_to_catch_up_ms: None,
     };
     logged.write(ctx.local_host.id());
-    if let Some(frame) = peer_frame {
-        ctx.report_frame(link, frame);
-    }
+    ctx.report_frame(link, peer_frame);
     if let Some(auth) = &ctx.connector_auth {
         ctx.report(auth.credential(link));
     }
@@ -1060,7 +1042,9 @@ async fn handle_control_body(
 ) -> ControlAction {
     match body {
         body @ (wire::message::Body::NeighborUp(_) | wire::message::Body::NeighborDown(_)) => {
-            // A neighbor announced is held to what a handshake's host is.
+            // A neighbor announced is held to what a handshake's host is,
+            // but the link stays: a later build may widen those limits, and
+            // one such host must not cut this one off from all the others.
             if let wire::message::Body::NeighborUp(up) = &body
                 && let Err(error) = up
                     .host
@@ -1068,10 +1052,8 @@ async fn handle_control_body(
                     .ok_or_else(|| "NeighborUp.host is required".to_string())
                     .and_then(host_from_wire)
             {
-                return ControlAction::ReplyAndClose(
-                    Box::new(protocol_error_link_close(error)),
-                    wire::LinkCloseReason::ProtocolError,
-                );
+                tracing::warn!(%error, "skipping a neighbor outside this build's limits");
+                return ControlAction::Continue;
             }
             ctx.report_frame(link, body);
             ControlAction::Continue
@@ -1174,14 +1156,14 @@ async fn handle_control_body(
     }
 }
 
-/// The peer a handshake's Hello names, with its neighbors and runtime
-/// instance. `expected` is the peer the carrier already proved or the dial
-/// was made to, when there is one.
+/// The peer a handshake's Hello names, with its runtime instance.
+/// `expected` is the peer the carrier already proved or the dial was made
+/// to, when there is one.
 fn accept_peer_hello(
     ctx: &LinkCtx,
     hello: wire::Hello,
     expected: Option<HostId>,
-) -> Result<(Host, Vec<Host>, RuntimeInstance), wire::Error> {
+) -> Result<(Host, RuntimeInstance), wire::Error> {
     let host = hello
         .host
         .ok_or_else(|| "Hello.host is required".to_string())
@@ -1203,11 +1185,7 @@ fn accept_peer_hello(
     }
     let runtime_instance =
         RuntimeInstance::from_wire(&hello.runtime_instance_id).map_err(invalid_argument_error)?;
-    Ok((
-        host,
-        neighbors_from_wire(hello.neighbors)?,
-        runtime_instance,
-    ))
+    Ok((host, runtime_instance))
 }
 
 /// What a host's link to the relay opens with, for its dial to write the
@@ -1233,7 +1211,6 @@ pub(crate) async fn relay_opening(
 /// This host's Hello, listing `neighbors` and the addresses in `own`.
 fn own_hello(ctx: &LinkCtx, neighbors: &[Host], own: &crate::routing::OwnAddresses) -> wire::Hello {
     wire::Hello {
-        protocol_version: PROTOCOL_VERSION,
         host: Some(host_to_wire(&ctx.local_host.snapshot())),
         neighbors: neighbors.iter().map(host_to_wire).collect(),
         auth_token: None,
@@ -1275,24 +1252,23 @@ fn accepted_hello_ack(
     hello.observed_addr = observed.map(|addr| addr.to_string());
     wire::Message {
         body: Some(wire::message::Body::HelloAck(wire::HelloAck {
-            outcome: Some(wire::hello_ack::Outcome::Accepted(hello)),
+            accepted: Some(hello),
         })),
     }
 }
 
-fn neighbors_from_wire(neighbors: Vec<wire::Host>) -> Result<Vec<Host>, wire::Error> {
-    neighbors
-        .into_iter()
-        .map(|host| host_from_wire(host).map_err(invalid_argument_error))
-        .collect()
-}
-
-fn error_hello_ack(error: wire::Error) -> wire::Message {
-    wire::Message {
-        body: Some(wire::message::Body::HelloAck(wire::HelloAck {
-            outcome: Some(wire::hello_ack::Outcome::Error(error)),
-        })),
-    }
+/// Leaves out of a handshake's list, before the core reads it, a neighbor
+/// outside this build's limits. It is skipped, not refused: a later build
+/// may widen them, and refusing would keep this host off the link until
+/// that neighbor went away.
+fn keep_neighbors_in_limits(neighbors: &mut Vec<wire::Host>) {
+    neighbors.retain(|host| {
+        host_from_wire(host.clone())
+            .inspect_err(|error| {
+                tracing::warn!(%error, "skipping a neighbor outside this build's limits");
+            })
+            .is_ok()
+    });
 }
 
 fn invalid_argument_error(message: impl Into<String>) -> wire::Error {
@@ -1492,21 +1468,17 @@ fn link_error_status(error: LinkError) -> tonic::Status {
     }
 }
 
-/// A Hello refused as malformed.
-fn protocol_error_hello_ack(message: impl Into<String>) -> wire::Message {
-    wire::Message {
-        body: Some(wire::message::Body::HelloAck(wire::HelloAck {
-            outcome: Some(wire::hello_ack::Outcome::Error(protocol_error(message))),
-        })),
-    }
-}
-
 /// A link closed for a message the protocol does not allow.
 fn protocol_error_link_close(message: impl Into<String>) -> wire::Message {
+    refused_link_close(protocol_error(message))
+}
+
+/// A link closed for the reason `error` gives: every handshake refusal.
+fn refused_link_close(error: wire::Error) -> wire::Message {
     wire::Message {
         body: Some(wire::message::Body::LinkClose(wire::LinkClose {
             reason: wire::LinkCloseReason::ProtocolError as i32,
-            error: Some(protocol_error(message)),
+            error: Some(error),
         })),
     }
 }
@@ -1575,20 +1547,23 @@ mod tests {
         }
     }
 
+    fn hello(peer: &Host, auth_token: Option<&str>) -> wire::Hello {
+        wire::Hello {
+            host: Some(host_to_wire(peer)),
+            neighbors: Vec::new(),
+            auth_token: auth_token.map(str::to_string),
+            runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
+            addrs: Vec::new(),
+            public_addr: None,
+            observed_addr: None,
+        }
+    }
+
     async fn send_hello(sink: &mut ControlSink, peer: &Host, auth_token: Option<&str>) {
         write_message(
             sink,
             &wire::Message {
-                body: Some(wire::message::Body::Hello(wire::Hello {
-                    protocol_version: PROTOCOL_VERSION,
-                    host: Some(host_to_wire(peer)),
-                    neighbors: Vec::new(),
-                    auth_token: auth_token.map(str::to_string),
-                    runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
-                    addrs: Vec::new(),
-                    public_addr: None,
-                    observed_addr: None,
-                })),
+                body: Some(wire::message::Body::Hello(hello(peer, auth_token))),
             },
         )
         .await
@@ -1600,7 +1575,7 @@ mod tests {
         assert!(matches!(
             ack.body,
             Some(wire::message::Body::HelloAck(wire::HelloAck {
-                outcome: Some(wire::hello_ack::Outcome::Accepted(_)),
+                accepted: Some(_),
             }))
         ));
     }
@@ -1944,45 +1919,114 @@ mod tests {
         own.abort();
     }
 
+    /// A neighbor list from a later build, which lets a host carry more
+    /// than this one allows, with the id of the one neighbor this build
+    /// can take.
+    fn neighbors_past_this_builds_limits() -> (Vec<wire::Host>, Vec<u8>) {
+        let mut wide = host_to_wire(&host(3));
+        wide.version = "1".repeat(1024);
+        let good = host_to_wire(&host(4));
+        let id = good.host_id.clone();
+        (vec![wide, good], id)
+    }
+
+    /// The ids of the neighbors the core is told of by the handshake.
+    async fn neighbors_the_core_hears(
+        heard: &mut mpsc::UnboundedReceiver<daemon_core::Input>,
+    ) -> Vec<Vec<u8>> {
+        loop {
+            let input = heard.recv().await.expect("a frame for the core");
+            let daemon_core::Input::LinkControl { frame, .. } = input else {
+                continue;
+            };
+            let neighbors = match frame.body {
+                Some(wire::message::Body::Hello(hello)) => hello.neighbors,
+                Some(wire::message::Body::HelloAck(wire::HelloAck {
+                    accepted: Some(accepted),
+                })) => accepted.neighbors,
+                _ => continue,
+            };
+            return neighbors.into_iter().map(|host| host.host_id).collect();
+        }
+    }
+
+    /// The core lists what a handshake names, so a neighbor this build
+    /// would not take has to be gone before the frame reaches it.
     #[tokio::test]
-    async fn a_peer_sharing_no_protocol_version_is_refused_as_needing_an_update() {
-        let local = host(1);
+    async fn an_accepted_link_keeps_a_neighbor_past_its_limits_from_the_core() {
         let peer = host(2);
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
-        let (connector_carrier, acceptor_carrier) = carrier_pair().await;
-        let ctx = LinkCtx::new_live(LiveLocalHost::new(local), links.clone())
-            .with_authenticated_peer(peer.id);
-        let task = tokio::spawn(run_link(ctx, acceptor_carrier.clone()));
-        let (mut sink, mut source) = connector_carrier.control();
+        let (dialled, accepted) = carrier_pair().await;
+        let (told, mut heard) = mpsc::unbounded_channel();
+        let mut ctx = LinkCtx::new_live(LiveLocalHost::new(host(1)), links.clone());
+        ctx.told_core = Some(told);
+        let task = tokio::spawn(run_link(ctx, accepted));
+        let (mut sink, mut source) = dialled.control();
+        let (neighbors, good) = neighbors_past_this_builds_limits();
 
         write_message(
             &mut sink,
             &wire::Message {
                 body: Some(wire::message::Body::Hello(wire::Hello {
-                    protocol_version: PROTOCOL_VERSION + 1,
-                    host: Some(host_to_wire(&peer)),
-                    neighbors: Vec::new(),
-                    auth_token: None,
-                    runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
-                    addrs: Vec::new(),
-                    public_addr: None,
-                    observed_addr: None,
+                    neighbors,
+                    ..hello(&peer, None)
                 })),
             },
         )
         .await
         .unwrap();
-        let close = expect_link_close(&mut source, wire::LinkCloseReason::VersionMismatch).await;
+
+        expect_accepted(&mut source).await;
+        assert!(linked(&links, peer.id).await, "the link stands");
+        assert_eq!(neighbors_the_core_hears(&mut heard).await, [good]);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn a_dialled_link_keeps_a_neighbor_past_its_limits_from_the_core() {
+        let peer = host(2);
+        let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
+        let (dialled, accepted) = carrier_pair().await;
+        let (told, mut heard) = mpsc::unbounded_channel();
+        let mut ctx = LinkCtx::new_live(LiveLocalHost::new(host(1)), links.clone());
+        ctx.told_core = Some(told);
+        let task = tokio::spawn(run_link(ctx, dialled));
+        let (mut sink, mut source) = accepted.control();
+        let (neighbors, good) = neighbors_past_this_builds_limits();
+
+        let said = read_message(&mut source).await.unwrap().unwrap();
+        assert!(matches!(said.body, Some(wire::message::Body::Hello(_))));
+        write_message(
+            &mut sink,
+            &wire::Message {
+                body: Some(wire::message::Body::HelloAck(wire::HelloAck {
+                    accepted: Some(wire::Hello {
+                        neighbors,
+                        ..hello(&peer, None)
+                    }),
+                })),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(neighbors_the_core_hears(&mut heard).await, [good]);
+        assert!(linked(&links, peer.id).await, "the link stands");
+        task.abort();
+    }
+
+    /// No build refuses another this way yet. A later relay may refuse a
+    /// build too old for it, and this build must word that as an update.
+    #[test]
+    fn a_far_end_that_refuses_this_build_as_too_old_reads_as_needing_an_update() {
+        let close = wire::LinkClose {
+            reason: wire::LinkCloseReason::VersionMismatch as i32,
+            error: None,
+        };
         assert_eq!(
             link_close_status(&close).map(|status| status.message().to_owned()),
             Some("the other machine needs updating".to_owned())
         );
-        assert_eq!(
-            acceptor_carrier.closed().await,
-            wire::LinkCloseReason::VersionMismatch
-        );
-        task.await.unwrap().unwrap();
-        assert!(!linked(&links, peer.id).await);
     }
 
     #[tokio::test(start_paused = true)]
@@ -2132,7 +2176,7 @@ mod tests {
             let (mut sink, mut source) = connector_carrier.control();
             send_hello(&mut sink, &peer, None).await;
             let Some(wire::message::Body::HelloAck(wire::HelloAck {
-                outcome: Some(wire::hello_ack::Outcome::Accepted(accepted)),
+                accepted: Some(accepted),
             })) = read_message(&mut source).await.unwrap().unwrap().body
             else {
                 panic!("the host accepts its peer");

@@ -125,7 +125,7 @@ pub mod harness {
 
     pub use crate::auth::claims::Tier;
     pub use crate::discovery::{Advertisement, Discovery, DiscoveryEvent, ScriptedDiscovery};
-    pub use crate::identity::device_key_path;
+    pub use crate::identity::{device_key_path, load_or_create_device_identity_in};
     pub use crate::link::ByteStream;
     pub use crate::link::relay_host::RelayHost;
     pub use crate::link::run::{AuthenticatedLinkUser, LinkTokenAuthenticator};
@@ -155,4 +155,3 @@ pub use link::validation::CLIENT_TOKENS_DIR;
 /// This binary's version, as stamped: the one it writes into every spec.
 pub use release::version;
 pub use transport::{create_tls_acceptor, relay_quic_server_config};
-pub use wire::PROTOCOL_VERSION;

@@ -94,6 +94,12 @@ malformed body) stays in the text exactly as written and is reported with its
 byte offset, and scanning resumes just after its opening marker, so a later
 valid element is still found. A stray U+FFFC in the text itself is replaced
 with U+FFFD and reported. The parser never drops text.
+
+An attachment kind a later build added decodes here as no kind at all, and
+`attachments::format` would drop it without a word, so a send holding one is
+refused rather than delivered short: by the interpreter for a prompt, since a
+daemon never reads one, and by the recipient's daemon for a message or a first
+prompt. The client puts the words back in the composer with the reason.
 `attachments::validate` checks a positioned value's shape: one placeholder
 per attachment, every attachment set, every blob named by a 32-byte hash.
 

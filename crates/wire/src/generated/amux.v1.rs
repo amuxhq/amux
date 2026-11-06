@@ -1096,8 +1096,8 @@ pub enum ExitCause {
     /// The process ended while a daemon watched, and its journal does not say
     /// why.
     EndedUnexpectedly = 10,
-    /// The provider process ended on its own with a clean status: a person
-    /// quit it where it runs.
+    /// The provider process ended on its own with a clean status, as it does
+    /// when a person quits it in its terminal.
     Quit = 11,
 }
 impl ExitCause {

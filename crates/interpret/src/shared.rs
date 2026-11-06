@@ -866,6 +866,9 @@ impl<A: OpenAsk> Shared<A> {
         if !self.turn_on_reflection {
             self.busy = true;
             self.turn.begin(self.now_ms);
+            // A turn that never reaches the model, as a local command's
+            // doesn't, starts no provider turn to clear this.
+            self.trouble = None;
         }
     }
 

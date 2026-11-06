@@ -82,12 +82,15 @@ async fn session<F: Future<Output = ()>>(
         Err(status) => return refused(&status),
     };
     loop {
-        let event = match stream.message().await {
-            Ok(Some(event)) => event,
+        match stream.message().await {
+            Ok(Some(response)) => {
+                if let Some(event) = response.event {
+                    answer(event).await;
+                }
+            }
             Ok(None) => return Answer::Ended,
             Err(_) => return Answer::Failed(PeerFailure::Uncertain),
-        };
-        answer(event).await;
+        }
     }
 }
 
@@ -129,7 +132,7 @@ async fn inventory<F: Future<Output = ()>>(
             (
                 client
                     .agents
-                    .subscribe_inventory(wire::Empty {})
+                    .subscribe_inventory(wire::SubscribeInventoryRequest {})
                     .await
                     .map(|response| response.into_inner()),
                 None,
@@ -146,10 +149,11 @@ async fn inventory<F: Future<Output = ()>>(
     tracing::debug!(%peer, "subscribed to the host's inventory");
     loop {
         let event = match stream.message().await {
-            Ok(Some(event)) => event,
+            Ok(Some(response)) => response.event,
             Ok(None) => return Answer::Ended,
             Err(_) => return Answer::Failed(PeerFailure::Uncertain),
         };
+        let Some(event) = event else { continue };
         if matches!(event.of, Some(wire::inventory_event::Of::CaughtUp(_)))
             && let Some(caught_up) = catch_up.take()
         {

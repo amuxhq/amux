@@ -15,8 +15,7 @@ pub(crate) fn invalid_argument(message: impl Into<String>) -> Error {
     error(ErrorCode::InvalidArgument, message)
 }
 
-/// The one break-glass refusal: the two ends of a link speak different
-/// protocol versions.
+/// The one break-glass refusal: a far end will not serve this build.
 pub(crate) fn version_mismatch() -> Error {
     Error::because(
         wire::ErrorReason::VersionMismatch,

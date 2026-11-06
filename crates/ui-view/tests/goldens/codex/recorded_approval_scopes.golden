@@ -6,7 +6,7 @@
   composer Send activity=Some(Running { key: "exec-1e412a46-6257-4604-ae53-369b6288e75d" }) queue=[] underway=[] refused=[]
 ## 64 recorded 63: fact Rpc method=item/commandExecution/requestApproval
   ask 0 -> "exec-1e412a46-6257-4604-ae53-369b6288e75d" 1/1 Open
-    choices AllowOnce*, AllowSimilar { prefix: ["touch", "first.txt"] }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowSimilar { prefix: ["touch", "first.txt"] }, Deny, DenyAndStop
     body Command { command: "touch first.txt", cwd: "<MACHINE_PATH>", reason: "Allow creating first.txt in the read-only workspace?", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 66 recorded 65: input stdin-9
@@ -18,7 +18,7 @@
   composer Send activity=Some(Running { key: "exec-edaf930d-4144-4c2f-a080-7fe7c85664ae" }) queue=[] underway=[] refused=[]
 ## 79 recorded 78: fact Rpc method=item/fileChange/requestApproval
   ask 1 -> "exec-edaf930d-4144-4c2f-a080-7fe7c85664ae" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: ["<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowAlways { subjects: ["<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session }, Deny, DenyAndStop
     body Edit { path: "<MACHINE_PATH>", files: 1, added: 1, removed: 0, lines: [Line(PatchLine { number: Some(1), kind: Added, text: "one" })], line: Some(1), reason: "", created: Some(true) }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 81 recorded 80: input stdin-10

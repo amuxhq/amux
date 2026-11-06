@@ -30,21 +30,21 @@ message ClaudeItem {
     ToolCall tool = 4;
     Turn turn = 5;
     Compaction compaction = 6;
-    AgentMessage agent_message = 9;
-    ApiError api_error = 10;
-    Boundary boundary = 11;
-    SlashOutput slash = 12;
-    Unrecognized unrecognized = 13;
+    AgentMessage agent_message = 7;
+    ApiError api_error = 8;
+    Boundary boundary = 9;
+    SlashOutput slash = 10;
+    Unrecognized unrecognized = 11;
     // A prompt delivered into the running turn; the text is the envelope's.
-    Steer steer = 14;
+    Steer steer = 12;
     // An ask that is its own row: a tool server's form or link, or a
     // dialog terminal Claude shows that no hook can answer.
-    AskItem ask = 15;
+    AskItem ask = 13;
     // The plan Claude declared, keyed by the call that declared it.
-    Plan plan = 16;
-    Task task = 17;
-    Status status = 18;
-    ModelSwitch model_switch = 19;
+    Plan plan = 14;
+    Task task = 15;
+    Status status = 16;
+    ModelSwitch model_switch = 17;
   }
 }
 

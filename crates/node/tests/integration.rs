@@ -23,4 +23,5 @@ mod resumption;
 mod settings;
 mod single_daemon;
 mod supervisor;
+mod upgrade;
 mod worktree;

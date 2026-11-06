@@ -205,15 +205,15 @@ impl Daemon {
         body: &wire::message::Body,
         out: &mut Vec<Output>,
     ) {
+        use wire::HelloAck;
         use wire::message::Body;
-        use wire::{HelloAck, hello_ack};
 
         let own = HostId::from_slice(self.store.own_host());
         let other = |host: HostId| Some(host) != own && host != peer;
         let (said, claimed): (Option<&wire::Host>, Vec<&wire::Host>) = match body {
             Body::Hello(hello) => (hello.host.as_ref(), hello.neighbors.iter().collect()),
             Body::HelloAck(HelloAck {
-                outcome: Some(hello_ack::Outcome::Accepted(accepted)),
+                accepted: Some(accepted),
             }) => (accepted.host.as_ref(), accepted.neighbors.iter().collect()),
             Body::NeighborUp(up) => (None, up.host.iter().collect()),
             Body::NeighborDown(down) => {

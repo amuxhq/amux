@@ -641,7 +641,7 @@ public enum ChatWords {
         case .blocked: String(localized: "reached")
         case .nearLimit: String(localized: "near")
         case .ok: String(localized: "fine")
-        case .unknown: nil
+        case .unspecified: nil
         }
         let resets = window.resetsAtMs
             .flatMap { Date(milliseconds: $0) > now ? $0 : nil }
@@ -790,7 +790,6 @@ public enum ChatWords {
 
     public static func signIn(_ view: SignInView) -> String {
         let head = switch view.state {
-        case .expired: String(localized: "Sign-in expired")
         case .failed: String(localized: "Sign-in failed")
         default: String(localized: "Signed out")
         }
@@ -853,7 +852,7 @@ public enum ChatWords {
             hosts.isEmpty
                 ? String(localized: "Allow network access")
                 : String(localized: "Allow network access to \(hosts.joined(separator: ", "))")
-        case .deny(let stops): stops ? String(localized: "Deny and stop") : String(localized: "Deny")
+        case .deny: String(localized: "Deny")
         case .denyAndStop: String(localized: "Deny and stop")
         case .approvePlan(let mode, let modeName):
             mode.isEmpty

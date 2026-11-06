@@ -85,9 +85,12 @@ impl Fleet {
     }
 }
 
-type Events = Pin<Box<dyn futures_util::Stream<Item = Result<InventoryEvent, Status>> + Send>>;
-type Sessions =
-    Pin<Box<dyn futures_util::Stream<Item = Result<wire::SessionEvent, Status>> + Send>>;
+type Events = Pin<
+    Box<dyn futures_util::Stream<Item = Result<wire::SubscribeInventoryResponse, Status>> + Send>,
+>;
+type Sessions = Pin<
+    Box<dyn futures_util::Stream<Item = Result<wire::SubscribeSessionResponse, Status>> + Send>,
+>;
 
 #[tonic::async_trait]
 impl AgentService for Fleet {
@@ -95,20 +98,22 @@ impl AgentService for Fleet {
 
     async fn subscribe_inventory(
         &self,
-        _: Request<wire::Empty>,
+        _: Request<wire::SubscribeInventoryRequest>,
     ) -> Result<Response<Events>, Status> {
         self.record(Call::Inventory);
-        let mut events = self
+        let events = self
             .hosts
             .iter()
             .cloned()
             .map(inventory_event::Of::Host)
             .chain(self.agents.iter().cloned().map(inventory_event::Of::Agent))
-            .map(|of| Ok(InventoryEvent { of: Some(of) }))
+            .chain([inventory_event::Of::CaughtUp(Default::default())])
+            .map(|of| {
+                Ok(wire::SubscribeInventoryResponse {
+                    event: Some(InventoryEvent { of: Some(of) }),
+                })
+            })
             .collect::<Vec<_>>();
-        events.push(Ok(InventoryEvent {
-            of: Some(inventory_event::Of::CaughtUp(Default::default())),
-        }));
         // A subscription stays open after CaughtUp, as the daemon's does.
         let events = futures_util::StreamExt::chain(
             futures_util::stream::iter(events),
@@ -120,7 +125,7 @@ impl AgentService for Fleet {
     async fn resolve_agent(
         &self,
         request: Request<wire::ResolveAgentRequest>,
-    ) -> Result<Response<Row>, Status> {
+    ) -> Result<Response<wire::ResolveAgentResponse>, Status> {
         let name = request.into_inner().name;
         self.record(Call::Resolve(name.clone()));
         if self.ambiguous.contains(&name) {
@@ -138,15 +143,18 @@ impl AgentService for Fleet {
             .iter()
             .find(|agent| agent.name == name)
             .cloned()
-            .map(Response::new)
+            .map(|agent| Response::new(wire::ResolveAgentResponse { agent: Some(agent) }))
             .ok_or_else(|| Status::not_found(format!("no agent named {name}")))
     }
 
     async fn send_message(
         &self,
-        request: Request<Envelope>,
+        request: Request<wire::SendMessageRequest>,
     ) -> Result<Response<SendMessageResponse>, Status> {
-        let envelope = request.into_inner();
+        let envelope = request
+            .into_inner()
+            .envelope
+            .expect("the request holds an envelope");
         self.record(Call::Send(envelope.clone()));
         self.severed().await?;
         if let Some(status) = &self.refuse_send {
@@ -160,7 +168,7 @@ impl AgentService for Fleet {
     async fn create_agent(
         &self,
         request: Request<CreateAgentRequest>,
-    ) -> Result<Response<Row>, Status> {
+    ) -> Result<Response<wire::CreateAgentResponse>, Status> {
         let request = request.into_inner();
         self.record(Call::Create(Box::new(request.clone())));
         self.severed().await?;
@@ -178,46 +186,50 @@ impl AgentService for Fleet {
             None => HERE.to_vec(),
         };
         let name = request.name.clone().unwrap_or_else(|| "quiet-otter".into());
-        Ok(Response::new(row(&request.agent_id, &host, &name)))
+        Ok(Response::new(wire::CreateAgentResponse {
+            agent: Some(row(&request.agent_id, &host, &name)),
+        }))
     }
 
     async fn rename_agent(
         &self,
         _: Request<wire::RenameAgentRequest>,
-    ) -> Result<Response<Row>, Status> {
+    ) -> Result<Response<wire::RenameAgentResponse>, Status> {
         Err(Status::unimplemented("rename"))
     }
 
     async fn file_agent(
         &self,
         request: Request<wire::FileAgentRequest>,
-    ) -> Result<Response<Row>, Status> {
+    ) -> Result<Response<wire::FileAgentResponse>, Status> {
         self.record(Call::Stop(request.into_inner()));
         self.severed().await?;
         match &self.refuse_stop {
             Some(status) => Err(status.clone()),
-            None => Ok(Response::new(Row::default())),
+            None => Ok(Response::new(wire::FileAgentResponse {
+                agent: Some(Row::default()),
+            })),
         }
     }
 
     async fn resume_agent(
         &self,
         _: Request<wire::ResumeAgentRequest>,
-    ) -> Result<Response<Row>, Status> {
+    ) -> Result<Response<wire::ResumeAgentResponse>, Status> {
         Err(Status::unimplemented("resume"))
     }
 
     async fn delete_agent(
         &self,
         _: Request<wire::DeleteAgentRequest>,
-    ) -> Result<Response<wire::Empty>, Status> {
+    ) -> Result<Response<wire::DeleteAgentResponse>, Status> {
         Err(Status::unimplemented("delete"))
     }
 
     async fn put_blob(
         &self,
         _: Request<wire::PutBlobRequest>,
-    ) -> Result<Response<wire::BlobRef>, Status> {
+    ) -> Result<Response<wire::PutBlobResponse>, Status> {
         Err(Status::unimplemented("put_blob"))
     }
 
@@ -231,7 +243,7 @@ impl AgentService for Fleet {
     async fn get_diff(
         &self,
         _: Request<wire::GetDiffRequest>,
-    ) -> Result<Response<wire::Diff>, Status> {
+    ) -> Result<Response<wire::GetDiffResponse>, Status> {
         Err(Status::unimplemented("diff"))
     }
 
@@ -279,21 +291,21 @@ impl SessionService for Fleet {
     async fn get_item(
         &self,
         _: Request<wire::GetItemRequest>,
-    ) -> Result<Response<wire::Item>, Status> {
+    ) -> Result<Response<wire::GetItemResponse>, Status> {
         Err(Status::unimplemented("get"))
     }
 
     async fn update_draft(
         &self,
         _: Request<wire::UpdateDraftRequest>,
-    ) -> Result<Response<wire::Draft>, Status> {
+    ) -> Result<Response<wire::UpdateDraftResponse>, Status> {
         Err(Status::unimplemented("save_draft"))
     }
 
     async fn get_draft(
         &self,
         _: Request<wire::GetDraftRequest>,
-    ) -> Result<Response<wire::Draft>, Status> {
+    ) -> Result<Response<wire::GetDraftResponse>, Status> {
         Err(Status::unimplemented("get_draft"))
     }
 }
@@ -645,7 +657,7 @@ async fn hosts_lists_trusted_hosts_and_this_one() {
 }
 
 /// The envelope carries no sender: the daemon fills it from the socket the
-/// call arrived on. The answer is the id the interpreter reads.
+/// call arrived on. The model is answered the envelope's id.
 #[tokio::test(flavor = "multi_thread")]
 async fn send_resolves_the_recipient_and_answers_the_envelope_id() {
     let mut mcp = Mcp::start().await;
@@ -1107,15 +1119,10 @@ async fn the_harness_runs_the_tool_server_from_the_install_path(kind: Kind) {
         .iter()
         .map(|(item, drawn)| match drawn {
             Drawn::Message(message) => format!(
-                "message to {} {:?} {} {} {}",
+                "message to {} {:?} {} {}",
                 message.to,
                 message.send_state(),
                 item.text,
-                if message.envelope_id == sent.id {
-                    "with the envelope id"
-                } else {
-                    "without it"
-                },
                 message.rejection
             ),
             Drawn::Tool(name) => format!("tool row {name}"),
@@ -1124,8 +1131,8 @@ async fn the_harness_runs_the_tool_server_from_the_install_path(kind: Kind) {
     assert_eq!(
         summary,
         [
-            "message to reviewer Sent Ready for review. with the envelope id ",
-            "message to ghost Rejected Anyone? without it no agent named ghost",
+            "message to reviewer Sent Ready for review. ",
+            "message to ghost Rejected Anyone? no agent named ghost",
         ],
         "{kind:?}"
     );

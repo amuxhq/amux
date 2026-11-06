@@ -69,6 +69,12 @@ fn question() -> Step {
     })
 }
 
+fn sending(envelope: wire::Envelope) -> Request<wire::SendMessageRequest> {
+    Request::new(wire::SendMessageRequest {
+        envelope: Some(envelope),
+    })
+}
+
 /// A message as an agent's tool server submits it.
 fn message(id: &[u8], to: &AgentRef, text: &str) -> wire::Envelope {
     wire::Envelope {
@@ -275,6 +281,26 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
         ..CreateAgentRequest::default()
     };
 
+    // An attachment arm this host's build does not know decodes as no arm.
+    let unreadable = tools
+        .create_agent(Request::new(CreateAgentRequest {
+            initial_prompt: Some(wire::PromptSubmission {
+                input_id: b"first".to_vec(),
+                prompt: Some(wire::PromptInput {
+                    text: "see this".into(),
+                    attachments: vec![wire::Attachment { of: None }],
+                }),
+            }),
+            ..request("desk")
+        }))
+        .await
+        .unwrap_err();
+    assert_eq!(unreadable.code(), Code::FailedPrecondition);
+    assert_eq!(
+        wire_error(&unreadable).message,
+        "one of its attachments is of a kind this host can't read; the host needs updating"
+    );
+
     let refused = tools
         .create_agent(Request::new(request("attic")))
         .await
@@ -383,7 +409,9 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
         .create_agent(Request::new(request("DESK")))
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .agent
+        .unwrap();
     assert_eq!(named.host_id, net.host("desk").unwrap().host_id.as_bytes());
     assert_eq!(named.cwd, lead_cwd);
     println!("spawn on \"desk\" or \"DESK\" naming no directory: the child starts in {lead_cwd}");
@@ -459,7 +487,7 @@ async fn stop_and_send_are_lineage_checked_across_hosts() {
     let refused = net
         .tools("other")
         .unwrap()
-        .send_message(Request::new(message(b"from-other", &to, "Still there?")))
+        .send_message(sending(message(b"from-other", &to, "Still there?")))
         .await
         .unwrap_err();
     assert_eq!(refused.code(), Code::FailedPrecondition);
@@ -482,7 +510,7 @@ async fn stop_and_send_are_lineage_checked_across_hosts() {
     .unwrap();
     net.tools("lead")
         .unwrap()
-        .send_message(Request::new(message(b"from-lead", &to, "Run it again.")))
+        .send_message(sending(message(b"from-lead", &to, "Run it again.")))
         .await
         .expect("the parent's send resumes its child");
     let resumed = row(&net, "server", "helper").await.unwrap();
@@ -582,8 +610,8 @@ async fn concurrent_duplicate_sends_across_hosts_yield_one_item() {
     let message = message(b"twice", &to, "Please review the survey.");
     let tools = net.tools("lead").unwrap();
     let (first, second) = tokio::join!(
-        tools.send_message(Request::new(message.clone())),
-        tools.send_message(Request::new(message)),
+        tools.send_message(sending(message.clone())),
+        tools.send_message(sending(message)),
     );
     first.expect("the first send");
     second.expect("the duplicate is answered as sent");
@@ -795,7 +823,7 @@ async fn cross_host_family_journey() {
     .unwrap();
     net.tools("lead")
         .unwrap()
-        .send_message(Request::new(message(
+        .send_message(sending(message(
             b"follow-up",
             &helper.parent(),
             "Add the flaky test to the report.",
@@ -1277,7 +1305,9 @@ async fn a_file_one_agent_sends_another_arrives_on_the_recipients_own_host() {
         .put_blob(Request::new(put(net.agent("scribe").unwrap().id)))
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .blob
+        .unwrap();
     let hash = hex(&blob.hash);
     let sender_path = net.agent_dir("scribe").unwrap().join("blobs").join(&hash);
     let element = format!(

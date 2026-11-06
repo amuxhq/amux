@@ -820,6 +820,29 @@ impl<A: OpenAsk> Shared<A> {
         self.turn_on_reflection && !self.submitted.is_empty()
     }
 
+    /// Refuses a prompt holding an attachment this build cannot read, and
+    /// says so: the kind stops here, before the prompt changes anything.
+    /// The client puts the words back in the composer with the reason.
+    pub fn refuse_unreadable(
+        &mut self,
+        emit: &mut Emit,
+        input_id: &[u8],
+        prompt: &PromptInput,
+    ) -> bool {
+        if attachments::all_readable(&prompt.attachments) {
+            return false;
+        }
+        self.refuse(
+            emit,
+            input_id,
+            Rejected {
+                refusal: Refusal::Unsupported as i32,
+                detail: Some(attachments::UNREADABLE.to_owned()),
+            },
+        );
+        true
+    }
+
     /// A person's prompt from any client. Submitted now when the provider
     /// is idle and nothing is queued ahead of it (returned, so the kind
     /// writes it to the provider), else queued; replies either way.
@@ -1361,15 +1384,11 @@ pub fn sent_message(arguments_json: &[u8], outcome: SendOutcome<'_>) -> (String,
                 .ok()
                 .and_then(|result| result.get("id")?.as_str().map(serde_pb::from_hex))
                 .and_then(Result::ok);
-            match id {
-                Some(id) => {
-                    body.envelope_id = id;
-                    body.send_state = wire::SendState::Sent as i32;
-                }
-                None => {
-                    body.send_state = wire::SendState::Rejected as i32;
-                    body.rejection = result.to_owned();
-                }
+            if id.is_some() {
+                body.send_state = wire::SendState::Sent as i32;
+            } else {
+                body.send_state = wire::SendState::Rejected as i32;
+                body.rejection = result.to_owned();
             }
         }
         SendOutcome::Failed(reason) => {
@@ -1383,7 +1402,7 @@ pub fn sent_message(arguments_json: &[u8], outcome: SendOutcome<'_>) -> (String,
 /// A usage state as goldens print it: `?` while unknown, else its name.
 pub(crate) fn describe_usage_state(state: i32) -> &'static str {
     match wire::UsageState::try_from(state).unwrap_or_default() {
-        wire::UsageState::Unknown => "?",
+        wire::UsageState::Unspecified => "?",
         wire::UsageState::Ok => "ok",
         wire::UsageState::NearLimit => "near",
         wire::UsageState::Blocked => "blocked",
@@ -1482,10 +1501,10 @@ pub(crate) fn describe_plan(plan: &wire::Plan) -> String {
 /// An agent-message body as the goldens print it; a sent one adds its
 /// recipient and how the send went.
 pub(crate) fn describe_agent_message(message: &AgentMessage) -> String {
-    let mut out = format!("envelope={}", serde_pb::to_hex(&message.envelope_id));
+    let mut out = String::new();
     if message.send_state != wire::SendState::Unspecified as i32 {
         out.push_str(&format!(
-            " to={:?} {}",
+            "to={:?} {}",
             message.to,
             message
                 .send_state()
@@ -1625,7 +1644,6 @@ pub fn agent_message_body(envelope: &Envelope) -> AgentMessage {
         None => wire::EnvelopeKind::Unspecified,
     };
     AgentMessage {
-        envelope_id: envelope.id.clone(),
         kind: kind as i32,
         from: envelope.from.clone(),
         context: envelope.context.clone().unwrap_or_default(),

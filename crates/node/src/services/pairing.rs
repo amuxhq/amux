@@ -14,7 +14,7 @@ use crate::runtime::ProfileRuntime;
 use crate::transport::{BoxedGrpcAuth, BoxedGrpcConnectInfo, PreTrustPairingReachability};
 use crate::trust::Reachability;
 
-type PairStream = Pin<Box<dyn Stream<Item = Result<wire::PairMessage, Status>> + Send>>;
+type PairStream = Pin<Box<dyn Stream<Item = Result<wire::PairResponse, Status>> + Send>>;
 
 /// This host as a pairing presents it: its id and its identity key.
 #[derive(Clone)]
@@ -71,7 +71,7 @@ impl wire::pairing_service_server::PairingService for PairingService {
 
     async fn pair(
         &self,
-        request: tonic::Request<tonic::Streaming<wire::PairMessage>>,
+        request: tonic::Request<tonic::Streaming<wire::PairRequest>>,
     ) -> Result<tonic::Response<Self::PairStream>, Status> {
         let reachability = pairing_request_reachability(&request)?;
         let Some(runtime) = self.runtime.upgrade() else {
@@ -85,6 +85,11 @@ impl wire::pairing_service_server::PairingService for PairingService {
                 request.into_inner(),
             )
             .await;
+        let replies = replies.map(|reply| {
+            reply.map(|message| wire::PairResponse {
+                message: Some(message),
+            })
+        });
         Ok(tonic::Response::new(replies.boxed()))
     }
 }

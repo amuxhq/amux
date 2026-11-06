@@ -21,7 +21,7 @@ use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
 use interpret::{Event, Interpreter};
-use models::lifecycle::RESUME_CONTINUES;
+pub use models::lifecycle::RESUME_CONTINUES;
 use models::single_daemon::{REPRODUCES, judge_step, stepped};
 use prost::Message as _;
 use store::Sqlite;

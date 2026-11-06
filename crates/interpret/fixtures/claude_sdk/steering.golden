@@ -28,7 +28,7 @@ snapshot WORKING queue=[] working_on="Plan it." at=1800000000000 asks=[] session
 ## 10 agent_message {"envelope":"e1","from":"lead","text":"Status?"}
 effect inject e1 via Stdin
 effect reply e1 queued
-item agent-message:6531 agent_message final input=e1 at=1800000000000 text="Status?" envelope=6531
+item agent-message:6531 agent_message final input=e1 at=1800000000000 text="Status?"
 pending [e1]
 ## 11 input {"id":"n3","send_now":{"target":"e1"}}
 effect reply n3 rejected:NOT_QUEUED

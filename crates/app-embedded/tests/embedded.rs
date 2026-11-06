@@ -181,8 +181,10 @@ async fn pairing_pin(net: &Net) -> (String, Vec<String>) {
         })
         .await
         .unwrap()
-        .into_inner();
-    let Some(wire::pairing_window::Secret::Pin(pin)) = started.secret else {
+        .into_inner()
+        .window
+        .unwrap();
+    let Some(pin) = started.pin else {
         panic!("the desk shows a PIN: {started:?}");
     };
     (pin, started.addrs)
@@ -393,7 +395,6 @@ fn found(desk: node::HostId, addrs: Vec<String>) -> app_runtime::values::Found {
     app_runtime::values::Found {
         host_id: desk.as_bytes().to_vec(),
         name: "desk".into(),
-        version: node::PROTOCOL_VERSION,
         addrs,
         scope: String::new(),
         pairing_open: false,

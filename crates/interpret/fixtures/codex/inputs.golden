@@ -97,7 +97,7 @@ snapshot STARTING queue=[] working_on="Try again." at=1800000000000 asks=[] thre
 incarnation_end PROVIDER_EXITED "exit code 1"
 ## 33 agent_message {"envelope":"e9","from":"lead","text":"Status?"}
 effect reply e9 queued
-item agent-message:6539 agent_message final input=e9 at=1800000000000 text="Status?" envelope=6539
+item agent-message:6539 agent_message final input=e9 at=1800000000000 text="Status?"
 pending [e9]
 ## 34 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
 effect write "{\"id\":\"amux-8\",\"method\":\"thread/inject_items\",\"params\":{\"items\":[{\"content\":[{\"text\":\"[message from agent lead]\\nStatus?\",\"type\":\"input_text\"}],\"role\":\"user\",\"type\":\"message\"}],\"threadId\":\"t1\"}}"

@@ -12,14 +12,20 @@ use tonic::{Request, Response, Status};
 use wire::agent_service_server::AgentService;
 use wire::session_service_server::SessionService;
 use wire::{
-    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, Empty, ErrorCode, FileAgentRequest,
-    GetBlobRequest, GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent, Item,
-    ListItemsRequest, ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse,
-    PutBlobRequest, RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
-    SendInputResponse, SendMessageResponse, SessionEvent, SubscribeSessionRequest,
+    CreateAgentRequest, CreateAgentResponse, DeleteAgentRequest, DeleteAgentResponse, ErrorCode,
+    FileAgentRequest, FileAgentResponse, GetBlobRequest, GetBlobResponse, GetDiffRequest,
+    GetDiffResponse, GetItemRequest, GetItemResponse, InventoryEvent, ListItemsRequest,
+    ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse, PutBlobRequest,
+    PutBlobResponse, RenameAgentRequest, RenameAgentResponse, ResolveAgentRequest,
+    ResolveAgentResponse, ResumeAgentRequest, ResumeAgentResponse, SendInputRequest,
+    SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent,
+    SubscribeInventoryRequest, SubscribeInventoryResponse, SubscribeSessionRequest,
+    SubscribeSessionResponse,
 };
 
-use crate::grpc::{EventStream, agent_id, host_id, own_catalogue, status, upgrade, wire_error};
+use crate::grpc::{
+    EventStream, agent_id, envelope_of, host_id, own_catalogue, status, upgrade, wire_error,
+};
 use crate::runtime::ProfileRuntime;
 use crate::serve::ServeError;
 use crate::transport::{BoxedGrpcAuth, BoxedGrpcConnectInfo, BoxedGrpcIo};
@@ -113,13 +119,13 @@ fn refused<T>(refusal: &str) -> Result<T, Status> {
 
 #[tonic::async_trait]
 impl AgentService for PeerApi {
-    type SubscribeInventoryStream = EventStream<InventoryEvent>;
+    type SubscribeInventoryStream = EventStream<SubscribeInventoryResponse>;
 
     /// This host's entry and this host's agents, never what this host
     /// knows of other hosts.
     async fn subscribe_inventory(
         &self,
-        request: Request<wire::Empty>,
+        request: Request<SubscribeInventoryRequest>,
     ) -> Result<Response<Self::SubscribeInventoryStream>, Status> {
         let from = Self::caller(&request)?;
         let subscription = self
@@ -129,7 +135,10 @@ impl AgentService for PeerApi {
             .map_err(|error| status(error.to_wire()))?;
         let stream = futures_util::stream::unfold(subscription, |mut subscription| async move {
             let event = subscription.next().await?;
-            Some((Ok(InventoryEvent::clone(&event)), subscription))
+            let response = SubscribeInventoryResponse {
+                event: Some(InventoryEvent::clone(&event)),
+            };
+            Some((Ok(response), subscription))
         });
         Ok(Response::new(Box::pin(stream)))
     }
@@ -137,7 +146,7 @@ impl AgentService for PeerApi {
     async fn resolve_agent(
         &self,
         request: Request<ResolveAgentRequest>,
-    ) -> Result<Response<Agent>, Status> {
+    ) -> Result<Response<ResolveAgentResponse>, Status> {
         Self::caller(&request)?;
         refused("a paired host resolves names itself")
     }
@@ -145,7 +154,7 @@ impl AgentService for PeerApi {
     async fn create_agent(
         &self,
         request: Request<CreateAgentRequest>,
-    ) -> Result<Response<Agent>, Status> {
+    ) -> Result<Response<CreateAgentResponse>, Status> {
         Self::caller(&request)?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
@@ -170,19 +179,19 @@ impl AgentService for PeerApi {
         {
             tracing::warn!(%error, "recording the first agent from a device");
         }
-        Ok(Response::new(agent))
+        Ok(Response::new(CreateAgentResponse { agent: Some(agent) }))
     }
 
     async fn rename_agent(
         &self,
         request: Request<RenameAgentRequest>,
-    ) -> Result<Response<Agent>, Status> {
+    ) -> Result<Response<RenameAgentResponse>, Status> {
         let runtime = self.own(&request, &request.get_ref().agent_id).await?;
         let request = request.into_inner();
         runtime
             .rename(agent_id(&request.agent_id)?, &request.name)
             .await
-            .map(Response::new)
+            .map(|agent| Response::new(RenameAgentResponse { agent: Some(agent) }))
             .map_err(|error| status(error.to_wire()))
     }
 
@@ -192,7 +201,7 @@ impl AgentService for PeerApi {
     async fn file_agent(
         &self,
         request: Request<FileAgentRequest>,
-    ) -> Result<Response<Agent>, Status> {
+    ) -> Result<Response<FileAgentResponse>, Status> {
         let runtime = self.own(&request, &request.get_ref().agent_id).await?;
         let request = request.into_inner();
         let Some(filing) = daemon_core::Filing::from_wire(request.filing()) else {
@@ -201,44 +210,48 @@ impl AgentService for PeerApi {
         runtime
             .file(agent_id(&request.agent_id)?, filing)
             .await
-            .map(Response::new)
+            .map(|agent| Response::new(FileAgentResponse { agent: Some(agent) }))
             .map_err(|error| status(error.to_wire()))
     }
 
     async fn resume_agent(
         &self,
         request: Request<ResumeAgentRequest>,
-    ) -> Result<Response<Agent>, Status> {
+    ) -> Result<Response<ResumeAgentResponse>, Status> {
         let runtime = self.own(&request, &request.get_ref().agent_id).await?;
         let request = request.into_inner();
-        let bootstrap = request.initial_prompt.map(crate::spec::prompt_bootstrap);
+        let bootstrap = request
+            .initial_prompt
+            .map(crate::spec::prompt_bootstrap)
+            .transpose()
+            .map_err(|error| status(error.to_wire()))?;
         runtime
             .resume(agent_id(&request.agent_id)?, bootstrap)
             .await
-            .map(Response::new)
+            .map(|agent| Response::new(ResumeAgentResponse { agent: Some(agent) }))
             .map_err(|error| status(error.to_wire()))
     }
 
     async fn delete_agent(
         &self,
         request: Request<DeleteAgentRequest>,
-    ) -> Result<Response<Empty>, Status> {
+    ) -> Result<Response<DeleteAgentResponse>, Status> {
         let runtime = self.own(&request, &request.get_ref().agent_id).await?;
         runtime
             .delete(agent_id(&request.get_ref().agent_id)?)
             .await
-            .map(|()| Response::new(Empty {}))
+            .map(|()| Response::new(DeleteAgentResponse {}))
             .map_err(|error| status(error.to_wire()))
     }
 
     async fn send_message(
         &self,
-        request: Request<wire::Envelope>,
+        request: Request<SendMessageRequest>,
     ) -> Result<Response<SendMessageResponse>, Status> {
         Self::caller(&request)?;
         // The sending daemon stamped the sender from its own caller.
         self.runtime()?
-            .send_peer_message(request.into_inner())
+            .send_peer_message(envelope_of(request.into_inner())?)
             .await
             .map(Response::new)
             .map_err(|error| status(error.to_wire()))
@@ -247,14 +260,14 @@ impl AgentService for PeerApi {
     async fn put_blob(
         &self,
         request: Request<PutBlobRequest>,
-    ) -> Result<Response<BlobRef>, Status> {
+    ) -> Result<Response<PutBlobResponse>, Status> {
         let runtime = self.own(&request, &request.get_ref().agent_id).await?;
         let request = request.into_inner();
         crate::blobs::within_limit(&request).map_err(|error| status(error.to_wire()))?;
         runtime
             .put_blob(request)
             .await
-            .map(Response::new)
+            .map(|blob| Response::new(PutBlobResponse { blob: Some(blob) }))
             .map_err(|error| status(error.to_wire()))
     }
 
@@ -273,12 +286,12 @@ impl AgentService for PeerApi {
     async fn get_diff(
         &self,
         request: Request<GetDiffRequest>,
-    ) -> Result<Response<wire::Diff>, Status> {
+    ) -> Result<Response<GetDiffResponse>, Status> {
         let runtime = self.own(&request, &request.get_ref().agent_id).await?;
         runtime
             .get_diff(request.into_inner())
             .await
-            .map(Response::new)
+            .map(|diff| Response::new(GetDiffResponse { diff: Some(diff) }))
             .map_err(|error| status(error.to_wire()))
     }
 
@@ -322,7 +335,7 @@ impl AgentService for PeerApi {
 
 #[tonic::async_trait]
 impl SessionService for PeerApi {
-    type SubscribeSessionStream = EventStream<SessionEvent>;
+    type SubscribeSessionStream = EventStream<SubscribeSessionResponse>;
 
     /// A tail, as a client asks, or what came after the revision the
     /// caller's replica holds, capped.
@@ -338,7 +351,10 @@ impl SessionService for PeerApi {
             .map_err(|error| status(error.to_wire()))?;
         let stream = futures_util::stream::unfold(subscription, |mut subscription| async move {
             let event = subscription.next().await?;
-            Some((Ok(SessionEvent::clone(&event)), subscription))
+            let response = SubscribeSessionResponse {
+                event: Some(SessionEvent::clone(&event)),
+            };
+            Some((Ok(response), subscription))
         });
         Ok(Response::new(Box::pin(stream)))
     }
@@ -355,12 +371,15 @@ impl SessionService for PeerApi {
             .map_err(|error| status(error.to_wire()))
     }
 
-    async fn get_item(&self, request: Request<GetItemRequest>) -> Result<Response<Item>, Status> {
+    async fn get_item(
+        &self,
+        request: Request<GetItemRequest>,
+    ) -> Result<Response<GetItemResponse>, Status> {
         let from = Self::caller(&request)?;
         self.runtime()?
             .peer_get_item(from, request.into_inner())
             .await
-            .map(Response::new)
+            .map(|item| Response::new(GetItemResponse { item: Some(item) }))
             .map_err(|error| status(error.to_wire()))
     }
 
@@ -379,7 +398,7 @@ impl SessionService for PeerApi {
     async fn update_draft(
         &self,
         request: Request<wire::UpdateDraftRequest>,
-    ) -> Result<Response<wire::Draft>, Status> {
+    ) -> Result<Response<wire::UpdateDraftResponse>, Status> {
         Self::caller(&request)?;
         refused("a draft is kept by its client's own machine")
     }
@@ -387,7 +406,7 @@ impl SessionService for PeerApi {
     async fn get_draft(
         &self,
         request: Request<wire::GetDraftRequest>,
-    ) -> Result<Response<wire::Draft>, Status> {
+    ) -> Result<Response<wire::GetDraftResponse>, Status> {
         Self::caller(&request)?;
         refused("a draft is kept by its client's own machine")
     }

@@ -141,7 +141,7 @@ final class ChatWordsTests: XCTestCase {
             ChatWords.choice(Choice(outcome: .allowSimilar(prefix: ["curl", "-s"]), primary: false, takesNote: false)),
             "Allow commands starting with curl -s")
         XCTAssertEqual(
-            ChatWords.choice(Choice(outcome: .deny(stops: false), primary: false, takesNote: true)), "Deny…")
+            ChatWords.choice(Choice(outcome: .deny, primary: false, takesNote: true)), "Deny…")
         XCTAssertEqual(
             ChatWords.choice(Choice(outcome: .allowNetwork(hosts: ["localhost"]), primary: false, takesNote: false)),
             "Allow network access to localhost")
@@ -221,7 +221,7 @@ final class ChatWordsTests: XCTestCase {
     func testAWindowOfUnknownUseReadsADashAndIsNeverTheFullest() {
         let now = Date(milliseconds: 1_800_000_000_000)
         let known = UsageWindowView(label: .fiveHour, state: .nearLimit, resetsAtMs: nil, usedPercent: 60)
-        let unknown = UsageWindowView(label: .named("overage"), state: .unknown, resetsAtMs: nil, usedPercent: nil)
+        let unknown = UsageWindowView(label: .named("overage"), state: .unspecified, resetsAtMs: nil, usedPercent: nil)
         XCTAssertEqual(ChatWords.used(unknown), "—")
         XCTAssertEqual(
             ChatWords.limitReached(UsageView(blocked: true, windows: [unknown, known], credits: nil), now: now),

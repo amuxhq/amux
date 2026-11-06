@@ -149,7 +149,7 @@ async fn a_relay_link_whose_credential_lapses_at_the_relay_first_comes_back_on_a
 async fn reconnect(net: &Net, host: &str, account: &str) {
     admin(net, host)
         .await
-        .sign_out(wire::Empty {})
+        .sign_out(wire::SignOutRequest {})
         .await
         .expect("the profile signs out");
     until(&format!("{host}'s relay link to close"), || async {
@@ -432,9 +432,7 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
     // interface say, gets one short try before the next.
     let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
     let started = start_pairing(&net, "porch", qr_window()).await.unwrap();
-    let Some(wire::pairing_window::Secret::QrSecret(secret)) = started.secret else {
-        panic!("a QR window hands out a secret");
-    };
+    let secret = qr_secret_of(&started);
     let mut addrs = vec![silent.local_addr().unwrap().to_string()];
     addrs.extend(started.addrs.clone());
     let begun = tokio::time::Instant::now();
@@ -476,13 +474,7 @@ async fn a_pairing_rerun_after_the_daemon_restarts_opens_a_fresh_window() {
     // The daemon crashes mid-pairing, before the PIN reaches anyone.
     net.kill_daemon("desk").await.unwrap();
     net.restart_daemon("desk").await.unwrap();
-    let open = admin(&net, "desk")
-        .await
-        .get_pairing_status(wire::Empty {})
-        .await
-        .unwrap()
-        .into_inner()
-        .active;
+    let open = pairing_status(&net, "desk").await.active;
     assert!(!open, "no window outlives the daemon that opened it");
 
     // The person runs it again: a window opens, not a refusal, and its PIN
@@ -626,7 +618,6 @@ fn advert(net: &Net, host: &str, addr: std::net::SocketAddr, scope: &str) -> Adv
     Advertisement {
         host_id: host_id(net, host),
         name: host.to_owned(),
-        version: wire::PROTOCOL_VERSION,
         addrs: vec![addr],
         scope: scope.to_owned(),
         pairing_open: false,
@@ -1158,7 +1149,7 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
             .await
             .unwrap()
             .agents
-            .subscribe_inventory(wire::Empty {})
+            .subscribe_inventory(wire::SubscribeInventoryRequest {})
             .await
             .unwrap()
             .into_inner();
@@ -1221,9 +1212,7 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
     // with a QR secret as well as a PIN.
     let links_before = net.relay().unwrap().links("ada").await;
     let started = start_pairing(&net, "desk", qr_window()).await.unwrap();
-    let Some(wire::pairing_window::Secret::QrSecret(secret)) = started.secret else {
-        panic!("a QR window hands out a secret");
-    };
+    let secret = qr_secret_of(&started);
     let pending = begin_pair(
         &net,
         "tablet",
@@ -1318,13 +1307,11 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
         .expect_err("the desk's PIN window is still open");
     admin(&net, "desk")
         .await
-        .cancel_pairing(wire::Empty {})
+        .cancel_pairing(wire::CancelPairingRequest {})
         .await
         .unwrap();
     let qr = start_pairing(&net, "desk", qr_window()).await.unwrap();
-    let Some(wire::pairing_window::Secret::QrSecret(secret)) = qr.secret else {
-        panic!("a QR window hands out a secret");
-    };
+    let secret = qr_secret_of(&qr);
     let across_qr = begin_pair(
         &net,
         "shop",
@@ -1338,7 +1325,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     assert_eq!(across_qr.message(), across.message());
     admin(&net, "desk")
         .await
-        .cancel_pairing(wire::Empty {})
+        .cancel_pairing(wire::CancelPairingRequest {})
         .await
         .unwrap();
     let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
@@ -1370,7 +1357,9 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
         })
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .profile
+        .unwrap();
     let work_profile = node::ProfileId::from_slice(&work.id).unwrap();
     let work_edge = net.profile_edge("desk", work_profile).unwrap();
     assert_ne!(work_edge.host_id(), desk);
@@ -1382,7 +1371,9 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
         .start_pairing(pin_window())
         .await
         .expect("the work profile opens its own window beside the desk's")
-        .into_inner();
+        .into_inner()
+        .window
+        .unwrap();
     let desk_start = start_pairing(&net, "desk", pin_window()).await.unwrap();
     let wrong_for_work = begin_pair(
         &net,
@@ -1459,7 +1450,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     let tunnel = edge(&net, "laptop").channel(desk).await.unwrap();
     let over_tunnel =
         wire::installation_service_client::InstallationServiceClient::new(tunnel.clone())
-            .list_profiles(wire::Empty {})
+            .list_profiles(wire::ListProfilesRequest {})
             .await
             .expect_err("no profile administration over a peer tunnel");
     assert_eq!(over_tunnel.code(), tonic::Code::Unimplemented);
@@ -1477,7 +1468,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     let on_socket = wire::installation_service_client::InstallationServiceClient::new(
         testnet::local_channel(&socket).await.unwrap(),
     )
-    .list_profiles(wire::Empty {})
+    .list_profiles(wire::ListProfilesRequest {})
     .await
     .expect_err("no installation administration on a profile's socket");
     assert_eq!(on_socket.code(), tonic::Code::Unimplemented);
@@ -1490,12 +1481,13 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
         let mut client = wire::client_stubs(testnet::local_channel(socket).await.unwrap());
         let mut events = client
             .agents
-            .subscribe_inventory(wire::Empty {})
+            .subscribe_inventory(wire::SubscribeInventoryRequest {})
             .await
             .unwrap()
             .into_inner();
         let first = loop {
-            match events.message().await.unwrap().unwrap().of {
+            let response = events.message().await.unwrap().unwrap();
+            match response.event.and_then(|event| event.of) {
                 Some(wire::inventory_event::Of::Host(host)) if host.host_id() == own.as_bytes() => {
                     break host;
                 }
@@ -1672,7 +1664,7 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
         .await
         .unwrap()
         .agents
-        .subscribe_inventory(wire::Empty {})
+        .subscribe_inventory(wire::SubscribeInventoryRequest {})
         .await
         .unwrap()
         .into_inner();
@@ -1722,7 +1714,8 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
             .expect("the held inventory to show the new agent")
             .expect("the held inventory is still open")
             .expect("the held inventory is still open");
-        if let Some(wire::inventory_event::Of::Agent(agent)) = event.of
+        if let Some(wire::inventory_event::Of::Agent(agent)) =
+            event.event.and_then(|event| event.of)
             && agent.agent_id == spawned.agent_id
         {
             break;
@@ -1820,7 +1813,7 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     answers.push((
         "SendMessage with no sender or recipient",
         peer.agents
-            .send_message(wire::Envelope::default())
+            .send_message(wire::SendMessageRequest::default())
             .await
             .map(|_| ()),
     ));
@@ -1962,7 +1955,7 @@ async fn a_subscriber_that_stops_reading_is_closed_while_one_beside_it_keeps_its
                 .await
                 .map_err(|status| format!("the reader's stream failed: {status:?}"))?
                 .ok_or("the reader's stream ended")?;
-            match event.of {
+            match event.event.and_then(|event| event.of) {
                 Some(wire::session_event::Of::Lagged(_)) => {
                     return Err("the reader was told it lagged".to_owned());
                 }
@@ -1997,7 +1990,12 @@ async fn a_subscriber_that_stops_reading_is_closed_while_one_beside_it_keeps_its
     };
     let lagged = seen
         .iter()
-        .position(|event| matches!(event.of, Some(wire::session_event::Of::Lagged(_))))
+        .position(|response: &wire::SubscribeSessionResponse| {
+            matches!(
+                response.event.as_ref().and_then(|event| event.of.as_ref()),
+                Some(wire::session_event::Of::Lagged(_))
+            )
+        })
         .expect("the stalled subscriber is told it lagged");
     assert_eq!(lagged, seen.len() - 1, "nothing follows Lagged");
     println!(
@@ -2028,13 +2026,13 @@ async fn bind(
             ..wire::BindProfileRequest::default()
         })
         .await
-        .map(tonic::Response::into_inner)
+        .map(|answer| answer.into_inner().profile.expect("a bound profile"))
 }
 
 async fn profile_info(net: &Net, host: &str, profile: &[u8]) -> wire::Profile {
     door(net, host)
         .await
-        .list_profiles(wire::Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .unwrap()
         .into_inner()
@@ -2052,7 +2050,9 @@ async fn create(net: &Net, host: &str, label: &str) -> (Vec<u8>, std::sync::Arc<
         })
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .profile
+        .unwrap();
     let edge = net
         .profile_edge(host, node::ProfileId::from_slice(&info.id).unwrap())
         .unwrap();
@@ -2074,12 +2074,12 @@ async fn an_agent_created_from_a_paired_device_finishes_the_first_agent_step() {
     .unwrap();
     let mut steps = door(&net, "desk")
         .await
-        .subscribe_onboarding(wire::OnboardingRequest::default())
+        .subscribe_onboarding(wire::SubscribeOnboardingRequest::default())
         .await
         .unwrap()
         .into_inner();
     let first_agent = |onboarding: &wire::Onboarding| onboarding.steps[5].state();
-    let now = steps.message().await.unwrap().unwrap();
+    let now = steps.message().await.unwrap().unwrap().onboarding.unwrap();
     assert_eq!(first_agent(&now), wire::StepState::Needed);
 
     net.spawn(testnet::AgentDecl::new("local", "desk").prompt("Hello."))
@@ -2087,13 +2087,15 @@ async fn an_agent_created_from_a_paired_device_finishes_the_first_agent_step() {
         .unwrap();
     let after_local = door(&net, "desk")
         .await
-        .subscribe_onboarding(wire::OnboardingRequest::default())
+        .subscribe_onboarding(wire::SubscribeOnboardingRequest::default())
         .await
         .unwrap()
         .into_inner()
         .message()
         .await
         .unwrap()
+        .unwrap()
+        .onboarding
         .unwrap();
     assert_eq!(first_agent(&after_local), wire::StepState::Needed);
     let work = net
@@ -2116,6 +2118,8 @@ async fn an_agent_created_from_a_paired_device_finishes_the_first_agent_step() {
         .await
         .expect("the steps move")
         .unwrap()
+        .unwrap()
+        .onboarding
         .unwrap();
     assert_eq!(first_agent(&moved), wire::StepState::Done, "{moved:?}");
 
@@ -2153,7 +2157,7 @@ async fn an_unnamed_sign_in_takes_the_only_profile_with_what_it_holds() {
                     ..wire::BindProfileRequest::default()
                 })
                 .await
-                .map(tonic::Response::into_inner)
+                .map(|answer| answer.into_inner().profile.unwrap())
         }
     };
     let signed = unnamed(testnet::Relay::login("ada"))
@@ -2288,7 +2292,7 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     let key = edge(&net, "desk").public_key().to_vec();
     admin(&net, "desk")
         .await
-        .sign_out(wire::Empty {})
+        .sign_out(wire::SignOutRequest {})
         .await
         .unwrap();
     until("Ada's relay link to close", || async {
@@ -2328,7 +2332,9 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
         })
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .profile
+        .unwrap();
     assert_eq!(again.id, main);
     until("Ada's relay link after the restart", || async {
         let links = net.relay().unwrap().links("ada").await;
@@ -2363,7 +2369,7 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
         async move {
             door.bind_profile(request)
                 .await
-                .map(tonic::Response::into_inner)
+                .map(|answer| answer.into_inner().profile.unwrap())
         }
     };
     let (first, second) = tokio::join!(
@@ -2506,7 +2512,7 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     .await;
     admin(&net, "desk")
         .await
-        .sign_out(wire::Empty {})
+        .sign_out(wire::SignOutRequest {})
         .await
         .unwrap();
     net.sever_link("desk", "laptop").unwrap();
@@ -2590,10 +2596,12 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     // opens no pairing window.
     let identity = admin(&net, "desk")
         .await
-        .get_device_identity(wire::Empty {})
+        .get_device_identity(wire::GetDeviceIdentityRequest {})
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .identity
+        .unwrap();
     let pinned = edge(&net, "laptop")
         .trusted()
         .into_iter()
@@ -2705,7 +2713,9 @@ async fn a_direct_link_keeps_its_session_through_a_rebind_a_large_transfer_and_a
         }))
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .blob
+        .unwrap();
     let fetched = tokio::time::timeout(
         testnet::PATIENCE,
         edge(&net, "laptop")
@@ -3180,8 +3190,8 @@ async fn an_attachment_at_the_stated_limit_stores_and_one_over_it_is_refused_nam
     net.shutdown().await.unwrap();
     println!(
         "at the limit: {:?}; over it: {:?}",
-        at_limit.as_ref().map(|blob| blob.get_ref().size),
-        over.as_ref().map(|blob| blob.get_ref().size)
+        at_limit.as_ref().map(|answer| &answer.get_ref().blob),
+        over.as_ref().map(|answer| &answer.get_ref().blob)
     );
     assert!(
         at_limit.is_ok(),
@@ -3503,8 +3513,7 @@ async fn a_suspended_host_lets_go_of_its_links_and_dials_them_at_once_as_it_resu
 /// The daemon runs the device sign-in a client asks for: it hands out the
 /// code and page, asks before adopting a profile that holds an agent, and
 /// binds it once the person approves. The profile stream follows: the
-/// account's name and picture as it signs in, what it may do once read,
-/// and a new picture once the account is read again.
+/// account's name and picture as it signs in, and what it may do once read.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_sign_in_the_daemon_runs_hands_out_its_code_and_the_profile_stream_follows_the_account() {
     use wire::sign_in_event::Of;
@@ -3521,7 +3530,7 @@ async fn a_sign_in_the_daemon_runs_hands_out_its_code_and_the_profile_stream_fol
     let main = profile(&net, "desk");
     let mut door = door(&net, "desk").await;
     let mut profiles = door
-        .subscribe_profiles(wire::Empty {})
+        .subscribe_profiles(wire::SubscribeProfilesRequest {})
         .await
         .unwrap()
         .into_inner();
@@ -3540,7 +3549,14 @@ async fn a_sign_in_the_daemon_runs_hands_out_its_code_and_the_profile_stream_fol
         .await
         .unwrap()
         .into_inner();
-    let Some(Of::Code(code)) = events.message().await.unwrap().unwrap().of else {
+    let Some(Of::Code(code)) = events
+        .message()
+        .await
+        .unwrap()
+        .unwrap()
+        .event
+        .and_then(|event| event.of)
+    else {
         panic!("the code comes first");
     };
     assert_eq!(relay.device_codes(), std::slice::from_ref(&code.user_code));
@@ -3553,7 +3569,14 @@ async fn a_sign_in_the_daemon_runs_hands_out_its_code_and_the_profile_stream_fol
     relay.approve_device(&code.user_code, "ada");
 
     // The worker makes the main profile one to adopt, so the daemon asks.
-    let Some(Of::Adopt(asked)) = events.message().await.unwrap().unwrap().of else {
+    let Some(Of::Adopt(asked)) = events
+        .message()
+        .await
+        .unwrap()
+        .unwrap()
+        .event
+        .and_then(|event| event.of)
+    else {
         panic!("asked to adopt");
     };
     assert_eq!(asked.profile.expect("the profile").id, main);
@@ -3571,7 +3594,14 @@ async fn a_sign_in_the_daemon_runs_hands_out_its_code_and_the_profile_stream_fol
     })
     .await
     .unwrap();
-    let Some(Of::SignedIn(signed)) = events.message().await.unwrap().unwrap().of else {
+    let Some(Of::SignedIn(signed)) = events
+        .message()
+        .await
+        .unwrap()
+        .unwrap()
+        .event
+        .and_then(|event| event.of)
+    else {
         panic!("signed in");
     };
     assert_eq!(signed.id, main);
@@ -3584,25 +3614,11 @@ async fn a_sign_in_the_daemon_runs_hands_out_its_code_and_the_profile_stream_fol
     })
     .await;
     assert_eq!(read.account_name, "ada");
-
-    relay.set_picture("ada", "https://pictures.test/ada-2.png");
-    let refreshed = door
-        .refresh_profile(wire::RefreshProfileRequest {
-            profile_id: main.clone(),
-        })
-        .await
-        .unwrap()
-        .into_inner();
-    assert_eq!(refreshed.picture_url, "https://pictures.test/ada-2.png");
-    streamed(&mut profiles, "the new picture", |profile| {
-        profile.picture_url == "https://pictures.test/ada-2.png"
-    })
-    .await;
 }
 
 /// Reads the profile stream until its first profile is `wanted`.
 async fn streamed(
-    profiles: &mut tonic::Streaming<wire::ListProfilesResponse>,
+    profiles: &mut tonic::Streaming<wire::SubscribeProfilesResponse>,
     what: &str,
     wanted: impl Fn(&wire::Profile) -> bool,
 ) -> wire::Profile {

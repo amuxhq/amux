@@ -6,12 +6,12 @@
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
 ## 7 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","permission_suggestions":[{"behavior":"allow","destination":"localSettings","rules":[{"ruleContent":"rm -rf build","toolName":"Bash"}],"type":"addRules"}],"tool_input":{"command":"rm -rf build"},"tool_name":"Bash"}}
   ask ask:1 -> "" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: ["rm -rf build"], directories: [], mode: "", mode_name: "", scope: Project }, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, AllowAlways { subjects: ["rm -rf build"], directories: [], mode: "", mode_name: "", scope: Project }, Deny+note, DenyAndStop+note
     body Command { command: "rm -rf build", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 9 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"command":"rm -rf build"},"name":"Bash","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.100Z","type":"assistant","uuid":"a1"}}
   ask ask:1 -> "t1" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: ["rm -rf build"], directories: [], mode: "", mode_name: "", scope: Project }, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, AllowAlways { subjects: ["rm -rf build"], directories: [], mode: "", mode_name: "", scope: Project }, Deny+note, DenyAndStop+note
     body Command { command: "rm -rf build", cwd: "", reason: "", description: "" }
 ## 10 fact {"channel":"transcript","json":{"message":{"content":[{"content":"","is_error":false,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.140Z","toolUseResult":{"interrupted":false,"stderr":"","stdout":""},"type":"user","uuid":"r1"}}
   ask none
@@ -20,12 +20,12 @@
   composer Send activity=Some(Running { key: "t2" }) queue=[] underway=[] refused=[]
 ## 13 fact {"channel":"hook","json":{"amux_reply":2,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"content":"x","file_path":"notes.md"},"tool_name":"Write"}}
   ask ask:2 -> "" 1/1 Open
-    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, Deny+note, DenyAndStop+note
     body Edit { path: "notes.md", files: 1, added: 1, removed: 0, lines: [Line(PatchLine { number: None, kind: Added, text: "x" })], line: None, reason: "", created: None }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 14 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t2","input":{"content":"x","file_path":"notes.md"},"name":"Write","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.200Z","type":"assistant","uuid":"a2"}}
   ask ask:2 -> "t2" 1/1 Open
-    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, Deny+note, DenyAndStop+note
     body Edit { path: "notes.md", files: 1, added: 1, removed: 0, lines: [Line(PatchLine { number: None, kind: Added, text: "x" })], line: None, reason: "", created: None }
 ## 15 fact {"channel":"transcript","json":{"message":{"content":[{"content":"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.","is_error":true,"tool_use_id":"t2","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":…
   ask none
@@ -34,19 +34,19 @@
   composer Send activity=Some(Running { key: "t3" }) queue=[] underway=[] refused=[]
 ## 17 fact {"channel":"hook","json":{"amux_reply":3,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"file_path":"a.rs","new_string":"b","old_string":"a"},"tool_name":"Edit"}}
   ask ask:3 -> "" 1/1 Open
-    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, Deny+note, DenyAndStop+note
     body Edit { path: "a.rs", files: 1, added: 1, removed: 1, lines: [Line(PatchLine { number: None, kind: Removed, text: "a" }), Line(PatchLine { number: None, kind: Added, text: "b" })], line: None, reason: "", created: Some(false) }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 18 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t3","input":{"file_path":"a.rs","new_string":"b","old_string":"a"},"name":"Edit","type":"tool_use"}],"id":"m3","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.400Z","type":"assistant","uuid":"a3"}}
   ask ask:3 -> "t3" 1/1 Open
-    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, Deny+note, DenyAndStop+note
     body Edit { path: "a.rs", files: 1, added: 1, removed: 1, lines: [Line(PatchLine { number: None, kind: Removed, text: "a" }), Line(PatchLine { number: None, kind: Added, text: "b" })], line: None, reason: "", created: Some(false) }
 ## 19 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Moving on.","type":"text"}],"id":"m4","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.500Z","type":"assistant","uuid":"a4"}}
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 22 fact {"channel":"hook","json":{"amux_reply":4,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"command":"cargo test"},"tool_name":"Bash"}}
   ask ask:4 -> "" 1/1 Open
-    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, Deny+note, DenyAndStop+note
     body Command { command: "cargo test", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 23 fact {"channel":"transcript","json":{"message":{"content":"never mind","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:10:00.600Z","type":"user","uuid":"u2"}}

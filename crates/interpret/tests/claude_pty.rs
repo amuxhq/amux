@@ -888,6 +888,27 @@ fn transcript_row(json: serde_json::Value) -> Event {
     })
 }
 
+/// A prompt holding an attachment this build cannot read is refused with
+/// its reason, and nothing is typed: Claude would lose it without a word.
+#[test]
+fn a_prompt_with_an_attachment_this_build_cannot_read_is_refused() {
+    let (mut state, _) = started_claude();
+    let input = wire::Input::new(
+        b"x1".to_vec(),
+        wire::ClaudePtyInput {
+            of: Some(wire::claude_pty_input::Of::Prompt(wire::PromptInput {
+                text: "see this".into(),
+                attachments: vec![wire::Attachment { of: None }],
+            })),
+        },
+    );
+    let stepped = ClaudePty::step(&mut state, Event::Input(input));
+    let [Effect::Reply { verdict, .. }] = stepped.effects.as_slice() else {
+        panic!("only the refusal: {:?}", stepped.effects);
+    };
+    assert!(format!("{verdict:?}").contains(attachments::UNREADABLE));
+}
+
 fn prompt_input(id: &str, text: &str) -> Event {
     let input = ClaudePty::fixture_input(
         id.as_bytes().to_vec(),

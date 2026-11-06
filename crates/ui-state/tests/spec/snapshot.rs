@@ -48,7 +48,7 @@ fn strip_facts() -> (
             error: "401".into(),
         }],
         wire::SignIn {
-            state: wire::SignInState::Expired as i32,
+            state: wire::SignInState::Failed as i32,
             account: "me".into(),
             message: "log in".into(),
         },
@@ -169,7 +169,7 @@ fn unknown_is_explicit_and_never_depends_on_which_fact_came_first() {
             "all unknown is the empty body"
         );
         assert_eq!(state.model, None);
-        assert_eq!(state.usage.state(), wire::UsageState::Unknown);
+        assert_eq!(state.usage.state(), wire::UsageState::Unspecified);
         assert!(!state.background.known);
         assert!(!state.context.known);
         let garbage = decode_snapshot(kind, &[0xff, 0xff, 0xff]);

@@ -11,7 +11,7 @@ type Profiles = InstallationServiceClient<Channel>;
 
 pub async fn list(profiles: &mut Profiles) -> Result<()> {
     let listed = profiles
-        .list_profiles(wire::Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .map_err(crate::plain)?
         .into_inner()
@@ -38,7 +38,9 @@ pub async fn create(profiles: &mut Profiles, label: Option<String>) -> Result<()
         .create_profile(CreateProfileRequest { label })
         .await
         .map_err(crate::plain)?
-        .into_inner();
+        .into_inner()
+        .profile;
+    let created = crate::held(created)?;
     println!(
         "Created profile {} ({}).",
         created.label,
@@ -56,7 +58,9 @@ pub async fn rename(profiles: &mut Profiles, reference: &str, name: &str) -> Res
         })
         .await
         .map_err(crate::plain)?
-        .into_inner();
+        .into_inner()
+        .profile;
+    let renamed = crate::held(renamed)?;
     println!("Renamed profile {} to {}.", profile.label, renamed.label);
     Ok(())
 }

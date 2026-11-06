@@ -1,11 +1,14 @@
 //! The store's schema. A fresh file is given it whole; any other file must
-//! carry this build's version, or it is refused and left as it is. There
-//! are no migrations.
+//! carry this build's stamp, or it is refused and left as it is.
+//!
+//! The schema only grows. A later build may add a table, or a column that
+//! is nullable or has a default, and adds whichever of those a file lacks
+//! when it opens it. Nothing is dropped, renamed or retyped, so there are
+//! no migrations and an older build can still read a newer build's file.
 
-/// The version of [`SCHEMA`], kept in the file's `user_version`. It stays 1
-/// until a release promises to open stores an older one wrote (0.9.0);
-/// before then a schema change keeps the version, and stores written under
-/// the old schema are deleted by hand.
+/// The stamp in a store's `user_version`. It stays 1: because the schema
+/// only grows, every build reads every store, and adding to the schema
+/// keeps the stamp.
 pub const SCHEMA_VERSION: u32 = 1;
 
 /// The whole schema, run once on a fresh file.

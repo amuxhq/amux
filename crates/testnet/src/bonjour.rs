@@ -133,7 +133,6 @@ mod tests {
         Advertisement {
             host_id: uuid::Uuid::new_v4(),
             name: name.into(),
-            version: 4,
             addrs: vec!["127.0.0.1:9".parse().unwrap()],
             scope: "testnet-bonjour-test".into(),
             pairing_open: false,
@@ -210,7 +209,6 @@ mod tests {
         let advert = Advertisement {
             host_id: "d6e6b93c-114e-4d20-b29a-6fac10bfb78d".parse().unwrap(),
             name: "desk".into(),
-            version: 4,
             addrs: vec!["127.0.0.1:52648".parse().unwrap()],
             scope: "journey".into(),
             pairing_open: true,
@@ -225,7 +223,6 @@ mod tests {
                 "52648",
                 "amux-d6e6b93c114e4d20b29a6fac10bfb78d.local",
                 "127.0.0.1",
-                "v=4",
                 "hid=d6e6b93c-114e-4d20-b29a-6fac10bfb78d",
                 "name=desk",
                 "scope=journey",

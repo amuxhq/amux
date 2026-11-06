@@ -3,10 +3,6 @@
 //! and control frames, and the client, pairing, profile and installation
 //! services.
 
-/// Protocol version for the native-stream link handshake. It moves only for
-/// a break both ends of a link must take; see `proto/amux/v1/README.md` at the repository root.
-pub const PROTOCOL_VERSION: u32 = 1;
-
 pub mod amux {
     pub mod v1 {
         #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
@@ -35,6 +31,8 @@ pub use google::rpc;
 
 mod error;
 mod host_name;
+#[cfg(test)]
+mod pinned;
 mod said;
 pub use amux::v1::*;
 pub use host_name::{HostName, HostNameError, MAX_HOST_NAME_CHARS};
@@ -45,7 +43,7 @@ pub use rpc::Code as ErrorCode;
 pub use rpc::Status as Error;
 pub use said::{Said, Wants};
 
-/// Bound for link-control messages and application-stream prefaces.
+/// Bound for link-control messages.
 pub const MESSAGE_SIZE_LIMIT: usize = 16 * 1024 * 1024;
 /// Bound for a link's first message, its Hello or the answer to one, read
 /// before anything has checked who sent it. Its fields are bounded but for
@@ -108,6 +106,11 @@ sized_service!(
 /// the usage count of clients opened: `mac` for the Mac app. The terminal
 /// sends none.
 pub const SURFACE_HEADER: &str = "amux-surface";
+
+/// What a caller says of a method its host does not have. gRPC's own answer
+/// to an unknown method has no words, and a caller's "could not start the
+/// agent: " would end at the colon.
+pub const HOST_NEEDS_UPDATE: &str = "that host needs updating to do this";
 
 /// The client services' stubs on one profile or tools socket: what a
 /// caller that speaks gRPC directly holds.

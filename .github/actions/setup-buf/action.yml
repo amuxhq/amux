@@ -1,0 +1,39 @@
+# Installs one pinned `buf` release by its download URL and checks the binary
+# against its published SHA-256, as setup-just does and for the same reason.
+# To move to another release, change the version and the sums together, from
+# that release's sha256.txt asset, and the version in docs/BUILD.md.
+name: Set up buf
+description: Install the pinned buf release from its download URL, checked against its SHA-256.
+runs:
+  using: composite
+  steps:
+    - name: Install buf
+      shell: bash
+      env:
+        BUF_VERSION: "1.75.0"
+      run: |
+        set -euo pipefail
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-X64) target=Linux-x86_64 sum=fad1e38d6909bbb583a4da81d8c02a01046e2cd663bde7e337dd24277393764b ;;
+          Linux-ARM64) target=Linux-aarch64 sum=00eb190aa82df17f393e05b04889cc60a0b13b3259d336e21a87d5f23ab4fd26 ;;
+          macOS-ARM64) target=Darwin-arm64 sum=f71b009ebd8530b12fd85b060c6c245e15d6e5110ccc8da48d8b6fa71e59330b ;;
+          macOS-X64) target=Darwin-x86_64 sum=ff6d0979143c661d59178a032c57be883b2ac03dc9bf7d00ffca222b0354bd46 ;;
+          *) echo "no pinned buf release for $RUNNER_OS on $RUNNER_ARCH" >&2; exit 1 ;;
+        esac
+        dir="$RUNNER_TEMP/buf-$BUF_VERSION"
+        mkdir -p "$dir"
+        curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+          --output "$dir/buf" \
+          "https://github.com/bufbuild/buf/releases/download/v$BUF_VERSION/buf-$target"
+        if command -v sha256sum >/dev/null; then
+          actual=$(sha256sum "$dir/buf" | cut -d ' ' -f 1)
+        else
+          actual=$(shasum -a 256 "$dir/buf" | cut -d ' ' -f 1)
+        fi
+        if [ "$actual" != "$sum" ]; then
+          echo "buf-$target has SHA-256 $actual, not $sum" >&2
+          exit 1
+        fi
+        chmod +x "$dir/buf"
+        echo "$dir" >> "$GITHUB_PATH"
+        "$dir/buf" --version

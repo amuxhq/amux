@@ -372,7 +372,7 @@ impl EmbeddedRuntime {
             .lock()
             .unwrap_or_else(|poison| poison.into_inner())
             .as_ref()
-            .map(|daemon| daemon.front_door())
+            .map(|daemon| daemon.front_door().answering(analytics::Client::Phone))
             .ok_or(ProfileRefusal::Stopping)?;
         let registry = self.registry.clone();
         let open: client::OpenProfile = Arc::new(move |id: &[u8]| {
@@ -572,7 +572,6 @@ impl EmbeddedRuntime {
                 Some(node::harness::Advertisement {
                     host_id: node::HostId::from_slice(&found.host_id).ok()?,
                     name: found.name,
-                    version: found.version,
                     addrs: found
                         .addrs
                         .iter()

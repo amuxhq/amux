@@ -47,11 +47,6 @@ impl PairWindow {
         self.status.borrow().locked_out
     }
 
-    /// The window now.
-    pub(crate) fn status(&self) -> WindowStatus {
-        self.status.borrow().clone()
-    }
-
     /// The window now and on every change.
     pub(crate) fn watch(&self) -> tokio::sync::watch::Receiver<WindowStatus> {
         self.status.subscribe()
@@ -204,17 +199,38 @@ pub(crate) fn counted_as(failure: Failure) -> analytics::PairingFailure {
     }
 }
 
-/// Reads a pairing stream's messages into the core until it ends.
-fn read_into_core(
+/// What crosses a pairing stream, either way: the step it holds.
+trait Holds {
+    fn message(self) -> Option<PairMessage>;
+}
+
+impl Holds for wire::PairRequest {
+    fn message(self) -> Option<PairMessage> {
+        self.message
+    }
+}
+
+impl Holds for wire::PairResponse {
+    fn message(self) -> Option<PairMessage> {
+        self.message
+    }
+}
+
+/// Reads a pairing stream's messages into the core until it ends. A
+/// message holding no step says nothing the core could read, and is dropped
+/// as one it does not know would be.
+fn read_into_core<T: Holds + Send + 'static>(
     inputs: super::WeakFeed,
     session: PairingId,
-    mut inbound: tonic::Streaming<PairMessage>,
+    mut inbound: tonic::Streaming<T>,
 ) {
     tokio::spawn(async move {
         let status = loop {
             match inbound.message().await {
-                Ok(Some(message)) => {
-                    super::feed(&inputs, Input::PairingMessage { session, message }).await
+                Ok(Some(held)) => {
+                    if let Some(message) = held.message() {
+                        super::feed(&inputs, Input::PairingMessage { session, message }).await
+                    }
                 }
                 Ok(None) => break None,
                 Err(status) => break Some(failure(&status)),
@@ -255,7 +271,7 @@ impl Driver {
         &self,
         local: wire::PairingIdentity,
         reachability: Option<Reachability>,
-        inbound: tonic::Streaming<PairMessage>,
+        inbound: tonic::Streaming<wire::PairRequest>,
     ) -> impl Stream<Item = Result<PairMessage, tonic::Status>> + Send + 'static {
         let session = self.pairings.mint();
         let (out, replies) = mpsc::unbounded_channel();
@@ -301,7 +317,12 @@ impl Driver {
         })
         .await;
         let outbound = stream::unfold(outbound, |mut outbound| async move {
-            outbound.recv().await.map(|message| (message, outbound))
+            outbound.recv().await.map(|message| {
+                let request = wire::PairRequest {
+                    message: Some(message),
+                };
+                (request, outbound)
+            })
         });
         match client.pair(tonic::Request::new(outbound)).await {
             Ok(inbound) => read_into_core(self.inputs.downgrade(), session, inbound.into_inner()),

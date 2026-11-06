@@ -40,7 +40,7 @@
   composer Send activity=Some(Running { key: "toolu_2" }) queue=[] underway=[] refused=[]
 ## 34 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"command":"make test"},"tool_name":"Bash"}}
   ask ask:1 -> "toolu_2" 1/1 Open
-    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, Deny+note, DenyAndStop+note
     body Command { command: "make test", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 35 input {"id":"p5","prompt":{"text":"Stop after this."}}

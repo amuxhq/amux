@@ -147,7 +147,7 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
     for _ in 0..2 {
         drop(
             person
-                .subscribe_inventory(Request::new(wire::Empty {}))
+                .subscribe_inventory(Request::new(wire::SubscribeInventoryRequest {}))
                 .await
                 .unwrap(),
         );
@@ -174,7 +174,7 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
     let plain = ClientApi::new(&runtime, None);
     drop(
         plain
-            .subscribe_inventory(Request::new(wire::Empty {}))
+            .subscribe_inventory(Request::new(wire::SubscribeInventoryRequest {}))
             .await
             .unwrap(),
     );

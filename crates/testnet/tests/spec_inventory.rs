@@ -539,7 +539,7 @@ async fn the_own_entry_carries_this_profiles_sign_in() {
     net.admin("laptop")
         .await
         .unwrap()
-        .sign_out(wire::Empty {})
+        .sign_out(wire::SignOutRequest {})
         .await
         .unwrap();
     fleet
@@ -933,9 +933,7 @@ async fn pairing_again_with_a_peer_that_revoked_trust_clears_the_mark_at_once() 
     let started = support::start_pairing(&net, "desk", support::qr_window())
         .await
         .unwrap();
-    let Some(wire::pairing_window::Secret::QrSecret(secret)) = started.secret else {
-        panic!("a QR window hands out a secret");
-    };
+    let secret = support::qr_secret_of(&started);
     let pending = support::begin_pair(
         &net,
         "tablet",

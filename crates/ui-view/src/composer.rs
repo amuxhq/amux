@@ -51,12 +51,12 @@ pub struct SignInView {
 pub fn sign_in(state: &SessionState) -> Option<SignInView> {
     let agent = state.agent_state();
     match agent.sign_in.state() {
-        SignInState::SignedOut | SignInState::Expired | SignInState::Failed => Some(SignInView {
+        SignInState::SignedOut | SignInState::Failed => Some(SignInView {
             state: agent.sign_in.state(),
             account: agent.sign_in.account.clone(),
             message: agent.sign_in.message.clone(),
         }),
-        SignInState::Unknown | SignInState::SignedIn => None,
+        SignInState::Unspecified | SignInState::SignedIn => None,
     }
 }
 

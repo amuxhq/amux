@@ -164,6 +164,17 @@ fn pieces_locate_each_blob_in_the_agent_directory() {
     assert!(matches!(pieces[0], Piece::Text("Look at these: ")));
 }
 
+/// An arm a later build added decodes here as no arm: it would be dropped
+/// from the prompt without a word. The placeholder count is no part of it.
+#[test]
+fn an_attachment_with_no_arm_is_one_this_build_cannot_read() {
+    assert!(attachments::all_readable(&[]));
+    assert!(attachments::all_readable(&every_arm()));
+    let mut held = every_arm();
+    held.push(wire::Attachment { of: None });
+    assert!(!attachments::all_readable(&held));
+}
+
 #[test]
 fn validate_counts_placeholders_against_attachments() {
     assert_eq!(validate(&positioned(every_arm())), Ok(()));

@@ -588,7 +588,9 @@ async fn blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the
         }))
         .await
         .expect("the desk stores the laptop's attachment")
-        .into_inner();
+        .into_inner()
+        .blob
+        .unwrap();
     let hex = |hash: &[u8]| hash.iter().map(|b| format!("{b:02x}")).collect::<String>();
     let on_desk = |hash: &[u8]| {
         walk(&own).into_iter().find(|path| {
@@ -614,6 +616,8 @@ async fn blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the
                 .await
                 .expect("the desk diffs its agent's working tree")
                 .into_inner()
+                .diff
+                .unwrap()
         }
     };
     let listed = diff(false).await;

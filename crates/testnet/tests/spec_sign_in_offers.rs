@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use support::*;
 use testnet::{Net, PATIENCE, Relay, Topology, until};
-use wire::{AnswerSignInOfferRequest, BindProfileRequest, Empty, OfferSignInRequest};
+use wire::{AnswerSignInOfferRequest, BindProfileRequest, OfferSignInRequest};
 
 use crate::support;
 
@@ -55,7 +55,7 @@ async fn profile_info(net: &Net, host: &str) -> wire::Profile {
     let id = profile(net, host);
     door(net, host)
         .await
-        .list_profiles(Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .unwrap()
         .into_inner()
@@ -90,7 +90,7 @@ async fn offer(net: &Net, host: &str, peer: &str) {
 async fn offered(net: &Net, host: &str) -> Vec<wire::SignInOffer> {
     let mut offers = admin(net, host)
         .await
-        .subscribe_sign_in_offers(Empty {})
+        .subscribe_sign_in_offers(wire::SubscribeSignInOffersRequest {})
         .await
         .unwrap()
         .into_inner();
@@ -114,7 +114,7 @@ async fn offered(net: &Net, host: &str) -> Vec<wire::SignInOffer> {
 async fn listed(net: &Net, host: &str) -> Vec<wire::SignInOffer> {
     admin(net, host)
         .await
-        .subscribe_sign_in_offers(Empty {})
+        .subscribe_sign_in_offers(wire::SubscribeSignInOffersRequest {})
         .await
         .unwrap()
         .into_inner()
@@ -138,7 +138,7 @@ async fn answer(
             accept,
         })
         .await
-        .map(tonic::Response::into_inner)
+        .map(|answer| answer.into_inner().profile.expect("a profile is answered"))
 }
 
 /// Desk is signed in to Ada and offers the laptop; the laptop is shown
@@ -194,7 +194,7 @@ async fn an_accepted_offer_signs_the_peer_in_to_the_same_account() {
     assert!(
         admin(&net, "laptop")
             .await
-            .subscribe_sign_in_offers(Empty {})
+            .subscribe_sign_in_offers(wire::SubscribeSignInOffersRequest {})
             .await
             .unwrap()
             .into_inner()
@@ -229,7 +229,7 @@ async fn a_dismissed_offer_ends_and_is_not_sent_again() {
     until_via(&net, "laptop", "desk", node::harness::LiveRoute::Direct).await;
     let mut offers = admin(&net, "laptop")
         .await
-        .subscribe_sign_in_offers(Empty {})
+        .subscribe_sign_in_offers(wire::SubscribeSignInOffersRequest {})
         .await
         .unwrap()
         .into_inner();
@@ -275,7 +275,7 @@ async fn a_dismissal_made_offline_holds_when_the_offerer_returns() {
 
     let mut offers = admin(&net, "laptop")
         .await
-        .subscribe_sign_in_offers(Empty {})
+        .subscribe_sign_in_offers(wire::SubscribeSignInOffersRequest {})
         .await
         .unwrap()
         .into_inner();
@@ -372,7 +372,7 @@ async fn a_signed_in_peer_is_offered_nothing() {
 
     let mut offers = admin(&net, "laptop")
         .await
-        .subscribe_sign_in_offers(Empty {})
+        .subscribe_sign_in_offers(wire::SubscribeSignInOffersRequest {})
         .await
         .unwrap()
         .into_inner();

@@ -1084,7 +1084,6 @@ mod tests {
                 &mut sink,
                 &wire::Message {
                     body: Some(wire::message::Body::Hello(wire::Hello {
-                        protocol_version: crate::PROTOCOL_VERSION,
                         host: Some(crate::routing::host_to_wire(&host)),
                         auth_token: Some(token.to_owned()),
                         runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
@@ -1095,7 +1094,7 @@ mod tests {
             .await
             .unwrap();
             let Some(wire::message::Body::HelloAck(wire::HelloAck {
-                outcome: Some(wire::hello_ack::Outcome::Accepted(accepted)),
+                accepted: Some(accepted),
             })) = read_message(&mut source).await.unwrap().unwrap().body
             else {
                 panic!("the relay accepts the host");

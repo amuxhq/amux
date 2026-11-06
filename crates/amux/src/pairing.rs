@@ -15,9 +15,9 @@ use wire::installation_service_client::InstallationServiceClient;
 use wire::pairing_error::Reason as PairingReason;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
-    BeginPairRequest, Empty, HostEntry, HostRef, PairingIdentity, PairingWindow, PendingPair,
-    RouteKind, StartPairingRequest, TrustSshPeerRequest, UnpairRequest, begin_pair_request,
-    pairing_window, start_pairing_request,
+    BeginPairRequest, HostEntry, HostRef, PairingIdentity, PairingWindow, PendingPair, RouteKind,
+    StartPairingRequest, TrustSshPeerRequest, UnpairRequest, begin_pair_request,
+    start_pairing_request,
 };
 
 type Door = InstallationServiceClient<Channel>;
@@ -80,9 +80,9 @@ impl Target {
 /// which closes it.
 pub async fn wait(mut admin: Admin, qr: bool, link: bool) -> Result<()> {
     let method = if qr {
-        start_pairing_request::Method::Qr(Empty {})
+        start_pairing_request::Method::Qr(wire::Empty {})
     } else {
-        start_pairing_request::Method::Pin(Empty {})
+        start_pairing_request::Method::Pin(wire::Empty {})
     };
     // Listening before pairing mode opens: a signal between the invitation
     // and the wait would otherwise end the command with pairing left open.
@@ -96,7 +96,9 @@ pub async fn wait(mut admin: Admin, qr: bool, link: bool) -> Result<()> {
         })
         .await
         .map_err(already_open)?
-        .into_inner();
+        .into_inner()
+        .window;
+    let started = crate::held(started)?;
     match invitation(&started, link) {
         Ok(lines) => lines.iter().for_each(|line| println!("{line}")),
         Err(error) => {
@@ -111,7 +113,7 @@ pub async fn wait(mut admin: Admin, qr: bool, link: bool) -> Result<()> {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(started.ttl_seconds);
     let mut statuses = admin
         .clone()
-        .watch_pairing(wire::Empty {})
+        .subscribe_pairing(wire::SubscribePairingRequest {})
         .await
         .map_err(plain)?
         .into_inner();
@@ -126,6 +128,9 @@ pub async fn wait(mut admin: Admin, qr: bool, link: bool) -> Result<()> {
             status = statuses.message() => {
                 let Some(status) = status.map_err(plain)? else {
                     bail!("the daemon stopped while pairing mode was open");
+                };
+                let Some(status) = status.status else {
+                    continue;
                 };
                 if status.locked_out {
                     bail!(
@@ -162,7 +167,9 @@ pub async fn demo(mut admin: Admin, pin: String, ttl: Duration) -> Result<()> {
         })
         .await
         .map_err(already_open)?
-        .into_inner();
+        .into_inner()
+        .window;
+    let started = crate::held(started)?;
     // The PIN alone: the next steps are for a window someone watches.
     if let Some(pin) = invitation(&started, false)?.first() {
         println!("{pin}");
@@ -254,8 +261,8 @@ fn ended() -> Result<impl std::future::Future<Output = ()>> {
 /// host listens, or a QR code the phone scans.
 fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
     let mut lines = Vec::new();
-    match &started.secret {
-        Some(pairing_window::Secret::Pin(pin)) => {
+    match (&started.pin, started.qr_link.as_str()) {
+        (Some(pin), "") => {
             // What to do next on each kind of device, so the PIN is never
             // left to the docs to explain.
             let name = started
@@ -301,11 +308,7 @@ fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
                 "On another computer: run {computer} and enter the PIN."
             ));
         }
-        Some(pairing_window::Secret::QrSecret(_)) => {
-            let payload = &started.qr_link;
-            if payload.is_empty() {
-                bail!("the daemon opened a QR window without its link");
-            }
+        (None, payload) if !payload.is_empty() => {
             lines.push(terminal_qr(payload)?);
             lines.push("Scan it with the phone's camera.".to_owned());
             lines.push(
@@ -317,10 +320,8 @@ fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
                 lines.push(format!("Pairing link: {payload}"));
             }
         }
-        Some(pairing_window::Secret::PinAndQr(_)) => {
-            bail!("the daemon opened a window `amux pair` did not ask for")
-        }
-        None => bail!("the daemon opened pairing mode without a secret"),
+        (Some(_), _) => bail!("the daemon opened a window `amux pair` did not ask for"),
+        (None, _) => bail!("the daemon opened pairing mode without a secret"),
     }
     Ok(lines)
 }
@@ -353,7 +354,10 @@ fn terminal_qr(payload: &str) -> Result<String> {
 
 /// Closes this host's pairing mode.
 pub async fn cancel(mut admin: Admin) -> Result<()> {
-    admin.cancel_pairing(wire::Empty {}).await.map_err(plain)?;
+    admin
+        .cancel_pairing(wire::CancelPairingRequest {})
+        .await
+        .map_err(plain)?;
     // The terminal may be gone (SIGHUP): saying so must not fail the close.
     let _ = writeln!(std::io::stdout(), "Pairing mode closed.");
     Ok(())
@@ -426,14 +430,18 @@ async fn confirm(mut admin: Admin, pairing: BeginPairRequest) -> Result<()> {
         .begin_pair(pairing)
         .await
         .map_err(refused)?
-        .into_inner();
+        .into_inner()
+        .pending;
+    let pending = crate::held(pending)?;
     let peer = admin
         .confirm_pair(wire::ConfirmPairRequest {
             token: pending.token.clone(),
         })
         .await
         .map_err(refused)?
-        .into_inner();
+        .into_inner()
+        .peer;
+    let peer = crate::held(peer)?;
     println!("{}", paired(&peer, &pending));
     Ok(())
 }
@@ -530,10 +538,12 @@ fn profile_dir(profile: &wire::Profile) -> Result<PathBuf> {
 async fn own_identity(admin: &Admin) -> Result<PairingIdentity> {
     let own = admin
         .clone()
-        .get_device_identity(wire::Empty {})
+        .get_device_identity(wire::GetDeviceIdentityRequest {})
         .await
         .map_err(plain)?
-        .into_inner();
+        .into_inner()
+        .identity;
+    let own = crate::held(own)?;
     Ok(PairingIdentity {
         host_id: own.host_id,
         pubkey: own.pubkey,
@@ -603,7 +613,7 @@ pub async fn relay(profile: &wire::Profile) -> Result<()> {
 /// announced by the relay or a paired host.
 pub async fn hosts(mut admin: Admin, client: &mut wire::ClientStubs, free: bool) -> Result<()> {
     let trusted = admin
-        .list_peers(wire::Empty {})
+        .list_peers(wire::ListPeersRequest {})
         .await
         .map_err(plain)?
         .into_inner()
@@ -729,7 +739,7 @@ fn peer_table(trusted: &[wire::Peer], hosts: &[HostEntry], free: bool) -> String
 pub async fn unpair(mut admin: Admin, peer: &str, force: bool) -> Result<()> {
     let id = Uuid::parse_str(peer).ok();
     let peers = admin
-        .list_peers(wire::Empty {})
+        .list_peers(wire::ListPeersRequest {})
         .await
         .map_err(plain)?
         .into_inner()
@@ -763,7 +773,9 @@ pub async fn unpair(mut admin: Admin, peer: &str, force: bool) -> Result<()> {
         })
         .await
         .map_err(plain)?
-        .into_inner();
+        .into_inner()
+        .peer;
+    let removed = crate::held(removed)?;
     println!("Unpaired {} ({}).", removed.name, host(&removed.host_id));
     Ok(())
 }
@@ -783,8 +795,8 @@ pub async fn login(mut door: Door, profile: Option<&wire::Profile>, cloud_url: &
         .await
         .map_err(plain)?
         .into_inner();
-    while let Some(event) = events.message().await.map_err(plain)? {
-        match event.of {
+    while let Some(response) = events.message().await.map_err(plain)? {
+        match response.event.and_then(|event| event.of) {
             Some(Of::Code(code)) => {
                 println!("\nTo sign in, open:");
                 println!("  {}", code.verification_uri_complete);
@@ -828,7 +840,10 @@ pub async fn login(mut door: Door, profile: Option<&wire::Profile>, cloud_url: &
 
 /// Signs a profile out; its agents and paired hosts stay.
 pub async fn logout(mut admin: Admin, profile: &wire::Profile) -> Result<()> {
-    admin.sign_out(wire::Empty {}).await.map_err(plain)?;
+    admin
+        .sign_out(wire::SignOutRequest {})
+        .await
+        .map_err(plain)?;
     println!(
         "Signed {} out; its agents and paired hosts stay.",
         profile.label
@@ -915,9 +930,8 @@ mod tests {
             }),
             ttl_seconds: 300,
             addrs: vec!["10.0.0.2:7420".into()],
-            cloud_url: None,
-            secret: Some(pairing_window::Secret::QrSecret(vec![9; 32])),
             qr_link: node::qr_link("https://amux.sh", &offered),
+            ..PairingWindow::default()
         };
         let lines = invitation(&started, true).unwrap();
         let link = lines
@@ -939,7 +953,7 @@ mod tests {
             ttl_seconds: 300,
             // Sorted, as a window's are: loopback first, and never offered.
             addrs: vec!["127.0.0.1:7420".into(), "10.0.0.2:7420".into()],
-            secret: Some(pairing_window::Secret::Pin("482913".into())),
+            pin: Some("482913".into()),
             ..PairingWindow::default()
         };
         assert_eq!(
@@ -1106,7 +1120,6 @@ mod tests {
                 standing: Some(wire::cloud_standing::Standing::SignedIn(wire::RelayLink {
                     state: Some(wire::relay_link::State::Connected(wire::RelayConnected {
                         tier: tier as i32,
-                        carrier: wire::RelayCarrier::Quic as i32,
                     })),
                 })),
             }),

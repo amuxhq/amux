@@ -222,7 +222,7 @@
     },
     {
       "id": "ask.permission-terminal",
-      "shows": "Terminal Claude's permission card, whose deny stops the turn."
+      "shows": "Terminal Claude's permission card, with one way to deny."
     },
     {
       "id": "ask.codex-command",
@@ -430,7 +430,7 @@
     },
     {
       "id": "composer.sign-in",
-      "shows": "In the composer's place, Claude asking to be signed in again: the sign-in expired, and where to sign in."
+      "shows": "In the composer's place, Claude asking to be signed in again: the sign-in failed, and where to sign in."
     },
     {
       "id": "composer.settings-claude-sdk",

@@ -344,14 +344,19 @@ impl Edge {
     }
 
     /// The offers paired peers made this profile, now and on every change.
-    pub fn watch_sign_in_offers(&self) -> impl Stream<Item = wire::SignInOffers> + use<> {
+    pub fn watch_sign_in_offers(
+        &self,
+    ) -> impl Stream<Item = wire::SubscribeSignInOffersResponse> + use<> {
         let watched = self.offers().received.subscribe();
         futures_util::stream::unfold((watched, true), |(mut watched, first)| async move {
             if !first && watched.changed().await.is_err() {
                 return None;
             }
             let offers = watched.borrow_and_update().clone();
-            Some((wire::SignInOffers { offers }, (watched, false)))
+            Some((
+                wire::SubscribeSignInOffersResponse { offers },
+                (watched, false),
+            ))
         })
     }
 

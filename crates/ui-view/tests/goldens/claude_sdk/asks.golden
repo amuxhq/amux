@@ -6,7 +6,7 @@
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
 ## 4 fact {"channel":"stream","json":{"request":{"blocked_path":"/work/other","decision_reason":"Bash commands that delete files need approval","description":"Remove the build output","input":{"command":"rm -rf target"},"permission_suggestions":[{"behavior":"allow","destination":"localSettings","rules":[{"ruleContent":"rm -rf target","toolName":"Bash"}],"type":"addRules"},{"destination":"session","dire…
   ask req-1 -> "t1" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: ["rm -rf target"], directories: [], mode: "", mode_name: "", scope: Project }, AllowAlways { subjects: [], directories: ["/work/other"], mode: "", mode_name: "", scope: Session }, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, AllowAlways { subjects: ["rm -rf target"], directories: [], mode: "", mode_name: "", scope: Project }, AllowAlways { subjects: [], directories: ["/work/other"], mode: "", mode_name: "", scope: Session }, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "", scope: Session }, Deny+note, DenyAndStop+note
     body Command { command: "rm -rf target", cwd: "", reason: "Bash commands that delete files need approval", description: "Remove the build output" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 5 input {"answer":{"answer":{"allow":{"scope":1}},"ask":"req-1"},"id":"a1"}
@@ -18,7 +18,7 @@
   composer Send activity=Some(Running { key: "t2" }) queue=[] underway=[] refused=[]
 ## 9 fact {"channel":"stream","json":{"request":{"input":{"command":"git push --force"},"permission_suggestions":[],"subtype":"can_use_tool","tool_name":"Bash","tool_use_id":"t2"},"request_id":"req-2","type":"control_request"}}
   ask req-2 -> "t2" 1/1 Open
-    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, Deny+note, DenyAndStop+note
     body Command { command: "git push --force", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 10 input {"answer":{"answer":{"deny":{"note":"not on main"}},"ask":"req-2"},"id":"a2"}
@@ -30,7 +30,7 @@
   composer Send activity=Some(Running { key: "t2b" }) queue=[] underway=[] refused=[]
 ## 13 fact {"channel":"stream","json":{"request":{"input":{"command":"git reset --hard"},"permission_suggestions":[],"subtype":"can_use_tool","tool_name":"Bash","tool_use_id":"t2b"},"request_id":"req-2b","type":"control_request"}}
   ask req-2b -> "t2b" 1/1 Open
-    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, Deny+note, DenyAndStop+note
     body Command { command: "git reset --hard", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 14 input {"answer":{"answer":{"deny":{}},"ask":"req-2b"},"id":"a2b"}
@@ -42,7 +42,7 @@
   composer Send activity=Some(Running { key: "t3" }) queue=[] underway=[] refused=[]
 ## 17 fact {"channel":"stream","json":{"request":{"input":{"command":"curl evil"},"permission_suggestions":[],"subtype":"can_use_tool","tool_name":"Bash","tool_use_id":"t3"},"request_id":"req-3","type":"control_request"}}
   ask req-3 -> "t3" 1/1 Open
-    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, Deny+note, DenyAndStop+note
     body Command { command: "curl evil", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 18 input {"answer":{"answer":{"deny":{"note":"stop there","stop":true}},"ask":"req-3"},"id":"a3"}

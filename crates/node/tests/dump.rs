@@ -902,11 +902,10 @@ async fn a_dump_cannot_compute_the_pin_of_a_window_opened_after_it() {
                 }))
                 .await
                 .unwrap()
-                .into_inner();
-            match window.secret {
-                Some(wire::pairing_window::Secret::Pin(pin)) => pin,
-                other => panic!("a PIN window, not {other:?}"),
-            }
+                .into_inner()
+                .window
+                .unwrap();
+            window.pin.expect("a PIN window")
         }
     };
 
@@ -922,7 +921,7 @@ async fn a_dump_cannot_compute_the_pin_of_a_window_opened_after_it() {
         .await
         .unwrap();
     admin
-        .cancel_pairing(Request::new(wire::Empty {}))
+        .cancel_pairing(Request::new(wire::CancelPairingRequest {}))
         .await
         .unwrap();
     let second = open().await;

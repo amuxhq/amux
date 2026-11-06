@@ -22,7 +22,7 @@ async fn clients(net: &Net) -> [(&'static str, Arc<dyn Client>); 2] {
         .front_door("desk")
         .await
         .unwrap()
-        .list_profiles(wire::Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .unwrap()
         .into_inner()

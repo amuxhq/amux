@@ -14,8 +14,8 @@ use uuid::Uuid;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
-    BeginPairRequest, Empty, InventoryEvent, PairingWindow, StartPairingRequest,
-    begin_pair_request, inventory_event, pairing_window, start_pairing_request,
+    BeginPairRequest, Empty, PairingWindow, StartPairingRequest, begin_pair_request,
+    inventory_event, start_pairing_request,
 };
 
 /// A host listening for direct links on loopback and on the net's
@@ -102,16 +102,16 @@ pub async fn peer_inventory_hosts(from: &Edge, to: Uuid) -> Result<Vec<Vec<u8>>,
     let mut client = from.peer(to).await.map_err(|error| error.status())?;
     let mut events = client
         .agents
-        .subscribe_inventory(wire::Empty {})
+        .subscribe_inventory(wire::SubscribeInventoryRequest {})
         .await?
         .into_inner();
     let mut hosts = Vec::new();
     loop {
-        let InventoryEvent { of } = events
+        let response = events
             .message()
             .await?
             .ok_or_else(|| tonic::Status::aborted("the inventory ended before CaughtUp"))?;
-        match of {
+        match response.event.and_then(|event| event.of) {
             Some(inventory_event::Of::Host(host)) => hosts.push(host.host_id().to_vec()),
             Some(inventory_event::Of::CaughtUp(_)) => return Ok(hosts),
             _ => {}
@@ -129,7 +129,7 @@ pub async fn start_pairing(
         .await
         .start_pairing(pairing)
         .await
-        .map(tonic::Response::into_inner)
+        .map(|answer| answer.into_inner().window.expect("a window is answered"))
 }
 
 /// A one-shot PIN window.
@@ -149,10 +149,32 @@ pub fn qr_window() -> StartPairingRequest {
 }
 
 pub fn pin_of(started: &PairingWindow) -> String {
-    match &started.secret {
-        Some(pairing_window::Secret::Pin(pin)) => pin.clone(),
-        other => panic!("a PIN pairing hands out a PIN, not {other:?}"),
-    }
+    started.pin.clone().expect("a PIN pairing hands out a PIN")
+}
+
+/// The secret a window's QR code carries, read from its link as a phone
+/// that scans it reads it.
+pub fn qr_secret_of(started: &PairingWindow) -> Vec<u8> {
+    node::parse_pair_link(&started.qr_link)
+        .expect("a QR window shows a pairing link")
+        .secret
+        .to_vec()
+}
+
+/// Where `host`'s pairing window stands now: the first thing its stream
+/// says.
+pub async fn pairing_status(net: &Net, host: &str) -> wire::PairingStatus {
+    admin(net, host)
+        .await
+        .subscribe_pairing(wire::SubscribePairingRequest {})
+        .await
+        .unwrap()
+        .into_inner()
+        .message()
+        .await
+        .unwrap()
+        .and_then(|response| response.status)
+        .expect("the stream opens with the status")
 }
 
 /// `initiator` begins pairing with the host at `addrs` using `secret`,
@@ -174,7 +196,7 @@ pub async fn begin_pair(
             addrs,
         })
         .await
-        .map(tonic::Response::into_inner)
+        .map(|answer| answer.into_inner().pending.expect("a pairing is answered"))
 }
 
 pub async fn confirm_pair(
@@ -186,7 +208,7 @@ pub async fn confirm_pair(
         .await
         .confirm_pair(wire::ConfirmPairRequest { token })
         .await
-        .map(tonic::Response::into_inner)
+        .map(|answer| answer.into_inner().peer.expect("a peer is answered"))
 }
 
 /// Pairs `initiator` with `responder` through both front doors with a PIN
@@ -215,7 +237,7 @@ pub async fn open_session(
     from: &Edge,
     host: Uuid,
     agent: Uuid,
-) -> Result<tonic::Streaming<wire::SessionEvent>, tonic::Status> {
+) -> Result<tonic::Streaming<wire::SubscribeSessionResponse>, tonic::Status> {
     let mut client = from
         .session_peer(host)
         .await
@@ -229,11 +251,14 @@ pub async fn open_session(
         .await?
         .into_inner();
     loop {
-        let event = events
+        let response = events
             .message()
             .await?
             .ok_or_else(|| tonic::Status::aborted("the session ended before CaughtUp"))?;
-        if matches!(event.of, Some(wire::session_event::Of::CaughtUp(_))) {
+        if matches!(
+            response.event.and_then(|event| event.of),
+            Some(wire::session_event::Of::CaughtUp(_))
+        ) {
             return Ok(events);
         }
     }
@@ -262,7 +287,7 @@ pub fn tier(net: &Net, host: &str) -> Option<node::Tier> {
 
 /// Reads a session until an item with `text` arrives, failing on Lagged,
 /// on the stream's end, or after the patience.
-pub async fn until_item(stream: &mut tonic::Streaming<wire::SessionEvent>, text: &str) {
+pub async fn until_item(stream: &mut tonic::Streaming<wire::SubscribeSessionResponse>, text: &str) {
     let deadline = tokio::time::Instant::now() + PATIENCE;
     loop {
         let event = tokio::time::timeout_at(deadline, stream.message())
@@ -270,7 +295,7 @@ pub async fn until_item(stream: &mut tonic::Streaming<wire::SessionEvent>, text:
             .unwrap_or_else(|_| panic!("timed out waiting for {text:?}"))
             .unwrap_or_else(|status| panic!("the session failed waiting for {text:?}: {status:?}"))
             .unwrap_or_else(|| panic!("the session ended waiting for {text:?}"));
-        match event.of {
+        match event.event.and_then(|event| event.of) {
             Some(wire::session_event::Of::Item(item)) if item.text == text => return,
             Some(wire::session_event::Of::Lagged(_)) => panic!("lagged waiting for {text:?}"),
             _ => {}

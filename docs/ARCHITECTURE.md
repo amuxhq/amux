@@ -209,10 +209,9 @@ The daemon dials in the other direction exactly once per agent: it connects
 to `ctl.sock`, reads a Hello, ingests the journal whenever a Nudge arrives,
 and writes inputs and stops. The agent never dials the daemon.
 
-Every surface is protobuf. The link carries a version integer for a
-deliberate break both sides must take; the control socket and the journal
-carry none. From 0.9.0 the schemas change only by adding; [the wire](WIRE.md)
-has the calls, the records and the rule.
+Every surface is protobuf, and none carries a version integer. From 0.9.0 the
+schemas change only by adding; [the wire](WIRE.md) has the calls, the records
+and the rule.
 
 ## Inside the daemon
 
@@ -675,7 +674,7 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`replay-support`](../crates/replay-support/src/lib.rs) | `just repro`: replays a report's records (each agent's as a made-up stream, the daemon core's, each chat's), an installation's own rings, or a relay's or supervisor's report, with the protocol's properties and the checks judged at every step. |
 | [`fake-amux`](../crates/fake-amux/src/main.rs) | A stand-in `amux` binary running the real supervisor over a scripted daemon. |
 | [`shot`](../crates/shot/README.md) | Deterministic PNG renderings of the terminal client's named states, and its storybook of whole screens. |
-| [`xtask`](../crates/xtask/src/main.rs) | Developer tasks: protobuf codegen, the protocol compatibility check, releases. |
+| [`xtask`](../crates/xtask/src/main.rs) | Developer tasks: protobuf codegen and releases. |
 | [`ios-tools`](../crates/ios-tools/src/main.rs) | The phone's developer tools: iOS verification, Swift type generation and the screenshot comparator. |
 
 ## The dependency policy

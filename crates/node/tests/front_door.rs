@@ -61,11 +61,18 @@ async fn ttl_applies_to_each_method() {
     let status = || {
         let admin = admin.clone();
         async move {
+            use futures_util::StreamExt as _;
             admin
-                .get_pairing_status(Request::new(wire::Empty {}))
+                .subscribe_pairing(Request::new(wire::SubscribePairingRequest {}))
                 .await
                 .unwrap()
                 .into_inner()
+                .next()
+                .await
+                .expect("the stream opens with the status")
+                .unwrap()
+                .status
+                .unwrap()
                 .active
         }
     };
@@ -73,7 +80,7 @@ async fn ttl_applies_to_each_method() {
         let admin = admin.clone();
         async move {
             admin
-                .cancel_pairing(Request::new(wire::Empty {}))
+                .cancel_pairing(Request::new(wire::CancelPairingRequest {}))
                 .await
                 .unwrap();
         }
@@ -88,6 +95,7 @@ async fn ttl_applies_to_each_method() {
             let window = start(method.clone(), asked)
                 .await
                 .unwrap_or_else(|status| panic!("{name} for {asked:?}: {status:?}"));
+            let window = window.window.unwrap();
             assert_eq!(window.ttl_seconds, answered, "{name} for {asked:?}");
             assert!(status().await, "{name} for {asked:?} is open");
             cancel().await;
@@ -190,12 +198,14 @@ async fn rename_and_delete_change_the_listed_profile() {
         }))
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .profile
+        .unwrap();
     let listed = || {
         let door = door.clone();
         let id = created.id.clone();
         async move {
-            door.list_profiles(Request::new(wire::Empty {}))
+            door.list_profiles(Request::new(wire::ListProfilesRequest {}))
                 .await
                 .unwrap()
                 .into_inner()
@@ -212,7 +222,9 @@ async fn rename_and_delete_change_the_listed_profile() {
         }))
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .profile
+        .unwrap();
     assert_eq!(renamed.label, "kept");
     let after = listed().await.expect("the profile is still listed");
     assert_eq!(after.label, "kept", "the list shows the new label");
@@ -248,7 +260,9 @@ async fn removing_a_profile_ends_a_dump_still_in_flight() {
         }))
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .profile
+        .unwrap();
     let id: node::ProfileId = uuid::Uuid::from_slice(&created.id).unwrap();
     let runtime = daemon.profile(id).expect("the new profile runs").clone();
 
@@ -351,9 +365,7 @@ async fn a_listener_with_no_pairing_window_at_one_address_does_not_fail_the_pair
         })
         .await
         .unwrap();
-    let Some(wire::pairing_window::Secret::Pin(pin)) = window.secret else {
-        panic!("a PIN window has a PIN");
-    };
+    let pin = window.pin.expect("a PIN window has a PIN");
     let pending = joiner_edge
         .begin_pair(wire::BeginPairRequest {
             host_id: offerer_edge.host_id().as_bytes().to_vec(),

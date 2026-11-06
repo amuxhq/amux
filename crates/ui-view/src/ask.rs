@@ -185,10 +185,8 @@ pub enum ChoiceOutcome {
     AllowNetwork {
         hosts: Vec<String>,
     },
-    /// Deny and let it carry on; `stops` when denying always ends the turn.
-    Deny {
-        stops: bool,
-    },
+    /// Deny and let it carry on.
+    Deny,
     DenyAndStop,
     /// Approve the plan; with a `mode`, switching to that permission, which
     /// `mode_name` names as the agent's catalogue does.
@@ -370,14 +368,8 @@ fn claude(
                     stop,
                 }))
             };
-            if p.deny_stops {
-                choices.push(choice(ChoiceOutcome::Deny { stops: true }, deny(true)));
-            } else {
-                choices.push(choice(ChoiceOutcome::Deny { stops: false }, deny(false)));
-                if p.deny_can_stop {
-                    choices.push(choice(ChoiceOutcome::DenyAndStop, deny(true)));
-                }
-            }
+            choices.push(choice(ChoiceOutcome::Deny, deny(false)));
+            choices.push(choice(ChoiceOutcome::DenyAndStop, deny(true)));
             (body, choices)
         }
         Some(ask::Body::Question(q)) => (
@@ -728,7 +720,7 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
                     CodexDecision::ApproveNetwork => ChoiceOutcome::AllowNetwork {
                         hosts: hosts.clone(),
                     },
-                    CodexDecision::Deny => ChoiceOutcome::Deny { stops: false },
+                    CodexDecision::Deny => ChoiceOutcome::Deny,
                     CodexDecision::Abort => ChoiceOutcome::DenyAndStop,
                     CodexDecision::ApproveAlways => ChoiceOutcome::AllowAlways {
                         subjects: always.clone(),
@@ -870,7 +862,7 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
                 vec![
                     choice(ChoiceOutcome::GrantForTurn, answer(false, true)),
                     choice(ChoiceOutcome::GrantForSession, answer(true, true)),
-                    choice(ChoiceOutcome::Deny { stops: false }, answer(false, false)),
+                    choice(ChoiceOutcome::Deny, answer(false, false)),
                 ],
             )
         }

@@ -447,7 +447,7 @@ pub fn pane_lines(
                         UsageState::Blocked => (Some("reached"), theme.warning()),
                         UsageState::NearLimit => (Some("near"), theme.text()),
                         UsageState::Ok => (Some("fine"), theme.muted()),
-                        UsageState::Unknown => (None, theme.muted()),
+                        UsageState::Unspecified => (None, theme.muted()),
                     };
                     let used = window
                         .used_percent

@@ -136,7 +136,7 @@ impl EarlyCall {
             EarlyCall::SubscribeInventory => EarlyAnswer::Inventory(
                 client
                     .agents
-                    .subscribe_inventory(wire::Empty {})
+                    .subscribe_inventory(wire::SubscribeInventoryRequest {})
                     .await?
                     .into_inner(),
             ),
@@ -157,8 +157,8 @@ impl EarlyCall {
 /// The answer to an early call: the stream the subscription opened.
 #[derive(Debug)]
 pub enum EarlyAnswer {
-    Inventory(tonic::Streaming<wire::InventoryEvent>),
-    Session(tonic::Streaming<wire::SessionEvent>),
+    Inventory(tonic::Streaming<wire::SubscribeInventoryResponse>),
+    Session(tonic::Streaming<wire::SubscribeSessionResponse>),
 }
 
 /// An early call under way: it went out with the link's first packets, and
@@ -1054,14 +1054,14 @@ mod tests {
 
         #[tonic::async_trait]
         impl AgentService for Answering {
-            type SubscribeInventoryStream = Events<wire::InventoryEvent>;
+            type SubscribeInventoryStream = Events<wire::SubscribeInventoryResponse>;
 
             async fn subscribe_inventory(
                 &self,
-                _: Request<wire::Empty>,
+                _: Request<wire::SubscribeInventoryRequest>,
             ) -> Answer<Self::SubscribeInventoryStream> {
                 self.inventory.fetch_add(1, Ordering::SeqCst);
-                let event = wire::InventoryEvent::default();
+                let event = wire::SubscribeInventoryResponse::default();
                 Ok(Response::new(Box::pin(futures_util::stream::iter([Ok(
                     event,
                 )]))))
@@ -1070,50 +1070,56 @@ mod tests {
             async fn resolve_agent(
                 &self,
                 _: Request<wire::ResolveAgentRequest>,
-            ) -> Answer<wire::Agent> {
+            ) -> Answer<wire::ResolveAgentResponse> {
                 unanswered()
             }
 
             async fn create_agent(
                 &self,
                 _: Request<wire::CreateAgentRequest>,
-            ) -> Answer<wire::Agent> {
+            ) -> Answer<wire::CreateAgentResponse> {
                 unanswered()
             }
 
             async fn rename_agent(
                 &self,
                 _: Request<wire::RenameAgentRequest>,
-            ) -> Answer<wire::Agent> {
+            ) -> Answer<wire::RenameAgentResponse> {
                 unanswered()
             }
 
-            async fn file_agent(&self, _: Request<wire::FileAgentRequest>) -> Answer<wire::Agent> {
+            async fn file_agent(
+                &self,
+                _: Request<wire::FileAgentRequest>,
+            ) -> Answer<wire::FileAgentResponse> {
                 unanswered()
             }
 
             async fn resume_agent(
                 &self,
                 _: Request<wire::ResumeAgentRequest>,
-            ) -> Answer<wire::Agent> {
+            ) -> Answer<wire::ResumeAgentResponse> {
                 unanswered()
             }
 
             async fn delete_agent(
                 &self,
                 _: Request<wire::DeleteAgentRequest>,
-            ) -> Answer<wire::Empty> {
+            ) -> Answer<wire::DeleteAgentResponse> {
                 unanswered()
             }
 
             async fn send_message(
                 &self,
-                _: Request<wire::Envelope>,
+                _: Request<wire::SendMessageRequest>,
             ) -> Answer<wire::SendMessageResponse> {
                 unanswered()
             }
 
-            async fn put_blob(&self, _: Request<wire::PutBlobRequest>) -> Answer<wire::BlobRef> {
+            async fn put_blob(
+                &self,
+                _: Request<wire::PutBlobRequest>,
+            ) -> Answer<wire::PutBlobResponse> {
                 unanswered()
             }
 
@@ -1124,7 +1130,10 @@ mod tests {
                 unanswered()
             }
 
-            async fn get_diff(&self, _: Request<wire::GetDiffRequest>) -> Answer<wire::Diff> {
+            async fn get_diff(
+                &self,
+                _: Request<wire::GetDiffRequest>,
+            ) -> Answer<wire::GetDiffResponse> {
                 unanswered()
             }
 
@@ -1145,14 +1154,14 @@ mod tests {
 
         #[tonic::async_trait]
         impl SessionService for Answering {
-            type SubscribeSessionStream = Events<wire::SessionEvent>;
+            type SubscribeSessionStream = Events<wire::SubscribeSessionResponse>;
 
             async fn subscribe_session(
                 &self,
                 _: Request<wire::SubscribeSessionRequest>,
             ) -> Answer<Self::SubscribeSessionStream> {
                 self.sessions.fetch_add(1, Ordering::SeqCst);
-                let event = wire::SessionEvent::default();
+                let event = wire::SubscribeSessionResponse::default();
                 Ok(Response::new(Box::pin(futures_util::stream::iter([Ok(
                     event,
                 )]))))
@@ -1165,7 +1174,10 @@ mod tests {
                 unanswered()
             }
 
-            async fn get_item(&self, _: Request<wire::GetItemRequest>) -> Answer<wire::Item> {
+            async fn get_item(
+                &self,
+                _: Request<wire::GetItemRequest>,
+            ) -> Answer<wire::GetItemResponse> {
                 unanswered()
             }
 
@@ -1179,11 +1191,14 @@ mod tests {
             async fn update_draft(
                 &self,
                 _: Request<wire::UpdateDraftRequest>,
-            ) -> Answer<wire::Draft> {
+            ) -> Answer<wire::UpdateDraftResponse> {
                 unanswered()
             }
 
-            async fn get_draft(&self, _: Request<wire::GetDraftRequest>) -> Answer<wire::Draft> {
+            async fn get_draft(
+                &self,
+                _: Request<wire::GetDraftRequest>,
+            ) -> Answer<wire::GetDraftResponse> {
                 unanswered()
             }
         }

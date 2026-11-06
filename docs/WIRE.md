@@ -83,39 +83,44 @@ meets often:
 | `PERMISSION_DENIED` | An agent caller sent input to, or stopped, an agent that is not its own direct child |
 | `RESOURCE_EXHAUSTED` | A blob could not be written, most often a full disk |
 
-A link refused for another protocol version reads as `FAILED_PRECONDITION`,
+A link refused because a build is too old reads as `FAILED_PRECONDITION`,
 reason `VERSION_MISMATCH`; see [Versions](#versions).
 
 ## The calls
 
+Every call takes its own `FooRequest` and answers its own `FooResponse`, so
+either can grow. A response around one value holds it in one field, as
+`ResolveAgentResponse.agent` holds an `Agent`, and each response on a stream
+holds one event. The tables name what a response holds.
+
 `service AgentService` in [`agent_service.proto`](../proto/amux/v1/agent_service.proto):
 
-| Call | Returns | Meaning |
+| Call | Answers with | Meaning |
 | --- | --- | --- |
-| `SubscribeInventory(Empty)` | stream of `InventoryEvent` | Hosts and agent rows: the current set, `CaughtUp`, then changes |
-| `ResolveAgent(ResolveAgentRequest)` | `Agent` | Fleet-wide reference to row: an id in any form amux prints (with or without dashes, or the short id's eight or more leading hex digits), a name, or `name@host`. Names are unique on a host, so `name@host` picks one; a bare name matching agents on two hosts is ambiguous, and the message offers those forms. Every other call takes an agent id. |
-| `CreateAgent(CreateAgentRequest)` | `Agent` | Spawn, optionally with a first prompt (see [Creating and resuming](#creating-and-resuming)). Names are unique on a host, counting exited agents: a given name another agent on the host holds gets the next free suffix (`worker-2`), and the returned `Agent` says the name it got. Without a name the daemon gives a word pair (`quiet-otter`) that no other agent on the host and no branch in the folder's repository has. With `new_worktree` the agent's host first makes a worktree on a branch named after the agent, and the agent starts there |
+| `SubscribeInventory` | stream of `InventoryEvent` | Hosts and agent rows: the current set, `CaughtUp`, then changes |
+| `ResolveAgent` | `Agent` | Fleet-wide reference to row: an id in any form amux prints (with or without dashes, or the short id's eight or more leading hex digits), a name, or `name@host`. Names are unique on a host, so `name@host` picks one; a bare name matching agents on two hosts is ambiguous, and the message offers those forms. Every other call takes an agent id. |
+| `CreateAgent` | `Agent` | Spawn, optionally with a first prompt (see [Creating and resuming](#creating-and-resuming)). Names are unique on a host, counting exited agents: a given name another agent on the host holds gets the next free suffix (`worker-2`), and the returned `Agent` says the name it got. Without a name the daemon gives a word pair (`quiet-otter`) that no other agent on the host and no branch in the folder's repository has. With `new_worktree` the agent's host first makes a worktree on a branch named after the agent, and the agent starts there |
 | `RenameAgent` | `Agent` | A name outside the rule (lowercase letters, digits and hyphens, starting with a letter or digit, at most 64) is refused `INVALID_ARGUMENT`, as it is for `CreateAgent`; a name another agent on the host holds, exited ones included, is refused `ALREADY_EXISTS` saying so. The agent's branch keeps the name it was made with |
-| `FileAgent(FileAgentRequest)` | `Agent` | Files the agent active, pinned or settled, apart from its lifecycle ([filing](PROTOCOL.md#filing)). Settling ends a live agent now: its running turn is cancelled the provider's own way and it exits, resumable, answered once it has ended. There is no "stop when done". The terminal, the phone and an agent's stop tool all settle; the interrupt input is what ends only the turn. Its children follow on their own hosts by [the family rule](PROTOCOL.md#the-family-rule). Pinning is refused for an agent with a parent |
-| `ResumeAgent(ResumeAgentRequest)` | `Agent` | Start the agent's directory again, optionally with a first prompt |
-| `DeleteAgent` | `Empty` | Stops the agent if live and removes it for good. Its children follow on their own hosts by [the family rule](PROTOCOL.md#the-family-rule) |
-| `SendMessage(Envelope)` | `SendMessageResponse` | Agent messaging: who it is from is the caller, never the request (see [Messages](#messages) and [agent tools](AGENT_TOOLS.md)) |
-| `PutBlob(PutBlobRequest)` | `BlobRef` | Bytes into an agent's directory |
-| `GetBlob(GetBlobRequest)` | `GetBlobResponse` | Bytes out |
-| `GetDiff(GetDiffRequest)` | `Diff` | The changed files on the owning host; the patch, stored as a blob, only when asked |
-| `GetCatalogue(GetCatalogueRequest)` | `GetCatalogueResponse` | What a provider on a host offers with no agent running: the encoded `Catalogue` and its hash. An agent's catalogue is a blob, read with `GetBlob` |
-| `ListRepositories` | `ListRepositoriesResponse` | Repositories a host offers to spawn agents in |
+| `FileAgent` | `Agent` | Files the agent active, pinned or settled, apart from its lifecycle ([filing](PROTOCOL.md#filing)). Settling ends a live agent now: its running turn is cancelled the provider's own way and it exits, resumable, answered once it has ended. There is no "stop when done". The terminal, the phone and an agent's stop tool all settle; the interrupt input is what ends only the turn. Its children follow on their own hosts by [the family rule](PROTOCOL.md#the-family-rule). Pinning is refused for an agent with a parent |
+| `ResumeAgent` | `Agent` | Start the agent's directory again, optionally with a first prompt |
+| `DeleteAgent` | nothing | Stops the agent if live and removes it for good. Its children follow on their own hosts by [the family rule](PROTOCOL.md#the-family-rule) |
+| `SendMessage` | the envelope id | Agent messaging: who it is from is the caller, never the request (see [Messages](#messages) and [agent tools](AGENT_TOOLS.md)) |
+| `PutBlob` | `BlobRef` | Bytes into an agent's directory |
+| `GetBlob` | the bytes | Bytes out |
+| `GetDiff` | `Diff` | The changed files on the owning host; the patch, stored as a blob, only when asked |
+| `GetCatalogue` | a catalogue and its hash | What a provider on a host offers with no agent running: the encoded `Catalogue` and its hash. An agent's catalogue is a blob, read with `GetBlob` |
+| `ListRepositories` | the repositories | Repositories a host offers to spawn agents in |
 
 `service SessionService` in [`session_service.proto`](../proto/amux/v1/session_service.proto):
 
-| Call | Returns | Meaning |
+| Call | Answers with | Meaning |
 | --- | --- | --- |
-| `SubscribeSession(SubscribeSessionRequest)` | stream of `SessionEvent` | One agent: opening, snapshot, tail, then live |
-| `ListItems(ListItemsRequest)` | `ListItemsResponse` | A page of older items |
-| `GetItem(GetItemRequest)` | `Item` | One item in full |
-| `SendInput(SendInputRequest)` | `SendInputResponse` | The interpreter's verdict on one input |
-| `UpdateDraft(UpdateDraftRequest)` | `Draft` | Keeps the unsent draft of an agent's composer on this machine, for its clients; an empty draft forgets it. Never synced to other machines |
-| `GetDraft(GetDraftRequest)` | `Draft` | The draft this machine keeps for an agent |
+| `SubscribeSession` | stream of `SessionEvent` | One agent: opening, snapshot, tail, then live |
+| `ListItems` | a page of items | A page of older items |
+| `GetItem` | `Item` | One item in full |
+| `SendInput` | a verdict | The interpreter's verdict on one input |
+| `UpdateDraft` | `Draft` | Keeps the unsent draft of an agent's composer on this machine, for its clients; an empty draft forgets it. Never synced to other machines |
+| `GetDraft` | `Draft` | The draft this machine keeps for an agent |
 
 A debug bundle is `ProfileAdminService.Dump(DumpRequest)`, answered with where it was written; it carries the records of the chats the asking client has on screen, and the daemon writes them into the one report beside its own records (see [debugging](DEBUGGING.md)). `SubmitReport(SubmitReportRequest)` writes a person's report around such a bundle and sends it to the profile's account. Both are served only on the profile's socket, never on an agent's.
 
@@ -530,10 +535,11 @@ The `Refusal` says why:
 | --- | --- | --- |
 | `REFUSAL_CLOSED_ASK` | interpreter | The answer names an ask that is not open, for example one already answered on another device |
 | `REFUSAL_NOT_QUEUED` | interpreter | The withdrawal or send-now names an input that is not waiting in the queue |
-| `REFUSAL_UNSUPPORTED` | interpreter | This agent version, kind or state cannot take the input, or send-now with no turn running |
+| `REFUSAL_UNSUPPORTED` | interpreter | This agent version, kind or state cannot take the input, or send-now with no turn running, or the prompt holds an attachment this build cannot read; a message whose body or attachment this build cannot read is refused the same way by the recipient's daemon |
 | `REFUSAL_DRAINING` | the agent | The agent is finishing up because its daemon went away or it was stopped |
 | `REFUSAL_EXITING` | the agent | A one-shot child decided to exit |
 | `REFUSAL_EXITED` | the owning daemon | The agent has exited; the composer offers Resume |
+| `REFUSAL_SETTLED` | the owning daemon | The agent is settled: only the person or its own parent resume it |
 | `REFUSAL_HOST_UNREACHABLE` | the local runtime | The agent's host cannot be reached, so the input never left; one that left and lost its answer is `ABORTED` instead |
 | `REFUSAL_CONVERSATION_ELSEWHERE` | interpreter | Terminal Claude's own view switched to another conversation, so a prompt would land in a conversation that is not this agent's |
 | `REFUSAL_TOO_LONG` | interpreter | The prompt is longer than the agent takes: Codex takes at most 1,048,576 characters (2^20), and would refuse a longer one only after amux had taken it; the detail names the limit and the prompt's length |
@@ -732,23 +738,40 @@ and close.
 long-running agent processes and long-lived clients run different versions at
 once, and stores and journals outlive the build that wrote them. So every
 surface in `amux.v1` (the client services, the link and pairing
-messages, the `ctl.sock` frames and the journal's records) changes by field
-discipline alone:
+messages, the `ctl.sock` frames and the journal's records) only adds:
 
 - Fields, oneof arms, enum values, messages and calls are added freely.
 - A number is never renumbered, retyped or reused. A field or enum value that
   goes leaves its number `reserved`.
 - A field never moves into, out of or between oneofs.
-- Names are not on the binary wire and may change, but for two: a service's
-  and a method's name, which are its gRPC path, and an error detail
-  message's, which is its `Any` type URL. A field or a method may take
-  another message that reads the same numbers, as an empty request may grow
-  into one with fields.
+- Names are frozen too. Three kinds are on the wire: a service's and a
+  method's name, which are its gRPC path, an error detail message's, which is
+  its `Any` type URL, and an `ErrorReason` value's, which is
+  `ErrorInfo.reason`. The rest are what every client's generated code calls
+  these things.
+- A new field's zero value means what builds without it did.
+- Existing data never moves to a new arm. An agent row in an arm an older host
+  cannot read is a row its next listing no longer names, so it drops the
+  replica and stops the children.
+- A new kind of message adds a field to `MessageBody`, keeping `text`, rather
+  than an arm to `Envelope.body`. An older host then still delivers the words.
+- New meaning goes in the per-kind body where it fits: bodies pass through a
+  daemon byte for byte, and a new envelope field is lost at any older daemon.
 
-`just proto-compat`, which CI runs, holds the tree to these rules against the
-newest release tag at or after 0.9.0, reading the descriptor set committed
-with that release; `just proto-compat <ref>` checks against any other ref. A
-break both ends of a link must take is a new `PROTOCOL_VERSION`, not an edit.
+Every call has its own `FooRequest` and `FooResponse`, so either can grow.
+
+`just proto-compat`, which CI runs, lints the schemas with buf's `STANDARD`
+rules and checks them against the newest release tag at or after 0.9.0 with
+its `PACKAGE` rules, which `buf.yaml` changes in one way: a field or enum value
+may go if its number stays `reserved`. `just proto-compat <ref>` checks against
+any other ref.
+
+A change that cannot be made this way, or a sweeping clean-up, is the next
+protocol: a new ALPN, `amux/2`, served beside `amux/1`, which TLS settles
+before any amux message.
+
+Strings builds agree on outside any schema, such as the ALPN and the pairing
+labels, are pinned by a test in `crates/wire/src/pinned.rs`.
 
 What a client writes into a dump is `amux.dump`, outside these promises:
 `DumpRequest.sessions` carries each session's record as bytes, and only the build that
@@ -770,22 +793,22 @@ What the design already relies on:
 
 ### Versions
 
-`wire::PROTOCOL_VERSION` (in [`crates/wire/src/lib.rs`](../crates/wire/src/lib.rs))
-is checked in one place: the link handshake between hosts. A connecting host
-names its version in `Hello.protocol_version`; the acceptor refuses a `Hello`
-naming another, closing the link with `LINK_CLOSE_REASON_VERSION_MISMATCH`,
-which the connecting host reads as the error reason `VERSION_MISMATCH`. It is 1, and moves only for a break
-both ends of a link must take.
+No version integer crosses a link: protobuf carries compatibility, and an
+equality check could only refuse one. A host names its build in
+`Hello.host.version`. A later relay can refuse a build too old for it on that,
+closing the link with `LINK_CLOSE_REASON_VERSION_MISMATCH`, which the
+connecting host reads as the error reason `VERSION_MISMATCH` and words as
+needing an update. No build does this yet.
 
-Nothing else carries a version integer:
+Nothing else carries a version integer either:
 
 - **Local clients** call the client services with no handshake. A client may
   compare its own version with its host's `HostEntry.host.version`; the terminal
   client shows "amux *version* is running · restart to update" when they
   differ.
 - **`ctl.sock` and the journal** have no version integer at all.
-- **The store** has a schema version; a store of another version is
-  refused, by name, and left as it is (see
+- **The store** only grows, so its stamp stays 1; a store with another stamp
+  is refused, by name, and left as it is (see
   [the journal and store](JOURNAL_AND_STORE.md)).
 
 ## Writing a client

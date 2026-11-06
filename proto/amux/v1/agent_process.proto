@@ -17,39 +17,39 @@ import "amux/v1/session_service.proto";
 message AgentSpec {
   // The directory name; ours, never the provider's.
   bytes agent_id = 1;
-  Kind kind = 3;
+  Kind kind = 2;
   // The project directory the provider child is launched in, frozen at
   // spawn.
-  string cwd = 4;
+  string cwd = 3;
   // The agent's name when this incarnation was spawned; a rename while it
   // runs reaches the row, and a Codex agent hears it on ctl.sock.
-  string name = 5;
+  string name = 4;
   // The inventory row's parent, host and id, so a child resumed from its
   // spec on one host still addresses a parent on another.
-  optional AgentRef parent = 6;
+  optional AgentRef parent = 5;
   // Exactly what the daemon resolved: model, permission mode, sandbox.
-  repeated string provider_args = 7;
-  map<string, string> provider_env = 8;
+  repeated string provider_args = 6;
+  map<string, string> provider_env = 7;
   // As configured, re-resolved on every spawn and resume.
-  string provider_command = 9;
+  string provider_command = 8;
   // Exactly what the agent process reads at start and nothing the daemon
   // consumes.
-  EffectiveConfig config = 10;
-  int64 created_at_ms = 12;
+  EffectiveConfig config = 9;
+  int64 created_at_ms = 10;
   // The n in spec.<n>.
-  uint32 incarnation = 13;
+  uint32 incarnation = 11;
   // What seeds the child's queue: the spawn's prompt, or a parent's
   // message on a parent-driven resume. Daemon-owned; a client never
   // supplies an envelope.
-  optional Bootstrap bootstrap = 15;
+  optional Bootstrap bootstrap = 12;
   // What the host's provider offers, from the daemon's copy for the host,
   // for a kind that cannot be asked itself: terminal Claude. Absent when
   // the host has no copy.
-  optional Catalogue offered = 16;
+  optional Catalogue offered = 13;
   // The branch the agent's worktree was made from, when its host made one:
   // what its git facts measure the branch against. Absent otherwise, and
   // the repository's default branch is the base.
-  optional string base_branch = 17;
+  optional string base_branch = 14;
 }
 
 message Bootstrap {

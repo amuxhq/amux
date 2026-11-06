@@ -23,8 +23,9 @@ per-kind carriers are in the interpreters (`crates/interpret`) and in
 ## The tool server
 
 The harness starts the tool server itself, as `amux internal mcp <dir>` run from the
-install path, so the server is always the agent's own version for the life of
-its session. The agent process registers it when it launches the provider:
+install path, so a process already started stays the version it started as,
+and a server a provider starts later is whatever is at that path. The agent
+process registers it when it launches the provider:
 Claude gets it through `--mcp-config` as a server named `amux`, with every
 tool but `attach` allowed by name in its settings (`mcp__amux__agents` and so
 on) so they run without a permission prompt. `attach` goes through Claude's own

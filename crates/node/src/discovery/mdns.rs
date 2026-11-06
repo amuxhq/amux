@@ -249,11 +249,6 @@ fn service_info(advert: &Advertisement) -> Result<ServiceInfo, DiscoveryError> {
 }
 
 fn advertisement_from_service(service: &ResolvedService) -> Result<Advertisement, String> {
-    let version = service
-        .get_property_val_str("v")
-        .ok_or_else(|| "missing TXT property v".to_string())?
-        .parse::<u32>()
-        .map_err(|_| "TXT property v is not a protocol version".to_string())?;
     let host_id = service
         .get_property_val_str("hid")
         .ok_or_else(|| "missing TXT property hid".to_string())?
@@ -298,7 +293,6 @@ fn advertisement_from_service(service: &ResolvedService) -> Result<Advertisement
     Ok(Advertisement {
         host_id,
         name,
-        version,
         addrs,
         scope,
         pairing_open,

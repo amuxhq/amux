@@ -69,8 +69,6 @@ pub enum ProfileRefusal {
     NoProfile(ProfileId),
     #[error("the profile is not in service")]
     NotInService,
-    #[error("the profile is not signed in")]
-    NotSignedIn,
     #[error("a profile needs a name")]
     NoName,
     #[error("another profile is named {0}")]
@@ -111,11 +109,9 @@ impl ProfileRefusal {
                 ErrorCode::InvalidArgument
             }
             Self::NameTaken(_) | Self::AccountElsewhere => ErrorCode::AlreadyExists,
-            Self::LastProfile
-            | Self::AgentsRunning
-            | Self::OtherAccount
-            | Self::HoldsData
-            | Self::NotSignedIn => ErrorCode::FailedPrecondition,
+            Self::LastProfile | Self::AgentsRunning | Self::OtherAccount | Self::HoldsData => {
+                ErrorCode::FailedPrecondition
+            }
             Self::Rejected(_) => ErrorCode::Unauthenticated,
             Self::Failed(_) => ErrorCode::Internal,
         };
@@ -393,25 +389,6 @@ impl Registry {
             });
         }
         let id = bound?;
-        installation.publish();
-        Self::one(&installation, id)
-    }
-
-    /// Reads the profile's account again now, and its relay link's
-    /// entitlement with it: what a client asks for after a purchase.
-    pub async fn refresh(&self, id: ProfileId) -> Result<ProfileState, ProfileRefusal> {
-        let installation = self.installation()?;
-        let edge = Self::edge_of(&installation, id)?;
-        if !edge.account().wants_cloud() {
-            return Err(ProfileRefusal::NotSignedIn);
-        }
-        edge.account()
-            .refresh()
-            .await
-            .map_err(ProfileRefusal::Unreachable)?;
-        // The relay's own copy; a profile whose link is down still has the
-        // account's answer.
-        let _ = edge.refresh_entitlement().await;
         installation.publish();
         Self::one(&installation, id)
     }

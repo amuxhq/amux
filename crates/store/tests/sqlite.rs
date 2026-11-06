@@ -56,6 +56,10 @@ fn a_store_of_another_schema_version_is_refused_named_and_untouched() {
         message.contains(&path.display().to_string()),
         "names the file: {message}"
     );
+    assert!(
+        message.contains("run the amux build that wrote it"),
+        "says how to get at the data: {message}"
+    );
     assert_eq!(
         std::fs::read(&path).unwrap(),
         before,

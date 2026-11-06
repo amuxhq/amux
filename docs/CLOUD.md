@@ -51,7 +51,7 @@ any client that calls `InstallationService.SignIn`.
 | `/connect/token` | POST | app, profile runtime | The app redeems its code here. A profile refreshes here as the client the token was issued to. Refresh tokens rotate: the one that comes back replaces the one spent. A profile accepting a paired device's offer of its account redeems the ticket here (`grant_type=urn:amux:sign-in-ticket`, `ticket`, `host_id`, its own `client_id`, `cli` on a computer and `mobile` on the phone, and the sign-in scopes) for tokens of its own; a used, expired or other host's ticket is `invalid_grant`. |
 | `/connect/revocation` | POST | profile runtime | A sign-out revokes the profile's refresh token here first (`token`, `token_type_hint=refresh_token`, the client it was issued to), so a copy taken earlier stops working. A failure is logged and the sign-out goes ahead. |
 | `/connect/userinfo` | GET | app, profile runtime | Who signed in: `sub`, `email`, `name`, `picture`. `sub` is the account identifier everything else is keyed by. The runtime reads it at sign-in and again at every token refresh, so a renamed account or a new picture reaches clients within the hour. |
-| `/api/graphql` | POST | app, profile runtime | The access read, below. The runtime makes it at sign-in, at every token refresh and when a client calls `RefreshProfile`, and publishes the answer on the profile. |
+| `/api/graphql` | POST | app, profile runtime | The access read, below. The runtime makes it at sign-in, and at every token refresh, and publishes the answer on the profile. |
 | `/api/connect` | GET | profile runtime | A relay credential, below. |
 | `/api/purchases` | POST | app | A purchase the App Store signed, below. |
 | `/api/account` | DELETE | app | Deletes the account. `409` while a subscription is still set to renew. |
@@ -88,7 +88,7 @@ A desktop client never holds a token. The daemon reads who the account is
 and what it may do, and publishes both on the profile
 (`Profile.account_name`, `email`, `picture_url` and `access`), which
 `InstallationService.SubscribeProfiles` streams to every client as it
-changes. A client that just learned of a purchase calls `RefreshProfile`.
+changes.
 
 ## The access read
 

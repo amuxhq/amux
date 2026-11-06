@@ -26,7 +26,7 @@ item warning:2 error final at=1793447725514 text="Full-history hydration is depr
 effect write "{\"id\":\"amux-1\",\"method\":\"thread/inject_items\",\"params\":{\"items\":[{\"content\":[{\"text\":\"Reply with exactly INJECTED_IDLE and nothing else.\",\"type\":\"input_text\"}],\"role\":\"user\",\"type\":\"message\"}],\"threadId\":\"01a191d0-89b3-7a82-8a23-9802729f1cde\"}}"
 effect write "{\"id\":\"amux-2\",\"method\":\"turn/start\",\"params\":{\"input\":[],\"threadId\":\"01a191d0-89b3-7a82-8a23-9802729f1cde\"}}"
 effect reply stdin-8 accepted
-item agent-message:737464696e2d38 agent_message final input=stdin-8 at=1793447725544 text="Reply with exactly INJECTED_IDLE and nothing else." envelope=737464696e2d38
+item agent-message:737464696e2d38 agent_message final input=stdin-8 at=1793447725544 text="Reply with exactly INJECTED_IDLE and nothing else."
 snapshot WORKING queue=[] working_on=- at=1793447725544 asks=[] thread=01a191d0-89b3-7a82-8a23-9802729f1cde model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 pending [stdin-8]
 ## 25 recorded 24: fact Rpc method=account/updated

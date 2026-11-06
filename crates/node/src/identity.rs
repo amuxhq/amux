@@ -36,7 +36,7 @@ const ED25519_PKCS8_V1_PREFIX: [u8; 16] = [
 const ED25519_SPKI_PREFIX: [u8; 12] = [
     0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
 ];
-pub const QUIC_ALPN: &[u8] = b"amux/2";
+pub const QUIC_ALPN: &[u8] = b"amux/1";
 
 #[derive(Debug, thiserror::Error)]
 pub enum IdentityError {

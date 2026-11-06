@@ -6,7 +6,7 @@
   composer Send activity=Some(Running { key: "exec-1e3f28fd-b1f5-4724-9cd6-347b69ad0eed" }) queue=[] underway=[] refused=[]
 ## 73 recorded 72: fact Rpc method=item/fileChange/requestApproval
   ask 0 -> "exec-1e3f28fd-b1f5-4724-9cd6-347b69ad0eed" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: ["<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowAlways { subjects: ["<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session }, Deny, DenyAndStop
     body Edit { path: "<MACHINE_PATH>", files: 1, added: 1, removed: 1, lines: [Hunk { old_start: 1, new_start: 1 }, Line(PatchLine { number: Some(1), kind: Removed, text: "old" }), Line(PatchLine { number: Some(1), kind: Added, text: "moved" }), Line(PatchLine { number: Some(2), kind: Context, text: "" }), Line(PatchLine { number: Some(3), kind: Context, text: "" }), Line(PatchLine { number: Some(4), kind…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 75 recorded 74: input stdin-9

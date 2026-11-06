@@ -16,8 +16,6 @@ pub enum CloudError {
     Connection(String),
     #[error("Authentication failed: {0}")]
     Auth(String),
-    #[error("Cloud request rejected: {0}")]
-    Rejected(String),
 }
 
 /// Response from the cloud `/api/connect` endpoint.
@@ -119,15 +117,10 @@ fn cloud_error_from_response(status: reqwest::StatusCode, body: &str) -> CloudEr
         return CloudError::Auth("invalid credentials".to_string());
     }
 
-    let detail = format!("API returned {status}: {body}");
-    if status.is_client_error()
-        && status != reqwest::StatusCode::REQUEST_TIMEOUT
-        && status != reqwest::StatusCode::TOO_MANY_REQUESTS
-    {
-        CloudError::Rejected(detail)
-    } else {
-        CloudError::Connection(detail)
-    }
+    // Only a 401 says the credentials are wrong. Anything else may be a
+    // proxy, a firewall or a route that has moved, and it costs a retry at
+    // the capped pace to find out; stopping would need a restart to undo.
+    CloudError::Connection(format!("API returned {status}: {body}"))
 }
 
 fn cloud_error_from_auth(error: AuthError) -> CloudError {
@@ -175,10 +168,11 @@ mod tests {
             ));
         }
 
+        // Every other refusal retries too, and keeps its words for the log.
         for body in ["", "not json", r#"{"error":"forbidden"}"#] {
             let error = cloud_error_from_response(reqwest::StatusCode::FORBIDDEN, body);
             match error {
-                CloudError::Rejected(message) => {
+                CloudError::Connection(message) => {
                     assert!(message.contains("403 Forbidden"));
                     assert!(message.contains(body));
                 }

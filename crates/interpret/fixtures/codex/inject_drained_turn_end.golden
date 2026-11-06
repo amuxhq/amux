@@ -21,7 +21,7 @@ item msg-1 message final at=1800000000000 text="1 2 3"
 ## 8 agent_message {"envelope":"e1","from":"reviewer","text":"Also say DONE."}
 effect write "{\"id\":\"amux-2\",\"method\":\"thread/inject_items\",\"params\":{\"items\":[{\"content\":[{\"text\":\"[message from agent reviewer]\\nAlso say DONE.\",\"type\":\"input_text\"}],\"role\":\"user\",\"type\":\"message\"}],\"threadId\":\"t1\"}}"
 effect reply e1 accepted
-item agent-message:6531 agent_message final input=e1 at=1800000001000 text="Also say DONE." envelope=6531
+item agent-message:6531 agent_message final input=e1 at=1800000001000 text="Also say DONE."
 pending [e1]
 ## 9 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
 item turn:1 turn final at=1800000001000 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000000

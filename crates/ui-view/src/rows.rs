@@ -573,7 +573,7 @@ fn decision_view(
 ) -> Option<Decision> {
     let decision = decision?;
     let outcome = match DecisionOutcome::try_from(decision.outcome).ok()? {
-        DecisionOutcome::None | DecisionOutcome::Unspecified => return None,
+        DecisionOutcome::Unspecified => return None,
         DecisionOutcome::Allowed => DecisionView::Allowed,
         DecisionOutcome::Denied => DecisionView::Denied,
         DecisionOutcome::AutoApproved => DecisionView::AutoApproved,

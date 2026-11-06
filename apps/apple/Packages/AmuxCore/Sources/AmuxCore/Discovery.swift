@@ -179,7 +179,6 @@ public final class LocalDiscovery {
     private struct Claim: Equatable {
         let host: HostId
         let name: String
-        let version: UInt32
         let scope: String
     }
 
@@ -219,8 +218,7 @@ public final class LocalDiscovery {
                   only?.contains(claimed.host) ?? true,
                   let name = claimed.name ?? Self.serviceName(of: sighting.endpoint)
             else { continue }
-            let claim = Claim(
-                host: claimed.host, name: name, version: claimed.version, scope: claimed.scope)
+            let claim = Claim(host: claimed.host, name: name, scope: claimed.scope)
             if let current = tracked[sighting.endpoint],
                current.claim == claim, current.routes == sighting.routes {
                 tracked[sighting.endpoint]?.pairing = claimed.pairing
@@ -274,8 +272,7 @@ public final class LocalDiscovery {
             self.tracked[endpoint]?.abandon = nil
             self.found[endpoint] = Found(
                 hostId: entry.claim.host.bytes, name: entry.claim.name,
-                version: entry.claim.version, addrs: [address], scope: entry.claim.scope,
-                pairingOpen: entry.pairing)
+                addrs: [address], scope: entry.claim.scope, pairingOpen: entry.pairing)
             self.handOver(Array(self.found.values))
         }
         if tracked[endpoint]?.attempt == attempt, tracked[endpoint]?.next == entry.next {
@@ -362,9 +359,9 @@ public final class LocalDiscovery {
 
     /// What an advertisement's own record claims it is.
     ///
-    /// A record missing either field is not an amux host advertising itself —
-    /// some other service on the same name, or a version that predates them —
-    /// and is passed over rather than guessed at.
+    /// A record with no host id is not an amux host advertising itself, but
+    /// some other service on the same name, and is passed over rather than
+    /// guessed at.
     ///
     /// The machine's name is the record's own, where it carries one: a
     /// responder that meets a second "desk" on the network renames this
@@ -375,12 +372,10 @@ public final class LocalDiscovery {
     /// rather than handed a keypad that can only fail.
     nonisolated static func claim(
         from record: NWTXTRecord
-    ) -> (host: HostId, version: UInt32, scope: String, name: String?, pairing: Bool)? {
-        guard let hid = record["hid"], let host = HostId(hid),
-              let claimed = record["v"], let version = UInt32(claimed)
-        else { return nil }
+    ) -> (host: HostId, scope: String, name: String?, pairing: Bool)? {
+        guard let hid = record["hid"], let host = HostId(hid) else { return nil }
         let name = record["name"].flatMap { $0.isEmpty ? nil : $0 }
-        return (host, version, record["scope"] ?? "", name, record["pair"] == "1")
+        return (host, record["scope"] ?? "", name, record["pair"] == "1")
     }
 
     /// The instance name a Bonjour endpoint carries: the machine's own,

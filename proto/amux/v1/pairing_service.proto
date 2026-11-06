@@ -6,9 +6,18 @@ package amux.v1;
 // with a one-shot secret, or over SSH.
 
 service PairingService {
-  rpc Pair(stream PairMessage) returns (stream PairMessage);
+  rpc Pair(stream PairRequest) returns (stream PairResponse);
 }
 
+message PairRequest {
+  PairMessage message = 1;
+}
+
+message PairResponse {
+  PairMessage message = 1;
+}
+
+// Either side's step of the exchange.
 message PairMessage {
   oneof body {
     bytes spake2_message = 1;
@@ -39,17 +48,16 @@ message PairingAbandoned {}
 message PairingError {
   enum Reason {
     REASON_UNSPECIFIED = 0;
-    NOT_IN_PAIRING_MODE = 1;
-    INVALID_PIN = 2;
-    PROTOCOL_VIOLATION = 3;
-    TIMEOUT = 4;
-    USER_REJECTED = 5;
-    SELF_PAIRING = 6;
+    REASON_INVALID_PIN = 1;
+    REASON_PROTOCOL_VIOLATION = 2;
+    REASON_TIMEOUT = 3;
+    REASON_USER_REJECTED = 4;
+    REASON_SELF_PAIRING = 5;
     // The peer claimed a host this one already trusts under another key.
     // The detail is the sentence a person is shown, naming that host.
-    ALREADY_PAIRED = 7;
+    REASON_ALREADY_PAIRED = 6;
     // Too many wrong secrets closed the window.
-    LOCKED = 8;
+    REASON_LOCKED = 7;
   }
 
   Reason reason = 1;

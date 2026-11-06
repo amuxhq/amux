@@ -202,7 +202,7 @@ async fn running_agents(
         return Ok(Vec::new());
     };
     let profiles = connect::installation(door)
-        .list_profiles(wire::Empty {})
+        .list_profiles(wire::ListProfilesRequest {})
         .await
         .map_err(crate::plain)?
         .into_inner()
@@ -211,11 +211,12 @@ async fn running_agents(
     for profile in profiles {
         let own = connect::admin_of(&profile)
             .await?
-            .get_device_identity(wire::Empty {})
+            .get_device_identity(wire::GetDeviceIdentityRequest {})
             .await
             .map_err(crate::plain)?
             .into_inner()
-            .host_id;
+            .identity;
+        let own = crate::held(own)?.host_id;
         let mut client = connect::client_of(&profile).await?;
         let (_, agents) = crate::verbs::inventory(&mut client).await?;
         let live: Vec<wire::Agent> = agents
@@ -320,10 +321,11 @@ pub async fn update(config: &InstallationConfig, retry: bool) -> Result<()> {
     while Instant::now() < deadline {
         let running = match connect::front_door_now(config).await {
             Some(door) => connect::installation(door)
-                .get_installation(wire::Empty {})
+                .get_installation(wire::GetInstallationRequest {})
                 .await
                 .ok()
-                .map(|info| info.into_inner().version),
+                .and_then(|info| info.into_inner().installation)
+                .map(|installation| installation.version),
             None => None,
         };
         if running.as_deref() == Some(version) {

@@ -36,7 +36,7 @@ snapshot WORKING queue=[] working_on="Plan it." at=1800000000000 asks=[] session
 ## 14 agent_message {"envelope":"e1","from":"lead","text":"Status?"}
 effect inject e1 via MessagingSocket
 effect reply e1 queued
-item agent-message:6531 agent_message final input=e1 at=1800000000000 text="Status?" envelope=6531
+item agent-message:6531 agent_message final input=e1 at=1800000000000 text="Status?"
 pending [e1]
 ## 15 input {"id":"n3","send_now":{"target":"e1"}}
 effect reply n3 rejected:NOT_QUEUED
@@ -91,11 +91,11 @@ item toolu_2 tool final at=1800000000180 text="" Bash TOOL_STATE_RUNNING input=s
 ## 33 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"command":"make test"},"tool_name":"Bash","tool_use_id":"toolu_2"}}
 snapshot WORKING queue=[] working_on="And the tests." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_2 Bash since=1800000000000
 ## 34 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"command":"make test"},"tool_name":"Bash"}}
-snapshot NEEDS_YOU queue=[] working_on="And the tests." at=1800000000000 asks=[ask:1->toolu_2 permission:Bash deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_2 Bash since=1800000000000
+snapshot NEEDS_YOU queue=[] working_on="And the tests." at=1800000000000 asks=[ask:1->toolu_2 permission:Bash] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_2 Bash since=1800000000000
 notice ask ask:1 run "make test" why="" more=0
 ## 35 input {"id":"p5","prompt":{"text":"Stop after this."}}
 effect reply p5 queued
-snapshot NEEDS_YOU queue=[p5] working_on="And the tests." at=1800000000000 asks=[ask:1->toolu_2 permission:Bash deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_2 Bash since=1800000000000
+snapshot NEEDS_YOU queue=[p5] working_on="And the tests." at=1800000000000 asks=[ask:1->toolu_2 permission:Bash] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=toolu_2 Bash since=1800000000000
 notice ask ask:1 run "make test" why="" more=0
 ## 36 input {"id":"n6","send_now":{"target":"p5"}}
 effect reply n6 rejected:UNSUPPORTED

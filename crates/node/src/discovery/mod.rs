@@ -30,7 +30,6 @@ pub const SERVICE_TYPE: &str = "_amux._udp.local.";
 /// writes these, so a browser reads the same record whoever put it up.
 pub fn txt_properties(advert: &Advertisement) -> Vec<(&'static str, String)> {
     let mut properties = vec![
-        ("v", advert.version.to_string()),
         // Hyphenated: the iPhone app parses this with Foundation's
         // `UUID(uuidString:)`, which rejects the 32-digit simple form.
         ("hid", advert.host_id.hyphenated().to_string()),
@@ -109,7 +108,6 @@ pub(crate) fn default_route_ipv4() -> Option<std::net::Ipv4Addr> {
 pub struct Advertisement {
     pub host_id: HostId,
     pub name: String,
-    pub version: u32,
     pub addrs: Vec<SocketAddr>,
     /// The advertiser's discovery scope. A browser lists only hosts whose
     /// scope equals its own, matched exactly: real machines leave it empty,

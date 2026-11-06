@@ -4,7 +4,7 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 5 fact {"channel":"rpc","json":{"id":7,"method":"item/commandExecution/requestApproval","params":{"availableDecisions":["accept",{"acceptWithExecpolicyAmendment":{"execpolicy_amendment":["curl","-s"]}},{"applyNetworkPolicyAmendment":{"network_policy_amendment":{"action":"allow","host":"api.example.com"}}},"decline","cancel"],"command":"/bin/zsh -lc 'curl -s https://api.example.com/status'","cwd":"/w…
   ask 7 -> "cmd-1" 1/1 Open
-    choices AllowOnce*, AllowSimilar { prefix: ["curl", "-s"] }, AllowNetwork { hosts: ["api.example.com"] }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowSimilar { prefix: ["curl", "-s"] }, AllowNetwork { hosts: ["api.example.com"] }, Deny, DenyAndStop
     body Command { command: "curl -s https://api.example.com/status", cwd: "/work", reason: "Reach the status API.", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 6 input {"answer":{"answer":{"decision":"approve_network"},"ask":"7"},"id":"a1"}
@@ -14,12 +14,12 @@
   composer Send activity=Some(Running { key: "fc-1" }) queue=[] underway=[] refused=[]
 ## 9 fact {"channel":"rpc","json":{"id":8,"method":"item/fileChange/requestApproval","params":{"grantRoot":"/work","itemId":"fc-1","reason":"Edit outside the workspace","threadId":"t1","turnId":"turn-1"}}}
   ask 8 -> "fc-1" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: ["/work/a.txt"], directories: [], mode: "", mode_name: "", scope: Session }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowAlways { subjects: ["/work/a.txt"], directories: [], mode: "", mode_name: "", scope: Session }, Deny, DenyAndStop
     body Edit { path: "/work/a.txt", files: 1, added: 1, removed: 1, lines: [Hunk { old_start: 1, new_start: 1 }, Line(PatchLine { number: Some(1), kind: Removed, text: "a" }), Line(PatchLine { number: Some(1), kind: Added, text: "b" })], line: Some(1), reason: "Edit outside the workspace", created: Some(false) }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 10 input {"answer":{"answer":{"decision":"approve_similar"},"ask":"8"},"id":"a3"}
   ask 8 -> "fc-1" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
-    choices AllowOnce*, AllowAlways { subjects: ["/work/a.txt"], directories: [], mode: "", mode_name: "", scope: Session }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowAlways { subjects: ["/work/a.txt"], directories: [], mode: "", mode_name: "", scope: Session }, Deny, DenyAndStop
     body Edit { path: "/work/a.txt", files: 1, added: 1, removed: 1, lines: [Hunk { old_start: 1, new_start: 1 }, Line(PatchLine { number: Some(1), kind: Removed, text: "a" }), Line(PatchLine { number: Some(1), kind: Added, text: "b" })], line: Some(1), reason: "Edit outside the workspace", created: Some(false) }
 ## 11 input {"answer":{"answer":{"decision":"deny"},"ask":"8"},"id":"a4"}
   ask none
@@ -36,12 +36,12 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 15 fact {"channel":"rpc","json":{"id":20,"method":"item/permissions/requestApproval","params":{"itemId":"exec-9","permissions":{"fileSystem":{"read":["/etc/shared"],"write":["/var/cache"]},"network":{"enabled":true}},"reason":"Read the shared config and reach the registry.","threadId":"t1","turnId":"turn-1"}}}
   ask 20 -> "ask:20" 1/1 Open
-    choices GrantForTurn*, GrantForSession, Deny { stops: false }
+    choices GrantForTurn*, GrantForSession, Deny
     body Access { reason: "Read the shared config and reach the registry.", read: ["/etc/shared"], write: ["/var/cache"], network: true, hosts: [] }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 16 input {"answer":{"answer":{"grant":{"read":["/etc/shared"],"write":["/elsewhere"]}},"ask":"20"},"id":"a6"}
   ask 20 -> "ask:20" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
-    choices GrantForTurn*, GrantForSession, Deny { stops: false }
+    choices GrantForTurn*, GrantForSession, Deny
     body Access { reason: "Read the shared config and reach the registry.", read: ["/etc/shared"], write: ["/var/cache"], network: true, hosts: [] }
 ## 17 input {"answer":{"answer":{"grant":{"for_session":true,"network":true,"read":["/etc/shared"]}},"ask":"20"},"id":"a7"}
   ask none
@@ -68,7 +68,7 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 24 fact {"channel":"rpc","json":{"id":30,"method":"item/commandExecution/requestApproval","params":{"availableDecisions":null,"command":"/bin/zsh -lc 'curl -s https://api.example.com/status'","cwd":"/work","itemId":"cmd-2","networkApprovalContext":{"host":"api.example.com","protocol":"https"},"proposedExecpolicyAmendment":["curl","-s"],"reason":"Reach the status API.","threadId":"t1","turnId":"turn-1…
   ask 30 -> "cmd-2" 1/1 Open
-    choices AllowOnce*, AllowForSession, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowForSession, Deny, DenyAndStop
     body Command { command: "curl -s https://api.example.com/status", cwd: "/work", reason: "Reach the status API.", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 25 fact {"channel":"rpc","json":{"method":"serverRequest/resolved","params":{"requestId":30,"threadId":"t1"}}}
@@ -86,7 +86,7 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 29 fact {"channel":"rpc","json":{"id":34,"method":"item/commandExecution/requestApproval","params":{"availableDecisions":["accept",{"acceptWithExecpolicyAmendment":{"execpolicy_amendment":["touch"]}},"cancel"],"command":"/bin/zsh -lc 'touch notes.txt'","cwd":"/work","itemId":"cmd-4","proposedExecpolicyAmendment":["touch"],"reason":"Create notes.txt.","threadId":"t1","turnId":"turn-1"}}}
   ask 34 -> "cmd-4" 1/1 Open
-    choices AllowOnce*, AllowSimilar { prefix: ["touch"] }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowSimilar { prefix: ["touch"] }, Deny, DenyAndStop
     body Command { command: "touch notes.txt", cwd: "/work", reason: "Create notes.txt.", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 30 input {"answer":{"answer":{"decision":"deny"},"ask":"34"},"id":"a9"}
@@ -96,7 +96,7 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 32 fact {"channel":"rpc","json":{"id":32,"method":"item/commandExecution/requestApproval","params":{"availableDecisions":["accept",{"acceptWithExecpolicyAmendment":{"execpolicy_amendment":["curl","-s"]}},{"applyNetworkPolicyAmendment":{"network_policy_amendment":{"action":"allow","host":"api.example.com"}}},"decline","cancel"],"command":"/bin/zsh -lc 'curl -s https://api.example.com/status'","cwd":"/…
   ask 32 -> "cmd-3" 1/1 Open
-    choices AllowOnce*, AllowSimilar { prefix: ["curl", "-s"] }, AllowNetwork { hosts: ["api.example.com"] }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowSimilar { prefix: ["curl", "-s"] }, AllowNetwork { hosts: ["api.example.com"] }, Deny, DenyAndStop
     body Command { command: "curl -s https://api.example.com/status", cwd: "/work", reason: "Reach the status API.", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 33 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"interrupted"}}}}

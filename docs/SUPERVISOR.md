@@ -312,9 +312,8 @@ three ways:
 | Anything else | An update is in progress: count failed starts against it as if this supervisor had done the swap. |
 
 Rollback restores the binary only, and only before activation. There is no
-store backup: the store the previous binary reopens holds nothing the new one
-wrote, because a binary refuses a store of another schema version rather than
-change it. A bad release that has already activated is fixed by a
+store backup: the store only grows, so the previous binary reads whatever the
+new one added. A bad release that has already activated is fixed by a
 corrective release with a higher version, never by moving back.
 
 The supervisor needs write access to the directory holding the `amux` binary,

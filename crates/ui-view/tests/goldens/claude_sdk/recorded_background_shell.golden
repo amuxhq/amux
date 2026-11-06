@@ -10,7 +10,7 @@
   composer Send activity=Some(Running { key: "toolu_01H2BDqakWvyGxVHsvsXSKin" }) queue=[] underway=[] refused=[]
 ## 54 recorded 53: fact Stream type=control_request
   ask 504dd29c-5d43-4f09-b46d-4631163ed207 -> "toolu_01H2BDqakWvyGxVHsvsXSKin" 1/1 Open
-    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, Deny+note, DenyAndStop+note
     body Command { command: "for i in 1 2 3; do echo tick $i; sleep 2; done", cwd: "", reason: "A variable in this command can't be checked before it runs", description: "Run three-tick loop in background" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 62 recorded 61: input stdin-4

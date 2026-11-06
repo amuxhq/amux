@@ -23,8 +23,9 @@ pub const ACCOUNT_FILE: &str = "account";
 /// An access token this close to expiry is refreshed before it is handed out.
 const ACCESS_TOKEN_MARGIN: Duration = Duration::from_secs(60);
 
+// Unknown keys are ignored: a later build may add one, and this build must
+// still start on a file that build wrote.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct AccountRecord {
     pub(crate) service: CloudServiceId,
     /// The account's subject at that service: what makes two logins the
@@ -237,16 +238,6 @@ impl Account {
             }
         }
         Ok(())
-    }
-
-    /// Reads the account again now: a fresh token, then who it is and what
-    /// it may do.
-    pub(crate) async fn refresh(self: &Arc<Self>) -> Result<(), String> {
-        let token = AccountCredentials(self.clone())
-            .access_token()
-            .await
-            .map_err(|error| error.to_string())?;
-        self.read_account(&token).await
     }
 
     /// A relay token belongs to the login that fetched it: signing in or
@@ -657,6 +648,22 @@ mod tests {
         };
         account.bind(record, expired).await.unwrap();
         account
+    }
+
+    /// A file a later build wrote still opens, as 0.8.4 did not with one
+    /// holding a key it had dropped.
+    #[tokio::test]
+    async fn an_account_file_with_a_key_this_build_does_not_know_still_opens() {
+        let dir = tempfile::tempdir().unwrap();
+        let endpoint = TokenEndpoint::start().await;
+        let path = dir.path().join(ACCOUNT_FILE);
+        signed_in(dir.path(), &endpoint).await;
+        let mut file: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        file["added_later"] = serde_json::Value::Bool(true);
+        std::fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
+        let opened = Account::open(dir.path()).unwrap();
+        assert_eq!(opened.record().unwrap().subject, "subject");
     }
 
     #[tokio::test]

@@ -6,12 +6,12 @@
   composer Send activity=Some(Running { key: "toolu_01YACd5CPNZcJjtngJcqcdNk" }) queue=[] underway=[] refused=[]
 ## 40 recorded 38: fact Hook hook_event_name=PermissionRequest
   ask ask:1 -> "" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "Accept edits", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "Accept edits", scope: Session }, Deny+note, DenyAndStop+note
     body Command { command: "touch decided.txt", cwd: "", reason: "", description: "Create empty file decided.txt in working directory" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 43 recorded 41: fact Transcript type=assistant uuid=e9087859-ffcb-4999-9fa3-5330b66e8c8d
   ask ask:1 -> "toolu_01YACd5CPNZcJjtngJcqcdNk" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "Accept edits", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "Accept edits", scope: Session }, Deny+note, DenyAndStop+note
     body Command { command: "touch decided.txt", cwd: "", reason: "", description: "Create empty file decided.txt in working directory" }
 ## 48 recorded 46: fact Transcript type=user uuid=46df020b-005c-4c36-ac7e-b16097d26162
   ask none

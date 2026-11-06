@@ -237,10 +237,7 @@ fn a_codex_rule_for_a_long_command_reads_whole() {
                 },
                 wire::Decision::ApproveSimilar,
             ),
-            choice(
-                ui_view::ChoiceOutcome::Deny { stops: false },
-                wire::Decision::Deny,
-            ),
+            choice(ui_view::ChoiceOutcome::Deny, wire::Decision::Deny),
         ],
         question_note: false,
         question_skip: false,
@@ -323,9 +320,10 @@ fn a_long_commands_choices_stay_on_a_short_screen() {
     let mut state = chat(replies(1, 3));
     state.update(snapshot(Phase::NeedsYou, body.encode_to_vec(), vec![]));
     let card = ask_card(&state).expect("the ask is open");
-    // The box numbers the choices and puts the way out last.
+    // The box numbers the choices and puts the way out last. Denying and
+    // stopping is the card's last choice, and no row of the box.
     let first = "1. Yes".to_owned();
-    let last = format!("{}. No", card.choices.len());
+    let last = format!("{}. No", card.choices.len() - 1);
     for (width, height) in [(80, 24), (80, 18), (80, 14)] {
         let mut view = ChatView::new(b"agent".to_vec(), 0, false);
         let screen = rows_of(&mut view, &state, 0, width, height).join("\n");

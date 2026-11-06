@@ -12,43 +12,55 @@ import "amux/v1/records.proto";
 // Local Unix socket and in-process only. Calls are not retried by any
 // client; a mutation that loses its reply is re-run by the person.
 service InstallationService {
-  rpc GetInstallation(Empty) returns (Installation);
-  rpc Shutdown(Empty) returns (Empty);
-  rpc ListProfiles(Empty) returns (ListProfilesResponse);
-  rpc CreateProfile(CreateProfileRequest) returns (Profile);
+  rpc GetInstallation(GetInstallationRequest) returns (GetInstallationResponse);
+  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
+  rpc ListProfiles(ListProfilesRequest) returns (ListProfilesResponse);
+  rpc CreateProfile(CreateProfileRequest) returns (CreateProfileResponse);
   // Names a profile, or lets the installation pick or create one.
-  rpc BindProfile(BindProfileRequest) returns (Profile);
-  rpc RenameProfile(RenameProfileRequest) returns (Profile);
-  rpc DeleteProfile(DeleteProfileRequest) returns (Empty);
+  rpc BindProfile(BindProfileRequest) returns (BindProfileResponse);
+  rpc RenameProfile(RenameProfileRequest) returns (RenameProfileResponse);
+  rpc DeleteProfile(DeleteProfileRequest) returns (DeleteProfileResponse);
   // Every profile now, then again whenever any of them changes: a new or
   // removed profile, a sign-in or sign-out, its relay link, its account's
   // name, picture or access. Each message is the whole list.
-  rpc SubscribeProfiles(Empty) returns (stream ListProfilesResponse);
+  rpc SubscribeProfiles(SubscribeProfilesRequest) returns (stream SubscribeProfilesResponse);
   // Signs a profile in with the device flow, run by the daemon: the first
   // event is the code to show the person and the page to open, the last is
   // the signed-in profile. A profile that already holds agents or paired
   // hosts asks first, with an adopt event, unless the request already
   // adopts; AnswerSignIn answers it. The stream's closing abandons the
   // sign-in.
-  rpc SignIn(SignInRequest) returns (stream SignInEvent);
-  rpc AnswerSignIn(AnswerSignInRequest) returns (Empty);
-  // Reads the profile's account again now (its name, picture and access),
-  // as after a purchase; the daemon also reads it whenever it refreshes the
-  // account's token.
-  rpc RefreshProfile(RefreshProfileRequest) returns (Profile);
+  rpc SignIn(SignInRequest) returns (stream SignInResponse);
+  rpc AnswerSignIn(AnswerSignInRequest) returns (AnswerSignInResponse);
   // The installation's everyday settings, as the config file resolves them.
-  rpc GetSettings(Empty) returns (Settings);
+  rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
   // Changes the named settings in the config file and applies each at once.
-  rpc UpdateSettings(UpdateSettingsRequest) returns (Settings);
+  rpc UpdateSettings(UpdateSettingsRequest) returns (UpdateSettingsResponse);
   // One profile's onboarding steps, now and on every change.
-  rpc SubscribeOnboarding(OnboardingRequest) returns (stream Onboarding);
-  rpc AnswerOnboarding(AnswerOnboardingRequest) returns (Onboarding);
+  rpc SubscribeOnboarding(SubscribeOnboardingRequest) returns (stream SubscribeOnboardingResponse);
+  rpc AnswerOnboarding(AnswerOnboardingRequest) returns (AnswerOnboardingResponse);
   // Folders worth offering as repositories: where Claude Code and Codex ran
   // lately, Git repositories that still exist.
-  rpc SuggestRepositories(Empty) returns (SuggestRepositoriesResponse);
+  rpc SuggestRepositories(SuggestRepositoriesRequest) returns (SuggestRepositoriesResponse);
   // A one-time link that signs the browser in to the profile's account and
   // opens `path` on amux.sh.
   rpc WebSignInLink(WebSignInLinkRequest) returns (WebSignInLinkResponse);
+}
+
+message GetInstallationRequest {}
+
+message GetInstallationResponse {
+  Installation installation = 1;
+}
+
+message ShutdownRequest {}
+
+message ShutdownResponse {}
+
+message GetSettingsRequest {}
+
+message GetSettingsResponse {
+  Settings settings = 1;
 }
 
 message Settings {
@@ -92,24 +104,31 @@ message UpdateSettingsRequest {
   optional bool auto_reports = 8;
 }
 
+message UpdateSettingsResponse {
+  Settings settings = 1;
+}
+
 message RepositoryList {
   repeated string paths = 1;
 }
 
-message OnboardingRequest {
+message SubscribeOnboardingRequest {
   // Empty: the profile a bare `amux` opens.
   bytes profile_id = 1;
+}
+
+message SubscribeOnboardingResponse {
+  Onboarding onboarding = 1;
 }
 
 message Onboarding {
   bytes profile_id = 1;
   // In the order they are shown.
   repeated OnboardingStep steps = 2;
-  reserved 3;
   // The person dismissed "Finish setting up": every step skipped now was
   // skipped when they did, so a client stops offering to finish them. A
   // step skipped later offers it again.
-  bool dismissed = 4;
+  bool dismissed = 3;
 }
 
 message OnboardingStep {
@@ -136,22 +155,23 @@ enum StepState {
 }
 
 message AnswerOnboardingRequest {
-  reserved 4;
   bytes profile_id = 1;
   oneof answer {
     // A confirmation step the person confirmed.
     OnboardingStepId done = 2;
     OnboardingStepId skip = 3;
     // "Finish setting up" dismissed: every needed step is skipped.
-    Empty dismiss = 5;
+    Empty dismiss = 4;
     // The client showed the step: counted for usage, nothing kept.
-    OnboardingStepId shown = 7;
+    OnboardingStepId shown = 5;
     // The client put a one-tap sign-in in front of the person, on the side
     // named: counted for usage, nothing kept.
-    OfferRole sign_in_offer_shown = 8;
+    OfferRole sign_in_offer_shown = 6;
   }
-  // The client answering, for the usage event.
-  Surface surface = 6;
+}
+
+message AnswerOnboardingResponse {
+  Onboarding onboarding = 1;
 }
 
 // Which side of a one-tap sign-in a client is on.
@@ -163,12 +183,7 @@ enum OfferRole {
   OFFER_ROLE_RECEIVER = 2;
 }
 
-enum Surface {
-  SURFACE_UNSPECIFIED = 0;
-  SURFACE_TERMINAL = 1;
-  SURFACE_PHONE = 2;
-  SURFACE_MAC = 3;
-}
+message SuggestRepositoriesRequest {}
 
 message SuggestRepositoriesResponse {
   repeated RepositoryEntry suggestions = 1;
@@ -259,7 +274,6 @@ message RelayLink {
 
 message RelayConnected {
   Tier tier = 1;
-  RelayCarrier carrier = 2;
 }
 
 enum Tier {
@@ -268,15 +282,19 @@ enum Tier {
   TIER_PRO = 2;
 }
 
-enum RelayCarrier {
-  RELAY_CARRIER_UNSPECIFIED = 0;
-  RELAY_CARRIER_QUIC = 1;
-  RELAY_CARRIER_TCP = 2;
-}
+message ListProfilesRequest {}
 
 message ListProfilesResponse { repeated Profile profiles = 1; }
 
+message SubscribeProfilesRequest {}
+
+message SubscribeProfilesResponse { repeated Profile profiles = 1; }
+
 message CreateProfileRequest { optional string label = 1; }
+
+message CreateProfileResponse {
+  Profile profile = 1;
+}
 
 message BindProfileRequest {
   optional bytes profile_id = 1;
@@ -288,14 +306,24 @@ message BindProfileRequest {
   string client_id = 5;
 }
 
+message BindProfileResponse {
+  Profile profile = 1;
+}
+
 message RenameProfileRequest {
   bytes profile_id = 1;
   string name = 2;
 }
 
+message RenameProfileResponse {
+  Profile profile = 1;
+}
+
 message DeleteProfileRequest {
   bytes profile_id = 1;
 }
+
+message DeleteProfileResponse {}
 
 message SignInRequest {
   // The profile to sign in; absent lets the installation pick: the profile
@@ -307,6 +335,10 @@ message SignInRequest {
   // Sign in a profile that already holds agents or paired hosts without
   // asking.
   bool adopt_non_pristine = 3;
+}
+
+message SignInResponse {
+  SignInEvent event = 1;
 }
 
 message SignInEvent {
@@ -342,4 +374,4 @@ message AnswerSignInRequest {
   bool adopt = 2;
 }
 
-message RefreshProfileRequest { bytes profile_id = 1; }
+message AnswerSignInResponse {}

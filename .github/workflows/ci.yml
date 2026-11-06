@@ -87,15 +87,18 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          # The compatibility check reads the latest release tag's schema.
+          # The protocol and store checks read the latest release tag's schemas.
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-buf
       - name: Check committed protobuf code
         run: just codegen-check
-      - name: Check the protocol still reads what the latest release wrote
+      - name: Lint the protocol and check it still reads what the latest release wrote
         run: just proto-compat
+      - name: Check the store only grew since the latest release
+        run: just store-check
       - name: Enforce dependency boundaries
         run: just dependency-policy
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28

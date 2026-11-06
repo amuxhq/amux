@@ -258,7 +258,7 @@ impl Install {
             .client
             .agents
             .clone()
-            .subscribe_inventory(wire::Empty {})
+            .subscribe_inventory(wire::SubscribeInventoryRequest {})
             .await
             .map_err(|status| status.to_string())?
             .into_inner();
@@ -267,7 +267,7 @@ impl Install {
             .map_err(|_| "the inventory said nothing".to_owned())?
             .map_err(|status| status.to_string())?
             .ok_or("the inventory ended")?;
-        match event.of {
+        match event.event.and_then(|event| event.of) {
             Some(inventory_event::Of::Host(entry)) => Ok(entry),
             other => Err(format!("the inventory opens with {other:?}, not this host")),
         }

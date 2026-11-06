@@ -7,14 +7,11 @@ mod signing;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     match std::env::args().nth(1).as_deref() {
         Some("codegen") => codegen(),
-        Some("proto-compat") => {
-            xtask::proto_compat::main(&std::env::args().skip(2).collect::<Vec<_>>())
-        }
         Some("release") => release::main(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("mac") => mac::main(&std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {
             eprintln!(
-                "usage: xtask <codegen|proto-compat [REF]|release <key generate [--file PATH]|cut VERSION|deploy VERSION [--channel C] [--rollout N] [--key-file PATH]>|mac <release VERSION [--rehearse] [--no-notarize]|deploy VERSION [--channel C] [--key-file PATH]>>"
+                "usage: xtask <codegen|release <key generate [--file PATH]|cut VERSION|deploy VERSION [--channel C] [--rollout N] [--key-file PATH]>|mac <release VERSION [--rehearse] [--no-notarize]|deploy VERSION [--channel C] [--key-file PATH]>>"
             );
             std::process::exit(2);
         }

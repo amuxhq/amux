@@ -5,7 +5,7 @@ effect reply p1 queued
 snapshot STARTING queue=[p1] working_on=- at=1800000000000 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 2 agent_message {"envelope":"e1","from":"lead","text":"It is on branch parser."}
 effect reply e1 queued
-item agent-message:6531 agent_message final input=e1 at=1800000000000 text="It is on branch parser." envelope=6531
+item agent-message:6531 agent_message final input=e1 at=1800000000000 text="It is on branch parser."
 pending [e1]
 ## 3 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
 effect write "{\"id\":\"amux-1\",\"method\":\"thread/inject_items\",\"params\":{\"items\":[{\"content\":[{\"text\":\"[message from agent lead]\\nIt is on branch parser.\",\"type\":\"input_text\"}],\"role\":\"user\",\"type\":\"message\"}],\"threadId\":\"t1\"}}"

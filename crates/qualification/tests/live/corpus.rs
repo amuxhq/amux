@@ -948,7 +948,9 @@ impl Install {
             })
             .await
             .map_err(|status| format!("the image upload: {status}"))?
-            .into_inner();
+            .into_inner()
+            .blob
+            .unwrap();
         self.send_input(
             &agent,
             sdk(claude_sdk_input::Of::Prompt(PromptInput {
@@ -1020,7 +1022,7 @@ impl Install {
                             .any(|item| matches!(item, Claude::ApiError(_))),
                         _ => !matches!(
                             log.state(kind).sign_in.state(),
-                            wire::SignInState::SignedIn | wire::SignInState::Unknown
+                            wire::SignInState::SignedIn | wire::SignInState::Unspecified
                         ),
                     }
             })

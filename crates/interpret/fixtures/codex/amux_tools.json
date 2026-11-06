@@ -1,5 +1,5 @@
 {
-  "about": "amux's own tools: status sets working_on and draws nothing; send is drawn as the message it sent, on the call's own key, sending until it returns, then sent with the envelope id or rejected with the reason; never a tool row for either.",
+  "about": "amux's own tools: status sets working_on and draws nothing; send is drawn as the message it sent, on the call's own key, sending until it returns, then sent or rejected with the reason; never a tool row for either.",
   "spec": {
     "created_at_ms": 1800000000000
   },

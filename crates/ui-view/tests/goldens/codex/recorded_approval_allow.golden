@@ -6,7 +6,7 @@
   composer Send activity=Some(Running { key: "exec-e8a96244-1e5d-45bf-b154-9414de3b3672" }) queue=[] underway=[] refused=[]
 ## 42 recorded 41: fact Rpc method=item/commandExecution/requestApproval
   ask 0 -> "exec-e8a96244-1e5d-45bf-b154-9414de3b3672" 1/1 Open
-    choices AllowOnce*, AllowSimilar { prefix: ["touch", "decided.txt"] }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowSimilar { prefix: ["touch", "decided.txt"] }, Deny, DenyAndStop
     body Command { command: "touch decided.txt", cwd: "<MACHINE_PATH>", reason: "Allow creating decided.txt in the read-only sandbox?", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 44 recorded 43: input stdin-9

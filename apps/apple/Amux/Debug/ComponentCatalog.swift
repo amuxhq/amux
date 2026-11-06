@@ -268,26 +268,26 @@ enum ComponentCatalog {
                 reason: "", created: false, line: 13), [
                     Choice(outcome: .allowOnce, primary: true, takesNote: false),
                     Choice(outcome: .allowAlways(subjects: [], directories: [], mode: "acceptEdits", modeName: "Accept edits", scope: .session), primary: false, takesNote: false),
-                    Choice(outcome: .deny(stops: false), primary: false, takesNote: true),
+                    Choice(outcome: .deny, primary: false, takesNote: true),
                 ])),
             ask("permission-create", height: 420, F.card(.claudeSdk, .edit(
                 path: "crates/amux-ui/src/pairing/refusals/every_reason_a_pairing_is_refused.rs",
                 files: 1, added: 2, removed: 0, lines: F.created,
                 reason: "", created: true, line: 1), [
                     Choice(outcome: .allowOnce, primary: true, takesNote: false),
-                    Choice(outcome: .deny(stops: false), primary: false, takesNote: true),
+                    Choice(outcome: .deny, primary: false, takesNote: true),
                 ])),
             ask("permission-tool", height: 360, F.card(.claudeSdk, .tool(
                 server: "github", tool: "create_issue",
                 arguments: "{\n  \"repo\": \"jlw/amux\",\n  \"title\": \"Pairing copy\"\n}"), [
                     Choice(outcome: .allowOnce, primary: true, takesNote: false),
-                    Choice(outcome: .deny(stops: false), primary: false, takesNote: true),
+                    Choice(outcome: .deny, primary: false, takesNote: true),
                 ])),
             ask("permission-terminal", height: 380, F.card(.claudePty, .command(
                 command: "cargo test -p amux-ui", cwd: "", reason: "", description: ""), [
                     Choice(outcome: .allowOnce, primary: true, takesNote: false),
                     Choice(outcome: .allowAlways(subjects: ["cargo test"], directories: [], mode: "", modeName: "", scope: .project), primary: false, takesNote: false),
-                    Choice(outcome: .deny(stops: true), primary: false, takesNote: false),
+                    Choice(outcome: .deny, primary: false, takesNote: false),
                 ])),
             ask("codex-command", height: 560, F.card(.codex, .command(
                 command: "curl -s localhost:8080/health", cwd: "~/src/amux", reason: "Check the dev server",
@@ -296,7 +296,7 @@ enum ComponentCatalog {
                     Choice(outcome: .allowForSession, primary: false, takesNote: false),
                     Choice(outcome: .allowSimilar(prefix: ["curl", "-s"]), primary: false, takesNote: false),
                     Choice(outcome: .allowNetwork(hosts: ["localhost"]), primary: false, takesNote: false),
-                    Choice(outcome: .deny(stops: false), primary: false, takesNote: false),
+                    Choice(outcome: .deny, primary: false, takesNote: false),
                     Choice(outcome: .denyAndStop, primary: false, takesNote: false),
                 ], count: 2)),
             ask("question-single", height: 500, F.card(.claudeSdk, .question([F.redactionQuestion]), [])),
@@ -364,7 +364,7 @@ enum ComponentCatalog {
                     Choice(outcome: .allowOnce, primary: true, takesNote: false),
                     Choice(outcome: .allowForSession, primary: false, takesNote: false),
                     Choice(outcome: .allowSimilar(prefix: ["curl", "-s"]), primary: false, takesNote: false),
-                    Choice(outcome: .deny(stops: false), primary: false, takesNote: false),
+                    Choice(outcome: .deny, primary: false, takesNote: false),
                 ])),
             ask("question-large-text", height: 2600, size: .accessibility5,
                 F.card(.claudeSdk, .question([F.redactionQuestion]), [])),
@@ -521,7 +521,7 @@ enum ComponentCatalog {
             composer("strip-trouble", height: 220, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(
                 model: "gpt-5", usage: UsageView(blocked: false, windows: [UsageWindowView(label: .fiveHour, state: .nearLimit, resetsAtMs: nil, usedPercent: 91)], credits: nil),
                 failedServers: [ServerView(name: "github", error: "exited", needsAuth: false)])),
-            composer("sign-in", height: 240, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(signIn: F.expiredSignIn)),
+            composer("sign-in", height: 240, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(signIn: F.failedSignIn)),
             // The settings card once per provider kind, from the settings
             // view each kind's interpreter state gives.
             composer("settings-claude-sdk", height: 640, frame: ScriptedChat.frame(kind: .claudeSdk),
@@ -648,7 +648,7 @@ enum ComponentCatalog {
             chat("signed-out", chat: {
                 ScriptedChat(
                     rows: F.conversation, frame: ScriptedChat.frame(phase: .idle),
-                    strip: ScriptedChat.strip(signIn: F.expiredSignIn))
+                    strip: ScriptedChat.strip(signIn: F.failedSignIn))
             }),
             // A list that fits on screen is always at its newest row and
             // follows arrivals, so the reader is put above it for real.
@@ -866,7 +866,7 @@ enum CatalogFixtures {
         QueuedRow(inputId: [3], text: [.text("worker-2 finished the specs.")], steered: false, canWithdraw: false, canSendNow: true, fromAgent: "worker-2"),
     ]
 
-    static let expiredSignIn = SignInView(state: .expired, account: "ada@example.com", message: "OAuth token has expired.")
+    static let failedSignIn = SignInView(state: .failed, account: "ada@example.com", message: "OAuth token has expired.")
 
     // MARK: - Settings
 
@@ -1201,7 +1201,7 @@ enum CatalogFixtures {
         Choice(outcome: .allowOnce, primary: true, takesNote: false),
         Choice(outcome: .allowAlways(subjects: ["cargo test"], directories: [], mode: "", modeName: "", scope: .project), primary: false, takesNote: false),
         Choice(outcome: .allowForSession, primary: false, takesNote: false),
-        Choice(outcome: .deny(stops: false), primary: false, takesNote: true),
+        Choice(outcome: .deny, primary: false, takesNote: true),
         Choice(outcome: .denyAndStop, primary: false, takesNote: true),
     ]
 

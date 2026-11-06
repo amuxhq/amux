@@ -24,28 +24,28 @@ message CodexItem {
     Text message = 2;
     Reasoning reasoning = 3;
     Work work = 4;
-    Turn turn = 6;
+    Turn turn = 5;
     // A prompt delivered into the running turn; the text is the envelope's.
-    Steer steer = 7;
-    Boundary boundary = 8;
-    AgentMessage agent_message = 9;
-    ApiError error = 10;
-    Unrecognized unrecognized = 12;
+    Steer steer = 6;
+    Boundary boundary = 7;
+    AgentMessage agent_message = 8;
+    ApiError error = 9;
+    Unrecognized unrecognized = 10;
     // Working notes, marked apart from the final answer.
-    Text working_note = 13;
-    ReviewerVerdict verdict = 15;
+    Text working_note = 11;
+    ReviewerVerdict verdict = 12;
     // A question, access grant, tool-server form or link: an ask that is
     // the work.
-    AskItem ask = 16;
+    AskItem ask = 13;
     // The plan Codex proposed in plan mode.
-    Plan plan = 17;
+    Plan plan = 14;
     // A line from a command amux runs for Codex, as Codex's own app prints
     // it ("Code review started: current changes"); the line is the envelope
     // text.
-    SlashOutput command_output = 18;
+    SlashOutput command_output = 15;
     // Codex holding the turn's answer for a slower safety check; the
     // envelope text is Codex's words.
-    SafetyCheck safety_check = 19;
+    SafetyCheck safety_check = 16;
   }
 }
 
@@ -186,15 +186,15 @@ message CodexSnapshot {
   optional string mode = 6;
   // Codex's own approval policy, absent until Codex says.
   optional string approval_policy = 7;
-  repeated ToolServer servers = 12;
-  CodexUsage usage = 13;
-  SignIn sign_in = 14;
-  BackgroundJobs background_jobs = 15;
+  repeated ToolServer servers = 8;
+  CodexUsage usage = 9;
+  SignIn sign_in = 10;
+  BackgroundJobs background_jobs = 11;
   // Plan steps with status.
-  TaskList plan = 16;
-  optional string effort = 17;
+  TaskList plan = 12;
+  optional string effort = 13;
   // Absent until the thread start response names it.
-  optional string thread_id = 18;
+  optional string thread_id = 14;
   // What it offers is in the catalogue the Snapshot names.
 }
 

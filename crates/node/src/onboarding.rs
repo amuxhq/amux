@@ -287,15 +287,6 @@ fn usage_step(step: Id) -> Option<analytics::Step> {
     })
 }
 
-fn usage_surface(surface: wire::Surface) -> Option<analytics::Client> {
-    Some(match surface {
-        wire::Surface::Terminal => analytics::Client::Terminal,
-        wire::Surface::Phone => analytics::Client::Phone,
-        wire::Surface::Mac => analytics::Client::Mac,
-        wire::Surface::Unspecified => return None,
-    })
-}
-
 /// A profile named by its id's bytes, or none when they are empty.
 fn named(bytes: &[u8]) -> Result<Option<ProfileId>, ProfileRefusal> {
     if bytes.is_empty() {
@@ -409,18 +400,19 @@ impl Registry {
     /// Takes a client's answer to a step and says where the steps stand
     /// after it. A step the daemon sees happen (pairing a phone, signing in,
     /// the first agent) is done only when it happens; a client may skip it.
+    /// `surface` is the client answering, for the usage count.
     pub fn answer_onboarding(
         &self,
         request: &wire::AnswerOnboardingRequest,
+        surface: analytics::Client,
     ) -> Result<wire::Onboarding, ProfileRefusal> {
         use wire::answer_onboarding_request::Answer;
         let installation = self.installation()?;
         let runtime = Self::onboarding_runtime(&installation, named(&request.profile_id)?)?;
         let profile = runtime.profile();
         let onboarding = &installation.onboarding;
-        let surface = usage_surface(request.surface());
         let record = |step: Id, outcome: analytics::StepOutcome| {
-            if let (Some(step), Some(surface)) = (usage_step(step), surface) {
+            if let Some(step) = usage_step(step) {
                 runtime
                     .analytics()
                     .record(analytics::Event::OnboardingStep {
@@ -445,7 +437,7 @@ impl Registry {
                 }
                 kept(onboarding.confirm(done))?;
                 record(done, analytics::StepOutcome::Done);
-                if done == Id::Repositories && surface.is_some() {
+                if done == Id::Repositories {
                     runtime
                         .analytics()
                         .record(analytics::Event::RepositoriesChosen {

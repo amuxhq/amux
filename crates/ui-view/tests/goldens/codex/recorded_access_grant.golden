@@ -4,7 +4,7 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 61 recorded 60: fact Rpc method=item/permissions/requestApproval
   ask 0 -> "ask:0" 1/1 Open
-    choices GrantForTurn*, GrantForSession, Deny { stops: false }
+    choices GrantForTurn*, GrantForSession, Deny
     body Access { reason: "Run curl -sI https://example.com and report its status line.", read: [], write: [], network: true, hosts: [] }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 63 recorded 62: input stdin-9

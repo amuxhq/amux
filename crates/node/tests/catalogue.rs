@@ -292,7 +292,9 @@ async fn current_catalogue_is_pinned() {
         }))
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .blob
+        .unwrap();
     read(&on_laptop, &agent, &attachment.hash).await;
     assert!(is_file(&pair.kept(&agent, &attachment.hash)));
 

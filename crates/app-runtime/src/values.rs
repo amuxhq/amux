@@ -901,13 +901,8 @@ pub struct PairingWindowView {
 
 impl From<&wire::PairingWindow> for PairingWindowView {
     fn from(window: &wire::PairingWindow) -> Self {
-        use wire::pairing_window::Secret;
         PairingWindowView {
-            pin: match &window.secret {
-                Some(Secret::PinAndQr(both)) => both.pin.clone(),
-                Some(Secret::Pin(pin)) => pin.clone(),
-                _ => String::new(),
-            },
+            pin: window.pin.clone().unwrap_or_default(),
             qr_link: window.qr_link.clone(),
             ttl_seconds: window.ttl_seconds,
         }
@@ -1007,7 +1002,6 @@ pub struct Roster {
 pub struct Found {
     pub host_id: Vec<u8>,
     pub name: String,
-    pub version: u32,
     /// Resolved addresses as `ip:port`, IPv6 in brackets.
     pub addrs: Vec<String>,
     pub scope: String,

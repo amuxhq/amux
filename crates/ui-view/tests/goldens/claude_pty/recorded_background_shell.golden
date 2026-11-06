@@ -6,12 +6,12 @@
   composer Send activity=Some(Running { key: "toolu_01JsZ2Bh9D8SbomEag9zhm8Y" }) queue=[] underway=[] refused=[]
 ## 47 recorded 45: fact Hook hook_event_name=PermissionRequest
   ask ask:1 -> "" 1/1 Open
-    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, Deny+note, DenyAndStop+note
     body Command { command: "for i in 1 2 3; do echo tick $i; sleep 2; done", cwd: "", reason: "", description: "Run three-tick loop in background" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 56 recorded 54: fact Transcript type=assistant uuid=f968b0cf-29f3-4259-b6c2-816691e7d05b
   ask ask:1 -> "toolu_01JsZ2Bh9D8SbomEag9zhm8Y" 1/1 Open
-    choices AllowOnce*, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, Deny+note, DenyAndStop+note
     body Command { command: "for i in 1 2 3; do echo tick $i; sleep 2; done", cwd: "", reason: "", description: "Run three-tick loop in background" }
 ## 61 recorded 59: fact Transcript type=user uuid=dcc4ed6e-9ce2-4a21-a717-9d6e227eaf6f
   ask none

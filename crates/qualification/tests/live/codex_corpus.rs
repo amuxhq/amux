@@ -168,22 +168,26 @@ impl Install {
             .await
             .map_err(|status| status.to_string())?
             .into_inner()
+            .agent
+            .ok_or("the answer held no agent")?
             .host_id;
         self.client
             .agents
             .clone()
-            .send_message(wire::Envelope {
-                id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-                to: Some(AgentRef {
-                    host_id,
-                    agent_id: agent.to_vec(),
+            .send_message(wire::SendMessageRequest {
+                envelope: Some(wire::Envelope {
+                    id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+                    to: Some(AgentRef {
+                        host_id,
+                        agent_id: agent.to_vec(),
+                    }),
+                    context: None,
+                    from: None,
+                    body: Some(wire::envelope::Body::Message(MessageBody {
+                        text: text.into(),
+                        attachments: Vec::new(),
+                    })),
                 }),
-                context: None,
-                from: None,
-                body: Some(wire::envelope::Body::Message(MessageBody {
-                    text: text.into(),
-                    attachments: Vec::new(),
-                })),
             })
             .await
             .map_err(|status| status.to_string())?;
@@ -567,7 +571,9 @@ impl Install {
             })
             .await
             .map_err(|status| format!("the image upload: {status}"))?
-            .into_inner();
+            .into_inner()
+            .blob
+            .unwrap();
         self.input(
             &agent,
             wire::KindInput::Codex(CodexInput {
@@ -714,7 +720,7 @@ impl Install {
                 settled(kind, log)
                     && !matches!(
                         log.state(kind).sign_in.state(),
-                        wire::SignInState::SignedIn | wire::SignInState::Unknown
+                        wire::SignInState::SignedIn | wire::SignInState::Unspecified
                     )
             })
             .await?;

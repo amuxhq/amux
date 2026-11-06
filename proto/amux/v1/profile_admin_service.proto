@@ -15,19 +15,18 @@ import "amux/v1/records.proto";
 // never on an agent's tools socket or a link. The socket names the profile.
 // Not retried, as the front door.
 service ProfileAdminService {
-  rpc SignOut(Empty) returns (Profile);
-  rpc StartPairing(StartPairingRequest) returns (PairingWindow);
-  rpc GetPairingStatus(Empty) returns (PairingStatus);
+  rpc SignOut(SignOutRequest) returns (SignOutResponse);
+  rpc StartPairing(StartPairingRequest) returns (StartPairingResponse);
   // The pairing status now, then again on every change.
-  rpc WatchPairing(Empty) returns (stream PairingStatus);
-  rpc CancelPairing(Empty) returns (Empty);
-  rpc BeginPair(BeginPairRequest) returns (PendingPair);
-  rpc ConfirmPair(ConfirmPairRequest) returns (Peer);
-  rpc AbandonPair(AbandonPairRequest) returns (Empty);
-  rpc GetDeviceIdentity(Empty) returns (DeviceIdentity);
-  rpc TrustSshPeer(TrustSshPeerRequest) returns (Empty);
-  rpc ListPeers(Empty) returns (ListPeersResponse);
-  rpc Unpair(UnpairRequest) returns (Peer);
+  rpc SubscribePairing(SubscribePairingRequest) returns (stream SubscribePairingResponse);
+  rpc CancelPairing(CancelPairingRequest) returns (CancelPairingResponse);
+  rpc BeginPair(BeginPairRequest) returns (BeginPairResponse);
+  rpc ConfirmPair(ConfirmPairRequest) returns (ConfirmPairResponse);
+  rpc AbandonPair(AbandonPairRequest) returns (AbandonPairResponse);
+  rpc GetDeviceIdentity(GetDeviceIdentityRequest) returns (GetDeviceIdentityResponse);
+  rpc TrustSshPeer(TrustSshPeerRequest) returns (TrustSshPeerResponse);
+  rpc ListPeers(ListPeersRequest) returns (ListPeersResponse);
+  rpc Unpair(UnpairRequest) returns (UnpairResponse);
   // The one bundle format: this host's own state, scoped to what the
   // request is for.
   rpc Dump(DumpRequest) returns (DumpResponse);
@@ -36,19 +35,29 @@ service ProfileAdminService {
   rpc SubmitReport(SubmitReportRequest) returns (SubmitReportResponse);
   // The person offers a paired peer this profile's account: the peer is
   // asked whether to sign in to it too.
-  rpc OfferSignIn(OfferSignInRequest) returns (Empty);
+  rpc OfferSignIn(OfferSignInRequest) returns (OfferSignInResponse);
   // The offers paired peers made this profile, now and on every change.
-  rpc SubscribeSignInOffers(Empty) returns (stream SignInOffers);
+  rpc SubscribeSignInOffers(SubscribeSignInOffersRequest) returns (stream SubscribeSignInOffersResponse);
   // Accepting signs this profile in to the offering peer's account;
   // declining ends the offer.
-  rpc AnswerSignInOffer(AnswerSignInOfferRequest) returns (Profile);
+  rpc AnswerSignInOffer(AnswerSignInOfferRequest) returns (AnswerSignInOfferResponse);
+}
+
+message SignOutRequest {}
+
+message SignOutResponse {
+  Profile profile = 1;
 }
 
 message OfferSignInRequest {
   bytes host_id = 1;
 }
 
-message SignInOffers {
+message OfferSignInResponse {}
+
+message SubscribeSignInOffersRequest {}
+
+message SubscribeSignInOffersResponse {
   repeated SignInOffer offers = 1;
 }
 
@@ -62,6 +71,10 @@ message SignInOffer {
 message AnswerSignInOfferRequest {
   bytes host_id = 1;
   bool accept = 2;
+}
+
+message AnswerSignInOfferResponse {
+  Profile profile = 1;
 }
 
 message StartPairingRequest {
@@ -81,26 +94,30 @@ message StartPairingRequest {
   optional uint64 ttl_seconds = 4;
 }
 
+message StartPairingResponse {
+  PairingWindow window = 1;
+}
+
 message PairingWindow {
   PairingIdentity identity = 1;
   uint64 ttl_seconds = 2;
   repeated string addrs = 3;
-  optional string cloud_url = 4;
-  oneof secret {
-    string pin = 5;
-    bytes qr_secret = 6;
-    // A window opened with `pin_or_qr`.
-    PinAndQr pin_and_qr = 8;
-  }
+  // The PIN a person types. Absent for a window opened with `qr`.
+  optional string pin = 4;
   // The link the QR shows, composed by the daemon:
   // https://<amux.sh>/p#<payload>. Empty for a window without a QR secret.
-  string qr_link = 7;
+  string qr_link = 5;
 }
 
-message PinAndQr {
-  string pin = 1;
-  bytes qr_secret = 2;
+message SubscribePairingRequest {}
+
+message SubscribePairingResponse {
+  PairingStatus status = 1;
 }
+
+message CancelPairingRequest {}
+
+message CancelPairingResponse {}
 
 message PairingStatus {
   bool active = 1;
@@ -121,6 +138,10 @@ message BeginPairRequest {
   repeated string addrs = 4;
 }
 
+message BeginPairResponse {
+  PendingPair pending = 1;
+}
+
 message PendingPair {
   bytes token = 1;
   PairingIdentity peer = 2;
@@ -132,10 +153,16 @@ message ConfirmPairRequest {
   bytes token = 1;
 }
 
+message ConfirmPairResponse {
+  Peer peer = 1;
+}
+
 message AbandonPairRequest {
   // PendingPair.token.
   bytes token = 1;
 }
+
+message AbandonPairResponse {}
 
 // SSH has already authenticated its peer outside the secret-based pairing
 // protocol, so its identity commit is a separate, SSH-only operation.
@@ -144,8 +171,14 @@ message TrustSshPeerRequest {
   SshTarget ssh_target = 2;
 }
 
+message TrustSshPeerResponse {}
+
 message UnpairRequest {
   HostRef peer = 1;
+}
+
+message UnpairResponse {
+  Peer peer = 1;
 }
 
 // An SSH destination; `amux internal ssh-link` there joins the profile whose
@@ -162,11 +195,19 @@ message Peer {
   optional SshTarget ssh_target = 4;
 }
 
+message GetDeviceIdentityRequest {}
+
+message GetDeviceIdentityResponse {
+  DeviceIdentity identity = 1;
+}
+
 message DeviceIdentity {
   bytes host_id = 1;
   string name = 2;
   bytes pubkey = 3;
 }
+
+message ListPeersRequest {}
 
 message ListPeersResponse {
   repeated Peer peers = 1;

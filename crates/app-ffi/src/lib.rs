@@ -100,10 +100,6 @@ struct Shared {
     /// hosted here or is a daemon this app attached to.
     installation: Arc<dyn client::Installation>,
     outbox: Arc<Outbox>,
-    /// The client the app is, in what it tells the daemon of setting up:
-    /// the phone hosting its own installation, or the Mac app attached to
-    /// the daemon on the Mac.
-    surface: wire::Surface,
 }
 
 /// What a phone-only call answers on an app attached to a daemon.
@@ -484,7 +480,7 @@ pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxR
         .embedded()
         .installation()
         .map_err(|error| error.to_string())?;
-    serve(phone, installation, config.tail, wire::Surface::Phone)
+    serve(phone, installation, config.tail)
 }
 
 /// Attaches to the daemon answering on `front_door` (`<root>/amux.sock`):
@@ -502,7 +498,7 @@ pub fn attach(front_door: &std::path::Path, tail: u32) -> Result<Box<AmuxRuntime
         .ok_or("the runtime has stopped")?
         .map_err(|error| format!("amux is not answering on {}: {error}", front_door.display()))?
         .naming("mac");
-    serve(phone, Arc::new(installation), tail, wire::Surface::Mac)
+    serve(phone, Arc::new(installation), tail)
 }
 
 /// How soon a stream from the daemon is opened again after it ends,
@@ -542,7 +538,6 @@ fn serve(
     phone: Phone,
     installation: Arc<dyn client::Installation>,
     tail: u32,
-    surface: wire::Surface,
 ) -> Result<Box<AmuxRuntime>, String> {
     let outbox = Arc::new(Outbox {
         tickets: AtomicU64::new(0),
@@ -595,7 +590,6 @@ fn serve(
             phone,
             installation,
             outbox,
-            surface,
         }),
         watch: Some(watch),
         tail,
@@ -653,7 +647,7 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
     let offers = shared.phone.handle().spawn(async move {
         follow(
             || watching.subscribe_sign_in_offers(),
-            |now: wire::SignInOffers| {
+            |now: wire::SubscribeSignInOffersResponse| {
                 posting.post_offers(
                     fleet,
                     now.offers.iter().map(SignInOfferView::from).collect(),
@@ -2234,7 +2228,7 @@ pub unsafe extern "C" fn amux_profile_watch_onboarding(profile: *const AmuxProfi
         *watch = Some(profile.shared.handle().spawn(async move {
             follow(
                 || {
-                    installation.subscribe_onboarding(wire::OnboardingRequest {
+                    installation.subscribe_onboarding(wire::SubscribeOnboardingRequest {
                         profile_id: id.as_bytes().to_vec(),
                     })
                 },
@@ -2267,7 +2261,7 @@ pub unsafe extern "C" fn amux_profile_answer_onboarding(
         // SAFETY: the caller's contract.
         let answer: Option<OnboardingAnswer> = unsafe { parse(answer) };
         let installation = profile.shared.installation.clone();
-        let (id, surface) = (profile.profile, profile.shared.surface);
+        let id = profile.profile;
         profile.act(async move {
             let Some(answer) = answer else {
                 return Answered::Err("the answer is not an OnboardingAnswer".into());
@@ -2277,7 +2271,6 @@ pub unsafe extern "C" fn amux_profile_answer_onboarding(
                     .answer_onboarding(wire::AnswerOnboardingRequest {
                         profile_id: id.as_bytes().to_vec(),
                         answer: Some(answer.into()),
-                        surface: surface as i32,
                     })
                     .await
                     .map(|now| OnboardingState::from(&now)),
@@ -2313,7 +2306,7 @@ pub unsafe extern "C" fn amux_profile_open_pairing(
                     (client.clone(), profile.shared.outbox.clone(), profile.fleet);
                 *watch = Some(profile.shared.handle().spawn(async move {
                     follow(
-                        || watching.watch_pairing(),
+                        || watching.subscribe_pairing(),
                         |status: wire::PairingStatus| {
                             outbox.post_pairing(fleet, PairingStatusView::from(&status));
                         },

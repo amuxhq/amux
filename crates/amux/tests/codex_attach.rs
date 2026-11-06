@@ -77,7 +77,7 @@ async fn codex_app_attaches_to_a_fresh_agent_and_codrives_it_with_amux() {
                     name: "coder".into(),
                 })
                 .await
-                .map(|agent| agent.into_inner().phase)
+                .map(|answer| answer.into_inner().agent.unwrap().phase)
                 .map_err(|error| error.to_string())
         }
     };

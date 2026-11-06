@@ -9,7 +9,6 @@ fn advert(name: &str) -> Advertisement {
     Advertisement {
         host_id: HostId::new_v4(),
         name: name.to_string(),
-        version: 7,
         addrs: vec![SocketAddr::from((Ipv4Addr::new(192, 0, 2, 8), 4819))],
         scope: String::new(),
         pairing_open: false,
@@ -18,7 +17,7 @@ fn advert(name: &str) -> Advertisement {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-fn txt_encoding_carries_version_host_id_name_and_scope() {
+fn txt_encoding_carries_host_id_name_and_scope() {
     let advert = Advertisement {
         scope: "worktree-a".to_owned(),
         ..advert("Studio")
@@ -28,12 +27,11 @@ fn txt_encoding_carries_version_host_id_name_and_scope() {
 
     assert_eq!(
         properties.len(),
-        4,
+        3,
         "no pairing flag while no window is open"
     );
     assert_eq!(service.get_property_val_str("name"), Some("Studio"));
     assert_eq!(service.get_property_val_str("scope"), Some("worktree-a"));
-    assert_eq!(service.get_property_val_str("v"), Some("7"));
     assert_eq!(
         service.get_property_val_str("hid"),
         Some(advert.host_id.hyphenated().to_string().as_str())
@@ -46,7 +44,7 @@ fn txt_encoding_carries_version_host_id_name_and_scope() {
         ..advert
     };
     let service = mdns::service_info_for_test(&open).unwrap();
-    assert_eq!(service.get_properties().len(), 5);
+    assert_eq!(service.get_properties().len(), 4);
     assert_eq!(service.get_property_val_str("pair"), Some("1"));
 }
 
@@ -64,7 +62,6 @@ fn txt_encoding_matches_the_record_the_phone_reads() {
     let advert = Advertisement {
         host_id: fixture["host_id"].as_str().unwrap().parse().unwrap(),
         name: "Studio".to_string(),
-        version: fixture["version"].as_u64().unwrap() as u32,
         addrs: vec![SocketAddr::from((Ipv4Addr::new(192, 0, 2, 8), 4819))],
         scope: fixture["scope"].as_str().unwrap().to_owned(),
         pairing_open: fixture["pairing_open"].as_bool().unwrap(),

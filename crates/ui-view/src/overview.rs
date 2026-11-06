@@ -277,7 +277,7 @@ pub fn overview(state: &SessionState, diff: Option<&Diff>) -> Overview {
                 Usage::Claude(_) | Usage::Unknown => None,
             },
         }),
-        UsageState::Unknown | UsageState::Ok => None,
+        UsageState::Unspecified | UsageState::Ok => None,
     };
     Overview {
         tasks: tasks.filter(|tasks| tasks.total > 0),

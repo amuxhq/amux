@@ -57,8 +57,7 @@ amux pair you@server.example.com
 amux must already be installed there, and SSH must log in without asking for
 a password, for example with a key in your SSH agent. The two computers then
 connect through SSH from then on. This is a good fit for a server you already
-SSH into; see [Running amux on a server](../use/server.md). A Windows computer
-can't be paired this way; pair it by code instead.
+SSH into; see [Running amux on a server](../use/server.md).
 
 ## Through the relay
 

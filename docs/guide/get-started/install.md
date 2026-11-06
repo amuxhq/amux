@@ -11,7 +11,7 @@ Install it on every computer you want agents to work on.
 
 ## Before you start
 
-- A Mac with Apple silicon, Linux on x86-64, or Windows on x86-64.
+- A Mac with Apple silicon, or Linux on x86-64.
 - Claude Code or Codex, installed and signed in on that computer. amux runs
   the agents you already use, on your own subscription to them.
 
@@ -23,12 +23,6 @@ You don't need an amux account. Everything on this page works without one.
 
 ```sh
 curl -fsSL https://amux.sh/install | sh
-```
-
-**On Windows, in PowerShell:**
-
-```powershell
-irm https://amux.sh/install | iex
 ```
 
 The script downloads the current release, checks it against the release's

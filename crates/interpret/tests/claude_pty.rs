@@ -67,6 +67,7 @@ goldens! {
     recorded_socket_delivery => "recorded_socket_delivery",
     calls_open_on_their_rows_and_hooks_make_none => "calls_open_on_their_rows",
     asks_open_on_the_hook_and_close_only_on_facts => "ask_rules",
+    a_spent_limit_blocks_the_agent_until_the_next_turn => "usage_limit",
     a_late_row_for_amuxs_own_prompt_leaves_the_ask_open => "late_prompt_row",
     a_prompt_row_behind_its_hooks_still_comes_first => "prompt_row_precedes_its_calls",
     the_trust_dialog_is_a_question_a_prompt_waits_behind => "trust_dialog",

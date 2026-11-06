@@ -257,6 +257,9 @@ fn attempts(message: &str) -> (u32, u32) {
 }
 
 /// Codex's typed error kind: the name of its error-info variant.
+/// The kind Codex gives a turn refused for a spent limit.
+const USAGE_LIMIT_EXCEEDED: &str = "usageLimitExceeded";
+
 fn error_kind(error: &TurnError) -> String {
     error
         .codex_error_info
@@ -378,6 +381,21 @@ impl State {
                 ..Default::default()
             },
         );
+    }
+
+    /// How an error the turn can't go past stops the agent.
+    fn blocked_by(&self, error: &TurnError) -> wire::BlockedNotice {
+        if unauthorized(error) {
+            crate::notice::signed_out()
+        } else if error_kind(error) == USAGE_LIMIT_EXCEEDED {
+            crate::notice::usage_spent(self.usage.as_ref().and_then(|usage| {
+                crate::notice::spent_until(
+                    usage.windows.iter().filter_map(|window| window.meter.as_ref()),
+                )
+            }))
+        } else {
+            crate::notice::failed(&error_message(error))
+        }
     }
 
     fn error_item(&mut self, emit: &mut Emit, key: String, error: ApiError) {
@@ -1794,6 +1812,10 @@ impl State {
                 message: message.clone(),
             });
         }
+        if !will_retry {
+            let why = self.blocked_by(&error);
+            self.shared.stopped_by(why);
+        }
         let turn = notification.turn_id;
         self.error_item(
             emit,
@@ -1893,6 +1915,9 @@ impl State {
                     verdict: wire::PlanVerdict::Undecided as i32,
                     note: None,
                 });
+                if let Some(proposed) = &self.proposed {
+                    self.shared.plan_written(&proposed.text);
+                }
                 self.emit_plan(emit);
                 if completed {
                     self.streamed.remove(&id);
@@ -2443,6 +2468,8 @@ impl State {
         if let Some(error) = &turn.error
             && self.final_error.as_deref() != Some(turn_id.as_str())
         {
+            let why = self.blocked_by(error);
+            self.shared.stopped_by(why);
             self.error_item(
                 emit,
                 format!("error:{turn_id}"),

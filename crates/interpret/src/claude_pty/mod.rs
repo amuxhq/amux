@@ -1542,7 +1542,8 @@ impl Interpreter for ClaudePty {
             .submitted
             .retain(|prompt| awaiting.contains(&prompt.id));
         let body = state.body();
-        state.shared.finish(emit, body)
+        let notice = state.shared.notice(crate::notice::claude_ask);
+        state.shared.finish(emit, body, notice)
     }
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {

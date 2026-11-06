@@ -18,4 +18,5 @@ item 41b461e8-a92b-4168-ad3a-5e9a984a69bf api_error final at=1793453280446 text=
 ## 39 recorded 37: fact Transcript type=system subtype=turn_duration uuid=80082483-1c13-47f9-8c33-98ff593edfab
 item turn:1 turn final at=1793453280450 text="" #1 TURN_OUTCOME_COMPLETED started=1793453278638
 snapshot IDLE queue=[] working_on=- at=1793453280348 asks=[] session=cd11970a-8385-430f-a202-5f0ff2e166d8 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+notice blocked failed "API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)"
 turn_end 1 last=-

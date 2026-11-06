@@ -424,6 +424,13 @@ pub struct Snapshot {
     /// counts what a stop would cut without decoding a body.
     #[prost(uint32, tag = "12")]
     pub background_jobs: u32,
+    /// What the agent wants of the person now, made small enough for a
+    /// notification; absent when it wants nothing. The interpreter projects it
+    /// from its own state, so the daemon can hold and send it without decoding
+    /// a body. Never an exit: a process that has gone says nothing, and its
+    /// daemon writes that notice itself.
+    #[prost(message, optional, tag = "13")]
+    pub notice: ::core::option::Option<Notice>,
 }
 impl ::prost::Name for Snapshot {
     const NAME: &'static str = "Snapshot";
@@ -433,6 +440,238 @@ impl ::prost::Name for Snapshot {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Snapshot".into()
+    }
+}
+/// What a notification says, in data rather than sentences: each client words
+/// it. Every string is clipped short, because a push has a few kilobytes.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Notice {
+    #[prost(oneof = "notice::Of", tags = "1, 2, 3")]
+    pub of: ::core::option::Option<notice::Of>,
+}
+/// Nested message and enum types in `Notice`.
+pub mod notice {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Of {
+        #[prost(message, tag = "1")]
+        Ask(super::AskNotice),
+        #[prost(message, tag = "2")]
+        Blocked(super::BlockedNotice),
+        #[prost(message, tag = "3")]
+        Died(super::DiedNotice),
+    }
+}
+impl ::prost::Name for Notice {
+    const NAME: &'static str = "Notice";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Notice".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Notice".into()
+    }
+}
+/// The agent's head ask.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AskNotice {
+    /// The ask's own key: a changed key is a different ask, and it is what an
+    /// answer would name.
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+    /// The provider's reason, when it gave one.
+    #[prost(string, tag = "8")]
+    pub why: ::prost::alloc::string::String,
+    /// How many other asks are open.
+    #[prost(uint32, tag = "9")]
+    pub more: u32,
+    #[prost(oneof = "ask_notice::Wants", tags = "2, 3, 4, 5, 6, 7")]
+    pub wants: ::core::option::Option<ask_notice::Wants>,
+}
+/// Nested message and enum types in `AskNotice`.
+pub mod ask_notice {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Wants {
+        #[prost(message, tag = "2")]
+        Run(super::RunWant),
+        #[prost(message, tag = "3")]
+        Change(super::ChangeWant),
+        #[prost(message, tag = "4")]
+        Use(super::UseWant),
+        #[prost(message, tag = "5")]
+        Question(super::QuestionWant),
+        #[prost(message, tag = "6")]
+        Plan(super::PlanWant),
+        #[prost(message, tag = "7")]
+        Other(super::OtherWant),
+    }
+}
+impl ::prost::Name for AskNotice {
+    const NAME: &'static str = "AskNotice";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AskNotice".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.AskNotice".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RunWant {
+    #[prost(string, tag = "1")]
+    pub command: ::prost::alloc::string::String,
+}
+impl ::prost::Name for RunWant {
+    const NAME: &'static str = "RunWant";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.RunWant".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.RunWant".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ChangeWant {
+    #[prost(string, tag = "1")]
+    pub path: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub files: u32,
+}
+impl ::prost::Name for ChangeWant {
+    const NAME: &'static str = "ChangeWant";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ChangeWant".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.ChangeWant".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UseWant {
+    #[prost(string, tag = "1")]
+    pub server: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub tool: ::prost::alloc::string::String,
+}
+impl ::prost::Name for UseWant {
+    const NAME: &'static str = "UseWant";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.UseWant".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.UseWant".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct QuestionWant {
+    #[prost(string, tag = "1")]
+    pub text: ::prost::alloc::string::String,
+}
+impl ::prost::Name for QuestionWant {
+    const NAME: &'static str = "QuestionWant";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.QuestionWant".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.QuestionWant".into()
+    }
+}
+/// Empty when the plan has no title of its own.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PlanWant {
+    #[prost(string, tag = "1")]
+    pub title: ::prost::alloc::string::String,
+}
+impl ::prost::Name for PlanWant {
+    const NAME: &'static str = "PlanWant";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PlanWant".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.PlanWant".into()
+    }
+}
+/// A form, a link, an access grant or an ask this build cannot read: the
+/// provider's own sentence.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct OtherWant {
+    #[prost(string, tag = "1")]
+    pub text: ::prost::alloc::string::String,
+}
+impl ::prost::Name for OtherWant {
+    const NAME: &'static str = "OtherWant";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.OtherWant".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.OtherWant".into()
+    }
+}
+/// The agent is alive and its turn is over, and it can't go on without the
+/// person.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BlockedNotice {
+    #[prost(oneof = "blocked_notice::Why", tags = "1, 2, 3")]
+    pub why: ::core::option::Option<blocked_notice::Why>,
+}
+/// Nested message and enum types in `BlockedNotice`.
+pub mod blocked_notice {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Why {
+        #[prost(message, tag = "1")]
+        SignedOut(super::Empty),
+        #[prost(message, tag = "2")]
+        Usage(super::UsageBlock),
+        /// The provider's words.
+        #[prost(string, tag = "3")]
+        Failed(::prost::alloc::string::String),
+    }
+}
+impl ::prost::Name for BlockedNotice {
+    const NAME: &'static str = "BlockedNotice";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.BlockedNotice".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.BlockedNotice".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UsageBlock {
+    #[prost(int64, optional, tag = "1")]
+    pub resets_at_ms: ::core::option::Option<i64>,
+}
+impl ::prost::Name for UsageBlock {
+    const NAME: &'static str = "UsageBlock";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.UsageBlock".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.UsageBlock".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DiedNotice {
+    #[prost(enumeration = "ExitCause", tag = "1")]
+    pub cause: i32,
+    #[prost(string, tag = "2")]
+    pub detail: ::prost::alloc::string::String,
+}
+impl ::prost::Name for DiedNotice {
+    const NAME: &'static str = "DiedNotice";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.DiedNotice".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.DiedNotice".into()
     }
 }
 /// What a row says about the git repository an agent works in.
@@ -3798,6 +4037,12 @@ pub struct HostEntry {
     /// client creates Claude agents on this host with it.
     #[prost(enumeration = "Kind", tag = "6")]
     pub claude_kind: i32,
+    /// Set when this host wants notifications: the key they are sealed to, on
+    /// the host's own entry in the inventory it serves. A daemon reads it only
+    /// from that stream, whose handshake proves who sent it, and keeps it with
+    /// its trust in the host; it is not on `Host`, which neighbors repeat.
+    #[prost(message, optional, tag = "7")]
+    pub push_key: ::core::option::Option<PushKey>,
     #[prost(oneof = "host_entry::Standing", tags = "4, 5")]
     pub standing: ::core::option::Option<host_entry::Standing>,
 }
@@ -3821,6 +4066,24 @@ impl ::prost::Name for HostEntry {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.HostEntry".into()
+    }
+}
+/// A public key notifications are sealed to.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PushKey {
+    #[prost(enumeration = "PushSuite", tag = "1")]
+    pub suite: i32,
+    #[prost(bytes = "vec", tag = "2")]
+    pub public_key: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for PushKey {
+    const NAME: &'static str = "PushKey";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PushKey".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.PushKey".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -4067,6 +4330,33 @@ impl ::prost::Name for HostRef {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.HostRef".into()
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum PushSuite {
+    Unspecified = 0,
+    /// HPKE: DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20-Poly1305.
+    HpkeX25519Chacha20 = 1,
+}
+impl PushSuite {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "PUSH_SUITE_UNSPECIFIED",
+            Self::HpkeX25519Chacha20 => "PUSH_SUITE_HPKE_X25519_CHACHA20",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "PUSH_SUITE_UNSPECIFIED" => Some(Self::Unspecified),
+            "PUSH_SUITE_HPKE_X25519_CHACHA20" => Some(Self::HpkeX25519Chacha20),
+            _ => None,
+        }
     }
 }
 /// How this machine reaches a host, or how a pairing peer was reached. No

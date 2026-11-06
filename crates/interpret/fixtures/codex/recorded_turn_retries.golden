@@ -38,4 +38,5 @@ item error:01a191cd-818d-7383-bd80-522ef88b0add error final at=1793447529837 tex
 ## 44 recorded 43: fact Rpc method=turn/completed
 item turn:1 turn final at=1793447529842 text="" #1 TURN_OUTCOME_FAILED started=1793447526803
 snapshot IDLE queue=[] working_on="Reply with exactly UNREACHABLE." at=1793447529842 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=[]
+notice blocked failed "Connection failed: error sending request"
 turn_end 1 last=-

@@ -19,6 +19,7 @@ pub mod claude_pty;
 pub mod claude_sdk;
 pub mod codex;
 mod golden;
+mod notice;
 pub mod record;
 pub mod redact;
 pub mod ring;

@@ -72,6 +72,7 @@ item msg_0457a67687b0968f016ae5d79719b8819180a359baa7e2c622 working_note final a
 ## 61 recorded 60: fact Rpc method=item/permissions/requestApproval
 item ask:0 ask final at=1793447831986 text="" access read=[] write=[] network=true open
 snapshot NEEDS_YOU queue=[] working_on="Use your request_permissions tool to ask me for network access. Once granted, run `curl -sI https://example.com` and reply with its status line." at=1793447831986 asks=[0→ask:0 access reason="Run curl -sI https://example.com and report its status line." read=[] write=[] network=true decisions=[]] thread=01a191d2-0f79-7ef1-ac96-0d28e3b52fcd model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+notice ask 0 other "Run curl -sI https://example.com and report its status line." why="" more=0
 ## 63 recorded 62: input stdin-9
 effect write "{\"id\":0,\"result\":{\"permissions\":{\"network\":{\"enabled\":true}},\"scope\":\"turn\"}}"
 effect reply stdin-9 accepted

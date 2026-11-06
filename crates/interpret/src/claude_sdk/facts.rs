@@ -257,22 +257,26 @@ impl State {
                     },
                 );
             }
-            Message::ModelRefusalNoFallback(refusal) => self.shared.item(
-                emit,
-                ItemDraft {
-                    key: refusal.uuid,
-                    body: item_body(Kind::ApiError(wire::ApiError {
-                        error_kind: "refusal".into(),
-                        message: without_terminal_codes(
-                            &written_opt(refusal.api_refusal_explanation.as_deref())
-                                .unwrap_or(refusal.content),
-                        ),
+            Message::ModelRefusalNoFallback(refusal) => {
+                let message = without_terminal_codes(
+                    &written_opt(refusal.api_refusal_explanation.as_deref())
+                        .unwrap_or(refusal.content),
+                );
+                self.shared.stopped_by(crate::notice::failed(&message));
+                self.shared.item(
+                    emit,
+                    ItemDraft {
+                        key: refusal.uuid,
+                        body: item_body(Kind::ApiError(wire::ApiError {
+                            error_kind: "refusal".into(),
+                            message,
+                            ..Default::default()
+                        })),
+                        complete: true,
                         ..Default::default()
-                    })),
-                    complete: true,
-                    ..Default::default()
-                },
-            ),
+                    },
+                );
+            }
             Message::LocalCommandOutput(output) => {
                 self.slash_output(emit, output.uuid, &without_terminal_codes(&output.content))
             }
@@ -831,6 +835,13 @@ impl State {
             if error == AUTHENTICATION_FAILED {
                 self.sign_in_failed(&text);
             }
+            let resets_at_ms = self.usage.as_ref().and_then(|usage| {
+                crate::notice::spent_until(
+                    usage.windows.iter().filter_map(|window| window.meter.as_ref()),
+                )
+            });
+            self.shared
+                .stopped_by(crate::claude_common::blocked_by(&error, &text, resets_at_ms));
             self.shared.item(
                 emit,
                 ItemDraft {
@@ -1130,6 +1141,7 @@ impl State {
             .map(|common| common.uuid.as_str())
             .unwrap_or_default();
         if outcome == TurnOutcome::Failed && subtype != "success" {
+            self.shared.stopped_by(crate::notice::failed(&errors.join("; ")));
             self.shared.item(
                 emit,
                 ItemDraft {
@@ -1319,6 +1331,9 @@ impl State {
                 )
             }
             PLAN_TOOL if server.is_empty() => {
+                if let Some(plan) = crate::claude_common::plan_text(input) {
+                    self.shared.plan_written(&plan);
+                }
                 let switch = crate::claude_common::plan_switch(self.offers_auto(), self.never_ask)
                     .to_owned();
                 (

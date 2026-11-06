@@ -75,6 +75,20 @@ headless user message (`UserMessage`), follow a transcript file
 (`CodexTurnInput`), write a blob an item refers to (`WriteBlob`), or end the
 process (`Exit`).
 
+## Notices
+
+Each interpreter projects its state into a notice, what a notification says
+about the agent, beside the body every time it builds a snapshot
+([`notice.rs`](../crates/interpret/src/notice.rs)). The daemon holds and sends
+it without decoding anything, so this is where a provider's asks and failures
+become the few shapes a notification has: an ask's run, change, tool, question,
+plan or provider sentence, or why the turn could not go on (signed out, a spent
+usage limit with its reset, or the provider's failure). A failure says nothing
+until the turn is over, because a provider may carry on after an error, and
+stops saying it when the next turn starts. Each kind recognises its own: a
+refused connection in terminal Claude ends its turn completed, and its only word
+of a spent limit is the error row it writes in place of an answer.
+
 ## The step rule
 
 Every event yields exactly one step: zero or more items, the snapshot when it

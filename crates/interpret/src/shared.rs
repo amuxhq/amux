@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 /// step carries as the attachment, never as text.
 pub use wire::{AMUX_TOOL_SERVER, ATTACH_TOOL, SEND_TOOL, STATUS_TOOL};
 use wire::{
-    AgentMessage, AgentSpec, Append, Attachment, Bootstrap, Envelope, Item, Phase, PromptInput,
-    QueuedInput, Refusal, Rejected, Sender, Snapshot, Step, TurnEnd, bootstrap, child_report,
+    AgentMessage, AgentSpec, Append, Attachment, Bootstrap, Envelope, Item, Notice, Phase,
+    PromptInput, QueuedInput, Refusal, Rejected, Sender, Snapshot, Step, TurnEnd, bootstrap, child_report,
     envelope, sender,
 };
 
@@ -358,6 +358,12 @@ pub struct Shared<A: OpenAsk> {
     #[serde(with = "serde_pb::bytes_set")]
     taken_messages: BTreeSet<Vec<u8>>,
     working_on: Option<String>,
+    /// Why the turn now over could not finish, from the provider's own
+    /// failure, until the next turn starts.
+    #[serde(with = "serde_pb::opt_msg")]
+    trouble: Option<wire::BlockedNotice>,
+    /// The newest plan's own title; a plan ask points at it.
+    plan_title: String,
     /// The agent declared its work with the status tool: from then on only
     /// that call changes working_on. Until then it is the first line of
     /// the newest prompt the agent took.
@@ -414,6 +420,8 @@ impl<A: OpenAsk> Shared<A> {
             pending_messages: BTreeSet::new(),
             taken_messages: BTreeSet::new(),
             working_on: None,
+            trouble: None,
+            plan_title: String::new(),
             declared: false,
             turn: TurnCounter::default(),
             submitted: Vec::new(),
@@ -455,14 +463,14 @@ impl<A: OpenAsk> Shared<A> {
     /// kind's explicit unknowns.
     pub fn initial_step(&mut self, unknown_body: Vec<u8>) -> Step {
         let mut emit = Emit::default();
-        self.snapshot_into(&mut emit, unknown_body, true);
+        self.snapshot_into(&mut emit, unknown_body, None, true);
         emit.step
     }
 
     /// Finishes a step: appends a Snapshot if anything a client draws from
     /// it changed, and judges the step by every interpreter's checks.
-    pub fn finish(&mut self, mut emit: Emit, body: Vec<u8>) -> Stepped {
-        self.snapshot_into(&mut emit, body, false);
+    pub fn finish(&mut self, mut emit: Emit, body: Vec<u8>, notice: Option<Notice>) -> Stepped {
+        self.snapshot_into(&mut emit, body, notice, false);
         self.judge(&emit);
         Stepped {
             step: emit.step,
@@ -555,11 +563,18 @@ impl<A: OpenAsk> Shared<A> {
     pub fn resume_step(&mut self, body: Vec<u8>) -> Step {
         let mut emit = Emit::default();
         emit.step.items = self.open_items.values().cloned().collect();
-        self.snapshot_into(&mut emit, body, true);
+        let notice = self.last_snapshot.as_ref().and_then(|last| last.notice.clone());
+        self.snapshot_into(&mut emit, body, notice, true);
         emit.step
     }
 
-    fn snapshot_into(&mut self, emit: &mut Emit, body: Vec<u8>, force: bool) {
+    fn snapshot_into(
+        &mut self,
+        emit: &mut Emit,
+        body: Vec<u8>,
+        notice: Option<Notice>,
+        force: bool,
+    ) {
         let phase = self.phase() as i32;
         // Since when is stamped only when the phase changes; streamed output
         // and every other change within a phase keep the earlier stamp.
@@ -579,6 +594,7 @@ impl<A: OpenAsk> Shared<A> {
             git: self.git.clone(),
             catalogue: self.catalogue.clone(),
             background_jobs: self.jobs.as_ref().map_or(0, |jobs| jobs.jobs.len() as u32),
+            notice,
         };
         let changed = self.last_snapshot.as_ref().is_none_or(|last| {
             Snapshot {
@@ -945,6 +961,36 @@ impl<A: OpenAsk> Shared<A> {
         &self.queue
     }
 
+    // --- notice ----------------------------------------------------------
+
+    /// The provider failed in a way the turn can't go past. The first
+    /// failure names it: one that follows, such as the turn's own error
+    /// result, is its consequence. It says nothing until the turn is over,
+    /// because a provider may carry on after an error it reported.
+    pub fn stopped_by(&mut self, why: wire::BlockedNotice) {
+        self.trouble.get_or_insert(why);
+    }
+
+    pub fn plan_written(&mut self, text: &str) {
+        self.plan_title = crate::notice::plan_title(text);
+    }
+
+    /// What the agent wants of the person: its head ask, which `ask` projects
+    /// with how many others are open and the newest plan's title, else the
+    /// failure that ended its turn.
+    pub fn notice(&self, ask: impl FnOnce(&A, u32, &str) -> Notice) -> Option<Notice> {
+        let open = self.asks.open_asks();
+        if let Some(head) = open.first() {
+            return Some(ask(head, open.len() as u32 - 1, &self.plan_title));
+        }
+        self.trouble
+            .clone()
+            .filter(|_| !self.busy)
+            .map(|why| Notice {
+                of: Some(wire::notice::Of::Blocked(why)),
+            })
+    }
+
     // --- asks ------------------------------------------------------------
 
     pub fn open_ask(&mut self, ask: A) {
@@ -1047,6 +1093,7 @@ impl<A: OpenAsk> Shared<A> {
     /// The provider reports a turn running; idempotent with a submission.
     pub fn turn_started(&mut self) -> u64 {
         self.busy = true;
+        self.trouble = None;
         self.turn.begin(self.now_ms)
     }
 
@@ -1832,7 +1879,7 @@ mod tests {
 
         shared.tick(20);
         shared.provider_started();
-        let idle = shared.finish(Emit::default(), Vec::new()).step;
+        let idle = shared.finish(Emit::default(), Vec::new(), None).step;
         assert_eq!(since(&idle), Some((Phase::Idle as i32, 20)));
 
         shared.tick(30);
@@ -1846,13 +1893,13 @@ mod tests {
                 ..Default::default()
             },
         );
-        let working = shared.finish(emit, Vec::new()).step;
+        let working = shared.finish(emit, Vec::new(), None).step;
         assert_eq!(since(&working), Some((Phase::Working as i32, 30)));
 
         shared.tick(40);
         let mut emit = Emit::default();
         assert!(shared.append(&mut emit, "t", "llo"));
-        let chunk = shared.finish(emit, Vec::new()).step;
+        let chunk = shared.finish(emit, Vec::new(), None).step;
         assert_eq!(chunk.appends.len(), 1);
         assert_eq!(
             since(&chunk),
@@ -1862,7 +1909,7 @@ mod tests {
 
         shared.tick(50);
         shared.set_working_on(Some("elsewhere".into()));
-        let same_phase = shared.finish(Emit::default(), Vec::new()).step;
+        let same_phase = shared.finish(Emit::default(), Vec::new(), None).step;
         assert_eq!(
             since(&same_phase),
             Some((Phase::Working as i32, 30)),
@@ -1872,7 +1919,7 @@ mod tests {
         shared.tick(60);
         let mut emit = Emit::default();
         shared.turn_ended(&mut emit, wire::TurnOutcome::Completed);
-        let done = shared.finish(emit, Vec::new()).step;
+        let done = shared.finish(emit, Vec::new(), None).step;
         assert_eq!(since(&done), Some((Phase::Idle as i32, 60)));
     }
 
@@ -1887,14 +1934,14 @@ mod tests {
             ..Default::default()
         };
         shared.set_git(Some(facts.clone()));
-        let read = shared.finish(Emit::default(), Vec::new()).step;
+        let read = shared.finish(Emit::default(), Vec::new(), None).step;
         assert_eq!(git(&read), Some(Some(facts.clone())));
         shared.set_git(Some(facts));
-        let same = shared.finish(Emit::default(), Vec::new()).step;
+        let same = shared.finish(Emit::default(), Vec::new(), None).step;
         assert_eq!(git(&same), None, "the same facts publish nothing");
 
         shared.set_git(None);
-        let gone = shared.finish(Emit::default(), Vec::new()).step;
+        let gone = shared.finish(Emit::default(), Vec::new(), None).step;
         assert_eq!(git(&gone), Some(None));
     }
 

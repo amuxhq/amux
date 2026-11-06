@@ -1847,7 +1847,8 @@ impl Interpreter for Codex {
             state.submit(&mut emit, entry, Vec::new());
         }
         let body = state.body();
-        state.shared.finish(emit, body)
+        let notice = state.shared.notice(crate::notice::codex_ask);
+        state.shared.finish(emit, body, notice)
     }
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {

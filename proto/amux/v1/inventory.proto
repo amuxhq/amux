@@ -44,6 +44,23 @@ message HostEntry {
   // The kind this host's settings resolve to for a new Claude agent: every
   // client creates Claude agents on this host with it.
   Kind claude_kind = 6;
+  // Set when this host wants notifications: the key they are sealed to, on
+  // the host's own entry in the inventory it serves. A daemon reads it only
+  // from that stream, whose handshake proves who sent it, and keeps it with
+  // its trust in the host; it is not on `Host`, which neighbors repeat.
+  optional PushKey push_key = 7;
+}
+
+// A public key notifications are sealed to.
+message PushKey {
+  PushSuite suite = 1;
+  bytes public_key = 2;
+}
+
+enum PushSuite {
+  PUSH_SUITE_UNSPECIFIED = 0;
+  // HPKE: DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20-Poly1305.
+  PUSH_SUITE_HPKE_X25519_CHACHA20 = 1;
 }
 
 message Trusted {

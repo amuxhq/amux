@@ -1,0 +1,129 @@
+{
+  "about": "A spent usage limit in terminal Claude, in the shape a real one took: Claude writes an error of its own in place of an answer and ends the turn, and that row is all it says. The agent is blocked until the next turn starts.",
+  "spec": {
+    "created_at_ms": 1800000000000
+  },
+  "events": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "hook_event_name": "SessionStart",
+          "source": "startup",
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "model": "claude-opus-5-5"
+        }
+      }
+    },
+    {
+      "tick": 1800000000010
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "type": "user",
+          "uuid": "u1",
+          "timestamp": "2027-01-15T08:00:00.010Z",
+          "sessionId": "s1",
+          "origin": {
+            "kind": "human"
+          },
+          "promptSource": "typed",
+          "message": {
+            "role": "user",
+            "content": "carry on"
+          }
+        }
+      }
+    },
+    {
+      "tick": 1800000000100
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "type": "assistant",
+          "uuid": "a1",
+          "parentUuid": "u1",
+          "timestamp": "2027-01-15T08:00:00.100Z",
+          "sessionId": "s1",
+          "isApiErrorMessage": true,
+          "error": "rate_limit",
+          "apiError": "usage_limit_reached",
+          "apiErrorStatus": 429,
+          "quotaLimits": {
+            "status": "rejected",
+            "resetsAt": 1800003600,
+            "rateLimitType": "five_hour",
+            "overageStatus": "rejected",
+            "isUsingOverage": false
+          },
+          "message": {
+            "id": "m1",
+            "type": "message",
+            "role": "assistant",
+            "model": "<synthetic>",
+            "stop_reason": "stop_sequence",
+            "content": [
+              {
+                "type": "text",
+                "text": "You've hit your 5-hour limit · resets 2:30am (Europe/Oslo)"
+              }
+            ],
+            "usage": {
+              "input_tokens": 0,
+              "output_tokens": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "type": "system",
+          "subtype": "turn_duration",
+          "uuid": "d1",
+          "parentUuid": "a1",
+          "timestamp": "2027-01-15T08:00:00.120Z",
+          "sessionId": "s1",
+          "durationMs": 110
+        }
+      }
+    },
+    {
+      "tick": 1800000000300
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "type": "user",
+          "uuid": "u2",
+          "timestamp": "2027-01-15T08:00:00.300Z",
+          "sessionId": "s1",
+          "origin": {
+            "kind": "human"
+          },
+          "promptSource": "typed",
+          "message": {
+            "role": "user",
+            "content": "try again"
+          }
+        }
+      }
+    }
+  ]
+}

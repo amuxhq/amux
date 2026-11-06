@@ -117,6 +117,26 @@ impl Verdict {
 
 /// The plan item of an ExitPlanMode call: its text and body. None until
 /// the call's input carries the plan, so the plan lands whole.
+/// How a failed request stops a Claude agent, from the kind Claude itself
+/// gave the failure.
+pub(crate) fn blocked_by(
+    error_kind: &str,
+    message: &str,
+    resets_at_ms: Option<i64>,
+) -> wire::BlockedNotice {
+    match error_kind {
+        "rate_limit" => crate::notice::usage_spent(resets_at_ms),
+        "authentication_failed" => crate::notice::signed_out(),
+        _ => crate::notice::failed(message),
+    }
+}
+
+pub(crate) fn plan_text(input: &Value) -> Option<String> {
+    serde_json::from_value::<PlanInput>(input.clone())
+        .ok()
+        .map(|input| input.plan)
+}
+
 pub(crate) fn plan_item(input: &str, verdict: &Verdict) -> Option<(String, wire::Plan)> {
     let plan = serde_json::from_str::<PlanInput>(input).ok()?.plan;
     (!plan.is_empty()).then(|| {

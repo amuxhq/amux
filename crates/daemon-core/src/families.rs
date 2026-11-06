@@ -193,6 +193,8 @@ pub enum Refusal {
     Live,
     /// Another agent on this host has the name.
     NameTaken(String),
+    /// Only an agent with no parent is pinned.
+    HasParent,
     /// The parent has ended and starts no more agents.
     ParentEnded(AgentId),
     StartTimeout,
@@ -242,6 +244,38 @@ pub(crate) enum Op {
     Stop,
     Kill,
     Delete,
+    File(Filing),
+}
+
+/// How the person files an agent, apart from its lifecycle: the wire's
+/// `Filing` without its unspecified value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Filing {
+    Active,
+    /// Kept at the top of the fleet; only an agent with no parent.
+    Pinned,
+    /// Done with: stopped when live, and its children settled with it.
+    Settled,
+}
+
+impl Filing {
+    /// The wire's filing, or nothing for one a client left unspecified.
+    pub fn from_wire(filing: wire::Filing) -> Option<Self> {
+        match filing {
+            wire::Filing::Unspecified => None,
+            wire::Filing::Active => Some(Self::Active),
+            wire::Filing::Pinned => Some(Self::Pinned),
+            wire::Filing::Settled => Some(Self::Settled),
+        }
+    }
+
+    fn to_wire(self) -> wire::Filing {
+        match self {
+            Self::Active => wire::Filing::Active,
+            Self::Pinned => wire::Filing::Pinned,
+            Self::Settled => wire::Filing::Settled,
+        }
+    }
 }
 
 /// The operation under way on an agent, and whoever waits for its answer.
@@ -378,8 +412,14 @@ impl Daemon {
         self.registry_call(Caller::Client(call), agent, Op::Resume(resume), out);
     }
 
-    pub(crate) fn stop(&mut self, call: CallId, agent: AgentId, out: &mut Vec<Output>) {
-        self.registry_call(Caller::Client(call), agent, Op::Stop, out);
+    pub(crate) fn file(
+        &mut self,
+        call: CallId,
+        agent: AgentId,
+        filing: Filing,
+        out: &mut Vec<Output>,
+    ) {
+        self.registry_call(Caller::Client(call), agent, Op::File(filing), out);
     }
 
     pub(crate) fn kill(&mut self, call: CallId, agent: AgentId, out: &mut Vec<Output>) {
@@ -410,6 +450,7 @@ impl Daemon {
                 Op::Stop => self.begin_ending(agent, false, Then::Answer, out),
                 Op::Kill => self.begin_ending(agent, true, Then::Answer, out),
                 Op::Delete => self.begin_delete(agent, out),
+                Op::File(filing) => self.begin_file(agent, filing, out),
             };
             match began {
                 Ok(Began::Waiting(doing)) => {
@@ -717,6 +758,11 @@ impl Daemon {
         row.exit_cause = ExitCause::Unspecified as i32;
         row.exit_detail = None;
         row.incarnation = spec.incarnation;
+        // Resumed by the person or its parent: no longer done with.
+        if row.is_settled() {
+            row.filing = wire::Filing::Active as i32;
+            row.filed_at_ms = self.timers.now_ms as i64;
+        }
         self.put_own_row(&row, out)?;
         // The next CaughtUp comes from this incarnation's journal.
         self.store.set_marker(&key, None);
@@ -771,6 +817,34 @@ impl Daemon {
             phase: Phase::Asked,
             then,
         }))
+    }
+
+    /// Files the agent as the person asked. Settling writes the filing
+    /// first, so its children here and on every host that follows its row
+    /// are settled with it, then stops it when it is live and answers once
+    /// it has ended.
+    fn begin_file(
+        &mut self,
+        agent: AgentId,
+        filing: Filing,
+        out: &mut Vec<Output>,
+    ) -> Result<Began, Refusal> {
+        let key = self.own_key(agent);
+        let mut row = self.store.agent(&key)?.ok_or(Refusal::NotFound)?;
+        if filing == Filing::Pinned && row.parent.is_some() {
+            return Err(Refusal::HasParent);
+        }
+        let wire = filing.to_wire() as i32;
+        if row.filing != wire {
+            row.filing = wire;
+            row.filed_at_ms = self.timers.now_ms as i64;
+            self.put_own_row(&row, out)?;
+        }
+        if filing != Filing::Settled {
+            return Ok(Began::Finished(Box::new(Ok(Some(to_wire(&row))))));
+        }
+        self.parent_changed(&key, ParentSays::Settled, out)?;
+        self.begin_ending(agent, false, Then::Answer, out)
     }
 
     fn ask_kill(&mut self, agent: AgentId, then: Then, out: &mut Vec<Output>) -> Doing {
@@ -1179,8 +1253,8 @@ impl Daemon {
     // --- the family rule ---------------------------------------------------------
 
     /// Each of this host's own agents under `parent`, whose row now says
-    /// `says`, follows it: exited stops each live child, deleted deletes
-    /// each child. A parent that is merely out of reach says neither, so
+    /// `says`, follows it: exited stops each live child, settled settles
+    /// each child not yet settled, deleted deletes each child. A parent that is merely out of reach says neither, so
     /// its children carry on and their reports wait in the outbox.
     pub(crate) fn parent_changed(
         &mut self,
@@ -1191,6 +1265,7 @@ impl Daemon {
         for child in self.store.agents_of_parent(parent)? {
             if child.agent.host != self.store.own_host()
                 || (says == ParentSays::Exited && child.lifecycle != Lifecycle::Live as i32)
+                || (says == ParentSays::Settled && child.is_settled())
             {
                 continue;
             }
@@ -1218,6 +1293,7 @@ impl Daemon {
         }
         let op = match says {
             ParentSays::Exited => Op::Stop,
+            ParentSays::Settled => Op::File(Filing::Settled),
             ParentSays::Deleted => Op::Delete,
         };
         self.registry_call(Caller::Family, child, op, out);
@@ -1312,6 +1388,12 @@ impl Daemon {
         if row.exit_cause == ExitCause::Unspecified as i32 {
             row.exit_cause = fallback.cause;
             row.exit_detail = fallback.detail;
+        }
+        // A one-shot child that did its work is done with, as its parent
+        // settling it would make it.
+        if row.exit_cause == ExitCause::Finished as i32 && !row.is_settled() {
+            row.filing = wire::Filing::Settled as i32;
+            row.filed_at_ms = self.timers.now_ms as i64;
         }
         let cause = wire::IncarnationEnd {
             cause: row.exit_cause,
@@ -1612,6 +1694,94 @@ mod tests {
     }
 
     #[test]
+    fn settling_a_parent_files_it_and_its_child_and_stops_both() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        rig.live(CHILD, "helper", Some(PARENT));
+        let (call, out) = rig.call(ClientRequest::FileAgent {
+            agent: PARENT,
+            filing: Filing::Settled,
+        });
+        assert!(rig.row(PARENT).unwrap().is_settled());
+        assert!(rig.row(CHILD).unwrap().is_settled(), "{out:?}");
+        assert_eq!(stops(&out, PARENT), [false], "{out:?}");
+        assert_eq!(stops(&out, CHILD), [false], "{out:?}");
+        assert!(answer_of(&out, call).is_none(), "answered once it ended");
+        let gone = rig.step(Input::ControlClosed {
+            agent: PARENT,
+            ended: Ended::Exited,
+        });
+        let row = answer_of(&gone, call).expect("the settle is answered with its row");
+        assert_eq!(
+            (row.lifecycle(), row.filing()),
+            (Lifecycle::Exited, wire::Filing::Settled)
+        );
+    }
+
+    #[test]
+    fn only_an_agent_with_no_parent_is_pinned_and_a_pin_stops_nothing() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        rig.live(CHILD, "helper", Some(PARENT));
+        let (call, out) = rig.call(ClientRequest::FileAgent {
+            agent: CHILD,
+            filing: Filing::Pinned,
+        });
+        assert_eq!(refusal_of(&out, call), Some(Refusal::HasParent));
+        let (call, out) = rig.call(ClientRequest::FileAgent {
+            agent: PARENT,
+            filing: Filing::Pinned,
+        });
+        let row = answer_of(&out, call).expect("a pin answers at once");
+        assert_eq!(row.filing(), wire::Filing::Pinned);
+        assert!(stops(&out, PARENT).is_empty(), "{out:?}");
+        assert_eq!(row.lifecycle(), Lifecycle::Live);
+    }
+
+    #[test]
+    fn a_resume_files_a_settled_agent_active_again() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        rig.call(ClientRequest::FileAgent {
+            agent: PARENT,
+            filing: Filing::Settled,
+        });
+        rig.step(Input::ControlClosed {
+            agent: PARENT,
+            ended: Ended::Exited,
+        });
+        assert!(rig.row(PARENT).unwrap().is_settled());
+        let (_, out) = rig.call(ClientRequest::ResumeAgent(Box::new(Resume {
+            agent: PARENT,
+            bootstrap: None,
+        })));
+        let Some((unlock, Job::AwaitUnlocked { .. })) = job_of(&out) else {
+            panic!("the resume waits for the directory: {out:?}");
+        };
+        let unlocked = rig.step(Input::JobDone {
+            job: unlock,
+            result: JobResult::Done,
+        });
+        let Some((spec, Job::NextSpec { .. })) = job_of(&unlocked) else {
+            panic!("the spec is asked for: {unlocked:?}");
+        };
+        rig.step(Input::JobDone {
+            job: spec,
+            result: JobResult::Spec(Some(Box::new(AgentSpec {
+                agent_id: PARENT.0.to_vec(),
+                kind: wire::Kind::Codex as i32,
+                incarnation: 2,
+                ..AgentSpec::default()
+            }))),
+        });
+        let row = rig.row(PARENT).unwrap();
+        assert_eq!(
+            (row.lifecycle, row.filing),
+            (Lifecycle::Live as i32, wire::Filing::Active as i32)
+        );
+    }
+
+    #[test]
     fn an_agent_that_ended_holds_no_journal_file_open() {
         let mut rig = rig();
         rig.live(PARENT, "lead", None);
@@ -1660,7 +1830,10 @@ mod tests {
         said(b"model a");
         rig.step(Input::Nudge { agent: PARENT });
 
-        rig.call(ClientRequest::StopAgent { agent: PARENT });
+        rig.call(ClientRequest::FileAgent {
+            agent: PARENT,
+            filing: Filing::Settled,
+        });
         let (resume, out) = rig.call(ClientRequest::ResumeAgent(Box::new(Resume {
             agent: PARENT,
             bootstrap: None,
@@ -1863,7 +2036,10 @@ mod tests {
         // A daemon that started again adopts the process, whose Hello makes
         // the next read to the journal's end announce its CaughtUp.
         rig.step(Input::AgentHello { agent: PARENT });
-        rig.call(ClientRequest::StopAgent { agent: PARENT });
+        rig.call(ClientRequest::FileAgent {
+            agent: PARENT,
+            filing: Filing::Settled,
+        });
         rig.call(ClientRequest::DeleteAgent { agent: PARENT });
 
         // The exit announces the CaughtUp, answers the stop, and the delete

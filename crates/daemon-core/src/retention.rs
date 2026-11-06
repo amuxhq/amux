@@ -1,8 +1,8 @@
 //! Retention: the store's sweeps, as one step.
 //!
-//! The store decides what goes (exited agents whole, least recently active
-//! first, never an exited child whose parent is live; then the largest live
-//! agent trimmed a chunk at a time, never below its newest rows; replicas
+//! The store decides what goes (settled, exited agents whole, least
+//! recently active first, never a settled child whose parent is live; then
+//! the largest other agent trimmed a chunk at a time, never below its newest rows; replicas
 //! with no source least recently used first, the rest trimmed to their
 //! tail with the block kept whole) and says which agents it removed. The
 //! core then does what the store cannot: ends the removed agents' streams,
@@ -162,6 +162,7 @@ mod tests {
         let key = AgentKey::new(*OWN, *AGENT);
         let mut row = AgentRow::new(key.clone(), wire::Kind::Codex, "/src");
         row.lifecycle = Lifecycle::Exited as i32;
+        row.filing = wire::Filing::Settled as i32;
         store.put_agent(&row).expect("the store takes its agent");
         let step = Step {
             items: vec![Item {
@@ -197,7 +198,7 @@ mod tests {
     }
 
     #[test]
-    fn an_exited_agent_over_the_budget_is_removed_with_its_streams_and_its_directory_named() {
+    fn a_settled_agent_over_the_budget_is_removed_with_its_streams_and_its_directory_named() {
         let mut daemon = daemon();
         let key = AgentKey::new(*OWN, *AGENT);
         let subscribe = ClientRequest::SubscribeSession {

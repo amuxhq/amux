@@ -194,7 +194,7 @@ async fn survive_daemon() {
         return;
     }
     for name in agents.keys() {
-        desk.run(&["stop", name]).await;
+        desk.run(&["settle", name]).await;
     }
     desk.run(&["server", "stop"]).await;
 }

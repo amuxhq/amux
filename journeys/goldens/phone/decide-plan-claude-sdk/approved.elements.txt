@@ -13,9 +13,8 @@ chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
 chat.more | More |  | 350,66,28,36
-chat.back | Back |  | 20,66,40,36
-chat.header | /p/t/a/n/d/work · desk | live | 80,66,165,36
-chat.title | planner | planner | 80,66,165,36
+chat.header | /p/t/a/n/d/work · desk | live | 76,66,165,36
+chat.title | planner | planner | 76,66,165,36
  | Attach |  | 23,779,44,44
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
@@ -26,6 +25,7 @@ chat.title | planner | planner | 80,66,165,36
  | Plan approved, Move the journal |  | 16,249,370,44
  | Moving the journal as planned. |  | 16,295,370,20
  | Worked <t> |  | 16,323,62,16
- | Back |  | 20,66,40,36
- | planner, /p/t/a/n/d/work · desk |  | 80,66,165,36
+BackButton | Agents |  | 16,62,44,44
+ | planner, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36
+ | Back |  | 16,73,44,23

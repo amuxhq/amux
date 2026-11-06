@@ -1,23 +1,6 @@
 import AmuxDesign
 import SwiftUI
 
-/// The way back as a pushed page draws it in the system's bar: a chevron in
-/// a circle of its own, as Messages and Slack draw it. A page that uses it
-/// hides the system's back button, whose title would otherwise sit beside it.
-public struct BarBack: View {
-    let identifier: String
-    let action: () -> Void
-
-    public init(identifier: String, action: @escaping () -> Void) {
-        self.identifier = identifier
-        self.action = action
-    }
-
-    public var body: some View {
-        BarButton("chevron.left", label: String(localized: "Back"), identifier: identifier, action: action)
-    }
-}
-
 /// A symbol in a circle of its own in the system's bar: back, cancel, done.
 /// It stands on the bar's glass, as every other item in the app's bars does.
 public struct BarButton: View {
@@ -104,25 +87,10 @@ struct WaitingLine: View {
 }
 
 extension View {
-    /// A pushed page's bar: the back circle on its own, with the page's
-    /// heading in its content rather than beside it.
-    func backBar(_ identifier: String, back: @escaping @MainActor () -> Void) -> some View {
-        modifier(BackBar(identifier: identifier, back: back))
-    }
-}
-
-private struct BackBar: ViewModifier {
-    let identifier: String
-    let back: @MainActor () -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .navigationBarBackButtonHidden(true)
-            .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    BarBack(identifier: identifier) { back() }
-                }
-            }
+    /// A pushed page's bar: the system's way back, its chevron alone, with
+    /// the page's heading in its content rather than beside it. The system's
+    /// button keeps the system's edge swipe, which follows the finger.
+    func backBar() -> some View {
+        toolbarRole(.editor).toolbarTitleDisplayMode(.inline)
     }
 }

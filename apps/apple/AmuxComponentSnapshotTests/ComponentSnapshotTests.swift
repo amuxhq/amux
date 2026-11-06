@@ -599,10 +599,19 @@ private struct ReadElement {
     static func all(in window: UIWindow) -> [ReadElement] {
         var found: [ReadElement] = []
         var seen = Set<ObjectIdentifier>()
-        func visit(_ node: NSObject, reach: CGRect) {
+        // A view that clips to its bounds draws nothing past them, so what
+        // it holds there is not drawn at all: a search field's collapsed
+        // scope bar keeps its segments in the tree at full size under the
+        // list's first row. A scroll view clips too, but what lies past its
+        // bounds is within reach and stays counted.
+        func visit(_ node: NSObject, reach: CGRect, clip: CGRect) {
             guard seen.insert(ObjectIdentifier(node)).inserted else { return }
             if let view = node as? UIView, view.isHidden || view.alpha == 0 { return }
             var reach = reach
+            var clip = clip
+            if let view = node as? UIView, view.clipsToBounds, !(view is UIScrollView) {
+                clip = clip.intersection(view.convert(view.bounds, to: window))
+            }
             if let scroller = node as? UIScrollView {
                 // A lazy stack reports a content size from the rows it has
                 // laid out, and places the rest at estimates past it, so
@@ -621,24 +630,27 @@ private struct ReadElement {
                 let traits = node.accessibilityTraits
                 let control = traits.contains(.button) || traits.contains(.adjustable)
                     || node is UIControl || node is UITextField || node is UITextView
-                if frame.width > 0, frame.height > 0 {
+                let shown = frame.intersection(clip)
+                if frame.width > 0, frame.height > 0, !shown.isNull, shown.width > 0, shown.height > 0 {
                     found.append(ReadElement(
                         label: node.accessibilityLabel ?? "", frame: frame, control: control, reach: reach))
                 }
             }
             if let listed = node.accessibilityElements as? [NSObject] {
-                listed.forEach { visit($0, reach: reach) }
+                listed.forEach { visit($0, reach: reach, clip: clip) }
             } else {
                 let count = node.accessibilityElementCount()
                 if count != NSNotFound, count > 0 {
                     for index in 0..<count {
-                        if let child = node.accessibilityElement(at: index) as? NSObject { visit(child, reach: reach) }
+                        if let child = node.accessibilityElement(at: index) as? NSObject {
+                            visit(child, reach: reach, clip: clip)
+                        }
                     }
                 }
             }
-            if let view = node as? UIView { view.subviews.forEach { visit($0, reach: reach) } }
+            if let view = node as? UIView { view.subviews.forEach { visit($0, reach: reach, clip: clip) } }
         }
-        visit(window, reach: window.bounds)
+        visit(window, reach: window.bounds, clip: window.bounds)
         return found
     }
 }

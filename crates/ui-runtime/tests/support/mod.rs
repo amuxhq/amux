@@ -14,11 +14,11 @@ use client::{Client, EventStream, RpcError};
 use tokio::sync::{mpsc, oneshot};
 use wire::{
     Agent, Attachment, BlobRef, CreateAgentRequest, DeleteAgentRequest, Diff, DumpRequest,
-    DumpResponse, GetBlobRequest, GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent,
-    Item, Kind, Lifecycle, ListItemsRequest, ListItemsResponse, ListRepositoriesRequest,
-    ListRepositoriesResponse, Phase, PutBlobRequest, QueuedInput, RenameAgentRequest,
-    ResolveAgentRequest, ResumeAgentRequest, SendInputRequest, SendInputResponse,
-    SendMessageResponse, SessionEvent, Snapshot, StopAgentRequest, SubscribeSessionRequest,
+    DumpResponse, FileAgentRequest, GetBlobRequest, GetBlobResponse, GetDiffRequest,
+    GetItemRequest, InventoryEvent, Item, Kind, Lifecycle, ListItemsRequest, ListItemsResponse,
+    ListRepositoriesRequest, ListRepositoriesResponse, Phase, PutBlobRequest, QueuedInput,
+    RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
+    SendInputResponse, SendMessageResponse, SessionEvent, Snapshot, SubscribeSessionRequest,
     attachment, inventory_event, send_input_response, session_event,
 };
 
@@ -35,7 +35,7 @@ pub enum Call {
     SendInput(SendInputRequest, Reply<SendInputResponse>),
     Resume(ResumeAgentRequest, Reply<Agent>),
     GetBlob(GetBlobRequest, Reply<GetBlobResponse>),
-    Stop(StopAgentRequest, Reply<()>),
+    Settle(FileAgentRequest, Reply<Agent>),
     Dump(DumpRequest, Reply<DumpResponse>),
 }
 
@@ -49,7 +49,7 @@ impl std::fmt::Debug for Call {
             Call::SendInput(request, _) => write!(f, "SendInput({request:?})"),
             Call::Resume(request, _) => write!(f, "Resume({request:?})"),
             Call::GetBlob(request, _) => write!(f, "GetBlob({request:?})"),
-            Call::Stop(request, _) => write!(f, "Stop({request:?})"),
+            Call::Settle(request, _) => write!(f, "Settle({request:?})"),
             Call::Dump(request, _) => write!(f, "Dump({request:?})"),
         }
     }
@@ -143,8 +143,8 @@ impl Client for FakeRuntime {
         unimplemented!("rename_agent")
     }
 
-    async fn stop_agent(&self, request: StopAgentRequest) -> Result<(), RpcError> {
-        self.call(|reply| Call::Stop(request, reply)).await
+    async fn file_agent(&self, request: FileAgentRequest) -> Result<Agent, RpcError> {
+        self.call(|reply| Call::Settle(request, reply)).await
     }
 
     async fn resume_agent(&self, request: ResumeAgentRequest) -> Result<Agent, RpcError> {
@@ -291,9 +291,9 @@ impl Calls {
         }
     }
 
-    pub async fn stop(&mut self) -> (StopAgentRequest, Reply<()>) {
+    pub async fn settle(&mut self) -> (FileAgentRequest, Reply<Agent>) {
         match self.next().await {
-            Call::Stop(request, reply) => (request, reply),
+            Call::Settle(request, reply) => (request, reply),
             other => panic!("expected Stop, got {other:?}"),
         }
     }

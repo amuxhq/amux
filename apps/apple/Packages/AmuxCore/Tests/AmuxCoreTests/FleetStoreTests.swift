@@ -17,7 +17,8 @@ enum Cards {
         _ index: Int, _ name: String, attention: Attention = .idle, minutesAgo: Double = 1,
         depth: UInt32 = 0, children: UInt32 = 0, family: Attention? = nil,
         members: UInt32 = 1, expanded: Bool = false, loud: LoudMember? = nil,
-        kind: Kind = .claudeSdk, reach: Reach = .online(.direct), host: HostId = desk
+        kind: Kind = .claudeSdk, reach: Reach = .online(.direct), host: HostId = desk,
+        filing: Filing = .active
     ) -> FleetRow {
         FleetRow(
             card: FleetCard(
@@ -26,23 +27,25 @@ enum Cards {
                 phaseSinceMs: Int64(now.addingTimeInterval(-60 * minutesAgo)
                     .timeIntervalSince1970 * 1000),
                 host: "desk", hostReach: reach, children: children,
-                familyAttention: family ?? attention, members: members, descendants: 0, backgroundJobs: 0, stopHeld: false,
+                familyAttention: family ?? attention, members: members, descendants: 0, backgroundJobs: 0, settleHeld: false, filing: filing, topLevel: true,
                 branch: nil, exitCause: attention == .exited ? .ended : nil),
             depth: depth, expanded: expanded, secondLine: .blank, loud: loud)
     }
 
     /// The runtime's sections for rows listed heads first, each family's
-    /// members after its head: a family sits in the section of its loudest
-    /// member, in the order given. The fleet's counts are the rows' unless
+    /// members after its head: a family the person pinned or settled sits
+    /// in that section, any other in the section of its loudest member, in
+    /// the order given. The fleet's counts are the rows' unless
     /// given, as they are where a folded family hides somebody.
     static func view(_ rows: [FleetRow], needYou: Int? = nil, working: Int? = nil) -> FleetView {
         var sections: [SectionKind: FleetSection] = [:]
         var kind = SectionKind.live
         for row in rows {
             if row.depth == 0 {
-                kind = switch row.card.familyAttention {
-                case .needsYou: .needsYou
-                case .exited: .exited
+                kind = switch (row.card.filing, row.card.familyAttention) {
+                case (.pinned, _): .pinned
+                case (.settled, _): .settled
+                case (_, .needsYou): .needsYou
                 default: .live
                 }
                 sections[kind, default: section(kind)].families += 1
@@ -53,13 +56,13 @@ enum Cards {
             UInt32(rows.filter { wanted.contains($0.card.attention) }.count)
         }
         return FleetView(
-            sections: SectionKind.allCases.compactMap { sections[$0] },
+            sections: [SectionKind.pinned, .needsYou, .live, .settled].compactMap { sections[$0] },
             needYou: needYou.map(UInt32.init) ?? counted([.needsYou]),
             working: working.map(UInt32.init) ?? counted([.working, .starting]))
     }
 
     private static func section(_ kind: SectionKind) -> FleetSection {
-        FleetSection(kind: kind, families: 0, foldedByDefault: kind == .exited, rows: [])
+        FleetSection(kind: kind, families: 0, foldedByDefault: kind == .settled, rows: [])
     }
 
     static func host(
@@ -107,20 +110,31 @@ final class FleetStoreTests: XCTestCase {
             "ages are read against \(fleet.orderedAt), before the row's own change at \(row.lastActivity), so it reads \(row.age(at: fleet.orderedAt))")
     }
 
-    func testExitedStartsFoldedAndOpensWhenAsked() {
+    /// An agent that exited and nobody settled is an ordinary row; a
+    /// settled one is put away in its own section, which the subtitle does
+    /// not count.
+    func testOnlySettledAgentsArePutAway() {
         let fleet = FleetStore(now: Cards.now)
         fleet.show(
-            Cards.view([Cards.row(1, "live"), Cards.row(2, "done", attention: .exited)]), hosts: [])
-        XCTAssertEqual(fleet.sections.map(\.kind), [.live, .exited])
-        XCTAssertEqual(fleet.sections.map { fleet.folded($0) }, [false, true], "as the runtime says")
-        XCTAssertEqual(fleet.sections[1].families, 1)
-        fleet.toggle(.exited)
-        XCTAssertEqual(fleet.sections.map { fleet.folded($0) }, [false, false])
+            Cards.view([
+                Cards.row(1, "live"), Cards.row(2, "done", attention: .exited),
+                Cards.row(3, "put-away", attention: .exited, filing: .settled),
+            ], needYou: 1), hosts: [])
+        XCTAssertEqual(fleet.sections.map(\.kind), [.live, .settled])
+        XCTAssertEqual(fleet.sections[0].rows.map(\.name), ["live", "done"])
+        XCTAssertEqual(fleet.settled?.rows.map(\.name), ["put-away"])
+        XCTAssertEqual(fleet.subtitle, "1 need you · 2 agents")
+    }
+
+    /// Pinned agents sit in their own section, above what needs the person.
+    func testPinnedAgentsLeadTheList() {
+        let fleet = FleetStore(now: Cards.now)
         fleet.show(
-            Cards.view([Cards.row(1, "live"), Cards.row(2, "done", attention: .exited)]), hosts: [])
-        XCTAssertFalse(fleet.folded(fleet.sections[1]), "opened stays open as the fleet moves")
-        fleet.toggle(.exited)
-        XCTAssertTrue(fleet.folded(fleet.sections[1]))
+            Cards.view([
+                Cards.row(1, "kept", filing: .pinned), Cards.row(2, "asks", attention: .needsYou),
+            ]), hosts: [])
+        XCTAssertEqual(fleet.sections.map(\.kind), [.pinned, .needsYou])
+        XCTAssertTrue(fleet.rows[0].pinned)
     }
 
     func testARowCarriesItsBranchAndSecondLine() {

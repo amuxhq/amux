@@ -23,12 +23,12 @@ use wire::agent_service_server::AgentService;
 use wire::profile_admin_service_server::ProfileAdminServiceServer;
 use wire::session_service_server::SessionService;
 use wire::{
-    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, Empty, ErrorCode, GetBlobRequest,
-    GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent, Item, ListItemsRequest,
-    ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse, PutBlobRequest,
-    RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
-    SendInputResponse, SendMessageResponse, SessionEvent, StopAgentRequest,
-    SubscribeSessionRequest, subscribe_session_request,
+    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, Empty, ErrorCode, FileAgentRequest,
+    GetBlobRequest, GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent, Item,
+    ListItemsRequest, ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse,
+    PutBlobRequest, RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
+    SendInputResponse, SendMessageResponse, SessionEvent, SubscribeSessionRequest,
+    subscribe_session_request,
 };
 
 use crate::blobs::BlobError;
@@ -340,24 +340,38 @@ impl AgentService for ClientApi {
             .map_err(|error| status(error.to_wire()))
     }
 
-    async fn stop_agent(
+    async fn file_agent(
         &self,
-        request: Request<StopAgentRequest>,
-    ) -> Result<Response<wire::Empty>, Status> {
+        request: Request<FileAgentRequest>,
+    ) -> Result<Response<Agent>, Status> {
         let request = request.into_inner();
+        let Some(filing) = daemon_core::Filing::from_wire(request.filing()) else {
+            return Err(status(wire_error(
+                ErrorCode::InvalidArgument,
+                "a filing is active, pinned or settled",
+            )));
+        };
+        // An agent settles its own children, as it ends their work; filing
+        // them any other way is the person's.
+        if self.caller.is_some() && filing != daemon_core::Filing::Settled {
+            return Err(status(wire_error(
+                ErrorCode::PermissionDenied,
+                "only the person pins or un-settles an agent",
+            )));
+        }
         let runtime = self.runtime()?;
         self.lineage(
             &runtime,
             &request.agent_id,
-            "an agent stops only its own children",
+            "an agent settles only its own children",
         )
         .await?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
-            let stopped = runtime.on_peer(host, request).await;
-            return match stopped {
-                Ok(_) => Ok(Response::new(wire::Empty {})),
+            let filed = runtime.on_peer(host, request).await;
+            return match filed {
+                Ok(agent) => Ok(Response::new(agent)),
                 // Never left, and the lapse is why: answered as unreachable
-                // in the lapse's words, so a client holds the stop as it
+                // in the lapse's words, so a client holds the settle as it
                 // holds a send and says the reason.
                 Err(error @ ForwardError::Lapsed { .. }) => Err(status(wire::Error::because(
                     wire::ErrorReason::HostUnreachable,
@@ -367,9 +381,9 @@ impl AgentService for ClientApi {
             };
         }
         runtime
-            .stop(agent_id(&request.agent_id)?)
+            .file(agent_id(&request.agent_id)?, filing)
             .await
-            .map(|_| Response::new(wire::Empty {}))
+            .map(Response::new)
             .map_err(|error| status(error.to_wire()))
     }
 

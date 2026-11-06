@@ -198,7 +198,7 @@ impl Walk {
         for attempt in 0..3 {
             let opened = self.journey.tap(&row).and_then(|()| {
                 self.journey.wait_within(
-                    |drawn| drawn.has("chat.back"),
+                    |drawn| drawn.has("chat"),
                     "the chat opened",
                     Duration::from_secs(5),
                 )
@@ -210,13 +210,12 @@ impl Walk {
             }
         }
         self.journey
-            .wait(|drawn| drawn.has("chat.back") && ready(drawn), description)
+            .wait(|drawn| drawn.has("chat") && ready(drawn), description)
     }
 
     fn back(&mut self) -> Result<(), String> {
-        self.journey.tap("chat.back")?;
-        self.journey
-            .wait(|drawn| !drawn.has("chat.back"), "the fleet")?;
+        self.journey.back()?;
+        self.journey.wait(|drawn| !drawn.has("chat"), "the fleet")?;
         // A row tapped while the chat is still leaving does not open.
         self.settle()
     }

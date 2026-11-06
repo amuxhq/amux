@@ -401,7 +401,7 @@ fn reopen(
     agent: &str,
     ready: impl Fn(&Drawn) -> bool,
 ) -> Result<Drawn, String> {
-    journey.tap("chat.back")?;
+    journey.back()?;
     back_to_row(journey, agent, |drawn| !drawn.has("chat.field"))?;
     journey.tap(&format!("home.row.{agent}"))?;
     journey.wait(
@@ -417,7 +417,7 @@ fn reopen_card(
     agent: &str,
     ready: impl Fn(&Drawn) -> bool,
 ) -> Result<Drawn, String> {
-    journey.tap("chat.back")?;
+    journey.back()?;
     back_to_row(journey, agent, |drawn| !drawn.has("chat"))?;
     journey.tap(&format!("home.row.{agent}"))?;
     journey.wait(|drawn| drawn.has("ask") && ready(drawn), "the chat again")
@@ -425,7 +425,7 @@ fn reopen_card(
 
 /// Back from a chat to the fleet, once the page has finished leaving.
 fn back_to_fleet(journey: &mut PhoneJourney) -> Result<(), String> {
-    journey.tap("chat.back")?;
+    journey.back()?;
     journey.wait(|drawn| !drawn.has("chat.field"), "the fleet")?;
     journey.app(json!({"kind": "settle"}))?;
     Ok(())
@@ -433,7 +433,7 @@ fn back_to_fleet(journey: &mut PhoneJourney) -> Result<(), String> {
 
 /// Back from a chat to the fleet.
 fn leave_chat(journey: &mut PhoneJourney) -> Result<(), String> {
-    journey.tap("chat.back")?;
+    journey.back()?;
     journey.wait(|drawn| !drawn.has("chat.field"), "the fleet")?;
     Ok(())
 }
@@ -581,7 +581,7 @@ fn reach_host(journey: &mut PhoneJourney) -> Proved {
 
     // Leaving the chat comes back to the fleet; opened again, the chat holds
     // the prompt and the reply.
-    journey.tap("chat.back")?;
+    journey.back()?;
     journey.wait(
         |drawn| drawn.has(&agent_row) && !drawn.has("chat.field"),
         "the fleet",
@@ -592,7 +592,7 @@ fn reach_host(journey: &mut PhoneJourney) -> Proved {
         "the chat opened again",
     )?;
     journey.screen("usable-chat", &["chat.row.turn-end"])?;
-    journey.tap("chat.back")?;
+    journey.back()?;
     journey.wait(
         |drawn| drawn.has(&agent_row) && !drawn.has("chat.field"),
         "the fleet",
@@ -787,7 +787,7 @@ fn decide_plan_codex(journey: &mut PhoneJourney) -> Proved {
     // Opened again, so it is read at rest: the decision stands where the
     // composer was.
     let row = format!("home.row.{agent_id}");
-    journey.tap("chat.back")?;
+    journey.back()?;
     journey.wait(|drawn| !drawn.has("chat") && drawn.has(&row), "the fleet")?;
     journey.tap(&row)?;
     journey.wait(
@@ -1189,7 +1189,7 @@ fn composer_limits(journey: &mut PhoneJourney) -> Proved {
     let refused = journey.wait_chat("desk", "expired", |chat| phase(chat) == "IDLE", "refused")?;
     reflected_once(&refused, "Check the links.")?;
     let row = format!("home.row.{expired}");
-    journey.tap("chat.back")?;
+    journey.back()?;
     journey.wait(|drawn| !drawn.has("chat") && drawn.has(&row), "the fleet")?;
     journey.tap(&row)?;
     journey.wait(asked, "the chat again")?;
@@ -1270,32 +1270,37 @@ fn manage_agent(journey: &mut PhoneJourney) -> Proved {
         "the new name on the phone",
     )?;
 
-    // Stopped: exited on the desk with its history kept, and resumable.
-    stop_from_menu(journey)?;
-    let stopped = journey.wait_inventory(
+    // Settled: exited on the desk with its history kept, put away on the
+    // phone's Settled page, and resumable.
+    settle_from_menu(journey)?;
+    let settled = journey.wait_inventory(
         "desk",
-        |agents| listed(agents, &id).is_some_and(|agent| agent["lifecycle"] == EXITED),
-        "stopped",
+        |agents| {
+            listed(agents, &id)
+                .is_some_and(|agent| agent["lifecycle"] == EXITED && agent["filing"] == SETTLED)
+        },
+        "settled",
     )?;
-    lifecycle(&stopped, &id, "helper", EXITED)?;
-    let control = negative_control(lifecycle(&stopped, &id, "helper", LIVE))?;
+    lifecycle(&settled, &id, "helper", EXITED)?;
+    let control = negative_control(lifecycle(&settled, &id, "helper", LIVE))?;
     let kept = journey.chat("desk", &id, "history-kept")?;
     reflected_once(&kept, HELLO)?;
     if !super::holds(&kept, READY) {
         return Err(format!(
-            "the stopped agent's history lost its reply: {kept}"
+            "the settled agent's history lost its reply: {kept}"
         ));
     }
+    let row = format!("home.row.{id}");
+    open_settled(journey, &id)?;
+    journey.tap(&row)?;
     journey.wait(
-        |drawn| labelled(drawn, "Exited"),
-        "the chat saying it exited",
+        |drawn| drawn.has("chat.field") && labelled(drawn, "Exited") && replies(drawn, READY) == 1,
+        "the settled chat",
     )?;
-    reopen(journey, &id, |drawn| {
-        labelled(drawn, "Exited") && replies(drawn, READY) == 1
-    })?;
     journey.screen("exited-and-resumable", &[])?;
 
-    // Resumed from the exited composer: the same identity, live again.
+    // Resumed from the exited composer: the same identity, live again and
+    // back among the fleet's agents.
     journey.type_text("chat.field", BACK)?;
     journey.wait(
         |drawn| drawn.enabled("chat.resume"),
@@ -1304,7 +1309,10 @@ fn manage_agent(journey: &mut PhoneJourney) -> Proved {
     journey.tap("chat.resume")?;
     let resumed = journey.wait_inventory(
         "desk",
-        |agents| listed(agents, &id).is_some_and(|agent| agent["lifecycle"] == LIVE),
+        |agents| {
+            listed(agents, &id)
+                .is_some_and(|agent| agent["lifecycle"] == LIVE && agent["filing"] == ACTIVE)
+        },
         "resumed",
     )?;
     lifecycle(&resumed, &id, "helper", LIVE)?;
@@ -1317,19 +1325,37 @@ fn manage_agent(journey: &mut PhoneJourney) -> Proved {
     reflected_once(&chat, HELLO)?;
     reflected_once(&chat, BACK)?;
     journey.wait(|drawn| replies(drawn, READY) == 2, "the resumed reply")?;
-    reopen(journey, &id, |drawn| {
-        replies(drawn, READY) == 2 && drawn.has("chat.row.turn-end")
-    })?;
+    // Off the Settled page, which no longer lists it, to the fleet, which
+    // does.
+    journey.back()?;
+    // The fleet under the page lists it again, so the page is read by
+    // its own words.
+    journey.wait(
+        |drawn| drawn.has("settled.empty") && !drawn.has("chat"),
+        "the Settled page with nothing on it",
+    )?;
+    journey.back()?;
+    journey.wait(|drawn| drawn.has(&row), "the fleet with it")?;
+    journey.tap(&row)?;
+    journey.wait(
+        |drawn| replies(drawn, READY) == 2 && drawn.has("chat.row.turn-end"),
+        "the chat again",
+    )?;
     journey.screen("resumed", &["chat.row.turn-end"])?;
 
-    // Deleted, explicitly: only an exited agent offers it, so stopped
-    // again first, then gone from the fleet and from the desk.
-    stop_from_menu(journey)?;
+    // Deleted, explicitly: only a settled agent offers it, so settled again
+    // first, then gone from the Settled page and from the desk.
+    settle_from_menu(journey)?;
     journey.wait_inventory(
         "desk",
-        |agents| listed(agents, &id).is_some_and(|agent| agent["lifecycle"] == EXITED),
-        "stopped-again",
+        |agents| {
+            listed(agents, &id)
+                .is_some_and(|agent| agent["lifecycle"] == EXITED && agent["filing"] == SETTLED)
+        },
+        "settled-again",
     )?;
+    open_settled(journey, &id)?;
+    journey.tap(&row)?;
     journey.wait(
         |drawn| labelled(drawn, "Exited"),
         "the chat saying it exited again",
@@ -1338,28 +1364,41 @@ fn manage_agent(journey: &mut PhoneJourney) -> Proved {
     journey.choose("Delete Agent")?;
     journey.wait_for(&["chat.delete.confirm"])?;
     journey.tap("chat.delete.confirm")?;
-    let row = format!("home.row.{id}");
     journey.wait(
-        |drawn| !drawn.has("chat.field") && !drawn.has(&row),
-        "the fleet without it",
+        |drawn| !drawn.has("chat") && drawn.has("settled.empty") && !drawn.has(&row),
+        "the Settled page with nothing on it",
     )?;
     journey.wait_inventory("desk", |agents| listed(agents, &id).is_none(), "deleted")?;
     journey.screen("deleted", &[])?;
     Ok(vec![
         "New Agent on the desk created a Claude agent the desk lists under its directory's name, and its chat answered".to_owned(),
         "Rename from the chat's menu: the desk lists the same id as helper".to_owned(),
-        "Stop Agent: the desk lists it exited, with its prompt and reply kept".to_owned(),
+        "Settle: the chat closed, the desk lists it exited and settled, with its prompt and reply kept, and the phone lists it on the Settled page".to_owned(),
         control,
-        "a message from the exited composer resumed the same id, and each prompt is in the desk's chat once".to_owned(),
-        "stopped again, Delete Agent: gone from the fleet and from the desk".to_owned(),
+        "a message from the settled agent's exited composer resumed the same id, filed it back among the fleet's agents, and each prompt is in the desk's chat once".to_owned(),
+        "settled again, Delete Agent from its chat on the Settled page: gone from the phone and from the desk".to_owned(),
     ])
 }
 
-fn stop_from_menu(journey: &mut PhoneJourney) -> Result<(), String> {
+/// Settles the open chat's agent from its menu. An idle agent is settled at
+/// once, with nothing to confirm, and the chat closes.
+fn settle_from_menu(journey: &mut PhoneJourney) -> Result<(), String> {
     journey.tap("chat.more")?;
-    journey.choose("Stop Agent")?;
-    journey.wait_for(&["chat.stop.confirm"])?;
-    journey.tap("chat.stop.confirm")
+    journey.choose("Settle")?;
+    journey.wait(|drawn| !drawn.has("chat"), "the chat closed")?;
+    Ok(())
+}
+
+/// The Settled page from the foot of the fleet, once it lists `agent`.
+fn open_settled(journey: &mut PhoneJourney, agent: &str) -> Result<(), String> {
+    journey.wait_for(&["home.settled"])?;
+    journey.tap("home.settled")?;
+    let row = format!("home.row.{agent}");
+    journey.wait(
+        |drawn| drawn.has("settled") && drawn.has(&row),
+        "the Settled page",
+    )?;
+    Ok(())
 }
 
 fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
@@ -1368,7 +1407,7 @@ fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
     // ends, and the reviewer started before its folder was a repository:
     // start it again so the phone has changes to offer for review.
     journey.request(
-        Control::Stop {
+        Control::SettleAgent {
             agent: "reviewer".to_owned(),
         },
         None,
@@ -1414,7 +1453,9 @@ fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
         .ok_or("no review line holds the edit")?;
     journey.perform(&line, "Select line")?;
     journey.wait_for(&["review.comment"])?;
-    journey.screen("review-diff", &[])?;
+    // The chat behind the review keeps its header in the tree, undrawn, at
+    // either of two offsets in its own bar.
+    journey.screen("review-diff", &["chat.header", "chat.title"])?;
     journey.tap("review.comment")?;
     journey.wait_for(&["review.note"])?;
     journey.type_text("review.note", COMMENT)?;
@@ -1427,7 +1468,7 @@ fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
         |drawn| labelled(drawn, COMMENT) && drawn.has("review.attach"),
         "the comment on the line",
     )?;
-    journey.screen("review-comment", &[])?;
+    journey.screen("review-comment", &["chat.header", "chat.title"])?;
     journey.tap("review.attach")?;
     journey.wait(
         |drawn| drawn.has("chat.field") && !drawn.has("review.attach"),
@@ -1657,7 +1698,7 @@ fn switch_to(journey: &mut PhoneJourney, account: &str) -> Result<(), String> {
     journey.tap("home.accounts")?;
     journey.choose(account)?;
     journey.wait(
-        |drawn| drawn.value("home.subtitle").split(" · ").next() == Some(account),
+        |drawn| drawn.value("home.accounts") == account,
         &format!("{account} on screen"),
     )?;
     Ok(())
@@ -2231,7 +2272,7 @@ fn purchase_restore(journey: &mut PhoneJourney) -> Proved {
             "the purchase was not offered to amux.sh again by a restore: {record}"
         ));
     }
-    journey.tap("paywall.back")?;
+    journey.back()?;
     journey.wait(|drawn| !drawn.has("paywall"), "the paywall closed")?;
 
     // The relay link reads what the account buys again, and the same
@@ -2814,7 +2855,7 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
     })?;
     // The command row's duration is how long the ask waited on the phone.
     journey.screen("answered", &["chat.row.turn-end", "chat.row.command"])?;
-    journey.tap("chat.back")?;
+    journey.back()?;
     Ok(lines(&[
         "put away, the desk's asker came to need the person and the bystander answered",
         "a push built from journeys/fixtures/needs-you.apns showed its notification, and its payload, handed to the app's remote-notification handler through the debug door with the app in the background, brought the asker's chat current: with the desk stopped it held the ask",

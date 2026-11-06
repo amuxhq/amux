@@ -1840,7 +1840,8 @@ impl Transition<'_> {
             PeerRequest::SubscribeSession(_) | PeerRequest::SubscribeInventory
         );
         let silent = match request {
-            PeerRequest::StopAgent(_) | PeerRequest::DeleteAgent(_) => Some(PeerReply::Done),
+            PeerRequest::FileAgent(_) => Some(PeerReply::Agent(wire::Agent::default())),
+            PeerRequest::DeleteAgent(_) => Some(PeerReply::Done),
             PeerRequest::SendMessage(_) => {
                 Some(PeerReply::SendMessage(wire::SendMessageResponse::default()))
             }
@@ -2725,7 +2726,7 @@ fn peer_request(request: &PeerRequest) -> &'static str {
         PeerRequest::SendInput(_) => "SendInput",
         PeerRequest::CreateAgent(_) => "CreateAgent",
         PeerRequest::RenameAgent(_) => "RenameAgent",
-        PeerRequest::StopAgent(_) => "StopAgent",
+        PeerRequest::FileAgent(_) => "FileAgent",
         PeerRequest::ResumeAgent(_) => "ResumeAgent",
         PeerRequest::DeleteAgent(_) => "DeleteAgent",
         PeerRequest::SendMessage(_) => "SendMessage",

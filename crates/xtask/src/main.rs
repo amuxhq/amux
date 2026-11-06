@@ -34,6 +34,7 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.DiffFile",
     "amux.v1.Empty",
     "amux.v1.EnvelopeKind",
+    "amux.v1.Filing",
     "amux.v1.Git",
     "amux.v1.Kind",
     "amux.v1.OfferedCommand",

@@ -31,7 +31,7 @@ amux gives every agent a small set of tools:
   it can reply the same way.
 - **Start a subagent**: a new Claude or Codex agent with a task, on this machine
   or another one you've paired.
-- **Stop its own subagents**, and only its own.
+- **Settle its own subagents**, and only its own.
 - **Say what it's working on**, so you and the other agents can find the
   right one to ask.
 - **Show you a file it made**, such as a screenshot or a report, as an image or
@@ -64,8 +64,8 @@ machine. If it doesn't know one, it asks you.
 Claude subagents always run in amux's chat, even if you usually chat in Claude
 Code's own interface, so you can read them from any device.
 
-## Stopping and deleting
+## Settling and deleting
 
-Stopping or deleting an agent does the same to its subagents, and to their
+Settling or deleting an agent does the same to its subagents, and to their
 subagents in turn, on every machine. A subagent on a machine that's offline
 follows as soon as that machine is back.

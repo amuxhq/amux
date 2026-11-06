@@ -53,7 +53,7 @@ there is one definition of each. [EMBEDDED.md](EMBEDDED.md) covers the bridge.
 
 [`client::Client`](../crates/client/src/lib.rs) has one async method per call of the client services
 (`proto/`), with the same names: `subscribe_inventory`, `resolve_agent`, `subscribe_session`,
-`list_items`, `get_item`, `send_input`, `create_agent`, `rename_agent`, `stop_agent`, `resume_agent`, `delete_agent`,
+`list_items`, `get_item`, `send_input`, `create_agent`, `rename_agent`, `file_agent`, `resume_agent`, `delete_agent`,
 `send_message`, `put_blob`, `get_blob`, `get_diff`, `get_catalogue`, `list_repositories`, `dump`, `update_draft` and
 `get_draft`, and of the profile's administration `sign_out`, `get_device_identity`, the pairing window
 (`start_pairing`, `cancel_pairing`, and `watch_pairing`, its status now and on every change) and the one-tap

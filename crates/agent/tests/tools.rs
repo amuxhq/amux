@@ -41,7 +41,7 @@ enum Call {
     Resolve(String),
     Send(Envelope),
     Create(Box<CreateAgentRequest>),
-    Stop(wire::StopAgentRequest),
+    Stop(wire::FileAgentRequest),
 }
 
 #[derive(Clone, Default)]
@@ -188,15 +188,15 @@ impl AgentService for Fleet {
         Err(Status::unimplemented("rename"))
     }
 
-    async fn stop_agent(
+    async fn file_agent(
         &self,
-        request: Request<wire::StopAgentRequest>,
-    ) -> Result<Response<wire::Empty>, Status> {
+        request: Request<wire::FileAgentRequest>,
+    ) -> Result<Response<Row>, Status> {
         self.record(Call::Stop(request.into_inner()));
         self.severed().await?;
         match &self.refuse_stop {
             Some(status) => Err(status.clone()),
-            None => Ok(Response::new(wire::Empty {})),
+            None => Ok(Response::new(Row::default())),
         }
     }
 

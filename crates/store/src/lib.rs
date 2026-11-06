@@ -123,9 +123,20 @@ pub struct AgentRow {
     /// over the rows it holds ([`Sqlite::live_descendants`]); a replica's is
     /// what its origin counted.
     pub descendants: u32,
+    /// How the person filed the agent (`amux.v1.Filing`), apart from its
+    /// lifecycle. The origin's registry owns it; replicas copy it.
+    pub filing: i32,
+    /// When the filing last changed, on the origin's clock.
+    pub filed_at_ms: i64,
 }
 
 impl AgentRow {
+    /// Whether the person settled the agent: done with, and the only kind
+    /// retention removes.
+    pub fn is_settled(&self) -> bool {
+        self.filing == wire::Filing::Settled as i32
+    }
+
     /// The newest snapshot's at_ms, never commit time. A replica's
     /// inventory row carries no snapshot, so a replica nobody opened has
     /// none.
@@ -161,6 +172,8 @@ impl AgentRow {
             owes_report: true,
             background_jobs: 0,
             descendants: 0,
+            filing: wire::Filing::Active as i32,
+            filed_at_ms: 0,
         }
     }
 }

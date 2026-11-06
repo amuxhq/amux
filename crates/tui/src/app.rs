@@ -1068,6 +1068,18 @@ impl App {
         Flow::Continue
     }
 
+    /// Files an agent as the person asked, saying so only when it fails.
+    fn file(&mut self, agent: AgentKey, filing: wire::Filing, verb: &'static str) {
+        let fleet = self.fleet.clone();
+        self.spawn(async move {
+            fleet
+                .file(&agent, filing)
+                .await
+                .err()
+                .map(|error| AppEvent::Notice(format!("could not {verb}: {error}"), Tone::Warn))
+        });
+    }
+
     fn fleet_effect(&mut self, effect: FleetEffect) -> Option<Flow> {
         let client = self.client.clone();
         match effect {
@@ -1116,21 +1128,23 @@ impl App {
                     })
                 })
             }
-            FleetEffect::CancelStop(agent) => self.fleet.cancel_stop(&agent),
-            FleetEffect::Stop(agent) => {
+            FleetEffect::CancelSettle(agent) => self.fleet.cancel_settle(&agent),
+            FleetEffect::Settle(agent) => {
                 let fleet = self.fleet.clone();
                 self.spawn(async move {
-                    // A stop whose host cannot be reached is held by the
+                    // A settle whose host cannot be reached is held by the
                     // fleet and shown on the agent's row until it goes.
-                    match fleet.stop(&agent).await {
+                    match fleet.settle(&agent).await {
                         Ok(_) => None,
                         Err(error) => Some(AppEvent::Notice(
-                            format!("could not stop: {error}"),
+                            format!("could not settle: {error}"),
                             Tone::Warn,
                         )),
                     }
                 })
             }
+            FleetEffect::Pin(agent) => self.file(agent, wire::Filing::Pinned, "pin"),
+            FleetEffect::Unpin(agent) => self.file(agent, wire::Filing::Active, "unpin"),
             FleetEffect::Delete(agent) => self.spawn(async move {
                 let request = DeleteAgentRequest {
                     agent_id: agent.agent,

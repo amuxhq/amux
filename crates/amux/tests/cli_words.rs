@@ -23,10 +23,10 @@ fn desk(steps: Vec<Step>) -> Desk {
     )
 }
 
-/// `amux send` to an agent that has exited says so in a sentence, not the
-/// refusal's name. QA: the CLI printed "worker did not take it: exited".
+/// `amux send` to an agent that has been settled says so in a sentence, not
+/// the refusal's name. QA: the CLI printed "worker did not take it: exited".
 #[tokio::test(flavor = "multi_thread")]
-async fn a_send_to_an_exited_agent_is_refused_in_plain_words() {
+async fn a_send_to_a_settled_agent_is_refused_in_plain_words() {
     let desk = desk(vec![
         Step::Text {
             chunks: vec!["done".to_owned()],
@@ -42,13 +42,13 @@ async fn a_send_to_an_exited_agent_is_refused_in_plain_words() {
         ])
         .await;
     created_id(&created);
-    desk.run(&["stop", "worker"]).await;
-    until("worker to exit", || {
+    desk.run(&["settle", "worker"]).await;
+    until("worker to settle", || {
         let desk = &desk;
         async move {
             let listing = desk.run(&["ls"]).await;
             line_of(&listing, "worker")
-                .contains("exited")
+                .contains("settled")
                 .then_some(())
                 .ok_or(listing)
         }
@@ -61,7 +61,7 @@ async fn a_send_to_an_exited_agent_is_refused_in_plain_words() {
     say(format!("$ amux send worker one more thing\n  {said}"));
     assert!(
         !refused.status.success(),
-        "the send to an exited agent failed"
+        "the send to a settled agent failed"
     );
     let reason = said.trim_end().rsplit(": ").next().unwrap_or_default();
     assert!(

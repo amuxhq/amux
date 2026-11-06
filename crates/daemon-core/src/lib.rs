@@ -48,7 +48,7 @@ pub mod trust;
 pub use blobs::Blobs;
 pub use checkpoints::Checkpoints;
 pub use deliveries::{Deliveries, DrainReport, delivery_envelope_id};
-pub use families::{Create, Ended, FamilyState, Refusal, Resume};
+pub use families::{Create, Ended, FamilyState, Filing, Refusal, Resume};
 pub use fingerprint::Fingerprint;
 pub use ids::{
     AccountId, AgentId, AttemptId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId,

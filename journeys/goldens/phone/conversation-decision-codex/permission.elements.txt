@@ -11,9 +11,8 @@ ask.choice.1 | Allow for this session |  | 28,708,346,50
 ask.choice.0 | Allow |  | 28,770,169,44
 ask.deny | Deny… |  | 205,770,169,44
 chat.more | More |  | 350,66,28,36
-chat.back | Back |  | 20,66,40,36
-chat.header | /p/t/a/n/d/work · desk | live | 80,66,165,36
-chat.title | decision-codex | decision-codex | 80,66,165,36
+chat.header | /p/t/a/n/d/work · desk | live | 76,66,165,36
+chat.title | decision-codex | decision-codex | 76,66,165,36
  | Wants to run a command |  | 62,590,189,20
  | More |  | 338,577,44,44
  | deploy --check |  | 28,625,346,40
@@ -25,6 +24,7 @@ chat.title | decision-codex | decision-codex | 80,66,165,36
  | deprecationNotice, Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`. |  | 16,146,370,98
  | Check the deployment once. |  | 16,246,370,40
  | Wants to run, deploy --check |  | 16,298,370,20
- | Back |  | 20,66,40,36
- | decision-codex, /p/t/a/n/d/work · desk |  | 80,66,165,36
+BackButton | Agents |  | 16,62,44,44
+ | decision-codex, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36
+ | Back |  | 16,73,44,23

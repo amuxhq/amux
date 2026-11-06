@@ -22,11 +22,11 @@ final class RoutePagesTests: XCTestCase {
         // never reach the root this test reads. The page is the same either
         // way.
         let routes: [Route] = [
-            .conversation(agent), .changes(agent), .host(machine), .paywall(.agents),
+            .conversation(agent), .changes(agent), .host(machine), .paywall(.agents), .settled,
         ]
         for route in routes {
             switch route {
-            case .conversation, .changes, .host, .paywall:
+            case .conversation, .changes, .host, .paywall, .settled:
                 break
             }
         }

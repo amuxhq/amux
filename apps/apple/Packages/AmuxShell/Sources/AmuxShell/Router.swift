@@ -168,6 +168,14 @@ public final class Router {
         setPath(Array(path.dropLast()), for: tab)
     }
 
+    /// Leaves `route` when it is the page on top, and nothing otherwise: a
+    /// chat closed twice over, by its agent leaving the list and by the
+    /// delete that removed it, goes back one page, not two.
+    public func close(_ route: Route) {
+        guard path.last == route else { return }
+        pop()
+    }
+
     public func popToRoot() {
         setPath([], for: tab)
     }

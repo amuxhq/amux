@@ -11,9 +11,9 @@ use support::synthetic::*;
 use support::*;
 use tonic::Code;
 use wire::{
-    DeleteAgentRequest, GetBlobRequest, GetDiffRequest, GetItemRequest, InventoryEvent,
-    ListItemsRequest, Phase, PutBlobRequest, RenameAgentRequest, ResumeAgentRequest,
-    SendInputRequest, StopAgentRequest, SubscribeSessionRequest, inventory_event, session_event,
+    DeleteAgentRequest, FileAgentRequest, GetBlobRequest, GetDiffRequest, GetItemRequest,
+    InventoryEvent, ListItemsRequest, Phase, PutBlobRequest, RenameAgentRequest,
+    ResumeAgentRequest, SendInputRequest, SubscribeSessionRequest, inventory_event, session_event,
     subscribe_session_request,
 };
 
@@ -252,10 +252,11 @@ async fn replica_agent_is_refused_on_every_read_and_input() {
                 .err(),
         ),
         (
-            "StopAgent",
+            "FileAgent",
             peer.agents
-                .stop_agent(StopAgentRequest {
+                .file_agent(FileAgentRequest {
                     agent_id: coder.clone(),
+                    filing: wire::Filing::Settled as i32,
                 })
                 .await
                 .err(),

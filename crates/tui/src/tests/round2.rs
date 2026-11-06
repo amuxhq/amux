@@ -357,7 +357,7 @@ fn enter_after_a_filter_opens_the_agent_it_found() {
 
 /// The stop window's two buttons answer the keys that move between them:
 /// Right then Enter stopped (or deleted) the agent although the person had
-/// moved to [Cancel]. `x` opens the stop window on a live agent.
+/// moved to [Cancel]. `x` opens the settle window on a working agent.
 #[test]
 fn moving_to_cancel_in_the_stop_window_cancels() {
     let fleet = home_fleet();
@@ -368,14 +368,14 @@ fn moving_to_cancel_in_the_stop_window_cancels() {
     let screen = home_at(&mut home, &fleet, W, H);
     assert!(
         screen.contains("Cancel"),
-        "the stop window is open:\n{screen}"
+        "the settle window is open:\n{screen}"
     );
     home.key(&fleet, key(KeyCode::Right));
     let effects = home.key(&fleet, key(KeyCode::Enter));
     assert!(
         !effects
             .iter()
-            .any(|effect| matches!(effect, FleetEffect::Stop(_) | FleetEffect::Delete(_))),
+            .any(|effect| matches!(effect, FleetEffect::Settle(_) | FleetEffect::Delete(_))),
         "Enter on [Cancel] did {effects:?}:\n{screen}"
     );
 }
@@ -390,12 +390,12 @@ fn focus(home: &mut crate::home::Home, fleet: &FleetState, name: &str) {
     home.key(fleet, key(KeyCode::Down));
 }
 
-/// Decided: `x` is home's one key for ending an agent. On a live agent it
-/// stops it (the agent goes to Exited, resumable); only an exited agent is
-/// deleted. A live agent is never offered deletion: today `x` on a live
-/// agent asked "Delete … and its history?".
+/// Decided: `x` is home's one key for putting an agent away. On an agent not
+/// settled it settles it (stopped when live, resumable), asking first only
+/// when that cuts work short; only a settled agent is deleted. An agent not
+/// settled is never offered deletion.
 #[test]
-fn x_stops_a_live_agent_and_deletes_only_an_exited_one() {
+fn x_settles_an_agent_and_deletes_only_a_settled_one() {
     let fleet = home_fleet();
     let mut home = new_home();
     home_at(&mut home, &fleet, W, H);
@@ -404,7 +404,7 @@ fn x_stops_a_live_agent_and_deletes_only_an_exited_one() {
     let screen = home_at(&mut home, &fleet, W, H);
     let effects = home.key(&fleet, key(KeyCode::Enter));
     assert!(
-        matches!(effects.as_slice(), [FleetEffect::Stop(agent)] if agent.agent == b"w1")
+        matches!(effects.as_slice(), [FleetEffect::Settle(agent)] if agent.agent == b"w1")
             && !screen.contains("Delete"),
         "x on a live agent did {effects:?}:\n{screen}"
     );
@@ -415,14 +415,14 @@ fn x_stops_a_live_agent_and_deletes_only_an_exited_one() {
     let effects = home.key(&fleet, key(KeyCode::Enter));
     assert!(
         matches!(effects.as_slice(), [FleetEffect::Delete(agent)] if agent.agent == b"old"),
-        "x on an exited agent did {effects:?}"
+        "x on a settled agent did {effects:?}"
     );
 }
 
-/// A stop its host could not take is held: the row says it waits for the
-/// host and `x` takes it back instead of asking to stop again.
+/// A settle its host could not take is held: the row says it waits for the
+/// host and `x` takes it back instead of settling again.
 #[test]
-fn a_held_stop_reads_on_its_row_and_x_cancels_it() {
+fn a_held_settle_reads_on_its_row_and_x_cancels_it() {
     let mut fleet = home_fleet();
     let alpha = fleet
         .agents()
@@ -430,7 +430,7 @@ fn a_held_stop_reads_on_its_row_and_x_cancels_it() {
         .map(ui_state::agent_key)
         .expect("alpha");
     let listing = fleet.listings();
-    fleet.update(ui_state::FleetMsg::HoldStop {
+    fleet.update(ui_state::FleetMsg::HoldSettle {
         agent: alpha.clone(),
         listing,
     });
@@ -438,21 +438,19 @@ fn a_held_stop_reads_on_its_row_and_x_cancels_it() {
     home_at(&mut home, &fleet, W, H);
     focus(&mut home, &fleet, "alpha");
     let screen = home_at(&mut home, &fleet, W, H);
-    assert!(screen.contains("stop held"), "{screen}");
+    assert!(screen.contains("settle held"), "{screen}");
     let effects = home.key(&fleet, key(KeyCode::Char('x')));
     assert!(
-        matches!(effects.as_slice(), [FleetEffect::CancelStop(agent)] if *agent == alpha),
-        "x on a held stop did {effects:?}:\n{screen}"
+        matches!(effects.as_slice(), [FleetEffect::CancelSettle(agent)] if *agent == alpha),
+        "x on a held settle did {effects:?}:\n{screen}"
     );
 }
 
-/// Decided: the stop window names what a stop will cut. An agent that is
-/// working says so, and one with subagents counts them (background jobs
-/// join the sentence once the fleet row carries them), as in "alpha is
-/// working … Stop anyway?"; today every stop reads "Stop alpha? It can be
-/// resumed later."
+/// Decided: the settle window names what settling will cut short. An agent
+/// that is working says so, and one with subagents counts them, as in
+/// "alpha is working. Settling stops it now."
 #[test]
-fn the_stop_window_names_the_turn_and_the_subagents_a_stop_cuts() {
+fn the_settle_window_names_the_turn_and_the_subagents_a_settle_cuts() {
     let fleet = home_fleet();
     for (name, words) in [("alpha", "working"), ("planner", "1 subagent")] {
         let mut home = new_home();
@@ -461,8 +459,8 @@ fn the_stop_window_names_the_turn_and_the_subagents_a_stop_cuts() {
         home.key(&fleet, key(KeyCode::Char('x')));
         let screen = home_at(&mut home, &fleet, W, H);
         assert!(
-            screen.contains("Stop") && screen.contains(words),
-            "stopping {name} does not say it cuts {words:?}:\n{screen}"
+            screen.contains("Settle") && screen.contains(words),
+            "settling {name} does not say it cuts {words:?}:\n{screen}"
         );
     }
 }
@@ -574,7 +572,7 @@ fn a_sentence_typed_on_home_stops_nothing() {
     assert!(
         !effects
             .iter()
-            .any(|effect| matches!(effect, FleetEffect::Stop(_) | FleetEffect::Delete(_))),
+            .any(|effect| matches!(effect, FleetEffect::Settle(_) | FleetEffect::Delete(_))),
         "typing \"so sure, yes\" on home did {effects:?}"
     );
 }
@@ -1123,7 +1121,7 @@ fn an_invalid_new_agent_name_is_refused_on_the_spot() {
 
 /// Deleting the last row of the list hands the highlight to the new last
 /// row, in sight: it fell back to the first agent, far up and often off
-/// screen, so the next `x` offered to stop an agent nobody had picked.
+/// screen, so the next `x` offered to settle an agent nobody had picked.
 #[test]
 fn deleting_the_last_row_moves_the_highlight_to_the_new_last_row() {
     let now = now();
@@ -1132,11 +1130,12 @@ fn deleting_the_last_row_moves_the_highlight_to_the_new_last_row() {
     if let wire::inventory_event::Of::Agent(agent) = &mut attic {
         agent.lifecycle = wire::Lifecycle::Exited as i32;
         agent.exit_cause = wire::ExitCause::Stopped as i32;
+        agent.filing = wire::Filing::Settled as i32;
     }
     inventory(&mut fleet, attic);
     let mut home = new_home();
     home_at(&mut home, &fleet, W, H);
-    // End lands on the folded "Exited" heading; Enter opens it; End again
+    // End lands on the folded "Settled" heading; Enter opens it; End again
     // reaches its last row.
     home.key(&fleet, key(KeyCode::End));
     home.key(&fleet, key(KeyCode::Enter));

@@ -55,7 +55,7 @@ public struct Paywall: View {
             .padding(.horizontal, design.metrics.gutter)
             foot
         }
-        .backBar("paywall.back") { actions(.cancel) }
+        .backBar()
         // A screen is a container of the things on it, not a name for all of
         // them: without this the system spreads this identifier over the
         // title, the rows and the buttons underneath.

@@ -4,20 +4,20 @@
   "configuration": "Measured",
   "device": "amux-iphone-1",
   "medians": {
-    "cold first frame": 761.1339092254639,
-    "cold store read": 40.35210609436035,
-    "cold fleet render": 190.82403182983398,
-    "reconciliation at 0 ms": 190.84203243255615,
-    "reconciliation at 100 ms": 234.66503620147705,
-    "reconciliation through the relay at 100 ms": 305.6570291519165,
-    "opening hitch time": 95.27704531592772,
-    "opening main-thread CPU": 14.308368619995914,
-    "streaming hitch time": 3.258996548566101e-6,
-    "streaming main-thread CPU": 33.23205613875556,
-    "streaming footprint": 79.34608459472656,
+    "cold first frame": 1244.821071624756,
+    "cold store read": 40.20893573760975,
+    "cold fleet render": 337.90004253387485,
+    "reconciliation at 0 ms": 337.90898323059093,
+    "reconciliation at 100 ms": 544.9609756469727,
+    "reconciliation through the relay at 100 ms": 533.8869094848633,
+    "opening hitch time": 120.7852665102242,
+    "opening main-thread CPU": 15.538429032601467,
+    "streaming hitch time": 3.7136194364170105e-06,
+    "streaming main-thread CPU": 32.02959064505915,
+    "streaming footprint": 82.20539093017578,
     "idle transcript commits": 0.0,
     "idle display ticks": 0.0,
-    "idle main-thread CPU": 1.353931588679023,
-    "idle home main-thread CPU": 2.7877301926167086
+    "idle main-thread CPU": 1.333232464411489,
+    "idle home main-thread CPU": 3.628430116598116
   }
 }

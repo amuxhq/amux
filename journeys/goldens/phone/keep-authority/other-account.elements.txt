@@ -1,5 +1,5 @@
 shell |  | hosts | 0,62,402,778
-home |  | ready | 0,196,402,595
+home |  | ready | 0,174,402,617
 hosts |  |  | 0,174,402,617
 hosts.empty |  | No hosts yet | 16,204,146,32
 hosts.empty.howToPair |  |  | 16,299,370,37

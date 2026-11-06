@@ -114,7 +114,7 @@ spawn or resume, never a running agent.
 
 The spec's `bootstrap` is what seeds the new incarnation's queue, if anything
 does: the first prompt a create or a resume carried, with its attachments and
-input id, or, when a parent's message resumes its exited child, that message.
+input id, or, when a message resumes an exited agent, that message.
 Only the daemon writes it; what a client sends on create or resume can only be
 a prompt.
 
@@ -205,9 +205,9 @@ one someone wants to look at.
 
 Nothing a person does in a chat stops the process. A chat's interrupt is the
 interrupt input, which cancels the turn and leaves the agent live and idle.
-Process stops come from the daemon: a stop (`StopAgent`, `amux stop`, and the
-first step of a delete) sends `Stop` on the control socket, and the agent
-cancels its turn the provider's own way and exits. There is no "stop when
+Process stops come from the daemon: a settle (`FileAgent`, `amux settle`, an
+agent's stop tool), the family rule, and the first step of a delete each send
+`Stop` on the control socket, and the agent cancels its turn the provider's own way and exits. There is no "stop when
 done": the agent's own drain, finishing its turn, happens only when its daemon
 is lost, and no message asks for it. If a stopped agent overruns the daemon's
 stop deadline (30 seconds), the stop becomes a kill: the daemon sends

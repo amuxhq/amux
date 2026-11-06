@@ -96,6 +96,9 @@ public enum DoorRequest: Sendable, Equatable {
     /// Activate the item reading `label` in what the system presented over
     /// the app, a dialog or a menu, whose items carry no names of their own.
     case choose(label: String)
+    /// Press the system bar's back button, as a person leaving a pushed
+    /// page does. The system draws it and gives it no name to press it by.
+    case back
     /// Run an element's named accessibility action, as VoiceOver's actions
     /// rotor does: what a drag or a hold does for a person with a finger.
     case perform(identifier: String, action: String)
@@ -410,6 +413,7 @@ extension DoorRequest: Codable {
         case "geometry":
             self = .geometry(on: try fields.decode(Bool.self, forKey: .on))
         case "settle": self = .settle
+        case "back": self = .back
         case "query": self = .query
         case "capture":
             self = .capture(path: try fields.decode(String.self, forKey: .path))
@@ -527,6 +531,8 @@ extension DoorRequest: Codable {
             try fields.encode(on, forKey: .on)
         case .settle:
             try fields.encode("settle", forKey: .kind)
+        case .back:
+            try fields.encode("back", forKey: .kind)
         case .query:
             try fields.encode("query", forKey: .kind)
         case .capture(let path):

@@ -19,10 +19,14 @@ To pair it with a computer, see
 
 ## Agents
 
-The Agents tab lists your agents in the same sections as the terminal app:
-**Needs you**, the ones that are live, and the ones that have exited. The line
-under each name says what the agent is doing or what it's waiting for. Search
-by name, folder or host.
+The Agents tab lists your agents: the ones you pinned, then the
+ones that need you, then the rest, with **Settled** at the bottom for the ones
+you're done with. The line under each name says what the agent is doing or
+what it's waiting for. Pull down for search, by name, folder or host.
+
+Swipe a row right to pin it, or left to settle it: it stops if it's running,
+and asks first if that would cut work short. A settled agent can be un-settled
+or deleted the same way, and sending it a message starts it again.
 
 Tap **+** to start an agent. Pick the host and the folder (your repositories
 come first, then folders your agents used lately, or type a path), then the

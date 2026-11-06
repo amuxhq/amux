@@ -12,12 +12,11 @@ use tonic::{Request, Response, Status};
 use wire::agent_service_server::AgentService;
 use wire::session_service_server::SessionService;
 use wire::{
-    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, Empty, ErrorCode, GetBlobRequest,
-    GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent, Item, ListItemsRequest,
-    ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse, PutBlobRequest,
-    RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
-    SendInputResponse, SendMessageResponse, SessionEvent, StopAgentRequest,
-    SubscribeSessionRequest,
+    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, Empty, ErrorCode, FileAgentRequest,
+    GetBlobRequest, GetBlobResponse, GetDiffRequest, GetItemRequest, InventoryEvent, Item,
+    ListItemsRequest, ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse,
+    PutBlobRequest, RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
+    SendInputResponse, SendMessageResponse, SessionEvent, SubscribeSessionRequest,
 };
 
 use crate::grpc::{EventStream, agent_id, host_id, own_catalogue, status, upgrade, wire_error};
@@ -187,15 +186,22 @@ impl AgentService for PeerApi {
             .map_err(|error| status(error.to_wire()))
     }
 
-    async fn stop_agent(
+    /// The calling daemon already held its caller to the filing rules: an
+    /// agent settles only its own children, and only the person pins or
+    /// un-settles.
+    async fn file_agent(
         &self,
-        request: Request<StopAgentRequest>,
-    ) -> Result<Response<wire::Empty>, Status> {
+        request: Request<FileAgentRequest>,
+    ) -> Result<Response<Agent>, Status> {
         let runtime = self.own(&request, &request.get_ref().agent_id).await?;
+        let request = request.into_inner();
+        let Some(filing) = daemon_core::Filing::from_wire(request.filing()) else {
+            return refused("a filing is active, pinned or settled");
+        };
         runtime
-            .stop(agent_id(&request.get_ref().agent_id)?)
+            .file(agent_id(&request.agent_id)?, filing)
             .await
-            .map(|_| Response::new(wire::Empty {}))
+            .map(Response::new)
             .map_err(|error| status(error.to_wire()))
     }
 

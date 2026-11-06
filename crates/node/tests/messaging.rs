@@ -400,9 +400,14 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
         1
     );
 
-    // An exited recipient, and a sender that is not its parent.
+    // An exited recipient the person settled, and a sender that is not its
+    // parent.
     recipient.die().await;
     until("the recipient's exit", || exited(&runtime, recipient.id))
+        .await
+        .unwrap();
+    runtime
+        .file(recipient.id, daemon_core::Filing::Settled)
         .await
         .unwrap();
     let refused = runtime
@@ -421,7 +426,7 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
         .await
         .unwrap_err();
     assert!(
-        matches!(refused, RelayError::Rejected(ref rejected) if rejected.refusal() == wire::Refusal::Exited)
+        matches!(refused, RelayError::Rejected(ref rejected) if rejected.refusal() == wire::Refusal::Settled)
     );
     crash(daemon, runtime).await;
 }
@@ -1385,7 +1390,14 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
         .await
         .unwrap();
 
-    // Anyone but the parent is told the child has exited.
+    // The one-shot child finished, so it settled itself: another agent is
+    // told so rather than waking it.
+    let stranger = id_of(
+        &runtime
+            .spawn(create(&install.work, "stranger", None), None)
+            .await
+            .unwrap(),
+    );
     let refused = runtime
         .send_message(
             Envelope {
@@ -1400,12 +1412,12 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
                 })),
                 ..Envelope::default()
             },
-            None,
+            Some(stranger),
         )
         .await
         .unwrap_err();
     assert!(
-        matches!(refused, RelayError::Rejected(ref rejected) if rejected.refusal() == wire::Refusal::Exited)
+        matches!(refused, RelayError::Rejected(ref rejected) if rejected.refusal() == wire::Refusal::Settled)
     );
 
     kill_all(&runtime).await;

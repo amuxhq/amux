@@ -13,9 +13,8 @@ chat.model | gpt-fake · medium |  | 71,779,144,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
 chat.more | More |  | 350,66,28,36
-chat.back | Back |  | 20,66,40,36
-chat.header | /p/t/a/n/d/work · desk | live | 80,66,165,36
-chat.title | decision-codex | decision-codex | 80,66,165,36
+chat.header | /p/t/a/n/d/work · desk | live | 76,66,165,36
+chat.title | decision-codex | decision-codex | 76,66,165,36
  | Attach |  | 23,779,44,44
  | gpt-fake |  | 71,779,144,44
  | Dictate |  | 287,779,44,44
@@ -26,6 +25,7 @@ chat.title | decision-codex | decision-codex | 80,66,165,36
  | 1 command |  | 16,286,370,44
  | The deploy check passed. |  | 16,332,370,20
  | Worked <t> |  | 16,359,62,16
- | Back |  | 20,66,40,36
- | decision-codex, /p/t/a/n/d/work · desk |  | 80,66,165,36
+BackButton | Agents |  | 16,62,44,44
+ | decision-codex, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36
+ | Back |  | 16,73,44,23

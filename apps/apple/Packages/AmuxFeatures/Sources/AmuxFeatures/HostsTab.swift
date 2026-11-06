@@ -185,8 +185,22 @@ public struct HostsTab: View {
     }
 
     /// The machines found and not paired, as cards with the one thing there
-    /// is to do with one.
+    /// is to do with one; then a machine only a paid plan reaches, with the
+    /// subscription that reaches it, as the Agents list offers it.
     private var callouts: [Callout<HostsAction>] {
+        var callouts = pairing
+        if let account = model.account, account.pro != true, let away = model.awayHost {
+            callouts.append(Callout(
+                id: "subscribe", glyph: "person.slash",
+                title: String(localized: "\(away.name) is away"),
+                detail: String(localized: "Pro reaches it from anywhere"),
+                button: String(localized: "Subscribe"), act: .subscribe,
+                identifier: "hosts.subscribe"))
+        }
+        return callouts
+    }
+
+    private var pairing: [Callout<HostsAction>] {
         model.discovered.compactMap { host in
             guard let id = host.id else { return nil }
             let offer = PairOffer(host, pro: model.account?.pro)

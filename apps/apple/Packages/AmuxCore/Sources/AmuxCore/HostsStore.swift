@@ -26,6 +26,12 @@ public final class HostsStore {
     /// phone does not raise the same window again while it stays open.
     public private(set) var declinedWindows: Set<HostId> = []
 
+    /// The machines last read away, kept until each is reached or no longer
+    /// listed: putting the app away drops every link, and coming back reads
+    /// a machine unreached until the first dials end, which is no news about
+    /// the plan.
+    public private(set) var heldAway: Set<HostId> = []
+
     @ObservationIgnored private var departures: [HostId: Date] = [:]
     @ObservationIgnored private let clock: @MainActor () -> Date
 
@@ -58,10 +64,20 @@ public final class HostsStore {
         }
         discovered = views.filter { $0.candidate && !$0.local }
             .sorted { $0.name.lowercased() < $1.name.lowercased() }
+        let unreached = Set(trusted.filter { !$0.online }.compactMap(\.id))
+        heldAway = heldAway.intersection(unreached)
+            .union(trusted.filter { $0.group == .away }.compactMap(\.id))
         // A window that closed is forgotten, so the next one the machine
         // opens is offered again.
         let open = Set(discovered.filter(\.windowOpen).compactMap(\.id))
         declinedWindows.formIntersection(open)
+    }
+
+    /// The first machine, by name, the relay would reach if this account
+    /// paid for it, as last read.
+    public var awayHost: HostView? {
+        hosts.filter { host in host.id.map(heldAway.contains) ?? false }
+            .min { $0.name.lowercased() < $1.name.lowercased() }
     }
 
     /// The machine found nearby with a pairing window open that the phone

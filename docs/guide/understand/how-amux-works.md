@@ -61,7 +61,7 @@ again when you resume it.
 
 Short of that, an agent never stops on its own. The Stop button in a chat
 interrupts the current turn and leaves the agent ready for the next prompt.
-Only stopping or deleting the agent, or the agent's own program exiting, ends
+Only settling or deleting the agent, or the agent's own program exiting, ends
 the process.
 
 ## Accounts and profiles

@@ -140,7 +140,7 @@ peer_rpc! {
         => PeerReply::SendInput(reply) => reply;
     wire::CreateAgentRequest => CreateAgent, wire::Agent => PeerReply::Agent(agent) => agent;
     wire::RenameAgentRequest => RenameAgent, wire::Agent => PeerReply::Agent(agent) => agent;
-    wire::StopAgentRequest => StopAgent, wire::Empty => PeerReply::Done => wire::Empty {};
+    wire::FileAgentRequest => FileAgent, wire::Agent => PeerReply::Agent(agent) => agent;
     wire::ResumeAgentRequest => ResumeAgent, wire::Agent => PeerReply::Agent(agent) => agent;
     wire::DeleteAgentRequest => DeleteAgent, wire::Empty => PeerReply::Done => wire::Empty {};
     wire::Envelope => SendMessage, wire::SendMessageResponse
@@ -399,8 +399,8 @@ async fn dispatch(
         PeerRequest::RenameAgent(request) => {
             unary(client.agents.rename_agent(request).await, PeerReply::Agent)
         }
-        PeerRequest::StopAgent(request) => {
-            unary(client.agents.stop_agent(request).await, |_| PeerReply::Done)
+        PeerRequest::FileAgent(request) => {
+            unary(client.agents.file_agent(request).await, PeerReply::Agent)
         }
         PeerRequest::ResumeAgent(request) => {
             unary(client.agents.resume_agent(request).await, PeerReply::Agent)

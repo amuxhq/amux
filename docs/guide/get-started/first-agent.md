@@ -76,11 +76,12 @@ agent waiting on you can be answered from whichever device is closest.
 
 To send an agent more work, type in its chat and press **Enter**.
 
-## Stop, resume and tidy up
+## Settle, resume and tidy up
 
-On the home screen, **s** stops the highlighted agent and **x** deletes it;
-both ask first. A stopped agent can be resumed later with
-`amux resume <name>`. `amux ls` lists your agents from the command line.
+On the home screen, **x** settles the highlighted agent: you're done with it,
+so it stops if it's running and moves to **Settled**. It asks first if that
+would cut work short. **x** on a settled agent deletes it, after asking. A
+settled agent can be resumed later with `amux resume <name>`. `amux ls` lists your agents from the command line.
 
 ## Prefer Claude Code's own interface?
 

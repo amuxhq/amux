@@ -452,15 +452,26 @@ public final class StoreBundle {
         return await profile.act(.rename(trimmed), on: agent)
     }
 
-    public func stop(_ agent: AgentKey) async -> Result<Nothing, RuntimeFailure> {
-        guard let profile else { return .failure(RuntimeFailure("nothing is running")) }
-        return await profile.act(.stop, on: agent)
+    /// Files an agent as done with, stopping it when live. One whose host
+    /// cannot be reached is held, and goes when the host is back.
+    public func settle(_ agent: AgentKey) async -> Result<Nothing, RuntimeFailure> {
+        await act(.settle, on: agent)
     }
 
-    /// Takes back a stop held while the agent's host could not be reached.
-    public func cancelStop(_ agent: AgentKey) async -> Result<Nothing, RuntimeFailure> {
-        guard let profile else { return .failure(RuntimeFailure("nothing is running")) }
-        return await profile.act(.cancelStop, on: agent)
+    /// Takes back a settle held while the agent's host could not be reached.
+    public func cancelSettle(_ agent: AgentKey) async -> Result<Nothing, RuntimeFailure> {
+        await act(.cancelSettle, on: agent)
+    }
+
+    /// Keeps an agent with no parent at the top of home.
+    public func pin(_ agent: AgentKey) async -> Result<Nothing, RuntimeFailure> {
+        await act(.pin, on: agent)
+    }
+
+    /// Files an agent back as active: its pin taken away, or un-settled
+    /// without resuming it.
+    public func unfile(_ agent: AgentKey) async -> Result<Nothing, RuntimeFailure> {
+        await act(.unfile, on: agent)
     }
 
     /// Deletes an agent. Its draft goes with it: the daemon forgets it, and

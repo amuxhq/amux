@@ -3,8 +3,8 @@ import SwiftUI
 
 /// A pushed page whose content is not here: still on its way, there being
 /// nothing to show, or the host not answering. Drawn as the app's other
-/// empty states are — a heading and a sentence at the top — with the
-/// system bar's back circle, so the way out is where it is on the page it
+/// empty states are — a heading and a sentence at the top — under the
+/// system bar's back button, so the way out is where it is on the page it
 /// stands in for.
 public struct PagePlaceholder: View {
     public enum Showing: Equatable, Sendable {
@@ -19,14 +19,12 @@ public struct PagePlaceholder: View {
     @Environment(\.design) private var design
     private let showing: Showing
     private let identifier: String
-    private let back: @MainActor () -> Void
 
-    /// `identifier` names the page; its back circle is `<identifier>.back`
-    /// and what it says is `<identifier>.<empty|failure>`.
-    public init(_ showing: Showing, identifier: String, back: @escaping @MainActor () -> Void) {
+    /// `identifier` names the page; what it says is
+    /// `<identifier>.<empty|failure>`.
+    public init(_ showing: Showing, identifier: String) {
         self.showing = showing
         self.identifier = identifier
-        self.back = back
     }
 
     public var body: some View {
@@ -37,7 +35,7 @@ public struct PagePlaceholder: View {
                 .padding(.horizontal, design.metrics.gutter)
                 .padding(.top, Space.l)
         }
-        .backBar("\(identifier).back", back: back)
+        .backBar()
     }
 
     @ViewBuilder

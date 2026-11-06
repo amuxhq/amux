@@ -10,7 +10,6 @@ paywall.terms-of-use |  | https://www.apple.com/legal/internet-services/itunes/d
 paywall.privacy-policy |  | https://amux.sh/privacy-policy/ | 124,418,94,46
 paywall.buy | Subscribe · £79.99 a year | yearly | 26,744,350,44
 paywall.restore | Restore Purchases |  | 133,784,136,48
-paywall.back | Back |  | 20,66,40,36
  | Reach your agents
 anywhere |  | 16,124,218,64
  | A subscription reaches your hosts from anywhere. Hosts on this network work without one. |  | 16,194,367,39
@@ -21,4 +20,5 @@ anywhere |  | 16,124,218,64
  | Privacy Policy |  | 124,418,94,46
  | Subscribe · £79.99 a year |  | 26,744,350,44
  | Restore Purchases |  | 133,784,136,48
- | Back |  | 20,66,40,36
+BackButton | Agents |  | 16,62,44,44
+ | Back |  | 16,73,44,23

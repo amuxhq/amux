@@ -11,9 +11,8 @@ chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
 chat.more | More |  | 350,66,28,36
-chat.back | Back |  | 20,66,40,36
-chat.header | /p/t/a/n/c/work · cabin | live | 80,66,168,36
-chat.title | backups | backups | 80,66,168,36
+chat.header | /p/t/a/n/c/work · cabin | live | 76,66,168,36
+chat.title | backups | backups | 76,66,168,36
  | Attach |  | 23,779,44,44
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
@@ -22,6 +21,7 @@ chat.title | backups | backups | 80,66,168,36
  | Check last night's backup. |  | 16,158,370,40
  | Last night's backup finished with no errors. |  | 16,210,370,20
  | Worked <t> |  | 16,237,62,16
- | Back |  | 20,66,40,36
- | backups, /p/t/a/n/c/work · cabin |  | 80,66,168,36
+BackButton | Agents |  | 16,62,44,44
+ | backups, /p/t/a/n/c/work · cabin |  | 76,66,168,36
  | More |  | 350,66,28,36
+ | Back |  | 16,73,44,23

@@ -5220,6 +5220,42 @@
           }
         }
       }
+    },
+    "Nothing new failed overnight." : {
+      "comment" : "Debug copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing new failed overnight."
+          }
+        }
+      }
+    },
+    "no back button on screen" : {
+      "comment" : "Debug copy. Used in apps/apple/Amux/Debug/DoorHost.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no back button on screen"
+          }
+        }
+      }
+    },
+    "the back button did not activate and no stack is pushed" : {
+      "comment" : "Debug copy. Used in apps/apple/Amux/Debug/DoorHost.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the back button did not activate and no stack is pushed"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

@@ -974,7 +974,10 @@ impl<'a> Transition<'a> {
                     PARENTS,
                     Input::ClientCall {
                         call: STOP,
-                        request: ClientRequest::StopAgent { agent: PARENT },
+                        request: ClientRequest::FileAgent {
+                            agent: PARENT,
+                            filing: daemon_core::Filing::Settled,
+                        },
                     },
                 );
             }

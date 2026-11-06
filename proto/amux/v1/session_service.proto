@@ -174,4 +174,6 @@ enum Refusal {
   REFUSAL_CONVERSATION_ELSEWHERE = 8;
   // The prompt is longer than the agent takes; the detail names the limit.
   REFUSAL_TOO_LONG = 9;
+  // The agent is settled: only the person or its own parent resume it.
+  REFUSAL_SETTLED = 10;
 }

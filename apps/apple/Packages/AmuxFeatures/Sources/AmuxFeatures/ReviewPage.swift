@@ -84,8 +84,7 @@ public struct ReviewPage: View {
                 target = nil
             }
         }
-        .navigationBarBackButtonHidden(true)
-        .toolbarTitleDisplayMode(.inline)
+        .backBar()
         .toolbar { bar }
         .accessibilityElement(children: .contain)
         .reported("review", value: "\(model.count)")
@@ -96,15 +95,11 @@ public struct ReviewPage: View {
 
     // MARK: - The bar
 
-    /// The system's bar as the chat draws it: the way back in a circle,
+    /// The system's bar as the chat draws it: the system's way back,
     /// what the page is in a pill beside it, and the file menu at the
     /// trailing edge.
     @ToolbarContentBuilder
     private var bar: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            BarBack(identifier: "review.back") { actions(.back) }
-        }
-        ToolbarSpacer(.fixed, placement: .topBarLeading)
         ToolbarItem(placement: .topBarLeading) {
             title
         }

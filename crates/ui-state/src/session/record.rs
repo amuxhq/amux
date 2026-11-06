@@ -351,6 +351,8 @@ fn agent(agent: Agent) -> Agent {
         git: None,
         descendants: agent.descendants,
         background_jobs: agent.background_jobs,
+        filing: agent.filing,
+        filed_at_ms: agent.filed_at_ms,
     }
 }
 

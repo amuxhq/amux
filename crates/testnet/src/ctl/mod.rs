@@ -146,8 +146,8 @@ pub enum Command {
     Send(SendArgs),
     /// Wait until an agent is at rest: idle or needing you, nothing queued.
     Wait(WaitArgs),
-    /// Stop an agent as a person does; it can be resumed.
-    StopAgent { agent: String },
+    /// Settle an agent as a person does: it stops, and can be resumed.
+    SettleAgent { agent: String },
     /// Start a stopped agent again, optionally with a prompt.
     Resume {
         agent: String,
@@ -650,7 +650,9 @@ fn run(folder: &Folder, command: Command) -> Result<Outcome, String> {
             "agent": wait.agent,
             "timeout_ms": wait.timeout.map(|seconds| seconds * 1000),
         }}))?),
-        Command::StopAgent { agent } => ack(folder.call(json!({"Stop": {"agent": agent}}))?),
+        Command::SettleAgent { agent } => {
+            ack(folder.call(json!({"SettleAgent": {"agent": agent}}))?)
+        }
         Command::Resume { agent, text } => {
             let text = (!text.is_empty()).then(|| text.join(" "));
             let resumed = folder.call(json!({"Resume": {"agent": agent, "text": text}}))?;

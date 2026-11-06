@@ -39,7 +39,7 @@ pub use values::{FleetDelta, HostView};
 /// crate.
 pub use wire::Provider;
 use wire::{
-    CreateAgentRequest, DeleteAgentRequest, DumpRequest, Kind, ListRepositoriesRequest,
+    CreateAgentRequest, DeleteAgentRequest, DumpRequest, Filing, Kind, ListRepositoriesRequest,
     RenameAgentRequest, RepositoryEntry,
 };
 
@@ -373,7 +373,7 @@ impl AppRuntime {
         })
     }
 
-    /// Renames, stops or deletes an agent.
+    /// Renames, files or deletes an agent.
     pub async fn agent_act(&self, agent: &AgentKey, act: &AgentAct) -> Result<(), RpcError> {
         let agent_id = agent.agent.clone();
         match act {
@@ -385,11 +385,13 @@ impl AppRuntime {
                 })
                 .await
                 .map(drop),
-            AgentAct::Stop => self.fleet.stop(agent).await.map(drop),
-            AgentAct::CancelStop => {
-                self.fleet.cancel_stop(agent);
+            AgentAct::Settle => self.fleet.settle(agent).await.map(drop),
+            AgentAct::CancelSettle => {
+                self.fleet.cancel_settle(agent);
                 Ok(())
             }
+            AgentAct::Pin => self.fleet.file(agent, Filing::Pinned).await.map(drop),
+            AgentAct::Unfile => self.fleet.file(agent, Filing::Active).await.map(drop),
             AgentAct::Delete => self
                 .client
                 .delete_agent(DeleteAgentRequest { agent_id })

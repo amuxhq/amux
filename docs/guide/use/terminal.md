@@ -19,13 +19,14 @@ Press `?` at any time to see every key.
 ## Home
 
 Home is your fleet. `+ New Agent` sits at the top, and the agents are below it
-in three sections:
+in four sections:
 
+- **Pinned**: agents you pinned, kept at the top.
 - **Needs you**: agents waiting on you, to approve a command, answer a
   question or decide on a plan.
-- **Live**: agents starting, working, or idle and ready for the next prompt.
-- **Exited**: agents that have finished or been stopped. This section starts
-  folded.
+- **Live**: agents starting, working, or idle and ready for the next prompt,
+  and agents that have exited but you haven't settled yet.
+- **Settled**: agents you're done with. This section starts folded.
 
 Each row shows the agent's name, its branch, which agent it is (Claude or
 Codex), its folder and, when it isn't this machine, its host. The line under
@@ -47,7 +48,8 @@ On home:
 | `n` | Start a new agent |
 | `/` | Filter by name, branch, folder or host |
 | `r` | Rename the agent |
-| `s`, `x` | Stop the agent, or delete it (both ask first) |
+| `x` | Settle the agent, asking first if that would cut work short; on a settled agent, delete it, asking first |
+| `p` | Pin or unpin the agent |
 | `h` | Your hosts, and how each one is reached |
 | `,` | Settings |
 | `b` | Report a problem |
@@ -219,8 +221,8 @@ Everything the app does is also a command. Name an agent by its name, by
 | `amux new claude` or `amux new codex` | Start an agent in this folder |
 | `amux send <agent> <message>` | Send an agent a message |
 | `amux attach <agent>` | Open an agent's chat in this terminal |
-| `amux stop <agent>` | Stop an agent. It can be resumed later. |
-| `amux resume <agent> [message]` | Start a stopped agent again |
+| `amux settle <agent>` | You're done with an agent: stops it if it's running, and settles its subagents. It can be resumed later. |
+| `amux resume <agent> [message]` | Start an exited or settled agent again |
 | `amux rename <agent> <name>` | Rename an agent |
 | `amux rm <agent>` | Delete an agent, its history and its subagents |
 | `amux pair [target]` | Pair with another machine, or open this one for pairing ([Add another computer](../get-started/add-another-computer.md)) |

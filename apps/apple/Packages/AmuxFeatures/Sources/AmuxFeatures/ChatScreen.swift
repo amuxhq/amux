@@ -18,13 +18,18 @@ public struct ChatSubject: Equatable, Sendable {
     public let descendants: Int
     /// Jobs its provider runs in the background, as its fleet row counts them.
     public let backgroundJobs: Int
-    /// A stop of it from this phone is held: its host cannot be reached, and
-    /// the stop goes when the host is back.
-    public let stopHeld: Bool
+    /// A settle of it from this phone is held: its host cannot be reached,
+    /// and the settle goes when the host is back.
+    public let settleHeld: Bool
+    /// How the person filed it, apart from its lifecycle.
+    public let filing: Filing
+    /// It has no parent, so it may be pinned.
+    public let topLevel: Bool
 
     public init(
         name: String, host: String, directory: String, branch: String? = nil, reach: Reach,
-        descendants: Int = 0, backgroundJobs: Int = 0, stopHeld: Bool = false
+        descendants: Int = 0, backgroundJobs: Int = 0, settleHeld: Bool = false,
+        filing: Filing = .active, topLevel: Bool = true
     ) {
         self.name = name
         self.host = host
@@ -33,7 +38,9 @@ public struct ChatSubject: Equatable, Sendable {
         self.reach = reach
         self.descendants = descendants
         self.backgroundJobs = backgroundJobs
-        self.stopHeld = stopHeld
+        self.settleHeld = settleHeld
+        self.filing = filing
+        self.topLevel = topLevel
     }
 
     public var reachable: Bool { reach.online }
@@ -63,10 +70,15 @@ public enum ChatAction: Equatable, Sendable {
     case back
     case attach(AttachChoice)
     case rename(String)
-    /// End the agent's process. Resume starts it again.
-    case stopAgent
-    /// Take back a stop held while the agent's host cannot be reached.
-    case cancelStop
+    /// Done with it: ends its process when live, and a message resumes it.
+    case settle
+    /// Take back a settle held while the agent's host cannot be reached.
+    case cancelSettle
+    /// Keep it at the top of home, or take its pin away.
+    case pin
+    case unpin
+    /// Back among the agents, without resuming it.
+    case unsettle
     case delete
     case copyAddress
     /// A parent or child in this chat's family.
@@ -82,8 +94,9 @@ public enum ChatAction: Equatable, Sendable {
 /// What the chat has open over itself; one at a time.
 public enum ChatOverlay: String, Equatable, Sendable {
     case rename
-    /// Stopping the agent, with what the stop cuts named first.
-    case stop
+    /// Settling the agent, when that cuts work short, with what it cuts
+    /// named first.
+    case settle
     case delete
     /// The model, effort and permission mode.
     case settings
@@ -195,7 +208,10 @@ public struct ChatScreen: View {
             screenHeight = $0.height
             screenWidth = $0.width
         }
-        .navigationBarBackButtonHidden(true)
+        // The system's own way back, chevron alone: its edge swipe moves the
+        // page with the finger and can be changed mid-way, as every pushed
+        // page's does.
+        .toolbarRole(.editor)
         .toolbarTitleDisplayMode(.inline)
         .toolbar { bar }
         .accessibilityElement(children: .contain)
@@ -248,21 +264,12 @@ public struct ChatScreen: View {
         return true
     }
 
-    /// The system's bar, as Slack and Messages use it: the way back in a
-    /// circle, who the chat is with in a pill beside it, and the chat's own
-    /// actions — its changes when it has any, and the menu — sharing one
-    /// pill at the trailing edge. Every pill is the bar's height.
+    /// The system's bar, as Slack and Messages use it: the system's way
+    /// back in a circle, who the chat is with in a pill beside it, and the
+    /// chat's own actions — its changes when it has any, and the menu —
+    /// sharing one pill at the trailing edge. Every pill is the bar's height.
     @ToolbarContentBuilder
     private var bar: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            BarBack(identifier: "chat.back") {
-                putDown += 1
-                actions(.back)
-            }
-        }
-        // The way back is a circle of its own; the bar would otherwise set
-        // it and the title on one piece of glass.
-        ToolbarSpacer(.fixed, placement: .topBarLeading)
         ToolbarItem(placement: .topBarLeading) {
             title
         }
@@ -352,13 +359,30 @@ public struct ChatScreen: View {
             value: model.comparison.rawValue)
     }
 
+    /// What settling would cut short, when anything.
+    static func settleCuts(model: ChatModel, subject: ChatSubject, descendants: Int) -> String? {
+        ChatWords.settleCuts(
+            name: subject.name, phase: model.frame?.phase,
+            jobs: max(subject.backgroundJobs, model.overview?.jobs.count ?? 0),
+            subAgents: descendants)
+    }
+
+    /// Settles at once, or asks first when that would cut work short.
+    private func settle() {
+        if Self.settleCuts(model: model, subject: subject, descendants: descendants) == nil {
+            actions(.settle)
+        } else {
+            showing = .settle
+        }
+    }
+
     /// The system's own menu, as the home's account menu is. The app's
     /// `MenuButton` lays a UIKit button over its label, and in the bar a
     /// finger never reaches that button: only an accessibility activation
     /// opened it, so the menu worked under VoiceOver and the drivers and did
     /// nothing for a tap.
     private var overflow: some View {
-        let running = model.frame.map({ if case .exited = $0.phase { false } else { true } }) ?? false
+        let settled = subject.filing == .settled
         return Menu {
             Button { choose { overviewOpen = true } } label: {
                 Label("Overview", systemImage: "list.bullet.rectangle")
@@ -367,19 +391,30 @@ public struct ChatScreen: View {
             Button { choose { actions(.copyAddress) } } label: {
                 Label("Copy Address", systemImage: "doc.on.doc")
             }
-            // A live agent is stopped, which keeps it to resume; only an
-            // exited one is deleted, so nothing live is ever removed from here.
-            if running && subject.stopHeld {
-                Button { choose { actions(.cancelStop) } } label: {
-                    Label("Cancel Stop", systemImage: "arrow.uturn.backward")
+            if subject.topLevel && !settled {
+                if subject.filing == .pinned {
+                    Button { choose { actions(.unpin) } } label: { Label("Unpin", systemImage: "pin.slash") }
+                } else {
+                    Button { choose { actions(.pin) } } label: { Label("Pin", systemImage: "pin") }
                 }
-            } else if running {
-                Button(role: .destructive) { choose { showing = .stop } } label: {
-                    Label("Stop Agent", systemImage: "stop.circle")
+            }
+            // Settling keeps the agent to resume; only a settled one is
+            // deleted, so nothing the person has not put away is removed
+            // from here.
+            if subject.settleHeld {
+                Button { choose { actions(.cancelSettle) } } label: {
+                    Label("Cancel Settle", systemImage: "arrow.uturn.backward")
                 }
-            } else {
+            } else if settled {
+                Button { choose { actions(.unsettle) } } label: {
+                    Label("Un-settle", systemImage: "tray.and.arrow.up")
+                }
                 Button(role: .destructive) { choose { showing = .delete } } label: {
                     Label("Delete Agent", systemImage: "trash")
+                }
+            } else {
+                Button { choose { settle() } } label: {
+                    Label("Settle", systemImage: "checkmark.circle")
                 }
             }
         } label: {
@@ -596,7 +631,7 @@ public struct ChatStanding: View {
     @ViewBuilder
     private var standing: some View {
         VStack(spacing: 8) {
-            if subject.stopHeld { heldStop }
+            if subject.settleHeld { heldSettle }
             if model.frame?.composer.switchedAway == true { switchedAway }
             if let notice = model.notice {
                 // Every notice is something that did not happen, so it reads in
@@ -614,17 +649,13 @@ public struct ChatStanding: View {
                     showing = nil
                     actions(.rename(name))
                 }
-            case .stop?:
-                StopCard(
-                    name: subject.name,
-                    cuts: ChatWords.stopCuts(
-                        name: subject.name, phase: model.frame?.phase,
-                        jobs: max(subject.backgroundJobs, model.overview?.jobs.count ?? 0),
-                        subAgents: descendants),
+            case .settle?:
+                SettleCard(
+                    name: subject.name, cuts: ChatScreen.settleCuts(model: model, subject: subject, descendants: descendants) ?? "",
                     cancel: { showing = nil }
                 ) {
                     showing = nil
-                    actions(.stopAgent)
+                    actions(.settle)
                 }
             case .delete?:
                 DeleteCard(name: subject.name, descendants: descendants, cancel: { showing = nil }) {
@@ -686,27 +717,27 @@ public struct ChatStanding: View {
         .identified("chat.switchedAway", label: words)
     }
 
-    /// A stop that has not gone yet, with the way to take it back.
-    private var heldStop: some View {
+    /// A settle that has not gone yet, with the way to take it back.
+    private var heldSettle: some View {
         HStack(spacing: 10) {
             Image(systemName: "clock")
                 .font(.system(size: 14))
                 .foregroundStyle(design.inkMuted.color)
-            Text(String(localized: "Stop held · sends when \(subject.host) is back"))
+            Text(String(localized: "Settle held · sends when \(subject.host) is back"))
                 .designFont(.detail, design)
                 .foregroundStyle(design.ink.color)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Button { actions(.cancelStop) } label: {
+            Button { actions(.cancelSettle) } label: {
                 ActionLabel(String(localized: "Cancel"), kind: .outline)
             }
             .buttonStyle(.amuxControl)
-            .identified("chat.stopHeld.cancel", label: String(localized: "Cancel"))
+            .identified("chat.settleHeld.cancel", label: String(localized: "Cancel"))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
-        .identified("chat.stopHeld", label: String(localized: "Stop held · sends when \(subject.host) is back"))
+        .identified("chat.settleHeld", label: String(localized: "Settle held · sends when \(subject.host) is back"))
     }
 
     @ViewBuilder
@@ -888,43 +919,42 @@ private struct RenameCard: View {
     }
 }
 
-/// Stopping the agent: a stop is always now, so when it cuts a turn,
-/// background jobs or subagents the confirm says which, and otherwise asks
-/// plainly.
-private struct StopCard: View {
+/// Settling an agent that is in the middle of something: a settle is always
+/// now, so what it cuts short is named first. One that cuts nothing settles
+/// without asking.
+private struct SettleCard: View {
     @Environment(\.design) private var design
     let name: String
-    /// What the stop cuts, as a question, or nil when it cuts nothing under way.
-    let cuts: String?
+    /// What the settle cuts short.
+    let cuts: String
     let cancel: () -> Void
     let confirm: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(String(localized: "Stop \(name)?"))
+            Text(String(localized: "Settle \(name)?"))
                 .designFont(.screenTitle, design)
                 .foregroundStyle(design.ink.color)
                 .fixedSize(horizontal: false, vertical: true)
-            if let cuts {
-                Text(cuts)
-                    .designFont(.detail, design)
-                    .foregroundStyle(design.ink.color)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .identified("chat.stop.cuts", label: cuts)
-            }
-            Consequence("checkmark", kept: true, String(localized: "Its chat and edits stay. Resume starts it again."))
+            Text(cuts)
+                .designFont(.detail, design)
+                .foregroundStyle(design.ink.color)
+                .fixedSize(horizontal: false, vertical: true)
+                .identified("chat.settle.cuts", label: cuts)
+            Consequence("xmark", kept: false, String(localized: "Settling stops it now."))
+            Consequence("checkmark", kept: true, String(localized: "Its chat and edits stay. A message resumes it."))
             ButtonPair {
-                choiceButton(String(localized: "Cancel"), kind: .outline, id: "chat.stop.cancel", action: cancel)
-                choiceButton(String(localized: "Stop"), kind: .destructive, id: "chat.stop.confirm", action: confirm)
+                choiceButton(String(localized: "Cancel"), kind: .outline, id: "chat.settle.cancel", action: cancel)
+                choiceButton(String(localized: "Settle"), kind: .destructive, id: "chat.settle.confirm", action: confirm)
             }
         }
         .padding(16)
         .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
-        .identified("chat.stop.card", label: cuts ?? String(localized: "Stop \(name)?"))
+        .identified("chat.settle.card", label: cuts)
     }
 }
 
-/// Deleting an exited agent, with what that does named first.
+/// Deleting a settled agent, with what that does named first.
 private struct DeleteCard: View {
     @Environment(\.design) private var design
     let name: String

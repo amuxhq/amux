@@ -7,6 +7,16 @@
 //! offline otherwise. A call that fails on a link closes the link, which
 //! is how a link that cannot carry calls stops reading online.
 //!
+//! Away says paying is the only way left to the host, so it waits until
+//! that is known. The relay refuses within a round trip, long before a
+//! dial on the local network ends, so while an attempt is out the
+//! refusal says nothing yet: the host reads offline until that attempt
+//! ends without a link, or online when one comes up. Once told, away
+//! holds through every attempt after it, so it does not blink at each
+//! retry, until the refusal stops being the relay's last word: a link of
+//! the host's own comes up, the relay says it holds no link to the host,
+//! or the relay no longer claims it.
+//!
 //! When a host is dialled, and on which paths, is the reach module's.
 
 use std::collections::BTreeMap;
@@ -67,9 +77,10 @@ pub struct PresenceState {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct HostPresence {
-    /// Whether the relay's refusal for the account's plan is the last thing
-    /// a forwarder said of the host since its last link of its own.
-    refused_for_plan: bool,
+    /// The forwarder, the relay, whose refusal for the account's plan is
+    /// the last thing it said of the host, while it still claims the host
+    /// and no link of the host's own has come up since.
+    refused_by: Option<HostId>,
     /// The view last told, so a view is told when it moves and not merely
     /// when something happened.
     told: HostView,
@@ -105,8 +116,8 @@ impl Daemon {
     /// Acts on each route that came up or went since `before`. A route
     /// gone takes its channels with it. A link of the host's own coming up
     /// says the relay's last refusal and the last dial error are out of
-    /// date. What the move means for dialling the host is the reach
-    /// module's.
+    /// date, and the relay no longer claiming the host says its refusal
+    /// is. What the move means for dialling the host is the reach module's.
     pub(crate) fn routes_moved(
         &mut self,
         before: Vec<(HostId, Vec<Route>)>,
@@ -125,10 +136,12 @@ impl Daemon {
             let own_came_up = now
                 .iter()
                 .any(|route| route.is_direct() && !was.contains(route));
-            if (own_came_up || now.is_empty())
-                && let Some(known) = self.presence.hosts.get_mut(&host)
+            if let Some(known) = self.presence.hosts.get_mut(&host)
+                && known
+                    .refused_by
+                    .is_some_and(|forwarder| own_came_up || !now.contains(&Route::Via(forwarder)))
             {
-                known.refused_for_plan = false;
+                known.refused_by = None;
             }
             self.reach_routes_moved(host, &was, &now, out);
         }
@@ -142,7 +155,7 @@ impl Daemon {
             .presence
             .hosts
             .iter()
-            .filter(|(_, known)| known.refused_for_plan)
+            .filter(|(_, known)| known.refused_by.is_some())
             .map(|(host, _)| *host)
             .collect();
         for host in refused {
@@ -152,12 +165,14 @@ impl Daemon {
 
     /// The peer at the other end of `link`, a relay or a daemon forwarding
     /// for its paired hosts, refused to forward to `host`. A refusal for
-    /// the plan leaves a host with no link of its own reading away, and
-    /// one because the forwarder holds no link to the host says the last
-    /// refusal for the plan is out of date. A refusal for the rate or a
-    /// shutdown says nothing of the host, and neither does one through a
-    /// forwarder no longer claiming it: what it refused was sent before it
-    /// said it no longer reaches the host.
+    /// the plan leaves a host with no link of its own reading away once no
+    /// attempt to it is out, and one because the same forwarder holds no
+    /// link to the host says its last refusal for the plan is out of date;
+    /// another forwarder's says nothing of what the relay carries, so a
+    /// paired host refusing a forward does not end away. A refusal for the
+    /// rate or a shutdown says nothing of the host, and neither does one
+    /// through a forwarder no longer claiming it: what it refused was sent
+    /// before it said it no longer reaches the host.
     pub(crate) fn forward_refused(
         &mut self,
         link: LinkId,
@@ -177,17 +192,16 @@ impl Daemon {
         {
             return;
         }
-        let refused_for_plan = match reason {
-            ForwardRefusal::PaymentRequired => true,
-            ForwardRefusal::NoRoute => false,
+        let refused_by = match reason {
+            ForwardRefusal::PaymentRequired => Some(forwarder),
+            ForwardRefusal::NoRoute => None,
             ForwardRefusal::RateLimited | ForwardRefusal::Unspecified => return,
         };
         self.touched.host(host);
-        self.presence
-            .hosts
-            .entry(host)
-            .or_default()
-            .refused_for_plan = refused_for_plan;
+        let known = self.presence.hosts.entry(host).or_default();
+        if refused_by.is_some() || known.refused_by == Some(forwarder) {
+            known.refused_by = refused_by;
+        }
     }
 
     /// `host` is forgotten: its trust ended. Nothing the core decided
@@ -195,26 +209,47 @@ impl Daemon {
     pub(crate) fn forget_host(&mut self, host: HostId) {
         self.touched.host(host);
         if let Some(known) = self.presence.hosts.get_mut(&host) {
-            known.refused_for_plan = false;
+            known.refused_by = None;
         }
     }
 
     /// Settles the view of each host the step touched. The route carrying
     /// a host's traffic is the first link of its own listed; a relay reads
-    /// as no host.
+    /// as no host. A host the relay refused for the plan reads away once
+    /// no attempt to it is out, and goes on reading away through the
+    /// attempts after; each such host is settled at every step, since an
+    /// attempt ending touches nothing else of it.
     pub(crate) fn tell_presence(&mut self) {
-        for host in self.touched.hosts.clone() {
+        let refused = self
+            .presence
+            .hosts
+            .iter()
+            .filter(|(_, known)| known.refused_by.is_some())
+            .map(|(host, _)| *host);
+        let mut hosts = self.touched.hosts.clone();
+        for host in refused {
+            if !hosts.contains(&host) {
+                hosts.push(host);
+            }
+        }
+        for host in hosts {
             let routes = self.routing.links.routes_to(host);
             let relay = self.routing.links.is_relay(host);
+            let trying = self.routing.reach.attempt(host).is_some();
             let known = self.presence.hosts.entry(host).or_default();
             let active = routes
                 .iter()
                 .copied()
                 .find(Route::is_direct)
                 .filter(|_| !relay);
+            let refused = known
+                .refused_by
+                .is_some_and(|forwarder| routes.contains(&Route::Via(forwarder)));
             let presence = match active {
                 Some(_) => Presence::Online,
-                None if known.refused_for_plan && !routes.is_empty() => Presence::Away,
+                None if refused && (!trying || known.told.presence == Presence::Away) => {
+                    Presence::Away
+                }
                 None => Presence::Offline,
             };
             let view = HostView {
@@ -534,7 +569,144 @@ mod tests {
             }),
         );
         down(&mut daemon, 3);
+        // Its own address is dialled again first, and that failing is what
+        // leaves paying the only way to it.
+        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
+        let attempt = daemon.reach().attempt(DESK).expect("the desk is dialled");
+        ended(
+            &mut daemon,
+            attempt,
+            crate::AttemptOutcome::Failed("no answer".to_owned()),
+        );
         assert_eq!(view(&daemon, DESK).presence, Presence::Away);
+    }
+
+    const DESK_ADDR: &str = "192.168.1.20:7000";
+
+    /// A daemon trusting the desk, remembered at its address on the local
+    /// network and as on the account, with the relay claiming it and an
+    /// attempt out on both: the phone at launch.
+    fn launched() -> (Daemon, crate::ids::AttemptId) {
+        let mut daemon = daemon();
+        let mut trust = crate::trust::TrustStore::of_hosts([DESK]);
+        let uuid = uuid::Uuid::from_bytes(DESK.0);
+        let mut entry = trust.entry(uuid).cloned().expect("the desk is trusted");
+        entry.direct = vec![DESK_ADDR.parse().unwrap()];
+        entry.on_account = true;
+        trust.insert_for_test(uuid, entry);
+        daemon.trust_for_test(trust);
+        step(&mut daemon, Input::Started);
+        up(&mut daemon, 1, RELAY, CarrierKind::Relay);
+        step(&mut daemon, Input::Dialling(crate::reach::Dialling::All));
+        claims(&mut daemon, 1, &[DESK]);
+        let attempt = daemon.reach().attempt(DESK).expect("the desk is dialled");
+        let plan = daemon.dial_plan(DESK);
+        assert!(plan.through_relay && !plan.paths.is_empty());
+        (daemon, attempt)
+    }
+
+    fn ended(daemon: &mut Daemon, attempt: crate::ids::AttemptId, outcome: crate::AttemptOutcome) {
+        step(
+            daemon,
+            Input::AttemptEnded {
+                host: DESK,
+                attempt,
+                outcome,
+            },
+        );
+    }
+
+    #[test]
+    fn a_host_at_home_never_reads_away_while_its_own_address_is_still_being_dialled() {
+        let (mut daemon, attempt) = launched();
+        // The relay answers within a round trip; the local network's dial
+        // is still out.
+        forward_refused(&mut daemon, 1, DESK, ForwardRefusal::PaymentRequired);
+        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
+        assert_eq!(daemon.reach().attempt(DESK), Some(attempt));
+
+        up(&mut daemon, 2, DESK, CarrierKind::Direct);
+        ended(
+            &mut daemon,
+            attempt,
+            crate::AttemptOutcome::Linked {
+                addr: Some(DESK_ADDR.parse().unwrap()),
+            },
+        );
+        assert_eq!(view(&daemon, DESK).presence, Presence::Online);
+    }
+
+    #[test]
+    fn a_refused_host_reads_away_once_its_own_paths_fail_and_holds_through_every_retry() {
+        let (mut daemon, attempt) = launched();
+        forward_refused(&mut daemon, 1, DESK, ForwardRefusal::PaymentRequired);
+        ended(
+            &mut daemon,
+            attempt,
+            crate::AttemptOutcome::Failed("no answer".to_owned()),
+        );
+        assert_eq!(view(&daemon, DESK).presence, Presence::Away);
+
+        for _ in 0..3 {
+            step(
+                &mut daemon,
+                Input::Timer {
+                    id: TimerId::Retry(DESK),
+                },
+            );
+            let retry = daemon
+                .reach()
+                .attempt(DESK)
+                .expect("the desk is dialled again");
+            assert_eq!(view(&daemon, DESK).presence, Presence::Away);
+            forward_refused(&mut daemon, 1, DESK, ForwardRefusal::PaymentRequired);
+            assert_eq!(view(&daemon, DESK).presence, Presence::Away);
+            step(
+                &mut daemon,
+                Input::Timer {
+                    id: TimerId::Attempt(DESK),
+                },
+            );
+            assert_eq!(daemon.reach().attempt(DESK), None, "{retry:?} timed out");
+            assert_eq!(view(&daemon, DESK).presence, Presence::Away);
+        }
+
+        // Home again: the host's own link ends it.
+        up(&mut daemon, 2, DESK, CarrierKind::Direct);
+        assert_eq!(view(&daemon, DESK).presence, Presence::Online);
+    }
+
+    #[test]
+    fn away_ends_when_the_relay_no_longer_claims_the_host_whoever_else_does() {
+        let mut daemon = refused_desk();
+        up(&mut daemon, 2, LAPTOP, CarrierKind::Direct);
+        claims(&mut daemon, 2, &[DESK]);
+        assert_eq!(view(&daemon, DESK).presence, Presence::Away);
+        frame(
+            &mut daemon,
+            1,
+            Body::NeighborDown(NeighborDown {
+                host_id: DESK.0.to_vec(),
+            }),
+        );
+        assert_eq!(view(&daemon, DESK).routes, vec![Route::Via(LAPTOP)]);
+        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
+        // The relay claiming it again says nothing of the plan until it
+        // refuses again.
+        claims(&mut daemon, 1, &[DESK]);
+        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
+    }
+
+    #[test]
+    fn a_paired_host_with_no_route_to_a_refused_host_leaves_it_away() {
+        let mut daemon = refused_desk();
+        up(&mut daemon, 2, LAPTOP, CarrierKind::Direct);
+        claims(&mut daemon, 2, &[DESK]);
+        forward_refused(&mut daemon, 2, DESK, ForwardRefusal::NoRoute);
+        assert_eq!(view(&daemon, DESK).presence, Presence::Away);
+        // The relay saying it holds no link to the host does end it.
+        forward_refused(&mut daemon, 1, DESK, ForwardRefusal::NoRoute);
+        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
     }
 
     #[test]

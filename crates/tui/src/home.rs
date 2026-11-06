@@ -50,9 +50,14 @@ pub enum FleetEffect {
         agent: AgentKey,
         name: String,
     },
-    Stop(AgentKey),
-    /// Takes back a stop held while the agent's host was out of reach.
-    CancelStop(AgentKey),
+    /// Files it as done with, stopping it when live.
+    Settle(AgentKey),
+    /// Takes back a settle held while the agent's host was out of reach.
+    CancelSettle(AgentKey),
+    /// Keeps it at the top of home.
+    Pin(AgentKey),
+    /// Takes its pin away.
+    Unpin(AgentKey),
     Delete(AgentKey),
     /// Leave amux.
     Quit,
@@ -83,8 +88,8 @@ const NAME_COL: usize = MARK_COL + 2;
 const ROOMY: u16 = 30;
 /// The composer takes at most this share of the draft screen's height.
 const COMPOSER_SHARE: usize = 2;
-/// The highlighted row's action: stop, or delete once exited. Brackets mark
-/// what can be clicked.
+/// The highlighted row's action: settle, or delete once settled. Brackets
+/// mark what can be clicked.
 const CLOSE: &str = "[x]";
 /// The fewest columns a folder is cut to before the host gives way.
 const FOLDER_LEAST: usize = 8;
@@ -102,9 +107,10 @@ enum Target {
 
 fn section_words(section: SectionKind) -> &'static str {
     match section {
+        SectionKind::Pinned => "Pinned",
         SectionKind::NeedsYou => "Needs you",
         SectionKind::Live => "Live",
-        SectionKind::Exited => "Exited",
+        SectionKind::Settled => "Settled",
     }
 }
 
@@ -600,16 +606,37 @@ impl Home {
         vec![]
     }
 
-    /// Asks before stopping a live agent or deleting an exited one: a live
-    /// agent is never offered deletion.
-    fn confirm_close(&mut self, fleet: &FleetState, agent: AgentKey) {
-        if let Some(entry) = fleet.agent(&agent) {
-            self.overlay = Some(Overlay::Confirm {
-                name: entry.name.clone(),
-                delete: ui_state::attention(entry) == Attention::Exited,
-                agent,
-                focus: Confirmed::Yes,
-            });
+    /// Settles an agent, asking first only when that cuts work short, or
+    /// asks before deleting a settled one: an agent not settled is never
+    /// offered deletion.
+    fn close(&mut self, fleet: &FleetState, agent: AgentKey) -> Vec<FleetEffect> {
+        let Some(entry) = fleet.agent(&agent) else {
+            return vec![];
+        };
+        let delete = entry.filing() == wire::Filing::Settled;
+        if !delete && settle_cuts(fleet, &agent).is_none() {
+            return vec![FleetEffect::Settle(agent)];
+        }
+        self.overlay = Some(Overlay::Confirm {
+            name: entry.name.clone(),
+            delete,
+            agent,
+            focus: Confirmed::Yes,
+        });
+        vec![]
+    }
+
+    /// Pins a top-level agent, or takes its pin away.
+    fn pin(fleet: &FleetState, agent: AgentKey) -> Vec<FleetEffect> {
+        match fleet.agent(&agent) {
+            Some(entry) if entry.parent.is_none() => {
+                if entry.filing() == wire::Filing::Pinned {
+                    vec![FleetEffect::Unpin(agent)]
+                } else {
+                    vec![FleetEffect::Pin(agent)]
+                }
+            }
+            _ => vec![],
         }
     }
 
@@ -657,7 +684,7 @@ impl Home {
             KeyCode::Char('n') => self.open_draft(),
             KeyCode::Right => {
                 if let Some(agent) = agent.filter(|agent| {
-                    fleet.families().children(agent).next().is_some()
+                    fleet.listed_children(agent).next().is_some()
                         && !self.expanded.contains(&agent.agent)
                 }) {
                     self.toggle(&agent);
@@ -675,7 +702,7 @@ impl Home {
             }
             KeyCode::Char(' ') | KeyCode::Char('z') => {
                 if let Some(agent) =
-                    agent.filter(|agent| fleet.families().children(agent).next().is_some())
+                    agent.filter(|agent| fleet.listed_children(agent).next().is_some())
                 {
                     self.toggle(&agent);
                 }
@@ -698,10 +725,15 @@ impl Home {
             }
             KeyCode::Char('x') => {
                 if let Some(agent) = agent {
-                    if fleet.stop_held(&agent) {
-                        return vec![FleetEffect::CancelStop(agent)];
+                    if fleet.settle_held(&agent) {
+                        return vec![FleetEffect::CancelSettle(agent)];
                     }
-                    self.confirm_close(fleet, agent);
+                    return self.close(fleet, agent);
+                }
+            }
+            KeyCode::Char('p') => {
+                if let Some(agent) = agent {
+                    return Self::pin(fleet, agent);
                 }
             }
             _ => {}
@@ -781,7 +813,7 @@ impl Home {
                 KeyCode::Enter if focus == Confirmed::Yes && delete => {
                     vec![FleetEffect::Delete(agent)]
                 }
-                KeyCode::Enter if focus == Confirmed::Yes => vec![FleetEffect::Stop(agent)],
+                KeyCode::Enter if focus == Confirmed::Yes => vec![FleetEffect::Settle(agent)],
                 KeyCode::Enter | KeyCode::Esc => vec![],
                 code => {
                     let focus = match code {
@@ -952,7 +984,7 @@ impl Home {
                 .map(|spot| spot.hit.clone())
         };
         let listing = self.overlay.is_none() && !self.draft.open;
-        // A modal asking before a stop or delete: its buttons act; the rest
+        // A modal asking before a settle or delete: its buttons act; the rest
         // of home under it does nothing.
         if let Some(Overlay::Confirm { agent, delete, .. }) = &self.overlay {
             let answer = match event.kind {
@@ -965,7 +997,7 @@ impl Home {
             };
             let effect = match answer {
                 Some(Confirmed::Yes) if *delete => vec![FleetEffect::Delete(agent.clone())],
-                Some(Confirmed::Yes) => vec![FleetEffect::Stop(agent.clone())],
+                Some(Confirmed::Yes) => vec![FleetEffect::Settle(agent.clone())],
                 _ => vec![],
             };
             if answer.is_some() {
@@ -1065,13 +1097,10 @@ impl Home {
                     self.open_setting(fleet, item);
                     vec![]
                 }
-                Some(Hit::Close(agent)) if listing && fleet.stop_held(&agent) => {
-                    vec![FleetEffect::CancelStop(agent)]
+                Some(Hit::Close(agent)) if listing && fleet.settle_held(&agent) => {
+                    vec![FleetEffect::CancelSettle(agent)]
                 }
-                Some(Hit::Close(agent)) if listing => {
-                    self.confirm_close(fleet, agent);
-                    vec![]
-                }
+                Some(Hit::Close(agent)) if listing => self.close(fleet, agent),
                 Some(Hit::Fold(agent)) if listing => {
                     self.toggle(&agent);
                     vec![]
@@ -1236,7 +1265,7 @@ impl Home {
                 let (sentence, verb) = if *delete {
                     (format!("Delete {name} and its history?"), "Delete")
                 } else {
-                    (stop_sentence(fleet, agent, name), "Stop")
+                    (settle_sentence(fleet, agent, name), "Settle")
                 };
                 let (buttons, spots) = crate::panel::buttons(
                     &[(verb, Confirmed::Yes), ("Cancel", Confirmed::No)],
@@ -1260,7 +1289,7 @@ impl Home {
                         .map(|words| Line::from(Span::styled(words.clone(), theme.text()))),
                 );
                 rows.extend([Line::default(), buttons, legend]);
-                let title = if *delete { "Delete" } else { "Stop" };
+                let title = if *delete { "Delete" } else { "Settle" };
                 let lines = crate::panel::bordered(title, rows, inner, &[], None, theme);
                 let rect = crate::panel::centre(paint, lines, area);
                 // The buttons' row: the border, a blank, the sentence's
@@ -1928,16 +1957,18 @@ impl Home {
     }
 }
 
-/// What the stop window asks: what a stop cuts when the agent is working,
-/// has background jobs or has subagents ("desk-1 is working and has 2
-/// background jobs and 1 subagent. Stop anyway?"), else the plain
-/// question. Subagents are the live descendants the agent's host counts,
-/// or those this fleet sees when it sees more.
-fn stop_sentence(fleet: &FleetState, agent: &AgentKey, name: &str) -> String {
-    let Some(entry) = fleet.agent(agent) else {
-        return format!("Stop {name}? It can be resumed later.");
+/// What a settle of `agent` would cut short, when anything: its turn under
+/// way, its background jobs and its subagents ("working and has 2
+/// background jobs and 1 subagent"). Subagents are the live descendants the
+/// agent's host counts, or those this fleet sees when it sees more.
+fn settle_cuts(fleet: &FleetState, agent: &AgentKey) -> Option<String> {
+    let entry = fleet.agent(agent)?;
+    // An ask open is a turn under way too: settling ends it unanswered.
+    let turn = match entry.phase() {
+        wire::Phase::Working => Some("is working"),
+        wire::Phase::NeedsYou => Some("needs you mid-turn"),
+        _ => None,
     };
-    let working = entry.phase() == wire::Phase::Working;
     let jobs = entry.background_jobs as usize;
     let seen = live_descendants(fleet, agent);
     let subs = (entry.descendants as usize).max(seen);
@@ -1950,11 +1981,21 @@ fn stop_sentence(fleet: &FleetState, agent: &AgentKey, name: &str) -> String {
         has.push(count(subs, "subagent"));
     }
     let has = has.join(" and ");
-    match (working, has.is_empty()) {
-        (false, true) => format!("Stop {name}? It can be resumed later."),
-        (true, true) => format!("{name} is working. Stop anyway?"),
-        (true, false) => format!("{name} is working and has {has}. Stop anyway?"),
-        (false, false) => format!("{name} has {has}. Stop anyway?"),
+    match (turn, has.is_empty()) {
+        (None, true) => None,
+        (Some(turn), true) => Some(turn.to_owned()),
+        (Some(turn), false) => Some(format!("{turn} and has {has}")),
+        (None, false) => Some(format!("has {has}")),
+    }
+}
+
+/// What the settle window asks: what settling cuts short ("desk-1 is
+/// working and has 2 background jobs and 1 subagent. Settling stops them."),
+/// else the plain question.
+fn settle_sentence(fleet: &FleetState, agent: &AgentKey, name: &str) -> String {
+    match settle_cuts(fleet, agent) {
+        Some(cuts) => format!("{name} {cuts}. Settling stops it now."),
+        None => format!("Settle {name}? A message resumes it."),
     }
 }
 
@@ -2003,8 +2044,9 @@ pub fn help_rows() -> Vec<(&'static str, String)> {
         ("r", "rename, in place".into()),
         (
             "x",
-            "stop (it can be resumed), or delete once exited; it asks first".into(),
+            "settle (a message resumes it), or delete once settled; asks before cutting work short or deleting".into(),
         ),
+        ("p", "pin to the top, or unpin".into()),
         ("h", "hosts".into()),
         (
             ",",
@@ -2249,13 +2291,13 @@ fn second_words(
 ) -> Option<(String, Style)> {
     // A stop the person gave while the host was out of reach waits to be
     // sent; `x` takes it back.
-    if row.card.stop_held {
+    if row.card.settle_held {
         let host = match row.card.host.as_str() {
             "" => "its host",
             host => host,
         };
         return Some((
-            format!("stop held · it goes when {host} is back · x cancels"),
+            format!("settle held · it goes when {host} is back · x cancels"),
             theme.warning(),
         ));
     }

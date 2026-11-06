@@ -1,0 +1,34 @@
+
+  amux
+
+  + New Agent
+
+
+  ▾ Live 5 ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+  › ○ decision-pty  Claude (terminal) · /tmp/journey/aj-xxxxxxxx/net/desk/work                         [x]
+
+    ○ reviewer  Claude · /tmp/journey/aj-xxxxxxxx/net/desk/work                                        now
+
+    ○ keeper  Claude · /tmp/journey/aj-xxxxxxxx/net/desk/work                                          now
+      The recovery state is safely stored.
+
+    ○ decision-codex  Codex · /tmp/journey/aj-xxxxxxxx/net/desk/work                                   now
+
+    ○ decision-sdk  Claude · /tmp/journey/aj-xxxxxxxx/net/desk/work                                    now
+
+
+  ▸ Settled 1 ──────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+
+
+
+
+
+
+
+
+
+  enter open   a attach   / filter   n new   ? keys

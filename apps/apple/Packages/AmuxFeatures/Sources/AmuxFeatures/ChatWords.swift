@@ -556,10 +556,32 @@ public enum ChatWords {
         }
     }
 
-    /// What stopping an agent cuts, as the stop confirm asks it: "desk-1 is
-    /// working and has 2 background jobs and 1 subagent. Stop anyway?" Nil
-    /// when a stop cuts nothing under way, for the plain confirm.
-    public static func stopCuts(name: String, phase: PhaseView?, jobs: Int, subAgents: Int) -> String? {
+    /// What settling an agent cuts short, as the settle confirm says it:
+    /// "desk-1 is working and has 2 background jobs and 1 subagent." Nil when
+    /// settling cuts nothing under way, so it settles without asking.
+    public static func settleCuts(name: String, phase: PhaseView?, jobs: Int, subAgents: Int) -> String? {
+        let turn: Turn = switch phase {
+        case .working?: .working
+        case .needsYou?: .needsYou
+        default: .none
+        }
+        return settleCuts(name: name, turn: turn, jobs: jobs, subAgents: subAgents)
+    }
+
+    /// The same, from what a fleet row knows of the agent.
+    public static func settleCuts(name: String, attention: Attention, jobs: Int, subAgents: Int) -> String? {
+        let turn: Turn = switch attention {
+        case .working: .working
+        case .needsYou: .needsYou
+        default: .none
+        }
+        return settleCuts(name: name, turn: turn, jobs: jobs, subAgents: subAgents)
+    }
+
+    /// Whether a turn is under way that a settle would cut.
+    private enum Turn { case working, needsYou, none }
+
+    private static func settleCuts(name: String, turn: Turn, jobs: Int, subAgents: Int) -> String? {
         var held: [String] = []
         if jobs > 0 {
             held.append(jobs == 1 ? String(localized: "1 background job") : String(localized: "\(jobs) background jobs"))
@@ -568,17 +590,17 @@ public enum ChatWords {
             held.append(subAgents == 1 ? String(localized: "1 subagent") : String(localized: "\(subAgents) subagents"))
         }
         let has = held.joined(separator: String(localized: " and "))
-        switch phase {
-        case .working?:
+        switch turn {
+        case .working:
             return has.isEmpty
-                ? String(localized: "\(name) is working. Stop anyway?")
-                : String(localized: "\(name) is working and has \(has). Stop anyway?")
-        case .needsYou?:
+                ? String(localized: "\(name) is working.")
+                : String(localized: "\(name) is working and has \(has).")
+        case .needsYou:
             return has.isEmpty
-                ? String(localized: "\(name) needs you mid-turn. Stop anyway?")
-                : String(localized: "\(name) needs you mid-turn and has \(has). Stop anyway?")
-        default:
-            return has.isEmpty ? nil : String(localized: "\(name) has \(has). Stop anyway?")
+                ? String(localized: "\(name) needs you mid-turn.")
+                : String(localized: "\(name) needs you mid-turn and has \(has).")
+        case .none:
+            return has.isEmpty ? nil : String(localized: "\(name) has \(has).")
         }
     }
 

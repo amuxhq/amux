@@ -95,11 +95,14 @@ this machine's hosts are out of reach because it is signed out, `signed out · a
 clears it, and it looks into folded sections too. It matches names, branches, folders and hosts.
 
 Below it, `+ New Agent`, then the agents in sections drawn alike (a fold marker, the label, a count, a faint rule):
-**Needs you**, **Live** (starting, working and idle) and **Exited**, folded until opened. Within a section agents are
-listed by when each last changed state (a turn starting or ending, an ask opening or answered), newest first, so a
-row never moves while an agent streams. The sections, their order and each row's second line come from the shared
+**Pinned**, **Needs you**, **Live** (starting, working, idle, and exited but not yet settled) and **Settled**,
+folded until opened. Pinned and Settled hold the families the person filed there, newest filed first; within the
+other sections agents are listed by when each last changed state (a turn starting or ending, an ask opening or
+answered), newest first, so a row never moves while an agent streams. The sections, their order and each row's second line come from the shared
 fleet view every client draws. A family sits in its loudest member's section;
-`→`, `←` or Space shows and hides its members, indented under their parent.
+`→`, `←` or Space shows and hides its members, indented under their parent. A settled member (one its parent
+stopped, or the person settled) is not listed or counted under its family: it is done with, and kept only so its
+parent can start it again.
 
 Each row is the agent's mark (`○` idle, starting, exited or on a host that is away; `●` working; `●` in the
 attention ink when it needs you), its name, its branch when it works in a repository, then faint which agent it is
@@ -111,12 +114,14 @@ Codex`, `usage limit reached`); why it exited (`finished`, a crash in red). An a
 the line it last had, its faint mark saying the host is out of reach. A starting
 agent has no second line. A folded family whose member needs you says that member's name and what it asks. The
 highlighted row is tinted, with half a line of the tint above and below; under the pointer or the
-keys alike, and it shows `[x]` in place of its age to stop the agent, or delete it once it has exited, after asking.
+keys alike, and it shows `[x]` in place of its age to settle the agent, or delete it once it is settled.
 A terminal that gives no background to tint marks it with `›` instead. `+ New Agent` and the section headings
 highlight the same way, tinted or marked, so a keyboard user always sees where Enter lands.
 
-On a row, `r` renames it in place (Enter saves, Esc cancels), `s` stops it and `x` deletes it, each asking first
-in a small window (Enter confirms, Esc cancels). A daemon that has not answered yet shows `connecting` at the
+On a row, `r` renames it in place (Enter saves, Esc cancels), `p` pins or unpins an agent with no parent, and `x`
+settles it, or deletes it once it is settled. Settling asks first in a small window (Enter confirms, Esc cancels)
+only when it would cut work short, naming what: a turn under way or an ask open, background jobs, subagents.
+Deleting always asks. A daemon that has not answered yet shows `connecting` at the
 right of the top line.
 
 ### A new agent
@@ -419,7 +424,8 @@ stops the agent or answers an ask; clearing a field and stopping the agent are n
 | → ← or Space | Show or hide a family's agents |
 | `n` | A new agent |
 | `r` | Rename, in place |
-| `s`, `x` | Stop, or delete, asking first |
+| `x` | Settle (asking first only when it cuts work short), or delete a settled agent, asking first |
+| `p` | Pin or unpin an agent with no parent |
 | `h` | Hosts |
 | `b` | Report a problem |
 | `,` | Settings |
@@ -570,7 +576,7 @@ these; the entries amux and service managers run are hidden from it and listed a
 | `amux ls` | Lists the agents with children beneath their parent: name, short id, agent and state. |
 | `amux new claude\|codex` | Starts an agent in the current directory (`--cwd` for another), for the interface `ui.chat_in` names or `--in amux\|native`: Claude runs headless for amux's chat and in a terminal for its own. `--name`, `--model`, `--effort`, `--permission` and `--prompt` for its first prompt; the model, effort and permission come from `new_agent` otherwise, except in the agent's own interface, which sets its own. Extra arguments for Claude go after `--`. |
 | `amux send <agent> <text…>` | Sends a prompt and prints whether the agent took it, and if not, why in a sentence. |
-| `amux stop <agent>` | Stops the agent now, and every descendant follows on its own host: its turn is cancelled the provider's own way (a question waiting on you is dismissed) and it exits, to be resumed later. |
+| `amux settle <agent>` | Files the agent as done with, stopping it now when live, and every descendant is settled with it on its own host: its turn is cancelled the provider's own way (a question waiting on you is dismissed) and it exits, to be resumed later. |
 | `amux resume <agent> [text…]` | Starts a stopped agent again, with an optional first prompt. |
 | `amux rename <agent> <name>` | Renames an agent. |
 | `amux rm <agent>` | Deletes an agent and its history; its children follow on their own hosts, a host that is away once it is back. |

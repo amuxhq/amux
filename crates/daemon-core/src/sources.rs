@@ -814,7 +814,22 @@ impl Daemon {
             // every child here follows, however recently it was made.
             self.parent_changed(key, ParentSays::Deleted, out)?;
         }
+        // Which parents this host already held as settled, so a settle that
+        // came while the link was down is followed and one already followed
+        // is not again: a child the person filed active under a settled
+        // parent stays so through every reconnect.
+        let settled = wire::Filing::Settled as i32;
+        let mut newly_settled = Vec::new();
         for agent in &listed {
+            let key = AgentKey::new(agent.host_id.clone(), agent.agent_id.clone());
+            let was_settled = self
+                .store
+                .agent(&key)?
+                .as_ref()
+                .is_some_and(AgentRow::is_settled);
+            if agent.filing == settled && !was_settled {
+                newly_settled.push(key);
+            }
             self.put_replica_row(agent, out)?;
         }
         for child in children {
@@ -835,10 +850,15 @@ impl Daemon {
                 self.follow(id, ParentSays::Deleted, out);
             }
         }
+        for key in &newly_settled {
+            self.parent_changed(key, ParentSays::Settled, out)?;
+        }
         let exited = wire::Lifecycle::Exited as i32;
-        for agent in listed.iter().filter(|agent| agent.lifecycle == exited) {
+        for agent in &listed {
             let key = AgentKey::new(agent.host_id.clone(), agent.agent_id.clone());
-            self.parent_changed(&key, ParentSays::Exited, out)?;
+            if agent.lifecycle == exited {
+                self.parent_changed(&key, ParentSays::Exited, out)?;
+            }
         }
         self.sources.following.remove(&host);
         self.sources.ready.insert(host, session);
@@ -850,18 +870,23 @@ impl Daemon {
     }
 
     /// A row the host's live stream says changed: written, and when it says
-    /// the agent has just exited, its children here follow. Only a change
-    /// to exited counts, not a row that already said so, so a child its
-    /// person resumed under an exited parent is not stopped again by every
-    /// later change to the parent's row (a recount, a rename).
+    /// the agent has just been settled or has just exited, its children here
+    /// follow. Only a change counts, not a row that already said so, so a
+    /// child its person resumed under an exited or settled parent is not
+    /// stopped or settled again by every later change to the parent's row
+    /// (a recount, a rename).
     fn replica_changed(&mut self, agent: &Agent, out: &mut Vec<Output>) -> Result<(), StoreError> {
         let key = AgentKey::new(agent.host_id.clone(), agent.agent_id.clone());
         let exited = wire::Lifecycle::Exited as i32;
-        let was_exited = self
-            .store
-            .agent(&key)?
+        let held = self.store.agent(&key)?;
+        let was_exited = held
+            .as_ref()
             .is_some_and(|was| was.lifecycle == exited && was.incarnation == agent.incarnation);
+        let was_settled = held.as_ref().is_some_and(AgentRow::is_settled);
         self.put_replica_row(agent, out)?;
+        if agent.filing == wire::Filing::Settled as i32 && !was_settled {
+            self.parent_changed(&key, ParentSays::Settled, out)?;
+        }
         if agent.lifecycle == exited && !was_exited {
             self.parent_changed(&key, ParentSays::Exited, out)?;
         }
@@ -1683,6 +1708,8 @@ pub fn from_wire(agent: &Agent) -> AgentRow {
     row.incarnation = agent.incarnation;
     row.background_jobs = agent.background_jobs;
     row.descendants = agent.descendants;
+    row.filing = agent.filing;
+    row.filed_at_ms = agent.filed_at_ms;
     row
 }
 
@@ -2291,6 +2318,64 @@ mod tests {
         ] {
             assert_eq!(judge(page), Some(crate::PAGE_OFF_THE_BOUNDARY), "{why}");
         }
+    }
+
+    /// A settle the link missed is followed when the host's listing
+    /// catches up; one this host already held is not followed again, so a
+    /// child the person filed active under a settled parent stays active
+    /// through a reconnect.
+    #[test]
+    fn a_catch_up_follows_only_a_settle_this_host_had_not_seen() {
+        const CHILD: [u8; 16] = *b"child-0000000000";
+        let mut daemon = daemon();
+        let mut parent = listed(wire::Lifecycle::Exited);
+        parent.filing = wire::Filing::Settled as i32;
+        let mut child = AgentRow::new(AgentKey::new(OWN, CHILD), wire::Kind::Codex as i32, "/src");
+        child.parent = Some(key());
+        child.lifecycle = wire::Lifecycle::Exited as i32;
+        daemon.store.put_agent(&child).unwrap();
+        let filing = |daemon: &Daemon| {
+            daemon
+                .store
+                .agent(&AgentKey::new(OWN, CHILD))
+                .unwrap()
+                .unwrap()
+                .filing
+        };
+
+        // Held settled already, as the live stream said: nothing to follow.
+        daemon.store.put_agent(&from_wire(&parent)).unwrap();
+        let mut out = Vec::new();
+        daemon
+            .inventory_caught_up(
+                HostId(PEER),
+                1,
+                None,
+                vec![parent.clone()],
+                &BTreeSet::new(),
+                &mut out,
+            )
+            .unwrap();
+        daemon.step(Input::Swept, &mut out);
+        assert_eq!(filing(&daemon), wire::Filing::Active as i32, "{out:?}");
+
+        // Settled while the link was down: the child is settled with it.
+        let mut held = from_wire(&parent);
+        held.filing = wire::Filing::Active as i32;
+        daemon.store.put_agent(&held).unwrap();
+        let mut out = Vec::new();
+        daemon
+            .inventory_caught_up(
+                HostId(PEER),
+                2,
+                None,
+                vec![parent],
+                &BTreeSet::new(),
+                &mut out,
+            )
+            .unwrap();
+        daemon.step(Input::Swept, &mut out);
+        assert_eq!(filing(&daemon), wire::Filing::Settled as i32, "{out:?}");
     }
 
     /// A kind this daemon has no name for is a number it carries: the

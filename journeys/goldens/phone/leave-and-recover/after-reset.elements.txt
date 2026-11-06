@@ -20,9 +20,8 @@ chat.model | claude-fake-1 · medium |  | 71,779,117,44
 chat.dictate | Dictate | idle | 228,779,44,44
 chat.resume | Resume |  | 276,779,103,44 (disabled)
 chat.more | More |  | 350,66,28,36
-chat.back | Back |  | 20,66,40,36
-chat.header | Exited · while the daemon was away | live | 80,66,221,36
-chat.title | keeper | keeper | 80,66,221,36
+chat.header | Exited · while the daemon was away | live | 76,66,221,36
+chat.title | keeper | keeper | 76,66,221,36
  | Exited · while the daemon was away, desk |  | 29,720,345,20
  | Attach |  | 23,779,44,44
  | claude-fake-1 |  | 71,779,117,44
@@ -38,6 +37,7 @@ chat.title | keeper | keeper | 80,66,221,36
  | Pick up where we left off. |  | 16,377,370,40
  | Back after the restart. |  | 16,428,370,20
  | Worked <t> |  | 16,456,62,16
- | Back |  | 20,66,40,36
- | keeper, Exited · while the daemon was away |  | 80,66,221,36
+BackButton | Agents |  | 16,62,44,44
+ | keeper, Exited · while the daemon was away |  | 76,66,221,36
  | More |  | 350,66,28,36
+ | Back |  | 16,73,44,23

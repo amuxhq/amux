@@ -1,41 +1,10 @@
 shell |  | agents | 0,62,402,778
-home |  | signed-out | 0,174,402,617
-home.chip.all | All | on | 16,172,44,44
-home.chip.needsYou | Needs you | off | 68,172,87,44
-home.chip.working | Working | off | 163,172,76,44
-home.row.<decision-pty> | decision-pty, Idle, desk, /private/tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,218,370,64
-home.row.<decision-pty>.age.volatile | <volatile>
-home.row.<reviewer> | reviewer, Idle, desk, /private/tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,282,370,64
-home.row.<reviewer>.age.volatile | <volatile>
-home.row.<keeper> | keeper, Idle, The recovery state is safely stored., desk, /private/tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,347,370,65
-home.row.<keeper>.age.volatile | <volatile>
-home.row.<keeper>.second |  |  | 40,382,236,18
-home.row.<decision-codex> | decision-codex, Idle, desk, /private/tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,413,370,64
-home.row.<decision-codex>.age.volatile | <volatile>
-home.row.<decision-sdk> | decision-sdk, Idle, desk, /private/tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,477,370,64
-home.row.<decision-sdk>.age.volatile | <volatile>
-home.newAgent | New Agent |  | 350,66,27,36
-home.accounts | Switch account |  | 24,66,28,36
+home |  | signed-out | 0,256,402,535
+settled |  | signed-out | 0,174,402,666
+settled.empty | Nothing settled |  | 0,174,366,101
 hosts |  | 1 reachable | 0,174,402,617
- | All |  | 16,172,44,44
- | Needs you |  | 68,172,87,44
- | Working |  | 163,172,76,44
- | decision-pty, Idle, desk, /private/tmp/amux-phone-journey/net/desk/work, <age> |  | 16,218,370,64
- | reviewer, Idle, desk, /private/tmp/amux-phone-journey/net/desk/work, <age> |  | 16,283,370,64
- | keeper, Idle, The recovery state is safely stored., desk, /private/tmp/amux-phone-journey/net/desk/work, <age> |  | 16,347,370,65
- | decision-codex, Idle, desk, /private/tmp/amux-phone-journey/net/desk/work, <age> |  | 16,413,370,64
- | decision-sdk, Idle, desk, /private/tmp/amux-phone-journey/net/desk/work, <age> |  | 16,477,370,64
- | Agents |  | 16,127,116,42
- | Switch account |  | 24,66,29,36
- | New Agent |  | 350,66,27,36
- | Search |  | 16,175,370,0
- | Agents |  | 111,795,94,54
- | Agents |  | 140,830,35,12
- | Hosts |  | 197,795,94,54
- | Hosts |  | 229,830,29,12
- | Agents |  | 111,795,94,54
- | Agents |  | 141,830,35,12
- | Hosts |  | 197,795,94,54
- | Hosts |  | 230,830,29,12
- | Agents | selected | 111,795,94,54
- | Hosts |  | 197,795,94,54
+ | Nothing settled |  | 16,198,185,32
+ | Swipe an agent left to settle it once you are done with it. |  | 16,238,334,37
+ | Settled |  | 16,127,119,42
+BackButton | Agents |  | 16,62,44,44
+ | Back |  | 16,73,44,23

@@ -24,11 +24,11 @@ use wire::profile_admin_service_server::ProfileAdminService;
 use wire::session_service_server::SessionService;
 use wire::{
     Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, Diff, DumpRequest, DumpResponse,
-    Envelope, ErrorCode, GetBlobRequest, GetBlobResponse, GetDiffRequest, GetItemRequest,
-    InventoryEvent, Item, ListItemsRequest, ListItemsResponse, ListRepositoriesRequest,
-    ListRepositoriesResponse, PutBlobRequest, RenameAgentRequest, ResolveAgentRequest,
-    ResumeAgentRequest, SendInputRequest, SendInputResponse, SendMessageResponse, SessionEvent,
-    StopAgentRequest, SubscribeSessionRequest,
+    Envelope, ErrorCode, FileAgentRequest, GetBlobRequest, GetBlobResponse, GetDiffRequest,
+    GetItemRequest, InventoryEvent, Item, ListItemsRequest, ListItemsResponse,
+    ListRepositoriesRequest, ListRepositoriesResponse, PutBlobRequest, RenameAgentRequest,
+    ResolveAgentRequest, ResumeAgentRequest, SendInputRequest, SendInputResponse,
+    SendMessageResponse, SessionEvent, SubscribeSessionRequest,
 };
 
 /// A server stream. An `Err` item or the end of the stream both mean the
@@ -111,7 +111,7 @@ pub trait Client: Send + Sync + 'static {
     async fn send_input(&self, request: SendInputRequest) -> Result<SendInputResponse, RpcError>;
     async fn create_agent(&self, request: CreateAgentRequest) -> Result<Agent, RpcError>;
     async fn rename_agent(&self, request: RenameAgentRequest) -> Result<Agent, RpcError>;
-    async fn stop_agent(&self, request: StopAgentRequest) -> Result<(), RpcError>;
+    async fn file_agent(&self, request: FileAgentRequest) -> Result<Agent, RpcError>;
     async fn resume_agent(&self, request: ResumeAgentRequest) -> Result<Agent, RpcError>;
     async fn delete_agent(&self, request: DeleteAgentRequest) -> Result<(), RpcError>;
     async fn send_message(&self, request: Envelope) -> Result<SendMessageResponse, RpcError>;
@@ -233,9 +233,8 @@ macro_rules! client_impl {
                 Ok($call!(self, agents, rename_agent, request).await?.into_inner())
             }
 
-            async fn stop_agent(&self, request: StopAgentRequest) -> Result<(), RpcError> {
-                $call!(self, agents, stop_agent, request).await?;
-                Ok(())
+            async fn file_agent(&self, request: FileAgentRequest) -> Result<Agent, RpcError> {
+                Ok($call!(self, agents, file_agent, request).await?.into_inner())
             }
 
             async fn resume_agent(&self, request: ResumeAgentRequest) -> Result<Agent, RpcError> {

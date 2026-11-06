@@ -1468,7 +1468,7 @@ fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
         |drawn| labelled(drawn, COMMENT) && drawn.has("review.attach"),
         "the comment on the line",
     )?;
-    journey.screen("review-comment", &[])?;
+    journey.screen("review-comment", &["chat.header", "chat.title"])?;
     journey.tap("review.attach")?;
     journey.wait(
         |drawn| drawn.has("chat.field") && !drawn.has("review.attach"),

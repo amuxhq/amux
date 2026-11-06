@@ -1,0 +1,33 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 2 input {"id":"p1","prompt":{"text":"one"}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 4 fact {"channel":"stream","json":{"duration_ms":10,"is_error":true,"subtype":"success","total_cost_usd":0.1,"type":"result","uuid":"r1"}}
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 5 input {"id":"p2","prompt":{"text":"two"}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 7 fact {"channel":"stream","json":{"duration_ms":10,"is_error":false,"subtype":"success","total_cost_usd":0.1,"type":"result","uuid":"r2"}}
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 8 input {"id":"p3","prompt":{"text":"three"}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 10 fact {"channel":"stream","json":{"duration_ms":10,"is_error":false,"subtype":"success","total_cost_usd":0.1,"type":"result","uuid":"r3"}}
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("one")], steered: false }
+     3 e1 Error { error_kind: "authentication_failed", message: "Invalid API key", attempts: 0, gave_up: true } attention
+     4 turn:1 TurnEnd { duration_ms: Some(10), failed: true }
+     5 70320000-0000-4000-8000-000000000000 Prompt { text: [Text("two")], steered: false }
+     6 m2:0 Prose { text: [Text("Fine now.")], streaming: false, working_note: false }
+     7 turn:2 TurnEnd { duration_ms: Some(10), failed: false }
+     8 70330000-0000-4000-8000-000000000000 Prompt { text: [Text("three")], steered: false }
+     9 m3:0 Prose { text: [Text("Still fine.")], streaming: false, working_note: false }
+    10 turn:3 TurnEnd { duration_ms: Some(10), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context None sign-in Some(SignInView { state: Failed, account: "", message: "Invalid API key" })
+== settings
+  model* unlisted claude-opus-5-5 "Opus 5.5" efforts=[]
+  permission* unlisted "default" "default" unsettable
+  changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Opus 5.5") effort=None permission=None mode=None

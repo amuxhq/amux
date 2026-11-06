@@ -137,6 +137,7 @@ and are tuned the same way:
 | One write on an agent's control socket | 5 s | `Launch.ctl_write_ms` |
 | Deliveries outbox retry | 30 s | `Settings.delivery_retry_ms` |
 | Push retry after a failure | 60 s | `Settings.push_retry_ms` |
+| One push's request | 30 s | `SEND_TIMEOUT` in `crates/node/src/outbox.rs` |
 | Wait on an origin for a page | 10 s | `PAGE_PATIENCE` in [`crates/node/src/driver/mod.rs`](../crates/node/src/driver/mod.rs) |
 | Largest journal or control-socket frame | 64 MiB | `journal::MAX_FRAME_BYTES`; `agent_dir::MAX_FRAME_BYTES` |
 | Fixed per-row allowance in retention's byte count | 48 bytes | `ITEM_BYTES` in [`crates/store/src/rows.rs`](../crates/store/src/rows.rs) |

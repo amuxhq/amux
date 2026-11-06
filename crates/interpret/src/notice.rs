@@ -6,9 +6,9 @@
 //! and failures become the few shapes a notification has.
 
 use wire::{
-    AccessWant, AskNotice, BlockedNotice, ChangeWant, Notice, OtherWant, PlanWant, QuestionWant,
-    RunWant, SignIn, SignInState, UsageBlock, UsageState, UseWant, ask, ask_notice, blocked_notice,
-    codex_ask, notice, tool_input,
+    AccessWant, AskNotice, BlockedNotice, ChangeWant, Empty, Notice, OtherWant, PlanWant,
+    QuestionWant, RunWant, UsageBlock, UseWant, ask, ask_notice, blocked_notice, codex_ask, notice,
+    tool_input,
 };
 
 /// The most bytes any one string keeps. A push has a few kilobytes for the
@@ -173,9 +173,9 @@ fn first_said<'a>(texts: &[&'a str]) -> &'a str {
         .unwrap_or_default()
 }
 
-pub(crate) fn signed_out(state: SignInState) -> BlockedNotice {
+pub(crate) fn signed_out() -> BlockedNotice {
     BlockedNotice {
-        why: Some(blocked_notice::Why::SignedOut(state as i32)),
+        why: Some(blocked_notice::Why::SignedOut(Empty {})),
     }
 }
 
@@ -188,55 +188,6 @@ pub(crate) fn usage_spent(resets_at_ms: Option<i64>) -> BlockedNotice {
 pub(crate) fn failed(message: &str) -> BlockedNotice {
     BlockedNotice {
         why: Some(blocked_notice::Why::Failed(clip(message))),
-    }
-}
-
-/// What the provider says of the agent now, where it says anything: terminal
-/// Claude reports neither its sign-in nor its usage. A notice reads this so
-/// it follows the state a person can see change, rather than what a turn
-/// ran into before they fixed it.
-#[derive(Clone, Copy, Default)]
-pub(crate) struct Standing {
-    pub sign_in: SignInState,
-    pub usage: UsageState,
-    pub resets_at_ms: Option<i64>,
-}
-
-impl Standing {
-    pub(crate) fn of(
-        sign_in: Option<&SignIn>,
-        usage: UsageState,
-        resets_at_ms: Option<i64>,
-    ) -> Self {
-        Self {
-            sign_in: sign_in.map_or(SignInState::Unknown, SignIn::state),
-            usage,
-            resets_at_ms,
-        }
-    }
-
-    /// What stops the agent now, whatever its last turn ran into.
-    pub(crate) fn blocked(&self) -> Option<BlockedNotice> {
-        match self.sign_in {
-            SignInState::SignedOut | SignInState::Expired | SignInState::Failed => {
-                Some(signed_out(self.sign_in))
-            }
-            SignInState::Unknown | SignInState::SignedIn => {
-                (self.usage == UsageState::Blocked).then(|| usage_spent(self.resets_at_ms))
-            }
-        }
-    }
-
-    /// Whether what a turn ran into has since been put right. A failure has
-    /// no state of its own to clear it: only the next turn does.
-    pub(crate) fn lifted(&self, why: &BlockedNotice) -> bool {
-        match why.why {
-            Some(blocked_notice::Why::SignedOut(_)) => self.sign_in == SignInState::SignedIn,
-            Some(blocked_notice::Why::Usage(_)) => {
-                matches!(self.usage, UsageState::Ok | UsageState::NearLimit)
-            }
-            Some(blocked_notice::Why::Failed(_)) | None => false,
-        }
     }
 }
 
@@ -277,9 +228,7 @@ pub(crate) fn describe(notice: &Notice) -> String {
             ask.more
         ),
         Some(notice::Of::Blocked(blocked)) => match &blocked.why {
-            Some(blocked_notice::Why::SignedOut(state)) => {
-                format!("blocked signed-out {state}")
-            }
+            Some(blocked_notice::Why::SignedOut(_)) => "blocked signed-out".to_owned(),
             Some(blocked_notice::Why::Usage(usage)) => {
                 format!("blocked usage resets={:?}", usage.resets_at_ms)
             }
@@ -294,43 +243,6 @@ pub(crate) fn describe(notice: &Notice) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn what_a_turn_ran_into_lifts_when_the_provider_says_so() {
-        let signed_in = Standing {
-            sign_in: SignInState::SignedIn,
-            ..Standing::default()
-        };
-        assert!(signed_in.lifted(&signed_out(SignInState::Failed)));
-        assert!(!signed_in.lifted(&usage_spent(None)));
-        assert!(!signed_in.lifted(&failed("refused")));
-        let usable = Standing {
-            usage: UsageState::NearLimit,
-            ..Standing::default()
-        };
-        assert!(usable.lifted(&usage_spent(None)));
-        // Terminal Claude says neither: only its next turn clears a block.
-        let silent = Standing::default();
-        assert!(!silent.lifted(&signed_out(SignInState::Failed)));
-        assert!(!silent.lifted(&usage_spent(Some(9))));
-    }
-
-    #[test]
-    fn what_stands_now_needs_no_failed_turn() {
-        let expired = Standing {
-            sign_in: SignInState::Expired,
-            usage: UsageState::Blocked,
-            resets_at_ms: Some(9),
-        };
-        assert_eq!(expired.blocked(), Some(signed_out(SignInState::Expired)));
-        let spent = Standing {
-            sign_in: SignInState::SignedIn,
-            usage: UsageState::Blocked,
-            resets_at_ms: Some(9),
-        };
-        assert_eq!(spent.blocked(), Some(usage_spent(Some(9))));
-        assert_eq!(Standing::default().blocked(), None);
-    }
 
     #[test]
     fn a_long_string_is_clipped_on_a_character_boundary() {

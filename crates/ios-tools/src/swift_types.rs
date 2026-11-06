@@ -26,7 +26,7 @@ pub const OUTPUT: &str = "apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values
 pub const PUSH_OUTPUT: &str = "apps/apple/Packages/AmuxPush/Sources/AmuxPush/Said.swift";
 
 /// Which definitions go to `PUSH_OUTPUT`: what a push says and what that holds.
-const PUSH_VALUES: &[&str] = &["Said", "SignInState", "Wants"];
+const PUSH_VALUES: &[&str] = &["Said", "Wants"];
 
 /// Every value the bridge hands over or takes, by its root types; what
 /// they hold comes along.

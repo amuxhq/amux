@@ -291,9 +291,7 @@ mod tests {
             ),
             (
                 "signed out",
-                of(blocked_of(blocked_notice::Why::SignedOut(
-                    wire::SignInState::Failed as i32,
-                ))),
+                of(blocked_of(blocked_notice::Why::SignedOut(wire::Empty {}))),
             ),
             (
                 "usage limit with a reset",

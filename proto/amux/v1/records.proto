@@ -271,20 +271,11 @@ message AccessWant {
 // person.
 message BlockedNotice {
   oneof why {
-    // How its sign-in stands.
-    SignInState signed_out = 1;
+    Empty signed_out = 1;
     UsageBlock usage = 2;
     // The provider's words.
     string failed = 3;
   }
-}
-
-enum SignInState {
-  SIGN_IN_STATE_UNKNOWN = 0;
-  SIGN_IN_STATE_SIGNED_IN = 1;
-  SIGN_IN_STATE_SIGNED_OUT = 2;
-  SIGN_IN_STATE_EXPIRED = 3;
-  SIGN_IN_STATE_FAILED = 4;
 }
 
 message UsageBlock {
@@ -335,6 +326,9 @@ enum ExitCause {
   // The process ended while a daemon watched, and its journal does not say
   // why.
   EXIT_CAUSE_ENDED_UNEXPECTEDLY = 10;
+  // The provider process ended on its own with a clean status: a person
+  // quit it where it runs.
+  EXIT_CAUSE_QUIT = 11;
 }
 
 // What a row says about the git repository an agent works in.

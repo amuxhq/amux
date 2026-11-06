@@ -6767,6 +6767,14 @@ public struct SignInOfferView: Codable, Hashable, Sendable {
     }
 }
 
+public enum SignInState: String, Codable, Hashable, Sendable, CaseIterable {
+    case unknown = "Unknown"
+    case signedIn = "SignedIn"
+    case signedOut = "SignedOut"
+    case expired = "Expired"
+    case failed = "Failed"
+}
+
 public struct SignInView: Codable, Hashable, Sendable {
     public var state: SignInState
     public var account: String

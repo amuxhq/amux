@@ -172,8 +172,15 @@ pub enum Event {
 }
 
 /// The cause the final boundary gives for a provider's own exit, with its
-/// exit code or signal as the detail.
+/// exit code or signal as the detail. A clean exit is a person quitting it,
+/// not a failure.
 pub fn provider_exit(code: Option<i32>) -> wire::IncarnationEnd {
+    if code == Some(0) {
+        return wire::IncarnationEnd {
+            cause: wire::ExitCause::Quit as i32,
+            detail: None,
+        };
+    }
     wire::IncarnationEnd {
         cause: wire::ExitCause::ProviderExited as i32,
         detail: Some(match code {

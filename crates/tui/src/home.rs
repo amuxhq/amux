@@ -24,7 +24,7 @@ use ui_view::{
     ActivityLine, ExitCause, FleetRow, FleetSection, FleetView, Offline, Reach, SecondLine,
     SectionKind, SessionLine,
 };
-use wire::{Attachment, Kind, Lifecycle, Said, SignInState, Wants};
+use wire::{Attachment, Kind, Lifecycle, Said, Wants};
 
 use crate::chat::composer::editor_lines;
 use crate::editor::Editor;
@@ -2276,14 +2276,7 @@ fn ask_words(wants: &Wants, more: u32) -> String {
 fn said_words(said: &Said, kind: Kind, now_ms: i64) -> String {
     match said {
         Said::Ask { wants, more, .. } => ask_words(wants, *more),
-        Said::SignedOut { state } => {
-            let provider = provider_word(kind);
-            match state {
-                SignInState::Expired => format!("{provider} sign-in expired"),
-                SignInState::Failed => format!("{provider} sign-in failed"),
-                _ => format!("signed out of {provider}"),
-            }
-        }
+        Said::SignedOut => format!("signed out of {}", provider_word(kind)),
         Said::UsageLimit { resets_at_ms } => {
             let mut words = "usage limit reached".to_owned();
             if let Some(at) = resets_at_ms.filter(|at| *at > now_ms) {

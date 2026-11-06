@@ -167,10 +167,18 @@ final class PushWordsTests: XCTestCase {
     }
 
     func testARowNamesTheProviderAndAPushCannot() {
-        XCTAssertEqual(PushWords.body(.signedOut(state: .expired), provider: "Codex"), "Codex sign-in expired")
-        XCTAssertEqual(
-            PushWords.body(.signedOut(state: .expired)),
-            "Signed out of its provider · sign in on its host")
+        XCTAssertEqual(PushWords.body(.signedOut, provider: "Codex"), "Signed out of Codex")
+        XCTAssertEqual(PushWords.body(.signedOut), "Signed out of its provider · sign in on its host")
+    }
+
+    func testANotificationGivesTheProvidersReasonBelowWhatItWants() {
+        let content = UNMutableNotificationContent()
+        PushAlert.write(
+            OpenedPush(
+                host: "h", agent: "a", name: "n",
+                notice: .ask(key: "k", wants: .run(command: "rm -rf target"), why: "Deletes files\nmore", more: 0)),
+            into: content)
+        XCTAssertEqual(content.body, "Wants to run rm -rf target\nDeletes files")
     }
 
     func testALimitAlreadyResetSaysNoTime() {

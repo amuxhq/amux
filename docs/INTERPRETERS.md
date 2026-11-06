@@ -86,11 +86,13 @@ few shapes both readers have: an ask's run, change, tool, question, plan, access
 or provider sentence, or why the agent can't go on (signed out, a spent usage
 limit with its reset, or the provider's failure).
 
-A sign-in or a usage limit the provider reports stands for as long as the
-provider says it does, whether or not a turn ran into it. What a turn ran into
-stays until the provider says it has lifted or the next turn starts, and a
-failure, which has no state of its own, until the next turn. Nothing blocks while
-a turn runs, because a provider may carry on after an error. Each kind recognises
+Blocked means a turn was stopped and that still stands. An idle agent with a
+spent limit or a lapsed sign-in that no turn ran into has nothing it can't go on
+with, so it says nothing; the chat shows that state. A block lasts until the next
+turn starts, or for a sign-in, until the provider reports it is signed in, which
+only a report made after the failure can say: the sign-in and usage state held
+from before it can't. Nothing blocks while a turn runs, because a provider may
+carry on after an error. Each kind recognises
 its own: a refused connection in terminal Claude ends its turn completed, and its
 only word of a spent limit is the error row it writes in place of an answer.
 

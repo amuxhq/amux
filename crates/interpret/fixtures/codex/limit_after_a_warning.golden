@@ -1,0 +1,26 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
+effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"t1\"}}"
+effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
+effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+## 2 fact {"channel":"rpc","json":{"method":"account/updated","params":{"authMode":"chatgpt","planType":"pro","threadId":"t1"}}}
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+## 3 fact {"channel":"rpc","json":{"method":"account/rateLimits/updated","params":{"rateLimits":{"primary":{"resetsAt":1800003600,"usedPercent":96,"windowDurationMins":300}},"threadId":"t1"}}}
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=near 5h:96%(near) servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+## 4 input {"id":"p1","prompt":{"text":"go 1"}}
+effect reply p1 accepted
+effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"7031\",\"input\":[{\"text\":\"go 1\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
+item prompt:7031 prompt final input=p1 at=1800000000000 text="go 1"
+snapshot WORKING queue=[] working_on="go 1" at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=near 5h:96%(near) servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+## 5 fact {"channel":"rpc","json":{"id":"amux-1","result":{"turn":{"id":"turn-1"}}}}
+## 6 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-1","status":"inProgress"}}}}
+## 7 fact {"channel":"rpc","json":{"method":"error","params":{"error":{"additionalDetails":null,"codexErrorInfo":"usageLimitExceeded","message":"refused"},"threadId":"t1","turnId":"turn-1","willRetry":false}}}
+item error:turn-1 error final at=1800000000000 text="" usageLimitExceeded "refused" retry=false 0/0
+## 8 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"error":{"additionalDetails":null,"codexErrorInfo":"usageLimitExceeded","message":"refused"},"id":"turn-1","status":"failed"}}}}
+item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_FAILED started=1800000000000
+snapshot IDLE queue=[] working_on="go 1" at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=near 5h:96%(near) servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
+notice blocked usage resets=None
+turn_end 1 last=-

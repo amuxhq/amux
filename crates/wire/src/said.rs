@@ -8,7 +8,7 @@
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::{ExitCause, Notice, SignInState, ask_notice, blocked_notice, notice};
+use crate::{ExitCause, Notice, ask_notice, blocked_notice, notice};
 
 impl ExitCause {
     /// Whether the agent ended in a way nobody meant. A cause this build
@@ -16,7 +16,7 @@ impl ExitCause {
     pub fn failed(cause: i32) -> bool {
         !matches!(
             Self::try_from(cause).unwrap_or_default(),
-            Self::Unspecified | Self::Finished | Self::Stopped | Self::Killed
+            Self::Unspecified | Self::Finished | Self::Stopped | Self::Killed | Self::Quit
         )
     }
 }
@@ -33,10 +33,10 @@ pub enum Said {
         /// How many other asks are open.
         more: u32,
     },
-    /// The provider is signed out, its sign-in expired, or signing in failed.
-    SignedOut { state: SignInState },
-    /// A usage window is spent; it resets at the latest reset of the windows
-    /// that are, when the provider says.
+    /// A turn stopped because the provider isn't signed in.
+    SignedOut,
+    /// A turn stopped at a spent usage window; it resets at the latest reset
+    /// of the windows that are, when the provider says.
     UsageLimit { resets_at_ms: Option<i64> },
     /// The provider's words for why its turn failed.
     Failed { message: String },
@@ -123,9 +123,7 @@ impl Said {
                 more: ask.more,
             },
             notice::Of::Blocked(blocked) => match blocked.why? {
-                blocked_notice::Why::SignedOut(state) => Self::SignedOut {
-                    state: SignInState::try_from(state).unwrap_or_default(),
-                },
+                blocked_notice::Why::SignedOut(_) => Self::SignedOut,
                 blocked_notice::Why::Usage(usage) => Self::UsageLimit {
                     resets_at_ms: usage.resets_at_ms,
                 },

@@ -472,9 +472,7 @@ pub fn authored_home() -> HomeScene {
             20,
             None,
             Some(SessionLine {
-                said: Some(Said::SignedOut {
-                    state: wire::SignInState::SignedOut,
-                }),
+                said: Some(Said::SignedOut),
                 ..SessionLine::default()
             }),
         ),

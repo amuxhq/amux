@@ -645,9 +645,8 @@ pub struct BlockedNotice {
 pub mod blocked_notice {
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Why {
-        /// How its sign-in stands.
-        #[prost(enumeration = "super::SignInState", tag = "1")]
-        SignedOut(i32),
+        #[prost(message, tag = "1")]
+        SignedOut(super::Empty),
         #[prost(message, tag = "2")]
         Usage(super::UsageBlock),
         /// The provider's words.
@@ -1030,42 +1029,6 @@ impl ::prost::Name for Lagged {
         "type.googleapis.com/amux.v1.Lagged".into()
     }
 }
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum SignInState {
-    Unknown = 0,
-    SignedIn = 1,
-    SignedOut = 2,
-    Expired = 3,
-    Failed = 4,
-}
-impl SignInState {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unknown => "SIGN_IN_STATE_UNKNOWN",
-            Self::SignedIn => "SIGN_IN_STATE_SIGNED_IN",
-            Self::SignedOut => "SIGN_IN_STATE_SIGNED_OUT",
-            Self::Expired => "SIGN_IN_STATE_EXPIRED",
-            Self::Failed => "SIGN_IN_STATE_FAILED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "SIGN_IN_STATE_UNKNOWN" => Some(Self::Unknown),
-            "SIGN_IN_STATE_SIGNED_IN" => Some(Self::SignedIn),
-            "SIGN_IN_STATE_SIGNED_OUT" => Some(Self::SignedOut),
-            "SIGN_IN_STATE_EXPIRED" => Some(Self::Expired),
-            "SIGN_IN_STATE_FAILED" => Some(Self::Failed),
-            _ => None,
-        }
-    }
-}
 /// The kind is the interpreter.
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -1133,6 +1096,9 @@ pub enum ExitCause {
     /// The process ended while a daemon watched, and its journal does not say
     /// why.
     EndedUnexpectedly = 10,
+    /// The provider process ended on its own with a clean status: a person
+    /// quit it where it runs.
+    Quit = 11,
 }
 impl ExitCause {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1152,6 +1118,7 @@ impl ExitCause {
             Self::DirectoryFailed => "EXIT_CAUSE_DIRECTORY_FAILED",
             Self::EndedWhileAway => "EXIT_CAUSE_ENDED_WHILE_AWAY",
             Self::EndedUnexpectedly => "EXIT_CAUSE_ENDED_UNEXPECTEDLY",
+            Self::Quit => "EXIT_CAUSE_QUIT",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1168,6 +1135,7 @@ impl ExitCause {
             "EXIT_CAUSE_DIRECTORY_FAILED" => Some(Self::DirectoryFailed),
             "EXIT_CAUSE_ENDED_WHILE_AWAY" => Some(Self::EndedWhileAway),
             "EXIT_CAUSE_ENDED_UNEXPECTEDLY" => Some(Self::EndedUnexpectedly),
+            "EXIT_CAUSE_QUIT" => Some(Self::Quit),
             _ => None,
         }
     }
@@ -3926,6 +3894,42 @@ impl ToolServerStatus {
             "TOOL_SERVER_STATUS_READY" => Some(Self::Ready),
             "TOOL_SERVER_STATUS_FAILED" => Some(Self::Failed),
             "TOOL_SERVER_STATUS_NEEDS_AUTH" => Some(Self::NeedsAuth),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SignInState {
+    Unknown = 0,
+    SignedIn = 1,
+    SignedOut = 2,
+    Expired = 3,
+    Failed = 4,
+}
+impl SignInState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unknown => "SIGN_IN_STATE_UNKNOWN",
+            Self::SignedIn => "SIGN_IN_STATE_SIGNED_IN",
+            Self::SignedOut => "SIGN_IN_STATE_SIGNED_OUT",
+            Self::Expired => "SIGN_IN_STATE_EXPIRED",
+            Self::Failed => "SIGN_IN_STATE_FAILED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SIGN_IN_STATE_UNKNOWN" => Some(Self::Unknown),
+            "SIGN_IN_STATE_SIGNED_IN" => Some(Self::SignedIn),
+            "SIGN_IN_STATE_SIGNED_OUT" => Some(Self::SignedOut),
+            "SIGN_IN_STATE_EXPIRED" => Some(Self::Expired),
+            "SIGN_IN_STATE_FAILED" => Some(Self::Failed),
             _ => None,
         }
     }

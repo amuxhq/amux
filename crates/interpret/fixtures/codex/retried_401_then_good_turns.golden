@@ -1,0 +1,35 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
+effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"t1\"}}"
+effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
+effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+## 2 fact {"channel":"rpc","json":{"method":"account/updated","params":{"authMode":"chatgpt","planType":"pro","threadId":"t1"}}}
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+## 3 input {"id":"p1","prompt":{"text":"go 1"}}
+effect reply p1 accepted
+effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"7031\",\"input\":[{\"text\":\"go 1\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
+item prompt:7031 prompt final input=p1 at=1800000000000 text="go 1"
+snapshot WORKING queue=[] working_on="go 1" at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+## 4 fact {"channel":"rpc","json":{"id":"amux-1","result":{"turn":{"id":"turn-1"}}}}
+## 5 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-1","status":"inProgress"}}}}
+## 6 fact {"channel":"rpc","json":{"method":"error","params":{"error":{"additionalDetails":null,"codexErrorInfo":"unauthorized","message":"refused"},"threadId":"t1","turnId":"turn-1","willRetry":true}}}
+item error:turn-1 error final at=1800000000000 text="" unauthorized "refused" retry=true 0/0
+snapshot WORKING queue=[] working_on="go 1" at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=SIGN_IN_STATE_FAILED - "refused" background=?
+## 7 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"error":null,"id":"turn-1","status":"completed"}}}}
+item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000000
+snapshot IDLE queue=[] working_on="go 1" at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=SIGN_IN_STATE_FAILED - "refused" background=[]
+turn_end 1 last=-
+## 8 input {"id":"p2","prompt":{"text":"go 2"}}
+effect reply p2 accepted
+effect write "{\"id\":\"amux-2\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"7032\",\"input\":[{\"text\":\"go 2\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
+item prompt:7032 prompt final input=p2 at=1800000000000 text="go 2"
+snapshot WORKING queue=[] working_on="go 2" at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=SIGN_IN_STATE_FAILED - "refused" background=[]
+## 9 fact {"channel":"rpc","json":{"id":"amux-2","result":{"turn":{"id":"turn-2"}}}}
+## 10 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-2","status":"inProgress"}}}}
+## 11 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"error":null,"id":"turn-2","status":"completed"}}}}
+item turn:2 turn final at=1800000000000 text="" #2 TURN_OUTCOME_COMPLETED started=1800000000000
+snapshot IDLE queue=[] working_on="go 2" at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=SIGN_IN_STATE_FAILED - "refused" background=[]
+turn_end 2 last=-

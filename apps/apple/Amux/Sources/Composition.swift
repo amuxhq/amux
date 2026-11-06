@@ -155,7 +155,7 @@ final class Composition {
             networkWatch: SystemNetworkWatch())
         self.runtime = runtime
         let environment: PushDevice.Environment
-        #if DEBUG
+        #if AMUX_DEBUG_TOOLS
         environment = .sandbox
         #else
         environment = .production

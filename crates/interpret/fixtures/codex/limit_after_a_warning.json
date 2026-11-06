@@ -1,0 +1,134 @@
+{
+ "about": "review",
+ "spec": {
+  "created_at_ms": 1800000000000
+ },
+ "events": [
+  {
+   "fact": {
+    "channel": "rpc",
+    "json": {
+     "id": 2,
+     "result": {
+      "thread": {
+       "id": "t1",
+       "cliVersion": "0.157.0",
+       "turns": []
+      },
+      "model": "gpt-5.6-luna",
+      "approvalPolicy": "on-request",
+      "sandbox": {
+       "type": "workspaceWrite"
+      },
+      "reasoningEffort": null
+     }
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "rpc",
+    "json": {
+     "method": "account/updated",
+     "params": {
+      "threadId": "t1",
+      "authMode": "chatgpt",
+      "planType": "pro"
+     }
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "rpc",
+    "json": {
+     "method": "account/rateLimits/updated",
+     "params": {
+      "threadId": "t1",
+      "rateLimits": {
+       "primary": {
+        "usedPercent": 96,
+        "windowDurationMins": 300,
+        "resetsAt": 1800003600
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "id": "p1",
+    "prompt": {
+     "text": "go 1"
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "rpc",
+    "json": {
+     "id": "amux-1",
+     "result": {
+      "turn": {
+       "id": "turn-1"
+      }
+     }
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "rpc",
+    "json": {
+     "method": "turn/started",
+     "params": {
+      "threadId": "t1",
+      "turn": {
+       "id": "turn-1",
+       "status": "inProgress"
+      }
+     }
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "rpc",
+    "json": {
+     "method": "error",
+     "params": {
+      "threadId": "t1",
+      "turnId": "turn-1",
+      "willRetry": false,
+      "error": {
+       "message": "refused",
+       "codexErrorInfo": "usageLimitExceeded",
+       "additionalDetails": null
+      }
+     }
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "rpc",
+    "json": {
+     "method": "turn/completed",
+     "params": {
+      "threadId": "t1",
+      "turn": {
+       "id": "turn-1",
+       "status": "failed",
+       "error": {
+        "message": "refused",
+        "codexErrorInfo": "usageLimitExceeded",
+        "additionalDetails": null
+       }
+      }
+     }
+    }
+   }
+  }
+ ]
+}

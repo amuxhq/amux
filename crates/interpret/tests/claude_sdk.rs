@@ -33,6 +33,8 @@ goldens! {
     amuxs_own_tools_draw_a_message_or_nothing => "amux_tools",
     lifecycle_events_write_boundaries_and_interrupt => "lifecycle",
     permission_asks_keep_scopes_reason_and_description => "asks",
+    a_failed_sign_in_says_nothing_after_good_turns => "sign_in_failed_then_good_turns",
+    a_limit_after_a_warning_stays_said => "limit_after_a_warning",
     a_flagged_ask_offers_no_always_and_defaults_to_no => "flagged_ask",
     questions_and_plan_verdicts_are_asks => "verdicts",
     plans_are_items_with_their_verdict => "plans",

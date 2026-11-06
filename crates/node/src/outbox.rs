@@ -49,17 +49,33 @@ impl PushSender for NoopSender {
     }
 }
 
+/// How long a push may take. Past it the send fails and is tried again: the
+/// row stays marked as being sent until a send ends, so one that hung on a
+/// sleeping network would never be retried.
+const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Seals each push to every host that wants it and posts them to the
 /// account's endpoint, which finds each host's device and calls its platform
 /// push service. The endpoint sees only which host gets what ciphertext.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct HttpSender {
     client: reqwest::Client,
 }
 
 impl HttpSender {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            client: reqwest::Client::builder()
+                .timeout(SEND_TIMEOUT)
+                .build()
+                .unwrap_or_default(),
+        }
+    }
+}
+
+impl Default for HttpSender {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

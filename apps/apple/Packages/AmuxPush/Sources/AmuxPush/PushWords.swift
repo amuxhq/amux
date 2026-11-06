@@ -11,15 +11,9 @@ public enum PushWords {
         case .ask(_, let wants, _, let more):
             let words = self.wants(wants)
             return more > 0 ? String(localized: "\(words) · \(more) more") : words
-        case .signedOut(let state):
-            guard let provider else {
-                return String(localized: "Signed out of its provider · sign in on its host")
-            }
-            return switch state {
-            case .expired: String(localized: "\(provider) sign-in expired")
-            case .failed: String(localized: "\(provider) sign-in failed")
-            default: String(localized: "Signed out of \(provider)")
-            }
+        case .signedOut:
+            return provider.map { String(localized: "Signed out of \($0)") }
+                ?? String(localized: "Signed out of its provider · sign in on its host")
         case .usageLimit(let resetsAtMs):
             guard let resetsAtMs else { return String(localized: "Usage limit reached") }
             let at = Date(timeIntervalSince1970: TimeInterval(resetsAtMs) / 1000)
@@ -34,6 +28,14 @@ public enum PushWords {
                 ? String(localized: "Stopped unexpectedly")
                 : String(localized: "Stopped unexpectedly: \(said)")
         }
+    }
+
+    /// The provider's reason for an ask, which a notification has room for
+    /// and a row doesn't.
+    public static func reason(_ said: Said) -> String? {
+        guard case .ask(_, _, let why, _) = said else { return nil }
+        let reason = firstLine(why)
+        return reason.isEmpty ? nil : reason
     }
 
     private static func wants(_ wants: Wants) -> String {

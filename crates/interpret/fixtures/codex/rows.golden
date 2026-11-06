@@ -14,7 +14,6 @@ snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[docs:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 5 fact {"channel":"rpc","json":{"method":"account/rateLimits/updated","params":{"rateLimits":{"credits":{"balance":"0","hasCredits":false,"unlimited":false},"primary":{"resetsAt":1800003600,"usedPercent":100,"windowDurationMins":300},"rateLimitReachedType":"primary","secondary":{"resetsAt":1800600000,"usedPercent":40,"windowDurationMins":10080}},"threadId":"t1"}}}
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=blocked 5h:100%(blocked) 7d:40%(ok) credits=0 servers=[docs:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
-notice blocked usage resets=Some(1800003600000)
 ## 6 input {"id":"p1","prompt":{"text":"Refactor the parser."}}
 effect reply p1 accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"7031\",\"input\":[{\"text\":\"Refactor the parser.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
@@ -70,15 +69,12 @@ effect write "{\"id\":\"amux-jobs-1-1\",\"method\":\"thread/backgroundTerminals/
 item cmd-1 work open at=1800000001000 text="[watching]\n" command "cargo watch" cwd=/work background TOOL_STATE_RUNNING
 item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED started=1799999996000
 snapshot IDLE queue=[] working_on="Splitting the lexer" at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=48000/258400 plan=[1:TASK_LIST_STATUS_COMPLETED:"Read the parser",2:TASK_LIST_STATUS_IN_PROGRESS:"Split the lexer",3:TASK_LIST_STATUS_PENDING:"Run the tests"] usage=blocked 5h:100%(blocked) 7d:40%(ok) credits=0 servers=[docs:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
-notice blocked usage resets=Some(1800003600000)
 turn_end 1 last=msg-1
 ## 35 fact {"channel":"rpc","json":{"id":"amux-jobs-1-1","result":{"data":[{"command":"/bin/zsh -lc 'cargo watch'","cpuPercent":null,"cwd":"/work","itemId":"cmd-1","osPid":null,"processId":"91","rssKb":null}],"nextCursor":null}}}
 snapshot IDLE queue=[] working_on="Splitting the lexer" at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=48000/258400 plan=[1:TASK_LIST_STATUS_COMPLETED:"Read the parser",2:TASK_LIST_STATUS_IN_PROGRESS:"Split the lexer",3:TASK_LIST_STATUS_PENDING:"Run the tests"] usage=blocked 5h:100%(blocked) 7d:40%(ok) credits=0 servers=[docs:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[cmd-1:"/bin/zsh -lc 'cargo watch'"@1800000001000]
-notice blocked usage resets=Some(1800003600000)
 ## 36 fact {"channel":"rpc","json":{"method":"item/completed","params":{"completedAtMs":1800000010000,"item":{"aggregatedOutput":"[watching]\n[done]\n","command":"/bin/zsh -lc 'cargo watch'","commandActions":[{"command":"cargo watch","type":"unknown"}],"cwd":"/work","durationMs":9000,"exitCode":0,"id":"cmd-1","status":"completed","type":"commandExecution"},"threadId":"t1","turnId":"turn-1"}}}
 item cmd-1 work final at=1800000001000 text="[watching]\n[done]\n" command "cargo watch" cwd=/work exit=0 background TOOL_STATE_SUCCEEDED started=1800000001000 ended=1800000010000
 snapshot IDLE queue=[] working_on="Splitting the lexer" at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=48000/258400 plan=[1:TASK_LIST_STATUS_COMPLETED:"Read the parser",2:TASK_LIST_STATUS_IN_PROGRESS:"Split the lexer",3:TASK_LIST_STATUS_PENDING:"Run the tests"] usage=blocked 5h:100%(blocked) 7d:40%(ok) credits=0 servers=[docs:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
-notice blocked usage resets=Some(1800003600000)
 ## 37 input {"id":"p2","prompt":{"text":"Run the tests."}}
 effect reply p2 accepted
 effect write "{\"id\":\"amux-2\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"7032\",\"input\":[{\"text\":\"Run the tests.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
@@ -94,8 +90,8 @@ item error:turn-2 error final at=1800000000000 text="" responseStreamDisconnecte
 item error:turn-2 error final at=1800000000000 text="" other "stream closed" retry=false 0/0
 item turn:2 turn final at=1800000000000 text="" #2 TURN_OUTCOME_FAILED started=1800000000000
 snapshot IDLE queue=[] working_on="Splitting the lexer" at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=48000/258400 plan=[1:TASK_LIST_STATUS_COMPLETED:"Read the parser",2:TASK_LIST_STATUS_IN_PROGRESS:"Split the lexer",3:TASK_LIST_STATUS_PENDING:"Run the tests"] usage=blocked 5h:100%(blocked) 7d:40%(ok) credits=0 servers=[docs:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
-notice blocked usage resets=Some(1800003600000)
+notice blocked failed "stream closed"
 turn_end 2 last=-
 ## 43 fact {"channel":"rpc","json":{"method":"account/updated","params":{"authMode":null,"planType":null,"threadId":"t1"}}}
 snapshot IDLE queue=[] working_on="Splitting the lexer" at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=48000/258400 plan=[1:TASK_LIST_STATUS_COMPLETED:"Read the parser",2:TASK_LIST_STATUS_IN_PROGRESS:"Split the lexer",3:TASK_LIST_STATUS_PENDING:"Run the tests"] usage=blocked 5h:100%(blocked) 7d:40%(ok) credits=0 servers=[docs:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_OUT - background=[]
-notice blocked signed-out 2
+notice blocked failed "stream closed"

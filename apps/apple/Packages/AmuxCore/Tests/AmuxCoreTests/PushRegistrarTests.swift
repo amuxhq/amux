@@ -318,7 +318,7 @@ final class SealedPayloadTests: XCTestCase {
             recipientKey: key.publicKey, ciphersuite: .Curve25519_SHA256_ChachaPoly,
             info: Data("amux push 1".utf8))
         let plain = """
-            {"host":"\(host)","agent":"\(agent)","name":"asker","notice":{"SignedOut":{"state":"Failed"}}}
+            {"host":"\(host)","agent":"\(agent)","name":"asker","notice":"SignedOut"}
             """
         let ciphertext = try sender.seal(Data(plain.utf8))
         return (sender.encapsulatedKey + ciphertext).base64EncodedString()

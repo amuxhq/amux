@@ -141,7 +141,14 @@ impl State {
                         state: SignInState::SignedIn as i32,
                         ..Default::default()
                     },
-                })
+                });
+                if self
+                    .sign_in
+                    .as_ref()
+                    .is_some_and(|sign_in| sign_in.state == SignInState::SignedIn as i32)
+                {
+                    self.shared.signed_in();
+                }
             }
             // Every reset, whatever started it, is a new session the next
             // init names.
@@ -787,7 +794,7 @@ impl State {
     /// Claude rejected the credential: the sign-in problem the strip
     /// shows until Claude reports an account again.
     /// When the spent usage windows reset.
-    pub(super) fn spent_until(&self) -> Option<i64> {
+    fn spent_until(&self) -> Option<i64> {
         self.usage.as_ref().and_then(|usage| {
             crate::notice::spent_until(
                 usage

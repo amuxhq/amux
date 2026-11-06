@@ -62,6 +62,7 @@ pub fn exit_words(cause: i32, detail: Option<&str>) -> String {
         Ok(ExitCause::Finished) => "finished",
         Ok(ExitCause::Stopped) => "stopped",
         Ok(ExitCause::Killed) => "killed",
+        Ok(ExitCause::Quit) => "quit",
         Ok(ExitCause::ProviderExited) => "the provider exited",
         // Both read as the person sees them: the agent ended while no
         // daemon was there, whether it drained or was found dead.

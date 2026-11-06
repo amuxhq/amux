@@ -2364,9 +2364,7 @@ fn each_row_says_what_its_state_calls_for() {
             why: Some(why),
         })),
     };
-    let signed_out = blocked(wire::blocked_notice::Why::SignedOut(
-        wire::SignInState::Expired as i32,
-    ));
+    let signed_out = blocked(wire::blocked_notice::Why::SignedOut(wire::Empty {}));
     let spent = blocked(wire::blocked_notice::Why::Usage(wire::UsageBlock {
         resets_at_ms: Some(9_000),
     }));
@@ -2473,12 +2471,7 @@ fn each_row_says_what_its_state_calls_for() {
         said["idle"],
         SecondLine::LastSaid("Done: the tests pass.".into())
     );
-    assert_eq!(
-        said["signed-out"],
-        SecondLine::Said(wire::Said::SignedOut {
-            state: wire::SignInState::Expired
-        })
-    );
+    assert_eq!(said["signed-out"], SecondLine::Said(wire::Said::SignedOut));
     assert_eq!(
         said["limited"],
         SecondLine::Said(wire::Said::UsageLimit {

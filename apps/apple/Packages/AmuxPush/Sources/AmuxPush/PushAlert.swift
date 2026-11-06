@@ -7,7 +7,8 @@ public enum PushAlert {
     /// notifications read; and an agent's notifications group together.
     public static func write(_ push: OpenedPush, into content: UNMutableNotificationContent) {
         if !push.name.isEmpty { content.title = push.name }
-        content.body = PushWords.body(push.notice)
+        content.body = [PushWords.body(push.notice), PushWords.reason(push.notice)]
+            .compactMap { $0 }.joined(separator: "\n")
         content.threadIdentifier = "\(push.host)/\(push.agent)"
         content.userInfo["amux"] = ["host": push.host, "agent": push.agent]
     }

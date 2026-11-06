@@ -970,6 +970,20 @@ impl<A: OpenAsk> Shared<A> {
     /// failure names it: one that follows, such as the turn's own error
     /// result, is its consequence. It says nothing until the turn is over,
     /// because a provider may carry on after an error it reported.
+    /// The provider said it is signed in again, so a turn it stopped for want
+    /// of that no longer stands. Only this report lifts it: a sign-in state
+    /// or a usage reading held from before the failure says nothing of it.
+    pub fn signed_in(&mut self) {
+        if matches!(
+            self.trouble
+                .as_ref()
+                .and_then(|trouble| trouble.why.as_ref()),
+            Some(wire::blocked_notice::Why::SignedOut(_))
+        ) {
+            self.trouble = None;
+        }
+    }
+
     pub fn stopped_by(&mut self, why: wire::BlockedNotice) {
         self.trouble.get_or_insert(why);
     }
@@ -981,25 +995,14 @@ impl<A: OpenAsk> Shared<A> {
     /// What the agent wants of the person: its head ask, which `ask` projects
     /// with how many others are open and the newest plan's title, else the
     /// failure that ended its turn.
-    pub(crate) fn notice(
-        &self,
-        ask: impl FnOnce(&A, u32, &str) -> Notice,
-        standing: crate::notice::Standing,
-    ) -> Option<Notice> {
+    pub fn notice(&self, ask: impl FnOnce(&A, u32, &str) -> Notice) -> Option<Notice> {
         let open = self.asks.open_asks();
         if let Some(head) = open.first() {
             return Some(ask(head, open.len() as u32 - 1, &self.plan_title));
         }
-        if self.busy {
-            return None;
-        }
-        standing
-            .blocked()
-            .or_else(|| {
-                self.trouble
-                    .clone()
-                    .filter(|trouble| !standing.lifted(trouble))
-            })
+        self.trouble
+            .clone()
+            .filter(|_| !self.busy)
             .map(|why| Notice {
                 of: Some(wire::notice::Of::Blocked(why)),
             })
@@ -1589,6 +1592,7 @@ fn ended_words(end: Option<&wire::IncarnationEnd>) -> String {
         Ok(ExitCause::Finished) => "finished",
         Ok(ExitCause::Stopped) => "stopped",
         Ok(ExitCause::Killed) => "killed",
+        Ok(ExitCause::Quit) => "quit",
         Ok(ExitCause::ProviderExited) => "the provider exited",
         Ok(ExitCause::DaemonLost | ExitCause::EndedWhileAway) => "ended while its daemon was away",
         Ok(ExitCause::Orphaned) => "ended while waiting for an answer nobody could give",

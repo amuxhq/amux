@@ -709,30 +709,6 @@
         }
       }
     },
-    "%@ sign-in expired" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ sign-in expired"
-          }
-        }
-      }
-    },
-    "%@ sign-in failed" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ sign-in failed"
-          }
-        }
-      }
-    },
     "%@ subagents" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",

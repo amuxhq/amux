@@ -60,11 +60,11 @@ final class FleetWordsTests: XCTestCase {
 
     func testAStuckAgentWarnsAndSaysWhenItCanGoOn() {
         let signedOut = FleetWords.secondLine(
-            .said(.signedOut(state: .expired)), kind: .codex, now: now)
-        XCTAssertEqual(signedOut?.text, "Codex sign-in expired")
+            .said(.signedOut), kind: .codex, now: now)
+        XCTAssertEqual(signedOut?.text, "Signed out of Codex")
         XCTAssertEqual(signedOut?.ink, .warning)
         XCTAssertEqual(
-            said(.said(.signedOut(state: .signedOut))), "Signed out of Claude")
+            said(.said(.signedOut)), "Signed out of Claude")
         XCTAssertEqual(said(.said(.usageLimit(resetsAtMs: nil))), "Usage limit reached")
         XCTAssertEqual(
             said(.said(.usageLimit(resetsAtMs: nowMs - 1))), "Usage limit reached",

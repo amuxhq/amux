@@ -93,6 +93,7 @@ fn exit_words(agent: &Agent) -> Option<String> {
         ExitCause::Finished => "finished",
         ExitCause::Stopped => "stopped",
         ExitCause::Killed => "killed",
+        ExitCause::Quit => "quit",
         ExitCause::ProviderExited => "the provider exited",
         ExitCause::DaemonLost | ExitCause::EndedWhileAway => "while the daemon was away",
         ExitCause::Orphaned => "orphaned while waiting for you",

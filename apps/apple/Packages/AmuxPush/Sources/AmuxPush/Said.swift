@@ -7,10 +7,10 @@ import Foundation
 public enum Said: Codable, Hashable, Sendable {
     /// The head ask.
     case ask(key: String, wants: Wants, why: String, more: UInt32)
-    /// The provider is signed out, its sign-in expired, or signing in failed.
-    case signedOut(state: SignInState)
-    /// A usage window is spent; it resets at the latest reset of the windows
-    /// that are, when the provider says.
+    /// A turn stopped because the provider isn't signed in.
+    case signedOut
+    /// A turn stopped at a spent usage window; it resets at the latest reset
+    /// of the windows that are, when the provider says.
     case usageLimit(resetsAtMs: Int64?)
     /// The provider's words for why its turn failed.
     case failed(message: String)
@@ -20,7 +20,6 @@ public enum Said: Codable, Hashable, Sendable {
 
     private enum Tag: String, CodingKey {
         case ask = "Ask"
-        case signedOut = "SignedOut"
         case usageLimit = "UsageLimit"
         case failed = "Failed"
         case died = "Died"
@@ -31,10 +30,6 @@ public enum Said: Codable, Hashable, Sendable {
         case wants
         case why
         case more
-    }
-
-    private enum SignedOutKeys: String, CodingKey {
-        case state
     }
 
     private enum UsageLimitKeys: String, CodingKey {
@@ -50,6 +45,17 @@ public enum Said: Codable, Hashable, Sendable {
     }
 
     public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "SignedOut": self = .signedOut
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no Said is named \(_name)")
+            }
+            return
+        }
         let _container = try decoder.container(keyedBy: Tag.self)
         guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
             throw DecodingError.dataCorrupted(
@@ -66,11 +72,6 @@ public enum Said: Codable, Hashable, Sendable {
                 wants: try _fields.decode(Wants.self, forKey: .wants),
                 why: try _fields.decode(String.self, forKey: .why),
                 more: try _fields.decode(UInt32.self, forKey: .more))
-        case .signedOut:
-            let _fields = try _container.nestedContainer(
-                keyedBy: SignedOutKeys.self, forKey: .signedOut)
-            self = .signedOut(
-                state: try _fields.decode(SignInState.self, forKey: .state))
         case .usageLimit:
             let _fields = try _container.nestedContainer(
                 keyedBy: UsageLimitKeys.self, forKey: .usageLimit)
@@ -98,10 +99,9 @@ public enum Said: Codable, Hashable, Sendable {
             try _fields.encode(wants, forKey: .wants)
             try _fields.encode(why, forKey: .why)
             try _fields.encode(more, forKey: .more)
-        case .signedOut(let state):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: SignedOutKeys.self, forKey: .signedOut)
-            try _fields.encode(state, forKey: .state)
+        case .signedOut:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("SignedOut")
         case .usageLimit(let resetsAtMs):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: UsageLimitKeys.self, forKey: .usageLimit)
@@ -116,14 +116,6 @@ public enum Said: Codable, Hashable, Sendable {
             try _fields.encode(detail, forKey: .detail)
         }
     }
-}
-
-public enum SignInState: String, Codable, Hashable, Sendable, CaseIterable {
-    case unknown = "Unknown"
-    case signedIn = "SignedIn"
-    case signedOut = "SignedOut"
-    case expired = "Expired"
-    case failed = "Failed"
 }
 
 public enum Wants: Codable, Hashable, Sendable {

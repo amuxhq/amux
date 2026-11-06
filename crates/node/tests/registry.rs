@@ -1200,8 +1200,8 @@ async fn a_restarted_daemon_adopts_live_agents_and_sweeps_exited_ones() {
         .unwrap();
     assert_eq!(row.lifecycle, Lifecycle::Exited as i32);
     // Its journal says why it ended, though no daemon saw it go.
-    assert_eq!(row.exit_cause, ExitCause::ProviderExited as i32);
-    assert_eq!(row.exit_detail.as_deref(), Some("exit code 0"));
+    assert_eq!(row.exit_cause, ExitCause::Quit as i32);
+    assert_eq!(row.exit_detail, None);
     assert_eq!(
         row.ingest_cursor,
         journal_end(&leaves_dir),

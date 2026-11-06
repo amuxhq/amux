@@ -43,7 +43,7 @@ public struct PushAccount: Sendable, Equatable {
 /// unknown, because a host that reads this phone's entry without it forgets
 /// the key and stops pushing to it.
 ///
-/// Everything here is retried by the next change, or the next launch. Taking
+/// Everything here is retried the next time the app comes forward. Taking
 /// notifications away goes through whatever fails: with the key gone and
 /// unsaid, a device row left behind receives nothing a host could seal.
 @MainActor
@@ -94,9 +94,10 @@ public final class PushRegistrar {
     }
 
     /// Whether iOS lets this app notify: it can be taken away in Settings at
-    /// any time, and there is no telling but to read it.
+    /// any time, and there is no telling but to read it. It is read whenever
+    /// the app comes forward, so an answer that changes nothing is still the
+    /// moment to try again what failed, as a device row on a bad connection.
     public func permitted(_ permitted: Bool) {
-        guard permitted != self.permitted else { return }
         self.permitted = permitted
         settle()
     }

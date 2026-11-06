@@ -278,8 +278,11 @@ def main() -> None:
     failures = bundle_violations(info, grants, settings, APP)
     appex = APP / EXTENSION
     if appex.is_dir():
-        extension_settings = next(row["buildSettings"] for row in settings_rows
-                                  if row["target"] == "AmuxNotifications")
+        # By target, not by the scheme above: a scheme lists its own targets,
+        # and the extension is only a dependency of the app.
+        extension_settings = json.loads(run([
+            "xcodebuild", "-project", "apps/apple/Amux.xcodeproj", "-target", "AmuxNotifications",
+            "-configuration", "Release", "-showBuildSettings", "-json"]).stdout)[0]["buildSettings"]
         extension_info = plistlib.loads((appex / "Info.plist").read_bytes())
         failures += extension_violations(
             info, grants, extension_info, granted(appex, extension_settings),

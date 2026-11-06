@@ -252,16 +252,19 @@ final class PushRegistrarTests: XCTestCase {
         XCTAssertNil(try XCTUnwrap(said.last).key)
     }
 
-    func testARowThatCouldntBeWrittenIsTriedAtTheNextChange() async {
+    func testARowThatCouldntBeWrittenIsTriedWhenTheAppComesForward() async {
         cloud.refuse(true)
         let pushes = await registered()
         XCTAssertTrue(cloud.registered.isEmpty)
         cloud.refuse(false)
-        pushes.accounts(adaAccount(wanted: true) + [
-            PushAccount(account: AccountId("bo"), profile: "bo-profile", wanted: false),
-        ])
+        // What iOS says hasn't changed, and reading it is still the moment.
+        pushes.permitted(true)
         await pushes.settled()
         XCTAssertEqual(cloud.registered.count, 1)
+        pushes.permitted(true)
+        await pushes.settled()
+        XCTAssertEqual(cloud.registered.count, 1, "and a row written isn't written again")
+        XCTAssertEqual(said.count, 1)
     }
 
     func testAKeychainThatCantBeReadChangesNothing() async {

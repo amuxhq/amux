@@ -132,11 +132,11 @@ fn an_exit_that_leaves_an_item_streaming_breaks_its_check() {
             ..Default::default()
         },
     );
-    assert_eq!(shared.finish(emit, Vec::new()).broken, None);
+    assert_eq!(shared.finish(emit, Vec::new(), None).broken, None);
     // The provider dies and the interpreter leaves the item streaming.
     shared.provider_exited();
     let broken = shared
-        .finish(interpret::Emit::default(), Vec::new())
+        .finish(interpret::Emit::default(), Vec::new(), None)
         .broken
         .map(|broken| broken.invariant);
     assert_eq!(broken, Some(checks::EXIT_LEFT_OPEN));
@@ -203,7 +203,7 @@ fn an_answer_accepted_for_a_closed_ask_breaks_its_check() {
     });
     let mut emit = interpret::Emit::default();
     shared.close_ask("ask:1");
-    let ok = shared.finish(emit, Vec::new());
+    let ok = shared.finish(emit, Vec::new(), None);
     assert_eq!(ok.broken, None);
     // A later answer to the closed ask is refused, as it must be; then the
     // interpreter takes it anyway.
@@ -211,7 +211,7 @@ fn an_answer_accepted_for_a_closed_ask_breaks_its_check() {
     assert!(shared.answer(&mut emit, b"late", "ask:1").is_none());
     shared.accept(&mut emit, b"late", false);
     let broken = shared
-        .finish(emit, Vec::new())
+        .finish(emit, Vec::new(), None)
         .broken
         .map(|broken| broken.invariant);
     assert_eq!(broken, Some(checks::CLOSED_ASK_ANSWERED));

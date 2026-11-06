@@ -43,11 +43,12 @@ pub fn attention(agent: &Agent) -> Attention {
 /// cause unknown or not given, since unknown is not failure; anything else
 /// failed, in the cause's words followed by its own.
 pub fn exit_cause(agent: &Agent) -> ExitCause {
-    match wire::ExitCause::try_from(agent.exit_cause) {
-        Ok(wire::ExitCause::Finished) => ExitCause::Finished,
-        Ok(wire::ExitCause::Stopped | wire::ExitCause::Killed | wire::ExitCause::Unspecified)
-        | Err(_) => ExitCause::Ended,
-        Ok(_) => ExitCause::Failed(exit_words(agent.exit_cause, agent.exit_detail.as_deref())),
+    if wire::ExitCause::failed(agent.exit_cause) {
+        ExitCause::Failed(exit_words(agent.exit_cause, agent.exit_detail.as_deref()))
+    } else if agent.exit_cause == wire::ExitCause::Finished as i32 {
+        ExitCause::Finished
+    } else {
+        ExitCause::Ended
     }
 }
 
@@ -61,6 +62,7 @@ pub fn exit_words(cause: i32, detail: Option<&str>) -> String {
         Ok(ExitCause::Finished) => "finished",
         Ok(ExitCause::Stopped) => "stopped",
         Ok(ExitCause::Killed) => "killed",
+        Ok(ExitCause::Quit) => "quit",
         Ok(ExitCause::ProviderExited) => "the provider exited",
         // Both read as the person sees them: the agent ended while no
         // daemon was there, whether it drained or was found dead.

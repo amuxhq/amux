@@ -25,6 +25,7 @@ item turn-1-plan plan final at=1800000000000 text="## Write the colour\n\n- Writ
 ## 10 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
 item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000000
 snapshot NEEDS_YOU queue=[] working_on="Plan the colour change." at=1800000000000 asks=[plan:turn-1-plan→turn-1-plan plan:[PLAN_CHOICE_START,PLAN_CHOICE_KEEP_PLANNING] decisions=[]] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=plan approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=[]
+notice ask plan:turn-1-plan plan "Write the colour" why="" more=0
 turn_end 1 last=turn-1-plan
 ## 11 input {"answer":{"answer":{"plan":{"choice":"start"}},"ask":"plan:turn-1-plan"},"id":"a1"}
 effect reply a1 accepted
@@ -61,6 +62,7 @@ item turn-3-plan plan final at=1800000000000 text="## Write the colour and the R
 ## 25 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-3","status":"completed"}}}}
 item turn:3 turn final at=1800000000000 text="" #3 TURN_OUTCOME_COMPLETED started=1800000000000
 snapshot NEEDS_YOU queue=[] working_on="Plan the README too." at=1800000000000 asks=[plan:turn-3-plan→turn-3-plan plan:[PLAN_CHOICE_START,PLAN_CHOICE_KEEP_PLANNING] decisions=[]] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=plan approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=[]
+notice ask plan:turn-3-plan plan "Write the colour and the README" why="" more=0
 turn_end 3 last=turn-3-plan
 ## 26 input {"answer":{"answer":{"plan":{"choice":"keep_planning","note":"Leave the README alone."}},"ask":"plan:turn-3-plan"},"id":"a2"}
 effect reply a2 accepted
@@ -82,6 +84,7 @@ item turn-4-plan plan final at=1800000000000 text="## Write the colour\n\n- Writ
 ## 34 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-4","status":"completed"}}}}
 item turn:4 turn final at=1800000000000 text="" #4 TURN_OUTCOME_COMPLETED started=1800000000000
 snapshot NEEDS_YOU queue=[] working_on="Leave the README alone." at=1800000000000 asks=[plan:turn-4-plan→turn-4-plan plan:[PLAN_CHOICE_START,PLAN_CHOICE_KEEP_PLANNING] decisions=[]] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=plan approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=[]
+notice ask plan:turn-4-plan plan "Write the colour" why="" more=0
 turn_end 4 last=turn-4-plan
 ## 35 input {"answer":{"answer":{"plan":{"choice":"keep_planning"}},"ask":"plan:turn-4-plan"},"id":"a3"}
 effect reply a3 accepted
@@ -106,6 +109,7 @@ item turn-5-plan plan final at=1800000000000 text="## Write the colour\n\n- Writ
 ## 44 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-5","status":"completed"}}}}
 item turn:5 turn final at=1800000000000 text="" #5 TURN_OUTCOME_COMPLETED started=1800000000000
 snapshot NEEDS_YOU queue=[] working_on="One more pass on the plan." at=1800000000000 asks=[plan:turn-5-plan→turn-5-plan plan:[PLAN_CHOICE_START,PLAN_CHOICE_KEEP_PLANNING] decisions=[]] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=plan approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=[]
+notice ask plan:turn-5-plan plan "Write the colour" why="" more=0
 turn_end 5 last=turn-5-plan
 ## 45 input {"id":"p4","prompt":{"text":"Forget the plan; just write Blue."}}
 effect reply p4 accepted

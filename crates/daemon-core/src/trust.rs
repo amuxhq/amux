@@ -64,6 +64,10 @@ pub struct TrustEntry {
     /// Every address the peer last listed for itself, with where each came
     /// from. The address it last answered at is its `Direct` reachability.
     pub listed: Vec<PeerAddress>,
+    /// The public key notifications to it are sealed to, when it wants them.
+    /// Kept here because a phone closes its links as it sleeps, which is
+    /// when a push is due, and because forgetting the host then forgets this.
+    pub push_key: Option<Vec<u8>>,
 }
 
 /// The paired hosts by id.
@@ -185,6 +189,7 @@ impl TrustStore {
                         signed_in: None,
                         platform: wire::Platform::Unspecified,
                         listed: Vec::new(),
+                        push_key: None,
                     },
                 )
             })
@@ -327,6 +332,18 @@ impl TrustStore {
         true
     }
 
+    /// Keeps whether a peer wants notifications, and the key to seal them to.
+    pub fn remember_push_key(&mut self, host_id: Uuid, push_key: Option<Vec<u8>>) -> bool {
+        let Some(entry) = self.entries.get_mut(&host_id) else {
+            return false;
+        };
+        if entry.push_key == push_key {
+            return false;
+        }
+        entry.push_key = push_key;
+        true
+    }
+
     fn other_host_for_pubkey(&self, host_id: Uuid, pubkey: &[u8]) -> Option<Uuid> {
         self.entries.iter().find_map(|(candidate_host_id, entry)| {
             (*candidate_host_id != host_id && entry.pubkey == pubkey).then_some(*candidate_host_id)
@@ -346,6 +363,7 @@ impl TrustEntry {
             ssh: self.ssh.clone(),
             direct: serde_json::to_string(&self.direct).expect("addresses serialize"),
             listed: serde_json::to_string(&self.listed).expect("addresses serialize"),
+            push_key: self.push_key.clone(),
         }
     }
 
@@ -361,6 +379,7 @@ impl TrustEntry {
             signed_in: row.signed_in,
             platform: wire::Platform::try_from(row.platform).unwrap_or_default(),
             listed: serde_json::from_str(&row.listed).map_err(|error| error.to_string())?,
+            push_key: row.push_key.clone(),
         };
         Ok((host, entry))
     }
@@ -376,6 +395,7 @@ impl TrustEntry {
             signed_in: None,
             platform: wire::Platform::Unspecified,
             listed: Vec::new(),
+            push_key: None,
         };
         if let Some(reachability) = reachability {
             entry.reached(reachability);
@@ -421,6 +441,12 @@ pub enum TrustChange {
         host: Uuid,
         listed: Vec<PeerAddress>,
     },
+    /// Keep the key a host's own entry said to seal its notifications to,
+    /// or that it wants none.
+    PushKey {
+        host: Uuid,
+        push_key: Option<Vec<u8>>,
+    },
     /// What `host` last said of itself.
     Remember {
         host: Uuid,
@@ -445,6 +471,7 @@ impl TrustChange {
             | TrustChange::DirectAddrs { host, .. }
             | TrustChange::Listed { host, .. }
             | TrustChange::Remember { host, .. }
+            | TrustChange::PushKey { host, .. }
             | TrustChange::Restore { host, .. }
             | TrustChange::OnTheAccount { host } => *host,
         }
@@ -623,6 +650,13 @@ impl Daemon {
                 let signed_in = staged.remember_signed_in(*host, *signed_in);
                 let platform = staged.remember_platform(*host, *platform);
                 Ok(if signed_in || platform {
+                    TrustChanged::Remembered
+                } else {
+                    TrustChanged::Unchanged
+                })
+            }
+            TrustChange::PushKey { host, push_key } => {
+                Ok(if staged.remember_push_key(*host, push_key.clone()) {
                     TrustChanged::Remembered
                 } else {
                     TrustChanged::Unchanged

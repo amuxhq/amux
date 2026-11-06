@@ -43,4 +43,5 @@ item error:01a191d1-a0dc-7373-869d-d445e306eb0a error final at=1793447798392 tex
 ## 45 recorded 44: fact Rpc method=turn/completed
 item turn:1 turn final at=1793447798398 text="" #1 TURN_OUTCOME_FAILED started=1793447796964
 snapshot IDLE queue=[] working_on="Reply with exactly UNREACHABLE." at=1793447798398 asks=[] thread=01a191d1-a0a0-76c3-98b8-8c5f0762c878 model=amux-live-no-such-model model_name="Amux Live No Such Model" effort=? permission=read-only mode=default approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
+notice blocked failed "The 'amux-live-no-such-model' model is not supported when using Codex with a ChatGPT account."
 turn_end 1 last=-

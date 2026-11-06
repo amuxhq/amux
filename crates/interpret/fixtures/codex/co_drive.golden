@@ -29,6 +29,7 @@ snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=
 item cmd-1 work open at=1800000000000 text="" command "cargo test -p parser" cwd=/work TOOL_STATE_RUNNING
 ## 11 fact {"channel":"rpc","json":{"id":40,"method":"item/commandExecution/requestApproval","params":{"command":"/bin/zsh -lc 'cargo test -p parser'","cwd":"/work","itemId":"cmd-1","reason":"Needs approval.","threadId":"t1","turnId":"turn-1"}}}
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[40→cmd-1 command "cargo test -p parser" reason="Needs approval." decisions=[APPROVE,APPROVE_SESSION,DENY,ABORT]] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+notice ask 40 run "cargo test -p parser" why="Needs approval." more=0
 ## 12 fact {"channel":"rpc","json":{"method":"serverRequest/resolved","params":{"requestId":40,"threadId":"t1"}}}
 item cmd-1 work open at=1800000000000 text="" command "cargo test -p parser" cwd=/work TOOL_STATE_RUNNING decision=DECISION_OUTCOME_UNKNOWN elsewhere
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
@@ -38,6 +39,7 @@ item cmd-1 work final at=1800000000000 text="" command "cargo test -p parser" cw
 item cmd-2 work open at=1800000000000 text="" command "rm -rf fixtures" cwd=/work TOOL_STATE_RUNNING
 ## 15 fact {"channel":"rpc","json":{"id":41,"method":"item/commandExecution/requestApproval","params":{"command":"/bin/zsh -lc 'rm -rf fixtures'","cwd":"/work","itemId":"cmd-2","reason":"Needs approval.","threadId":"t1","turnId":"turn-1"}}}
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[41→cmd-2 command "rm -rf fixtures" reason="Needs approval." decisions=[APPROVE,APPROVE_SESSION,DENY,ABORT]] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+notice ask 41 run "rm -rf fixtures" why="Needs approval." more=0
 ## 16 fact {"channel":"rpc","json":{"method":"serverRequest/resolved","params":{"requestId":41,"threadId":"t1"}}}
 item cmd-2 work open at=1800000000000 text="" command "rm -rf fixtures" cwd=/work TOOL_STATE_RUNNING decision=DECISION_OUTCOME_UNKNOWN elsewhere
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?

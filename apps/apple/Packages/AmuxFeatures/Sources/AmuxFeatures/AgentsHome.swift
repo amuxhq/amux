@@ -1242,10 +1242,10 @@ struct AgentRowView: View {
     /// The command or path the second line names, if it names one.
     private var code: String? {
         switch row.secondLine {
-        case .ask(let ask):
-            switch ask.subject {
-            case .command(let command): ChatWords.firstLine(command)
-            case .edit(let path, let files, _) where files <= 1: path
+        case .said(.ask(_, let wants, _, _)):
+            switch wants {
+            case .run(let command): ChatWords.firstLine(command)
+            case .change(let path, let files, _) where files <= 1: path
             default: nil
             }
         case .step(let line):

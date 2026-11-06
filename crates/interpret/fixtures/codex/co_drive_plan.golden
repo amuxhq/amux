@@ -21,6 +21,7 @@ item turn-1-plan plan final at=1800000000000 text="## Write the colour\n\n- Writ
 ## 8 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
 item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000000
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[plan:turn-1-plan→turn-1-plan plan:[PLAN_CHOICE_START,PLAN_CHOICE_KEEP_PLANNING] decisions=[]] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=plan approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=[]
+notice ask plan:turn-1-plan plan "Write the colour" why="" more=0
 turn_end 1 last=turn-1-plan
 ## 9 fact {"channel":"rpc","json":{"method":"thread/settings/updated","params":{"threadId":"t1","threadSettings":{"approvalPolicy":"on-request","collaborationMode":{"mode":"default","settings":{"model":"gpt-5.6-luna","reasoning_effort":null}},"cwd":"/work","effort":null,"model":"gpt-5.6-luna","sandboxPolicy":{"type":"workspaceWrite"}}}}}
 item turn-1-plan plan final at=1800000000000 text="## Write the colour\n\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n" PLAN_VERDICT_APPROVED
@@ -50,6 +51,7 @@ item turn-3-plan plan final at=1800000000000 text="## Write the colour and the R
 ## 20 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-3","status":"completed"}}}}
 item turn:3 turn final at=1800000000000 text="" #3 TURN_OUTCOME_COMPLETED started=1800000000000
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[plan:turn-3-plan→turn-3-plan plan:[PLAN_CHOICE_START,PLAN_CHOICE_KEEP_PLANNING] decisions=[]] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=plan approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=[]
+notice ask plan:turn-3-plan plan "Write the colour and the README" why="" more=0
 turn_end 3 last=turn-3-plan
 ## 21 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-4","status":"inProgress"}}}}
 item turn-3-plan plan final at=1800000000000 text="## Write the colour and the README\n\n- Write `Blue` to `color.txt`.\n- Say so in `README.md`.\n" PLAN_VERDICT_SENT_BACK

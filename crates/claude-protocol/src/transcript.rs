@@ -197,6 +197,21 @@ pub struct Origin {
     pub extensions: Extensions,
 }
 
+/// The limit behind a refused request, on the row Claude writes for it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuotaLimits {
+    #[serde(default)]
+    pub status: String,
+    /// Seconds since the epoch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resets_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rate_limit_type: Option<String>,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
 /// One block of an assistant message as Claude received it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -211,6 +226,9 @@ pub struct AssistantRow {
     pub is_api_error_message: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// The limit a request was refused under.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quota_limits: Option<QuotaLimits>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
     #[serde(flatten)]

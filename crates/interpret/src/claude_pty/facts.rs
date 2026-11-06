@@ -568,6 +568,9 @@ impl State {
                 (wire::ask::Body::Question(question), shape)
             }
             PLAN_TOOL if server.is_empty() => {
+                if let Some(plan) = crate::claude_common::plan_text(input) {
+                    self.shared.plan_written(&plan);
+                }
                 let switch = self.plan_switch();
                 (
                     wire::ask::Body::Plan(plan_ask(&switch)),
@@ -1681,13 +1684,27 @@ impl State {
             }
         }
         if row.is_api_error_message == Some(true) {
+            let error_kind = row.error.clone().unwrap_or_default();
+            let text = blocks_text(&message.content);
+            // Terminal Claude has no usage stream: this row is all it says of
+            // a spent limit, and the turn ends with it.
+            let resets_at_ms = row
+                .quota_limits
+                .as_ref()
+                .and_then(|quota| quota.resets_at)
+                .map(|seconds| seconds * 1000);
+            self.shared.stopped_by(crate::claude_common::blocked_by(
+                &error_kind,
+                &text,
+                resets_at_ms,
+            ));
             self.shared.item(
                 emit,
                 ItemDraft {
                     key: uuid,
                     body: item_body(Kind::ApiError(wire::ApiError {
-                        error_kind: row.error.clone().unwrap_or_default(),
-                        message: blocks_text(&message.content),
+                        error_kind,
+                        message: text,
                         ..Default::default()
                     })),
                     at_ms,

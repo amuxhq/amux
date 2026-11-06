@@ -296,17 +296,34 @@ words.
 
 ## Push notifications
 
-A "needs you" push names a host and an agent under its `amux` key, and the app
-handles one by bringing that chat current (see
-[the iPhone page](IOS.md#foreground-background-and-pushes)). The daemon keeps
-an outbox of them: a row when an agent's phase turns to needs you, deleted
-unsent if the phase leaves needs you before its delay runs out. Nothing in
-this repository delivers them yet. The daemon's sender is `node::NoopSender`;
-`node::HttpSender` posts a push as JSON (`host_id`, `agent_id`, `revision`,
-`name`, `working_on`, `text`) with the daemon's relay credential to an
-endpoint it is given, but no amux.sh endpoint is wired to it, and the app
-does not register for remote notifications. The `push-wake` journey hands a
-payload to the app directly.
+A push tells a person's phone what an agent wants of them, and the service
+carries it without being able to read it.
+
+The phone registers its device token under its account with `PUT
+/api/devices/{hostId}`, one row per profile, and removes it with `DELETE` when
+notifications go off. A daemon with something to say posts `POST /api/push`
+with the profile's access token:
+
+```json
+{ "id": "<32 hex chars>", "recipients": [ { "host_id": "<uuid>", "sealed": "<base64>" } ] }
+```
+
+The service checks the account is `pro`, finds each recipient's device under
+that account, skipping any it has none for, and sends each one through the
+device's platform: an alert saying only "An agent needs you", with `sealed`
+beside it under `amux`. `id` is the same on a retry, and is the push's collapse
+id, so a retry replaces rather than repeats. The daemon retries a `5xx` or an
+unanswered request, and takes any other refusal as final.
+
+`sealed` is HPKE (X25519, HKDF-SHA256, ChaCha20-Poly1305, base mode, info `amux
+push 1`): the 32-byte encapsulated key, then the ciphertext, then base64. Inside
+is JSON naming the host, the agent, its name and the notice. The key it is sealed
+to never passes through the service: the phone says it on its own inventory
+entry, over the pinned link. So the service can neither read a push nor make one
+up, and the phone's notification extension writes the alert from what it opens.
+If it can't open one, as before the first unlock after a restart, the plain alert
+shows, and a tap opens the fleet. Tapping one that opened brings up the chat it
+names (see [the iPhone page](IOS.md#foreground-background-and-pushes)).
 
 ## Running the relay
 

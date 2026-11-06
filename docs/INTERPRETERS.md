@@ -75,6 +75,27 @@ headless user message (`UserMessage`), follow a transcript file
 (`CodexTurnInput`), write a blob an item refers to (`WriteBlob`), or end the
 process (`Exit`).
 
+## Notices
+
+Each interpreter projects its state into a notice, what the agent wants of the
+person, beside the body every time it builds a snapshot
+([`notice.rs`](../crates/interpret/src/notice.rs)). A push and the agent's fleet
+row both say it, so they can't disagree. The daemon holds and sends it without
+decoding anything, so this is where a provider's asks and failures become the
+few shapes both readers have: an ask's run, change, tool, question, plan, access
+or provider sentence, or why the agent can't go on (signed out, a spent usage
+limit with its reset, or the provider's failure).
+
+Blocked means a turn was stopped and that still stands. An idle agent with a
+spent limit or a lapsed sign-in that no turn ran into has nothing it can't go on
+with, so it says nothing; the chat shows that state. A block lasts until the next
+turn starts, or for a sign-in, until the provider reports it is signed in, which
+only a report made after the failure can say: the sign-in and usage state held
+from before it can't. Nothing blocks while a turn runs, because a provider may
+carry on after an error. Each kind recognises
+its own: a refused connection in terminal Claude ends its turn completed, and its
+only word of a spent limit is the error row it writes in place of an answer.
+
 ## The step rule
 
 Every event yields exactly one step: zero or more items, the snapshot when it

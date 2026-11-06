@@ -538,15 +538,20 @@ it.
 **Push notifications** come from an outbox the daemon core drains
 ([`notifications.rs`](../crates/daemon-core/src/notifications.rs)), handing
 each push to a sender in [`node::outbox`](../crates/node/src/outbox.rs) as a
-job. In the transaction that
-turns an agent's phase to needs-you, ingest writes a notifications row with
-a due time a short delay away; the row is deleted unsent if the phase moves
-on first, or when the agent exits or is deleted. A drain hands due rows to a
-`PushSender`. The payload is envelope fields only (host, agent, name, what
-it is working on, the newest item's text), so producing it interprets
-nothing. The daemon never talks to a push service or holds a device token:
-`HttpSender` posts to an account endpoint, and the desktop daemon and the
-phone's runtime currently run `NoopSender`, which sends nothing.
+job. Each interpreter projects what its agent wants of the person into a small
+kind-neutral notice on the snapshot's envelope, and in the transaction that
+raises one, ingest writes a notifications row with a due time a short delay
+away. The row is replaced or deleted unsent if the notice moves on first, or
+when the agent exits or is deleted, and a top-level agent's process dying
+raises its own. Only an ask pushes from a family member: a member blocked or
+dead is its parent's to hear of. A drain hands due rows to a `PushSender` with
+the paired hosts that want notifications. Holding and sending a notice
+interprets nothing. The daemon never talks to a push service or holds a device
+token: `HttpSender` seals the notice to each recipient's key and posts the
+sealed copies to the account service with the profile's own access token, so
+neither that service nor the platform's can read it. A host says it wants
+notifications on its own inventory entry, which only hosts paired with it read
+([the protocol](PROTOCOL.md#chapter-3-presence)).
 
 ### Windows, as a stated cost
 

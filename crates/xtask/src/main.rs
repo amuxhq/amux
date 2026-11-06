@@ -122,6 +122,9 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
             "#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]",
         );
     }
+    // A notice is rare and a snapshot is moved through every step, so the
+    // notice's room is taken only when there is one.
+    config.boxed(".amux.v1.Snapshot.notice");
     // The chat model's Refusal holds the wire's reason; the mirrors name
     // the reason apart from it.
     config.type_attribute("amux.v1.Refusal", "#[schemars(rename = \"RefusalReason\")]");

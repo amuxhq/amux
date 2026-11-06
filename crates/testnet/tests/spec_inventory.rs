@@ -1005,3 +1005,65 @@ async fn a_hosts_entry_says_whether_its_inventory_is_current() {
     reconnecting_until(&net, &mut fleet, |events| current(events, true)).await;
     net.shutdown().await.unwrap();
 }
+
+async fn push_key_kept_for(net: &Net, on: &str, of: Uuid) -> Option<Vec<u8>> {
+    net.runtime(on)
+        .unwrap()
+        .read_store(move |store| store.trusted_hosts().unwrap())
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|row| row.host_id == of.as_bytes())
+        .and_then(|row| row.push_key)
+}
+
+/// A host says it wants notifications on its own inventory entry, which only
+/// hosts paired with it read, so a host paired with its neighbor never holds
+/// its key, and it can take the wish back.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_push_key_reaches_the_hosts_paired_with_it_and_no_further() {
+    let mut net = Net::start(
+        Topology::new()
+            .host("phone")
+            .host("desk")
+            .host("tower")
+            .link("phone", "desk")
+            .link("desk", "tower"),
+    )
+    .await
+    .unwrap();
+    for (a, b) in [
+        ("phone", "desk"),
+        ("desk", "phone"),
+        ("desk", "tower"),
+        ("tower", "desk"),
+    ] {
+        net.trust(a, b).await.unwrap();
+    }
+    let phone = net.host("phone").unwrap().host_id;
+    let key = vec![5; 32];
+
+    net.runtime("phone")
+        .unwrap()
+        .want_notifications(Some(key.clone()));
+    patience::until("the desk to keep the key", || async {
+        let kept = push_key_kept_for(&net, "desk", phone).await;
+        (kept.as_ref() == Some(&key))
+            .then_some(())
+            .ok_or_else(|| format!("{kept:?}"))
+    })
+    .await
+    .unwrap();
+    assert_eq!(push_key_kept_for(&net, "tower", phone).await, None);
+
+    net.runtime("phone").unwrap().want_notifications(None);
+    patience::until("the desk to forget the key", || async {
+        let kept = push_key_kept_for(&net, "desk", phone).await;
+        kept.is_none()
+            .then_some(())
+            .ok_or_else(|| format!("{kept:?}"))
+    })
+    .await
+    .unwrap();
+    net.shutdown().await.unwrap();
+}

@@ -90,7 +90,11 @@ profile, else one that holds nothing, else a new one), `amux_runtime_sign_out`
 (the profile stays tied to its account), `amux_runtime_access_token` (a
 bearer for the account service; the profile alone spends the refresh token),
 `amux_runtime_refresh_entitlement` (asks what the account buys now, so a
-purchase lifts the relay's tier at once) and `amux_runtime_trusting_profiles`
+purchase lifts the relay's tier at once), `amux_runtime_host_id` (the id a
+notification for the profile is addressed to),
+`amux_runtime_want_notifications` (the public key notifications are sealed to,
+or null to take the wish back; memory-only, so the app says it at every start)
+and `amux_runtime_trusting_profiles`
 (every profile whose trust store holds a host, oldest first); a driving build's
 `amux_runtime_offer_pairing` opens pairing mode on a profile and answers its
 pairing link, so tests can pair two profiles. `amux_runtime_discovered` hands

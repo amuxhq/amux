@@ -252,6 +252,27 @@ public final class Runtime: @unchecked Sendable {
         }
     }
 
+    /// A profile's host id, which a notification for it is addressed to, as
+    /// the bridge carries it.
+    public func hostId(_ profile: String) async -> Result<[UInt8], RuntimeFailure> {
+        await act([UInt8].self) { live in
+            profile.withCString { amux_runtime_host_id(live, $0) }
+        }
+    }
+
+    /// Says whether a profile wants notifications, with the public key they
+    /// are sealed to, or nil to take the wish back. The runtime keeps it in
+    /// memory only, so it is said again at every start.
+    public func wantNotifications(
+        _ profile: String, key: [UInt8]?
+    ) async -> Result<Nothing, RuntimeFailure> {
+        await act(Nothing.self) { live in
+            profile.withCString { profile in
+                Bridge.json(key).withCString { amux_runtime_want_notifications(live, profile, $0) }
+            }
+        }
+    }
+
     /// Asks the account service what a profile's account buys now, over its
     /// relay link, so the relay's tier follows a purchase at once.
     public func refreshEntitlement(_ profile: String) async -> Result<Nothing, RuntimeFailure> {

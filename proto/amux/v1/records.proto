@@ -193,6 +193,98 @@ message Snapshot {
   // unknown. The daemon copies it onto the inventory row, so a fleet row
   // counts what a stop would cut without decoding a body.
   uint32 background_jobs = 12;
+  // What the agent wants of the person now, made small enough for a
+  // notification; absent when it wants nothing. The interpreter projects it
+  // from its own state, so the daemon can hold and send it without decoding
+  // a body. Never an exit: a process that has gone says nothing, and its
+  // daemon writes that notice itself.
+  optional Notice notice = 13;
+}
+
+// What a notification says, in data rather than sentences: each client words
+// it. Every string is clipped short, because a push has a few kilobytes.
+message Notice {
+  oneof of {
+    AskNotice ask = 1;
+    BlockedNotice blocked = 2;
+    DiedNotice died = 3;
+  }
+}
+
+// The agent's head ask.
+message AskNotice {
+  // The ask's own key: a changed key is a different ask, and it is what an
+  // answer would name.
+  string key = 1;
+  oneof wants {
+    RunWant run = 2;
+    ChangeWant change = 3;
+    UseWant use = 4;
+    QuestionWant question = 5;
+    PlanWant plan = 6;
+    OtherWant other = 7;
+    AccessWant access = 10;
+  }
+  // The provider's reason, when it gave one.
+  string why = 8;
+  // How many other asks are open.
+  uint32 more = 9;
+}
+
+message RunWant {
+  string command = 1;
+}
+
+message ChangeWant {
+  string path = 1;
+  uint32 files = 2;
+  // Whether the file is new; absent when the provider doesn't say.
+  optional bool created = 3;
+}
+
+message UseWant {
+  string server = 1;
+  string tool = 2;
+}
+
+message QuestionWant {
+  string text = 1;
+}
+
+// Empty when the plan has no title of its own.
+message PlanWant {
+  string title = 1;
+}
+
+// A form, a link or an ask this build cannot read: the provider's own
+// sentence, and the server that sent it when one did.
+message OtherWant {
+  string text = 1;
+  string server = 2;
+}
+
+message AccessWant {
+  string reason = 1;
+}
+
+// The agent is alive and its turn is over, and it can't go on without the
+// person.
+message BlockedNotice {
+  oneof why {
+    Empty signed_out = 1;
+    UsageBlock usage = 2;
+    // The provider's words.
+    string failed = 3;
+  }
+}
+
+message UsageBlock {
+  optional int64 resets_at_ms = 1;
+}
+
+message DiedNotice {
+  ExitCause cause = 1;
+  string detail = 2;
 }
 
 // The kind is the interpreter.
@@ -234,6 +326,9 @@ enum ExitCause {
   // The process ended while a daemon watched, and its journal does not say
   // why.
   EXIT_CAUSE_ENDED_UNEXPECTEDLY = 10;
+  // The provider process ended on its own with a clean status, as it does
+  // when a person quits it in its terminal.
+  EXIT_CAUSE_QUIT = 11;
 }
 
 // What a row says about the git repository an agent works in.

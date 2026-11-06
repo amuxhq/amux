@@ -25,6 +25,8 @@
 	<dict>
 		<key>sh.amux.app</key>
 		<string>amux App Store</string>
+		<key>sh.amux.app.notifications</key>
+		<string>amux Notifications App Store</string>
 	</dict>
 	<!-- Xcode may otherwise rewrite the build number while exporting. The
 	     number this repository derived, wrote and tagged is the number that

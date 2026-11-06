@@ -33,6 +33,32 @@ public protocol CloudService: Sendable {
     /// would be a second place for that to change.
     func recordPurchase(_ id: AccountId, signedTransaction: String) async throws(CloudError)
     func requestDeletion(_ id: AccountId, confirmedEmail: String) async throws(CloudError) -> DeletionOutcome
+    /// Says where a profile's notifications go, under its account. A repeat
+    /// replaces what was there.
+    func registerDevice(
+        _ id: AccountId, host: HostId, device: PushDevice
+    ) async throws(CloudError)
+    /// Says a profile's notifications go nowhere any more.
+    func removeDevice(_ id: AccountId, host: HostId) async throws(CloudError)
+}
+
+/// Where a phone's notifications go: its token from the platform, and which of
+/// the platform's two services issued it. A development build's token means
+/// nothing to the production service, and the other way about.
+public struct PushDevice: Sendable, Equatable {
+    public enum Environment: String, Sendable {
+        case sandbox
+        case production
+    }
+
+    /// The token as hex, which is how the service's platform takes it.
+    public var token: String
+    public var environment: Environment
+
+    public init(token: Data, environment: Environment) {
+        self.token = token.map { String(format: "%02x", $0) }.joined()
+        self.environment = environment
+    }
 }
 
 /// What a sign-in leaves for the runtime: the service that issued the

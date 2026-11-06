@@ -1,5 +1,6 @@
 //! The store's reader and writer suite, against a temp-file SQLite store.
 
+use prost::Message as _;
 use store::{
     Absorb, AgentKey, AgentRow, CommitClock, Cut, Delivery, Marker, PageEnd, Record, Sqlite,
     StoreError,
@@ -445,51 +446,122 @@ fn a_turn_end_with_a_parent_inserts_a_delivery() {
     assert_eq!(store.deliveries().unwrap(), vec![exited]);
 }
 
+fn ask_notice(key: &str, more: u32) -> wire::Notice {
+    wire::Notice {
+        of: Some(wire::notice::Of::Ask(wire::AskNotice {
+            key: key.to_owned(),
+            wants: Some(wire::ask_notice::Wants::Run(wire::RunWant {
+                command: "migrate".to_owned(),
+            })),
+            why: String::new(),
+            more,
+        })),
+    }
+}
+
+fn noticing(phase: Phase, notice: Option<wire::Notice>) -> Step {
+    let mut snapshot = snapshot(phase, Some("deploying"), 9);
+    snapshot.notice = notice.map(Box::new);
+    Step {
+        snapshot: Some(snapshot),
+        ..Default::default()
+    }
+}
+
 #[test]
-fn turning_to_needs_you_inserts_one_notification_and_leaving_removes_it() {
+fn a_notice_owes_one_notification_until_it_moves_on() {
     let store = fresh();
     let agent = own("a");
     let mut store = with_agent(store, &agent);
-    let snap = |phase| Step {
-        snapshot: Some(snapshot(phase, Some("deploying"), 9)),
-        ..Default::default()
-    };
     store
         .commit(
             &agent,
             &[
                 (1, items_step(&[item("m1", "May I run the migration?")])),
-                (2, snap(Phase::NeedsYou)),
+                (2, noticing(Phase::NeedsYou, Some(ask_notice("ask:1", 0)))),
             ],
             CLOCK,
         )
         .unwrap();
-    // Still needs you: no second notification for the same transition.
+    // The same ask with another behind it: nothing new to tell.
     store
-        .commit(&agent, &[(3, snap(Phase::NeedsYou))], CLOCK)
+        .commit(
+            &agent,
+            &[(3, noticing(Phase::NeedsYou, Some(ask_notice("ask:1", 1))))],
+            CLOCK,
+        )
         .unwrap();
     let notifications = store.notifications().unwrap();
     assert_eq!(notifications.len(), 1);
     assert_eq!(notifications[0].revision, 2);
     assert_eq!(notifications[0].due_at_ms, 31_000);
+    assert_eq!(notifications[0].name, "worker");
     assert_eq!(
-        (
-            notifications[0].name.as_str(),
-            notifications[0].working_on.as_deref(),
-            notifications[0].text.as_str()
-        ),
-        ("worker", Some("deploying"), "May I run the migration?")
+        notifications[0].notice,
+        ask_notice("ask:1", 0).encode_to_vec()
     );
     store
-        .commit(&agent, &[(4, snap(Phase::Working))], CLOCK)
+        .commit(&agent, &[(4, noticing(Phase::Working, None))], CLOCK)
+        .unwrap();
+    assert!(store.notifications().unwrap().is_empty());
+}
+
+/// Two asks open and the first answered within the delay: the phase never
+/// leaves needs-you, but the person is owed the second, not the first.
+#[test]
+fn answering_one_of_two_open_asks_replaces_what_is_owed() {
+    let store = fresh();
+    let agent = own("a");
+    let mut store = with_agent(store, &agent);
+    store
+        .commit(
+            &agent,
+            &[(1, noticing(Phase::NeedsYou, Some(ask_notice("ask:1", 1))))],
+            CLOCK,
+        )
+        .unwrap();
+    store
+        .commit(
+            &agent,
+            &[(2, noticing(Phase::NeedsYou, Some(ask_notice("ask:2", 0))))],
+            CLOCK,
+        )
+        .unwrap();
+    let notifications = store.notifications().unwrap();
+    assert_eq!(notifications.len(), 1);
+    assert_eq!(
+        notifications[0].notice,
+        ask_notice("ask:2", 0).encode_to_vec()
+    );
+}
+
+/// A family member's ask is the person's alone to answer; its being blocked
+/// is its parent's to hear of.
+#[test]
+fn only_a_top_level_agent_owes_news_of_being_blocked() {
+    let blocked = wire::Notice {
+        of: Some(wire::notice::Of::Blocked(wire::BlockedNotice {
+            why: Some(wire::blocked_notice::Why::Failed("no".to_owned())),
+        })),
+    };
+    let store = fresh();
+    let child = own("child");
+    let mut store = with_agent(store, &child);
+    let mut row = store.agent(&child).unwrap().unwrap();
+    row.parent = Some(own("parent"));
+    store.put_agent(&row).unwrap();
+    store
+        .commit(&child, &[(1, noticing(Phase::Idle, Some(blocked)))], CLOCK)
         .unwrap();
     assert!(store.notifications().unwrap().is_empty());
     store
-        .commit(&agent, &[(5, snap(Phase::NeedsYou))], CLOCK)
+        .commit(
+            &child,
+            &[(2, noticing(Phase::NeedsYou, Some(ask_notice("ask:1", 0))))],
+            CLOCK,
+        )
         .unwrap();
     assert_eq!(store.notifications().unwrap().len(), 1);
-    store.remove_notifications(b"a").unwrap();
-    assert!(store.notifications().unwrap().is_empty());
 }
 
 #[test]
@@ -542,7 +614,7 @@ fn delete_removes_an_agent_whole() {
     store.put_agent(&row).unwrap();
     let step = Step {
         items: vec![item("m", "done")],
-        snapshot: Some(snapshot(Phase::NeedsYou, None, 1)),
+        snapshot: noticing(Phase::NeedsYou, Some(ask_notice("ask:1", 0))).snapshot,
         turn_end: Some(TurnEnd {
             turn_id: 1,
             last_message_key: "m".into(),
@@ -648,22 +720,25 @@ fn remove_notification_removes_only_that_one() {
     let store = fresh();
     let agent = own("a");
     let mut store = with_agent(store, &agent);
-    let snap = |phase| Step {
-        snapshot: Some(snapshot(phase, None, 9)),
-        ..Default::default()
-    };
     store
-        .commit(&agent, &[(1, snap(Phase::NeedsYou))], CLOCK)
+        .commit(
+            &agent,
+            &[(1, noticing(Phase::NeedsYou, Some(ask_notice("ask:1", 0))))],
+            CLOCK,
+        )
         .unwrap();
     let sent = store.notifications().unwrap().remove(0);
     store
         .commit(
             &agent,
-            &[(2, snap(Phase::Working)), (3, snap(Phase::NeedsYou))],
+            &[
+                (2, noticing(Phase::Working, None)),
+                (3, noticing(Phase::NeedsYou, Some(ask_notice("ask:2", 0)))),
+            ],
             CLOCK,
         )
         .unwrap();
-    // The first was already removed by the phase change; a later one stays.
+    // The first went when its ask closed; a later one stays.
     store.remove_notification(&sent).unwrap();
     let left = store.notifications().unwrap();
     assert_eq!(left.len(), 1);

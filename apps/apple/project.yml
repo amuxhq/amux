@@ -28,6 +28,14 @@ settings:
     CODE_SIGNING_ALLOWED: NO
     "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]": YES
     "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
+    # What the App Store shows, and the number that identifies one binary
+    # forever. `just ios release` writes both here; nothing else should. Here
+    # rather than on the app so the extension takes them too: the App Store
+    # refuses an extension whose numbers differ from its app's.
+    # The version matches the listing already on the App Store, so the next
+    # release is the next version of it.
+    MARKETING_VERSION: "1.0.33"
+    CURRENT_PROJECT_VERSION: "41"
     # The Rust bridge is assembled for arm64 alone (apps/apple/Tools/ios-rust.py), the
     # phone is arm64 and every simulator this is measured on runs on Apple
     # silicon. An Intel slice would be a second configuration nobody builds
@@ -44,6 +52,8 @@ packages:
     path: Packages/AmuxDesign
   AmuxFeatures:
     path: Packages/AmuxFeatures
+  AmuxPush:
+    path: Packages/AmuxPush
   AmuxShell:
     path: Packages/AmuxShell
   AmuxTestSupport:
@@ -135,6 +145,9 @@ targets:
         # The transcript is measured against the display's full cadence; the
         # 120 Hz cap iOS applies by default would hide hitches behind it.
         CADisableMinimumFrameDurationOnPhone: true
+        # The keychain group push keys live in, for the code to name. The
+        # team's prefix is a build setting, so it has no other way to know.
+        AmuxPushKeychainGroup: $(AppIdentifierPrefix)sh.amux.push
     # amux.sh's pairing page opens the app: the QR code a host shows is
     # `https://amux.sh/p#<invitation>`, and amux.sh's
     # apple-app-site-association names this app for `/p`. The App ID and the
@@ -143,6 +156,12 @@ targets:
       path: Amux/Amux.entitlements
       properties:
         com.apple.developer.associated-domains: [applinks:amux.sh]
+        # Development here; the export to the App Store writes production from
+        # its profile. PushDevice.Environment tells the account service which.
+        aps-environment: development
+        # Shared with the notification extension, which reads what the app
+        # keeps here: a separate process can't see the app's files.
+        keychain-access-groups: [$(AppIdentifierPrefix)sh.amux.push]
     postBuildScripts:
       - name: Stamp build revision
         basedOnDependencyAnalysis: false
@@ -158,12 +177,6 @@ targets:
         # reads it each build and updates only the built app's Info.plist.
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         PRODUCT_BUNDLE_IDENTIFIER: sh.amux.app
-        # What the App Store shows, and the number that identifies one binary
-        # forever. `just ios release` writes both here; nothing else should.
-        # The version matches the listing already on the App Store, so the
-        # next release is the next version of it.
-        MARKETING_VERSION: "1.0.33"
-        CURRENT_PROJECT_VERSION: "41"
         SWIFT_EMIT_LOC_STRINGS: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # XcodeGen gives an iOS target iPhone and iPad by default; this app is
@@ -214,8 +227,44 @@ targets:
         product: AmuxDesign
       - package: AmuxFeatures
         product: AmuxFeatures
+      - package: AmuxPush
+        product: AmuxPush
       - package: AmuxShell
         product: AmuxShell
+      - target: AmuxNotifications
+
+  # Opens a push on its way to the screen and writes what it says over the
+  # plain alert. iOS gives it a few megabytes, so it links AmuxPush alone and
+  # never the Rust bridge; `just ios scope-audit` checks the built binary.
+  AmuxNotifications:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: AmuxNotifications
+    info:
+      path: AmuxNotifications/Info.plist
+      properties:
+        CFBundleDisplayName: Amux
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        AmuxPushKeychainGroup: $(AppIdentifierPrefix)sh.amux.push
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+    entitlements:
+      path: AmuxNotifications/AmuxNotifications.entitlements
+      properties:
+        keychain-access-groups: [$(AppIdentifierPrefix)sh.amux.push]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: sh.amux.app.notifications
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+    dependencies:
+      - package: AmuxPush
+        product: AmuxPush
 
   # Tests that need the app's own window and UIKit run hosted by the app
   # rather than by a package test runner.
@@ -335,5 +384,6 @@ schemes:
         - package: AmuxCore/AmuxCoreTests
         - package: AmuxDesign/AmuxDesignTests
         - package: AmuxFeatures/AmuxFeaturesTests
+        - package: AmuxPush/AmuxPushTests
         - package: AmuxShell/AmuxShellTests
         - package: AmuxTestSupport/AmuxTestSupportTests

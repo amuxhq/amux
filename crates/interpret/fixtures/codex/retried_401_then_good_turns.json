@@ -1,0 +1,164 @@
+{
+ "about": "review",
+ "spec": {
+  "created_at_ms": 1800000000000
+ },
+ "events": [
+  {
+   "fact": {
+    "channel": "rpc",
+    "json": {
+     "id": 2,
+     "result": {
+      "thread": {
+       "id": "t1",
+       "cliVersion": "0.157.0",
+       "turns": []
+      },
+      "model": "gpt-5.6-luna",
+      "approvalPolicy": "on-request",
+      "sandbox": {
+       "type": "workspaceWrite"
+      },
+      "reasoningEffort": null
+     }
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "rpc",
+    "json": {
+     "method": "account/updated",
+     "params": {
+      "threadId": "t1",
+      "authMode": "chatgpt",
+      "planType": "pro"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "id": "p1",
+    "prompt": {
+     "text": "go 1"
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "rpc",
+    "json": {
+     "id": "amux-1",
+     "result": {
+      "turn": {
+       "id": "turn-1"
+      }
+     }
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "rpc",
+    "json": {
+     "method": "turn/started",
+     "params": {
+      "threadId": "t1",
+      "turn": {
+       "id": "turn-1",
+       "status": "inProgress"
+      }
+     }
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "rpc",
+    "json": {
+     "method": "error",
+     "params": {
+      "threadId": "t1",
+      "turnId": "turn-1",
+      "willRetry": true,
+      "error": {
+       "message": "refused",
+       "codexErrorInfo": "unauthorized",
+       "additionalDetails": null
+      }
+     }
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "rpc",
+    "json": {
+     "method": "turn/completed",
+     "params": {
+      "threadId": "t1",
+      "turn": {
+       "id": "turn-1",
+       "status": "completed",
+       "error": null
+      }
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "id": "p2",
+    "prompt": {
+     "text": "go 2"
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "rpc",
+    "json": {
+     "id": "amux-2",
+     "result": {
+      "turn": {
+       "id": "turn-2"
+      }
+     }
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "rpc",
+    "json": {
+     "method": "turn/started",
+     "params": {
+      "threadId": "t1",
+      "turn": {
+       "id": "turn-2",
+       "status": "inProgress"
+      }
+     }
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "rpc",
+    "json": {
+     "method": "turn/completed",
+     "params": {
+      "threadId": "t1",
+      "turn": {
+       "id": "turn-2",
+       "status": "completed",
+       "error": null
+      }
+     }
+    }
+   }
+  }
+ ]
+}

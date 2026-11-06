@@ -1,0 +1,84 @@
+{
+ "about": "review",
+ "spec": {
+  "created_at_ms": 1800000000000
+ },
+ "events": [
+  {
+   "fact": {
+    "channel": "stream",
+    "json": {
+     "type": "system",
+     "subtype": "init",
+     "uuid": "init-s1",
+     "session_id": "s1",
+     "claude_code_version": "2.1.292",
+     "model": "claude-opus-5-5",
+     "permissionMode": "default"
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "stream",
+    "json": {
+     "type": "rate_limit_event",
+     "uuid": "rl-1",
+     "session_id": "s1",
+     "rate_limit_info": {
+      "status": "allowed_warning",
+      "rateLimitType": "five_hour",
+      "unifiedWindows": {
+       "five_hour": {
+        "utilization": 0.92,
+        "resetsAt": 1800003600
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "id": "p1",
+    "prompt": {
+     "text": "one"
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "stream",
+    "json": {
+     "type": "assistant",
+     "uuid": "e1",
+     "message": {
+      "id": "e1",
+      "model": "claude-opus-5-5",
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "API Error: 429 rate limited"
+       }
+      ]
+     },
+     "error": "rate_limit"
+    }
+   }
+  },
+  {
+   "fact": {
+    "channel": "stream",
+    "json": {
+     "type": "result",
+     "subtype": "success",
+     "uuid": "r1",
+     "duration_ms": 10,
+     "total_cost_usd": 0.1,
+     "is_error": true
+    }
+   }
+  }
+ ]
+}

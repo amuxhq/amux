@@ -135,9 +135,9 @@ enum StoryFleet {
         ]
         let needs = [
             row(1, "release-notes", on: desk, .needsYou, minutes: 2,
-                .ask(AskSummary(subject: .question(question: "Which changes should the release notes keep?", count: 1), count: 1))),
+                .said(.ask(key: "", wants: .question(text: "Which changes should the release notes keep?"), why: "", more: 0))),
             row(2, "auth-refactor", on: studio, .needsYou, minutes: 6, reach: studioReach, branch: "refactor-auth",
-                .ask(AskSummary(subject: .command(command: "cargo test -p amux-auth"), count: 1))),
+                .said(.ask(key: "", wants: .run(command: "cargo test -p amux-auth"), why: "", more: 0))),
         ]
         let live = [
             row(3, "flaky-e2e", on: desk, .working, minutes: 1, kind: .claudePty,

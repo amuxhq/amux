@@ -1421,10 +1421,12 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
             runtime.make_worktree(&repo, &name).await
         }
         Job::SendPush(push) => {
-            let Some(sender) = runtime.upgrade().map(|runtime| runtime.push.clone()) else {
+            let Some(runtime) = runtime.upgrade() else {
                 return;
             };
-            match sender.send(&push).await {
+            let sender = runtime.push.clone();
+            let cloud = runtime.edge().and_then(|edge| edge.push_cloud());
+            match sender.send(&push, cloud).await {
                 Ok(()) => JobResult::Done,
                 Err(error) => JobResult::Failed(error.to_string()),
             }

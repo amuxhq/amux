@@ -18,8 +18,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use prost::Message as _;
 use serde::{Deserialize, Serialize};
-use store::{AgentKey, AgentRow, Delivery, Marker, StoreError};
+use store::{AgentKey, AgentRow, Delivery, Marker, Notification, StoreError};
 use wire::{
     Agent, AgentRemoved, AgentSpec, CtlFrame, ExitCause, Lifecycle, ctl_frame, inventory_event,
 };
@@ -758,6 +759,7 @@ impl Daemon {
         row.exit_cause = ExitCause::Unspecified as i32;
         row.exit_detail = None;
         row.incarnation = spec.incarnation;
+        self.store.remove_notifications(&row.agent.agent)?;
         // Resumed by the person or its parent: no longer done with.
         if row.is_settled() {
             row.filing = wire::Filing::Active as i32;
@@ -1368,9 +1370,40 @@ impl Daemon {
         self.announce_caught_up(&key, out)
     }
 
+    /// Tells the person a top-level agent's process died, once the delay is
+    /// up: one resumed by then has nothing to report. An end somebody meant,
+    /// or whose cause is not known, is news to nobody; unknown is not failure.
+    fn owe_news_of_a_death(
+        &mut self,
+        row: &AgentRow,
+        cause: &wire::IncarnationEnd,
+        out: &mut Vec<Output>,
+    ) -> Result<(), StoreError> {
+        // With nobody to tell, a row would only hold a timer armed to find
+        // that out.
+        if !ExitCause::failed(cause.cause) || self.push_recipients().is_empty() {
+            return Ok(());
+        }
+        self.store.put_notification(&Notification {
+            agent_id: row.agent.agent.clone(),
+            revision: row.next_revision,
+            due_at_ms: self.timers.now_ms as i64 + self.settings.notify_delay_ms,
+            name: row.name.clone(),
+            notice: wire::Notice {
+                of: Some(wire::notice::Of::Died(wire::DiedNotice {
+                    cause: cause.cause,
+                    detail: cause.detail.clone().unwrap_or_default(),
+                })),
+            }
+            .encode_to_vec(),
+        })?;
+        self.drain_notifications(out);
+        Ok(())
+    }
+
     /// Marks the row exited, then settles what the process leaves: its
     /// unsent notifications go, since no push may name an agent that is
-    /// gone, and a child whose incarnation ended without sending its last
+    /// gone, a top-level agent that died is news, and a child whose incarnation ended without sending its last
     /// report tells its parent it failed: its turn was open, or it ended
     /// idle, as a sub-agent stopped while it waits for its own child does.
     /// A turn end marked last already told it.
@@ -1403,6 +1436,7 @@ impl Daemon {
         self.parent_changed(&row.agent, ParentSays::Exited, out)?;
         self.store.remove_notifications(&row.agent.agent)?;
         let Some(parent) = &row.parent else {
+            self.owe_news_of_a_death(&row, &cause, out)?;
             return Ok(());
         };
         // As committed: the phase at exit says nothing here, since a

@@ -291,6 +291,7 @@ fn trusted(host: &[u8], name: &str) -> store::TrustedHost {
         ssh: Some("desk.example".into()),
         direct: "[]".into(),
         listed: "[]".into(),
+        push_key: None,
     }
 }
 

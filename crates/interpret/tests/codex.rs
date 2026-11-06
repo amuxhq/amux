@@ -31,6 +31,8 @@ macro_rules! goldens {
 
 goldens! {
     a_message_injected_mid_turn_is_consumed_at_the_inject_acknowledgement => "inject_drained",
+    a_retried_401_says_nothing_after_good_turns => "retried_401_then_good_turns",
+    a_limit_after_a_warning_stays_said => "limit_after_a_warning",
     a_message_whose_turn_ended_before_its_acknowledgement_is_kicked => "inject_drained_turn_end",
     amuxs_own_tools_draw_a_message_or_nothing => "amux_tools",
     another_client_drives_the_same_thread => "co_drive",

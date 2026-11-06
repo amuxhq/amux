@@ -334,10 +334,10 @@ pub fn authored_home() -> HomeScene {
     use std::collections::HashMap;
 
     use ui_state::{Activity, ActivityKind, Connection, FleetMsg, FleetState};
-    use ui_view::{ActivityLine, AskSubject, AskSummary, SessionLine, StuckReason};
+    use ui_view::{ActivityLine, SessionLine};
     use wire::inventory_event::Of;
     use wire::trusted::Reach;
-    use wire::{Kind, Lifecycle, Phase};
+    use wire::{Kind, Lifecycle, Phase, Said, Wants};
 
     const NOW: i64 = 1_800_000_000_000;
     const MINUTE: i64 = 60_000;
@@ -362,8 +362,14 @@ pub fn authored_home() -> HomeScene {
         event(Of::Host(wire::HostEntry::trusted_host(id, name, reach)));
     }
     let mut lines = HashMap::new();
-    let line = |ask: Option<AskSubject>, step: Option<&str>, said: Option<&str>| SessionLine {
-        ask: ask.map(|subject| AskSummary { subject, count: 1 }),
+    let asks = |wants: Wants, more: u32| Said::Ask {
+        key: "ask".into(),
+        wants,
+        why: String::new(),
+        more,
+    };
+    let line = |ask: Option<Said>, step: Option<&str>, said: Option<&str>| SessionLine {
+        said: ask,
         step: step.map(|step| ActivityLine {
             activity: Activity {
                 kind: ActivityKind::Running { key: "call".into() },
@@ -374,7 +380,6 @@ pub fn authored_home() -> HomeScene {
             step: Some(step.to_owned()),
         }),
         last_said: said.map(str::to_owned),
-        stuck: None,
     };
     #[allow(clippy::type_complexity)]
     let agents: [(
@@ -406,10 +411,12 @@ pub fn authored_home() -> HomeScene {
             12,
             Some("planner"),
             Some(line(
-                Some(AskSubject::Question {
-                    question: "Should the old specs be deleted or kept?".into(),
-                    count: 1,
-                }),
+                Some(asks(
+                    Wants::Question {
+                        text: "Should the old specs be deleted or kept?".into(),
+                    },
+                    0,
+                )),
                 None,
                 None,
             )),
@@ -423,12 +430,12 @@ pub fn authored_home() -> HomeScene {
             3,
             None,
             Some(SessionLine {
-                ask: Some(AskSummary {
-                    subject: AskSubject::Command {
+                said: Some(asks(
+                    Wants::Run {
                         command: "cargo test -p auth".into(),
                     },
-                    count: 2,
-                }),
+                    1,
+                )),
                 ..SessionLine::default()
             }),
         ),
@@ -465,10 +472,7 @@ pub fn authored_home() -> HomeScene {
             20,
             None,
             Some(SessionLine {
-                stuck: Some(StuckReason::SignedOut {
-                    state: wire::SignInState::SignedOut,
-                    account: String::new(),
-                }),
+                said: Some(Said::SignedOut),
                 ..SessionLine::default()
             }),
         ),
@@ -481,7 +485,7 @@ pub fn authored_home() -> HomeScene {
             30,
             None,
             Some(SessionLine {
-                stuck: Some(StuckReason::UsageLimit { resets_at_ms: None }),
+                said: Some(Said::UsageLimit { resets_at_ms: None }),
                 ..SessionLine::default()
             }),
         ),

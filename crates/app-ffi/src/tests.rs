@@ -528,6 +528,51 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     phone.started(unsafe { amux_runtime_refresh_entitlement(phone.runtime, phone.id.as_ptr()) });
     assert!(phone.result()["Err"].is_string());
 
+    // The profile's host id is the one the desk pinned, and a key said to
+    // it reaches the desk, which keeps it for when the phone's links are
+    // closed; taking the wish back takes the key.
+    // SAFETY: the runtime is live.
+    phone.started(unsafe { amux_runtime_host_id(phone.runtime, phone.id.as_ptr()) });
+    let host_id = phone.result();
+    let phone_host: Vec<u8> = serde_json::from_value(host_id["Ok"].clone()).expect("its bytes");
+    let kept_on_the_desk = || {
+        tokio
+            .block_on(
+                net.runtime("desk")
+                    .unwrap()
+                    .read_store(|store| store.trusted_hosts().unwrap()),
+            )
+            .unwrap()
+            .into_iter()
+            .find(|row| row.host_id == phone_host)
+            .and_then(|row| row.push_key)
+    };
+    let key = c(&json!(vec![5u8; 32]).to_string());
+    // SAFETY: the runtime is live; the strings live for the call.
+    phone.started(unsafe {
+        amux_runtime_want_notifications(phone.runtime, phone.id.as_ptr(), key.as_ptr())
+    });
+    assert!(phone.result()["Ok"].is_null());
+    phone.until("the desk to keep the key", || {
+        kept_on_the_desk() == Some(vec![5; 32])
+    });
+    let none = c("null");
+    // SAFETY: the runtime is live; the strings live for the call.
+    phone.started(unsafe {
+        amux_runtime_want_notifications(phone.runtime, phone.id.as_ptr(), none.as_ptr())
+    });
+    assert!(phone.result()["Ok"].is_null());
+    phone.until("the desk to forget the key", || {
+        kept_on_the_desk().is_none()
+    });
+    // A key that isn't one is refused rather than taken for no wish at all.
+    let nonsense = c("\"not bytes\"");
+    // SAFETY: the runtime is live; the strings live for the call.
+    phone.started(unsafe {
+        amux_runtime_want_notifications(phone.runtime, phone.id.as_ptr(), nonsense.as_ptr())
+    });
+    assert!(phone.result()["Err"].is_string());
+
     // What the phone's own browser found is handed over whole; one this
     // runtime cannot read is left out.
     let found = c(&json!([{

@@ -968,7 +968,7 @@ capabilities = ["macOS", "Xcode 26.6", "iOS 26.5 golden simulator"]
 lane = "fast"
 evidence = "target/ios/DerivedData"
 update = ""
-swift = ["AmuxAppTests", "AmuxCoreTests", "AmuxDesignTests", "AmuxFeaturesTests", "AmuxShellTests", "AmuxTestSupportTests"]
+swift = ["AmuxAppTests", "AmuxCoreTests", "AmuxDesignTests", "AmuxFeaturesTests", "AmuxPushTests", "AmuxShellTests", "AmuxTestSupportTests"]
 
 [[suite]]
 name = "phone-journeys"

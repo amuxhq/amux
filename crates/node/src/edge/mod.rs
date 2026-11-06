@@ -944,6 +944,14 @@ impl Edge {
         }
     }
 
+    /// Who a push goes through: none for a profile with no account.
+    pub(crate) fn push_cloud(&self) -> Option<crate::outbox::PushCloud> {
+        Some(crate::outbox::PushCloud {
+            url: self.account.service()?.as_str().to_owned(),
+            credentials: self.credentials()?,
+        })
+    }
+
     fn credentials(&self) -> Option<Arc<dyn CredentialProvider>> {
         self.account.wants_cloud().then(|| {
             Arc::new(AccountCredentials(self.account.clone())) as Arc<dyn CredentialProvider>

@@ -83,7 +83,9 @@
       {"literal": "\"nowhere\"", "context": "return .error(\"\\(identifier) did not activate (aimed at \\(aimed.map { \"\\(Int($0.x)),\\(Int($0.y))\" } ?? \"nowhere\"), which reaches \\(hit ?? \"nothing\")\\(scrolled))\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"nothing\"", "context": "return .error(\"\\(identifier) did not activate (aimed at \\(aimed.map { \"\\(Int($0.x)),\\(Int($0.y))\" } ?? \"nowhere\"), which reaches \\(hit ?? \"nothing\")\\(scrolled))\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"\\(identifier) did not activate (aimed at \\(aimed.map { \"\\(Int($0.x)),\\(Int($0.y))\" } ?? \"nowhere\"), which reaches \\(hit ?? \"nothing\")\\(scrolled))\"", "context": "return .error(\"\\(identifier) did not activate (aimed at \\(aimed.map { \"\\(Int($0.x)),\\(Int($0.y))\" } ?? \"nowhere\"), which reaches \\(hit ?? \"nothing\")\\(scrolled))\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"BackButton\"", "context": "guard let button = VisibleTree.find(\"BackButton\", in: window) else {", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
+      {"literal": "\"BackButton\"", "context": "guard let button = VisibleTree.find(\"BackButton\", in: window) else {", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"registerDevice \\(id) on \\(host)\"", "context": "case .registerDevice(let id, let host, _): \"registerDevice \\(id) on \\(host)\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"removeDevice \\(id) on \\(host)\"", "context": "case .removeDevice(let id, let host): \"removeDevice \\(id) on \\(host)\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
     ],
     "apps/apple/Amux/Debug/DoorServer.swift": [
       {"literal": "\"\\(given) is not an IPv4 or IPv6 address\"", "context": "case .unparsable(let given): \"\\(given) is not an IPv4 or IPv6 address\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
@@ -171,10 +173,10 @@
       {"literal": "\"{ me { access { pro until grant { __typename \"", "context": "let query = \"{ me { access { pro until grant { __typename \"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"... on Purchased { provider willRenew entitledUntil } } } } }\"", "context": "+ \"... on Purchased { provider willRenew entitledUntil } } } } }\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"POST\"", "context": "request.httpMethod = \"POST\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 4},
-      {"literal": "\"application/json\"", "context": "request.setValue(\"application/json\", forHTTPHeaderField: \"Content-Type\")", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 3},
-      {"literal": "\"Content-Type\"", "context": "request.setValue(\"application/json\", forHTTPHeaderField: \"Content-Type\")", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 3},
+      {"literal": "\"application/json\"", "context": "request.setValue(\"application/json\", forHTTPHeaderField: \"Content-Type\")", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 4},
+      {"literal": "\"Content-Type\"", "context": "request.setValue(\"application/json\", forHTTPHeaderField: \"Content-Type\")", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 4},
       {"literal": "\"query\"", "context": "request.httpBody = try? JSONEncoder().encode([\"query\": query])", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"DELETE\"", "context": "request.httpMethod = \"DELETE\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"DELETE\"", "context": "request.httpMethod = \"DELETE\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 2},
       {"literal": "\"revenuecat\"", "context": "case \"revenuecat\":", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"{}\"", "context": "request.httpBody = Data(\"{}\".utf8)", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"account\"", "context": "return endpoint.base.appending(path: \"account\")", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
@@ -201,7 +203,13 @@
       {"literal": "\"login_hint\"", "context": "components.queryItems?.append(URLQueryItem(name: \"login_hint\", value: account.email))", "reason": "OpenID Connect authorize parameter name or value; not interface copy.", "count": 1},
       {"literal": "\"select_account\"", "context": "components.queryItems?.append(URLQueryItem(name: \"prompt\", value: \"select_account\"))", "reason": "OpenID Connect authorize parameter name or value; not interface copy.", "count": 1},
       {"literal": "\"prompt\"", "context": "components.queryItems?.append(URLQueryItem(name: \"prompt\", value: \"select_account\"))", "reason": "OpenID Connect authorize parameter name or value; not interface copy.", "count": 1},
-      {"literal": "\"https://apps.apple.com/account/subscriptions\"", "context": "public static let appStoreSubscriptions = URL(string: \"https://apps.apple.com/account/subscriptions\")!", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1}
+      {"literal": "\"https://apps.apple.com/account/subscriptions\"", "context": "public static let appStoreSubscriptions = URL(string: \"https://apps.apple.com/account/subscriptions\")!", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"api/devices/\\(host)\"", "context": "func device(_ host: HostId) -> URL { base.appending(path: \"api/devices/\\(host)\") }", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"PUT\"", "context": "request.httpMethod = \"PUT\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"apns\"", "context": "transport: \"apns\", environment: device.environment.rawValue, token: device.token))", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Cloud.swift": [
+      {"literal": "\"%02x\"", "context": "self.token = token.map { String(format: \"%02x\", $0) }.joined()", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Coding.swift": [
       {"literal": "\"not an RFC 3339 timestamp: \\(text)\"", "context": "debugDescription: \"not an RFC 3339 timestamp: \\(text)\"))", "reason": "Decoder or invariant diagnostic retained for debugging; not displayed by a view.", "count": 1},
@@ -691,6 +699,18 @@
       {"literal": "\"store-failure.remedy\"", "context": ".identified(\"store-failure.remedy\", value: message)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"store-failure.relaunch\"", "context": ".identified(\"store-failure.relaunch\", label: \"Relaunch\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"store-failure\"", "context": ".identified(\"store-failure\", value: message)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushAlert.swift": [
+      {"literal": "\"\\(push.host)/\\(push.agent)\"", "context": "content.threadIdentifier = \"\\(push.host)/\\(push.agent)\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushKeys.swift": [
+      {"literal": "\"sh.amux.push\"", "context": "private static let service = \"sh.amux.push\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"AmuxPushKeychainGroup\"", "context": "group = Bundle.main.object(forInfoDictionaryKey: \"AmuxPushKeychainGroup\") as? String ?? \"\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxPush/Sources/AmuxPush/SealedPush.swift": [
+      {"literal": "\"amux push 1\"", "context": "private static let info = Data(\"amux push 1\".utf8)", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"to\"", "context": "let to = amux[\"to\"] as? String, let sealed = amux[\"sealed\"] as? String,", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"sealed\"", "context": "let to = amux[\"to\"] as? String, let sealed = amux[\"sealed\"] as? String,", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
     ],
     "apps/apple/Packages/AmuxShell/Sources/AmuxShell/DeepLink.swift": [
       {"literal": "\"-\"", "context": "var standard = text.replacingOccurrences(of: \"-\", with: \"+\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},

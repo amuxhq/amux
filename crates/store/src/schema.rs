@@ -61,15 +61,13 @@ CREATE TABLE deliveries (
   PRIMARY KEY (child_id, incarnation, exited, turn_id)
 ) STRICT;
 
--- A needs-you transition owed to the person, keyed by the snapshot that
--- raised it; built from envelope fields only.
+-- A notice owed to the person, keyed by the revision that raised it.
 CREATE TABLE notifications (
-  agent_id            BLOB    NOT NULL,  -- the own agent that needs the person
-  revision            INTEGER NOT NULL,  -- the snapshot's revision that turned to needs-you
+  agent_id            BLOB    NOT NULL,  -- the own agent that wants the person
+  revision            INTEGER NOT NULL,  -- the revision that raised it
   due_at_ms           INTEGER NOT NULL,  -- sent no earlier, so an answer at the desk cancels it
-  name                TEXT    NOT NULL,  -- the agent's name when it turned
-  working_on          TEXT,              -- the snapshot's working_on
-  text                TEXT    NOT NULL DEFAULT '', -- the newest item's text: usually the question
+  name                TEXT    NOT NULL,  -- the agent's name when it was raised
+  notice              BLOB    NOT NULL,  -- amux.v1.Notice
   PRIMARY KEY (agent_id, revision)
 ) STRICT;
 
@@ -91,7 +89,8 @@ CREATE TABLE trusted_hosts (
   platform            INTEGER NOT NULL,  -- amux.v1.Platform, last it said one
   ssh                 TEXT,              -- the SSH destination it paired at, when it paired that way
   direct              TEXT    NOT NULL,  -- JSON: the addresses it last answered at directly
-  listed              TEXT    NOT NULL   -- JSON: every address it last listed, with where each came from
+  listed              TEXT    NOT NULL,  -- JSON: every address it last listed, with where each came from
+  push_key            BLOB               -- the public key notifications are sealed to: it wants them
 ) STRICT;
 
 -- An unsent draft per agent, kept for this machine's clients.

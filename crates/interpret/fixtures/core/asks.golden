@@ -12,10 +12,12 @@ item u1 prompt final input=p1 at=1000 text="delete the build dir"
 item t1 tool final at=1000 text="" Bash TOOL_STATE_RUNNING
 ## 5 fact {"channel":"stream","json":{"id":"a1","tool":"t1","tool_name":"Bash","type":"ask"}}
 snapshot NEEDS_YOU queue=[] working_on="delete the build dir" at=1000 asks=[a1] model=?
+notice ask a1 use "" "Bash" why="" more=0
 ## 6 tick 600000
 ## 7 input {"id":"p2","prompt":{"text":"while asked"}}
 effect reply p2 queued
 snapshot NEEDS_YOU queue=[p2] working_on="delete the build dir" at=600000 asks=[a1] model=?
+notice ask a1 use "" "Bash" why="" more=0
 ## 8 input {"answer":{"answer":{"allow":{}},"ask":"a1"},"id":"ans1"}
 effect write "{\"type\":\"answer\",\"ask\":\"a1\"}"
 effect reply ans1 accepted
@@ -28,6 +30,7 @@ item t1 tool final at=600000 text="" Bash TOOL_STATE_SUCCEEDED
 item t2 tool final at=600000 text="" Write TOOL_STATE_RUNNING
 ## 12 fact {"channel":"stream","json":{"id":"a2","tool":"t2","tool_name":"Write","type":"ask"}}
 snapshot NEEDS_YOU queue=[p2] working_on="delete the build dir" at=600000 asks=[a2] model=?
+notice ask a2 use "" "Write" why="" more=0
 ## 13 fact {"channel":"stream","json":{"id":"t2","output":"answered in the provider's own interface","type":"tool_result"}}
 item t2 tool final at=600000 text="" Write TOOL_STATE_SUCCEEDED
 snapshot WORKING queue=[p2] working_on="delete the build dir" at=600000 asks=[] model=?
@@ -42,6 +45,7 @@ item u2 prompt final input=p2 at=600000 text="while asked"
 item t3 tool final at=600000 text="" Bash TOOL_STATE_RUNNING
 ## 17 fact {"channel":"stream","json":{"id":"a3","tool":"t3","tool_name":"Bash","type":"ask"}}
 snapshot NEEDS_YOU queue=[] working_on="while asked" at=600000 asks=[a3] model=?
+notice ask a3 use "" "Bash" why="" more=0
 ## 18 provider_exit {"code":1}
 snapshot STARTING queue=[] working_on="while asked" at=600000 asks=[] model=?
 incarnation_end PROVIDER_EXITED "exit code 1"

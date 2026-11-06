@@ -21,10 +21,10 @@ use ratatui::widgets::Paragraph;
 use settings::ChatInSetting;
 use ui_state::{ActivityKind, AgentKey, Attention, Connection, FleetState};
 use ui_view::{
-    ActivityLine, AskSubject, AskSummary, ExitCause, FleetRow, FleetSection, FleetView, Offline,
-    Reach, SecondLine, SectionKind, SessionLine, StuckReason,
+    ActivityLine, ExitCause, FleetRow, FleetSection, FleetView, Offline, Reach, SecondLine,
+    SectionKind, SessionLine,
 };
-use wire::{Attachment, Kind, Lifecycle, SignInState};
+use wire::{Attachment, Kind, Lifecycle, Said, Wants};
 
 use crate::chat::composer::editor_lines;
 use crate::editor::Editor;
@@ -2235,11 +2235,11 @@ fn provider_word(kind: Kind) -> &'static str {
 }
 
 /// What an ask asks, in a line: the command, the file, the question.
-fn ask_words(ask: &AskSummary) -> String {
-    let words = match &ask.subject {
-        AskSubject::Command { command } => format!("wants to run {}", text::first_line(command)),
-        AskSubject::Edit { files, .. } if *files > 1 => format!("wants to edit {files} files"),
-        AskSubject::Edit { path, created, .. } => {
+fn ask_words(wants: &Wants, more: u32) -> String {
+    let words = match wants {
+        Wants::Run { command } => format!("wants to run {}", text::first_line(command)),
+        Wants::Change { files, .. } if *files > 1 => format!("wants to edit {files} files"),
+        Wants::Change { path, created, .. } => {
             let verb = match created {
                 Some(true) => "create",
                 Some(false) => "edit",
@@ -2247,7 +2247,7 @@ fn ask_words(ask: &AskSummary) -> String {
             };
             format!("wants to {verb} {path}")
         }
-        AskSubject::Tool { server, tool } => {
+        Wants::Use { server, tool } => {
             let tool = [server.as_str(), tool.as_str()]
                 .into_iter()
                 .filter(|part| !part.is_empty())
@@ -2255,20 +2255,40 @@ fn ask_words(ask: &AskSummary) -> String {
                 .join(" ");
             format!("wants to use {tool}")
         }
-        AskSubject::Question { question, .. } => text::first_line(question).to_owned(),
-        AskSubject::Plan => "has a plan for you to decide".to_owned(),
-        AskSubject::Form { server, message } | AskSubject::Link { server, message } => {
-            match server.as_str() {
-                "" => text::first_line(message).to_owned(),
-                server => format!("{server}: {}", text::first_line(message)),
-            }
-        }
-        AskSubject::Access { reason } => format!("wants access: {}", text::first_line(reason)),
-        AskSubject::Unanswerable { reason } => text::first_line(reason).to_owned(),
+        Wants::Question { text: question } => text::first_line(question).to_owned(),
+        Wants::Plan { title } => match text::first_line(title) {
+            "" => "has a plan for you to decide".to_owned(),
+            title => format!("has a plan for you to decide: {title}"),
+        },
+        Wants::Access { reason } => format!("wants access: {}", text::first_line(reason)),
+        Wants::Other { server, text: said } => match server.as_str() {
+            "" => text::first_line(said).to_owned(),
+            server => format!("{server}: {}", text::first_line(said)),
+        },
     };
-    match ask.count {
-        0 | 1 => words,
-        count => format!("{words} · {} more", count - 1),
+    match more {
+        0 => words,
+        more => format!("{words} · {more} more"),
+    }
+}
+
+/// What stops an agent, or what it asks, as its row says it.
+fn said_words(said: &Said, kind: Kind, now_ms: i64) -> String {
+    match said {
+        Said::Ask { wants, more, .. } => ask_words(wants, *more),
+        Said::SignedOut => format!("signed out of {}", provider_word(kind)),
+        Said::UsageLimit { resets_at_ms } => {
+            let mut words = "usage limit reached".to_owned();
+            if let Some(at) = resets_at_ms.filter(|at| *at > now_ms) {
+                words.push_str(&format!(" · resets {}", crate::chat::resets(at, now_ms)));
+            }
+            words
+        }
+        Said::Failed { message } => match text::first_line(message) {
+            "" => "its turn failed".to_owned(),
+            message => message.to_owned(),
+        },
+        Said::Died { detail } => format!("exited · {}", text::first_line(detail)),
     }
 }
 
@@ -2319,25 +2339,12 @@ fn second_words(
     }
     Some(match line {
         // What it asks is the most important line on home.
-        SecondLine::Ask(ask) => (ask_words(ask), theme.text()),
+        SecondLine::Said(said @ Said::Ask { .. }) => {
+            (said_words(said, row.card.kind, now_ms), theme.text())
+        }
+        SecondLine::Said(said) => (said_words(said, row.card.kind, now_ms), theme.warning()),
         SecondLine::Step(step) => (step_words(step), theme.muted()),
         SecondLine::LastSaid(said) => (said.clone(), theme.muted()),
-        SecondLine::Stuck(StuckReason::SignedOut { state, .. }) => {
-            let provider = provider_word(row.card.kind);
-            let words = match state {
-                SignInState::Expired => format!("{provider} sign-in expired"),
-                SignInState::Failed => format!("{provider} sign-in failed"),
-                _ => format!("signed out of {provider}"),
-            };
-            (words, theme.warning())
-        }
-        SecondLine::Stuck(StuckReason::UsageLimit { resets_at_ms }) => {
-            let mut words = "usage limit reached".to_owned();
-            if let Some(at) = resets_at_ms.filter(|at| *at > now_ms) {
-                words.push_str(&format!(" · resets {}", crate::chat::resets(at, now_ms)));
-            }
-            (words, theme.warning())
-        }
         SecondLine::Exited(ExitCause::Finished) => ("finished".to_owned(), theme.faint()),
         SecondLine::Exited(ExitCause::Ended) => ("exited".to_owned(), theme.faint()),
         SecondLine::Exited(ExitCause::Failed(cause)) => {

@@ -35,6 +35,7 @@ tokio-util = { workspace = true }
 tower = { workspace = true }
 webpki-roots = { workspace = true }
 # The dump path's redactor: the one place the daemon decodes a body.
+hpke = { workspace = true }
 interpret = { workspace = true }
 redaction = { workspace = true }
 journal = { workspace = true }

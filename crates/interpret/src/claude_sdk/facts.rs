@@ -141,7 +141,14 @@ impl State {
                         state: SignInState::SignedIn as i32,
                         ..Default::default()
                     },
-                })
+                });
+                if self
+                    .sign_in
+                    .as_ref()
+                    .is_some_and(|sign_in| sign_in.state == SignInState::SignedIn as i32)
+                {
+                    self.shared.signed_in();
+                }
             }
             // Every reset, whatever started it, is a new session the next
             // init names.
@@ -257,22 +264,26 @@ impl State {
                     },
                 );
             }
-            Message::ModelRefusalNoFallback(refusal) => self.shared.item(
-                emit,
-                ItemDraft {
-                    key: refusal.uuid,
-                    body: item_body(Kind::ApiError(wire::ApiError {
-                        error_kind: "refusal".into(),
-                        message: without_terminal_codes(
-                            &written_opt(refusal.api_refusal_explanation.as_deref())
-                                .unwrap_or(refusal.content),
-                        ),
+            Message::ModelRefusalNoFallback(refusal) => {
+                let message = without_terminal_codes(
+                    &written_opt(refusal.api_refusal_explanation.as_deref())
+                        .unwrap_or(refusal.content),
+                );
+                self.shared.stopped_by(crate::notice::failed(&message));
+                self.shared.item(
+                    emit,
+                    ItemDraft {
+                        key: refusal.uuid,
+                        body: item_body(Kind::ApiError(wire::ApiError {
+                            error_kind: "refusal".into(),
+                            message,
+                            ..Default::default()
+                        })),
+                        complete: true,
                         ..Default::default()
-                    })),
-                    complete: true,
-                    ..Default::default()
-                },
-            ),
+                    },
+                );
+            }
             Message::LocalCommandOutput(output) => {
                 self.slash_output(emit, output.uuid, &without_terminal_codes(&output.content))
             }
@@ -782,6 +793,18 @@ impl State {
 
     /// Claude rejected the credential: the sign-in problem the strip
     /// shows until Claude reports an account again.
+    /// When the spent usage windows reset.
+    fn spent_until(&self) -> Option<i64> {
+        self.usage.as_ref().and_then(|usage| {
+            crate::notice::spent_until(
+                usage
+                    .windows
+                    .iter()
+                    .filter_map(|window| window.meter.as_ref()),
+            )
+        })
+    }
+
     fn sign_in_failed(&mut self, message: &str) {
         let account = self
             .sign_in
@@ -831,6 +854,11 @@ impl State {
             if error == AUTHENTICATION_FAILED {
                 self.sign_in_failed(&text);
             }
+            self.shared.stopped_by(crate::claude_common::blocked_by(
+                &error,
+                &text,
+                self.spent_until(),
+            ));
             self.shared.item(
                 emit,
                 ItemDraft {
@@ -1130,6 +1158,8 @@ impl State {
             .map(|common| common.uuid.as_str())
             .unwrap_or_default();
         if outcome == TurnOutcome::Failed && subtype != "success" {
+            self.shared
+                .stopped_by(crate::notice::failed(&errors.join("; ")));
             self.shared.item(
                 emit,
                 ItemDraft {
@@ -1319,6 +1349,9 @@ impl State {
                 )
             }
             PLAN_TOOL if server.is_empty() => {
+                if let Some(plan) = crate::claude_common::plan_text(input) {
+                    self.shared.plan_written(&plan);
+                }
                 let switch = crate::claude_common::plan_switch(self.offers_auto(), self.never_ask)
                     .to_owned();
                 (

@@ -1,4 +1,5 @@
 import AmuxCore
+import AmuxPush
 import AmuxValues
 import Foundation
 import XCTest
@@ -15,23 +16,23 @@ final class FleetWordsTests: XCTestCase {
         FleetWords.secondLine(line, kind: kind, now: now)?.text
     }
 
+    private func asks(_ wants: Wants, more: UInt32 = 0) -> SecondLine {
+        .said(.ask(key: "k", wants: wants, why: "", more: more))
+    }
+
     func testAnAskSaysWhatItAsksAndHowManyMoreWait() {
+        XCTAssertEqual(said(asks(.run(command: "cargo test\n--all"))), "Wants to run cargo test")
         XCTAssertEqual(
-            said(.ask(AskSummary(subject: .command(command: "cargo test\n--all"), count: 1))),
-            "Wants to run cargo test")
-        XCTAssertEqual(
-            said(.ask(AskSummary(subject: .edit(path: "src/a.rs", files: 1, created: true), count: 3))),
+            said(asks(.change(path: "src/a.rs", files: 1, created: true), more: 2)),
             "Wants to create src/a.rs · 2 more")
         XCTAssertEqual(
-            said(.ask(AskSummary(subject: .edit(path: "src/a.rs", files: 1, created: nil), count: 1))),
-            "Wants to write src/a.rs")
-        XCTAssertEqual(said(.ask(AskSummary(subject: .plan, count: 1))), "Has a plan for you to decide")
+            said(asks(.change(path: "src/a.rs", files: 1, created: nil))), "Wants to write src/a.rs")
+        XCTAssertEqual(said(asks(.plan(title: ""))), "Has a plan for you to decide")
+        XCTAssertEqual(said(asks(.question(text: "Which base?"))), "Which base?")
         XCTAssertEqual(
-            said(.ask(AskSummary(subject: .question(question: "Which base?", count: 2), count: 1))),
-            "Which base?")
+            said(asks(.other(server: "linear", text: "Sign in\nnow"))), "linear: Sign in")
         XCTAssertEqual(
-            FleetWords.secondLine(.ask(AskSummary(subject: .plan, count: 1)), kind: .codex, now: now)?.ink,
-            .ask)
+            FleetWords.secondLine(asks(.plan(title: "")), kind: .codex, now: now)?.ink, .ask)
     }
 
     /// Background jobs lead an idle or working line, as the terminal's row
@@ -46,7 +47,7 @@ final class FleetWordsTests: XCTestCase {
         XCTAssertEqual(
             with(.step(AmuxValues.ActivityLine(activity: thinking, step: nil)), 2),
             "2 background jobs · \(said(.step(AmuxValues.ActivityLine(activity: thinking, step: nil)))!)")
-        XCTAssertEqual(with(.ask(AskSummary(subject: .plan, count: 1)), 2), "Has a plan for you to decide")
+        XCTAssertEqual(with(asks(.plan(title: "")), 2), "Has a plan for you to decide")
         XCTAssertEqual(with(.lastSaid("Done."), 0), "Done.")
     }
 
@@ -59,18 +60,22 @@ final class FleetWordsTests: XCTestCase {
 
     func testAStuckAgentWarnsAndSaysWhenItCanGoOn() {
         let signedOut = FleetWords.secondLine(
-            .stuck(.signedOut(state: .expired, account: "ada")), kind: .codex, now: now)
-        XCTAssertEqual(signedOut?.text, "Codex sign-in expired")
+            .said(.signedOut), kind: .codex, now: now)
+        XCTAssertEqual(signedOut?.text, "Signed out of Codex")
         XCTAssertEqual(signedOut?.ink, .warning)
         XCTAssertEqual(
-            said(.stuck(.signedOut(state: .signedOut, account: ""))), "Signed out of Claude")
-        XCTAssertEqual(said(.stuck(.usageLimit(resetsAtMs: nil))), "Usage limit reached")
+            said(.said(.signedOut)), "Signed out of Claude")
+        XCTAssertEqual(said(.said(.usageLimit(resetsAtMs: nil))), "Usage limit reached")
         XCTAssertEqual(
-            said(.stuck(.usageLimit(resetsAtMs: nowMs - 1))), "Usage limit reached",
+            said(.said(.usageLimit(resetsAtMs: nowMs - 1))), "Usage limit reached",
             "a reset already past is not promised")
         XCTAssertTrue(
-            said(.stuck(.usageLimit(resetsAtMs: nowMs + 3_600_000)))?
+            said(.said(.usageLimit(resetsAtMs: nowMs + 3_600_000)))?
                 .hasPrefix("Usage limit reached · resets ") == true)
+        let failed = FleetWords.secondLine(
+            .said(.failed(message: "Connection refused\nretry")), kind: .codex, now: now)
+        XCTAssertEqual(failed?.text, "Connection refused")
+        XCTAssertEqual(failed?.ink, .warning)
     }
 
     func testWhatTheStateWordAlreadySaysIsNotSaidAgain() {

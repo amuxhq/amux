@@ -100,6 +100,8 @@ public enum CloudCall: Sendable, Equatable {
     case entitlement(AccountId)
     case recordPurchase(AccountId)
     case requestDeletion(AccountId, confirmedEmail: String)
+    case registerDevice(AccountId, host: HostId, device: PushDevice)
+    case removeDevice(AccountId, host: HostId)
 }
 
 /// The cloud, scripted. It answers exactly what the state says and records
@@ -207,6 +209,16 @@ public final class ScriptedCloudService: CloudService, @unchecked Sendable {
         let state = record(.requestDeletion(id, confirmedEmail: confirmedEmail))
         await wait(state)
         return state.deletion
+    }
+
+    public func registerDevice(
+        _ id: AccountId, host: HostId, device: PushDevice
+    ) async throws(CloudError) {
+        await wait(record(.registerDevice(id, host: host, device: device)))
+    }
+
+    public func removeDevice(_ id: AccountId, host: HostId) async throws(CloudError) {
+        await wait(record(.removeDevice(id, host: host)))
     }
 }
 

@@ -220,6 +220,7 @@ impl Daemon {
                         reach: Some(self.reads(host)),
                         current: self.sources.ready(host),
                     })),
+                    push_key: None,
                     claude_kind: self
                         .host_set
                         .claude_kinds

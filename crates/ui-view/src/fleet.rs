@@ -11,11 +11,8 @@ pub use ui_state::ExitCause;
 use ui_state::{
     Activity, ActivityKind, AgentKey, Attention, FleetState, ItemBody, ItemClass, SessionState,
 };
-use wire::{
-    Agent, Filing, HostEntry, Kind, Lifecycle, RouteKind, SignInState, UsageState, trusted,
-};
+use wire::{Agent, Filing, HostEntry, Kind, Lifecycle, RouteKind, Said, Wants, trusted};
 
-use crate::ask::{AskBody, ask_card};
 use crate::text::{markdown_words, within, without_direction_controls};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
@@ -117,14 +114,13 @@ pub struct LoudMember {
 /// working on is a fact for agents finding each other, not for this line.
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 pub enum SecondLine {
-    /// Needs you: what it asks.
-    Ask(AskSummary),
+    /// What it wants of the person: what it asks, or what stops it. The
+    /// same words a push says.
+    Said(Said),
     /// Working: the step it is running, as the chat's activity line has it.
     Step(ActivityLine),
     /// Idle: the first line of what it last said.
     LastSaid(String),
-    /// Idle, and cannot go on until the person acts.
-    Stuck(StuckReason),
     Exited(ExitCause),
     /// The agent's host no longer trusts this machine: it will not come
     /// back on its own, only by pairing again. The agent is only as it last
@@ -132,52 +128,6 @@ pub enum SecondLine {
     HostRevoked,
     /// Starting, or nothing known yet.
     Blank,
-}
-
-/// The head ask, small enough for a row: what is asked, without the diff,
-/// the plan or the form that the ask card carries.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
-pub struct AskSummary {
-    pub subject: AskSubject,
-    /// Asks open, the head included.
-    pub count: u32,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
-pub enum AskSubject {
-    Command {
-        command: String,
-    },
-    Edit {
-        path: String,
-        files: u32,
-        /// As the ask's card has it: None for a write that may do either.
-        created: Option<bool>,
-    },
-    Tool {
-        server: String,
-        tool: String,
-    },
-    /// The first question, and how many there are.
-    Question {
-        question: String,
-        count: u32,
-    },
-    Plan,
-    Form {
-        server: String,
-        message: String,
-    },
-    Link {
-        server: String,
-        message: String,
-    },
-    Access {
-        reason: String,
-    },
-    Unanswerable {
-        reason: String,
-    },
 }
 
 /// The activity line, with the subject of the step it names when the step
@@ -188,92 +138,38 @@ pub struct ActivityLine {
     pub step: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
-pub enum StuckReason {
-    /// The provider is signed out, its sign-in expired, or signing in failed.
-    SignedOut { state: SignInState, account: String },
-    /// A usage window is spent; it resets at the latest reset of the
-    /// windows that are, when the provider says.
-    UsageLimit { resets_at_ms: Option<i64> },
-}
-
 /// What one agent's session knows for its row. Read from the session alone,
 /// so a client never holds the fleet and a session at once; [`fleet_view`]
 /// picks from it by the state the inventory row says.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SessionLine {
-    pub ask: Option<AskSummary>,
+    pub said: Option<Said>,
     pub step: Option<ActivityLine>,
     pub last_said: Option<String>,
-    pub stuck: Option<StuckReason>,
 }
 
 pub fn session_line(state: &SessionState, now_ms: i64) -> SessionLine {
-    let agent = state.agent_state();
-    let stuck = match agent.sign_in.state() {
-        SignInState::SignedOut | SignInState::Expired | SignInState::Failed => {
-            Some(StuckReason::SignedOut {
-                state: agent.sign_in.state(),
-                account: agent.sign_in.account.clone(),
-            })
-        }
-        SignInState::Unknown | SignInState::SignedIn => None,
-    }
-    .or_else(|| {
-        (agent.usage.state() == UsageState::Blocked).then(|| StuckReason::UsageLimit {
-            resets_at_ms: crate::usage_windows(&agent.usage)
-                .iter()
-                .filter(|window| window.state == UsageState::Blocked)
-                .filter_map(|window| window.resets_at_ms)
-                .max(),
-        })
-    });
     SessionLine {
-        ask: ask_card(state).map(|card| AskSummary {
-            subject: subject(card.body),
-            count: card.count as u32,
-        }),
+        said: said(state),
         step: activity(state, now_ms).map(|activity| ActivityLine {
             step: step_subject(state, &activity),
             activity,
         }),
         last_said: last_said(state),
-        stuck,
     }
 }
 
-fn subject(body: AskBody) -> AskSubject {
-    match body {
-        AskBody::Command { command, .. } => AskSubject::Command { command },
-        AskBody::Edit {
-            path,
-            files,
-            created,
-            ..
-        } => AskSubject::Edit {
-            path,
-            files,
-            created,
-        },
-        AskBody::Tool { server, tool, .. } => AskSubject::Tool { server, tool },
-        AskBody::Question(questions) => AskSubject::Question {
-            count: questions.len() as u32,
-            question: questions
-                .into_iter()
-                .next()
-                .map(|first| first.question)
-                .unwrap_or_default(),
-        },
-        AskBody::Plan { .. } => AskSubject::Plan,
-        AskBody::Form {
-            server, message, ..
-        } => AskSubject::Form { server, message },
-        AskBody::Link {
-            server, message, ..
-        } => AskSubject::Link { server, message },
-        AskBody::Access { reason, .. } => AskSubject::Access { reason },
-        AskBody::Unanswerable { reason } => AskSubject::Unanswerable { reason },
+/// What the agent's notice says, its path as the chat's ask card shows it.
+fn said(state: &SessionState) -> Option<Said> {
+    let mut said = Said::of(state.agent_state().notice.clone()?)?;
+    if let Said::Ask {
+        wants: Wants::Change { path, .. },
+        ..
+    } = &mut said
+    {
+        *path = within(&state.agent().cwd, path);
     }
+    Some(said)
 }
 
 /// The activity line, for the chat and the agent's row alike. While
@@ -404,12 +300,12 @@ fn second_line(
         return SecondLine::Blank;
     };
     let said = match attention {
-        Attention::NeedsYou => line.ask.clone().map(SecondLine::Ask),
+        Attention::NeedsYou => line.said.clone().map(SecondLine::Said),
         Attention::Working => line.step.clone().map(SecondLine::Step),
         Attention::Idle => line
-            .stuck
+            .said
             .clone()
-            .map(SecondLine::Stuck)
+            .map(SecondLine::Said)
             .or_else(|| line.last_said.clone().map(SecondLine::LastSaid)),
         Attention::Starting | Attention::Exited => None,
     };

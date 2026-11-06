@@ -19,6 +19,7 @@ pub mod claude_pty;
 pub mod claude_sdk;
 pub mod codex;
 mod golden;
+mod notice;
 pub mod record;
 pub mod redact;
 pub mod ring;
@@ -171,8 +172,15 @@ pub enum Event {
 }
 
 /// The cause the final boundary gives for a provider's own exit, with its
-/// exit code or signal as the detail.
+/// exit code or signal as the detail. A clean exit is not a failure: it is
+/// how a person quits a terminal provider.
 pub fn provider_exit(code: Option<i32>) -> wire::IncarnationEnd {
+    if code == Some(0) {
+        return wire::IncarnationEnd {
+            cause: wire::ExitCause::Quit as i32,
+            detail: None,
+        };
+    }
     wire::IncarnationEnd {
         cause: wire::ExitCause::ProviderExited as i32,
         detail: Some(match code {

@@ -10,6 +10,9 @@ let package = Package(
         // definitions by `cargo run -p ios-tools -- swift-types`.
         .library(name: "AmuxValues", targets: ["AmuxValues"]),
     ],
+    dependencies: [
+        .package(path: "../AmuxPush"),
+    ],
     targets: [
         // Assembled by `just ios rust` from the Rust bridge; the recipes that
         // build or test this package produce it first.
@@ -17,8 +20,13 @@ let package = Package(
         // The only code in this app that runs before `main()`. It exists
         // in C because nothing written in Swift can: see LaunchClock.h.
         .target(name: "LaunchClock"),
-        .target(name: "AmuxValues"),
-        .target(name: "AmuxCore", dependencies: ["AmuxApp", "AmuxValues", "LaunchClock"]),
+        .target(name: "AmuxValues", dependencies: [.product(name: "AmuxPush", package: "AmuxPush")]),
+        .target(
+            name: "AmuxCore",
+            dependencies: [
+                "AmuxApp", "AmuxValues", "LaunchClock",
+                .product(name: "AmuxPush", package: "AmuxPush"),
+            ]),
         .testTarget(name: "AmuxCoreTests", dependencies: ["AmuxCore"]),
     ],
     swiftLanguageModes: [.v6]

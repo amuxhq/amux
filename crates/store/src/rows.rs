@@ -247,8 +247,7 @@ fn notification_row(row: &Row<'_>) -> rusqlite::Result<Notification> {
         revision: row.get::<_, i64>(1)? as u64,
         due_at_ms: row.get(2)?,
         name: row.get(3)?,
-        working_on: row.get(4)?,
-        text: row.get(5)?,
+        notice: row.get(4)?,
     })
 }
 
@@ -475,19 +474,6 @@ impl Rows<'_> {
             .unwrap_or_default())
     }
 
-    /// The text of the item at the highest position, empty when none is held.
-    pub(crate) fn newest_text(&self, agent: &AgentKey) -> Result<String, StoreError> {
-        Ok(self
-            .conn
-            .prepare_cached(
-                "SELECT text FROM items WHERE origin_host = ?1 AND agent_id = ?2 \
-                 ORDER BY position DESC LIMIT 1",
-            )?
-            .query_row(params![agent.host, agent.agent], |row| row.get(0))
-            .optional()?
-            .unwrap_or_default())
-    }
-
     /// Writes an own item: a new key takes `next_position`, a held key keeps
     /// its own. Returns the position the item has.
     pub(crate) fn commit_item(
@@ -687,25 +673,24 @@ impl Rows<'_> {
     pub(crate) fn put_notification(&self, notification: &Notification) -> Result<(), StoreError> {
         self.conn
             .prepare_cached(
-                "INSERT INTO notifications (agent_id, revision, due_at_ms, name, working_on, \
-                 text) VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+                "INSERT INTO notifications (agent_id, revision, due_at_ms, name, notice) \
+                 VALUES (?1, ?2, ?3, ?4, ?5) \
                  ON CONFLICT (agent_id, revision) DO UPDATE SET due_at_ms = excluded.due_at_ms, \
-                 name = excluded.name, working_on = excluded.working_on, text = excluded.text",
+                 name = excluded.name, notice = excluded.notice",
             )?
             .execute(params![
                 notification.agent_id,
                 signed(notification.revision),
                 notification.due_at_ms,
                 notification.name,
-                notification.working_on,
-                notification.text,
+                notification.notice,
             ])?;
         Ok(())
     }
 
     pub(crate) fn notifications(&self) -> Result<Vec<Notification>, StoreError> {
         let mut statement = self.conn.prepare_cached(
-            "SELECT agent_id, revision, due_at_ms, name, working_on, text FROM notifications \
+            "SELECT agent_id, revision, due_at_ms, name, notice FROM notifications \
              ORDER BY agent_id, revision",
         )?;
         let rows = statement
@@ -736,8 +721,8 @@ impl Rows<'_> {
 
     pub(crate) fn trusted_hosts(&self) -> Result<Vec<TrustedHost>, StoreError> {
         let mut read = self.conn.prepare_cached(
-            "SELECT host_id, pubkey, name, on_account, signed_in, platform, ssh, direct, listed \
-             FROM trusted_hosts ORDER BY host_id",
+            "SELECT host_id, pubkey, name, on_account, signed_in, platform, ssh, direct, listed, \
+             push_key FROM trusted_hosts ORDER BY host_id",
         )?;
         let hosts = read
             .query_map([], |row| {
@@ -751,6 +736,7 @@ impl Rows<'_> {
                     ssh: row.get(6)?,
                     direct: row.get(7)?,
                     listed: row.get(8)?,
+                    push_key: row.get(9)?,
                 })
             })?
             .collect::<Result<_, _>>()?;
@@ -760,12 +746,12 @@ impl Rows<'_> {
     pub(crate) fn put_trusted_host(&self, host: &TrustedHost) -> Result<(), StoreError> {
         self.conn.execute(
             "INSERT INTO trusted_hosts (host_id, pubkey, name, on_account, \
-             signed_in, platform, ssh, direct, listed) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
+             signed_in, platform, ssh, direct, listed, push_key) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
              ON CONFLICT (host_id) DO UPDATE SET pubkey = excluded.pubkey, \
              name = excluded.name, on_account = excluded.on_account, signed_in = excluded.signed_in, \
              platform = excluded.platform, ssh = excluded.ssh, direct = excluded.direct, \
-             listed = excluded.listed",
+             listed = excluded.listed, push_key = excluded.push_key",
             params![
                 host.host_id,
                 host.pubkey,
@@ -776,6 +762,7 @@ impl Rows<'_> {
                 host.ssh,
                 host.direct,
                 host.listed,
+                host.push_key,
             ],
         )?;
         Ok(())

@@ -7,10 +7,12 @@ snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model
 ## 2 fact {"channel":"agent","json":{"type":"trust_dialog"}}
 item ask:ask:1 ask final at=1800000000000 text="" question×1 open
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[ask:1->ask:ask:1 question:2] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+notice ask ask:1 question "Do you trust the files in this folder?" why="" more=0
 ## 3 fact {"channel":"agent","json":{"type":"ready"}}
 ## 4 input {"id":"p1","prompt":{"text":"look around"}}
 effect reply p1 queued
 snapshot NEEDS_YOU queue=[p1] working_on=- at=1800000000000 asks=[ask:1->ask:ask:1 question:2] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+notice ask ask:1 question "Do you trust the files in this folder?" why="" more=0
 ## 5 input {"answer":{"answer":{"selected":["x"]},"ask":"ask:1"},"id":"a1"}
 effect reply a1 rejected:UNSUPPORTED
 ## 6 input {"answer":{"answer":{"selected":[0]},"ask":"ask:1"},"id":"a2"}

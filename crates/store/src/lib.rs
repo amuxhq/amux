@@ -46,6 +46,8 @@ pub struct TrustedHost {
     pub ssh: Option<String>,
     pub direct: String,
     pub listed: String,
+    /// The public key notifications are sealed to, when the host wants them.
+    pub push_key: Option<Vec<u8>>,
 }
 
 /// The most directories [`Sqlite::record_recent_directory`] keeps.
@@ -316,18 +318,17 @@ impl Delivery {
     }
 }
 
-/// The push outbox row for one turn into needs_you, built from envelope
-/// fields only: nothing here needs a body decoded.
+/// A push owed to the person: the notice a snapshot raised, or a process's
+/// death. Nothing here needs a body decoded.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Notification {
     pub agent_id: Vec<u8>,
-    /// The revision of the snapshot that turned to needs_you.
+    /// The revision that raised it.
     pub revision: u64,
     pub due_at_ms: i64,
     pub name: String,
-    pub working_on: Option<String>,
-    /// The newest item's text when it turned: usually the question.
-    pub text: String,
+    /// An encoded `amux.v1.Notice`.
+    pub notice: Vec<u8>,
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -50,6 +50,7 @@ mod resource_limits;
 mod retention;
 mod routing;
 mod runtime;
+mod seal;
 mod serve;
 mod services;
 mod spec;
@@ -93,7 +94,9 @@ pub use install::{
 };
 pub use link::{Cursor, PeerClient, TRUST_REVOKED, forwarder, framed, link_log, paths, socket};
 pub use offers::{HostCatalogue, PROVIDERS, Provider};
-pub use outbox::{DrainReport, HttpSender, NoopSender, Push, PushFuture, PushSender};
+pub use outbox::{
+    DrainReport, HttpSender, NoopSender, Push, PushCloud, PushFuture, PushRecipient, PushSender,
+};
 pub use pairing::qr::{QrPairingError, QrPairingPayload, parse_pair_link, qr_link};
 #[cfg(unix)]
 pub use pairing::ssh::relay_stdio_to_unix_socket;

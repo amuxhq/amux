@@ -33,6 +33,34 @@ final class RouterTests: XCTestCase {
 
     private func agent() -> AgentKey { AgentKey(host: machine, agent: UUID()) }
 
+    /// A notification about the chat somebody is reading stays quiet, and
+    /// anything over the chat means they aren't reading it.
+    func testTheChatOnScreenIsOnlyAChatWithNothingOverIt() {
+        let router = Router()
+        let chat = agent()
+        XCTAssertNil(router.chatOnScreen)
+        router.open(.conversation(chat))
+        XCTAssertEqual(router.chatOnScreen, chat)
+        router.composing = true
+        XCTAssertNil(router.chatOnScreen)
+        router.composing = false
+        router.open(.changes(chat))
+        XCTAssertNil(router.chatOnScreen, "the page on show is another one")
+        router.setPath([.conversation(chat)], for: .agents)
+        router.select(.hosts)
+        XCTAssertNil(router.chatOnScreen)
+    }
+
+    /// A notification that can't say who it is about opens the fleet.
+    func testOpeningTheFleetLeavesWhateverWasOnShow() {
+        let router = Router()
+        router.open(.conversation(agent()))
+        router.select(.hosts)
+        router.openFleet()
+        XCTAssertEqual(router.tab, .agents)
+        XCTAssertEqual(router.path, [])
+    }
+
     /// Leaving a page is said once, however it was left: by the app popping,
     /// by the system writing the stack back after a back gesture, or by one
     /// page replacing another.

@@ -17,10 +17,12 @@ snapshot WORKING queue=[] working_on=- at=1800000000010 asks=[] session=s1 model
 snapshot WORKING queue=[] working_on=- at=1800000000100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=t1 Bash since=1800000000100
 ## 7 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","permission_suggestions":[{"behavior":"allow","destination":"localSettings","rules":[{"ruleContent":"rm -rf build","toolName":"Bash"}],"type":"addRules"}],"tool_input":{"command":"rm -rf build"},"tool_name":"Bash"}}
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000100 asks=[ask:1->- permission:Bash/localSettings Bash(rm -rf build) deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=t1 Bash since=1800000000100
+notice ask ask:1 run "rm -rf build" why="" more=0
 ## 8 tick 1800000600100
 ## 9 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t1","input":{"command":"rm -rf build"},"name":"Bash","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.100Z","type":"assistant","uuid":"a1"}}
 item t1 tool final at=1800000600100 text="" Bash TOOL_STATE_RUNNING input=shell:"rm -rf build"
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:1->t1 permission:Bash/localSettings Bash(rm -rf build) deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=t1 Bash since=1800000000100
+notice ask ask:1 run "rm -rf build" why="" more=0
 ## 10 fact {"channel":"transcript","json":{"message":{"content":[{"content":"","is_error":false,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.140Z","toolUseResult":{"interrupted":false,"stderr":"","stdout":""},"type":"user","uuid":"r1"}}
 effect hook 1 released
 item t1 tool final at=1800000600100 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere ended=1800000600140 input=shell:"rm -rf build"
@@ -31,9 +33,11 @@ item t1 tool final at=1800000600100 text="" Bash TOOL_STATE_SUCCEEDED decision=D
 snapshot WORKING queue=[] working_on=- at=1800000600100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=t2 Write since=1800000600100
 ## 13 fact {"channel":"hook","json":{"amux_reply":2,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"content":"x","file_path":"notes.md"},"tool_name":"Write"}}
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:2->- permission:Write deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=t2 Write since=1800000600100
+notice ask ask:2 change "notes.md" files=1 created=None why="" more=0
 ## 14 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t2","input":{"content":"x","file_path":"notes.md"},"name":"Write","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.200Z","type":"assistant","uuid":"a2"}}
 item t2 tool final at=1800000600200 text="" Write TOOL_STATE_RUNNING input=write:"notes.md"
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:2->t2 permission:Write deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=t2 Write since=1800000600100
+notice ask ask:2 change "notes.md" files=1 created=None why="" more=0
 ## 15 fact {"channel":"transcript","json":{"message":{"content":[{"content":"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.","is_error":true,"tool_use_id":"t2","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.300Z","toolUseResult":"User rejected tool use","type":"user","uuid":"r2"}}
 effect hook 2 released
 item t2 tool final at=1800000600200 text="" Write TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED elsewhere ended=1800000600300 input=write:"notes.md" out="The user doesn't want to proceed with this tool use. The too…"
@@ -42,9 +46,11 @@ snapshot WORKING queue=[] working_on=- at=1800000600100 asks=[] session=s1 model
 snapshot WORKING queue=[] working_on=- at=1800000600100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=t3 Edit since=1800000600100
 ## 17 fact {"channel":"hook","json":{"amux_reply":3,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"file_path":"a.rs","new_string":"b","old_string":"a"},"tool_name":"Edit"}}
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:3->- permission:Edit deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=t3 Edit since=1800000600100
+notice ask ask:3 change "a.rs" files=1 created=Some(false) why="" more=0
 ## 18 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t3","input":{"file_path":"a.rs","new_string":"b","old_string":"a"},"name":"Edit","type":"tool_use"}],"id":"m3","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.400Z","type":"assistant","uuid":"a3"}}
 item t3 tool final at=1800000600400 text="" Edit TOOL_STATE_RUNNING input=edit:"a.rs"x1
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:3->t3 permission:Edit deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=t3 Edit since=1800000600100
+notice ask ask:3 change "a.rs" files=1 created=Some(false) why="" more=0
 ## 19 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Moving on.","type":"text"}],"id":"m4","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.500Z","type":"assistant","uuid":"a4"}}
 effect hook 3 released
 item t3 tool final at=1800000600400 text="" Edit TOOL_STATE_RUNNING decision=DECISION_OUTCOME_UNKNOWN input=edit:"a.rs"x1
@@ -56,6 +62,7 @@ effect reply late rejected:CLOSED_ASK
 snapshot WORKING queue=[] working_on=- at=1800000600100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=t3 Edit since=1800000600100 running=t4 Bash since=1800000600100
 ## 22 fact {"channel":"hook","json":{"amux_reply":4,"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"command":"cargo test"},"tool_name":"Bash"}}
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:4->- permission:Bash deny-can-stop] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=? running=t3 Edit since=1800000600100 running=t4 Bash since=1800000600100
+notice ask ask:4 run "cargo test" why="" more=0
 ## 23 fact {"channel":"transcript","json":{"message":{"content":"never mind","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:10:00.600Z","type":"user","uuid":"u2"}}
 effect hook 4 released
 item u2 prompt final at=1800000600600 text="never mind"

@@ -187,10 +187,9 @@ fn print(view: &FleetView) {
 
 fn second_line(line: &SecondLine) -> String {
     match line {
-        SecondLine::Ask(ask) => format!("asks {:?}", ask.subject),
+        SecondLine::Said(said) => format!("says {said:?}"),
         SecondLine::Step(step) => step.step.clone().unwrap_or_else(|| "working".into()),
         SecondLine::LastSaid(said) => said.clone(),
-        SecondLine::Stuck(reason) => format!("stuck: {reason:?}"),
         SecondLine::Exited(cause) => format!("exited: {cause:?}"),
         SecondLine::HostRevoked => "its host no longer trusts this machine".into(),
         SecondLine::Blank => String::new(),

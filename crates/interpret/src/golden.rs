@@ -1660,6 +1660,9 @@ fn render_frame<'a, I: Interpreter>(
             snapshot.at_ms,
             I::describe_snapshot(&snapshot.body).text
         );
+        if let Some(notice) = &snapshot.notice {
+            let _ = writeln!(out, "notice {}", crate::notice::describe(notice));
+        }
     }
     if let Some(pending) = pending {
         let _ = writeln!(

@@ -89,6 +89,7 @@ fn a_full_entry() -> TrustEntry {
     TrustEntry {
         pubkey: vec![9; 32],
         name: "peer".to_string(),
+        push_key: None,
         on_account: true,
         direct: vec![addr("192.0.2.7:7001"), addr("[::1]:4000")],
         ssh: Some("workstation".to_string()),

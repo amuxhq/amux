@@ -136,16 +136,19 @@ def literals(source):
 # literals are wire keys and case names, which change with the Rust and are
 # never shown to anybody, and `ios-tools swift-types --check` already fails on
 # any hand edit.
-GENERATED = Path("apps/apple/Packages/AmuxCore/Sources/AmuxValues")
+GENERATED = (
+    Path("apps/apple/Packages/AmuxCore/Sources/AmuxValues"),
+    Path("apps/apple/Packages/AmuxPush/Sources/AmuxPush/Said.swift"),
+)
 
 
 def swift_sources(root):
     roots = [root / "apps/apple/Amux/Sources", root / "apps/apple/Amux/Debug",
              *sorted((root / "apps/apple/Packages").glob("*/Sources"))]
-    generated = root / GENERATED
+    generated = [root / path for path in GENERATED]
     return sorted(
         path for directory in roots for path in directory.rglob("*.swift")
-        if generated not in path.parents)
+        if not any(place == path or place in path.parents for place in generated))
 
 
 def debug_source(path):

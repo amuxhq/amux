@@ -127,6 +127,17 @@
             parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "AmuxPushTests"
+               BuildableName = "AmuxPushTests"
+               BlueprintName = "AmuxPushTests"
+               ReferencedContainer = "container:Packages/AmuxPush">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "AmuxShellTests"
                BuildableName = "AmuxShellTests"
                BlueprintName = "AmuxShellTests"

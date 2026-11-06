@@ -378,6 +378,8 @@ pub struct ProfileRuntime {
     /// cost per frame can be measured from outside.
     ingested_frames: AtomicU64,
     pub(crate) push: Arc<dyn PushSender>,
+    /// What this host's own entry says of notifications.
+    pub(crate) push_key: std::sync::Mutex<Option<Vec<u8>>>,
     /// The outbox drains and the retention sweep.
     pub(crate) background: Mutex<Vec<JoinHandle<()>>>,
     /// The dumps the core asked for that are still being written; none
@@ -676,6 +678,7 @@ impl ProfileRuntime {
             commits: watch::Sender::new(0),
             ingested_frames: AtomicU64::new(0),
             push,
+            push_key: std::sync::Mutex::new(None),
             background: Mutex::new(Vec::new()),
             core_dumps: Mutex::new(Some(Vec::new())),
             agent_dumps: Mutex::new(core_ring::DumpLimit::default()),

@@ -75,25 +75,19 @@ pub fn redact_file(
                 params![rowid, text("text", body), text("exit_detail", detail)],
             )?;
         }
-        let mut read = tx.prepare("SELECT rowid, name, working_on, text FROM notifications")?;
+        let mut read = tx.prepare("SELECT rowid, name, notice FROM notifications")?;
         let rows = read
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get::<_, String>(3)?,
-                ))
-            })?
-            .collect::<Result<Vec<(i64, Option<String>, Option<String>, String)>, _>>()?;
-        for (rowid, name, working_on, body) in rows {
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .collect::<Result<Vec<(i64, Option<String>, Vec<u8>)>, _>>()?;
+        for (rowid, name, notice) in rows {
+            let notice = wire::Notice::decode(notice.as_slice())
+                .map_err(|error| StoreError::Corrupt(error.to_string()))?;
             tx.execute(
-                "UPDATE notifications SET name = ?2, working_on = ?3, text = ?4 WHERE rowid = ?1",
+                "UPDATE notifications SET name = ?2, notice = ?3 WHERE rowid = ?1",
                 params![
                     rowid,
                     text("name", name),
-                    text("working_on", working_on),
-                    redactor.text("", "text", &body)
+                    redacted(redactor, &notice).encode_to_vec()
                 ],
             )?;
         }

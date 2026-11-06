@@ -1,0 +1,25 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 4 fact {"channel":"transcript","json":{"message":{"content":"carry on","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 7 fact {"channel":"transcript","json":{"durationMs":110,"parentUuid":"a1","sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.120Z","type":"system","uuid":"d1"}}
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 9 fact {"channel":"transcript","json":{"message":{"content":"try again","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.300Z","type":"user","uuid":"u2"}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 u1 Prompt { text: [Text("carry on")], steered: false }
+     3 a1 Error { error_kind: "rate_limit", message: "You've hit your 5-hour limit · resets 2:30am (Europe/Oslo)", attempts: 0, gave_up: true } attention
+     4 turn:1 TurnEnd { duration_ms: Some(110), failed: false }
+     5 u2 Prompt { text: [Text("try again")], steered: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context None sign-in None
+== settings
+  model* unlisted claude-opus-5-5 "Opus 5.5" efforts=[]
+  permission  "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Opus 5.5") effort=None permission=None mode=None

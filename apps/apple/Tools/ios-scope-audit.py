@@ -44,6 +44,14 @@ FORBIDDEN_APIS = (
 # Store for an app it already has.
 ASSOCIATED_DOMAINS = ["applinks:amux.sh"]
 BONJOUR_SERVICES = ["_amux._udp"]
+# The extension that opens a push. iOS gives it a few megabytes, which the Rust
+# bridge alone would overrun, so nothing of the bridge may reach it.
+EXTENSION = "PlugIns/AmuxNotifications.appex"
+EXTENSION_POINT = "com.apple.usernotifications.service"
+BRIDGE_SYMBOL = "amux_runtime_"
+# Where the app keeps push keys and the extension reads them. Named as the
+# entitlements files spell it, since the team's prefix is not committed.
+PUSH_KEY_GROUP = "$(AppIdentifierPrefix)sh.amux.push"
 LOCAL_NETWORK_PURPOSE = ("amux finds hosts on your network so this phone can "
                          "pair and connect to them directly.")
 # Resources that only the driving and capture tools need. Code that reads them
@@ -136,8 +144,10 @@ def resource_violations(bundle: Path) -> list[str]:
 def bundle_violations(info: dict, entitlements: dict, settings: dict,
                       bundle: Path) -> list[str]:
     failures = icon_violations(info, bundle) + resource_violations(bundle)
-    if "aps-environment" in entitlements:
-        failures.append("push entitlement: aps-environment")
+    # Required: without it the app asks for a token and never gets one, and
+    # nothing but the notifications that don't arrive says so.
+    if "aps-environment" not in entitlements:
+        failures.append("no push entitlement: aps-environment")
     domains = entitlements.get("com.apple.developer.associated-domains")
     if domains != ASSOCIATED_DOMAINS:
         failures.append(f"associated domains must be {ASSOCIATED_DOMAINS}, not {domains}")
@@ -164,6 +174,29 @@ def bundle_violations(info: dict, entitlements: dict, settings: dict,
     return failures
 
 
+def extension_violations(app_info: dict, app_grants: dict, info: dict, grants: dict,
+                         symbols: str) -> list[str]:
+    """Refuse a notification extension that would launch and do nothing.
+
+    Every one of these still builds and installs: the app's pushes would just
+    show the plain alert, or the App Store would turn the upload down."""
+    failures = []
+    if info.get("NSExtension", {}).get("NSExtensionPointIdentifier") != EXTENSION_POINT:
+        failures.append(f"the extension does not declare {EXTENSION_POINT}")
+    for key in ("CFBundleShortVersionString", "CFBundleVersion"):
+        if info.get(key) != app_info.get(key):
+            failures.append(f"the extension's {key} is {info.get(key)}, "
+                            f"not the app's {app_info.get(key)}")
+    if BRIDGE_SYMBOL in symbols:
+        failures.append("the extension links the Rust bridge")
+    for name, held in (("app", app_grants), ("extension", grants)):
+        if PUSH_KEY_GROUP not in held.get("keychain-access-groups", []):
+            failures.append(f"the {name} lacks the push key group {PUSH_KEY_GROUP}")
+    if info.get("AmuxPushKeychainGroup") != app_info.get("AmuxPushKeychainGroup"):
+        failures.append("the app and the extension name different push key groups")
+    return failures
+
+
 def graph_violations(graphs: list[dict]) -> list[str]:
     failures = []
     def visit(node):
@@ -183,13 +216,28 @@ def inspect_binary(binary: Path) -> tuple[str, str]:
     return symbols, strings
 
 
-def entitlements() -> dict:
-    result = run(["codesign", "-d", "--entitlements", ":-", str(APP)], check=False)
+def entitlements(bundle: Path) -> dict:
+    result = run(["codesign", "-d", "--entitlements", ":-", str(bundle)], check=False)
     if result.returncode:
         if b"not signed at all" in result.stderr:
             return {}
         raise RuntimeError(result.stderr.decode(errors="replace"))
     return plistlib.loads(result.stdout) if result.stdout.strip() else {}
+
+
+def granted(bundle: Path, settings: dict) -> dict:
+    """What a bundle is signed with, and what its target's Release signing says.
+
+    Simulator builds may be unsigned, so the signing input is read too, or an
+    entitlement could be missing behind disabled simulator signing."""
+    grants = entitlements(bundle)
+    declared = settings.get("CODE_SIGN_ENTITLEMENTS", "")
+    if declared:
+        path = Path(declared)
+        if not path.is_absolute():
+            path = Path(settings["SRCROOT"]) / path
+        grants |= plistlib.loads(path.read_bytes())
+    return grants
 
 
 def detector_probe() -> None:
@@ -225,17 +273,19 @@ def main() -> None:
     settings = next(row["buildSettings"] for row in settings_rows if row["target"] == "Amux")
     (OUTPUT / "build-settings.json").write_text(json.dumps(settings, indent=2))
     info = plistlib.loads((APP / "Info.plist").read_bytes())
-    grants = entitlements()
-    # Simulator builds may be unsigned. Inspect the Release signing input too,
-    # so a push entitlement cannot hide behind disabled simulator signing.
-    declared = settings.get("CODE_SIGN_ENTITLEMENTS", "")
-    if declared:
-        path = Path(declared)
-        if not path.is_absolute():
-            path = Path(settings["SRCROOT"]) / path
-        grants |= plistlib.loads(path.read_bytes())
+    grants = granted(APP, settings)
     (OUTPUT / "entitlements.json").write_text(json.dumps(grants, indent=2))
     failures = bundle_violations(info, grants, settings, APP)
+    appex = APP / EXTENSION
+    if appex.is_dir():
+        extension_settings = next(row["buildSettings"] for row in settings_rows
+                                  if row["target"] == "AmuxNotifications")
+        extension_info = plistlib.loads((appex / "Info.plist").read_bytes())
+        failures += extension_violations(
+            info, grants, extension_info, granted(appex, extension_settings),
+            inspect_binary(appex / extension_info["CFBundleExecutable"])[0])
+    else:
+        failures.append(f"no extension at {EXTENSION}")
     symbols, strings = inspect_binary(APP / info["CFBundleExecutable"])
     (OUTPUT / "symbols.txt").write_text(symbols)
     # Include compiled localization resources: a row may no longer be a literal
@@ -265,7 +315,8 @@ def main() -> None:
     failures += graph_violations(graphs + rust_graph)
     detector_probe()
     lines = [f"Release app: {APP}",
-             "Inspected: Info.plist, the app icon, bundle resources, entitlements, build destinations, executable symbols,",
+             "Inspected: Info.plist, the app icon, bundle resources, entitlements, the notification extension,",
+             "build destinations, executable symbols,",
              "compiled strings and the complete Swift package and locked Rust dependency graphs.",
              "Detector rejected a compiler-built test executable carrying a debug export."]
     if failures:
@@ -278,7 +329,9 @@ def main() -> None:
                   "and no legacy browser; iPhone destinations only;",
                   "no amuxcloud or React Native package; no driving code.",
                   "PASS: in-app attention copy, Contact Support and Report a Problem remain;",
-                  "the report screen, its freeze and the record snapshot ship."]
+                  "the report screen, its freeze and the record snapshot ship.",
+                  "PASS: the notification extension is embedded, shares the push key group and the",
+                  "app's numbers, and carries none of the Rust bridge."]
     lines += ["Limit: simulator Release bundle inspection; distribution signing is checked before release."]
     report.write_text("\n".join(lines) + "\n")
     print(report.read_text(), end="", flush=True)

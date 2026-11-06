@@ -203,28 +203,30 @@ security find-certificate -c "Apple Distribution" -p | \
 
 **The export signs by hand.** `apps/apple/ExportOptions.plist` sets
 `signingStyle: manual` and names both the certificate type
-(`Apple Distribution`) and the profile (`amux App Store`, for
-`sh.amux.app`). Automatic signing is what Xcode does in the IDE, and it does
+(`Apple Distribution`) and a profile for each bundle: `amux App Store` for
+`sh.amux.app`, and `amux Notifications App Store` for its notification
+extension, `sh.amux.app.notifications`. Automatic signing is what Xcode does in the IDE, and it does
 not work here: the export answers *Cloud signing permission error* and then
 *No profiles for `sh.amux.app` were found*, with an active matching profile
-sitting installed. Signing by hand means **the certificate and the profile
+sitting installed. Signing by hand means **the certificate and the profiles
 must already exist on the Mac before an export** — nothing creates them
-mid-run. It also means two names are pinned: rename the profile in Apple's
+mid-run. It also means the names are pinned: rename a profile in Apple's
 portal and the export stops. The certificate type is named rather than one
 certificate's full name, because a full name ends in the Team ID and that
 file is committed.
 
 **The certificate expires.** The one on the release Mac runs to **10
 September 2027**. When it does, the export fails to find an identity: make a
-new Apple Distribution certificate, install it, and make a new `amux App
-Store` profile tied to it — the profile is bound to the certificate and does
-not survive it. Keeping the same two names means nothing in this repository
-changes.
+new Apple Distribution certificate, install it, and make new `amux App
+Store` and `amux Notifications App Store` profiles tied to it — a profile is
+bound to the certificate and does not survive it. Keeping the same names means
+nothing in this repository changes.
 
 So: **a simulator build needs nothing** — no team, no certificate, no
 profile. **A distribution archive needs** the Team ID above, an Apple
-Distribution certificate in the login keychain, an App Store provisioning
-profile named `amux App Store` for `sh.amux.app`, and the App Store Connect
+Distribution certificate in the login keychain, App Store provisioning
+profiles named `amux App Store` for `sh.amux.app` and `amux Notifications App
+Store` for `sh.amux.app.notifications`, and the App Store Connect
 API key. The last three are produced once and then reused; the
 [checklist](#one-time-operator-setup) at the end is how they come to exist.
 
@@ -283,7 +285,7 @@ that identifies a team. Its keys:
 | `destination` | `export` | write the `.ipa` here; the upload is a separate step the recipe runs with altool |
 | `signingStyle` | `manual` | the export names what it signs with. Automatic signing fails here — see [Signing](#signing) |
 | `signingCertificate` | `Apple Distribution` | the certificate *type*; `teamID` picks which identity in the keychain. A full name would carry the Team ID into a committed file |
-| `provisioningProfiles` | `sh.amux.app` → `amux App Store` | the profile by name. It has to be installed already |
+| `provisioningProfiles` | `sh.amux.app` → `amux App Store`, `sh.amux.app.notifications` → `amux Notifications App Store` | one profile per bundle, by name. Each has to be installed already |
 | `manageAppVersionAndBuildNumber` | `false` | Xcode may otherwise rewrite the build number at export. The number this repository chose and tagged is the number that ships |
 | `uploadSymbols` | `true` | symbols travel with the archive so crash reports are readable |
 
@@ -295,7 +297,7 @@ refresh what it can — the app ID, and the development profile the archive
 signs with — rather than stopping to ask. It does *not* extend to the
 distribution profile: Xcode's cloud signing refuses that from a script here,
 which is why the export signs by hand against a profile made once. The
-distribution certificate and the `amux App Store` profile are therefore
+distribution certificate and the two App Store profiles are therefore
 standing inputs, and `just ios release --preflight` reports them as such.
 
 Validate:
@@ -557,8 +559,8 @@ printf 'DEVELOPMENT_TEAM = %s\n' \
 `.gitignore` already covers it. Confirm with
 `git check-ignore -q apps/apple/Signing.local.xcconfig`.
 
-**5. Make the distribution certificate and the App Store profile.** Both,
-once. The export signs by hand, so neither appears on its own during a run —
+**5. Make the distribution certificate and the App Store profiles.** All of
+them, once. The export signs by hand, so neither appears on its own during a run —
 a Mac that has only an Apple Development identity is the normal starting
 point and this is the step that fills the gap.
 
@@ -570,8 +572,11 @@ Download the resulting `.cer` and double-click it to install it, with its
 private key, into the login keychain. Then **Profiles → +**, choose **App
 Store Connect** distribution, select `sh.amux.app` and that certificate, and
 name the profile exactly **`amux App Store`** — `apps/apple/ExportOptions.plist`
-asks for that name. Download it and double-click it to install it into
-`~/Library/MobileDevice/Provisioning Profiles`.
+asks for that name. The App ID needs **Push Notifications** on, and a profile
+made before that was turned on has to be made again. Make a second profile the
+same way for `sh.amux.app.notifications`, which needs no capabilities, named
+exactly **`amux Notifications App Store`**. Download each and double-click it
+to install it into `~/Library/Developer/Xcode/UserData/Provisioning Profiles`.
 
 The same two things can be created through the App Store Connect API with the
 key from step 1; the private key still has to be generated locally and the
@@ -587,11 +592,11 @@ Confirm both landed:
 
 ```
 security find-identity -v -p codesigning        # names an Apple Distribution identity
-ls ~/Library/MobileDevice/Provisioning\ Profiles/
+ls ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles/
 ```
 
 **6. Check it.** `just ios release --preflight` reports every input —
-including the certificate and the profile from step 5, by name — and says
+including the certificate and the profiles from step 5, by name — and says
 which one is missing. Nothing in this step reaches Apple beyond
 authenticating. Then `just ios release --rehearse` archives and exports for
 real, writing nothing to the tree and cutting no tag, which is the proof that

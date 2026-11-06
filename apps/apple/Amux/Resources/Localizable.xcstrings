@@ -817,6 +817,18 @@
         }
       }
     },
+    "%@ · and %@ more" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · and %@ more"
+          }
+        }
+      }
+    },
     "%@ · away" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
       "extractionState" : "manual",
@@ -3266,13 +3278,25 @@
       }
     },
     "Has a plan for you to decide" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FleetWords.swift.",
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FleetWords.swift, apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Has a plan for you to decide"
+          }
+        }
+      }
+    },
+    "Has a plan for you to decide: %@" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Has a plan for you to decide: %@"
           }
         }
       }
@@ -3525,6 +3549,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Its invitation names no address here, so it can only be reached through the relay. Sign in and this phone can take it up."
+          }
+        }
+      }
+    },
+    "Its turn failed" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its turn failed"
           }
         }
       }
@@ -3854,7 +3890,7 @@
       }
     },
     "Needs you" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxCore/Sources/AmuxCore/FleetOrder.swift, ios/Packages/AmuxCore/Sources/AmuxCore/FleetStore.swift.",
+      "comment" : "English app copy. Used in ios/Packages/AmuxCore/Sources/AmuxCore/FleetOrder.swift, ios/Packages/AmuxCore/Sources/AmuxCore/FleetStore.swift, apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -5281,6 +5317,18 @@
         }
       }
     },
+    "Signed out of its provider · sign in on its host" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed out of its provider · sign in on its host"
+          }
+        }
+      }
+    },
     "STARTED" : {
       "comment" : "English app copy. Used in Facts.swift.",
       "extractionState" : "manual",
@@ -5901,6 +5949,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stopped"
+          }
+        }
+      }
+    },
+    "Stopped unexpectedly" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped unexpectedly"
+          }
+        }
+      }
+    },
+    "Stopped unexpectedly: %@" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped unexpectedly: %@"
           }
         }
       }
@@ -6626,7 +6698,7 @@
       }
     },
     "Usage limit reached" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift, apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -6638,7 +6710,7 @@
       }
     },
     "Usage limit reached · resets %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FleetWords.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FleetWords.swift, apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -6794,7 +6866,7 @@
       }
     },
     "Wants to edit %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FleetWords.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FleetWords.swift, apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -6806,7 +6878,7 @@
       }
     },
     "Wants to edit %@ files" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift, apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -6842,7 +6914,7 @@
       }
     },
     "Wants to run %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FleetWords.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FleetWords.swift, apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -6902,7 +6974,7 @@
       }
     },
     "Wants to use %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in ios/Packages/AmuxCore/Sources/AmuxCore/AskPanels.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in ios/Packages/AmuxCore/Sources/AmuxCore/AskPanels.swift, apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {

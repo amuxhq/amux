@@ -26,8 +26,10 @@ def png(path: Path, width: int, height: int, *, cgbi: bool = False) -> Path:
 
 
 
-# What the App Store build is signed with: amux.sh's pairing page opens the app.
-SHIPPED_GRANTS = {"com.apple.developer.associated-domains": ["applinks:amux.sh"]}
+# What the App Store build is signed with: amux.sh's pairing page opens the
+# app, and it takes pushes.
+SHIPPED_GRANTS = {"com.apple.developer.associated-domains": ["applinks:amux.sh"],
+                  "aps-environment": "production"}
 
 class TheAppIcon(unittest.TestCase):
     """The bundle must carry what the App Store refuses an upload without.
@@ -123,13 +125,16 @@ class ScopeAuditTests(unittest.TestCase):
                     "SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD": "NO"}
         grants = SHIPPED_GRANTS
         self.assertEqual(audit.bundle_violations(info, grants, settings, bundle), [])
-        self.assertTrue(audit.bundle_violations(
-            info, grants | {"aps-environment": "development"}, settings, bundle))
+        # Asking for a token without this never gets one, and nothing but the
+        # notifications that don't arrive says so.
+        self.assertIn("no push entitlement: aps-environment", audit.bundle_violations(
+            info, {key: value for key, value in grants.items() if key != "aps-environment"},
+            settings, bundle))
         # A build without the pairing page's domain sends a phone that has
         # the app to the App Store for it.
         self.assertTrue(audit.bundle_violations(info, {}, settings, bundle))
         self.assertTrue(audit.bundle_violations(
-            info, {"com.apple.developer.associated-domains": ["applinks:example.com"]},
+            info, grants | {"com.apple.developer.associated-domains": ["applinks:example.com"]},
             settings, bundle))
         self.assertTrue(audit.bundle_violations(info | {"UIDeviceFamily": [1, 2]}, grants, settings, bundle))
         for flag in ("SUPPORTS_MACCATALYST", "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD",
@@ -138,6 +143,27 @@ class ScopeAuditTests(unittest.TestCase):
                 self.assertTrue(audit.bundle_violations(info, grants, settings | {flag: "YES"}, bundle))
         self.assertTrue(audit.bundle_violations(
             info, grants, settings | {"SUPPORTED_PLATFORMS": "macosx"}, bundle))
+
+    def test_the_notification_extension(self):
+        group = {"keychain-access-groups": [audit.PUSH_KEY_GROUP]}
+        app = {"CFBundleShortVersionString": "1.2.3", "CFBundleVersion": "9",
+               "AmuxPushKeychainGroup": "TEAM.sh.amux.push"}
+        extension = app | {"NSExtension": {"NSExtensionPointIdentifier": audit.EXTENSION_POINT}}
+
+        def violations(info=extension, app_grants=group, grants=group, symbols="_main"):
+            return audit.extension_violations(app, app_grants, info, grants, symbols)
+
+        self.assertEqual(violations(), [])
+        # It has a few megabytes to live in, and the bridge alone is more.
+        self.assertTrue(violations(symbols="_amux_runtime_start"))
+        self.assertTrue(violations(info=extension | {"NSExtension": {}}))
+        # The App Store refuses an extension whose numbers differ from its app's.
+        self.assertTrue(violations(info=extension | {"CFBundleVersion": "8"}))
+        # Either side without the group, or naming another, leaves the
+        # extension unable to read the key: every push stays the plain alert.
+        self.assertTrue(violations(grants={}))
+        self.assertTrue(violations(app_grants={}))
+        self.assertTrue(violations(info=extension | {"AmuxPushKeychainGroup": "other"}))
 
     def test_debug_only_resources_in_the_bundle_are_rejected(self):
         # Symbols catch the code that reads these files; nothing else catches

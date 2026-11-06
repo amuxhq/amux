@@ -26,9 +26,11 @@ every command goes through `just ios <recipe>` (`just --list ios`).
 | `AmuxCore/LaunchClock` | The one piece of C in the app: an image initialiser that marks the end of dynamic loading for the cold-start split |
 | `AmuxDesign` | Light and dark tokens, bundled faces, type scaling, glass, motion and thumb-target geometry |
 | `AmuxFeatures` | The screens, as functions of the state and actions they are handed, plus the registered UIKit leaves |
+| `AmuxPush` | What opening a push takes: push keys in the keychain, opening and decoding what a daemon sealed, and the words a notification says. No Rust and none of the other packages, because the notification extension links it |
 | `AmuxShell` | Tabs (Agents, Hosts) and the Settings sheet, routes, deep links and speech dictation |
 | `AmuxTestSupport` | The driving door's protocol and the scripted account, App Store and chat stand-ins |
 | `apps/apple/Amux` | The app target: entry point, `Composition` (which assembles every store and service), report capture, and under `Debug/` the door server and the component catalogue |
+| `apps/apple/AmuxNotifications` | The notification service extension: opens a push on its way to the screen and writes what it says over the plain alert |
 
 `AmuxCore` links the bridge as the binary target `AmuxApp`, an XCFramework
 under `target/ios/` that the bridge recipes build (see
@@ -822,6 +824,17 @@ iPhone running a Release build before a release:
   ([performance](PERFORMANCE.md)) measures the launch, reaching the fleet,
   streaming and idle on an enrolled phone plugged in over USB; battery and a
   standard display stay by hand.
+
+The notification extension is one of these. `xcrun simctl push` adds its request
+straight to SpringBoard, past the delivery path service extensions run on, so a
+simulator never starts it, whatever the payload says. A build embeds it and the
+system registers it there, and its opening and words are tested in `AmuxPush`
+against what the daemon's own code sealed, but it reading the app's key from
+another process and rewriting a live notification happen only on a phone, as does
+getting a real token. On a phone: turn notifications on with a Pro account and
+leave an agent asking on a host; check the lock screen says who and what, that a
+tap opens the chat, and that a restarted phone shows the plain alert until its
+first unlock.
 
 ## Registered UIKit leaves
 

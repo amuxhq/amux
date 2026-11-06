@@ -692,6 +692,24 @@
       {"literal": "\"store-failure.relaunch\"", "context": ".identified(\"store-failure.relaunch\", label: \"Relaunch\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"store-failure\"", "context": ".identified(\"store-failure\", value: message)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1}
     ],
+    "apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushAlert.swift": [
+      {"literal": "\"\\(push.host)/\\(push.agent)\"", "context": "content.threadIdentifier = \"\\(push.host)/\\(push.agent)\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushKeys.swift": [
+      {"literal": "\"sh.amux.push\"", "context": "private static let service = \"sh.amux.push\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"AmuxPushKeychainGroup\"", "context": "group = Bundle.main.object(forInfoDictionaryKey: \"AmuxPushKeychainGroup\") as? String ?? \"\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushNotice.swift": [
+      {"literal": "\"usage_limit\"", "context": "case usageLimit = \"usage_limit\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"resets_at_ms\"", "context": "private enum UsageKeys: String, CodingKey { case resetsAtMs = \"resets_at_ms\" }", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"signed_out\"", "context": "guard word == \"signed_out\" else {", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"not a notice: \\(word)\"", "context": "codingPath: decoder.codingPath, debugDescription: \"not a notice: \\(word)\"))", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxPush/Sources/AmuxPush/SealedPush.swift": [
+      {"literal": "\"amux push 1\"", "context": "private static let info = Data(\"amux push 1\".utf8)", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"to\"", "context": "let to = amux[\"to\"] as? String, let sealed = amux[\"sealed\"] as? String,", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"sealed\"", "context": "let to = amux[\"to\"] as? String, let sealed = amux[\"sealed\"] as? String,", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
+    ],
     "apps/apple/Packages/AmuxShell/Sources/AmuxShell/DeepLink.swift": [
       {"literal": "\"-\"", "context": "var standard = text.replacingOccurrences(of: \"-\", with: \"+\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"+\"", "context": "var standard = text.replacingOccurrences(of: \"-\", with: \"+\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},

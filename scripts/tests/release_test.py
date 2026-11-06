@@ -332,8 +332,8 @@ class TheExportOptions(unittest.TestCase):
         # from a script, so the export names what it signs with.
         options = plistlib.loads((ROOT / recipe.EXPORT_OPTIONS).read_bytes())
         self.assertEqual("manual", options["signingStyle"])
-        self.assertEqual("sh.amux.app",
-                         next(iter(options["provisioningProfiles"])))
+        self.assertEqual({"sh.amux.app", "sh.amux.app.notifications"},
+                         set(options["provisioningProfiles"]))
 
     def test_the_named_certificate_carries_no_account_identifier(self):
         # A full identity name ends in "(<Team ID>)" and this file is
@@ -376,7 +376,8 @@ class TheProvisioningProfile(unittest.TestCase):
             (root / "apps/apple").mkdir(parents=True)
             (root / recipe.EXPORT_OPTIONS).write_bytes(
                 (ROOT / recipe.EXPORT_OPTIONS).read_bytes())
-            self.assertEqual({"sh.amux.app": "amux App Store"},
+            self.assertEqual({"sh.amux.app": "amux App Store",
+                              "sh.amux.app.notifications": "amux Notifications App Store"},
                              recipe.wanted_profiles())
 
     def test_the_one_with_that_name_is_chosen(self):

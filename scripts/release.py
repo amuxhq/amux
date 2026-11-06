@@ -48,7 +48,7 @@ KEY_DIRECTORY = Path.home() / ".appstoreconnect/private_keys"
 EXPORT_OPTIONS = Path("apps/apple/ExportOptions.plist")
 # Where Xcode looks for provisioning profiles. The export names the profile it
 # wants, so the profile has to be sitting here before a release runs.
-PROFILES = Path.home() / "Library/MobileDevice/Provisioning Profiles"
+PROFILES = Path.home() / "Library/Developer/Xcode/UserData/Provisioning Profiles"
 # The certificate type an App Store build is signed with. A full identity name
 # is "Apple Distribution: <person> (<Team ID>)".
 DISTRIBUTION = "Apple Distribution"

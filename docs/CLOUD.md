@@ -194,10 +194,10 @@ fresh one asks for a sign-in. Signing in or out forgets the kept credential.
 The plan a credential carries is only as fresh as its fetch, so a profile
 renews it once it is an hour old (at once, after the link comes up, for a kept
 one older than that) and hourly while connected, sending each renewal to the
-relay as `Reauth`. A lapse therefore reaches the relay within the hour. A free
-profile renews every three minutes so that a purchase reaches the link
-promptly. After a purchase the app does not wait for that: it asks the profile
-to refresh at once (`amux_runtime_refresh_entitlement`). Nor do the account's
+relay as `Reauth`. A lapse therefore reaches the relay within the hour, and so
+does a purchase no link has presented yet, on whatever plan. After a purchase
+the app does not wait for that: it asks the profile to refresh at once
+(`amux_runtime_refresh_entitlement`). Nor do the account's
 other machines: when a link presents a paid credential, the relay sends
 `RefreshCredential` to each of the account's links still on the free plan,
 and those profiles refresh at once, so a purchase made on the phone reaches

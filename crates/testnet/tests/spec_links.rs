@@ -2017,8 +2017,8 @@ async fn punch_strict_routers_keep_the_link_on_the_relay() {
 }
 
 /// Two hosts on one free account on the same network: their link is on the
-/// LAN, and neither ever learns where the relay sees the other, so neither
-/// has anything to punch to and the link stays where it is.
+/// LAN and stays there. Each may still list where the relay saw it while
+/// the account paid, but a free account punches to no such address.
 #[tokio::test(flavor = "multi_thread")]
 async fn punch_free_never_probes_and_the_link_stays_on_the_lan() {
     let said = "said over the LAN on a free account";
@@ -2042,11 +2042,6 @@ async fn punch_free_never_probes_and_the_link_stays_on_the_lan() {
     tokio::time::sleep(punch_given_up()).await;
     for (host, peer) in [("laptop", "desk"), ("desk", "laptop")] {
         assert_eq!(
-            observed_addresses(&net, host, peer),
-            Vec::<String>::new(),
-            "{host} never learns where the relay sees {peer}: nothing to punch to"
-        );
-        assert_eq!(
             net.carrying_path(host, peer).unwrap(),
             Some(PathKind::Lan),
             "{host}'s link to {peer} stays on the LAN"
@@ -2055,17 +2050,21 @@ async fn punch_free_never_probes_and_the_link_stays_on_the_lan() {
             !ever_carried_by(&net, host, peer, PathKind::Punched),
             "{host}'s link to {peer} was never punched"
         );
-        println!("{host}: no observed address for {peer}, link on lan throughout");
+        println!(
+            "{host}: link to {peer} on lan throughout, though it lists {:?} as observed",
+            observed_addresses(&net, host, peer)
+        );
     }
     net.shutdown().await.unwrap();
 }
 
-/// A lapse takes the punched path away: once the account is free the link
-/// leaves the path it was punched onto, and with no free path between two
-/// routers it goes down rather than moving back to the relay, which no
-/// longer forwards for the account.
+/// A lapse leaves the link on the path it was punched onto: the relay no
+/// longer forwards for the account, but the link stays punched while that
+/// path answers. Once the link is off it, here because the laptop's daemon
+/// restarts, a free account punches no new path, and with no free path
+/// between the two routers the link stays down.
 #[tokio::test(flavor = "multi_thread")]
-async fn punch_lapse_drops_the_punched_path() {
+async fn punch_lapse_keeps_the_punched_path_until_the_link_leaves_it() {
     let said = "said before the lapse";
     let mut net = behind_routers(testnet::RouterKind::Ordinary, said).await;
     carried_by(&net, "laptop", "desk", PathKind::Punched).await;
@@ -2093,36 +2092,38 @@ async fn punch_lapse_drops_the_punched_path() {
         .await
         .unwrap();
     }
+    // Both hosts' relay links are on the free plan once this returns.
     let lapsed = net.set_tier("ada", testnet::TierDecl::Free).await.unwrap();
     println!("{lapsed:?}");
-    // A host that stops sending on the punched path with nowhere else to
-    // go writes no new path for its link; the link log next says it went
-    // down, at the link's idle timeout (30 s).
-    for (host, peer) in [("laptop", "desk"), ("desk", "laptop")] {
-        testnet::observe::until_within(
-            &format!("{host}'s link to {peer} to leave the punched path"),
-            std::time::Duration::from_secs(45),
-            || async {
-                match net.carrying_path(host, peer) {
-                    Ok(Some(PathKind::Punched)) => Err("still punched".to_owned()),
-                    other => {
-                        println!("{host}'s link to {peer} after the lapse: {other:?}");
-                        Ok(())
-                    }
-                }
-            },
-        )
-        .await
-        .unwrap();
-    }
-    tokio::time::sleep(punch_given_up()).await;
-    for (host, peer) in [("laptop", "desk"), ("desk", "laptop")] {
-        assert_ne!(
-            net.carrying_path(host, peer).unwrap(),
-            Some(PathKind::Punched),
-            "{host} punches {peer} no more while free"
-        );
-    }
+    let punched_both_ways = || async {
+        [("laptop", "desk"), ("desk", "laptop")]
+            .into_iter()
+            .all(|(host, peer)| net.carrying_path(host, peer).unwrap() == Some(PathKind::Punched))
+    };
+    // Past two probe intervals, each answered on the punched path.
+    testnet::holds_for(
+        "the link punched both ways after the lapse",
+        std::time::Duration::from_secs(12),
+        punched_both_ways,
+    )
+    .await
+    .unwrap();
+    println!("both links still punched 12 s after the lapse");
+
+    net.stop_daemon("laptop").await.unwrap();
+    net.restart_daemon("laptop").await.unwrap();
+    let never_punched_again = || async {
+        [("laptop", "desk"), ("desk", "laptop")]
+            .into_iter()
+            .all(|(host, peer)| net.carrying_path(host, peer).unwrap() != Some(PathKind::Punched))
+    };
+    testnet::holds_for(
+        "no punched link once the laptop restarts on the free plan",
+        punch_given_up(),
+        never_punched_again,
+    )
+    .await
+    .unwrap();
     net.shutdown().await.unwrap();
 }
 

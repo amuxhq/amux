@@ -438,10 +438,12 @@ relay the public address its packets arrive from (`observed_addr`,
 `ObservedAddress`) and passes it to its peers with its addresses; a peer's
 probes to it open the routers on both sides when they allow it, and the
 link goes direct across networks. A host on a free account is told no
-observed address and never probes one. When the account lapses, every
-punched path is dropped at once, an address the peer also lists aside, so
-no packet goes on a path across networks after a lapse. amux never asks a
-router for a port mapping.
+observed address and never probes one. When the account lapses, the link
+stays on the punched path carrying it for as long as that path answers;
+every other punched path is dropped, and so is that one once the link is
+off it (an address the peer also lists stays, as a direct path). After a
+lapse no new path is punched until the account pays again. amux never asks
+a router for a port mapping.
 
 ### Launch: tickets, tokens and early calls
 

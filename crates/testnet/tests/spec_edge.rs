@@ -135,18 +135,15 @@ async fn armed(net: &Net, at_ms: i64) {
         });
 }
 
-/// The free tier's refresh interval the signed-in net sets, short enough
-/// to step past.
-const FREE_REFRESH: Duration = Duration::from_secs(60);
-
 /// How long a test watches, at a policy time that stands still or just
 /// short of a deadline, for what must not happen yet: a timer due then
 /// fires and is answered on loopback well inside it.
 const QUIET: Duration = Duration::from_millis(500);
 
-/// How long a Pro link waits after a fresh credential before refreshing:
-/// five minutes before the credential expires.
-fn pro_refresh_ms() -> i64 {
+/// How long a link waits after a fresh credential before refreshing: five
+/// minutes before the credential expires, which the test relay's short
+/// credentials reach before they are an hour old.
+fn refresh_ms() -> i64 {
     (testnet::CREDENTIAL_TTL - Duration::from_secs(5 * 60)).as_millis() as i64
 }
 
@@ -685,9 +682,6 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
         topology,
         NetOptions {
             clock: ClockMode::Driven,
-            edge: Some(Arc::new(|_, edge| {
-                edge.cloud.free_refresh_interval = Some(FREE_REFRESH);
-            })),
             ..NetOptions::default()
         },
     )
@@ -725,14 +719,16 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
     assert_eq!(relay.connects().len(), 1);
     println!("bound as Ada; connected to the relay on the free tier");
 
-    // The account buys Pro. Nothing happens until the runtime's clock
-    // reaches the free tier's refresh interval this net sets to a minute:
-    // the refresh is armed on the policy clock, which has not moved since
+    // The account buys Pro where no link presents it, so nothing asks the
+    // desk to refresh. Nothing happens until the runtime's clock reaches
+    // the refresh armed as on any plan, five minutes before the credential
+    // expires: it is armed on the policy clock, which has not moved since
     // the link connected, and has not fired.
     relay.set_tier("ada", Tier::Pro);
-    armed(&net, net.now_ms() + FREE_REFRESH.as_millis() as i64).await;
+    armed(&net, net.now_ms() + refresh_ms()).await;
     assert_eq!(relay.connects().len(), 1);
-    net.advance(Duration::from_secs(60)).unwrap();
+    net.advance(Duration::from_millis(refresh_ms() as u64))
+        .unwrap();
     until("the refreshed credential to carry the new tier", || async {
         let info = info(&net, "desk").await;
         let tier = info.relay_connected().map(wire::RelayConnected::tier);
@@ -750,7 +746,7 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
         ["relay-ada-1", "relay-ada-2"],
         "the relay saw the first credential in Hello and the second in Reauth"
     );
-    println!("clock +60s: Reauth with relay-ada-2, tier Pro");
+    println!("clock +300s: Reauth with relay-ada-2, tier Pro");
     // On Pro the next refresh is armed five minutes before the fresh
     // credential expires, so nothing refreshes again at once.
     holds_for(
@@ -776,7 +772,7 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
     .unwrap();
     // The refresh went through: the next comes at its own boundary, five
     // minutes before relay-ada-3 expires.
-    net.advance(Duration::from_millis(pro_refresh_ms() as u64))
+    net.advance(Duration::from_millis(refresh_ms() as u64))
         .unwrap();
     until("the next refresh at its boundary", || async {
         let presented = relay.presented();
@@ -790,7 +786,7 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
     assert_eq!(relay.links("ada").await, vec![(host_id, 1)]);
     assert!(info(&net, "desk").await.relay_connected().is_some());
     println!(
-        "clock +910s: relay-ada-1 expired, the link lived on relay-ada-3 and then relay-ada-4"
+        "clock +1150s: relay-ada-1 expired, the link lived on relay-ada-3 and then relay-ada-4"
     );
 
     // Signing out forgets the credential and keeps the binding.

@@ -37,7 +37,6 @@ use crate::routing::Host;
 use crate::transport::tls_connect_stream;
 
 const CLOUD_ROUTING_ESTABLISHMENT_TIMEOUT: Duration = Duration::from_secs(10);
-pub const FREE_TIER_REFRESH_INTERVAL: Duration = Duration::from_secs(180);
 /// How long a relay host found to drop UDP is dialled over TLS alone.
 pub const UDP_BLOCKED_MEMORY: Duration = Duration::from_millis(daemon_core::reach::UDP_BLOCKED_MS);
 
@@ -45,7 +44,6 @@ pub struct CloudTransport {
     quic_endpoint: crate::link::LinkEndpoint,
     tcp_override: Option<std::net::SocketAddr>,
     quic_override: Option<super::RelayQuic>,
-    free_refresh_interval: Option<Duration>,
 }
 
 impl CloudTransport {
@@ -53,13 +51,11 @@ impl CloudTransport {
         quic_endpoint: crate::link::LinkEndpoint,
         tcp_override: Option<std::net::SocketAddr>,
         quic_override: Option<super::RelayQuic>,
-        free_refresh_interval: Option<Duration>,
     ) -> Self {
         Self {
             quic_endpoint,
             tcp_override,
             quic_override,
-            free_refresh_interval,
         }
     }
 }
@@ -636,7 +632,7 @@ async fn run_cloud_connection_with_details(
     let tier = details.token.tier;
     let kept = details.kept;
     let refresh_status = ctx.status.clone();
-    let connector_auth = LinkConnectorAuth::with_free_refresh_interval(
+    let connector_auth = LinkConnectorAuth::new(
         details.token,
         Arc::new(CloudLinkTokenRefresher {
             cloud_url: ctx.cloud_url.clone(),
@@ -646,11 +642,6 @@ async fn run_cloud_connection_with_details(
             current_host: details.host,
             current_port: details.port,
         }),
-        Some(
-            ctx.transport
-                .free_refresh_interval
-                .unwrap_or(FREE_TIER_REFRESH_INTERVAL),
-        ),
     )
     .with_refresh_observer(move |tier| {
         refresh_status.report(Relay::Connected {

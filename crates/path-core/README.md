@@ -20,7 +20,9 @@ The rules it keeps:
 - While the link is direct the relay path is kept ready by probing it each
   interval, so falling back costs no validation.
 - An address only the relay's observation gave is reached by punching, which
-  is paid: a free account never probes one, and a lapse drops it.
+  is paid: a free account never probes one. A lapse leaves the link on the
+  punched path carrying it while that path works, and drops it once the link
+  is off it.
 - A network change makes every path stale and probes them all at once.
 
 Like the other cores, nothing inside a step locks, spawns, awaits or reads

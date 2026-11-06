@@ -24,10 +24,12 @@
 //! - An address stays a candidate however long it goes unanswered: it is
 //!   probed again every [`PROBE_INTERVAL_MS`], so a link that left it for
 //!   the relay returns once it answers. Only the peer no longer listing it
-//!   forgets it, or a lapse, for an address reached by punching.
+//!   forgets it, or, for an address reached by punching, a free plan.
 //! - An address learned only from the relay's observation of the peer is
-//!   reached by punching, which is paid: it is never probed or carried
-//!   while the account is free, and a lapse drops it.
+//!   reached by punching, which is paid: a free account never starts on
+//!   one. A lapse leaves the link on the punched path carrying it, for as
+//!   long as that path keeps working; once the link is off it, the path is
+//!   dropped, and only paying again punches another.
 //! - A network change makes every path stale; each is probed again at once,
 //!   and the link carries on whichever answers first. So does the link
 //!   going: the next one carries only on a path that answered for it.
@@ -139,7 +141,8 @@ pub enum Output {
     SendOnAll {
         paths: Vec<Path>,
     },
-    /// Forget the address: a lapse no longer allows punching to it.
+    /// Forget the address: on a free plan, punching to it again is not
+    /// allowed.
     DropCandidate {
         addr: SocketAddr,
     },
@@ -160,7 +163,7 @@ pub const CARRIES_ONLY_ANSWERED: Check = Check {
 };
 pub const NO_CROSS_NETWORK_AFTER_LAPSE: Check = Check {
     id: "path.no_cross_network_after_lapse",
-    sentence: "after a lapse no packet goes on a path across networks",
+    sentence: "after a lapse no packet goes on a path across networks, but on the punched path the link has stayed on since",
 };
 pub const NO_SWING: Check = Check {
     id: "path.no_swing",
@@ -343,6 +346,7 @@ impl Paths {
         self.expire_probes();
         self.keep_probing(out);
         self.select(out);
+        self.let_go_of_punching(out);
         self.arm(out);
         let checked = self.check_step_invariants();
         out.extend(
@@ -381,8 +385,10 @@ impl Paths {
                 .keys()
                 .copied()
                 .filter(|key| {
-                    self.path_of(*key)
-                        .is_some_and(|p| matches!(p, Path::Punched(_)))
+                    Some(*key) != carried
+                        && self
+                            .path_of(*key)
+                            .is_some_and(|p| matches!(p, Path::Punched(_)))
                 })
                 .chain(carried.filter(|key| self.is_refused(*key)))
                 .chain(
@@ -484,7 +490,10 @@ impl Paths {
     /// nothing.
     fn arrived(&mut self, path: Path, out: &mut Vec<Output>) {
         let key = Key::from(path);
-        if matches!(path, Path::Punched(_)) && !self.paid {
+        // On a free plan only the punched path the link is still on is
+        // heard on.
+        let carried = self.carrying.is_some_and(|carrying| carrying.key == key);
+        if matches!(path, Path::Punched(_)) && !self.paid && !carried {
             return;
         }
         // A forwarding link the driver never reported up is not a path.
@@ -536,8 +545,9 @@ impl Paths {
         }
     }
 
-    /// The plan changed. A lapse drops every address only the relay's
-    /// observation gave, since reaching it was punching.
+    /// The plan changed. Paying again probes the forwarders that refused
+    /// the free plan; on a lapse, [`Paths::let_go_of_punching`] drops the
+    /// punched paths the link is not on.
     fn plan(&mut self, paid: bool, out: &mut Vec<Output>) {
         let was_paid = self.paid;
         self.paid = paid;
@@ -551,12 +561,24 @@ impl Paths {
                     }
                 }
             }
+        }
+    }
+
+    /// On a free plan, forgets the relay's observation of every address
+    /// but the one carrying the link: the link stays on a path punched
+    /// before a lapse, and once it is off it only paying punches again. An
+    /// address the peer also lists stays, as a direct path.
+    fn let_go_of_punching(&mut self, out: &mut Vec<Output>) {
+        if self.paid {
             return;
         }
+        let carried = self.carrying.map(|carrying| carrying.key);
         let punched: Vec<SocketAddr> = self
             .sources
             .iter()
-            .filter(|(_, sources)| sources.contains(&Source::Observed))
+            .filter(|(addr, sources)| {
+                sources.contains(&Source::Observed) && carried != Some(Key::Addr(**addr))
+            })
             .map(|(addr, _)| *addr)
             .collect();
         for addr in punched {
@@ -750,9 +772,17 @@ impl Paths {
         })
     }
 
+    /// Whether the machine may probe, carry or send on the path. On a free
+    /// plan the only punched path is the one still carrying the link from
+    /// before a lapse, while it works.
     fn usable(&self, key: Key) -> bool {
         match key {
-            Key::Addr(_) => self.paid || !matches!(self.path_of(key), Some(Path::Punched(_))),
+            Key::Addr(_) => {
+                self.paid
+                    || !matches!(self.path_of(key), Some(Path::Punched(_)))
+                    || (self.carrying.is_some_and(|carrying| carrying.key == key)
+                        && self.is_working(key))
+            }
             Key::Forwarded(link) => !self.refused.contains(&link),
             Key::Framed(_) => true,
         }
@@ -964,6 +994,54 @@ mod tests {
         assert_eq!(paths.carrying(), Some(&Path::Direct(public())));
     }
 
+    /// A lapse leaves the link on the path it was punched onto while that
+    /// path works; once the link is off it, the path is dropped and a free
+    /// plan does not punch it again, whoever names it.
+    #[test]
+    fn a_lapse_leaves_the_link_on_its_punched_path_until_the_link_is_off_it() {
+        let mut paths = up(true);
+        step(
+            &mut paths,
+            Input::Candidate {
+                addr: public(),
+                source: Source::Observed,
+            },
+        );
+        let out = answer(&mut paths, Path::Punched(public()), 30);
+        assert_eq!(carry(&out), Some(Path::Punched(public())));
+
+        let out = step(&mut paths, Input::Plan { paid: false });
+        assert!(!out.contains(&Output::DropCandidate { addr: public() }));
+        assert_eq!(paths.carrying(), Some(&Path::Punched(public())));
+        let out = tick(&mut paths, PROBE_INTERVAL_MS);
+        assert!(
+            probes(&out).contains(&Path::Punched(public())),
+            "the path the link is on is still kept alive"
+        );
+
+        let out = tick(&mut paths, PROBE_INTERVAL_MS + PROBE_TIMEOUT_MS);
+        assert!(
+            out.contains(&Output::DropCandidate { addr: public() }),
+            "the path stopped answering: {out:?}"
+        );
+        assert_ne!(paths.carrying(), Some(&Path::Punched(public())));
+        let out = step(
+            &mut paths,
+            Input::Candidate {
+                addr: public(),
+                source: Source::Observed,
+            },
+        );
+        assert!(probes(&out).is_empty(), "the peer's word does not punch it");
+        let out = step(
+            &mut paths,
+            Input::PacketArrived {
+                path: Path::Punched(public()),
+            },
+        );
+        assert!(probes(&out).is_empty(), "nor does a packet arriving there");
+    }
+
     #[test]
     fn a_punched_path_the_peer_then_lists_is_carried_as_direct() {
         let mut paths = up(true);
@@ -1124,16 +1202,16 @@ mod tests {
 
     #[test]
     fn a_violation_is_a_dump() {
-        let mut paths = up(false);
-        paths.sources.insert(public(), [Source::Observed].into());
-        paths
-            .paths
-            .insert(Key::Addr(public()), PathState::default());
+        let mut paths = up(true);
+        answer(&mut paths, Path::Direct(lan()), 4);
+        let relay = paths.paths.get_mut(&Key::Forwarded(RELAY)).unwrap();
+        relay.probe_deadline_ms = None;
+        relay.probed_ms = None;
         let mut out = Vec::new();
         paths.step(Input::Tick { now_ms: 1 }, &mut out);
         assert!(out.iter().any(|output| matches!(
             output,
-            Output::Dump { reason: DumpReason::Violation(v) } if v.invariant == NO_CROSS_NETWORK_AFTER_LAPSE
+            Output::Dump { reason: DumpReason::Violation(v) } if v.invariant == RELAY_READY_WHILE_DIRECT
         )));
     }
 }

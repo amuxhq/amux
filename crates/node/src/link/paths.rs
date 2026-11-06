@@ -303,7 +303,8 @@ impl PathDriver {
                 // The socket names any address a packet came from direct.
                 // One only the relay's observation gave is punched: the
                 // peer may still be sending there after this account
-                // lapsed, and a free machine must not take it back.
+                // lapsed, and a free machine hears it only while the link
+                // is still on it.
                 let path = match path {
                     Path::Direct(addr)
                         if machine.candidates.iter().any(|(candidate, source)| {
@@ -1056,11 +1057,12 @@ mod tests {
         );
     }
 
-    /// A lapse leaves a punched path even when nothing else can carry the
-    /// link: the socket stops sending on it, and the peer's packets still
-    /// arriving there do not put the link back on it.
+    /// A lapse leaves the link on the path it was punched onto. Once the
+    /// link is off it, here because the network changed, the socket stops
+    /// sending there, and the peer's packets still arriving there do not
+    /// put the link back on it while the plan is free.
     #[tokio::test(flavor = "multi_thread")]
-    async fn entitlement_a_lapse_leaves_a_punched_path_with_nowhere_else_to_go() {
+    async fn entitlement_a_lapse_keeps_a_punched_path_until_the_link_is_off_it() {
         let linked = linked(false).await;
         let paths = &linked.laptop_paths;
         paths.plan(true);
@@ -1080,9 +1082,16 @@ mod tests {
         .expect("the desk's address, known only from the relay, is punched");
 
         paths.plan(false);
-        assert_eq!(paths.carrying(linked.desk), None);
+        assert_eq!(
+            paths.carrying(linked.desk),
+            Some(Path::Punched(linked.lan)),
+            "the lapse leaves the link where it is"
+        );
+        paths.network_changed();
+        assert_eq!(paths.carrying(linked.desk), None, "off the punched path");
         // The desk keeps sending there (keepalives every 500 ms).
         tokio::time::sleep(Duration::from_secs(2)).await;
+        assert_eq!(paths.carrying(linked.desk), None);
         assert_eq!(
             paths.socket.carrying(linked.desk),
             None,

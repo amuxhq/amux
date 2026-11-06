@@ -231,9 +231,6 @@ pub struct CloudOptions {
     /// Dial the relay's QUIC carrier here, trusting these roots, instead of
     /// the host and port the cloud names and the public roots.
     pub relay_quic: Option<RelayQuic>,
-    /// How often a free account's link asks the cloud what the account
-    /// buys; a purchase reaches the link within one interval.
-    pub free_refresh_interval: Option<Duration>,
 }
 
 /// Where a test's relay answers QUIC, and the roots that trust its
@@ -561,12 +558,10 @@ impl Edge {
     pub(crate) async fn begin(&self, options: &EdgeOptions) {
         self.reachability
             .start_dialling(options.dial, options.lan.is_some());
-        self.tasks.lock().unwrap().push(follow_plan(
-            &self.status,
-            &self.connections,
-            &self.paths,
-            self.local_host.clone(),
-        ));
+        self.tasks
+            .lock()
+            .unwrap()
+            .push(follow_plan(&self.status, &self.connections, &self.paths));
         self.start_cloud().await;
     }
 
@@ -989,7 +984,6 @@ impl Edge {
                 self.quic_endpoint.clone(),
                 self.cloud_options.relay_tcp,
                 self.cloud_options.relay_quic.clone(),
-                self.cloud_options.free_refresh_interval,
             ),
             core.clone(),
         ));
@@ -1280,9 +1274,8 @@ impl Drop for LoopbackLink {
 }
 
 /// Follows the account's plan as the relay says it. The path machines are
-/// told whether it pays each time: a free account's links stop telling
-/// peers the address the relay saw, since reaching it is punching. The
-/// connections are told when it changes from one connected tier to
+/// told whether it pays each time, since a free account punches no new
+/// path. The connections are told when it changes from one connected tier to
 /// another: what the relay carries changes with it, and hosts it refused
 /// or carried need not wait for a retry's backoff or a call to read as
 /// they now are.
@@ -1290,7 +1283,6 @@ fn follow_plan(
     status: &RuntimeStatus,
     connections: &Arc<ConnectionManager>,
     paths: &Arc<PathDriver>,
-    local_host: LiveLocalHost,
 ) -> JoinHandle<()> {
     let mut relay = status.subscribe();
     let connections = Arc::downgrade(connections);
@@ -1304,11 +1296,7 @@ fn follow_plan(
             let (Some(connections), Some(paths)) = (connections.upgrade(), paths.upgrade()) else {
                 return;
             };
-            let paid = tier == crate::Tier::Pro;
-            if !paid {
-                local_host.clear_public();
-            }
-            paths.plan(paid);
+            paths.plan(tier == crate::Tier::Pro);
             if plan.replace(tier).is_some_and(|before| before != tier) {
                 connections.plan_changed();
             }

@@ -16,42 +16,23 @@ final class FleetWordsTests: XCTestCase {
         FleetWords.secondLine(line, kind: kind, now: now)?.text
     }
 
-    func testAnAskSaysWhatItAsksAndHowManyMoreWait() {
-        XCTAssertEqual(
-            said(.ask(AskSummary(subject: .command(command: "cargo test\n--all"), count: 1))),
-            "Wants to run cargo test")
-        XCTAssertEqual(
-            said(.ask(AskSummary(subject: .edit(path: "src/a.rs", files: 1, created: true), count: 3))),
-            "Wants to create src/a.rs · 2 more")
-        XCTAssertEqual(
-            said(.ask(AskSummary(subject: .edit(path: "src/a.rs", files: 1, created: nil), count: 1))),
-            "Wants to write src/a.rs")
-        XCTAssertEqual(said(.ask(AskSummary(subject: .plan, count: 1))), "Has a plan for you to decide")
-        XCTAssertEqual(
-            said(.ask(AskSummary(subject: .question(question: "Which base?", count: 2), count: 1))),
-            "Which base?")
-        XCTAssertEqual(
-            FleetWords.secondLine(.ask(AskSummary(subject: .plan, count: 1)), kind: .codex, now: now)?.ink,
-            .ask)
+    private func asks(_ wants: Wants, more: UInt32 = 0) -> SecondLine {
+        .said(.ask(key: "k", wants: wants, why: "", more: more))
     }
 
-    /// A notification is written by an extension that can't link these words,
-    /// so its own are held to them here.
-    func testANotificationSaysWhatTheRowSays() {
-        let same: [(AskSubject, PushWants)] = [
-            (.command(command: "cargo test\n--all"), .run(command: "cargo test\n--all")),
-            (.edit(path: "src/a.rs", files: 1, created: false), .change(path: "src/a.rs", files: 1)),
-            (.edit(path: "src/a.rs", files: 3, created: false), .change(path: "src/a.rs", files: 3)),
-            (.tool(server: "github", tool: "create_issue"), .use(server: "github", tool: "create_issue")),
-            (.tool(server: "", tool: "Bash"), .use(server: "", tool: "Bash")),
-            (.question(question: "Which base?\nPick", count: 1), .question(text: "Which base?\nPick")),
-            (.plan, .plan(title: "")),
-        ]
-        for (subject, wants) in same {
-            XCTAssertEqual(
-                PushWords.body(.ask(wants: wants, why: "", more: 0)),
-                FleetWords.ask(AskSummary(subject: subject, count: 1)))
-        }
+    func testAnAskSaysWhatItAsksAndHowManyMoreWait() {
+        XCTAssertEqual(said(asks(.run(command: "cargo test\n--all"))), "Wants to run cargo test")
+        XCTAssertEqual(
+            said(asks(.change(path: "src/a.rs", files: 1, created: true), more: 2)),
+            "Wants to create src/a.rs · 2 more")
+        XCTAssertEqual(
+            said(asks(.change(path: "src/a.rs", files: 1, created: nil))), "Wants to write src/a.rs")
+        XCTAssertEqual(said(asks(.plan(title: ""))), "Has a plan for you to decide")
+        XCTAssertEqual(said(asks(.question(text: "Which base?"))), "Which base?")
+        XCTAssertEqual(
+            said(asks(.other(server: "linear", text: "Sign in\nnow"))), "linear: Sign in")
+        XCTAssertEqual(
+            FleetWords.secondLine(asks(.plan(title: "")), kind: .codex, now: now)?.ink, .ask)
     }
 
     /// Background jobs lead an idle or working line, as the terminal's row
@@ -66,7 +47,7 @@ final class FleetWordsTests: XCTestCase {
         XCTAssertEqual(
             with(.step(AmuxValues.ActivityLine(activity: thinking, step: nil)), 2),
             "2 background jobs · \(said(.step(AmuxValues.ActivityLine(activity: thinking, step: nil)))!)")
-        XCTAssertEqual(with(.ask(AskSummary(subject: .plan, count: 1)), 2), "Has a plan for you to decide")
+        XCTAssertEqual(with(asks(.plan(title: "")), 2), "Has a plan for you to decide")
         XCTAssertEqual(with(.lastSaid("Done."), 0), "Done.")
     }
 
@@ -79,18 +60,22 @@ final class FleetWordsTests: XCTestCase {
 
     func testAStuckAgentWarnsAndSaysWhenItCanGoOn() {
         let signedOut = FleetWords.secondLine(
-            .stuck(.signedOut(state: .expired, account: "ada")), kind: .codex, now: now)
+            .said(.signedOut(state: .expired)), kind: .codex, now: now)
         XCTAssertEqual(signedOut?.text, "Codex sign-in expired")
         XCTAssertEqual(signedOut?.ink, .warning)
         XCTAssertEqual(
-            said(.stuck(.signedOut(state: .signedOut, account: ""))), "Signed out of Claude")
-        XCTAssertEqual(said(.stuck(.usageLimit(resetsAtMs: nil))), "Usage limit reached")
+            said(.said(.signedOut(state: .signedOut))), "Signed out of Claude")
+        XCTAssertEqual(said(.said(.usageLimit(resetsAtMs: nil))), "Usage limit reached")
         XCTAssertEqual(
-            said(.stuck(.usageLimit(resetsAtMs: nowMs - 1))), "Usage limit reached",
+            said(.said(.usageLimit(resetsAtMs: nowMs - 1))), "Usage limit reached",
             "a reset already past is not promised")
         XCTAssertTrue(
-            said(.stuck(.usageLimit(resetsAtMs: nowMs + 3_600_000)))?
+            said(.said(.usageLimit(resetsAtMs: nowMs + 3_600_000)))?
                 .hasPrefix("Usage limit reached · resets ") == true)
+        let failed = FleetWords.secondLine(
+            .said(.failed(message: "Connection refused\nretry")), kind: .codex, now: now)
+        XCTAssertEqual(failed?.text, "Connection refused")
+        XCTAssertEqual(failed?.ink, .warning)
     }
 
     func testWhatTheStateWordAlreadySaysIsNotSaidAgain() {

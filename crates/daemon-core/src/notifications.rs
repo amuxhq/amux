@@ -157,7 +157,7 @@ impl Daemon {
     /// The hosts this one trusts that said they want notifications. Trust is
     /// not transitive, and nor is this: a host paired only with a neighbor
     /// has no entry here, however this host came to hear of it.
-    fn push_recipients(&self) -> Vec<PushRecipient> {
+    pub(crate) fn push_recipients(&self) -> Vec<PushRecipient> {
         self.trust
             .store()
             .entries()

@@ -510,10 +510,10 @@ since-when and git facts, and families. `fleet_view` puts each family in the sec
 beneath their parents. Since-when moves only when an agent's state does, so rows never move while an agent
 streams. A folded family whose head does not need the person carries the member that does.
 
-Each row's second line goes by the state the inventory row says, in words its session supplies: the head ask
-when it needs you; the step it is running (the chat's activity line, with the step's command or file) when
-working; when idle, why it is stuck (signed out, a spent usage window) or else the first line of what it last
-said, its markdown read as words; nothing while starting or before its session opens; how it ended once exited,
+Each row's second line goes by the state the inventory row says, in words its session supplies: the snapshot's
+notice, the same one a push says, when it needs you; the step it is running (the chat's activity line, with the
+step's command or file) when working; when idle, what stops it (signed out, a spent usage window, a failed turn),
+also from the notice, or else the first line of what it last said, its markdown read as words; nothing while starting or before its session opens; how it ended once exited,
 whatever its host is doing; or that its host no longer trusts this machine (`HostRevoked`), which only pairing
 again undoes. A host out of reach otherwise changes nothing in the line: the row says what this machine last held,
 and each client marks the host's reach from the card's `host_reach`. The header's working and needs-you

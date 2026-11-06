@@ -2212,6 +2212,27 @@ fn session_on(entry: &wire::Agent, body: wire::ClaudeSnapshot, items: Vec<Item>)
     state
 }
 
+/// A session whose snapshot carries `notice`, as an interpreter projects it.
+fn session_saying(
+    entry: &wire::Agent,
+    notice: Option<wire::Notice>,
+    items: Vec<Item>,
+) -> SessionState {
+    let mut state = SessionState::new(entry.clone(), CAP);
+    state.update(event(session_event::Of::Snapshot(wire::Snapshot {
+        kind: Kind::ClaudeSdk as i32,
+        body: wire::ClaudeSnapshot::default().encode_to_vec(),
+        phase: entry.phase,
+        notice: notice.map(Box::new),
+        ..wire::Snapshot::default()
+    })));
+    for item in items {
+        state.update(event(session_event::Of::Item(item)));
+    }
+    state.update(caught_up());
+    state
+}
+
 fn second_lines(view: &FleetView) -> HashMap<String, SecondLine> {
     view.sections
         .iter()
@@ -2329,59 +2350,34 @@ fn each_row_says_what_its_state_calls_for() {
         branch: Some("fix-login".into()),
         ..Default::default()
     });
-    let question = wire::Ask {
-        key: "q-1".into(),
-        body: Some(wire::ask::Body::Question(wire::QuestionAsk {
-            questions: vec![wire::Question {
-                question: "Which environment?".into(),
-                ..Default::default()
-            }],
+    let question = wire::Notice {
+        of: Some(wire::notice::Of::Ask(wire::AskNotice {
+            key: "q-1".into(),
+            wants: Some(wire::ask_notice::Wants::Question(wire::QuestionWant {
+                text: "Which environment?".into(),
+            })),
             ..Default::default()
         })),
-        ..Default::default()
     };
-    let signed_out = wire::SignIn {
-        state: wire::SignInState::Expired as i32,
-        account: "me@example.com".into(),
-        message: String::new(),
+    let blocked = |why| wire::Notice {
+        of: Some(wire::notice::Of::Blocked(wire::BlockedNotice {
+            why: Some(why),
+        })),
     };
-    let window = |limit: wire::Limit, used_percent, resets_at_ms, state: wire::UsageState| {
-        wire::ClaudeUsageWindow {
-            limit: limit as i32,
-            model: None,
-            provider_name: String::new(),
-            meter: Some(wire::UsageMeter {
-                used_percent,
-                resets_at_ms: Some(resets_at_ms),
-                state: state as i32,
-                used_unknown: false,
-            }),
-        }
-    };
-    let spent = wire::ClaudeUsage {
-        state: wire::UsageState::Blocked as i32,
-        windows: vec![
-            window(
-                wire::Limit::FiveHour,
-                100.0,
-                9_000,
-                wire::UsageState::Blocked,
-            ),
-            window(wire::Limit::Weekly, 40.0, 3_000, wire::UsageState::Ok),
-        ],
-    };
+    let signed_out = blocked(wire::blocked_notice::Why::SignedOut(
+        wire::SignInState::Expired as i32,
+    ));
+    let spent = blocked(wire::blocked_notice::Why::Usage(wire::UsageBlock {
+        resets_at_ms: Some(9_000),
+    }));
+    let failed = blocked(wire::blocked_notice::Why::Failed(
+        "the connection was refused".into(),
+    ));
     let rows = [
-        (
-            entry("asker", Phase::NeedsYou),
-            wire::ClaudeSnapshot {
-                asks: vec![question],
-                ..Default::default()
-            },
-            vec![],
-        ),
+        (entry("asker", Phase::NeedsYou), Some(question), vec![]),
         (
             entry("worker", Phase::Working),
-            wire::ClaudeSnapshot::default(),
+            None,
             vec![
                 said(1, 1, "Running the tests.", true),
                 running(2, 2, "cargo test"),
@@ -2389,7 +2385,7 @@ fn each_row_says_what_its_state_calls_for() {
         ),
         (
             branched,
-            wire::ClaudeSnapshot::default(),
+            None,
             vec![said(
                 1,
                 1,
@@ -2399,39 +2395,30 @@ fn each_row_says_what_its_state_calls_for() {
         ),
         (
             entry("signed-out", Phase::Idle),
-            wire::ClaudeSnapshot {
-                sign_in: Some(signed_out),
-                ..Default::default()
-            },
+            Some(signed_out),
             vec![said(1, 1, "Done.", true)],
         ),
+        (entry("limited", Phase::Idle), Some(spent), vec![]),
         (
-            entry("limited", Phase::Idle),
-            wire::ClaudeSnapshot {
-                usage: Some(spent),
-                ..Default::default()
-            },
-            vec![],
+            entry("failed", Phase::Idle),
+            Some(failed),
+            vec![said(1, 1, "Trying the relay.", true)],
         ),
-        (
-            entry("starting", Phase::Starting),
-            wire::ClaudeSnapshot::default(),
-            vec![],
-        ),
+        (entry("starting", Phase::Starting), None, vec![]),
         (
             ended("finished", wire::ExitCause::Finished, None),
-            wire::ClaudeSnapshot::default(),
+            None,
             vec![said(1, 1, "All done.", true)],
         ),
         (
             fleet_entry("b", "far", Phase::Working, None, 1),
-            wire::ClaudeSnapshot::default(),
+            None,
             vec![running(1, 1, "make")],
         ),
     ];
     let mut lines = HashMap::new();
-    for (entry, body, items) in rows {
-        let state = session_on(&entry, body, items);
+    for (entry, notice, items) in rows {
+        let state = session_saying(&entry, notice, items);
         lines.insert(ui_state::agent_key(&entry), session_line(&state, 5_000));
         fleet.update(listed(entry));
     }
@@ -2465,12 +2452,13 @@ fn each_row_says_what_its_state_calls_for() {
     let said = second_lines(&view);
     assert_eq!(
         said["asker"],
-        SecondLine::Ask(AskSummary {
-            subject: AskSubject::Question {
-                question: "Which environment?".into(),
-                count: 1
+        SecondLine::Said(wire::Said::Ask {
+            key: "q-1".into(),
+            wants: wire::Wants::Question {
+                text: "Which environment?".into()
             },
-            count: 1
+            why: String::new(),
+            more: 0
         })
     );
     let SecondLine::Step(step) = &said["worker"] else {
@@ -2487,15 +2475,20 @@ fn each_row_says_what_its_state_calls_for() {
     );
     assert_eq!(
         said["signed-out"],
-        SecondLine::Stuck(StuckReason::SignedOut {
-            state: wire::SignInState::Expired,
-            account: "me@example.com".into()
+        SecondLine::Said(wire::Said::SignedOut {
+            state: wire::SignInState::Expired
         })
     );
     assert_eq!(
         said["limited"],
-        SecondLine::Stuck(StuckReason::UsageLimit {
+        SecondLine::Said(wire::Said::UsageLimit {
             resets_at_ms: Some(9_000)
+        })
+    );
+    assert_eq!(
+        said["failed"],
+        SecondLine::Said(wire::Said::Failed {
+            message: "the connection was refused".into()
         })
     );
     assert_eq!(said["starting"], SecondLine::Blank);

@@ -28,7 +28,7 @@ effect reply a2 rejected:CLOSED_ASK
 item fc-1 work open at=1800000000500 text="" file_change [FILE_CHANGE_KIND_UPDATE /work/a.txt patch="@@ -1 +1 @@\n-a\n+b\n"] TOOL_STATE_RUNNING
 ## 9 fact {"channel":"rpc","json":{"id":8,"method":"item/fileChange/requestApproval","params":{"grantRoot":"/work","itemId":"fc-1","reason":"Edit outside the workspace","threadId":"t1","turnId":"turn-1"}}}
 snapshot NEEDS_YOU queue=[] working_on="Deploy it." at=1800000000000 asks=[8→fc-1 file_change files=1 reason="Edit outside the workspace" root=/work decisions=[APPROVE,APPROVE_SESSION,DENY,ABORT]] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
-notice ask 8 change "/work/a.txt" files=1 why="Edit outside the workspace" more=0
+notice ask 8 change "/work/a.txt" files=1 created=Some(false) why="Edit outside the workspace" more=0
 ## 10 input {"answer":{"answer":{"decision":"approve_similar"},"ask":"8"},"id":"a3"}
 effect reply a3 rejected:UNSUPPORTED
 ## 11 input {"answer":{"answer":{"decision":"deny"},"ask":"8"},"id":"a4"}
@@ -50,7 +50,7 @@ snapshot WORKING queue=[] working_on="Deploy it." at=1800000000000 asks=[] threa
 ## 15 fact {"channel":"rpc","json":{"id":20,"method":"item/permissions/requestApproval","params":{"itemId":"exec-9","permissions":{"fileSystem":{"read":["/etc/shared"],"write":["/var/cache"]},"network":{"enabled":true}},"reason":"Read the shared config and reach the registry.","threadId":"t1","turnId":"turn-1"}}}
 item ask:20 ask final at=1800000000000 text="" access read=["/etc/shared"] write=["/var/cache"] network=true open
 snapshot NEEDS_YOU queue=[] working_on="Deploy it." at=1800000000000 asks=[20→ask:20 access reason="Read the shared config and reach the registry." read=["/etc/shared"] write=["/var/cache"] network=true decisions=[]] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
-notice ask 20 other "Read the shared config and reach the registry." why="" more=0
+notice ask 20 access "Read the shared config and reach the registry." why="" more=0
 ## 16 input {"answer":{"answer":{"grant":{"read":["/etc/shared"],"write":["/elsewhere"]}},"ask":"20"},"id":"a6"}
 effect reply a6 rejected:UNSUPPORTED
 ## 17 input {"answer":{"answer":{"grant":{"for_session":true,"network":true,"read":["/etc/shared"]}},"ask":"20"},"id":"a7"}
@@ -63,7 +63,7 @@ item mcp-1 work open at=1800000000700 text="" mcp docs·sign_in args="{}" result
 ## 19 fact {"channel":"rpc","json":{"id":"elicit-1","method":"mcpServer/elicitation/request","params":{"message":"Sign in to the docs server.","mode":"url","serverName":"docs","threadId":"t1","turnId":"turn-1","url":"https://docs.example.com/login"}}}
 item ask:"elicit-1" ask final at=1800000000000 text="" link docs open
 snapshot NEEDS_YOU queue=[] working_on="Deploy it." at=1800000000000 asks=["elicit-1"→ask:"elicit-1" link docs "Sign in to the docs server." https://docs.example.com/login decisions=[]] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
-notice ask "elicit-1" other "Sign in to the docs server." why="" more=0
+notice ask "elicit-1" other "docs" "Sign in to the docs server." why="" more=0
 ## 20 input {"answer":{"answer":{"link":{"action":"accept"}},"ask":"\"elicit-1\""},"id":"a8"}
 effect write "{\"id\":\"elicit-1\",\"result\":{\"action\":\"accept\",\"content\":null}}"
 effect reply a8 accepted
@@ -72,7 +72,7 @@ snapshot WORKING queue=[] working_on="Deploy it." at=1800000000000 asks=[] threa
 ## 21 fact {"channel":"rpc","json":{"id":"elicit-2","method":"mcpServer/elicitation/request","params":{"message":"Which space?","mode":"form","requestedSchema":{"properties":{"space":{"type":"string"}},"type":"object"},"serverName":"docs","threadId":"t1","turnId":"turn-1"}}}
 item ask:"elicit-2" ask final at=1800000000000 text="" form docs open
 snapshot NEEDS_YOU queue=[] working_on="Deploy it." at=1800000000000 asks=["elicit-2"→ask:"elicit-2" form docs "Which space?" schema="{\"properties\":{\"space\":{\"type\":\"string\"}…" decisions=[]] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
-notice ask "elicit-2" other "Which space?" why="" more=0
+notice ask "elicit-2" other "docs" "Which space?" why="" more=0
 ## 22 input {"answer":{"answer":{"form":{"action":"accept","content":{"space":"eng"}}},"ask":"\"elicit-2\""},"id":"a9"}
 effect write "{\"id\":\"elicit-2\",\"result\":{\"action\":\"accept\",\"content\":{\"space\":\"eng\"}}}"
 effect reply a9 accepted

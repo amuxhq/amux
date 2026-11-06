@@ -388,7 +388,7 @@ you", and under its `amux` key the host id of the profile it is for (`to`) and
 what the daemon sealed (`sealed`; [the service's side](CLOUD.md#push-notifications)
 has the format). The notification extension picks that profile's key, opens it,
 and writes the agent's name over the title and what it wants over the body,
-in the words of its fleet row (`PushWords`). It leaves `amux` naming the host and
+in the same words as its fleet row, because both call `PushWords`. It leaves `amux` naming the host and
 agent, which is what the rest of the app reads (`PushPayload`), and sets a
 thread per agent. A push it can't open stays the plain alert, as it does between
 a restart and the first unlock. The extension has a few megabytes to live in, so

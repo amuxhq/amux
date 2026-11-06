@@ -136,7 +136,7 @@ item toolu_01JKDeTGxD754hVJtAJZqJeK tool final at=1793424955777 text="" Edit TOO
 item toolu_01FhHxcpPHL99r1yVYpSYeij tool final at=1793424956040 text="" Read TOOL_STATE_RUNNING read input="null"
 ## 266 recorded 265: fact Stream type=control_request
 snapshot NEEDS_YOU queue=[] working_on="Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval with the ExitPlanMode tool." at=1793424956044 asks=[7489cda5-f181-49c2-8355-b8f5395d158e->toolu_01JKDeTGxD754hVJtAJZqJeK permission:Edit/session mode=acceptEdits description="README.md" deny-can-stop] session=0b12576d-e7f1-410a-a23f-5c89dcc3aa66 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=27059/? tasks=? active=[] usage=ok 5h:22%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
-notice ask 7489cda5-f181-49c2-8355-b8f5395d158e change "<MACHINE_PATH>" files=1 why="" more=0
+notice ask 7489cda5-f181-49c2-8355-b8f5395d158e change "<MACHINE_PATH>" files=1 created=Some(false) why="" more=0
 ## 272 recorded 271: input stdin-5
 effect write "{\"response\":{\"request_id\":\"7489cda5-f181-49c2-8355-b8f5395d158e\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"file_path\":\"<MACHINE_PATH>\",\"new_string\":\"UPDATED\",\"old_string\":\"CURRENT\",\"replace_all\":false}},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply stdin-5 accepted

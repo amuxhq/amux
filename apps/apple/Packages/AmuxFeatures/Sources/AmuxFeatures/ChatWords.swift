@@ -1,4 +1,5 @@
 import AmuxCore
+import AmuxPush
 import Foundation
 
 /// How the phone words the chat's typed facts. The rows, the card and the
@@ -652,10 +653,7 @@ public enum ChatWords {
     /// When a limit resets: the time of day when it is within the day, else
     /// the weekday.
     public static func resets(_ atMs: Int64, now: Date) -> String {
-        let at = Date(milliseconds: atMs)
-        return at.timeIntervalSince(now) < 20 * 3_600
-            ? at.formatted(date: .omitted, time: .shortened)
-            : at.formatted(.dateTime.weekday(.abbreviated))
+        PushWords.resets(Date(milliseconds: atMs), now: now)
     }
 
     // MARK: - The overview

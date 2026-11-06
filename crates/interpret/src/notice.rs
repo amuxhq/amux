@@ -6,8 +6,9 @@
 //! and failures become the few shapes a notification has.
 
 use wire::{
-    AskNotice, BlockedNotice, ChangeWant, Empty, Notice, OtherWant, PlanWant, QuestionWant,
-    RunWant, UsageBlock, UseWant, ask, ask_notice, blocked_notice, codex_ask, notice, tool_input,
+    AccessWant, AskNotice, BlockedNotice, ChangeWant, Notice, OtherWant, PlanWant, QuestionWant,
+    RunWant, SignIn, SignInState, UsageBlock, UsageState, UseWant, ask, ask_notice, blocked_notice,
+    codex_ask, notice, tool_input,
 };
 
 /// The most bytes any one string keeps. A push has a few kilobytes for the
@@ -64,7 +65,20 @@ fn plan(title: &str) -> ask_notice::Wants {
 }
 
 fn other(text: &str) -> ask_notice::Wants {
-    ask_notice::Wants::Other(OtherWant { text: clip(text) })
+    from_server("", text)
+}
+
+fn from_server(server: &str, text: &str) -> ask_notice::Wants {
+    ask_notice::Wants::Other(OtherWant {
+        text: clip(text),
+        server: clip(server),
+    })
+}
+
+fn access(reason: &str) -> ask_notice::Wants {
+    ask_notice::Wants::Access(AccessWant {
+        reason: clip(reason),
+    })
 }
 
 /// The title a plan's first line gives it, when it gives one of its own.
@@ -101,10 +115,12 @@ pub(crate) fn claude_ask(asked: &wire::Ask, more: u32, plan_title: &str) -> Noti
                         &shell.description,
                     ]),
                 ),
-                Some(tool_input::Of::Edit(_)) => (
+                Some(tool_input::Of::Edit(edit)) => (
                     ask_notice::Wants::Change(ChangeWant {
                         path: clip(subject),
                         files: 1,
+                        // A write may make the file or replace it.
+                        created: (!edit.write).then_some(false),
                     }),
                     permission.reason.as_str(),
                 ),
@@ -116,8 +132,8 @@ pub(crate) fn claude_ask(asked: &wire::Ask, more: u32, plan_title: &str) -> Noti
         }
         Some(ask::Body::Question(asked)) => (question(asked), ""),
         Some(ask::Body::Plan(_)) => (plan(plan_title), ""),
-        Some(ask::Body::Form(form)) => (other(&form.message), ""),
-        Some(ask::Body::Link(link)) => (other(&link.message), ""),
+        Some(ask::Body::Form(form)) => (from_server(&form.server, &form.message), ""),
+        Some(ask::Body::Link(link)) => (from_server(&link.server, &link.message), ""),
         Some(ask::Body::Unanswerable(unanswerable)) => (other(&unanswerable.reason), ""),
         None => (other(""), ""),
     };
@@ -131,13 +147,17 @@ pub(crate) fn codex_ask(asked: &wire::CodexAsk, more: u32, plan_title: &str) -> 
             ask_notice::Wants::Change(ChangeWant {
                 path: clip(change.changes.first().map_or("", |file| file.path.as_str())),
                 files: change.changes.len() as u32,
+                created: Some(
+                    change.changes.len() == 1
+                        && change.changes[0].kind() == wire::FileChangeKind::Add,
+                ),
             }),
             change.reason.as_str(),
         ),
         Some(codex_ask::Body::McpTool(tool)) => (use_tool(&tool.server, &tool.tool), ""),
-        Some(codex_ask::Body::McpForm(form)) => (other(&form.message), ""),
-        Some(codex_ask::Body::McpLink(link)) => (other(&link.message), ""),
-        Some(codex_ask::Body::Access(access)) => (other(&access.reason), ""),
+        Some(codex_ask::Body::McpForm(form)) => (from_server(&form.server, &form.message), ""),
+        Some(codex_ask::Body::McpLink(link)) => (from_server(&link.server, &link.message), ""),
+        Some(codex_ask::Body::Access(asked)) => (access(&asked.reason), ""),
         Some(codex_ask::Body::Question(asked)) => (question(asked), ""),
         Some(codex_ask::Body::Plan(_)) => (plan(plan_title), ""),
         None => (other(""), ""),
@@ -153,9 +173,9 @@ fn first_said<'a>(texts: &[&'a str]) -> &'a str {
         .unwrap_or_default()
 }
 
-pub(crate) fn signed_out() -> BlockedNotice {
+pub(crate) fn signed_out(state: SignInState) -> BlockedNotice {
     BlockedNotice {
-        why: Some(blocked_notice::Why::SignedOut(Empty {})),
+        why: Some(blocked_notice::Why::SignedOut(state as i32)),
     }
 }
 
@@ -168,6 +188,55 @@ pub(crate) fn usage_spent(resets_at_ms: Option<i64>) -> BlockedNotice {
 pub(crate) fn failed(message: &str) -> BlockedNotice {
     BlockedNotice {
         why: Some(blocked_notice::Why::Failed(clip(message))),
+    }
+}
+
+/// What the provider says of the agent now, where it says anything: terminal
+/// Claude reports neither its sign-in nor its usage. A notice reads this so
+/// it follows the state a person can see change, rather than what a turn
+/// ran into before they fixed it.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Standing {
+    pub sign_in: SignInState,
+    pub usage: UsageState,
+    pub resets_at_ms: Option<i64>,
+}
+
+impl Standing {
+    pub(crate) fn of(
+        sign_in: Option<&SignIn>,
+        usage: UsageState,
+        resets_at_ms: Option<i64>,
+    ) -> Self {
+        Self {
+            sign_in: sign_in.map_or(SignInState::Unknown, SignIn::state),
+            usage,
+            resets_at_ms,
+        }
+    }
+
+    /// What stops the agent now, whatever its last turn ran into.
+    pub(crate) fn blocked(&self) -> Option<BlockedNotice> {
+        match self.sign_in {
+            SignInState::SignedOut | SignInState::Expired | SignInState::Failed => {
+                Some(signed_out(self.sign_in))
+            }
+            SignInState::Unknown | SignInState::SignedIn => {
+                (self.usage == UsageState::Blocked).then(|| usage_spent(self.resets_at_ms))
+            }
+        }
+    }
+
+    /// Whether what a turn ran into has since been put right. A failure has
+    /// no state of its own to clear it: only the next turn does.
+    pub(crate) fn lifted(&self, why: &BlockedNotice) -> bool {
+        match why.why {
+            Some(blocked_notice::Why::SignedOut(_)) => self.sign_in == SignInState::SignedIn,
+            Some(blocked_notice::Why::Usage(_)) => {
+                matches!(self.usage, UsageState::Ok | UsageState::NearLimit)
+            }
+            Some(blocked_notice::Why::Failed(_)) | None => false,
+        }
     }
 }
 
@@ -185,12 +254,18 @@ pub(crate) fn describe(notice: &Notice) -> String {
     let wants = |wants: &Option<ask_notice::Wants>| match wants {
         Some(ask_notice::Wants::Run(run)) => format!("run {:?}", run.command),
         Some(ask_notice::Wants::Change(change)) => {
-            format!("change {:?} files={}", change.path, change.files)
+            format!(
+                "change {:?} files={} created={:?}",
+                change.path, change.files, change.created
+            )
         }
         Some(ask_notice::Wants::Use(tool)) => format!("use {:?} {:?}", tool.server, tool.tool),
         Some(ask_notice::Wants::Question(question)) => format!("question {:?}", question.text),
         Some(ask_notice::Wants::Plan(plan)) => format!("plan {:?}", plan.title),
-        Some(ask_notice::Wants::Other(other)) => format!("other {:?}", other.text),
+        Some(ask_notice::Wants::Access(access)) => format!("access {:?}", access.reason),
+        Some(ask_notice::Wants::Other(other)) => {
+            format!("other {:?} {:?}", other.server, other.text)
+        }
         None => "nothing".to_owned(),
     };
     match &notice.of {
@@ -202,7 +277,9 @@ pub(crate) fn describe(notice: &Notice) -> String {
             ask.more
         ),
         Some(notice::Of::Blocked(blocked)) => match &blocked.why {
-            Some(blocked_notice::Why::SignedOut(_)) => "blocked signed-out".to_owned(),
+            Some(blocked_notice::Why::SignedOut(state)) => {
+                format!("blocked signed-out {state}")
+            }
             Some(blocked_notice::Why::Usage(usage)) => {
                 format!("blocked usage resets={:?}", usage.resets_at_ms)
             }
@@ -217,6 +294,43 @@ pub(crate) fn describe(notice: &Notice) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_a_turn_ran_into_lifts_when_the_provider_says_so() {
+        let signed_in = Standing {
+            sign_in: SignInState::SignedIn,
+            ..Standing::default()
+        };
+        assert!(signed_in.lifted(&signed_out(SignInState::Failed)));
+        assert!(!signed_in.lifted(&usage_spent(None)));
+        assert!(!signed_in.lifted(&failed("refused")));
+        let usable = Standing {
+            usage: UsageState::NearLimit,
+            ..Standing::default()
+        };
+        assert!(usable.lifted(&usage_spent(None)));
+        // Terminal Claude says neither: only its next turn clears a block.
+        let silent = Standing::default();
+        assert!(!silent.lifted(&signed_out(SignInState::Failed)));
+        assert!(!silent.lifted(&usage_spent(Some(9))));
+    }
+
+    #[test]
+    fn what_stands_now_needs_no_failed_turn() {
+        let expired = Standing {
+            sign_in: SignInState::Expired,
+            usage: UsageState::Blocked,
+            resets_at_ms: Some(9),
+        };
+        assert_eq!(expired.blocked(), Some(signed_out(SignInState::Expired)));
+        let spent = Standing {
+            sign_in: SignInState::SignedIn,
+            usage: UsageState::Blocked,
+            resets_at_ms: Some(9),
+        };
+        assert_eq!(spent.blocked(), Some(usage_spent(Some(9))));
+        assert_eq!(Standing::default().blocked(), None);
+    }
 
     #[test]
     fn a_long_string_is_clipped_on_a_character_boundary() {

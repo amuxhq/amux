@@ -383,19 +383,24 @@ impl State {
         );
     }
 
+    /// When the spent usage windows reset.
+    pub(super) fn spent_until(&self) -> Option<i64> {
+        self.usage.as_ref().and_then(|usage| {
+            crate::notice::spent_until(
+                usage
+                    .windows
+                    .iter()
+                    .filter_map(|window| window.meter.as_ref()),
+            )
+        })
+    }
+
     /// How an error the turn can't go past stops the agent.
     fn blocked_by(&self, error: &TurnError) -> wire::BlockedNotice {
         if unauthorized(error) {
-            crate::notice::signed_out()
+            crate::notice::signed_out(SignInState::Failed)
         } else if error_kind(error) == USAGE_LIMIT_EXCEEDED {
-            crate::notice::usage_spent(self.usage.as_ref().and_then(|usage| {
-                crate::notice::spent_until(
-                    usage
-                        .windows
-                        .iter()
-                        .filter_map(|window| window.meter.as_ref()),
-                )
-            }))
+            crate::notice::usage_spent(self.spent_until())
         } else {
             crate::notice::failed(&error_message(error))
         }

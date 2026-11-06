@@ -35,6 +35,7 @@ pub use google::rpc;
 
 mod error;
 mod host_name;
+mod said;
 pub use amux::v1::*;
 pub use host_name::{HostName, HostNameError, MAX_HOST_NAME_CHARS};
 /// An error's code, gRPC's own.
@@ -42,6 +43,7 @@ pub use rpc::Code as ErrorCode;
 /// amux's error, a `google.rpc.Status`: named apart so it never reads as
 /// tonic's `Status`, the transport's carrier for it.
 pub use rpc::Status as Error;
+pub use said::{Said, Wants};
 
 /// Bound for link-control messages and application-stream prefaces.
 pub const MESSAGE_SIZE_LIMIT: usize = 16 * 1024 * 1024;

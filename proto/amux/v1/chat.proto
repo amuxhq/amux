@@ -680,14 +680,6 @@ message SignIn {
   string message = 3;
 }
 
-enum SignInState {
-  SIGN_IN_STATE_UNKNOWN = 0;
-  SIGN_IN_STATE_SIGNED_IN = 1;
-  SIGN_IN_STATE_SIGNED_OUT = 2;
-  SIGN_IN_STATE_EXPIRED = 3;
-  SIGN_IN_STATE_FAILED = 4;
-}
-
 // What the provider runs in the background: commands and tasks that
 // outlive the call that started them. `known` false is the explicit
 // unknown; the list empties when the provider exits, and a new incarnation

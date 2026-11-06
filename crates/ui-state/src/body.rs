@@ -381,6 +381,8 @@ pub struct AgentState {
     pub phase: wire::Phase,
     pub queue: Vec<wire::QueuedInput>,
     pub at_ms: i64,
+    /// What the agent wants of the person now.
+    pub notice: Option<wire::Notice>,
     /// In the order the interpreter opened them.
     pub asks: Vec<OpenAsk>,
     pub model: Option<String>,
@@ -588,6 +590,7 @@ impl AgentState {
             queue: snapshot.queue.clone(),
             at_ms: snapshot.at_ms,
             catalogue: snapshot.catalogue.clone(),
+            notice: snapshot.notice.as_deref().cloned(),
             ..decode_snapshot(kind, &snapshot.body)
         }
     }

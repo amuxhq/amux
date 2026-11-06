@@ -1001,7 +1001,15 @@ impl Interpreter for ClaudeSdk {
             state.submit(&mut emit, entry);
         }
         let body = state.body();
-        let notice = state.shared.notice(crate::notice::claude_ask);
+        let standing = crate::notice::Standing::of(
+            state.sign_in.as_ref(),
+            state
+                .usage
+                .as_ref()
+                .map_or(wire::UsageState::Unknown, |usage| usage.state()),
+            state.spent_until(),
+        );
+        let notice = state.shared.notice(crate::notice::claude_ask, standing);
         state.shared.finish(emit, body, notice)
     }
 

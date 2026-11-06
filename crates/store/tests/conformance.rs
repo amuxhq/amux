@@ -461,7 +461,7 @@ fn ask_notice(key: &str, more: u32) -> wire::Notice {
 
 fn noticing(phase: Phase, notice: Option<wire::Notice>) -> Step {
     let mut snapshot = snapshot(phase, Some("deploying"), 9);
-    snapshot.notice = notice;
+    snapshot.notice = notice.map(Box::new);
     Step {
         snapshot: Some(snapshot),
         ..Default::default()

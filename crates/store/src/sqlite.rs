@@ -776,10 +776,10 @@ fn commit(
             let was = row
                 .snapshot
                 .as_ref()
-                .and_then(|last| last.notice.as_ref())
+                .and_then(|last| last.notice.as_deref())
                 .map(Owed::of);
             copy_envelope(&mut row, &snapshot);
-            let now = snapshot.notice.as_ref().map(Owed::of);
+            let now = snapshot.notice.as_deref().map(Owed::of);
             if now != was {
                 rows.remove_notifications(&agent.agent)?;
                 let notice = snapshot

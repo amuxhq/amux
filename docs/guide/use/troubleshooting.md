@@ -72,8 +72,8 @@ in the way:
   machine the agent runs on, run `claude` and sign in with `/login`, or run
   `codex login`.
 - **A usage limit is reached.** The agent's provider has a limit on how much
-  you can use it. The chat says when the limit resets, and you can still type
-  your next message in the meantime.
+  you can use it. The agent's row and its chat say when the limit resets, and
+  you can still type your next message in the meantime.
 - **The agent can't find a command,** such as `npm` or `cargo`, though it works
   in your own terminal. amux started at login remembers the `PATH` of the shell
   it was turned on from. Turn it off and on again from a shell where the

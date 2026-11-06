@@ -566,7 +566,7 @@ impl<A: OpenAsk> Shared<A> {
         let notice = self
             .last_snapshot
             .as_ref()
-            .and_then(|last| last.notice.clone());
+            .and_then(|last| last.notice.as_deref().cloned());
         self.snapshot_into(&mut emit, body, notice, true);
         emit.step
     }
@@ -597,7 +597,7 @@ impl<A: OpenAsk> Shared<A> {
             git: self.git.clone(),
             catalogue: self.catalogue.clone(),
             background_jobs: self.jobs.as_ref().map_or(0, |jobs| jobs.jobs.len() as u32),
-            notice,
+            notice: notice.map(Box::new),
         };
         let changed = self.last_snapshot.as_ref().is_none_or(|last| {
             Snapshot {
@@ -981,14 +981,25 @@ impl<A: OpenAsk> Shared<A> {
     /// What the agent wants of the person: its head ask, which `ask` projects
     /// with how many others are open and the newest plan's title, else the
     /// failure that ended its turn.
-    pub fn notice(&self, ask: impl FnOnce(&A, u32, &str) -> Notice) -> Option<Notice> {
+    pub(crate) fn notice(
+        &self,
+        ask: impl FnOnce(&A, u32, &str) -> Notice,
+        standing: crate::notice::Standing,
+    ) -> Option<Notice> {
         let open = self.asks.open_asks();
         if let Some(head) = open.first() {
             return Some(ask(head, open.len() as u32 - 1, &self.plan_title));
         }
-        self.trouble
-            .clone()
-            .filter(|_| !self.busy)
+        if self.busy {
+            return None;
+        }
+        standing
+            .blocked()
+            .or_else(|| {
+                self.trouble
+                    .clone()
+                    .filter(|trouble| !standing.lifted(trouble))
+            })
             .map(|why| Notice {
                 of: Some(wire::notice::Of::Blocked(why)),
             })

@@ -394,11 +394,11 @@ fn marked_history() -> ClientSessionHistory {
         }),
         catalogue: Some(b"catalogue".to_vec()),
         background_jobs: 0,
-        notice: Some(wire::Notice {
+        notice: Some(Box::new(wire::Notice {
             of: Some(wire::notice::Of::Blocked(wire::BlockedNotice {
                 why: Some(wire::blocked_notice::Why::Failed(marked())),
             })),
-        }),
+        })),
     };
     let prompt = wire::Input::new(
         b"sent".to_vec(),

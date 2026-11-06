@@ -786,6 +786,18 @@ impl State {
 
     /// Claude rejected the credential: the sign-in problem the strip
     /// shows until Claude reports an account again.
+    /// When the spent usage windows reset.
+    pub(super) fn spent_until(&self) -> Option<i64> {
+        self.usage.as_ref().and_then(|usage| {
+            crate::notice::spent_until(
+                usage
+                    .windows
+                    .iter()
+                    .filter_map(|window| window.meter.as_ref()),
+            )
+        })
+    }
+
     fn sign_in_failed(&mut self, message: &str) {
         let account = self
             .sign_in
@@ -835,18 +847,10 @@ impl State {
             if error == AUTHENTICATION_FAILED {
                 self.sign_in_failed(&text);
             }
-            let resets_at_ms = self.usage.as_ref().and_then(|usage| {
-                crate::notice::spent_until(
-                    usage
-                        .windows
-                        .iter()
-                        .filter_map(|window| window.meter.as_ref()),
-                )
-            });
             self.shared.stopped_by(crate::claude_common::blocked_by(
                 &error,
                 &text,
-                resets_at_ms,
+                self.spent_until(),
             ));
             self.shared.item(
                 emit,

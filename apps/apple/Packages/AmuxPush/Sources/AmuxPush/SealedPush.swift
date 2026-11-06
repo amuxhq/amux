@@ -7,9 +7,9 @@ public struct OpenedPush: Decodable, Equatable, Sendable {
     public var host: String
     public var agent: String
     public var name: String
-    public var notice: PushNotice
+    public var notice: Said
 
-    public init(host: String, agent: String, name: String, notice: PushNotice) {
+    public init(host: String, agent: String, name: String, notice: Said) {
         self.host = host
         self.agent = agent
         self.name = name

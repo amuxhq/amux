@@ -1,4 +1,5 @@
 import AmuxCore
+import AmuxPush
 import AmuxValues
 import Foundation
 
@@ -36,49 +37,16 @@ public enum FleetWords {
             }
         }
         switch line {
-        case .ask(let ask): return (self.ask(ask), .ask)
+        case .said(let said):
+            let ink: Ink = if case .ask = said { .ask } else { .warning }
+            return (PushWords.body(said, provider: provider(kind), now: now), ink)
         case .step(let step): return (self.step(step), .quiet)
         case .lastSaid(let said): return said.isEmpty ? nil : (said, .quiet)
-        case .stuck(.signedOut(let state, _)):
-            let provider = provider(kind)
-            let words = switch state {
-            case .expired: String(localized: "\(provider) sign-in expired")
-            case .failed: String(localized: "\(provider) sign-in failed")
-            default: String(localized: "Signed out of \(provider)")
-            }
-            return (words, .warning)
-        case .stuck(.usageLimit(let resetsAtMs)):
-            guard let at = resetsAtMs, Date(milliseconds: at) > now else {
-                return (String(localized: "Usage limit reached"), .warning)
-            }
-            return (
-                String(localized: "Usage limit reached · resets \(ChatWords.resets(at, now: now))"),
-                .warning)
         case .exited(.failed(let cause)): return (cause, .error)
         case .hostRevoked:
             return (String(localized: "Its host no longer trusts this phone · pair again to reach it"), .warning)
         case .exited(.finished), .exited(.ended), .blank: return nil
         }
-    }
-
-    /// What an ask asks, in a line: the command, the file, the question.
-    public static func ask(_ ask: AskSummary) -> String {
-        let words: String = switch ask.subject {
-        case .command(let command): String(localized: "Wants to run \(ChatWords.firstLine(command))")
-        case .edit(_, let files, _) where files > 1: String(localized: "Wants to edit \(files) files")
-        case .edit(let path, _, let created?):
-            created ? String(localized: "Wants to create \(path)") : String(localized: "Wants to edit \(path)")
-        case .edit(let path, _, nil): String(localized: "Wants to write \(path)")
-        case .tool(let server, let tool):
-            String(localized: "Wants to use \([server, tool].filter { !$0.isEmpty }.joined(separator: " "))")
-        case .question(let question, _): ChatWords.firstLine(question)
-        case .plan: String(localized: "Has a plan for you to decide")
-        case .form(let server, let message), .link(let server, let message):
-            server.isEmpty ? ChatWords.firstLine(message) : "\(server): \(ChatWords.firstLine(message))"
-        case .access(let reason): String(localized: "Wants access: \(ChatWords.firstLine(reason))")
-        case .unanswerable(let reason): ChatWords.firstLine(reason)
-        }
-        return ask.count > 1 ? String(localized: "\(words) · \(ask.count - 1) more") : words
     }
 
     /// The step a working agent is on, as the chat's activity line names

@@ -102,7 +102,7 @@ snapshot WORKING queue=[] working_on="Call the ask_the_operator tool from the sp
 ## 98 recorded 97: fact Rpc method=mcpServer/elicitation/request
 item ask:1 ask final at=1793447821736 text="" form <REDACTED_IDENTIFIER> open
 snapshot NEEDS_YOU queue=[] working_on="Call the ask_the_operator tool from the spec tool server twice, one call at a time: first with word BLUE, then with word LINK. Then reply with what each call returned." at=1793447821736 asks=[1→ask:1 form <REDACTED_IDENTIFIER> "Confirm the word BLUE." schema="{\"properties\":{\"confirmed\":{\"type\":\"stri…" decisions=[]] thread=01a191d1-e426-7b30-93b0-b7edda9621b7 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=15391/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_READY,spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
-notice ask 1 other "Confirm the word BLUE." why="" more=0
+notice ask 1 other "<REDACTED_IDENTIFIER>" "Confirm the word BLUE." why="" more=0
 ## 100 recorded 99: input stdin-10
 effect write "{\"id\":1,\"result\":{\"action\":\"accept\",\"content\":{\"confirmed\":\"BLUE\"}}}"
 effect reply stdin-10 accepted
@@ -125,7 +125,7 @@ snapshot WORKING queue=[] working_on="Call the ask_the_operator tool from the sp
 ## 121 recorded 120: fact Rpc method=mcpServer/elicitation/request
 item ask:3 ask final at=1793447823495 text="" link <REDACTED_IDENTIFIER> open
 snapshot NEEDS_YOU queue=[] working_on="Call the ask_the_operator tool from the spec tool server twice, one call at a time: first with word BLUE, then with word LINK. Then reply with what each call returned." at=1793447823495 asks=[3→ask:3 link <REDACTED_IDENTIFIER> "Open the page to confirm." https://example.com/confirm decisions=[]] thread=01a191d1-e426-7b30-93b0-b7edda9621b7 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=15517/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_READY,spec:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
-notice ask 3 other "Open the page to confirm." why="" more=0
+notice ask 3 other "<REDACTED_IDENTIFIER>" "Open the page to confirm." why="" more=0
 ## 123 recorded 122: input stdin-12
 effect write "{\"id\":3,\"result\":{\"action\":\"cancel\",\"content\":null}}"
 effect reply stdin-12 accepted

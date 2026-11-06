@@ -7,11 +7,11 @@
         "host": "11111111-1111-1111-1111-111111111111",
         "name": "refactor-auth",
         "notice": {
-          "ask": {
+          "Ask": {
             "key": "ask:7",
             "more": 0,
             "wants": {
-              "run": {
+              "Run": {
                 "command": "deploy --prod\n--force"
               }
             },
@@ -19,7 +19,7 @@
           }
         }
       },
-      "sealed": "i4N+ZBweav0wqVr+eiSwtzj4FVWPKUhIG1ZlbmuJs1bi+oMJTpVkxFTO3r6PT8bQr8hCkwZdFRYDL5w7IAi+85FSj72hOfJotvjanKWaDtSrvMosbnlsEvHiG1smMk3t13LkmSMV+w/PDYR1erCnku4VopaNxz0+qRA+uuIaL4k3GUtpmAtafiOjgRBfJgvngMk9uhWLkyUIW54AyCSa3MRn4QcK8CH1iBnQayOkj5ArPIRJtI8iShJDjhlsDWcpmjfn37UUezgkAZgSSVNzla9hPDks/BeztP3xEDHYEEjF6GNCRV13oM4lA5K761krxZoWo31QVerggzKtk3DY4dtWeDr2Uw5CFAPCmK58amxaRJ0PHA=="
+      "sealed": "AsIN7mR/8KclhwlqT7XhH6pMF/xF9gu0hlNOCuJRuQ9OIELLxRbbYAqfYY9/PSVqkYThlNc/QmRaSnROb1Z+mxsIJ0TTGt617h5bE4hjYHEESorAGuSx4F4g4gFOA+FXG4GwB3+ecauUykLZM9bOoVzFAbSsuVawZftfq2ewZVvTZs9GydfH3emX3JdYGvp1AOcryavNDAtsbX4379ApVs+aVYcDY6F6VHtXJZXglOr6mvMNCPmJhgUPD25ZpP+k9i0OUntWRbuBFvUmbXcSGqCQRA5WBKKy7rdm1X6RDDRhkCPJdzUZftTd/dNpRAH77QtNpBxhZ7hPq5nqaycxNTTpkTKpnVcY+2Pk9D+wlQgPhdnqOA=="
     },
     {
       "name": "run and more",
@@ -28,11 +28,11 @@
         "host": "11111111-1111-1111-1111-111111111111",
         "name": "refactor-auth",
         "notice": {
-          "ask": {
+          "Ask": {
             "key": "ask:7",
             "more": 2,
             "wants": {
-              "run": {
+              "Run": {
                 "command": "deploy --prod"
               }
             },
@@ -40,7 +40,7 @@
           }
         }
       },
-      "sealed": "FcPx2p9dKSWkYdPsPig09AB2+o9Ra/4qtdQRCFsYT2g3xkYw1UaSv8WjaXIjaRJ48U4iwG2SFF76L7YxLXXv19Y2SSZjC7G6OZB+3mdkmr3iddQ/fPgf1ST5+Bfz3+bQJbJMkXSI9Zj3NOoWXCz7k0YwNV7bY4FtjJnnv+VLPl15Fz4hi8PafnjnwNmwitfbVYW0ZpVMNVjCjrkTUrljxyuqVQPOsDV+JV6t7SaM6Mem9/lsvhtjqj4ytWoEnAtqyCuXwXs8xD4JZkRY3K4Dcu9x7og84bCryy6XhoO+VXztbo91IuAoecB7V4f8uFNE6DzXyuwIHFU3LcT1frsYQUGvSWw="
+      "sealed": "d6EWL3/2/U6UrAYHS8kntAnDZEI36cpHzucLulkQKxFYMNQnf83Q3AREvXX3smX4DyxECODyv944514e+VnYADc/5fqWc9cGXTzPJBY9Rnf7hmnJL1RxnTTrLDZye5EVObxoMvBAIN8tDvff7vSTvNG2mlrkW8TBtw5UGk5K1Wn2VBs7KwpEA+yCelwNwNb9TOu9iZCG2X6N+8DiCo6gGBf883yYPEZ81OGcY9+LjcbXFwXCi5wWwTJnNhn3F5qEJDlwKhe/nOjbrcM7OO7JfeMZeFzay9J3ln5gW8YOkEhTtAVuPm02fr2/WZGM54KzkdgjPsWXuOKxE/ojAxMBfSAa37s="
     },
     {
       "name": "change one file",
@@ -49,11 +49,12 @@
         "host": "11111111-1111-1111-1111-111111111111",
         "name": "refactor-auth",
         "notice": {
-          "ask": {
+          "Ask": {
             "key": "ask:7",
             "more": 0,
             "wants": {
-              "change": {
+              "Change": {
+                "created": false,
                 "files": 1,
                 "path": "src/lib.rs"
               }
@@ -62,7 +63,7 @@
           }
         }
       },
-      "sealed": "sUD+9oYtMaGBkHzZz5sDHaVvtJFQ6WBkzvcRvcXP8SUnS8rvkBkoVJUxPSnd1W5HOMSxbTwyMTdejTKCHD37t4mp9mdAMC4ypcV7D+f+caET9qq1hSUUTCYAIdIYqV2Lzyidyrd+NebWAgXdlE/Uqq4eDU+8QQ6KNoaCD/gqyOsI5YnypF0UPTiQftDtGA3BPSu94mE4VPe3E4yRf3CFS1OtJgA59fE9Iez+7nEzPd7U4qYBcdvs9LF652D9Xw7dnHA9cLxKoBTSaxsY5L6oiEllrV3dGqHS6EL1fHmEDjx+GGaKihq+t42wA2GFl1ptK9pUlQ0xYXZsKkQKl+yrzbsGyEmfJalnyzuP"
+      "sealed": "lM02x1bZ+MvFzts9AauNyC0coaekehVQVpeV6IP4Nx8X06qwsJeCEbvyhUnATjhRbaDdTQs3U3r3rvEZ0M0vDwkMl8w6Ws73WQeWi67/UZptAuQMFVnUHPoSpKtmLl7OvicLF8k3SH4CZXjJB9UU4FnOA0DnV43ESbS/Uwf/8NJyJvNDUm1Hd4xFcF66e9fA1tzFjnAzyuhF+eM/zY+s0RijBV0SfJUitOxbybYo9vFz0bvqvbR24iqT7YysaSEA3OTFyl9mTkAM9eVKH7yvz+0y5oBcHdQz3ZXVxL4+3AULJ1GWAjMmRd+hBte7KaInuHtWVFI9KmOgxeE9+UljPcIYwXUXPhfIdn9oMV5CFjpcnXqR87/0GL/BVw=="
     },
     {
       "name": "change many files",
@@ -71,11 +72,12 @@
         "host": "11111111-1111-1111-1111-111111111111",
         "name": "refactor-auth",
         "notice": {
-          "ask": {
+          "Ask": {
             "key": "ask:7",
             "more": 0,
             "wants": {
-              "change": {
+              "Change": {
+                "created": false,
                 "files": 4,
                 "path": "src/lib.rs"
               }
@@ -84,7 +86,7 @@
           }
         }
       },
-      "sealed": "6xBOFTW83poX3KSqe6NwJMCIRohvYEDjS+Ss/hhcrU2xLZgFow0sroRqR6K4oQNAsSc97iJ2IorrdNPzNFaS/MrLKlk6OWdNHK4wzSEDu3gGWXP5Q/Dh/U5J3HLdxtSbYduwI1QWNx81OftZO71Xd48S7plAKnBZAf4t99ticHyxeoqGLNLznbqS39vsdcKOvgpz1YKjq7PQHoblvCX701NA2SLKNfZQKB65t9+2kpO9QTgz92cCG9Vk4iDO6fcPZzlWumSW1eHG9FrOKHiSTDMsniWWBSi05+p0eSDPum2yy0KzKnY9MSQTIc7eu9xUFOgsLqqKLFPtYUvJaguBfLPP62Wi99Y7taUl"
+      "sealed": "vfO/IKP2cUBFEY7FQSwmF03q8I34dbj6FkWzVI5n3iExsySjv+AkKJ0jD0c9bj7dbc6nGXQ+4/Dujkoao8WKuA3bo66fiAYRJLc0nNHlqinjBIhx1qFdp1RqeDl2azbI24iLXOHluCRYNH8WE+gRJM80Q+2g9OSSI+O6Sw6fObUSBGW3hewUUbaF7I+t16g+DUxihVFnPjTsaGAmMm8ebwCXdcMbNJIKXqd80fRrJw9qOjqcesLdbZXns7WQfgs2BAHBJit3pvkXOtUhbGOcDYUrivy/cfxKTLBff4WrmxmNA6SEIJs26H4G7TYK7y93qKQz2797g5PIOToWjUGz5q0udVY1GFrU2ind7tsBJnLt+mwAu8W2N3tClA=="
     },
     {
       "name": "use a tool",
@@ -93,11 +95,11 @@
         "host": "11111111-1111-1111-1111-111111111111",
         "name": "refactor-auth",
         "notice": {
-          "ask": {
+          "Ask": {
             "key": "ask:7",
             "more": 0,
             "wants": {
-              "use": {
+              "Use": {
                 "server": "github",
                 "tool": "create_issue"
               }
@@ -106,7 +108,7 @@
           }
         }
       },
-      "sealed": "rEts8fUny/oKbnTuIChv+Pb+IUQpm9bN2h+sxZCXiDG4eAoEvDk1NOMOylmBIJtpJBBB4fUAf12cREbxGedSnqEJfy+0rktAZD2/Y8mjbIHyDUI8//u2ap9krsgcRDvO6TAqFABsVfYYZ1v8cFEvTpZYCKROlysTqWMtGTHw0waJPRe3+b0kjxyoldNMi/1hBpLiy0hZtsRrM84m7GWgdEs70giaBXJaNqd841zuFgoTP7bPAuwllEXRwfMyRq+bkruYJ4+4HPvSyepI3k7iqofL0rum7Skif5+UoznEr75nMdPYKMsbCDDzltffMCwB7hBTqgH2VQB1QL3bi8H3Segai7Dvs7iMR8SBe0+LckzTTQ=="
+      "sealed": "T3EU3bGCS1Pk3hrNW7hYNgdDwhxkHEZrncmNLfyP6mvOw5GBHvPwKAUciPwL57POTbAAbNFaUkiGvp2vXYuODH55SnJa+HOeCqxg0uaOGsxVMNe2ouBGELo9yw5uEWitmUVVlLE4X+6dOu/H9H4wFF8V7v6nlX/L777atQRrt1IXaj24TlynAnZaG5nYLCt9Oc1py5sNweMRE2CRcpcCa31bpQ4UJsvCVYSd8nwkxvKjipmdrn/XfBR/eiHQOG/Eyt9qviIb/8B75cvyvp3RrDwvtL6kq+BenfZZDrok5dVvDj5o5yIRFv1gesXQQzbtLEyJ3TLNbEVIi/cL0ousAEmE6DSJTsgmNDjVEPGH3Ne7hg=="
     },
     {
       "name": "question",
@@ -115,11 +117,11 @@
         "host": "11111111-1111-1111-1111-111111111111",
         "name": "refactor-auth",
         "notice": {
-          "ask": {
+          "Ask": {
             "key": "ask:7",
             "more": 0,
             "wants": {
-              "question": {
+              "Question": {
                 "text": "Which suite?\nPick one"
               }
             },
@@ -127,7 +129,7 @@
           }
         }
       },
-      "sealed": "o6yjSpdGqraDyaUl34WrX9LbPAfrR04tSf8U0y2cRmrGa+z8CGtVQKN33jgT4YkvEOUNgJFnvSnTYNDIsDysbii6QP6DoL5D+tnAsqHSt4o1adZ2d4YkcQt2d4cPOkxewcH0SoLyVdb1e6fcTo2zGjM8U6Z+xNazzIc+B5Fe1ngD2WJKUOhHll7QE6xkGHN2g2CNk72emVbChVnavJ+GelqRNILtJy8yM4zoPd35CJDBML+1FX0+yqOFwi5aBx7QRcrgeTnRaqaRPEEhbfN+UUpxlJRX6FAjsYaTiTWygFUtPnToUOCPl43hh65PnfSc2juSD6lEfcKP8/Fyh3P53sUr5m+vHfG3befDctlX0g=="
+      "sealed": "FSaq4fR+AMgUUJfrWFLg3eSTFzZBhXICpW/aIm+CfzU6RH/kh5qKfVz+i2LvNWNRIC1+ugjx/RnlXKuz53ONS6VUsvQ5rWX0WspDu5SH7oiwG8NACHuQyceizn7fvSEuY8u9Z5zPtltMDBLGsgRMRfY5L504EPUzZiNU3WoA26tiKo3ubLug71rTW8aQ7daoKfb+EoOX0XuN2wksv/vgVk/it3cIF5IpkW9SMb3iJ7WacSpywged5/eP04V2pdiqbIY1k5fR9utBbhYt/wESlv1QKv79nNLsGZtxN47v4LCxgEJUPyd5pwgl5vDBttx8xUwabI6k+LS/d+4VHttiHedED+iT5w1/4b4GRm3mlA=="
     },
     {
       "name": "plan with a title",
@@ -136,11 +138,11 @@
         "host": "11111111-1111-1111-1111-111111111111",
         "name": "refactor-auth",
         "notice": {
-          "ask": {
+          "Ask": {
             "key": "ask:7",
             "more": 0,
             "wants": {
-              "plan": {
+              "Plan": {
                 "title": "Move the cache"
               }
             },
@@ -148,7 +150,7 @@
           }
         }
       },
-      "sealed": "T3j4UXlDNeNcCjAHkijY3JLzTOc+CY0bHvIu3zR7FDmj8Mlh2kvlf9KKT7bTCy4SMc2Ishjf1QZXIhTsxiusuI9gmbWUgbes9aB2YTOJjaCejUS3ScnEEVDMkVVA7TxGAkr4ntD8IRODDVyhmhDimRTpZqGn3PM2f/lsi818xHfiRBIyNda1ix2a2rXT4O+G8kJ2kRL49gqhem6w7ArVZ0sMeMklBoLI9ZW7ZlcgX2JjBmmFGIIdgEXbo23feLKZe5D5O200V9cOHaW6HsQ3vCxr0Ltj2LggPL1OhOxBaKGKnjI/AEN02qEBKh7hc5WTYzSR9LPnDLH41ntJ3K94NV9yybM="
+      "sealed": "nXmOW3iYV3RHj87kEezHo9uPpzB37/2FRvmUNDxbOzI6uro7yXUNiZW1Txhk2xgbHDrxKwJuT8ozhvlHQMzS5TN+J3PUwR+BxazQVynJyApP07vZ3RCumr0VdG0nI21JrR0IlWJbe9BSE9FCADrcg1JttbCV8+giPcFyGlkD2X6Mae6h8mXl0sEbsDK1RKwyH9eeQSTdVSK43+ay56M1LEphkz96xcO1zdB+JZqUbOSr0uAclA9ngamxLuGW1eylZz8DN7BuG++P1YJYMfe/OeJESVTiSrgrKV4JTTUnNVZJU5G6nMH26jkbsH7W3Dr6LU/OFXdWroRIeKDJlyTt084Usf8="
     },
     {
       "name": "plan without one",
@@ -157,11 +159,11 @@
         "host": "11111111-1111-1111-1111-111111111111",
         "name": "refactor-auth",
         "notice": {
-          "ask": {
+          "Ask": {
             "key": "ask:7",
             "more": 0,
             "wants": {
-              "plan": {
+              "Plan": {
                 "title": ""
               }
             },
@@ -169,7 +171,7 @@
           }
         }
       },
-      "sealed": "XCLxR0ng03tjyQ8oJMZNlwMevrAcTXS5bP0eEzRyTEJr/e7Y1ZpHsMPzxbQn91E5lxlqs1BtvqaZO1GVJ/TjAuBnZcPWYkbY2wRNQZvHyHZzctgY1qecDkb8RIQ3TDEEMN6uq5+hbxr8qWqpdFhymRStMMZsfhkYhD3clcEq0XDxCUzB2LtDEjAfRXDJri0RhReNUuT+rNU5pGEV55HJN5UjlpSk3hvzkl7iKb38ARJy8bJbfRZW3k469k0brcfBqy2NamkhbGSa/ZAcY7GmbaN7T0aBMbHdlLuk+cfE4H2yKxh1mV/Vis/VNsq87ykuJQL0+1VV"
+      "sealed": "XeA+rmaRMyb3TX1efT+plSxvBhba32xV/t9wj7A653K+P42ZfVR+9SzbWIFKm2OgccHHIvEAsBhdVdQtdXSLrsKa4B9Yt5iCTNTAArBOYCabQLKsCnPfzL3+ii55MdVNmIrxo8HSHFSrAF1WSCYI4uMR/vnk1+orCc4RYYR4xdUfNSe+N73oYNRqjcxPWodidld/9rs/jUy2aXqVO6I9Z+/HN+7tLdOsyLsVoaFcspn+7e2ftK8DFNUWaf1WoIRGM2hmaAsdTmuuiOKujMOvLD2TpjgvPX2zntE37lk2gyxpgwTZhr+poRzr30jy8on7Ec0XrX9G"
     },
     {
       "name": "the provider's sentence",
@@ -178,11 +180,12 @@
         "host": "11111111-1111-1111-1111-111111111111",
         "name": "refactor-auth",
         "notice": {
-          "ask": {
+          "Ask": {
             "key": "ask:7",
             "more": 1,
             "wants": {
-              "other": {
+              "Other": {
+                "server": "",
                 "text": "Sign in to Linear to go on"
               }
             },
@@ -190,7 +193,7 @@
           }
         }
       },
-      "sealed": "y8lcb6jpOvyfzTzCG9c0aEZOdB9hGuyz8oZsOBquDgpyTGROpSPXHUtS92KkYU1dGdAliVWTKjWz/MK/+LtmTwLsvDZsqWhAloK2Lav99PCbdA8vbBeuwtwuoXjbk7xTrOftBRi1VrMSSNGaXRsKFiJ0caSRPzsVhvdJmH7Xc6s3CN6ALZUFIOX7Z4EHup6lC8XQCtrPgq78jdTsrQaFvbT4aG1gK/+wfihEX/gQ/F3NaKWBMqafplG0qyoIz1LLuTM4dbTS692d7E1Ock00OvrrLS1OVkWf1i8CtjeYFt5MRaCkXN/KIcWBus54rXupYA8wUGVzp2WP+qct4PRL9iiPBhf7bQ7Oxus29hHZN04="
+      "sealed": "LUABKQrXocNeWQNEaUSirkopwN6O8sqLR0I7taKnFz3FPFTt7lo/rmgYsob/yNEkqsTt2oQSVQbob1POhqMBM+z2O/SUI4KABbvwS+RCk2cHf+1dGJSTtIGuYrPNdpwNEi7y3l23wACuIEYayNojOwCkTPbvqHToOW4uF2tkX4m9pXMYSBcIq4U3IUyhD4GIvEFRWH9EAJ37f9AvyU3BK3jXXdKFjNc4vIUOrqWCig0oJc+eFNGvlqeYQvSbel97h+90ddmkHfgAMobrJ6hQWs4IodimwBLfAAZ7sbNd4fzfslqqM8Ce6Heb9x8ZuULAfuCemTbQ4Jkp9BVndyigvA6p6ihDPwUvtjwiaXcbthqN6vCqY4VBR7fNQiQ="
     },
     {
       "name": "signed out",
@@ -198,9 +201,13 @@
         "agent": "22222222-2222-2222-2222-222222222222",
         "host": "11111111-1111-1111-1111-111111111111",
         "name": "refactor-auth",
-        "notice": "signed_out"
+        "notice": {
+          "SignedOut": {
+            "state": "Failed"
+          }
+        }
       },
-      "sealed": "7t5LmDDrYQtQlXF+JWV9DLRCovlxzaIYZnogQwpujnYWCnJ1zo9eP5xpGM43sqVAudTu0IgTDDJe3rzl78KA+lw3axok0+vK6nN/zPHgrUamnxlUng076h5ro5mzdtE5jh9iPPo2b9nUIAZJ5Z/evf+v1Hy3u26w/heo3tYxYW/50yb61tR6RvhjEAgKN79uYF58t4i59yiL49NtAyVcadhL5CJe4XXfRcockbJktFHBIq3juXlMvBF8SQ=="
+      "sealed": "6Z8efqo+PzIkeSlp059yBTfnuOJEj/374skVGFi+zwYm/JyhsbLaNCSXKnXw2Vhvl3tvwQhzrirJnF0eUpTDpp/WlAB+UAVyUoA5RklEh3VZQZV7bUBC9SIX2FjrThoT0ymH9RK76EgfRTkaDiFBpmd0OVK5cRsgOs3yS3rLTk1nwYDDOGP+vD/rs1HUAelfRJ3l7I3+MrcXNgZBBiGxskpGbMOBwIqy31f7gqg8tfViMMFS/zM1Oa+4pKiJzGvZQr9s8aNTNQUTBZul9DmQ"
     },
     {
       "name": "usage limit with a reset",
@@ -209,12 +216,12 @@
         "host": "11111111-1111-1111-1111-111111111111",
         "name": "refactor-auth",
         "notice": {
-          "usage_limit": {
+          "UsageLimit": {
             "resets_at_ms": 1800000000000
           }
         }
       },
-      "sealed": "ffhipJV5hgpOSYGqV9qVnyS5ZW4wWEcpc/jjLdoaI026gZyC5O3xf/WN18EdhqF1WwQRVD6ECTGrNfJCkzSX1/lm5FfaifmizttW3uEh4hm4GpT6vnSQMHTt4wV19dm+IysjDpAmL0CSO5xqWy2quGqNkNP/fjK0b/nJ4WqKDOtCp9trkL6ykcsN6lPSrRVWzGjtxC8uFRPUouOZr7bNgZ6Qp9zZ2JGAj4YPweMQJSWPrlYjYFbb9nAw+ySpxzTDtWi+nyHeER4Kw5FxYKo2sRF2Woi3jXy6+dfS/Bk="
+      "sealed": "wh7Gu/Ixp1YVjLJP+bAmVlUMpe2O6rwQ+mmtH4cUPX3pW4ErpXTQweIaN7Jif7IG0CCmSmbvakh8P8o9B15uH2N6QXPPn3yCLPZ/FZ5FfxRT8XGPGgafIHqlT+P1W8abiHDSL5/08odtylT//CSzy3H2Xd/ob0XiqFzxYZKk8fRDbAMqVVXPfRyoa1hJ3ENPM7WuxQ8ZsQM2kuTFM8smZB2aP59Tr2wZKTd5DbftEKC6fYMClORC3P5MPF4rtWPQJEIVYzUx4PzT7hc2ZCkaGZJin38to19VtSeMcw=="
     },
     {
       "name": "usage limit without one",
@@ -223,12 +230,12 @@
         "host": "11111111-1111-1111-1111-111111111111",
         "name": "refactor-auth",
         "notice": {
-          "usage_limit": {
+          "UsageLimit": {
             "resets_at_ms": null
           }
         }
       },
-      "sealed": "DW6qUS9J4MP4GdT9ILS+sxGdCOJOqeKdeN3FzeGEKCRJWUAz79BMEc7heujjBTaus+R167c8et2yeTKbQJFXcn/oLSdfNhG7VEMxepv/DROeSXxyQ8NEwGzdjlIdq2FSiqv/BupR54uNCmejxcy2WM5Mx+/Y3tu2fVeBzIJ22nGVKiKtASrnU0ZTN+ADW6dzW4+IIwnr3rxQ5c37N7w9YlvHXNh3RlRJYGVIKxxr4RfxgLJqx5ziKyrNTlgMMK8G/Ne9EZFQG4i/z72FWzUN22/BP2w="
+      "sealed": "abJT1E3IhXOAvjj2zYeKXaQNHapWqg4p0muSsZJQLEWMcjBfQdCdfIAFfHiDdBmBYDGgRCD+X1LOOf/LRmXCQySSK1VrfF1KBU5DhSsrG4A4UGw6l1NOfYpVPIRR0I62HD1L76RLfA0K2wOGAQbKAb083jD3L9jDCP/6flGcy78tyAqA4PMB1xAeMOMgmpxFbw36GfuUMvS74ig039035uPhTg8H6+bl/dTuOrqNcch6OGP8tYdKjOPGxXF7rfMEf6a1XoUrH1myzQxxC1n5RtU6Fw=="
     },
     {
       "name": "failed",
@@ -237,12 +244,12 @@
         "host": "11111111-1111-1111-1111-111111111111",
         "name": "refactor-auth",
         "notice": {
-          "failed": {
+          "Failed": {
             "message": "Connection refused"
           }
         }
       },
-      "sealed": "SYDUrcYU4whPMG1AfaTjQUN/VKqbuxIEMn/Vp9ZDGTypuRm50yYnf0gyWKNoekNBWnncdC2epFx5pfWwgJRLFzOGdhJut91psntQF3L12stUGm6onyKY2BkGDNqU/CNQ/oMWWaOiGKMw63q1kY9d0n/TFF3y0qfPRIUJuH6S+Bvx+cSYOaOHPJLPITnFhrYrD54UQ0RbtFnnPRkNClxsF4AlKS845fXmMsSOPs2VocKjGYUTlHXd2Ba7PR0E16pb72DwP69dcVc7VMmPXR1A9xu9FON7IQyUnLk="
+      "sealed": "mgmSdPsYOCRot7/GWtZY28aijf4bLjjLc58zk4Nm+HlValCYiUB62TfaejsfR90HO9xWvkGlmRZ/oKglg83di2HlMh0SRIPFCCooc+zvwRv5Rl2ncoSyllMBqlSSwCQjJTHbF9T3r2Kh9yYjaGMbfdcHrKAlz9hGvyPw+NJlWpUjQH600vW9U5FSrZrXN5jpgNUirf253/ZFTELyRE9juhI74cag18OBCHFCQ+1G2GP0DNpdx7umEeGGxIFn+Po0xJIjFZxyRI3UUuc1lz9rTxAZ4KtVdsRSInA="
     },
     {
       "name": "died",
@@ -251,12 +258,12 @@
         "host": "11111111-1111-1111-1111-111111111111",
         "name": "refactor-auth",
         "notice": {
-          "died": {
+          "Died": {
             "detail": "exited with status 1"
           }
         }
       },
-      "sealed": "SjvEOZYjpkb76hWOV5B2h4yX3BvfBJ5sHs5XL1fXBRSbkxpDdY76XuzUKVWd14k6iaekL7nRc3jtx55aSW+MntIUjz8fM7P7c5d6cmJBQAEg0XVM+6pIj0RY7SJKrccNKXRwsT/atNiQaZdYUXY4uxF6B0QdGX7VSQzSf54J4ca3KXapNLJZ2WSX4QY8BFdRgGTW6vQHlx8ldUcCz3IHdmIcnT+kT4ZP5Y5cxxajbWyuGYVMtgLhBPZYatwf/5+hU+CnzgBfachpDl58suaSgrBY/w5HTnkb3g=="
+      "sealed": "Z0HehQNVby1Rdzf8ynaJvEbqyopn2lttLmfk1lpshH14xtglN+nXzuGwo/hr7bemtZOZoop6IR7kh/yI+DeEmfmDBk1fl19NY7dOPf31P4I0OUeIrpm52xbOwXxSfjk3MJpj8qCxYCt+mU7A/X4QGNiKSVsqvGouwgRhT0R1ELNfMckdVQd25euHvbDNP0J91gjMn/S05FaTIvK0JYtJQ6Qb6I9gtpXKpyfVeY8pJKt5i7MlDXFwjDDYMyerFwFF4BGkU/lS+BtOfGa4XjXbPdumr+Q54fChvA=="
     }
   ],
   "private_key": "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE="

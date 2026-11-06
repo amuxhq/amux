@@ -223,6 +223,7 @@ message AskNotice {
     QuestionWant question = 5;
     PlanWant plan = 6;
     OtherWant other = 7;
+    AccessWant access = 10;
   }
   // The provider's reason, when it gave one.
   string why = 8;
@@ -237,6 +238,8 @@ message RunWant {
 message ChangeWant {
   string path = 1;
   uint32 files = 2;
+  // Whether the file is new; absent when the provider doesn't say.
+  optional bool created = 3;
 }
 
 message UseWant {
@@ -253,21 +256,35 @@ message PlanWant {
   string title = 1;
 }
 
-// A form, a link, an access grant or an ask this build cannot read: the
-// provider's own sentence.
+// A form, a link or an ask this build cannot read: the provider's own
+// sentence, and the server that sent it when one did.
 message OtherWant {
   string text = 1;
+  string server = 2;
+}
+
+message AccessWant {
+  string reason = 1;
 }
 
 // The agent is alive and its turn is over, and it can't go on without the
 // person.
 message BlockedNotice {
   oneof why {
-    Empty signed_out = 1;
+    // How its sign-in stands.
+    SignInState signed_out = 1;
     UsageBlock usage = 2;
     // The provider's words.
     string failed = 3;
   }
+}
+
+enum SignInState {
+  SIGN_IN_STATE_UNKNOWN = 0;
+  SIGN_IN_STATE_SIGNED_IN = 1;
+  SIGN_IN_STATE_SIGNED_OUT = 2;
+  SIGN_IN_STATE_EXPIRED = 3;
+  SIGN_IN_STATE_FAILED = 4;
 }
 
 message UsageBlock {

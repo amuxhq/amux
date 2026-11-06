@@ -1379,11 +1379,9 @@ impl Daemon {
         cause: &wire::IncarnationEnd,
         out: &mut Vec<Output>,
     ) -> Result<(), StoreError> {
-        let meant = matches!(
-            ExitCause::try_from(cause.cause).unwrap_or_default(),
-            ExitCause::Unspecified | ExitCause::Finished | ExitCause::Stopped | ExitCause::Killed
-        );
-        if meant {
+        // With nobody to tell, a row would only hold a timer armed to find
+        // that out.
+        if !ExitCause::failed(cause.cause) || self.push_recipients().is_empty() {
             return Ok(());
         }
         self.store.put_notification(&Notification {

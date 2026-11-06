@@ -137,7 +137,7 @@ impl Rig {
         let mut step = snapshot(phase, &[], self.clock.now_ms());
         if phase == Phase::NeedsYou {
             self.asks += 1;
-            step.snapshot.as_mut().unwrap().notice = Some(ask_notice(self.asks));
+            step.snapshot.as_mut().unwrap().notice = Some(Box::new(ask_notice(self.asks)));
         }
         step
     }

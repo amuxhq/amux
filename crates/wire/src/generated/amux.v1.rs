@@ -429,8 +429,8 @@ pub struct Snapshot {
     /// from its own state, so the daemon can hold and send it without decoding
     /// a body. Never an exit: a process that has gone says nothing, and its
     /// daemon writes that notice itself.
-    #[prost(message, optional, tag = "13")]
-    pub notice: ::core::option::Option<Notice>,
+    #[prost(message, optional, boxed, tag = "13")]
+    pub notice: ::core::option::Option<::prost::alloc::boxed::Box<Notice>>,
 }
 impl ::prost::Name for Snapshot {
     const NAME: &'static str = "Snapshot";
@@ -484,7 +484,7 @@ pub struct AskNotice {
     /// How many other asks are open.
     #[prost(uint32, tag = "9")]
     pub more: u32,
-    #[prost(oneof = "ask_notice::Wants", tags = "2, 3, 4, 5, 6, 7")]
+    #[prost(oneof = "ask_notice::Wants", tags = "2, 3, 4, 5, 6, 7, 10")]
     pub wants: ::core::option::Option<ask_notice::Wants>,
 }
 /// Nested message and enum types in `AskNotice`.
@@ -503,6 +503,8 @@ pub mod ask_notice {
         Plan(super::PlanWant),
         #[prost(message, tag = "7")]
         Other(super::OtherWant),
+        #[prost(message, tag = "10")]
+        Access(super::AccessWant),
     }
 }
 impl ::prost::Name for AskNotice {
@@ -536,6 +538,9 @@ pub struct ChangeWant {
     pub path: ::prost::alloc::string::String,
     #[prost(uint32, tag = "2")]
     pub files: u32,
+    /// Whether the file is new; absent when the provider doesn't say.
+    #[prost(bool, optional, tag = "3")]
+    pub created: ::core::option::Option<bool>,
 }
 impl ::prost::Name for ChangeWant {
     const NAME: &'static str = "ChangeWant";
@@ -595,12 +600,14 @@ impl ::prost::Name for PlanWant {
         "type.googleapis.com/amux.v1.PlanWant".into()
     }
 }
-/// A form, a link, an access grant or an ask this build cannot read: the
-/// provider's own sentence.
+/// A form, a link or an ask this build cannot read: the provider's own
+/// sentence, and the server that sent it when one did.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct OtherWant {
     #[prost(string, tag = "1")]
     pub text: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub server: ::prost::alloc::string::String,
 }
 impl ::prost::Name for OtherWant {
     const NAME: &'static str = "OtherWant";
@@ -610,6 +617,21 @@ impl ::prost::Name for OtherWant {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.OtherWant".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AccessWant {
+    #[prost(string, tag = "1")]
+    pub reason: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AccessWant {
+    const NAME: &'static str = "AccessWant";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AccessWant".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.AccessWant".into()
     }
 }
 /// The agent is alive and its turn is over, and it can't go on without the
@@ -623,8 +645,9 @@ pub struct BlockedNotice {
 pub mod blocked_notice {
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Why {
-        #[prost(message, tag = "1")]
-        SignedOut(super::Empty),
+        /// How its sign-in stands.
+        #[prost(enumeration = "super::SignInState", tag = "1")]
+        SignedOut(i32),
         #[prost(message, tag = "2")]
         Usage(super::UsageBlock),
         /// The provider's words.
@@ -1005,6 +1028,42 @@ impl ::prost::Name for Lagged {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Lagged".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SignInState {
+    Unknown = 0,
+    SignedIn = 1,
+    SignedOut = 2,
+    Expired = 3,
+    Failed = 4,
+}
+impl SignInState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unknown => "SIGN_IN_STATE_UNKNOWN",
+            Self::SignedIn => "SIGN_IN_STATE_SIGNED_IN",
+            Self::SignedOut => "SIGN_IN_STATE_SIGNED_OUT",
+            Self::Expired => "SIGN_IN_STATE_EXPIRED",
+            Self::Failed => "SIGN_IN_STATE_FAILED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SIGN_IN_STATE_UNKNOWN" => Some(Self::Unknown),
+            "SIGN_IN_STATE_SIGNED_IN" => Some(Self::SignedIn),
+            "SIGN_IN_STATE_SIGNED_OUT" => Some(Self::SignedOut),
+            "SIGN_IN_STATE_EXPIRED" => Some(Self::Expired),
+            "SIGN_IN_STATE_FAILED" => Some(Self::Failed),
+            _ => None,
+        }
     }
 }
 /// The kind is the interpreter.
@@ -3867,42 +3926,6 @@ impl ToolServerStatus {
             "TOOL_SERVER_STATUS_READY" => Some(Self::Ready),
             "TOOL_SERVER_STATUS_FAILED" => Some(Self::Failed),
             "TOOL_SERVER_STATUS_NEEDS_AUTH" => Some(Self::NeedsAuth),
-            _ => None,
-        }
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum SignInState {
-    Unknown = 0,
-    SignedIn = 1,
-    SignedOut = 2,
-    Expired = 3,
-    Failed = 4,
-}
-impl SignInState {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unknown => "SIGN_IN_STATE_UNKNOWN",
-            Self::SignedIn => "SIGN_IN_STATE_SIGNED_IN",
-            Self::SignedOut => "SIGN_IN_STATE_SIGNED_OUT",
-            Self::Expired => "SIGN_IN_STATE_EXPIRED",
-            Self::Failed => "SIGN_IN_STATE_FAILED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "SIGN_IN_STATE_UNKNOWN" => Some(Self::Unknown),
-            "SIGN_IN_STATE_SIGNED_IN" => Some(Self::SignedIn),
-            "SIGN_IN_STATE_SIGNED_OUT" => Some(Self::SignedOut),
-            "SIGN_IN_STATE_EXPIRED" => Some(Self::Expired),
-            "SIGN_IN_STATE_FAILED" => Some(Self::Failed),
             _ => None,
         }
     }

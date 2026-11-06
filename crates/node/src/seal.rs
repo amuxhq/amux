@@ -14,7 +14,7 @@ use hpke::{Deserializable as _, OpModeS, Serializable as _};
 use prost::Message as _;
 use serde::Serialize;
 use uuid::Uuid;
-use wire::{ask_notice, blocked_notice, notice};
+use wire::Said;
 
 /// Binds a sealed push to what it is for. The phone opens it with the same words.
 const INFO: &[u8] = b"amux push 1";
@@ -43,104 +43,19 @@ struct Sealed<'a> {
     notice: Said,
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum Said {
-    Ask {
-        key: String,
-        wants: Wants,
-        why: String,
-        more: u32,
-    },
-    SignedOut,
-    UsageLimit {
-        resets_at_ms: Option<i64>,
-    },
-    Failed {
-        message: String,
-    },
-    Died {
-        detail: String,
-    },
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum Wants {
-    Run { command: String },
-    Change { path: String, files: u32 },
-    Use { server: String, tool: String },
-    Question { text: String },
-    Plan { title: String },
-    Other { text: String },
-}
-
-impl Wants {
-    fn of(wants: Option<ask_notice::Wants>) -> Self {
-        match wants {
-            Some(ask_notice::Wants::Run(run)) => Self::Run {
-                command: run.command,
-            },
-            Some(ask_notice::Wants::Change(change)) => Self::Change {
-                path: change.path,
-                files: change.files,
-            },
-            Some(ask_notice::Wants::Use(tool)) => Self::Use {
-                server: tool.server,
-                tool: tool.tool,
-            },
-            Some(ask_notice::Wants::Question(question)) => Self::Question {
-                text: question.text,
-            },
-            Some(ask_notice::Wants::Plan(plan)) => Self::Plan { title: plan.title },
-            Some(ask_notice::Wants::Other(other)) => Self::Other { text: other.text },
-            None => Self::Other {
-                text: String::new(),
-            },
-        }
-    }
-}
-
-impl Said {
-    fn of(notice: wire::Notice) -> Result<Self, SealError> {
-        Ok(match notice.of {
-            Some(notice::Of::Ask(ask)) => Self::Ask {
-                key: ask.key,
-                wants: Wants::of(ask.wants),
-                why: ask.why,
-                more: ask.more,
-            },
-            Some(notice::Of::Blocked(blocked)) => match blocked.why {
-                Some(blocked_notice::Why::SignedOut(_)) => Self::SignedOut,
-                Some(blocked_notice::Why::Usage(usage)) => Self::UsageLimit {
-                    resets_at_ms: usage.resets_at_ms,
-                },
-                Some(blocked_notice::Why::Failed(message)) => Self::Failed { message },
-                None => Self::Failed {
-                    message: String::new(),
-                },
-            },
-            Some(notice::Of::Died(died)) => Self::Died {
-                detail: died.detail,
-            },
-            None => return Err(SealError::Notice("it says nothing".to_owned())),
-        })
-    }
-
-    /// The same notice without its reason, the first thing to go when a push
-    /// is too long: what the agent wants still says what it needs.
-    fn without_why(self) -> Self {
-        match self {
-            Self::Ask {
-                key, wants, more, ..
-            } => Self::Ask {
-                key,
-                wants,
-                why: String::new(),
-                more,
-            },
-            said => said,
-        }
+/// The same notice without its reason, the first thing to go when a push is
+/// too long: what the agent wants still says what it needs.
+fn without_why(said: Said) -> Said {
+    match said {
+        Said::Ask {
+            key, wants, more, ..
+        } => Said::Ask {
+            key,
+            wants,
+            why: String::new(),
+            more,
+        },
+        said => said,
     }
 }
 
@@ -168,7 +83,7 @@ fn uuid(bytes: &[u8]) -> Result<String, SealError> {
 pub(crate) fn seal_push(push: &Push, push_key: &[u8]) -> Result<String, SealError> {
     let notice = wire::Notice::decode(push.notice.as_slice())
         .map_err(|error| SealError::Notice(error.to_string()))?;
-    let said = Said::of(notice)?;
+    let said = Said::of(notice).ok_or_else(|| SealError::Notice("it says nothing".to_owned()))?;
     let (host, agent) = (uuid(&push.host_id)?, uuid(&push.agent_id)?);
     let plain = |notice: Said| -> Result<Vec<u8>, SealError> {
         serde_json::to_vec(&Sealed {
@@ -183,7 +98,7 @@ pub(crate) fn seal_push(push: &Push, push_key: &[u8]) -> Result<String, SealErro
     if whole.len() <= MOST_SEALED_CHARS {
         return Ok(whole);
     }
-    let shorter = seal_bytes(&plain(said.without_why())?, push_key)?;
+    let shorter = seal_bytes(&plain(without_why(said))?, push_key)?;
     if shorter.len() <= MOST_SEALED_CHARS {
         Ok(shorter)
     } else {
@@ -194,7 +109,7 @@ pub(crate) fn seal_push(push: &Push, push_key: &[u8]) -> Result<String, SealErro
 #[cfg(test)]
 mod tests {
     use hpke::{Kem as _, OpModeR};
-    use wire::{AskNotice, Notice, RunWant};
+    use wire::{AskNotice, Notice, RunWant, ask_notice, blocked_notice, notice};
 
     use super::*;
 
@@ -248,12 +163,12 @@ mod tests {
         let opened = open(&sealed, &private);
         assert_eq!(opened["name"], "asker");
         assert_eq!(opened["host"], "01010101-0101-0101-0101-010101010101");
-        assert_eq!(opened["notice"]["ask"]["key"], "ask:1");
+        assert_eq!(opened["notice"]["Ask"]["key"], "ask:1");
         assert_eq!(
-            opened["notice"]["ask"]["wants"]["run"]["command"],
+            opened["notice"]["Ask"]["wants"]["Run"]["command"],
             "deploy --prod"
         );
-        assert_eq!(opened["notice"]["ask"]["more"], 1);
+        assert_eq!(opened["notice"]["Ask"]["more"], 1);
     }
 
     #[test]
@@ -261,7 +176,7 @@ mod tests {
         let (private, public) = X25519HkdfSha256::gen_keypair();
         let sealed = seal_push(&push("deploy", &"why ".repeat(1000)), &public.to_bytes()).unwrap();
         assert!(sealed.len() <= MOST_SEALED_CHARS);
-        assert_eq!(open(&sealed, &private)["notice"]["ask"]["why"], "");
+        assert_eq!(open(&sealed, &private)["notice"]["Ask"]["why"], "");
     }
 
     /// The file the phone's own tests open, so one fixture holds the sealing
@@ -315,6 +230,7 @@ mod tests {
             Wants::Change(wire::ChangeWant {
                 path: path.to_owned(),
                 files,
+                created: Some(false),
             })
         };
         let plan = |title: &str| {
@@ -367,6 +283,7 @@ mod tests {
                 of(ask_of(
                     Wants::Other(wire::OtherWant {
                         text: "Sign in to Linear to go on".to_owned(),
+                        server: String::new(),
                     }),
                     "",
                     1,
@@ -374,7 +291,9 @@ mod tests {
             ),
             (
                 "signed out",
-                of(blocked_of(blocked_notice::Why::SignedOut(wire::Empty {}))),
+                of(blocked_of(blocked_notice::Why::SignedOut(
+                    wire::SignInState::Failed as i32,
+                ))),
             ),
             (
                 "usage limit with a reset",

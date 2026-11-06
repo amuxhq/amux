@@ -354,7 +354,9 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
             emit.effect(write(&entry.text));
         }
         let body = state.body();
-        let notice = state.shared.notice(crate::notice::claude_ask);
+        let notice = state
+            .shared
+            .notice(crate::notice::claude_ask, Default::default());
         state.shared.finish(emit, body, notice)
     }
 

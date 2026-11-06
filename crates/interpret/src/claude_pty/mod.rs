@@ -1542,7 +1542,9 @@ impl Interpreter for ClaudePty {
             .submitted
             .retain(|prompt| awaiting.contains(&prompt.id));
         let body = state.body();
-        let notice = state.shared.notice(crate::notice::claude_ask);
+        let notice = state
+            .shared
+            .notice(crate::notice::claude_ask, Default::default());
         state.shared.finish(emit, body, notice)
     }
 

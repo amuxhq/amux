@@ -71,14 +71,14 @@ final class SealedPushTests: XCTestCase {
             .formatted(date: .omitted, time: .shortened)
         let expected = [
             "run": "Wants to run deploy --prod",
-            "run and more": "Wants to run deploy --prod · and 2 more",
+            "run and more": "Wants to run deploy --prod · 2 more",
             "change one file": "Wants to edit src/lib.rs",
             "change many files": "Wants to edit 4 files",
             "use a tool": "Wants to use github create_issue",
             "question": "Which suite?",
             "plan with a title": "Has a plan for you to decide: Move the cache",
             "plan without one": "Has a plan for you to decide",
-            "the provider's sentence": "Sign in to Linear to go on · and 1 more",
+            "the provider's sentence": "Sign in to Linear to go on · 1 more",
             "signed out": "Signed out of its provider · sign in on its host",
             "usage limit with a reset": "Usage limit reached · resets \(reset)",
             "usage limit without one": "Usage limit reached",
@@ -129,7 +129,7 @@ final class PushAlertTests: XCTestCase {
     private let opened = OpenedPush(
         host: "11111111-1111-1111-1111-111111111111",
         agent: "22222222-2222-2222-2222-222222222222", name: "refactor-auth",
-        notice: .ask(wants: .run(command: "deploy"), why: "", more: 0))
+        notice: .ask(key: "k", wants: .run(command: "deploy"), why: "", more: 0))
 
     func testAnOpenedPushBecomesTheAgentsNameOverWhatItWants() {
         let content = UNMutableNotificationContent()
@@ -161,9 +161,16 @@ final class PushAlertTests: XCTestCase {
 final class PushWordsTests: XCTestCase {
     func testAnAskWithNothingToSayStillSaysItNeedsYou() {
         XCTAssertEqual(
-            PushWords.body(.ask(wants: .other(text: ""), why: "", more: 0)), "Needs you")
+            PushWords.body(.ask(key: "k", wants: .other(server: "", text: ""), why: "", more: 0)), "Needs you")
         XCTAssertEqual(
-            PushWords.body(.ask(wants: .run(command: "ls"), why: "", more: 0)), "Wants to run ls")
+            PushWords.body(.ask(key: "k", wants: .run(command: "ls"), why: "", more: 0)), "Wants to run ls")
+    }
+
+    func testARowNamesTheProviderAndAPushCannot() {
+        XCTAssertEqual(PushWords.body(.signedOut(state: .expired), provider: "Codex"), "Codex sign-in expired")
+        XCTAssertEqual(
+            PushWords.body(.signedOut(state: .expired)),
+            "Signed out of its provider · sign in on its host")
     }
 
     func testALimitAlreadyResetSaysNoTime() {

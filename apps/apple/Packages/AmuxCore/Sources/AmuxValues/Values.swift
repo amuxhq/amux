@@ -2,6 +2,7 @@
 // the values the phone bridge carries. Do not edit: change the Rust and
 // regenerate; `--check` fails on any difference.
 
+@_exported import AmuxPush
 import Foundation
 
 public enum AccountBinding: String, Codable, Hashable, Sendable, CaseIterable {
@@ -892,201 +893,6 @@ public enum AskRow: Codable, Hashable, Sendable {
             try _fields.encode(reason, forKey: .reason)
             try _fields.encode(resolution, forKey: .resolution)
         }
-    }
-}
-
-public enum AskSubject: Codable, Hashable, Sendable {
-    case plan
-    case command(command: String)
-    case edit(path: String, files: UInt32, created: Bool?)
-    case tool(server: String, tool: String)
-    /// The first question, and how many there are.
-    case question(question: String, count: UInt32)
-    case form(server: String, message: String)
-    case link(server: String, message: String)
-    case access(reason: String)
-    case unanswerable(reason: String)
-
-    private enum Tag: String, CodingKey {
-        case command = "Command"
-        case edit = "Edit"
-        case tool = "Tool"
-        case question = "Question"
-        case form = "Form"
-        case link = "Link"
-        case access = "Access"
-        case unanswerable = "Unanswerable"
-    }
-
-    private enum CommandKeys: String, CodingKey {
-        case command
-    }
-
-    private enum EditKeys: String, CodingKey {
-        case path
-        case files
-        case created
-    }
-
-    private enum ToolKeys: String, CodingKey {
-        case server
-        case tool
-    }
-
-    private enum QuestionKeys: String, CodingKey {
-        case question
-        case count
-    }
-
-    private enum FormKeys: String, CodingKey {
-        case server
-        case message
-    }
-
-    private enum LinkKeys: String, CodingKey {
-        case server
-        case message
-    }
-
-    private enum AccessKeys: String, CodingKey {
-        case reason
-    }
-
-    private enum UnanswerableKeys: String, CodingKey {
-        case reason
-    }
-
-    public init(from decoder: any Decoder) throws {
-        if let _single = try? decoder.singleValueContainer(),
-           let _name = try? _single.decode(String.self)
-        {
-            switch _name {
-            case "Plan": self = .plan
-            default:
-                throw DecodingError.dataCorruptedError(
-                    in: _single, debugDescription: "no AskSubject is named \(_name)")
-            }
-            return
-        }
-        let _container = try decoder.container(keyedBy: Tag.self)
-        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
-            throw DecodingError.dataCorrupted(
-                .init(
-                    codingPath: decoder.codingPath,
-                    debugDescription: "a AskSubject names exactly one variant"))
-        }
-        switch _tag {
-        case .command:
-            let _fields = try _container.nestedContainer(
-                keyedBy: CommandKeys.self, forKey: .command)
-            self = .command(
-                command: try _fields.decode(String.self, forKey: .command))
-        case .edit:
-            let _fields = try _container.nestedContainer(
-                keyedBy: EditKeys.self, forKey: .edit)
-            self = .edit(
-                path: try _fields.decode(String.self, forKey: .path),
-                files: try _fields.decode(UInt32.self, forKey: .files),
-                created: try _fields.decodeIfPresent(Bool.self, forKey: .created))
-        case .tool:
-            let _fields = try _container.nestedContainer(
-                keyedBy: ToolKeys.self, forKey: .tool)
-            self = .tool(
-                server: try _fields.decode(String.self, forKey: .server),
-                tool: try _fields.decode(String.self, forKey: .tool))
-        case .question:
-            let _fields = try _container.nestedContainer(
-                keyedBy: QuestionKeys.self, forKey: .question)
-            self = .question(
-                question: try _fields.decode(String.self, forKey: .question),
-                count: try _fields.decode(UInt32.self, forKey: .count))
-        case .form:
-            let _fields = try _container.nestedContainer(
-                keyedBy: FormKeys.self, forKey: .form)
-            self = .form(
-                server: try _fields.decode(String.self, forKey: .server),
-                message: try _fields.decode(String.self, forKey: .message))
-        case .link:
-            let _fields = try _container.nestedContainer(
-                keyedBy: LinkKeys.self, forKey: .link)
-            self = .link(
-                server: try _fields.decode(String.self, forKey: .server),
-                message: try _fields.decode(String.self, forKey: .message))
-        case .access:
-            let _fields = try _container.nestedContainer(
-                keyedBy: AccessKeys.self, forKey: .access)
-            self = .access(
-                reason: try _fields.decode(String.self, forKey: .reason))
-        case .unanswerable:
-            let _fields = try _container.nestedContainer(
-                keyedBy: UnanswerableKeys.self, forKey: .unanswerable)
-            self = .unanswerable(
-                reason: try _fields.decode(String.self, forKey: .reason))
-        }
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        switch self {
-        case .plan:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("Plan")
-        case .command(let command):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: CommandKeys.self, forKey: .command)
-            try _fields.encode(command, forKey: .command)
-        case .edit(let path, let files, let created):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: EditKeys.self, forKey: .edit)
-            try _fields.encode(path, forKey: .path)
-            try _fields.encode(files, forKey: .files)
-            try _fields.encodeIfPresent(created, forKey: .created)
-        case .tool(let server, let tool):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: ToolKeys.self, forKey: .tool)
-            try _fields.encode(server, forKey: .server)
-            try _fields.encode(tool, forKey: .tool)
-        case .question(let question, let count):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: QuestionKeys.self, forKey: .question)
-            try _fields.encode(question, forKey: .question)
-            try _fields.encode(count, forKey: .count)
-        case .form(let server, let message):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: FormKeys.self, forKey: .form)
-            try _fields.encode(server, forKey: .server)
-            try _fields.encode(message, forKey: .message)
-        case .link(let server, let message):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: LinkKeys.self, forKey: .link)
-            try _fields.encode(server, forKey: .server)
-            try _fields.encode(message, forKey: .message)
-        case .access(let reason):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: AccessKeys.self, forKey: .access)
-            try _fields.encode(reason, forKey: .reason)
-        case .unanswerable(let reason):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: UnanswerableKeys.self, forKey: .unanswerable)
-            try _fields.encode(reason, forKey: .reason)
-        }
-    }
-}
-
-/// The head ask, small enough for a row: what is asked, without the diff,
-/// the plan or the form that the ask card carries.
-public struct AskSummary: Codable, Hashable, Sendable {
-    public var subject: AskSubject
-    /// Asks open, the head included.
-    public var count: UInt32
-
-    public init(subject: AskSubject, count: UInt32) {
-        self.subject = subject
-        self.count = count
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case subject
-        case count
     }
 }
 
@@ -6514,14 +6320,13 @@ public enum Scope: Codable, Hashable, Sendable {
 /// What a row says under its name, by the agent's state. What the agent is
 /// working on is a fact for agents finding each other, not for this line.
 public enum SecondLine: Codable, Hashable, Sendable {
-    /// Needs you: what it asks.
-    case ask(AskSummary)
+    /// What it wants of the person: what it asks, or what stops it. The
+    /// same words a push says.
+    case said(Said)
     /// Working: the step it is running, as the chat's activity line has it.
     case step(ActivityLine)
     /// Idle: the first line of what it last said.
     case lastSaid(String)
-    /// Idle, and cannot go on until the person acts.
-    case stuck(StuckReason)
     case exited(ExitCause)
     /// The agent's host no longer trusts this machine: it will not come
     /// back on its own, only by pairing again. The agent is only as it last
@@ -6531,10 +6336,9 @@ public enum SecondLine: Codable, Hashable, Sendable {
     case blank
 
     private enum Tag: String, CodingKey {
-        case ask = "Ask"
+        case said = "Said"
         case step = "Step"
         case lastSaid = "LastSaid"
-        case stuck = "Stuck"
         case exited = "Exited"
     }
 
@@ -6559,14 +6363,12 @@ public enum SecondLine: Codable, Hashable, Sendable {
                     debugDescription: "a SecondLine names exactly one variant"))
         }
         switch _tag {
-        case .ask:
-            self = .ask(try _container.decode(AskSummary.self, forKey: .ask))
+        case .said:
+            self = .said(try _container.decode(Said.self, forKey: .said))
         case .step:
             self = .step(try _container.decode(ActivityLine.self, forKey: .step))
         case .lastSaid:
             self = .lastSaid(try _container.decode(String.self, forKey: .lastSaid))
-        case .stuck:
-            self = .stuck(try _container.decode(StuckReason.self, forKey: .stuck))
         case .exited:
             self = .exited(try _container.decode(ExitCause.self, forKey: .exited))
         }
@@ -6574,18 +6376,15 @@ public enum SecondLine: Codable, Hashable, Sendable {
 
     public func encode(to encoder: any Encoder) throws {
         switch self {
-        case .ask(let _value):
+        case .said(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
-            try _container.encode(_value, forKey: .ask)
+            try _container.encode(_value, forKey: .said)
         case .step(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .step)
         case .lastSaid(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .lastSaid)
-        case .stuck(let _value):
-            var _container = encoder.container(keyedBy: Tag.self)
-            try _container.encode(_value, forKey: .stuck)
         case .exited(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .exited)
@@ -6968,14 +6767,6 @@ public struct SignInOfferView: Codable, Hashable, Sendable {
     }
 }
 
-public enum SignInState: String, Codable, Hashable, Sendable, CaseIterable {
-    case unknown = "Unknown"
-    case signedIn = "SignedIn"
-    case signedOut = "SignedOut"
-    case expired = "Expired"
-    case failed = "Failed"
-}
-
 public struct SignInView: Codable, Hashable, Sendable {
     public var state: SignInState
     public var account: String
@@ -7065,65 +6856,6 @@ public enum StepState: String, Codable, Hashable, Sendable, CaseIterable {
     case done = "done"
     case skipped = "skipped"
     case not_needed = "not_needed"
-}
-
-public enum StuckReason: Codable, Hashable, Sendable {
-    /// The provider is signed out, its sign-in expired, or signing in failed.
-    case signedOut(state: SignInState, account: String)
-    /// A usage window is spent; it resets at the latest reset of the
-    /// windows that are, when the provider says.
-    case usageLimit(resetsAtMs: Int64?)
-
-    private enum Tag: String, CodingKey {
-        case signedOut = "SignedOut"
-        case usageLimit = "UsageLimit"
-    }
-
-    private enum SignedOutKeys: String, CodingKey {
-        case state
-        case account
-    }
-
-    private enum UsageLimitKeys: String, CodingKey {
-        case resetsAtMs = "resets_at_ms"
-    }
-
-    public init(from decoder: any Decoder) throws {
-        let _container = try decoder.container(keyedBy: Tag.self)
-        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
-            throw DecodingError.dataCorrupted(
-                .init(
-                    codingPath: decoder.codingPath,
-                    debugDescription: "a StuckReason names exactly one variant"))
-        }
-        switch _tag {
-        case .signedOut:
-            let _fields = try _container.nestedContainer(
-                keyedBy: SignedOutKeys.self, forKey: .signedOut)
-            self = .signedOut(
-                state: try _fields.decode(SignInState.self, forKey: .state),
-                account: try _fields.decode(String.self, forKey: .account))
-        case .usageLimit:
-            let _fields = try _container.nestedContainer(
-                keyedBy: UsageLimitKeys.self, forKey: .usageLimit)
-            self = .usageLimit(
-                resetsAtMs: try _fields.decodeIfPresent(Int64.self, forKey: .resetsAtMs))
-        }
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        switch self {
-        case .signedOut(let state, let account):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: SignedOutKeys.self, forKey: .signedOut)
-            try _fields.encode(state, forKey: .state)
-            try _fields.encode(account, forKey: .account)
-        case .usageLimit(let resetsAtMs):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: UsageLimitKeys.self, forKey: .usageLimit)
-            try _fields.encodeIfPresent(resetsAtMs, forKey: .resetsAtMs)
-        }
-    }
 }
 
 /// One task of the list, by its subject.

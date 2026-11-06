@@ -126,7 +126,7 @@ pub(crate) fn blocked_by(
 ) -> wire::BlockedNotice {
     match error_kind {
         "rate_limit" => crate::notice::usage_spent(resets_at_ms),
-        "authentication_failed" => crate::notice::signed_out(),
+        "authentication_failed" => crate::notice::signed_out(wire::SignInState::Failed),
         _ => crate::notice::failed(message),
     }
 }

@@ -193,9 +193,10 @@ pub(crate) fn seal_push(push: &Push, push_key: &[u8]) -> Result<String, SealErro
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use hpke::{Kem as _, OpModeR};
     use wire::{AskNotice, Notice, RunWant};
+
+    use super::*;
 
     fn open(
         sealed: &str,
@@ -261,6 +262,195 @@ mod tests {
         let sealed = seal_push(&push("deploy", &"why ".repeat(1000)), &public.to_bytes()).unwrap();
         assert!(sealed.len() <= MOST_SEALED_CHARS);
         assert_eq!(open(&sealed, &private)["notice"]["ask"]["why"], "");
+    }
+
+    /// The file the phone's own tests open, so one fixture holds the sealing
+    /// here and the opening there to the same format.
+    fn fixture_path() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
+            "../../apps/apple/Packages/AmuxPush/Tests/AmuxPushTests/Fixtures/sealed-pushes.json",
+        )
+    }
+
+    const FIXTURE_KEY: [u8; 32] = [0x41; 32];
+
+    fn fixture_key() -> <X25519HkdfSha256 as hpke::Kem>::PrivateKey {
+        <X25519HkdfSha256 as hpke::Kem>::PrivateKey::from_bytes(&FIXTURE_KEY).unwrap()
+    }
+
+    fn fixture_key_text() -> String {
+        base64::engine::general_purpose::STANDARD.encode(FIXTURE_KEY)
+    }
+
+    fn ask_of(wants: ask_notice::Wants, why: &str, more: u32) -> notice::Of {
+        notice::Of::Ask(AskNotice {
+            key: "ask:7".to_owned(),
+            wants: Some(wants),
+            why: why.to_owned(),
+            more,
+        })
+    }
+
+    fn blocked_of(why: blocked_notice::Why) -> notice::Of {
+        notice::Of::Blocked(wire::BlockedNotice { why: Some(why) })
+    }
+
+    /// Every shape a notice takes, by the name the phone's tests know it by.
+    fn fixture_pushes() -> Vec<(&'static str, Push)> {
+        use ask_notice::Wants;
+        let of = |of: notice::Of| Push {
+            host_id: vec![0x11; 16],
+            agent_id: vec![0x22; 16],
+            revision: 1,
+            name: "refactor-auth".to_owned(),
+            notice: Notice { of: Some(of) }.encode_to_vec(),
+            recipients: Vec::new(),
+        };
+        let run = |command: &str| {
+            Wants::Run(RunWant {
+                command: command.to_owned(),
+            })
+        };
+        let change = |path: &str, files| {
+            Wants::Change(wire::ChangeWant {
+                path: path.to_owned(),
+                files,
+            })
+        };
+        let plan = |title: &str| {
+            Wants::Plan(wire::PlanWant {
+                title: title.to_owned(),
+            })
+        };
+        vec![
+            (
+                "run",
+                of(ask_of(run("deploy --prod\n--force"), "It ships", 0)),
+            ),
+            ("run and more", of(ask_of(run("deploy --prod"), "", 2))),
+            (
+                "change one file",
+                of(ask_of(change("src/lib.rs", 1), "", 0)),
+            ),
+            (
+                "change many files",
+                of(ask_of(change("src/lib.rs", 4), "", 0)),
+            ),
+            (
+                "use a tool",
+                of(ask_of(
+                    Wants::Use(wire::UseWant {
+                        server: "github".to_owned(),
+                        tool: "create_issue".to_owned(),
+                    }),
+                    "",
+                    0,
+                )),
+            ),
+            (
+                "question",
+                of(ask_of(
+                    Wants::Question(wire::QuestionWant {
+                        text: "Which suite?\nPick one".to_owned(),
+                    }),
+                    "",
+                    0,
+                )),
+            ),
+            (
+                "plan with a title",
+                of(ask_of(plan("Move the cache"), "", 0)),
+            ),
+            ("plan without one", of(ask_of(plan(""), "", 0))),
+            (
+                "the provider's sentence",
+                of(ask_of(
+                    Wants::Other(wire::OtherWant {
+                        text: "Sign in to Linear to go on".to_owned(),
+                    }),
+                    "",
+                    1,
+                )),
+            ),
+            (
+                "signed out",
+                of(blocked_of(blocked_notice::Why::SignedOut(wire::Empty {}))),
+            ),
+            (
+                "usage limit with a reset",
+                of(blocked_of(blocked_notice::Why::Usage(wire::UsageBlock {
+                    resets_at_ms: Some(1_800_000_000_000),
+                }))),
+            ),
+            (
+                "usage limit without one",
+                of(blocked_of(blocked_notice::Why::Usage(wire::UsageBlock {
+                    resets_at_ms: None,
+                }))),
+            ),
+            (
+                "failed",
+                of(blocked_of(blocked_notice::Why::Failed(
+                    "Connection refused".to_owned(),
+                ))),
+            ),
+            (
+                "died",
+                of(notice::Of::Died(wire::DiedNotice {
+                    detail: "exited with status 1".to_owned(),
+                    ..wire::DiedNotice::default()
+                })),
+            ),
+        ]
+    }
+
+    /// The committed fixture still opens, and what this code seals now still
+    /// says the same thing. A failure here is a change to what the phone reads.
+    #[test]
+    fn the_phones_fixture_is_what_this_code_seals() {
+        let fixture: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(fixture_path()).unwrap()).unwrap();
+        let private = fixture_key();
+        let public = X25519HkdfSha256::sk_to_pk(&private).to_bytes();
+        assert_eq!(fixture["private_key"], fixture_key_text());
+        let cases = fixture["cases"].as_array().unwrap();
+        let pushes = fixture_pushes();
+        assert_eq!(cases.len(), pushes.len());
+        for (case, (name, push)) in cases.iter().zip(&pushes) {
+            assert_eq!(case["name"], *name);
+            assert_eq!(
+                open(case["sealed"].as_str().unwrap(), &private),
+                case["plain"]
+            );
+            let sealed = seal_push(push, &public).unwrap();
+            assert_eq!(open(&sealed, &private), case["plain"], "{name}");
+        }
+    }
+
+    /// Writes the fixture again. Sealing takes randomness, so this is run by
+    /// hand when the sealed format changes, and its output is committed.
+    #[test]
+    #[ignore = "rewrites the committed fixture"]
+    fn write_the_phones_fixture() {
+        let private = fixture_key();
+        let public = X25519HkdfSha256::sk_to_pk(&private).to_bytes();
+        let cases: Vec<_> = fixture_pushes()
+            .iter()
+            .map(|(name, push)| {
+                let sealed = seal_push(push, &public).unwrap();
+                let plain = open(&sealed, &private);
+                serde_json::json!({ "name": name, "sealed": sealed, "plain": plain })
+            })
+            .collect();
+        let fixture = serde_json::json!({
+            "private_key": fixture_key_text(),
+            "cases": cases,
+        });
+        let path = fixture_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut text = serde_json::to_string_pretty(&fixture).unwrap();
+        text.push('\n');
+        std::fs::write(path, text).unwrap();
     }
 
     #[test]

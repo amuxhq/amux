@@ -622,6 +622,17 @@ impl EmbeddedRuntime {
         })
     }
 
+    /// Says whether a profile wants notifications, and the public key they
+    /// are sealed to. Nothing keeps it, so the app says it at every start.
+    pub fn want_notifications(
+        &self,
+        profile: ProfileId,
+        public_key: Option<Vec<u8>>,
+    ) -> Result<(), EmbeddedError> {
+        self.runtime(profile)?.want_notifications(public_key);
+        Ok(())
+    }
+
     /// Asks the account service again what the account buys, over the
     /// relay link, so a purchase lifts the relay's tier now rather than at
     /// the link's next scheduled refresh.

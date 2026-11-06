@@ -1723,6 +1723,50 @@ pub unsafe extern "C" fn amux_runtime_access_token(
     }
 }
 
+/// A profile's host id, which is what a notification for it is addressed
+/// to; the ticket answers `{"Ok": [byte, ..]}` or `{"Err": ..}`.
+///
+/// # Safety
+/// As for `amux_runtime_delete_profile`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_runtime_host_id(
+    runtime: *const AmuxRuntime,
+    profile: *const c_char,
+) -> u64 {
+    // SAFETY: the caller's contract.
+    unsafe {
+        profile_act(runtime, profile, |embedded, profile| async move {
+            Answered::from(embedded.host_id(profile))
+        })
+    }
+}
+
+/// Says whether a profile wants notifications: `key` is a JSON byte array,
+/// the public key they are sealed to, or `null` to take the wish back. Nothing
+/// keeps it, so the app says it at every start. The ticket answers
+/// `{"Ok": null}` or `{"Err": ..}`.
+///
+/// # Safety
+/// As for `amux_runtime_delete_profile`; `key` is a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_runtime_want_notifications(
+    runtime: *const AmuxRuntime,
+    profile: *const c_char,
+    key: *const c_char,
+) -> u64 {
+    // SAFETY: the caller's contract.
+    let key: Option<Option<Vec<u8>>> = unsafe { parse(key) };
+    // SAFETY: the caller's contract.
+    unsafe {
+        profile_act(runtime, profile, |embedded, profile| async move {
+            let Some(key) = key else {
+                return Answered::Err("the key is not a byte array".into());
+            };
+            Answered::from(embedded.want_notifications(profile, key))
+        })
+    }
+}
+
 /// Asks the account service what a profile's account buys now, over its
 /// relay link, so the relay's tier follows a purchase at once; the ticket
 /// answers `{"Ok": null}` or `{"Err": ..}`.

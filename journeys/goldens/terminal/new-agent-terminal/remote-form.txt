@@ -15,7 +15,7 @@
       Tidied.      │                                                                      │
                    │  [Start]  [Cancel]                                                   │
     ○ limited  Clau│  enter start   ←→ choose   ↑↓ move   esc cancel                      │            now
-      usage limit r╰──────────────────────────────────────────────────────────────────────╯
+      The FAQ is re╰──────────────────────────────────────────────────────────────────────╯
 
     ○ worker  Claude · /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                                   now
 

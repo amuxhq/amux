@@ -12,7 +12,7 @@
       Tidied.      │  Folder    /tmp/journey/aj-xxxxxxxx/net/laptop/work                  │
                    │  Host       cabin   desk   laptop                                    │
     ○ limited  Clau│  Worktree  [ ] new worktree                                          │            now
-      usage limit r│                                                                      │
+      The FAQ is re│                                                                      │
                    │  [Start]  [Cancel]                                                   │
     ○ worker  Claud│  enter next   esc done                                               │            now
                    ╰──────────────────────────────────────────────────────────────────────╯

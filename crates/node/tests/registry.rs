@@ -518,6 +518,9 @@ async fn a_stop_and_a_kill_end_the_process_and_record_why() {
 /// was marked with the daemon's own when its process went, and a cause on
 /// the step would land on the new, live incarnation's row and stand in for
 /// how that one ends.
+// On Windows a process it starts can outlive it, which fails it as a leak
+// (FOX-356).
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_resumed_agent_ends_with_its_own_cause_not_the_one_its_repair_boundary_names() {
     let install = Install::new();
@@ -1962,6 +1965,7 @@ async fn a_restarted_daemon_serves_the_tools_of_the_agents_it_adopts() {
     );
 }
 
+#[cfg(unix)]
 fn sdk_input(of: wire::claude_sdk_input::Of) -> wire::Input {
     wire::Input::new(
         uuid::Uuid::new_v4().as_bytes().to_vec(),
@@ -2025,6 +2029,9 @@ async fn a_persons_stop_ends_a_working_agent_as_stopped_within_seconds() {
 /// ones it was created with: a permission and an effort chosen in the chat
 /// survive a stop and a resume (QA: a resume silently went back to plan
 /// mode and to the creation model).
+// On Windows a process it starts can outlive it, which fails it as a leak
+// (FOX-356).
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_resume_keeps_the_permission_and_effort_the_agent_last_ran_with() {
     let install = Install::new();

@@ -738,6 +738,7 @@ mod tests {
             TrustEntry {
                 pubkey: pubkey.to_vec(),
                 name: "peer".to_string(),
+                push_key: None,
                 on_account: true,
                 direct: Vec::new(),
                 ssh: None,

@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 pub use wire::{AMUX_TOOL_SERVER, ATTACH_TOOL, SEND_TOOL, STATUS_TOOL};
 use wire::{
     AgentMessage, AgentSpec, Append, Attachment, Bootstrap, Envelope, Item, Notice, Phase,
-    PromptInput, QueuedInput, Refusal, Rejected, Sender, Snapshot, Step, TurnEnd, bootstrap, child_report,
-    envelope, sender,
+    PromptInput, QueuedInput, Refusal, Rejected, Sender, Snapshot, Step, TurnEnd, bootstrap,
+    child_report, envelope, sender,
 };
 
 use crate::checks::{self, Watch};
@@ -563,7 +563,10 @@ impl<A: OpenAsk> Shared<A> {
     pub fn resume_step(&mut self, body: Vec<u8>) -> Step {
         let mut emit = Emit::default();
         emit.step.items = self.open_items.values().cloned().collect();
-        let notice = self.last_snapshot.as_ref().and_then(|last| last.notice.clone());
+        let notice = self
+            .last_snapshot
+            .as_ref()
+            .and_then(|last| last.notice.clone());
         self.snapshot_into(&mut emit, body, notice, true);
         emit.step
     }

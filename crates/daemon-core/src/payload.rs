@@ -27,18 +27,26 @@ pub type AgentSpec = wire::AgentSpec;
 /// Why a forwarder will not carry a link's packets to a destination.
 pub type ForwardRefusal = wire::ForwardRefusal;
 
-/// What a push carries: envelope fields only, so producing it interprets
-/// nothing.
+/// What a push carries: the notice as the outbox holds it, so producing it
+/// interprets nothing, and who gets it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Push {
     pub host_id: Vec<u8>,
     pub agent_id: Vec<u8>,
-    /// The revision of the snapshot that turned the agent to needs_you.
+    /// The revision that raised it.
     pub revision: u64,
     pub name: String,
-    pub working_on: Option<String>,
-    /// The agent's newest item's text when it turned.
-    pub text: String,
+    /// An encoded `amux.v1.Notice`.
+    pub notice: Vec<u8>,
+    pub recipients: Vec<PushRecipient>,
+}
+
+/// A paired host that wants notifications.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PushRecipient {
+    pub host_id: Vec<u8>,
+    /// The public key a push to it is sealed to.
+    pub push_key: Vec<u8>,
 }
 
 /// What a host's dial error says of one that refused this host's

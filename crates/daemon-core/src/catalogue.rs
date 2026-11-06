@@ -307,6 +307,36 @@ impl Daemon {
         }
     }
 
+    /// What a trusted host's own entry said of notifications. Only its own
+    /// entry on the stream its handshake proved says this; a key in a suite
+    /// this build can't seal to reads as wanting none.
+    pub(crate) fn push_key_said(
+        &mut self,
+        host: HostId,
+        key: Option<wire::PushKey>,
+        out: &mut Vec<Output>,
+    ) {
+        let uuid = Uuid::from_bytes(host.0);
+        let push_key = key
+            .filter(|key| key.suite() == wire::PushSuite::HpkeX25519Chacha20)
+            .map(|key| key.public_key);
+        let moved = self
+            .trust
+            .store()
+            .entry(uuid)
+            .is_some_and(|entry| entry.push_key != push_key);
+        if moved {
+            self.change_trust(
+                TrustChange::PushKey {
+                    host: uuid,
+                    push_key,
+                },
+                None,
+                out,
+            );
+        }
+    }
+
     /// The driver found that `host` no longer trusts this one.
     pub(crate) fn peer_revoked(&mut self, host: HostId) {
         self.routing.catalogue.note_revoked(host);

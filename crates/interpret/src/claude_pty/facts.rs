@@ -1693,8 +1693,11 @@ impl State {
                 .as_ref()
                 .and_then(|quota| quota.resets_at)
                 .map(|seconds| seconds * 1000);
-            self.shared
-                .stopped_by(crate::claude_common::blocked_by(&error_kind, &text, resets_at_ms));
+            self.shared.stopped_by(crate::claude_common::blocked_by(
+                &error_kind,
+                &text,
+                resets_at_ms,
+            ));
             self.shared.item(
                 emit,
                 ItemDraft {

@@ -837,11 +837,17 @@ impl State {
             }
             let resets_at_ms = self.usage.as_ref().and_then(|usage| {
                 crate::notice::spent_until(
-                    usage.windows.iter().filter_map(|window| window.meter.as_ref()),
+                    usage
+                        .windows
+                        .iter()
+                        .filter_map(|window| window.meter.as_ref()),
                 )
             });
-            self.shared
-                .stopped_by(crate::claude_common::blocked_by(&error, &text, resets_at_ms));
+            self.shared.stopped_by(crate::claude_common::blocked_by(
+                &error,
+                &text,
+                resets_at_ms,
+            ));
             self.shared.item(
                 emit,
                 ItemDraft {
@@ -1141,7 +1147,8 @@ impl State {
             .map(|common| common.uuid.as_str())
             .unwrap_or_default();
         if outcome == TurnOutcome::Failed && subtype != "success" {
-            self.shared.stopped_by(crate::notice::failed(&errors.join("; ")));
+            self.shared
+                .stopped_by(crate::notice::failed(&errors.join("; ")));
             self.shared.item(
                 emit,
                 ItemDraft {

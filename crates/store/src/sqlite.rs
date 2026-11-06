@@ -5,6 +5,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use prost::Message as _;
 use rusqlite::{Connection, TransactionBehavior};
 
 use crate::retention::{self, Sweep};
@@ -240,6 +241,33 @@ fn held_snapshot(row: &AgentRow) -> u64 {
 }
 
 /// Copies the envelope fields a snapshot carries onto its row.
+/// What makes one notice a different thing to tell the person. A change
+/// within one, such as how many other asks are open, leaves what is owed
+/// alone, and its delay with it. Another ask starts again: an answer at the
+/// desk then cancels that one too.
+#[derive(PartialEq)]
+enum Owed {
+    Ask(String),
+    Blocked,
+    Nothing,
+}
+
+impl Owed {
+    fn of(notice: &wire::Notice) -> Self {
+        match &notice.of {
+            Some(wire::notice::Of::Ask(ask)) => Self::Ask(ask.key.clone()),
+            Some(wire::notice::Of::Blocked(_)) => Self::Blocked,
+            Some(wire::notice::Of::Died(_)) | None => Self::Nothing,
+        }
+    }
+}
+
+/// Only the person can answer an ask, wherever in a family it opened. A
+/// member blocked or dead is its parent's to hear of and deal with.
+fn is_ask(notice: &wire::Notice) -> bool {
+    matches!(notice.of, Some(wire::notice::Of::Ask(_)))
+}
+
 fn copy_envelope(row: &mut AgentRow, snapshot: &Snapshot) {
     row.phase = snapshot.phase;
     row.working_on = snapshot.working_on.clone();
@@ -691,6 +719,10 @@ impl Sqlite {
         self.read(|rows| rows.notifications())
     }
 
+    pub fn put_notification(&mut self, notification: &Notification) -> Result<(), StoreError> {
+        self.write(|rows| rows.put_notification(notification))
+    }
+
     pub fn remove_notifications(&mut self, agent_id: &[u8]) -> Result<(), StoreError> {
         self.write(|rows| rows.remove_notifications(agent_id))
     }
@@ -741,20 +773,28 @@ fn commit(
             let mut snapshot = snapshot.clone();
             snapshot.revision = row.next_revision;
             row.next_revision += 1;
-            let was = row.phase;
+            let was = row
+                .snapshot
+                .as_ref()
+                .and_then(|last| last.notice.as_ref())
+                .map(Owed::of);
             copy_envelope(&mut row, &snapshot);
-            let needs_you = wire::Phase::NeedsYou as i32;
-            if snapshot.phase == needs_you && was != needs_you {
-                rows.put_notification(&Notification {
-                    agent_id: agent.agent.clone(),
-                    revision: snapshot.revision,
-                    due_at_ms: clock.now_ms + clock.notify_delay_ms,
-                    name: row.name.clone(),
-                    working_on: row.working_on.clone(),
-                    text: rows.newest_text(agent)?,
-                })?;
-            } else if snapshot.phase != needs_you && was == needs_you {
+            let now = snapshot.notice.as_ref().map(Owed::of);
+            if now != was {
                 rows.remove_notifications(&agent.agent)?;
+                let notice = snapshot
+                    .notice
+                    .as_ref()
+                    .filter(|notice| row.parent.is_none() || is_ask(notice));
+                if let Some(notice) = notice {
+                    rows.put_notification(&Notification {
+                        agent_id: agent.agent.clone(),
+                        revision: snapshot.revision,
+                        due_at_ms: clock.now_ms + clock.notify_delay_ms,
+                        name: row.name.clone(),
+                        notice: notice.encode_to_vec(),
+                    })?;
+                }
             }
             committed.records.push(Record::Snapshot(snapshot));
         }

@@ -390,7 +390,10 @@ impl State {
         } else if error_kind(error) == USAGE_LIMIT_EXCEEDED {
             crate::notice::usage_spent(self.usage.as_ref().and_then(|usage| {
                 crate::notice::spent_until(
-                    usage.windows.iter().filter_map(|window| window.meter.as_ref()),
+                    usage
+                        .windows
+                        .iter()
+                        .filter_map(|window| window.meter.as_ref()),
                 )
             }))
         } else {

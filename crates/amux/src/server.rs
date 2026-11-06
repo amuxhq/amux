@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, bail};
-use node::{Launch, NoopSender, StartOptions};
+use node::{HttpSender, Launch, StartOptions};
 use settings::InstallationConfig;
 use tracing_subscriber::EnvFilter;
 
@@ -94,9 +94,7 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
             boot_id: None,
             launch: launch(config)?,
             clock: Arc::new(agent_dir::SystemClock),
-            // Needs-you pushes go through the relay, which this build does
-            // not connect to yet.
-            push: Arc::new(NoopSender),
+            push: Arc::new(HttpSender::new()),
             daemon_log: Some(log),
             // A supervised daemon is handed its supervisor's pipe.
             supervisor_log: pipe.is_some().then(|| config.root.join(SUPERVISOR_LOG)),

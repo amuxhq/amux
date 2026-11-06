@@ -1,21 +1,27 @@
-//! The notifications outbox on a driven clock: a needs-you transition
-//! enqueues one push keyed by its snapshot's revision, handed to the
-//! sender once due; an answer before then cancels it; the agent's exit and
-//! delete remove it.
+//! The notifications outbox on a driven clock: a notice enqueues one push
+//! keyed by its snapshot's revision, handed to the sender once due with the
+//! paired hosts that want it; an answer before then cancels it; a death
+//! replaces it with news of the death, and a delete removes it.
 
 use std::sync::{Arc, Mutex};
 
 use agent_dir::{Clock as _, ManualClock};
-use node::{Daemon, NoopSender, ProfileRuntime, Push, PushFuture, PushSender, StartOptions};
+use node::{
+    Daemon, NoopSender, ProfileRuntime, Push, PushCloud, PushFuture, PushRecipient, PushSender,
+    StartOptions,
+};
+use prost::Message as _;
 use support::synthetic::*;
 use support::*;
-use wire::Phase;
+use wire::{AskNotice, Notice, Phase, RunWant, Step, ask_notice, notice};
 
 use crate::support;
 
 const SEGMENTS: u64 = 1 << 20;
 const DELAY: i64 = 30_000;
 const T0: i64 = 1_000_000;
+const PHONE: [u8; 16] = [8; 16];
+const PUSH_KEY: [u8; 32] = [9; 32];
 
 /// The no-op sender, with a record of what it was handed.
 #[derive(Default)]
@@ -24,9 +30,9 @@ struct Recording {
 }
 
 impl PushSender for Recording {
-    fn send<'a>(&'a self, push: &'a Push) -> PushFuture<'a> {
+    fn send<'a>(&'a self, push: &'a Push, cloud: Option<PushCloud>) -> PushFuture<'a> {
         self.sent.lock().unwrap().push(push.clone());
-        NoopSender.send(push)
+        NoopSender.send(push, cloud)
     }
 }
 
@@ -43,6 +49,42 @@ struct Rig {
     daemon: Daemon,
     runtime: Arc<ProfileRuntime>,
     log: Vec<String>,
+    asks: u32,
+}
+
+fn ask_notice(number: u32) -> Notice {
+    Notice {
+        of: Some(notice::Of::Ask(AskNotice {
+            key: format!("ask:{number}"),
+            wants: Some(ask_notice::Wants::Run(RunWant {
+                command: "migrate".to_owned(),
+            })),
+            why: String::new(),
+            more: 0,
+        })),
+    }
+}
+
+/// A paired phone that wants notifications.
+fn trust_a_phone(install: &Install) {
+    install
+        .store()
+        .put_trusted_host(
+            &store::TrustedHost {
+                host_id: PHONE.to_vec(),
+                pubkey: vec![7; 32],
+                name: "phone".to_owned(),
+                on_account: false,
+                signed_in: None,
+                platform: 0,
+                ssh: None,
+                direct: "[]".to_owned(),
+                listed: "[]".to_owned(),
+                push_key: Some(PUSH_KEY.to_vec()),
+            },
+            store::Durability::Normal,
+        )
+        .unwrap();
 }
 
 impl Rig {
@@ -66,6 +108,7 @@ impl Rig {
             daemon,
             runtime,
             log: Vec::new(),
+            asks: 0,
         }
     }
 
@@ -89,8 +132,18 @@ impl Rig {
             .collect()
     }
 
+    /// A snapshot in `phase`, naming a new ask whenever it needs the person.
+    fn noticed(&mut self, phase: Phase) -> Step {
+        let mut step = snapshot(phase, &[], self.clock.now_ms());
+        if phase == Phase::NeedsYou {
+            self.asks += 1;
+            step.snapshot.as_mut().unwrap().notice = Some(ask_notice(self.asks));
+        }
+        step
+    }
+
     async fn turn(&mut self, agent: &mut SyntheticAgent, phase: Phase, what: &str) {
-        agent.append(&snapshot(phase, &[], self.clock.now_ms()));
+        agent.append(&self.noticed(phase));
         agent.nudge().await;
         let revision = agent.journal().offset();
         until("the snapshot to commit", || async {
@@ -119,12 +172,13 @@ impl Rig {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_needs_you_push_is_sent_once_due_and_cancelled_by_an_answer_exit_or_delete() {
+async fn a_push_is_sent_once_due_to_who_wants_it_and_an_answer_or_delete_cancels_it() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "deployer", SEGMENTS);
     agent.register(&install);
     agent.append(&item("ask", "May I run the migration?"));
     agent.go_live();
+    trust_a_phone(&install);
     let mut rig = Rig::start(install).await;
     rig.note("outbox (revision, due) pairs are shown relative to the start");
 
@@ -148,14 +202,17 @@ async fn a_needs_you_push_is_sent_once_due_and_cancelled_by_an_answer_exit_or_de
     .unwrap();
     let push = rig.pushes.sent().remove(0);
     assert_eq!(
-        (
-            push.name.as_str(),
-            push.working_on.as_deref(),
-            push.text.as_str(),
-            push.revision
-        ),
-        ("deployer", Some("the task"), "May I run the migration?", 2),
-        "envelope fields only"
+        (push.name.as_str(), push.revision),
+        ("deployer", 2),
+        "the row's own fields"
+    );
+    assert_eq!(push.notice, ask_notice(1).encode_to_vec(), "held unread");
+    assert_eq!(
+        push.recipients,
+        vec![PushRecipient {
+            host_id: PHONE.to_vec(),
+            push_key: PUSH_KEY.to_vec(),
+        }]
     );
     assert_eq!(push.agent_id, agent.id.as_bytes().to_vec());
     until("the sent row to go", || async {
@@ -167,10 +224,8 @@ async fn a_needs_you_push_is_sent_once_due_and_cancelled_by_an_answer_exit_or_de
     .await
     .unwrap();
     rig.note(format!(
-        "due: handed to the no-op sender ({:?}, working on {:?}: {:?}); outbox {:?}",
+        "due: handed to the no-op sender ({:?}); outbox {:?}",
         push.name.as_str(),
-        push.working_on.as_deref().unwrap_or_default(),
-        push.text,
         rig.rows().await
     ));
 
@@ -192,12 +247,34 @@ async fn a_needs_you_push_is_sent_once_due_and_cancelled_by_an_answer_exit_or_de
     // nothing the delay could send.
     assert_eq!(rig.pushes.sent().len(), 1, "nothing more was sent");
 
-    // The agent exits while it needs you: the row goes with it.
+    // The agent dies while it needs you: its ask can no longer be answered,
+    // so what was owed goes, and news of the death takes its place.
     rig.turn(&mut agent, Phase::NeedsYou, "the agent asks a third time")
         .await;
-    assert_eq!(rig.rows().await.len(), 1);
+    let asked = rig.rows().await;
+    assert_eq!(asked.len(), 1);
     agent.die().await;
-    until("the exit to remove the row", || async {
+    until("the death to replace the row", || async {
+        let rows = rig.rows().await;
+        (rows.len() == 1 && rows != asked)
+            .then_some(())
+            .ok_or_else(|| format!("rows {rows:?}"))
+    })
+    .await
+    .unwrap();
+    rig.note(format!("the agent dies: outbox {:?}", rig.rows().await));
+    rig.advance_to(4 * DELAY).await;
+    until("news of the death", || async {
+        let sent = rig.pushes.sent().len();
+        (sent == 2)
+            .then_some(())
+            .ok_or_else(|| format!("{sent} sent"))
+    })
+    .await
+    .unwrap();
+    let died = Notice::decode(rig.pushes.sent()[1].notice.as_slice()).unwrap();
+    assert!(matches!(died.of, Some(notice::Of::Died(_))), "{died:?}");
+    until("the sent row to go", || async {
         let rows = rig.rows().await;
         rows.is_empty()
             .then_some(())
@@ -205,13 +282,13 @@ async fn a_needs_you_push_is_sent_once_due_and_cancelled_by_an_answer_exit_or_de
     })
     .await
     .unwrap();
-    rig.note(format!("the agent exits: outbox {:?}", rig.rows().await));
 
     // Delete removes it too.
     let mut other = SyntheticAgent::new(&rig.install, "reviewer", SEGMENTS);
     other.register(&rig.install);
     other.append(&item("ask", "Approve the plan?"));
-    other.append(&snapshot(Phase::NeedsYou, &[], rig.clock.now_ms()));
+    let step = rig.noticed(Phase::NeedsYou);
+    other.append(&step);
     rig.runtime.ingest(other.id).await.unwrap();
     assert_eq!(rig.rows().await.len(), 1);
     rig.note(format!("another agent asks: outbox {:?}", rig.rows().await));
@@ -219,9 +296,33 @@ async fn a_needs_you_push_is_sent_once_due_and_cancelled_by_an_answer_exit_or_de
     assert!(rig.rows().await.is_empty());
     rig.note("it is deleted: outbox []");
     rig.clock.set(T0 + 10 * DELAY);
-    assert_eq!(rig.pushes.sent().len(), 1, "one push in all");
+    assert_eq!(rig.pushes.sent().len(), 2, "two pushes in all");
     rig.note(format!("pushes sent in all: {}", rig.pushes.sent().len()));
 
+    drop(rig.runtime);
+    drop(rig.daemon);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_notice_with_nobody_to_tell_is_dropped_when_due() {
+    let install = Install::new();
+    let mut agent = SyntheticAgent::new(&install, "deployer", SEGMENTS);
+    agent.register(&install);
+    agent.go_live();
+    let mut rig = Rig::start(install).await;
+    rig.turn(&mut agent, Phase::NeedsYou, "the agent asks")
+        .await;
+    assert_eq!(rig.rows().await.len(), 1);
+    rig.advance_to(DELAY).await;
+    until("the row to go", || async {
+        let rows = rig.rows().await;
+        rows.is_empty()
+            .then_some(())
+            .ok_or_else(|| format!("rows {rows:?}"))
+    })
+    .await
+    .unwrap();
+    assert!(rig.pushes.sent().is_empty(), "no job was made");
     drop(rig.runtime);
     drop(rig.daemon);
 }

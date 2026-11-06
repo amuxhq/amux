@@ -10,16 +10,16 @@ use wire::{
     RunWant, UsageBlock, UseWant, ask, ask_notice, blocked_notice, codex_ask, notice, tool_input,
 };
 
-/// The most characters any one string keeps. A push has a few kilobytes for
-/// the whole notice, sealed and encoded, and a lock screen shows a few lines.
-const MOST_CHARS: usize = 400;
+/// The most bytes any one string keeps. A push has a few kilobytes for the
+/// whole notice, sealed and encoded, and a lock screen shows a few lines.
+const MOST_BYTES: usize = 600;
 
 fn clip(text: &str) -> String {
     let text = text.trim();
-    match text.char_indices().nth(MOST_CHARS) {
-        Some((end, _)) => format!("{}…", &text[..end]),
-        None => text.to_owned(),
+    if text.len() <= MOST_BYTES {
+        return text.to_owned();
     }
+    format!("{}…", &text[..text.floor_char_boundary(MOST_BYTES)])
 }
 
 fn wants_ask(key: &str, wants: ask_notice::Wants, why: &str, more: u32) -> Notice {
@@ -70,14 +70,18 @@ fn other(text: &str) -> ask_notice::Wants {
 /// The title a plan's first line gives it, when it gives one of its own.
 pub(crate) fn plan_title(text: &str) -> String {
     let first = text.trim_start().lines().next().unwrap_or_default();
-    let title = first.strip_prefix('#').map_or("", |heading| {
-        heading.trim_start_matches('#').trim()
-    });
+    let title = first
+        .strip_prefix('#')
+        .map_or("", |heading| heading.trim_start_matches('#').trim());
     if title.eq_ignore_ascii_case("plan") {
         return String::new();
     }
     // A notification already says it is a plan.
-    title.strip_prefix("Plan:").unwrap_or(title).trim().to_owned()
+    title
+        .strip_prefix("Plan:")
+        .unwrap_or(title)
+        .trim()
+        .to_owned()
 }
 
 /// Claude's head ask, either kind of Claude. A permission says what it would
@@ -91,7 +95,11 @@ pub(crate) fn claude_ask(asked: &wire::Ask, more: u32, plan_title: &str) -> Noti
             match input.and_then(|input| input.of.as_ref()) {
                 Some(tool_input::Of::Shell(shell)) => (
                     run(subject),
-                    first_said(&[&permission.reason, &permission.description, &shell.description]),
+                    first_said(&[
+                        &permission.reason,
+                        &permission.description,
+                        &shell.description,
+                    ]),
                 ),
                 Some(tool_input::Of::Edit(_)) => (
                     ask_notice::Wants::Change(ChangeWant {
@@ -165,9 +173,7 @@ pub(crate) fn failed(message: &str) -> BlockedNotice {
 
 /// When the spent windows reset: the latest of them, since the agent can't
 /// go on until the last one has.
-pub(crate) fn spent_until<'a>(
-    meters: impl Iterator<Item = &'a wire::UsageMeter>,
-) -> Option<i64> {
+pub(crate) fn spent_until<'a>(meters: impl Iterator<Item = &'a wire::UsageMeter>) -> Option<i64> {
     meters
         .filter(|meter| meter.state() == wire::UsageState::Blocked)
         .filter_map(|meter| meter.resets_at_ms)
@@ -214,15 +220,18 @@ mod tests {
 
     #[test]
     fn a_long_string_is_clipped_on_a_character_boundary() {
-        let clipped = clip(&"é".repeat(MOST_CHARS + 50));
-        assert_eq!(clipped.chars().count(), MOST_CHARS + 1);
+        let clipped = clip(&format!("a{}", "é".repeat(MOST_BYTES)));
+        assert!(clipped.len() <= MOST_BYTES + '…'.len_utf8());
         assert!(clipped.ends_with('…'));
         assert_eq!(clip("  short  "), "short");
     }
 
     #[test]
     fn a_plan_is_titled_by_a_heading_of_its_own() {
-        assert_eq!(plan_title("# Update the README\n\n- step"), "Update the README");
+        assert_eq!(
+            plan_title("# Update the README\n\n- step"),
+            "Update the README"
+        );
         assert_eq!(plan_title("# Plan: Update it\n- step"), "Update it");
         assert_eq!(plan_title("\n## Plan\n- step"), "");
         assert_eq!(plan_title("- step\n- step"), "");

@@ -309,6 +309,13 @@ none (`PLATFORM_UNSPECIFIED`) is shown as unknown rather than as a guess. Nothin
 routes or authorizes on these fields; they exist so a client can tell one
 device from another and say why a host is out of reach.
 
+A host that wants notifications says so on its own `HostEntry` in the inventory
+it serves, with the public key they are sealed to. That is not on `Host`, which
+neighbors repeat: this stream carries only the serving host's entry, on a link
+its pin authenticated, so a key reaches exactly the hosts paired with it. A
+daemon keeps the key with its trust in the host, because a phone closes its links
+as it sleeps, which is when a push is due. Unpairing forgets it.
+
 ## Chapter 4: Routing and failover
 
 Routing has two rules:

@@ -235,6 +235,7 @@ fn snapshot(kind: Kind, snapshot: Snapshot) -> Snapshot {
         git: None,
         catalogue: snapshot.catalogue,
         background_jobs: snapshot.background_jobs,
+        notice: None,
     }
 }
 
@@ -371,6 +372,7 @@ fn host(host: HostEntry) -> HostEntry {
             Standing::Candidate(_) => Standing::Candidate(Default::default()),
         }),
         claude_kind: host.claude_kind,
+        push_key: None,
     }
 }
 

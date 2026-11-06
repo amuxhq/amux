@@ -1,12 +1,15 @@
-//! The notifications outbox: "needs you", pushed to the person's devices.
+//! The notifications outbox: what an agent wants of the person, pushed to
+//! their devices.
 //!
-//! A row is written in the transaction that turns an agent's phase to
-//! needs_you, due a delay away, and deleted unsent if the phase leaves
-//! needs_you first, at the agent's exit or with the agent. The core reads
-//! the rows afresh whenever an envelope changes, when the start's sweep is
-//! done and when the next row falls due: each due row not already on its
-//! way becomes a [`Job::SendPush`], and the row is deleted once the job
-//! says the push was handed over. A push that failed is tried again after
+//! A row is written in the transaction that raises a snapshot's notice, due
+//! a delay away, and replaced or deleted unsent if the notice moves on first,
+//! at the agent's exit or with the agent; a process that dies raises its own.
+//! The core reads the rows afresh whenever an envelope changes, when the
+//! start's sweep is done and when the next row falls due: each due row not
+//! already on its way becomes a [`Job::SendPush`] to the paired hosts that
+//! want notifications, and the row is deleted once the job says the push was
+//! handed over. With nobody to tell, it is deleted then and there. A push
+//! that failed is tried again after
 //! [`Settings::push_retry_ms`](crate::Settings::push_retry_ms). Only a row
 //! is ever sent, so a push cancelled before it fell due is never sent.
 
@@ -18,7 +21,7 @@ use store::Notification;
 use crate::Daemon;
 use crate::ids::{JobId, TimerId};
 use crate::io::{Job, Output};
-use crate::payload::{JobResult, Push};
+use crate::payload::{JobResult, Push, PushRecipient};
 
 /// The pushes handed to the driver and not yet done.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -73,13 +76,18 @@ impl Daemon {
             if self.notifications.is_sending(&row) {
                 continue;
             }
+            let recipients = self.push_recipients();
+            if recipients.is_empty() {
+                self.forget_notification(row.agent_id, row.revision);
+                continue;
+            }
             let job = self.pending.mint();
             self.notifications
                 .sending
                 .insert(job, (row.agent_id.clone(), row.revision));
             out.push(Output::Job {
                 id: job,
-                op: Job::SendPush(self.push_for(row)),
+                op: Job::SendPush(self.push_for(row, recipients)),
             });
         }
         self.arm_notifications(next, out);
@@ -119,19 +127,7 @@ impl Daemon {
             return false;
         };
         match result {
-            JobResult::Done => {
-                let row = Notification {
-                    agent_id,
-                    revision,
-                    due_at_ms: 0,
-                    name: String::new(),
-                    working_on: None,
-                    text: String::new(),
-                };
-                if let Err(error) = self.store.remove_notification(&row) {
-                    tracing::warn!(%error, "deleting a sent notification failed");
-                }
-            }
+            JobResult::Done => self.forget_notification(agent_id, revision),
             failed => {
                 tracing::warn!(?failed, "a push failed; it is tried again");
                 let retry = self.timers.now_ms + self.settings.push_retry_ms;
@@ -145,14 +141,43 @@ impl Daemon {
         true
     }
 
-    fn push_for(&self, row: Notification) -> Push {
+    fn forget_notification(&mut self, agent_id: Vec<u8>, revision: u64) {
+        let row = Notification {
+            agent_id,
+            revision,
+            due_at_ms: 0,
+            name: String::new(),
+            notice: Vec::new(),
+        };
+        if let Err(error) = self.store.remove_notification(&row) {
+            tracing::warn!(%error, "deleting a sent notification failed");
+        }
+    }
+
+    /// The hosts this one trusts that said they want notifications. Trust is
+    /// not transitive, and nor is this: a host paired only with a neighbor
+    /// has no entry here, however this host came to hear of it.
+    fn push_recipients(&self) -> Vec<PushRecipient> {
+        self.trust
+            .store()
+            .entries()
+            .filter_map(|(host, entry)| {
+                entry.push_key.as_ref().map(|push_key| PushRecipient {
+                    host_id: host.as_bytes().to_vec(),
+                    push_key: push_key.clone(),
+                })
+            })
+            .collect()
+    }
+
+    fn push_for(&self, row: Notification, recipients: Vec<PushRecipient>) -> Push {
         Push {
             host_id: self.store.own_host().to_vec(),
             agent_id: row.agent_id,
             revision: row.revision,
             name: row.name,
-            working_on: row.working_on,
-            text: row.text,
+            notice: row.notice,
+            recipients,
         }
     }
 }

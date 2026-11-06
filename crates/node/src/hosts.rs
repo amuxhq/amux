@@ -37,7 +37,24 @@ impl ProfileRuntime {
                 current: true,
             })),
             claude_kind: self.launch_claude_kind() as i32,
+            push_key: self
+                .push_key
+                .lock()
+                .unwrap()
+                .clone()
+                .map(|public_key| wire::PushKey {
+                    suite: wire::PushSuite::HpkeX25519Chacha20 as i32,
+                    public_key,
+                }),
         }
+    }
+
+    /// Says on this host's own entry whether it wants notifications, and the
+    /// key they are sealed to. The owner of the private half says so at every
+    /// start, so nothing here is kept.
+    pub fn want_notifications(&self, public_key: Option<Vec<u8>>) {
+        *self.push_key.lock().unwrap() = public_key;
+        self.tell_own_host();
     }
 
     /// Tells the core this host's own entry as it stands now.

@@ -26,3 +26,9 @@ description = "Agent record aliases in fixtures"
 condition = "AND"
 paths = ['''(^|/)fixtures/''']
 regexes = ['''^(id|key|name)-[0-9a-f]{12}$''']
+
+# CryptoKit's name for a key's type, beside the word `key` wherever one is
+# declared. The exact type name only, so a real value is still caught.
+[[allowlists]]
+description = "CryptoKit's private key type"
+regexes = ['''^Curve25519\.KeyAgreement\.PrivateKey$''']

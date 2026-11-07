@@ -55,8 +55,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: sh.amux.desktop
         # Written by `just mac release`; the build number is the version,
         # since no store keeps a ledger of builds.
-        MARKETING_VERSION: "0.0.0"
-        CURRENT_PROJECT_VERSION: "0.0.0"
+        MARKETING_VERSION: "0.0.1"
+        CURRENT_PROJECT_VERSION: "0.0.1"
         # Distributed outside the App Store and signed with Developer ID, so
         # the hardened runtime is on and the sandbox is off: the app talks to
         # amux's sockets under ~/.amux and installs amux into ~/.amux/bin.

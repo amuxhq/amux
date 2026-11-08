@@ -13,7 +13,9 @@ never renumber), which `just proto-compat` checks. `amux.dump` is exempt.
 - Build, test and lint through `just` (`just --list`); `wt` is for worktrees,
   sessions and this tree's daemon. Recipes carry timeouts; a firing timeout is
   a hang to diagnose.
-- Update `DEVLOG.md` in the same commit as each chunk of work.
+- The why of a change and its test evidence go in the commit message; search
+  past decisions with `git log --grep`. A rejected alternative that should
+  constrain future work goes in that component's page in `docs/`.
 - Committed documentation lives in `docs/` (start at `docs/README.md`);
   `notes/` is gitignored working material. Graduate notes into `docs/`
   deliberately; never force-add them.

@@ -1135,7 +1135,9 @@ impl State {
         } else {
             wire::BoundaryKind::Started
         };
-        self.boundary(emit, kind, wire::IncarnationEnd::default());
+        if !(kind == wire::BoundaryKind::Started && std::mem::take(&mut self.started_drawn)) {
+            self.boundary(emit, kind, wire::IncarnationEnd::default());
+        }
         self.release_held(emit);
     }
 

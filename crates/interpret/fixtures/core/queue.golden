@@ -1,8 +1,8 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=1000 asks=[] model=?
 ## 1 input {"id":"early","prompt":{"text":"before the provider is up"}}
-effect reply early queued
-snapshot STARTING queue=[early] working_on=- at=1000 asks=[] model=?
+effect reply early accepted
+snapshot STARTING queue=[] working_on="before the provider is up" at=1000 asks=[] model=?
 ## 2 tick 1100
 ## 3 fact {"channel":"stream","json":{"type":"ready"}}
 effect write "{\"text\":\"before the provider is up\",\"type\":\"user\"}"

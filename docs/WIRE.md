@@ -162,8 +162,10 @@ itself. The `agent` arm is the kind: both Claude
 kinds take `ClaudeCreateConfig` and Codex takes `CodexCreateConfig`, so the
 settings are always the kind's own. A create with no arm set names no
 interpreter and fails with `INVALID_ARGUMENT`. `initial_prompt` is a prompt with its attachments and the client's
-input id; it is queued before the agent starts. A resume takes the same: the
-exited chat's composer sends its draft that way.
+input id; with nothing ahead of it, it is the agent's first turn, drawn at once
+and written to the provider when the provider takes input. A resume takes the
+same, queued for the new incarnation: the exited chat's composer sends its
+draft that way.
 
 ## Subscribe
 
@@ -569,7 +571,10 @@ state machine is `SessionState` in
 [`crates/ui-state/src/session.rs`](../crates/ui-state/src/session.rs).
 
 The queue lives in the interpreter, not in the provider. A second client's
-prompt lands in the same queue, and every client sees it in the snapshot.
+prompt lands in the same queue, and every client sees it in the snapshot. It
+holds what waits behind something: a new agent's first prompt, with nothing
+ahead of it, is accepted unqueued and is in the transcript while the provider
+starts.
 Editing a queued prompt is `WithdrawQueued` followed by a fresh prompt; nothing
 is edited in place. `SendQueuedNow` delivers one queued prompt into the running
 turn through the provider's own steering path.

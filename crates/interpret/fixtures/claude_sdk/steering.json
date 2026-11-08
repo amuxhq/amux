@@ -12,23 +12,48 @@
         }
       },
       "expect": {
+        "reply": "accepted",
+        "queue": [],
+        "phase": "STARTING"
+      }
+    },
+    {
+      "input": {
+        "id": "p0b",
+        "prompt": {
+          "text": "Behind the first."
+        }
+      },
+      "note": "something is ahead of this one, so it queues",
+      "expect": {
         "reply": "queued",
         "queue": [
-          "p0"
-        ],
-        "phase": "STARTING"
+          "p0b"
+        ]
       }
     },
     {
       "input": {
         "id": "n0",
         "send_now": {
-          "target": "p0"
+          "target": "p0b"
         }
       },
       "expect": {
         "reply": "rejected:UNSUPPORTED",
         "silent": true
+      }
+    },
+    {
+      "input": {
+        "id": "w0b",
+        "withdraw": {
+          "target": "p0b"
+        }
+      },
+      "expect": {
+        "reply": "accepted",
+        "queue": []
       }
     },
     {

@@ -617,7 +617,8 @@ impl SessionState {
             }
             Msg::Send(input) => {
                 let id = input.input_id.clone();
-                let to_feed = self.phase() == PhaseView::Idle && self.queue().is_empty();
+                let to_feed = matches!(self.phase(), PhaseView::Idle | PhaseView::Starting)
+                    && self.queue().is_empty();
                 outcome.session = self.inputs.push(input);
                 if outcome.session
                     && let Some(sent) = self.inputs.get_mut(&id)

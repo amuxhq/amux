@@ -644,11 +644,7 @@ impl State {
     /// Hands a prompt to Claude. Its item is written now: the uuid it
     /// carries is the key Claude's own record of it uses.
     fn submit(&mut self, emit: &mut Emit, entry: wire::QueuedInput) {
-        if self.early_boundary.is_none()
-            && let Some(kind) = self.coming_boundary()
-        {
-            self.early_boundary = Some(self.boundary(emit, kind, wire::IncarnationEnd::default()));
-        }
+        self.boundary_above_prompt(emit);
         let uuid = client_uuid(&entry.input_id);
         if entry.text.starts_with('/') {
             self.slash = Some(entry.text.clone());
@@ -667,10 +663,34 @@ impl State {
             attachments: entry.attachments.clone(),
         });
         self.ask_title(emit, &entry.text);
+        if !self.shared.drawn_early(&entry.input_id) {
+            self.prompt_row(emit, entry);
+        }
+    }
+
+    /// Draws the first prompt while Claude is still starting.
+    fn draw_opening(&mut self, emit: &mut Emit) {
+        if let Some(entry) = self.shared.opening_to_draw() {
+            self.boundary_above_prompt(emit);
+            self.prompt_row(emit, entry);
+        }
+    }
+
+    /// The boundary Claude's init will fill in, written now so a prompt
+    /// that goes in first is drawn below it.
+    fn boundary_above_prompt(&mut self, emit: &mut Emit) {
+        if self.early_boundary.is_none()
+            && let Some(kind) = self.coming_boundary()
+        {
+            self.early_boundary = Some(self.boundary(emit, kind, wire::IncarnationEnd::default()));
+        }
+    }
+
+    fn prompt_row(&mut self, emit: &mut Emit, entry: wire::QueuedInput) {
         self.shared.item(
             emit,
             ItemDraft {
-                key: uuid,
+                key: client_uuid(&entry.input_id),
                 text: entry.text,
                 attachments: entry.attachments,
                 input_id: entry.input_id,
@@ -1046,6 +1066,7 @@ impl Interpreter for ClaudeSdk {
             }
             Event::Git(git) => state.shared.set_git(git),
         }
+        state.draw_opening(&mut emit);
         if let Some(entry) = state.shared.next_queued() {
             state.submit(&mut emit, entry);
         }

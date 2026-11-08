@@ -2475,3 +2475,64 @@ fn a_stopped_background_command_reads_stopping_until_it_ends() {
     ));
     assert!(terminate(&written).is_none());
 }
+
+fn first_prompt_spec() -> wire::AgentSpec {
+    wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 1,
+        bootstrap: Some(wire::Bootstrap {
+            of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+                input_id: b"first".to_vec(),
+                prompt: Some(wire::PromptInput {
+                    text: "Review the parser.".into(),
+                    ..Default::default()
+                }),
+            })),
+        }),
+        ..Default::default()
+    }
+}
+
+/// The first frame stays a bare snapshot with nothing queued; the agent's
+/// first event draws its started rule, then the prompt.
+fn assert_drawn_at_once(first_frame: &wire::Step, drawn: &wire::Step) {
+    assert!(first_frame.items.is_empty());
+    let snapshot = first_frame.snapshot.as_ref().expect("a snapshot");
+    assert_eq!(snapshot.phase(), wire::Phase::Starting);
+    assert!(snapshot.queue.is_empty());
+    let rows: Vec<&str> = drawn.items.iter().map(|item| item.key.as_str()).collect();
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert!(rows[0].starts_with("boundary:"), "{rows:?}");
+    assert_eq!(drawn.items[1].input_id, b"first");
+    assert_eq!(drawn.items[1].text, "Review the parser.");
+}
+
+/// A first prompt is the first turn from the moment it is given: drawn while
+/// Codex starts, sent once its thread exists, and given no second row or
+/// second started rule when it is.
+#[test]
+fn a_first_prompt_is_drawn_while_codex_starts_and_sent_once() {
+    let (mut state, first_frame) = Codex::initial(&first_prompt_spec());
+    let drawn = Codex::step(&mut state, Event::Tick { at_ms: 1 });
+    assert_drawn_at_once(&first_frame, &drawn.step);
+
+    let ran = Codex::step(
+        &mut state,
+        rpc(
+            json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.160.0", "turns": []}, "model": "m"}}),
+        ),
+    );
+    let turns = writes(&ran.effects)
+        .into_iter()
+        .filter(|write| write["method"] == "turn/start")
+        .count();
+    assert_eq!(turns, 1, "{:?}", ran.effects);
+    assert!(
+        ran.step
+            .items
+            .iter()
+            .all(|item| item.input_id != b"first" && !item.key.starts_with("boundary:")),
+        "{:?}",
+        ran.step.items
+    );
+}

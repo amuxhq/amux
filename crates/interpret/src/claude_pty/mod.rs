@@ -487,6 +487,9 @@ pub struct State {
     seq: u64,
     next_ask: u64,
     next_boundary: u64,
+    /// The first prompt was drawn before Claude started, under the started
+    /// boundary, so the session's start writes none.
+    started_drawn: bool,
     tasks: Option<Vec<Task>>,
     context_tokens: Option<u64>,
     /// Claude's background jobs; the shared part publishes them.
@@ -612,6 +615,7 @@ impl State {
             seq: 0,
             next_ask: 0,
             next_boundary: 0,
+            started_drawn: false,
             tasks: None,
             context_tokens: None,
             jobs: Jobs::default(),
@@ -1174,6 +1178,28 @@ impl State {
         self.shared.item(emit, boundary_item(key, kind, exit));
     }
 
+    /// Draws the first prompt while Claude is still starting. Claude's own
+    /// record of it comes only after it is typed and adds no second row.
+    fn draw_opening(&mut self, emit: &mut Emit) {
+        let Some(entry) = self.shared.opening_to_draw() else {
+            return;
+        };
+        self.boundary(emit, BoundaryKind::Started, wire::IncarnationEnd::default());
+        self.started_drawn = true;
+        self.shared.item(
+            emit,
+            ItemDraft {
+                key: format!("prompt:{}", crate::serde_pb::to_hex(&entry.input_id)),
+                text: entry.text,
+                attachments: entry.attachments,
+                input_id: entry.input_id,
+                body: item_body(claude_item::Kind::Prompt(wire::Prompt {})),
+                complete: true,
+                ..Default::default()
+            },
+        );
+    }
+
     fn emit_slash(&mut self, emit: &mut Emit) {
         let Some(slash) = &self.slash else {
             return;
@@ -1536,6 +1562,7 @@ impl Interpreter for ClaudePty {
             }
             Event::Git(git) => state.shared.set_git(git),
         }
+        state.draw_opening(&mut emit);
         if let Some(entry) = state.shared.next_queued() {
             state.typed(&mut emit, entry);
         }

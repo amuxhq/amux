@@ -1,7 +1,5 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 1 input {"id":"p1","prompt":{"text":"Start."}}
-  composer Send activity=None queue=[QueuedRow { input_id: [112, 49], text: [Text("Start.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 2 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 6 input {"id":"s1","prompt":{"text":"Use the staging config."}}

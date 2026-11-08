@@ -1842,3 +1842,87 @@ fn a_reply_drawn_before_an_announced_calls_row_lands_below_the_call() {
         .collect();
     assert_eq!(keys, ["toolu_1", "stream:d2"]);
 }
+
+fn first_prompt_spec() -> wire::AgentSpec {
+    wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 1,
+        bootstrap: Some(wire::Bootstrap {
+            of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+                input_id: b"first".to_vec(),
+                prompt: Some(wire::PromptInput {
+                    text: "Review the parser.".into(),
+                    ..Default::default()
+                }),
+            })),
+        }),
+        ..Default::default()
+    }
+}
+
+/// The first frame stays a bare snapshot with nothing queued; the agent's
+/// first event draws its started rule, then the prompt.
+fn assert_drawn_at_once(first_frame: &wire::Step, drawn: &wire::Step) {
+    assert!(first_frame.items.is_empty());
+    let snapshot = first_frame.snapshot.as_ref().expect("a snapshot");
+    assert_eq!(snapshot.phase(), wire::Phase::Starting);
+    assert!(snapshot.queue.is_empty());
+    let rows: Vec<&str> = drawn.items.iter().map(|item| item.key.as_str()).collect();
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert!(rows[0].starts_with("boundary:"), "{rows:?}");
+    assert_eq!(drawn.items[1].input_id, b"first");
+    assert_eq!(drawn.items[1].text, "Review the parser.");
+}
+
+/// A first prompt is the first turn from the moment it is given: drawn while
+/// Claude starts, typed once it can take it, and Claude's own record of it
+/// and of its session's start add no second row or second started rule.
+#[test]
+fn a_first_prompt_is_drawn_while_terminal_claude_starts_and_typed_once() {
+    use interpret::claude_pty::ClaudePty as Kind;
+    let (mut state, first_frame) = Kind::initial(&first_prompt_spec());
+    let drawn = Kind::step(&mut state, Event::Tick { at_ms: 1 });
+    assert_drawn_at_once(&first_frame, &drawn.step);
+
+    let started = Kind::step(
+        &mut state,
+        hook(serde_json::json!({
+            "hook_event_name": "SessionStart", "source": "startup", "session_id": "s1",
+            "transcript_path": "/t/s1.jsonl", "model": "m",
+        })),
+    );
+    assert!(
+        started
+            .step
+            .items
+            .iter()
+            .all(|item| !item.key.starts_with("boundary:")),
+        "{:?}",
+        started.step.items
+    );
+    let typed = started
+        .effects
+        .iter()
+        .filter(|effect| matches!(effect, Effect::Terminal(_)))
+        .count();
+    assert_eq!(typed, 1, "{:?}", started.effects);
+
+    let recorded = Kind::step(
+        &mut state,
+        transcript_row(serde_json::json!({
+            "type": "user", "uuid": "u1", "timestamp": "2027-01-15T08:00:00.010Z",
+            "sessionId": "s1", "origin": {"kind": "human"}, "promptSource": "typed",
+            "message": {"role": "user", "content": "Review the parser."},
+        })),
+    );
+    assert!(
+        recorded
+            .step
+            .items
+            .iter()
+            .all(|item| item.input_id != b"first"),
+        "{:?}",
+        recorded.step.items
+    );
+    assert!(!Kind::typed_unrecorded(&state), "the prompt was reflected");
+}

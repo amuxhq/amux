@@ -536,7 +536,7 @@ fn an_interrupt_before_claude_starts_leaves_the_queued_prompt_to_run() {
     );
     let snapshot = queued.step.snapshot.expect("a snapshot");
     assert_eq!(snapshot.phase(), wire::Phase::Starting);
-    assert_eq!(snapshot.queue.len(), 1);
+    assert!(snapshot.queue.is_empty());
 
     let interrupt = wire::claude_sdk_input::Of::Interrupt(wire::Interrupt {});
     let stopped = ClaudeSdk::step(&mut state, sdk_input(b"stop", interrupt));
@@ -2201,4 +2201,70 @@ fn a_withheld_tool_server_is_not_carried_into_the_next_incarnation() {
     };
     let (_, step) = ClaudeSdk::reincarnate(state, &next);
     assert!(!failed(&step), "the next incarnation does not");
+}
+
+fn first_prompt_spec() -> wire::AgentSpec {
+    wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 1,
+        bootstrap: Some(wire::Bootstrap {
+            of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+                input_id: b"first".to_vec(),
+                prompt: Some(wire::PromptInput {
+                    text: "Review the parser.".into(),
+                    ..Default::default()
+                }),
+            })),
+        }),
+        ..Default::default()
+    }
+}
+
+/// The first frame stays a bare snapshot with nothing queued; the agent's
+/// first event draws its started rule, then the prompt.
+fn assert_drawn_at_once(first_frame: &wire::Step, drawn: &wire::Step) {
+    assert!(first_frame.items.is_empty());
+    let snapshot = first_frame.snapshot.as_ref().expect("a snapshot");
+    assert_eq!(snapshot.phase(), wire::Phase::Starting);
+    assert!(snapshot.queue.is_empty());
+    let rows: Vec<&str> = drawn.items.iter().map(|item| item.key.as_str()).collect();
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert!(rows[0].starts_with("boundary:"), "{rows:?}");
+    assert_eq!(drawn.items[1].input_id, b"first");
+    assert_eq!(drawn.items[1].text, "Review the parser.");
+}
+
+/// A first prompt is the first turn from the moment it is given: drawn while
+/// Claude starts, written once it can take it, and given no second row or
+/// second started rule when it does.
+#[test]
+fn a_first_prompt_is_drawn_while_claude_starts_and_written_once() {
+    let (mut state, first_frame) = ClaudeSdk::initial(&first_prompt_spec());
+    let drawn = ClaudeSdk::step(&mut state, Event::Tick { at_ms: 1 });
+    assert_drawn_at_once(&first_frame, &drawn.step);
+    let boundary = drawn.step.items[0].key.clone();
+
+    let ran = ClaudeSdk::step(
+        &mut state,
+        stream(json!({"type": "system", "subtype": "init", "uuid": "i", "session_id": "s"})),
+    );
+    let written = ran
+        .effects
+        .iter()
+        .filter(|effect| matches!(effect, Effect::UserMessage { .. }))
+        .count();
+    assert_eq!(written, 1, "{:?}", ran.effects);
+    assert!(ran.step.items.iter().all(|item| item.input_id != b"first"));
+    assert!(
+        ran.step
+            .items
+            .iter()
+            .all(|item| !item.key.starts_with("boundary:") || item.key == boundary),
+        "the init fills in the started rule already drawn: {:?}",
+        ran.step.items
+    );
+    assert_eq!(
+        ran.step.snapshot.expect("a snapshot").phase(),
+        wire::Phase::Working
+    );
 }

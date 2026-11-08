@@ -1,5 +1,5 @@
 ## 0 initial
-snapshot STARTING queue=[initial] working_on="Review the parser" at=1000 asks=[] model=?
+snapshot STARTING queue=[] working_on="Review the parser" at=1000 asks=[] model=?
 ## 1 tick 1000
 ## 2 fact {"channel":"stream","json":{"type":"ready"}}
 effect write "{\"text\":\"\\n  Review the parser\\nand report back\",\"type\":\"user\"}"

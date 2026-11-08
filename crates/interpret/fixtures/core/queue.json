@@ -3,10 +3,10 @@
   "spec": { "created_at_ms": 1000 },
   "events": [
     { "input": { "id": "early", "prompt": { "text": "before the provider is up" } },
-      "expect": { "reply": "queued", "queue": ["early"], "phase": "STARTING" } },
+      "expect": { "reply": "accepted", "queue": [], "phase": "STARTING" } },
     { "tick": 1100 },
     { "fact": { "channel": "stream", "json": { "type": "ready" } },
-      "note": "the provider accepts input: the queued prompt is submitted",
+      "note": "the provider accepts input: the first prompt is submitted",
       "expect": { "phase": "WORKING", "queue": [], "effects": ["write \"{\\\"text\\\":\\\"before the provider is up\\\",\\\"type\\\":\\\"user\\\"}\""] } },
     { "fact": { "channel": "stream", "json": { "type": "user", "id": "u1", "text": "before the provider is up" } },
       "expect": { "items": ["u1"] } },

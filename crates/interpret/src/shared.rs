@@ -347,6 +347,16 @@ pub struct Shared<A: OpenAsk> {
     /// A turn is running: submitted, or reported by the provider.
     busy: bool,
     queue: Queue,
+    /// No provider has taken input for this agent yet.
+    fresh: bool,
+    /// The agent's first prompt, given before the provider could take it
+    /// with nothing ahead of it. It is already the first turn and is drawn
+    /// as sent; only the write to the provider waits.
+    #[serde(with = "serde_pb::opt_msg")]
+    opening: Option<QueuedInput>,
+    /// The input id of the prompt drawn ahead of its write, so neither the
+    /// write nor the provider's record of it draws a second row.
+    drawn_early: Option<Vec<u8>>,
     asks: Asks<A>,
     /// Agent messages the provider accepted and has not yet consumed, by
     /// envelope id. A one-shot agent does not exit while this is non-empty.
@@ -424,6 +434,9 @@ impl<A: OpenAsk> Shared<A> {
             started: false,
             busy: false,
             queue: Queue::default(),
+            fresh: true,
+            opening: None,
+            drawn_early: None,
             asks: Asks::default(),
             pending_messages: BTreeSet::new(),
             taken_messages: BTreeSet::new(),
@@ -448,7 +461,11 @@ impl<A: OpenAsk> Shared<A> {
         };
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) {
             shared.prompted(&entry.text);
-            shared.queue.push(entry);
+            if shared.opens(&entry) {
+                shared.opening = Some(entry);
+            } else {
+                shared.queue.push(entry);
+            }
         }
         shared
     }
@@ -466,8 +483,13 @@ impl<A: OpenAsk> Shared<A> {
         // A new provider process runs nothing in the background yet.
         self.set_jobs(Vec::new());
         self.now_ms = self.now_ms.max(spec.created_at_ms);
+        self.fresh = false;
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap)
             && !self.queue.contains(&entry.input_id)
+            && self
+                .opening
+                .as_ref()
+                .is_none_or(|held| held.input_id != entry.input_id)
         {
             self.prompted(&entry.text);
             self.queue.push(entry);
@@ -881,6 +903,11 @@ impl<A: OpenAsk> Shared<A> {
             self.mark_submitted(&entry.input_id);
             self.accept(emit, input_id, false);
             Some(entry)
+        } else if self.opens(&entry) {
+            self.prompted(&entry.text);
+            self.opening = Some(entry);
+            self.accept(emit, input_id, false);
+            None
         } else {
             self.queue.push(entry);
             self.accept(emit, input_id, true);
@@ -888,13 +915,58 @@ impl<A: OpenAsk> Shared<A> {
         }
     }
 
-    /// The head of the queue, when the provider is idle: the kind writes it
-    /// to the provider. Call whenever the provider may have become idle.
+    /// Whether a prompt is the agent's first turn although its provider
+    /// cannot take it yet: nothing is ahead of it, so it is not waiting
+    /// behind anything a person would call a queue. A command is left to
+    /// queue, as the row it draws is the provider's to say, and so is an
+    /// agent's message, whose queue row says who sent it.
+    fn opens(&self, entry: &QueuedInput) -> bool {
+        let person = matches!(
+            entry
+                .sender
+                .as_ref()
+                .and_then(|sender| sender.value.as_ref()),
+            Some(sender::Value::Human(_))
+        );
+        person
+            && self.fresh
+            && !self.leaving
+            && self.asks.is_empty()
+            && self.opening.is_none()
+            && self.queue.is_empty()
+            && !entry.text.trim_start().starts_with(['/', '!'])
+    }
+
+    /// The first prompt still to be drawn, once: the kind writes its row at
+    /// the end of a step, the first frame being a bare snapshot. A spawn's
+    /// prompt is drawn by the agent's first event, ahead of the provider
+    /// taking input.
+    pub fn opening_to_draw(&mut self) -> Option<QueuedInput> {
+        let opening = self.opening.as_ref()?;
+        if self.drawn_early.as_ref() == Some(&opening.input_id) {
+            return None;
+        }
+        self.drawn_early = Some(opening.input_id.clone());
+        Some(opening.clone())
+    }
+
+    /// Whether this prompt's row was drawn before it reached the provider.
+    pub fn drawn_early(&self, input_id: &[u8]) -> bool {
+        self.drawn_early.as_deref() == Some(input_id)
+    }
+
+    /// A first prompt is waiting for its provider to take input.
+    pub fn has_opening(&self) -> bool {
+        self.opening.is_some()
+    }
+
+    /// The prompt the provider takes next, when it is idle: the kind writes
+    /// it. Call whenever the provider may have become idle.
     pub fn next_queued(&mut self) -> Option<QueuedInput> {
         if !self.ready() {
             return None;
         }
-        let entry = self.queue.pop()?;
+        let entry = self.opening.take().or_else(|| self.queue.pop())?;
         self.prompted(&entry.text);
         self.mark_submitted(&entry.input_id);
         Some(entry)
@@ -1139,6 +1211,7 @@ impl<A: OpenAsk> Shared<A> {
     /// The provider accepts input.
     pub fn provider_started(&mut self) {
         self.started = true;
+        self.fresh = false;
     }
 
     pub fn is_started(&self) -> bool {
@@ -1233,6 +1306,7 @@ impl<A: OpenAsk> Shared<A> {
     pub fn quiescent(&self) -> bool {
         !self.busy
             && self.queue.is_empty()
+            && self.opening.is_none()
             && !self.typed_unrecorded()
             && self.pending_messages.is_empty()
     }

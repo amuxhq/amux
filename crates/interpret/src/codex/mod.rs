@@ -615,6 +615,9 @@ pub struct State {
     requests: BTreeMap<String, Request>,
     next_request: u64,
     next_boundary: u64,
+    /// The first prompt was drawn before Codex started, under the started
+    /// boundary, so the thread's start writes none.
+    started_drawn: bool,
     /// Agent messages accepted while no thread was running.
     #[serde(with = "serde_pb::msgs")]
     held: Vec<Envelope>,
@@ -708,6 +711,7 @@ impl State {
             requests: BTreeMap::new(),
             next_request: 0,
             next_boundary: 0,
+            started_drawn: false,
             held: Vec::new(),
             works: BTreeMap::new(),
             child_changes: BTreeMap::new(),
@@ -1121,7 +1125,6 @@ impl State {
     /// Starts a turn for a prompt. Its item is written now, keyed by its
     /// input id; Codex's reflection of it is recognised and left out.
     fn submit(&mut self, emit: &mut Emit, entry: QueuedInput, consumes: Vec<Vec<u8>>) {
-        let key = prompt_key(&entry.input_id);
         let command = Command::parse(&entry.text).and_then(Result::ok);
         match &command {
             // Codex compacts on request rather than from a message; the
@@ -1203,10 +1206,29 @@ impl State {
                 });
             }
         }
+        if !self.shared.drawn_early(&entry.input_id) {
+            self.prompt_row(emit, entry);
+        }
+    }
+
+    /// Draws the first prompt while Codex is still starting.
+    fn draw_opening(&mut self, emit: &mut Emit) {
+        if let Some(entry) = self.shared.opening_to_draw() {
+            self.boundary(
+                emit,
+                wire::BoundaryKind::Started,
+                wire::IncarnationEnd::default(),
+            );
+            self.started_drawn = true;
+            self.prompt_row(emit, entry);
+        }
+    }
+
+    fn prompt_row(&mut self, emit: &mut Emit, entry: QueuedInput) {
         self.emit_item(
             emit,
             ItemDraft {
-                key,
+                key: prompt_key(&entry.input_id),
                 text: entry.text,
                 attachments: entry.attachments,
                 input_id: entry.input_id,
@@ -1423,17 +1445,18 @@ impl State {
         }
         // A command that runs no turn of the person's words (a compaction,
         // a clear, a review) carries no messages.
-        let compacts = self
-            .shared
-            .queue()
-            .entries()
-            .iter()
-            .find(|entry| !entry.steer)
-            .is_some_and(|entry| match Command::parse(&entry.text) {
-                Some(Ok(Command::Compact | Command::Clear | Command::Review(_))) => true,
-                Some(Ok(Command::Plan(words))) => words.is_empty(),
-                _ => false,
-            });
+        let compacts = !self.shared.has_opening()
+            && self
+                .shared
+                .queue()
+                .entries()
+                .iter()
+                .find(|entry| !entry.steer)
+                .is_some_and(|entry| match Command::parse(&entry.text) {
+                    Some(Ok(Command::Compact | Command::Clear | Command::Review(_))) => true,
+                    Some(Ok(Command::Plan(words))) => words.is_empty(),
+                    _ => false,
+                });
         let Some(entry) = (!compacts).then(|| self.shared.next_queued()).flatten() else {
             for envelope in &held {
                 self.inject(emit, envelope);
@@ -1907,6 +1930,7 @@ impl Interpreter for Codex {
             }
             Event::Git(git) => state.shared.set_git(git),
         }
+        state.draw_opening(&mut emit);
         if let Some(entry) = state.shared.next_queued() {
             state.submit(&mut emit, entry, Vec::new());
         }

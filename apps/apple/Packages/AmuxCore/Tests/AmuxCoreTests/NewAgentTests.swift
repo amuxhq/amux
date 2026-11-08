@@ -176,7 +176,7 @@ final class NewAgentTests: XCTestCase {
             OfferedMode(value: "default", displayName: "Default", normal: true, settable: true),
             OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true),
         ],
-        skills: [])
+        skills: [], newAgent: nil)
 
     func testTheChoicesComeFromTheHostsCatalogueAndGoInTheRequest() {
         let store = NewAgentStore()
@@ -192,7 +192,8 @@ final class NewAgentTests: XCTestCase {
         XCTAssertEqual(values(store.settings?.permissions ?? []), ["default"],
                        "a permission naming models waits for one of them; one not settable is never offered")
         store.choose(.model("gpt-6-astra"))
-        XCTAssertEqual(store.effort, "low", "a model starts at its own default effort")
+        XCTAssertNil(store.effort, "a model's own default effort is no pick of the person's")
+        XCTAssertEqual(store.settings?.efforts.first(where: \.current)?.value, "low")
         XCTAssertEqual(store.settings?.efforts.map(\.value), ["low", "high"])
         XCTAssertEqual(values(store.settings?.permissions ?? []), ["default", "auto"])
         XCTAssertEqual(store.settings?.modes.map(\.value), ["default", "plan"])
@@ -211,7 +212,7 @@ final class NewAgentTests: XCTestCase {
         // Another model starts at its own default effort and gives up a
         // permission it does not take for the normal one.
         store.choose(.model("gpt-6-sol"))
-        XCTAssertEqual(store.effort, "low")
+        XCTAssertNil(store.effort)
         XCTAssertEqual(store.permission, "default")
         store.choose(.mode("default"))
         XCTAssertNil(store.mode, "the normal mode is no choice at all")

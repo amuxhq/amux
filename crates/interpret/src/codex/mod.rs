@@ -438,13 +438,7 @@ pub const PERMISSIONS: [NamedPermission; 4] = [
     named("read-only", "Read only", "on-request", "read-only", "user"),
     NamedPermission {
         normal: true,
-        ..named(
-            "default",
-            "Default",
-            "on-request",
-            "workspace-write",
-            "user",
-        )
+        ..named("default", "Ask", "on-request", "workspace-write", "user")
     },
     named(
         "auto",
@@ -466,7 +460,7 @@ pub const PERMISSIONS: [NamedPermission; 4] = [
 ];
 
 /// Codex's modes: its collaboration modes, value and name.
-const MODES: [(&str, &str); 2] = [("default", "Default"), ("plan", "Plan")];
+const MODES: [(&str, &str); 2] = [("default", "Normal"), ("plan", "Plan")];
 
 /// The permission a catalogue value names.
 pub fn permission(value: &str) -> Option<&'static NamedPermission> {
@@ -487,13 +481,52 @@ fn permission_of(approval: &str, sandbox: &str, reviewer: Option<&str>) -> Optio
         .map(|named| named.value)
 }
 
+/// What a new agent would start with by Codex's own settings: what its
+/// configuration names, else the model its list marks as the default and
+/// that model's own effort. The permission is named only when the settings
+/// make one amux has a name for.
+fn new_agent_defaults(
+    models: &[codex_protocol::server::Model],
+    config: Option<&codex_protocol::server::ResolvedConfig>,
+) -> wire::NewAgentDefaults {
+    let model = config.and_then(|config| config.model.clone()).or_else(|| {
+        models
+            .iter()
+            .find(|model| model.is_default)
+            .map(|model| model.id.clone())
+    });
+    let effort = config
+        .and_then(|config| config.model_reasoning_effort.clone())
+        .or_else(|| {
+            let model = model.as_deref()?;
+            models
+                .iter()
+                .find(|listed| listed.id == model || listed.model == model)
+                .map(|listed| listed.default_reasoning_effort.as_str().to_owned())
+        })
+        .filter(|effort| !effort.is_empty());
+    let permission = config.and_then(|config| {
+        let approval = config.approval_policy.as_ref()?.as_str()?;
+        let sandbox = config.sandbox_mode.as_deref()?;
+        permission_of(approval, sandbox, config.approvals_reviewer.as_deref()).map(str::to_owned)
+    });
+    wire::NewAgentDefaults {
+        model,
+        effort,
+        permission,
+    }
+}
+
 /// What Codex offers on a host with no agent running, from its
-/// `model/list` pages and its `skills/list` answer.
+/// `model/list` pages and its `skills/list` answer, and what a new agent
+/// would start with there.
 pub fn host_catalogue(
     models: &[codex_protocol::server::Model],
     skills: codex_protocol::server::SkillsListResponse,
+    config: Option<&codex_protocol::server::ResolvedConfig>,
 ) -> wire::Catalogue {
     wire::Catalogue {
+        new_agent: Some(new_agent_defaults(models, config)),
         models: facts::offered_models(models),
         commands: offered_commands(),
         permissions: offered_permissions(),

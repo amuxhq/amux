@@ -1546,9 +1546,12 @@ pub(crate) fn permissions(
 }
 
 /// The models an initialize answer lists, as headless Claude answers it.
+/// Claude's "default" entry is left out: it only repeats a model listed
+/// under its own name, and reads as a choice that is not one.
 pub(crate) fn offered_models(models: &[ModelInfo]) -> Vec<OfferedModel> {
     models
         .iter()
+        .filter(|model| model.value != "default")
         .map(|model| OfferedModel {
             value: model.value.clone(),
             display_name: model.display_name.clone(),

@@ -167,6 +167,145 @@ pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
     }
 }
 
+/// A person's model or effort pick, for the host to start later agents of
+/// its kind on. None leaves that setting as it was.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Picked {
+    pub kind: Kind,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+}
+
+impl Picked {
+    /// A pick worth keeping: only amux's own chat keeps them, since Claude
+    /// in its own terminal follows Claude's settings.
+    fn worth_keeping(self) -> Option<Self> {
+        (matches!(self.kind, Kind::ClaudeSdk | Kind::Codex)
+            && (self.model.is_some() || self.effort.is_some()))
+        .then_some(self)
+    }
+
+    /// The pick a mid-chat input makes, if it makes one.
+    pub fn of_input(input: &wire::Input) -> Option<Self> {
+        use wire::{KindInput, claude_sdk_input as sdk, codex_input as codex};
+        let (kind, model, effort) = match input.decode_body()? {
+            KindInput::ClaudeSdk(input) => match input.of? {
+                sdk::Of::Model(set) => (Kind::ClaudeSdk, set.model, None),
+                sdk::Of::Effort(set) => (Kind::ClaudeSdk, None, set.effort),
+                _ => return None,
+            },
+            KindInput::Codex(input) => match input.of? {
+                codex::Of::Model(set) => (Kind::Codex, set.model, None),
+                codex::Of::Effort(set) => (Kind::Codex, None, set.effort),
+                _ => return None,
+            },
+            KindInput::ClaudePty(_) => return None,
+        };
+        Self {
+            kind,
+            model,
+            effort,
+        }
+        .worth_keeping()
+    }
+}
+
+/// The pick a creation asks the host to keep, if it asks.
+pub fn picked_at_creation(
+    agent: &create_agent_request::Agent,
+    request: &wire::CreateAgentRequest,
+) -> Option<Picked> {
+    use create_agent_request::Agent;
+    let (model, effort) = match agent {
+        Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude) => (&claude.model, &claude.effort),
+        Agent::Codex(codex) => (&codex.model, &codex.effort),
+    };
+    Picked {
+        kind: agent.kind(),
+        model: model.clone().filter(|_| request.remember_model),
+        effort: effort.clone().filter(|_| request.remember_effort),
+    }
+    .worth_keeping()
+}
+
+/// Where a person's picks go: the installation's settings, or nowhere in a
+/// test that has none.
+#[derive(Clone)]
+pub struct PickKeeper(std::sync::Arc<dyn Fn(Picked) + Send + Sync>);
+
+impl PickKeeper {
+    pub fn new(keep: impl Fn(Picked) + Send + Sync + 'static) -> Self {
+        Self(std::sync::Arc::new(keep))
+    }
+
+    pub(crate) fn keep(&self, picked: Picked) {
+        (self.0)(picked);
+    }
+}
+
+impl Default for PickKeeper {
+    fn default() -> Self {
+        Self::new(|_| {})
+    }
+}
+
+/// `agent` with what it does not choose filled from the host's remembered
+/// picks. Claude in its own terminal keeps to Claude's settings, arguments
+/// the person passed win, and a remembered effort its model does not take is
+/// left for the provider to decide.
+pub fn with_remembered(
+    agent: &create_agent_request::Agent,
+    remembered: &settings::NewAgentSettings,
+    offered: Option<&wire::Catalogue>,
+) -> create_agent_request::Agent {
+    use create_agent_request::Agent;
+    let named = |args: &[String], flag: &str| {
+        args.iter()
+            .any(|arg| arg == flag || arg.starts_with(&format!("{flag}=")))
+    };
+    let mut filled = agent.clone();
+    let (model, effort, defaults, passed_model, passed_effort) = match &mut filled {
+        Agent::ClaudePty(_) => return filled,
+        Agent::ClaudeSdk(claude) => {
+            let passed_model = named(&claude.args, "--model");
+            let passed_effort = named(&claude.args, "--effort");
+            (
+                &mut claude.model,
+                &mut claude.effort,
+                &remembered.claude,
+                passed_model,
+                passed_effort,
+            )
+        }
+        Agent::Codex(codex) => (
+            &mut codex.model,
+            &mut codex.effort,
+            &remembered.codex,
+            false,
+            false,
+        ),
+    };
+    if model.is_none() && !passed_model {
+        model.clone_from(&defaults.model);
+    }
+    if effort.is_none() && !passed_effort {
+        let starting = model
+            .clone()
+            .or_else(|| offered.and_then(|catalogue| catalogue.new_agent.as_ref()?.model.clone()));
+        let entry = starting.as_deref().and_then(|starting| {
+            offered?
+                .models
+                .iter()
+                .find(|listed| listed.value == starting || listed.resolved_model == starting)
+        });
+        let taken = |value: &String| {
+            entry.is_none_or(|entry| entry.efforts.is_empty() || entry.efforts.contains(value))
+        };
+        *effort = defaults.effort.clone().filter(taken);
+    }
+    filled
+}
+
 /// The provider command as configured for a kind.
 pub fn provider_command(launch: &Launch, kind: Kind) -> String {
     match kind {
@@ -408,5 +547,117 @@ mod tests {
             ..CodexCreateConfig::default()
         }));
         assert!(unnamed.provider_args.is_empty(), "{unnamed:?}");
+    }
+
+    fn remembered() -> settings::NewAgentSettings {
+        settings::NewAgentSettings {
+            claude: settings::NewAgentDefaults {
+                model: Some("sonnet".into()),
+                effort: Some("xhigh".into()),
+            },
+            ..Default::default()
+        }
+    }
+
+    fn claude(model: Option<&str>) -> ClaudeCreateConfig {
+        ClaudeCreateConfig {
+            model: model.map(str::to_owned),
+            ..Default::default()
+        }
+    }
+
+    fn offered(efforts: &[&str]) -> wire::Catalogue {
+        wire::Catalogue {
+            models: vec![wire::OfferedModel {
+                value: "sonnet".into(),
+                efforts: efforts.iter().map(|effort| (*effort).to_owned()).collect(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn remembered_picks_fill_only_what_is_not_chosen() {
+        let filled = with_remembered(
+            &Agent::ClaudeSdk(claude(None)),
+            &remembered(),
+            Some(&offered(&["high", "xhigh"])),
+        );
+        let Agent::ClaudeSdk(filled) = filled else {
+            panic!("the kind stays");
+        };
+        assert_eq!(filled.model.as_deref(), Some("sonnet"));
+        assert_eq!(filled.effort.as_deref(), Some("xhigh"));
+
+        let chosen = with_remembered(
+            &Agent::ClaudeSdk(claude(Some("haiku"))),
+            &remembered(),
+            None,
+        );
+        let Agent::ClaudeSdk(chosen) = chosen else {
+            panic!("the kind stays");
+        };
+        assert_eq!(chosen.model.as_deref(), Some("haiku"));
+    }
+
+    #[test]
+    fn claude_in_its_own_terminal_keeps_to_claudes_settings() {
+        let agent = Agent::ClaudePty(claude(None));
+        assert_eq!(with_remembered(&agent, &remembered(), None), agent);
+    }
+
+    #[test]
+    fn a_persons_arguments_beat_a_remembered_pick() {
+        let filled = with_remembered(
+            &Agent::ClaudeSdk(ClaudeCreateConfig {
+                args: vec!["--model=opus".into(), "--effort".into(), "low".into()],
+                ..Default::default()
+            }),
+            &remembered(),
+            None,
+        );
+        let Agent::ClaudeSdk(filled) = filled else {
+            panic!("the kind stays");
+        };
+        assert_eq!((filled.model, filled.effort), (None, None));
+    }
+
+    #[test]
+    fn a_remembered_effort_the_model_cannot_take_is_left_out() {
+        let filled = with_remembered(
+            &Agent::ClaudeSdk(claude(None)),
+            &remembered(),
+            Some(&offered(&["low", "high"])),
+        );
+        let Agent::ClaudeSdk(filled) = filled else {
+            panic!("the kind stays");
+        };
+        assert_eq!(filled.effort, None);
+    }
+
+    #[test]
+    fn only_a_marked_creation_keeps_its_picks() {
+        let agent = Agent::ClaudeSdk(ClaudeCreateConfig {
+            model: Some("sonnet".into()),
+            effort: Some("high".into()),
+            ..Default::default()
+        });
+        let request = |remember_model, remember_effort| wire::CreateAgentRequest {
+            remember_model,
+            remember_effort,
+            ..Default::default()
+        };
+        assert_eq!(picked_at_creation(&agent, &request(false, false)), None);
+        assert_eq!(
+            picked_at_creation(&agent, &request(true, false)),
+            Some(Picked {
+                kind: Kind::ClaudeSdk,
+                model: Some("sonnet".into()),
+                effort: None,
+            })
+        );
+        let terminal = Agent::ClaudePty(claude(Some("sonnet")));
+        assert_eq!(picked_at_creation(&terminal, &request(true, true)), None);
     }
 }

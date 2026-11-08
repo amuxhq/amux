@@ -397,7 +397,7 @@ impl Server {
                 input_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 prompt: Some(prompt),
             }),
-            new_worktree: false,
+            ..CreateAgentRequest::default()
         };
         let agent = self
             .daemon_once("the new agent".to_owned(), |mut client| {

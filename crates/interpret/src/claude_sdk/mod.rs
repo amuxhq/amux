@@ -233,15 +233,26 @@ fn write(input: &claude_stream::Input) -> Effect {
 }
 
 /// What Claude offers on a host with no agent running, from its initialize
-/// answer. Never-ask is listed: a new agent can be created allowing it.
+/// answer, and what a new agent would start with by Claude's own settings,
+/// from that and `applied`. Never-ask is listed: a new agent can be created
+/// allowing it.
 pub fn host_catalogue(
     initialized: &claude_protocol::stream::InitializationResult,
+    applied: Option<&claude_protocol::stream::init::AppliedSettings>,
 ) -> wire::Catalogue {
     use crate::claude_common::{auto_models, offered_commands, offered_models, permissions};
     wire::Catalogue {
         models: offered_models(&initialized.models),
         commands: offered_commands(&initialized.commands),
         permissions: permissions(Some(&auto_models(&initialized.models)), true, true),
+        new_agent: Some(wire::NewAgentDefaults {
+            model: applied.and_then(|applied| applied.model.clone()),
+            effort: applied.and_then(|applied| applied.effort.clone()),
+            permission: initialized
+                .current_permission_mode
+                .as_ref()
+                .map(|mode| mode.as_str().to_owned()),
+        }),
         ..Default::default()
     }
 }

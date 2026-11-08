@@ -244,7 +244,7 @@ mod tests {
         assert!(text.contains("chat_in = \"native\""), "{text}");
         assert!(text.contains("telemetry = false"), "{text}");
         let config = InstallationConfig::from_file(&path).unwrap();
-        assert_eq!(config.new_agent.claude.model, "sonnet");
+        assert_eq!(config.new_agent.claude.model.as_deref(), Some("sonnet"));
         assert!(!config.telemetry);
     }
 

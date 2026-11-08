@@ -97,6 +97,8 @@ pub struct HostCatalogue {
 }
 
 struct Held {
+    /// What the provider said, before the host's remembered picks.
+    asked: ProviderOffer,
     offer: HostCatalogue,
     asked_at_ms: i64,
     /// When the provider's version was last read and matched.
@@ -114,7 +116,7 @@ pub(crate) struct Offers {
 
 impl Offers {
     /// The copies the profile kept; an unreadable one is asked again.
-    pub(crate) fn load(profile_dir: &Path) -> Self {
+    pub(crate) fn load(profile_dir: &Path, launch: &Launch) -> Self {
         let mut held = HashMap::new();
         for provider in ASKED {
             let Ok(bytes) = std::fs::read(copy_path(profile_dir, provider)) else {
@@ -127,7 +129,8 @@ impl Offers {
             held.insert(
                 provider,
                 Held {
-                    offer: host_catalogue(offer),
+                    offer: host_catalogue(offer.clone(), &remembered(provider, launch)),
+                    asked: offer,
                     asked_at_ms,
                     version_read_at_ms: i64::MIN,
                 },
@@ -141,6 +144,20 @@ impl Offers {
                 .map(|provider| (provider, tokio::sync::Mutex::new(())))
                 .collect(),
         }
+    }
+
+    /// Names the copies again after the host's remembered picks changed, so
+    /// each hash follows what a client would now be told.
+    pub(crate) fn remembered_changed(&self, launch: &Launch) {
+        for (provider, held) in self.held.lock().unwrap().iter_mut() {
+            held.offer = host_catalogue(held.asked.clone(), &remembered(*provider, launch));
+        }
+    }
+
+    /// The copy of what `provider` offers, as last asked.
+    pub(crate) fn offered(&self, provider: Provider) -> Option<Catalogue> {
+        let held = self.held.lock().unwrap();
+        held.get(&provider).map(|held| held.offer.catalogue.clone())
     }
 
     /// Per provider asked, its hash and whether it is signed in: what this
@@ -165,10 +182,32 @@ fn copy_path(profile_dir: &Path, provider: Provider) -> PathBuf {
     profile_dir.join(PROVIDERS).join(provider_word(provider))
 }
 
-/// Encodes the helper's catalogue once and names it by the hash of exactly
-/// those bytes, so what is served is what is named.
-fn host_catalogue(offer: ProviderOffer) -> HostCatalogue {
-    let catalogue = offer.catalogue.unwrap_or_default();
+/// The picks a new agent of `provider` starts with on this host. A host that
+/// runs Claude in its own terminal keeps to Claude's own settings.
+fn remembered(provider: Provider, launch: &Launch) -> settings::NewAgentDefaults {
+    match provider {
+        Provider::Claude if launch.claude_kind != wire::Kind::ClaudePty => {
+            launch.new_agent.claude.clone()
+        }
+        Provider::Codex => launch.new_agent.codex.clone(),
+        _ => settings::NewAgentDefaults::default(),
+    }
+}
+
+/// Encodes the helper's catalogue once, with the host's remembered picks
+/// over what the provider would start a new agent with, and names it by the
+/// hash of exactly those bytes, so what is served is what is named.
+fn host_catalogue(offer: ProviderOffer, remembered: &settings::NewAgentDefaults) -> HostCatalogue {
+    let mut catalogue = offer.catalogue.unwrap_or_default();
+    if remembered.model.is_some() || remembered.effort.is_some() {
+        let starting = catalogue.new_agent.get_or_insert_default();
+        if remembered.model.is_some() {
+            starting.model.clone_from(&remembered.model);
+        }
+        if remembered.effort.is_some() {
+            starting.effort.clone_from(&remembered.effort);
+        }
+    }
     let bytes = catalogue.encode_to_vec();
     HostCatalogue {
         blob: GetCatalogueResponse {
@@ -243,10 +282,11 @@ impl ProfileRuntime {
             .await
             .map_err(|error| CatalogueError::Write(io::Error::other(error)))?
             .map_err(CatalogueError::Write)?;
-        let answer = host_catalogue(offer);
+        let answer = host_catalogue(offer.clone(), &remembered(provider, &launch));
         offers.held.lock().unwrap().insert(
             provider,
             Held {
+                asked: offer,
                 offer: answer.clone(),
                 asked_at_ms: now,
                 version_read_at_ms: now,
@@ -285,13 +325,15 @@ impl ProfileRuntime {
         };
         match asked {
             Ok(asked) => {
-                let answer = host_catalogue(ProviderOffer {
+                let asked = ProviderOffer {
                     asked_at_ms: now,
                     ..asked
-                });
+                };
+                let answer = host_catalogue(asked.clone(), &Default::default());
                 offers.folders.lock().unwrap().insert(
                     key,
                     Held {
+                        asked,
                         offer: answer.clone(),
                         asked_at_ms: now,
                         version_read_at_ms: now,

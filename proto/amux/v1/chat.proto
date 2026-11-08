@@ -368,6 +368,18 @@ message Catalogue {
   // Codex's skills, which a person mentions as "$name" anywhere in a
   // message; empty for Claude, whose skills are among its commands.
   repeated OfferedSkill skills = 5;
+  // What a new agent on this host starts with when nothing is chosen;
+  // absent from a catalogue an agent wrote about its own session.
+  NewAgentDefaults new_agent = 6;
+}
+
+// A new agent's starting settings, by catalogue values: the host's remembered
+// pick, else what the provider itself would use. An absent value is one
+// neither can name, and the provider decides it when the agent starts.
+message NewAgentDefaults {
+  optional string model = 1;
+  optional string effort = 2;
+  optional string permission = 3;
 }
 
 // A skill Codex offers this session.

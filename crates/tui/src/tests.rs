@@ -375,7 +375,7 @@ fn codex_moves_mode_with_shift_tab_and_permission_from_the_settings_key() {
     let (screen, _) = feed(&mut view, &state);
     for words in [
         "read only",
-        "default",
+        "ask",
         "auto",
         "full access",
         "acts without asking",
@@ -1469,7 +1469,6 @@ fn raw_attach_is_only_for_terminals_on_this_machine() {
         local_host: b"a".to_vec(),
         layout: None,
         chat_in: settings::ChatInSetting::Amux,
-        defaults: settings::NewAgentSettings::default(),
     };
     let agent = |host: &[u8], kind: Kind| wire::Agent {
         host_id: host.to_vec(),
@@ -2410,7 +2409,6 @@ fn home_place() -> crate::home::Place {
         version: String::new(),
         working_dir: "~/work/amux".into(),
         chat_in: settings::ChatInSetting::Amux,
-        defaults: settings::NewAgentSettings::default(),
     }
 }
 
@@ -2634,12 +2632,8 @@ fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
         screen.contains("What should the new agent work on?"),
         "{screen}"
     );
-    // Until the host says what Claude offers there, the settings' own
-    // words; then the catalogue's.
-    assert!(
-        screen.contains("Claude · opus (high) · default │ ~/work/amux"),
-        "{screen}"
-    );
+    // Until the host says what Claude would start with, nothing is named.
+    assert!(screen.contains("Claude · … · … │ ~/work/amux"), "{screen}");
     home.open_setup()
         .unwrap()
         .offer(b"a", wire::Provider::Claude, &[1; 32], &claude_offer());
@@ -2759,6 +2753,11 @@ fn claude_offer() -> wire::Catalogue {
         ..Default::default()
     };
     wire::Catalogue {
+        new_agent: Some(wire::NewAgentDefaults {
+            model: Some("opus".into()),
+            effort: Some("high".into()),
+            permission: Some("default".into()),
+        }),
         models: vec![wire::OfferedModel {
             value: "opus".into(),
             display_name: "Opus".into(),
@@ -2796,6 +2795,11 @@ fn codex_offer() -> wire::Catalogue {
         settable: true,
     };
     wire::Catalogue {
+        new_agent: Some(wire::NewAgentDefaults {
+            model: Some("gpt-6.1-sol".into()),
+            effort: Some("medium".into()),
+            permission: Some("default".into()),
+        }),
         models: vec![
             wire::OfferedModel {
                 value: "gpt-6.1-sol".into(),
@@ -2816,7 +2820,7 @@ fn codex_offer() -> wire::Catalogue {
             permission("read-only", "Read only"),
             wire::OfferedPermission {
                 normal: true,
-                ..permission("default", "Default")
+                ..permission("default", "Ask")
             },
             permission("auto", "Auto"),
             wire::OfferedPermission {
@@ -2824,7 +2828,7 @@ fn codex_offer() -> wire::Catalogue {
                 ..permission("full-access", "Full access")
             },
         ],
-        modes: vec![mode("default", "Default"), mode("plan", "Plan")],
+        modes: vec![mode("default", "Normal"), mode("plan", "Plan")],
         ..Default::default()
     }
 }
@@ -2864,7 +2868,7 @@ fn a_new_agent_offers_what_its_host_offers() {
     home.open_setup().unwrap().pick(Item::Kind, "1");
     // Before the host says, a model can only be named.
     assert!(home.open_setup().unwrap().takes_typed(Item::Model));
-    assert_eq!(choice_words(&mut home, &fleet, Item::Effort), ["medium ✓"]);
+    assert!(choice_words(&mut home, &fleet, Item::Effort).is_empty());
     // What another host offers is not this one's.
     home.open_setup()
         .unwrap()
@@ -2875,7 +2879,7 @@ fn a_new_agent_offers_what_its_host_offers() {
         .offer(b"a", wire::Provider::Codex, &[2; 32], &codex_offer());
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
-        screen.contains("Codex · GPT-6.1 Sol (medium) · default │ ~/work/amux"),
+        screen.contains("Codex · GPT-6.1 Sol (medium) · ask │ ~/work/amux"),
         "{screen}"
     );
     assert!(screen.contains("shift+tab mode"), "{screen}");
@@ -2886,51 +2890,69 @@ fn a_new_agent_offers_what_its_host_offers() {
     );
     assert_eq!(
         choice_words(&mut home, &fleet, Item::Effort),
-        ["low", "medium · default ✓", "high", "xhigh"]
+        ["low", "medium ✓", "high", "xhigh"]
     );
     assert_eq!(
         choice_words(&mut home, &fleet, Item::Permission),
         [
             "read only",
-            "default ✓",
+            "ask ✓",
             "auto",
             "full access · acts without asking"
         ]
     );
     assert_eq!(
         choice_words(&mut home, &fleet, Item::Mode),
-        ["default ✓", "plan"]
+        ["normal ✓", "plan"]
     );
 
     // Another model starts at its own default effort.
     home.open_setup().unwrap().pick(Item::Model, "gpt-6-mini");
     assert_eq!(
         choice_words(&mut home, &fleet, Item::Effort),
-        ["low · default ✓", "high"]
+        ["low ✓", "high"]
     );
     // Shift+Tab steps the mode, which the edge names once it is not the
     // normal one.
     home.key(&fleet, key(KeyCode::BackTab));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
-        screen.contains("Codex · GPT-6 mini (low) · default · plan │"),
+        screen.contains("Codex · GPT-6 mini (low) · ask · plan │"),
         "{screen}"
     );
     let request = home.open_setup().unwrap().request(b"id".to_vec(), None);
     let Some(wire::create_agent_request::Agent::Codex(config)) = request.agent else {
         panic!("a Codex agent: {request:?}");
     };
+    // Only what the person picked is sent; the rest is the host's to decide.
     assert_eq!(
         (config.model.as_deref(), config.effort.as_deref()),
-        (Some("gpt-6-mini"), Some("low"))
+        (Some("gpt-6-mini"), None)
     );
     assert_eq!(
         (config.permission.as_deref(), config.mode.as_deref()),
-        (Some("default"), Some("plan"))
+        (None, Some("plan"))
     );
+    assert!(request.remember_model && !request.remember_effort);
     // Another agent is another provider's catalogue, asked afresh.
     home.open_setup().unwrap().pick(Item::Kind, "0");
     assert!(home.open_setup().unwrap().offered.is_none());
+}
+
+/// What a sibling copies from its chat is no pick of the person's; what
+/// they then change is.
+#[test]
+fn a_siblings_copied_settings_are_not_remembered() {
+    use crate::setup::{Item, Setup};
+    let mut setup = Setup::defaults(settings::ChatInSetting::Amux, "~/work", b"a");
+    setup.model = Some("opus".into());
+    setup.effort = Some("high".into());
+    let mut setup = setup.sibling(Kind::ClaudeSdk, settings::ChatInSetting::Amux);
+    let request = setup.request(b"id".to_vec(), None);
+    assert!(!request.remember_model && !request.remember_effort);
+    setup.pick(Item::Effort, "low");
+    let request = setup.request(b"id".to_vec(), None);
+    assert!(!request.remember_model && request.remember_effort);
 }
 
 /// Claude's Shift+Tab steps the permissions that still ask, as in a chat.
@@ -2987,10 +3009,7 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
     );
     home.open_setup().unwrap().pick(Item::Kind, "1");
     let screen = home_screen(&mut home, &fleet, theme());
-    assert!(
-        screen.contains("Codex (not signed in) · gpt-6.1-sol"),
-        "{screen}"
-    );
+    assert!(screen.contains("Codex (not signed in) · …"), "{screen}");
 
     // The form for an agent used in its own terminal says it on the chip.
     let mut home = crate::home::Home::new(crate::home::Place {

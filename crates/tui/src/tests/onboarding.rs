@@ -686,12 +686,8 @@ fn home_offers_to_finish_setting_up_and_takes_the_settings_key() {
 
 #[test]
 fn the_picker_offers_the_hosts_repositories_then_its_recent_folders() {
-    let mut setup = crate::setup::Setup::defaults(
-        settings::ChatInSetting::Amux,
-        "/src/here",
-        b"desk",
-        &settings::NewAgentSettings::default(),
-    );
+    let mut setup =
+        crate::setup::Setup::defaults(settings::ChatInSetting::Amux, "/src/here", b"desk");
     assert!(setup.wants_folders());
     let entry = |path: &str| wire::RepositoryEntry {
         path: path.into(),

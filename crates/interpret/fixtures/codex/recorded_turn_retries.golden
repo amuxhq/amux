@@ -13,8 +13,8 @@ snapshot IDLE queue=[] working_on=- at=1793447526698 asks=[] thread=01a191cd-7c4
 ## 11 recorded 10: fact Rpc method=mcpServer/startupStatus/updated
 snapshot IDLE queue=[] working_on=- at=1793447526700 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 13 recorded 12: fact Rpc "{\"id\":\"amux-skills\",\"result\":{\"data\":[{\"cwd\":\"<MACHINE_PATH>\",\"err…
-effect catalogue 54087522 models=[] commands=5 skills=46 permissions=[read-only,default,auto,full-access] modes=[default,plan]
-snapshot catalogue 54087522
+effect catalogue a6a4aca5 models=[] commands=5 skills=46 permissions=[read-only,default,auto,full-access] modes=[default,plan]
+snapshot catalogue a6a4aca5
 snapshot IDLE queue=[] working_on=- at=1793447526704 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 18 recorded 17: fact Rpc method=deprecationNotice
 item warning:2 error final at=1793447526710 text="Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." deprecationNotice "Full-history hydration is deprecated for paginated threads; omit `includeTurns` …" retry=false 0/0
@@ -24,8 +24,8 @@ effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientU
 item prompt:6de81ad2ebab47c5a7a00144749caff1 prompt final input=0x6de81ad2ebab47c5a7a00144749caff1 at=1793447526794 text="Reply with exactly UNREACHABLE."
 snapshot WORKING queue=[] working_on="Reply with exactly UNREACHABLE." at=1793447526794 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 29 recorded 28: fact Rpc "{\"id\":\"amux-models-1\",\"result\":{\"data\":[{\"additionalSpeedTiers\":[\"fa…
-effect catalogue f843ee81 models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},gpt-6-astra{low*/medium/high/xhigh/max/ultra},gpt-6-sol{low/medium*/high/xhigh/max/ultra},gpt-6-luna{low/medium*/high/xhigh/max},gpt-5.6-sol{low*/medium/high/xhigh/max/ultra},gpt-6.1-terra{low*/medium/high/xhigh/max/ultra},gpt-5.6-terra{low/medium*/high/xhigh/max/ultra},gpt-5.6-luna{low/medium*/high/xhigh/max},gpt-5.5{low/medium*/high/xhigh}] commands=5 skills=46 permissions=[read-only,default,auto,full-access] modes=[default,plan]
-snapshot catalogue f843ee81
+effect catalogue 766fca9b models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},gpt-6-astra{low*/medium/high/xhigh/max/ultra},gpt-6-sol{low/medium*/high/xhigh/max/ultra},gpt-6-luna{low/medium*/high/xhigh/max},gpt-5.6-sol{low*/medium/high/xhigh/max/ultra},gpt-6.1-terra{low*/medium/high/xhigh/max/ultra},gpt-5.6-terra{low/medium*/high/xhigh/max/ultra},gpt-5.6-luna{low/medium*/high/xhigh/max},gpt-5.5{low/medium*/high/xhigh}] commands=5 skills=46 permissions=[read-only,default,auto,full-access] modes=[default,plan]
+snapshot catalogue 766fca9b
 snapshot WORKING queue=[] working_on="Reply with exactly UNREACHABLE." at=1793447527328 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 35 recorded 34: fact Rpc method=mcpServer/startupStatus/updated
 snapshot WORKING queue=[] working_on="Reply with exactly UNREACHABLE." at=1793447527944 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?

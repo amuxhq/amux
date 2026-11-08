@@ -1774,11 +1774,11 @@ fn new_agent_worktree(journey: &mut TerminalJourney) -> Proved {
     journey.wait_terms(&pane, &["╭─ Model", ". Fable 5"])?;
     journey.frame(&pane, "desk-models")?;
     pick(journey, &pane, "Fable 5")?;
-    // Another model starts at its own default effort; Claude names none, so
-    // the effort is left to the model.
+    // Another model keeps the effort the host would start it on, when it
+    // takes that effort.
     journey.wait(
         &pane,
-        |frame| frame.contains("Claude · Fable 5 · ") && !frame.contains("╭─ Model"),
+        |frame| frame.contains("Claude · Fable 5 (high) · ") && !frame.contains("╭─ Model"),
         "Fable 5 chosen",
     )?;
     // In the desk's repository, which its agent already works in.

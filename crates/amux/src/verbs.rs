@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::{Result, anyhow, bail};
-use settings::{ChatInSetting, InstallationConfig};
+use settings::ChatInSetting;
 use uuid::Uuid;
 use wire::{
     Agent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
@@ -309,32 +309,17 @@ pub struct Create {
     pub args: Vec<String>,
 }
 
-/// `amux new`: an agent as the terminal app starts one, with its starting
-/// model, effort and permission from `new_agent` where none is given. In
-/// the agent's own interface those are its own to set, as in the app.
-pub async fn create(
-    client: &mut Client,
-    host: &[u8],
-    config: &InstallationConfig,
-    create: Create,
-) -> Result<()> {
+/// `amux new`: an agent as the terminal app starts one. What is not given
+/// is left to the host, which starts it on the person's remembered picks and
+/// otherwise on the provider's own settings.
+pub async fn create(client: &mut Client, host: &[u8], create: Create) -> Result<()> {
     let cwd = match create.cwd {
         Some(cwd) => std::path::absolute(cwd)?,
         None => std::env::current_dir()?,
     };
-    let interface = create.interface.unwrap_or(config.ui.chat_in);
-    let defaults = match create.agent {
-        CliAgent::Claude => &config.new_agent.claude,
-        CliAgent::Codex => &config.new_agent.codex,
-    };
-    let configured = |given: &Option<String>, default: &str| {
-        given
-            .clone()
-            .or_else(|| (interface == ChatInSetting::Amux).then(|| default.to_owned()))
-    };
-    let model = configured(&create.model, &defaults.model);
-    let effort = configured(&create.effort, &defaults.effort);
-    let permission = configured(&create.permission, &defaults.permission);
+    let model = create.model.clone();
+    let effort = create.effort.clone();
+    let permission = create.permission.clone();
     let claude = || ClaudeCreateConfig {
         args: create.args.clone(),
         model: model.clone(),

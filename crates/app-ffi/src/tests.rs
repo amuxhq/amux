@@ -1491,8 +1491,8 @@ fn a_new_agents_settings_and_picks_come_from_the_shared_view() {
     assert_eq!(next["model"], json!("sol"));
     assert_eq!(
         next["effort"],
-        json!("medium"),
-        "another model, its own default"
+        json!(null),
+        "another model: its effort is not the person's pick"
     );
     let broken = c("{");
     // SAFETY: the strings live for the call.

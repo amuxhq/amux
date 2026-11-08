@@ -418,9 +418,8 @@ fn the_initialize_answer_lists_models_with_efforts_and_commands_with_sources() {
         .filter(|(hash, _)| snapshot.catalogue.as_ref() == Some(hash))
         .expect("the catalogue the last snapshot names");
     let first = &snapshot.models[0];
-    assert_eq!(first.value, "default");
-    assert_eq!(first.display_name, "Default (recommended)");
-    assert!(first.description.starts_with("Fable 5.1"));
+    assert_eq!(first.value, "opus");
+    assert!(snapshot.models.iter().all(|model| model.value != "default"));
     assert_eq!(first.efforts, ["low", "medium", "high", "xhigh", "max"]);
     let haiku = snapshot
         .models

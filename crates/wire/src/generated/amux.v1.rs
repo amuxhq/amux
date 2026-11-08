@@ -2361,6 +2361,10 @@ pub struct Catalogue {
     /// message; empty for Claude, whose skills are among its commands.
     #[prost(message, repeated, tag = "5")]
     pub skills: ::prost::alloc::vec::Vec<OfferedSkill>,
+    /// What a new agent on this host starts with when nothing is chosen;
+    /// absent from a catalogue an agent wrote about its own session.
+    #[prost(message, optional, tag = "6")]
+    pub new_agent: ::core::option::Option<NewAgentDefaults>,
 }
 impl ::prost::Name for Catalogue {
     const NAME: &'static str = "Catalogue";
@@ -2370,6 +2374,29 @@ impl ::prost::Name for Catalogue {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Catalogue".into()
+    }
+}
+/// A new agent's starting settings, by catalogue values: the host's remembered
+/// pick, else what the provider itself would use. An absent value is one
+/// neither can name, and the provider decides it when the agent starts.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct NewAgentDefaults {
+    #[prost(string, optional, tag = "1")]
+    pub model: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "2")]
+    pub effort: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "3")]
+    pub permission: ::core::option::Option<::prost::alloc::string::String>,
+}
+impl ::prost::Name for NewAgentDefaults {
+    const NAME: &'static str = "NewAgentDefaults";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.NewAgentDefaults".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.NewAgentDefaults".into()
     }
 }
 /// A skill Codex offers this session.
@@ -7204,6 +7231,12 @@ pub struct CreateAgentRequest {
     /// is the branch as given.
     #[prost(bool, tag = "10")]
     pub new_worktree: bool,
+    /// The agent config's model and effort are a person's picks, so its host
+    /// starts its later agents of this kind on them too.
+    #[prost(bool, tag = "11")]
+    pub remember_model: bool,
+    #[prost(bool, tag = "12")]
+    pub remember_effort: bool,
     /// Which interpreter, with that kind's settings.
     #[prost(oneof = "create_agent_request::Agent", tags = "6, 7, 8")]
     pub agent: ::core::option::Option<create_agent_request::Agent>,

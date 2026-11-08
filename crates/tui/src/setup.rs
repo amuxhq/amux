@@ -16,7 +16,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Frame as Paint;
 use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
-use settings::{ChatInSetting, NewAgentDefaults, NewAgentSettings};
+use settings::ChatInSetting;
 use ui_state::FleetState;
 use ui_view::{Changeable, NewAgentChoices, NewAgentPick, Reach, SettingChange, SettingsView};
 use wire::{
@@ -51,14 +51,6 @@ impl Agent {
             (Agent::Claude, ChatInSetting::Amux) => Kind::ClaudeSdk,
             (Agent::Claude, ChatInSetting::Native) => Kind::ClaudePty,
             (Agent::Codex, _) => Kind::Codex,
-        }
-    }
-
-    /// What it starts with, from the installation's settings.
-    fn defaults(self, settings: &NewAgentSettings) -> &NewAgentDefaults {
-        match self {
-            Agent::Claude => &settings.claude,
-            Agent::Codex => &settings.codex,
         }
     }
 
@@ -139,8 +131,9 @@ pub struct Setup {
     pub local_host: Vec<u8>,
     /// Start it in a new worktree of the folder's repository.
     pub worktree: bool,
-    /// What each agent starts with, for when the agent changes.
-    pub defaults: NewAgentSettings,
+    /// The model and effort copied from a running chat, which are not the
+    /// person's picks until changed.
+    pub copied: (Option<String>, Option<String>),
     /// Which Claude the chosen host says a new agent runs there, taken as
     /// the agent starts; unspecified follows where the person chats.
     pub host_claude_kind: Kind,
@@ -151,13 +144,8 @@ pub struct Setup {
 
 impl Setup {
     /// From home: the defaults, in the folder the client started in.
-    pub fn defaults(
-        chat_in: ChatInSetting,
-        working_dir: &str,
-        local_host: &[u8],
-        defaults: &NewAgentSettings,
-    ) -> Setup {
-        let mut setup = Setup {
+    pub fn defaults(chat_in: ChatInSetting, working_dir: &str, local_host: &[u8]) -> Setup {
+        Setup {
             name: None,
             agent: Agent::Claude,
             chat_in,
@@ -170,33 +158,28 @@ impl Setup {
             host: local_host.to_vec(),
             local_host: local_host.to_vec(),
             worktree: false,
-            defaults: defaults.clone(),
+            copied: (None, None),
             host_claude_kind: Kind::Unspecified,
             folders: None,
-        };
-        setup.start_from_defaults();
-        setup
+        }
     }
 
-    /// The agent's model, effort and permission from the settings.
+    /// Nothing picked: the agent will start on its host's defaults.
     fn start_from_defaults(&mut self) {
-        let defaults = self.agent.defaults(&self.defaults).clone();
-        self.model = Some(defaults.model);
-        self.effort = Some(defaults.effort);
-        self.permission = Some(defaults.permission);
+        self.model = None;
+        self.effort = None;
+        self.permission = None;
         self.mode = None;
+        self.copied = (None, None);
     }
 
     /// A running agent's settings, to start a sibling where the person
-    /// chats now: whatever the chat did not report comes from the settings.
+    /// chats now: whatever the chat did not report is left to its host.
     pub fn sibling(mut self, kind: Kind, chat_in: ChatInSetting) -> Setup {
         self.agent = Agent::of(kind);
         self.chat_in = chat_in;
         self.offered = None;
-        let defaults = self.agent.defaults(&self.defaults).clone();
-        self.model.get_or_insert(defaults.model);
-        self.effort.get_or_insert(defaults.effort);
-        self.permission.get_or_insert(defaults.permission);
+        self.copied = (self.model.clone(), self.effort.clone());
         self
     }
 
@@ -281,21 +264,24 @@ impl Setup {
         // which Shift+Tab steps, speaks only when it is not the normal one,
         // as in a chat.
         let view = self.view();
+        // Nothing named while the host has not said; once it has, a setting
+        // it cannot name is left off.
+        let waiting = if self.offered.is_none() { "…" } else { "" };
         let mut model = view
             .models
             .iter()
             .find(|model| model.current)
             .map(|model| model.display_name.clone())
-            .unwrap_or_default();
-        if let Some(effort) = &self.effort {
-            model.push_str(&format!(" ({effort})"));
+            .unwrap_or_else(|| waiting.to_owned());
+        if let Some(effort) = view.efforts.iter().find(|effort| effort.current) {
+            model.push_str(&format!(" ({})", effort.value));
         }
         let permission = view
             .permissions
             .iter()
             .find(|permission| permission.current)
             .map(crate::words::permission_words)
-            .unwrap_or_default();
+            .unwrap_or_else(|| waiting.to_owned());
         let mut agent = self.agent.name().to_owned();
         if signed_in(fleet, &self.host, self.agent.provider()) == Some(false) {
             agent.push_str(" (not signed in)");
@@ -308,6 +294,7 @@ impl Setup {
         if let Some(mode) = view.modes.iter().find(|mode| mode.current && !mode.normal) {
             runs.push((Item::Mode, crate::words::mode_words(mode)));
         }
+        runs.retain(|(_, words)| !words.is_empty());
         let folder = match self.folder.as_str() {
             "" => "+ Folder".to_owned(),
             folder => self.shown(folder),
@@ -549,6 +536,9 @@ impl Setup {
             initial_prompt: prompt,
             agent: Some(config),
             new_worktree: self.worktree,
+            // What a chat's sibling merely copied is not the person's pick.
+            remember_model: !own && self.model.is_some() && self.model != self.copied.0,
+            remember_effort: !own && self.effort.is_some() && self.effort != self.copied.1,
             ..CreateAgentRequest::default()
         }
     }
@@ -654,17 +644,13 @@ pub(crate) fn model_choices(view: &SettingsView) -> Vec<Choice> {
         .collect()
 }
 
-/// The current model's efforts, its default marked.
+/// The current model's efforts.
 pub(crate) fn effort_choices(view: &SettingsView) -> Vec<Choice> {
     view.efforts
         .iter()
         .map(|effort| Choice {
             label: effort.value.clone(),
-            detail: if effort.default {
-                "default".into()
-            } else {
-                String::new()
-            },
+            detail: String::new(),
             value: effort.value.clone(),
             current: effort.current,
             disabled: false,

@@ -59,8 +59,6 @@ pub struct TuiConfig {
     /// Where the person chats with their agents: in amux, or in each
     /// agent's own terminal, attached on start.
     pub chat_in: settings::ChatInSetting,
-    /// What each agent starts with: its model, effort and mode.
-    pub defaults: settings::NewAgentSettings,
 }
 
 /// How this client lays its screens out, kept between runs: a person's
@@ -383,7 +381,6 @@ impl App {
             local_host: config.local_host.clone(),
             working_dir: config.working_dir.to_string_lossy().into_owned(),
             chat_in: config.chat_in,
-            defaults: config.defaults.clone(),
         });
         let layout = Layout::load(config.layout.as_deref());
         App {
@@ -963,7 +960,6 @@ impl App {
                     &state,
                     self.fleet.state().agent(&chat.agent),
                     &self.config.local_host,
-                    &self.config.defaults,
                 )
                 .sibling(state.kind(), self.config.chat_in);
                 drop(state);
@@ -1765,7 +1761,6 @@ fn sibling_setup(
     state: &ui_state::SessionState,
     agent: Option<&wire::Agent>,
     local_host: &[u8],
-    defaults: &settings::NewAgentSettings,
 ) -> crate::setup::Setup {
     let view = ui_view::settings(state);
     crate::setup::Setup {
@@ -1797,7 +1792,7 @@ fn sibling_setup(
         host: agent.map(|agent| agent.host_id.clone()).unwrap_or_default(),
         local_host: local_host.to_vec(),
         worktree: false,
-        defaults: defaults.clone(),
+        copied: (None, None),
         host_claude_kind: wire::Kind::Unspecified,
         folders: None,
     }

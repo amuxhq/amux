@@ -17,7 +17,7 @@
 
                                                                           ╭─ Permission ─────────────────────────────╮
     Plan the overview's file list before changing it                      │   1. read only                           │
-                                                                          │   2. default                             │
+                                                                          │   2. ask                                 │
                                                                           │   3. auto                                │
     Ready: I'll group the changed files by folder, root files first.      │ › 4. full access ✓ · acts without asking │
                                                                           ╰──────────────────────────────────────────╯

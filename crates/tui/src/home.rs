@@ -2074,19 +2074,12 @@ pub struct Place {
     pub working_dir: String,
     /// Where the person chats, which decides how a new agent starts.
     pub chat_in: ChatInSetting,
-    /// What each agent starts with.
-    pub defaults: settings::NewAgentSettings,
 }
 
 impl Place {
     /// A new agent's setup before the person changes any of it.
     fn setup(&self) -> Setup {
-        Setup::defaults(
-            self.chat_in,
-            &self.working_dir,
-            &self.local_host,
-            &self.defaults,
-        )
+        Setup::defaults(self.chat_in, &self.working_dir, &self.local_host)
     }
 }
 

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::stream::types::Extensions;
+use crate::stream::types::{Extensions, PermissionMode};
 
 /// Complete response to the stream-JSON `initialize` control request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -8,6 +8,9 @@ pub struct InitializationResult {
     pub commands: Vec<SlashCommand>,
     pub models: Vec<ModelInfo>,
     pub account: AccountInfo,
+    /// The permission a session starts in by Claude's own settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_permission_mode: Option<PermissionMode>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

@@ -76,6 +76,13 @@ letter to change one:
 The models and permissions on offer are whatever that agent offers on the host
 you picked. If Claude or Codex isn't signed in there, the picker says so.
 
+A new agent starts on the model, effort and permission Claude or Codex is
+already set to on that host, so amux and Claude's own terminal app agree until
+you choose otherwise. When you pick a model or effort in amux, for a new agent
+or in a chat, later agents on that host start on it too. Permissions never stick: a
+permission you pick applies to that agent only. An agent you use in Claude's
+own terminal app always follows Claude's settings.
+
 You can also start an agent from the shell, in the current folder:
 
 ```sh
@@ -200,14 +207,11 @@ A few more live only in the config file, `~/.config/amux/config.toml`.
 ```toml
 [ui]
 theme = "terminal"    # terminal (your terminal's own colours), dark or light
-
-[new_agent.claude]
-model = "opus"
-effort = "high"
-
-[new_agent.codex]
-effort = "medium"
 ```
+
+To go back to following Claude or Codex after picking in amux, forget the
+remembered value: `amux config unset new_agent.claude.model`, and likewise
+`new_agent.claude.effort`, `new_agent.codex.model` and `new_agent.codex.effort`.
 
 ## Commands
 

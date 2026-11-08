@@ -123,6 +123,8 @@ pub(crate) struct Installation {
     shutdown: watch::Sender<bool>,
     /// Where profiles record analytics; unset records nothing.
     analytics: std::sync::OnceLock<Arc<dyn analytics::Sink>>,
+    /// Where profiles keep a person's model and effort picks.
+    pick_keeper: std::sync::OnceLock<crate::spec::PickKeeper>,
     /// Logins refused only because their profile held data, by the token
     /// they were staged with, until bound again with adopt or forgotten.
     staged_logins: Mutex<Vec<(String, std::time::Instant, crate::edge::account::Login)>>,
@@ -138,8 +140,9 @@ impl Installation {
     /// last applied moves, so what an embedder gave a host at start stands
     /// until the person changes that setting.
     pub(crate) fn apply(&self, config: &settings::InstallationConfig) {
-        let (repositories, kind, renamed) = {
+        let (repositories, kind, renamed, new_agent) = {
             let mut last = self.applied.lock().unwrap();
+            let new_agent = (last.new_agent != config.new_agent).then(|| config.new_agent.clone());
             let repositories =
                 (last.repositories != config.repositories).then(|| config.repositories());
             let kind = (crate::host_settings::claude_kind(&last)
@@ -151,10 +154,10 @@ impl Installation {
                 name
             });
             *last = config.clone();
-            (repositories, kind, renamed)
+            (repositories, kind, renamed, new_agent)
         };
         self.awake.keep_awake(config.keep_awake);
-        if repositories.is_none() && kind.is_none() && renamed.is_none() {
+        if repositories.is_none() && kind.is_none() && renamed.is_none() && new_agent.is_none() {
             return;
         }
         {
@@ -164,6 +167,9 @@ impl Installation {
             }
             if let Some(kind) = kind {
                 launch.claude_kind = kind;
+            }
+            if let Some(new_agent) = &new_agent {
+                launch.new_agent.clone_from(new_agent);
             }
         }
         let runtimes: Vec<Arc<ProfileRuntime>> = self
@@ -180,6 +186,12 @@ impl Installation {
             }
             if let Some(kind) = kind {
                 launch.claude_kind = kind;
+            }
+            if let Some(new_agent) = &new_agent {
+                launch.new_agent.clone_from(new_agent);
+            }
+            if kind.is_some() || new_agent.is_some() {
+                runtime.offers().remembered_changed(&launch);
             }
             runtime.set_launch(launch);
             if let (Some(name), Some(edge)) = (&renamed, runtime.edge()) {
@@ -281,6 +293,7 @@ impl Installation {
                 self.data_dir.join(crate::worktree::WORKTREES),
             ),
             onboarding: self.onboarding.clone(),
+            remember_pick: self.pick_keeper.get().cloned().unwrap_or_default(),
         }))
     }
 
@@ -595,8 +608,22 @@ pub async fn start(
         moved: watch::Sender::new(()),
         shutdown: watch::Sender::new(false),
         staged_logins: Mutex::new(Vec::new()),
+        pick_keeper: std::sync::OnceLock::new(),
         analytics: std::sync::OnceLock::new(),
     });
+    let keeper = Arc::downgrade(&installation);
+    let _ = installation
+        .pick_keeper
+        .set(crate::spec::PickKeeper::new(move |picked| {
+            let Some(installation) = keeper.upgrade() else {
+                return;
+            };
+            match installation.settings.remember(&picked) {
+                Ok(Some(config)) => installation.apply(&config),
+                Ok(None) => {}
+                Err(error) => tracing::warn!(%error, "keeping a new agent default"),
+            }
+        }));
     let uploader = installation.start_analytics(telemetry);
 
     let listed = profiles::list(&installation.data_dir).map_err(StartError::Profiles)?;

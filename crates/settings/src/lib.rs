@@ -248,13 +248,10 @@ impl Default for AgentSettings {
     }
 }
 
-/// What a new agent starts with when a person starts one in the terminal
-/// client: per agent, the model, reasoning effort and permission. Shipped
-/// with real values, so a new agent always shows what it will run; a person
-/// changes them in the config file, and starting one beside a running chat
-/// copies that chat's instead. A file that sets some of an agent's values
-/// keeps the shipped ones for the rest.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// How a new agent starts on this host. amux ships no model or effort of its
+/// own: unset, the provider's own settings decide. A person's pick in amux's
+/// chat is kept here, and `claude_kind` chooses which Claude runs.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NewAgentSettings {
     pub claude: NewAgentDefaults,
     pub codex: NewAgentDefaults,
@@ -280,9 +277,10 @@ impl Serialize for NewAgentSettings {
     ) -> std::result::Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Claude<'a> {
-            model: &'a str,
-            effort: &'a str,
-            permission: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            model: &'a Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            effort: &'a Option<String>,
             #[serde(skip_serializing_if = "Option::is_none")]
             kind: Option<ClaudeKindSetting>,
         }
@@ -295,7 +293,6 @@ impl Serialize for NewAgentSettings {
             claude: Claude {
                 model: &self.claude.model,
                 effort: &self.claude.effort,
-                permission: &self.claude.permission,
                 kind: self.claude_kind,
             },
             codex: &self.codex,
@@ -310,73 +307,40 @@ impl<'de> Deserialize<'de> for NewAgentSettings {
     ) -> std::result::Result<Self, D::Error> {
         #[derive(Default, Deserialize)]
         #[serde(default)]
-        struct Given {
-            model: Option<String>,
-            effort: Option<String>,
-            permission: Option<String>,
-        }
-        #[derive(Default, Deserialize)]
-        #[serde(default)]
         struct GivenClaude {
             model: Option<String>,
             effort: Option<String>,
-            permission: Option<String>,
             kind: Option<ClaudeKindSetting>,
         }
         #[derive(Default, Deserialize)]
         #[serde(default)]
         struct Both {
             claude: GivenClaude,
-            codex: Given,
-        }
-        fn over(given: Given, shipped: NewAgentDefaults) -> NewAgentDefaults {
-            NewAgentDefaults {
-                model: given.model.unwrap_or(shipped.model),
-                effort: given.effort.unwrap_or(shipped.effort),
-                permission: given.permission.unwrap_or(shipped.permission),
-            }
+            codex: NewAgentDefaults,
         }
         let given = Both::deserialize(deserializer)?;
-        let shipped = Self::default();
-        let claude = Given {
-            model: given.claude.model,
-            effort: given.claude.effort,
-            permission: given.claude.permission,
-        };
         Ok(Self {
-            claude: over(claude, shipped.claude),
-            codex: over(given.codex, shipped.codex),
+            claude: NewAgentDefaults {
+                model: given.claude.model,
+                effort: given.claude.effort,
+            },
+            codex: given.codex,
             claude_kind: given.claude.kind,
         })
     }
 }
 
-/// One agent's starting model, effort and permission, in the agent's own
-/// words: a Claude alias or a Codex model id, the effort as the agent names
-/// it, and the permission by the value the agent's catalogue gives it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One agent's remembered starting model and effort, in the agent's own
+/// words: a Claude alias or a Codex model id, and the effort as the agent
+/// names it. Permission is left out on purpose: a one-off "never ask" must
+/// not become how every later agent starts.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct NewAgentDefaults {
-    pub model: String,
-    pub effort: String,
-    pub permission: String,
-}
-
-impl Default for NewAgentSettings {
-    fn default() -> Self {
-        Self {
-            claude: NewAgentDefaults {
-                model: "opus".into(),
-                effort: "high".into(),
-                permission: "default".into(),
-            },
-            codex: NewAgentDefaults {
-                model: "gpt-6.1-sol".into(),
-                effort: "medium".into(),
-                permission: "default".into(),
-            },
-            claude_kind: None,
-        }
-    }
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
 }
 
 /// Where the palette comes from: the terminal amux was started in, or a
@@ -642,7 +606,11 @@ pub fn installation_keys() -> Vec<String> {
         .expect("the default config serialises");
     let mut keys = vec![
         "host_name".to_owned(),
+        "new_agent.claude.effort".to_owned(),
         "new_agent.claude.kind".to_owned(),
+        "new_agent.claude.model".to_owned(),
+        "new_agent.codex.effort".to_owned(),
+        "new_agent.codex.model".to_owned(),
         "updates".to_owned(),
     ];
     leaves("", &default, &mut keys);
@@ -725,13 +693,10 @@ mod tests {
     }
 
     #[test]
-    fn an_agent_setting_given_alone_keeps_the_shipped_rest() {
+    fn an_agent_setting_given_alone_leaves_the_rest_to_the_provider() {
         let config = installation("[new_agent.claude]\nmodel = \"sonnet\"\n").unwrap();
-        assert_eq!(config.new_agent.claude.model, "sonnet");
-        assert_eq!(
-            config.new_agent.claude.effort,
-            NewAgentSettings::default().claude.effort
-        );
+        assert_eq!(config.new_agent.claude.model.as_deref(), Some("sonnet"));
+        assert_eq!(config.new_agent.claude.effort, None);
         assert_eq!(config.new_agent.codex, NewAgentSettings::default().codex);
     }
 
@@ -818,12 +783,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!(config.host_name(), "desk");
-        assert_eq!(config.new_agent.claude.model, "opus");
+        assert_eq!(config.new_agent.claude.model.as_deref(), Some("opus"));
         assert_eq!(
             config.ignored,
             [
                 "agent.facts_ring_segments",
                 "new_agent.claude.flavour",
+                "new_agent.claude.permission",
                 "prevent_idle_sleep",
                 "retention",
             ]
@@ -1009,7 +975,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(set.claude_kind(), ClaudeKindSetting::Sdk);
-        assert_eq!(set.new_agent.claude.model, "haiku");
+        assert_eq!(set.new_agent.claude.model.as_deref(), Some("haiku"));
         assert!(set.ignored.is_empty(), "{:?}", set.ignored);
         // It writes back where it was read from.
         let again = installation(&toml::to_string(&set).unwrap()).unwrap();
@@ -1074,7 +1040,17 @@ mod tests {
             "[new_agent.claude]\nmodel = \"haiku\"\neffort = \"low\"\npermission = \"default\"\n",
         )
         .unwrap();
-        assert_eq!(set.new_agent.claude.model, "haiku");
+        assert_eq!(set.new_agent.claude.model.as_deref(), Some("haiku"));
         assert_eq!(set.new_agent.codex, NewAgentSettings::default().codex);
+    }
+
+    #[test]
+    fn nothing_is_shipped_for_a_new_agent() {
+        let shipped = NewAgentSettings::default();
+        assert_eq!(shipped.claude, NewAgentDefaults::default());
+        assert_eq!(shipped.codex, NewAgentDefaults::default());
+        let written = toml::to_string(&InstallationConfig::default()).unwrap();
+        assert!(!written.contains("model ="), "{written}");
+        assert!(!written.contains("effort ="), "{written}");
     }
 }

@@ -519,7 +519,6 @@ fn choosing_another_host_drops_this_hosts_folder() {
         settings::ChatInSetting::Amux,
         "/Users/me/laptop-project",
         b"\x0a",
-        &settings::NewAgentSettings::default(),
     );
     setup.pick(crate::setup::Item::Host, "0b");
     assert_eq!(setup.host, b"\x0b".to_vec(), "the host changed");
@@ -1029,7 +1028,6 @@ fn raw_attach_to_a_stopped_agent_says_it_is_stopped() {
         local_host: b"a".to_vec(),
         layout: None,
         chat_in: settings::ChatInSetting::Amux,
-        defaults: settings::NewAgentSettings::default(),
     };
     for kind in [Kind::ClaudePty, Kind::Codex] {
         let stopped = wire::Agent {
@@ -1114,7 +1112,7 @@ fn an_invalid_new_agent_name_is_refused_on_the_spot() {
         Some("a-very-long-agent-name-that-fills-most-of-the-edge")
     );
     assert!(
-        edge.contains("opus") && edge.contains('…'),
+        edge.contains("a-very-long-agent-name-that…") && edge.contains("Claude · …"),
         "the name pushed the model off the edge instead of shortening: {edge:?}"
     );
 }

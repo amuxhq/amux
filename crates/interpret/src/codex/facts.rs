@@ -860,6 +860,7 @@ impl State {
                 models: self.models.clone(),
                 commands: super::offered_commands(),
                 permissions: super::offered_permissions(),
+                new_agent: None,
                 modes: super::offered_modes(),
                 skills: self.skills.iter().map(ListedSkill::offered).collect(),
             },

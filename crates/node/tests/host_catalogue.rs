@@ -182,6 +182,10 @@ async fn a_host_says_what_its_providers_offer_with_no_agent_running() {
         ["read-only", "default", "auto", "full-access"]
     );
     assert_eq!(values(&codex.modes, |m| &m.value), ["default", "plan"]);
+    assert!(
+        codex.new_agent.is_some() && claude.new_agent.is_some(),
+        "each provider says what a new agent would start with"
+    );
 
     // A second ask answers from the copy: neither provider runs again.
     assert_eq!(ask(&api, here, wire::Provider::Claude).await, claude);
@@ -577,4 +581,86 @@ async fn a_host_under_a_managed_mcp_config_still_asks_claude() {
     let api = node::ClientApi::new(&runtime, None);
     let claude = ask(&api, runtime.host(), wire::Provider::Claude).await;
     assert_eq!(values(&claude.models, |m| &m.value), ["opus"]);
+}
+
+/// A person's pick is what later agents start with, in every client's
+/// catalogue and in the agent's own launch.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_persons_pick_is_what_later_agents_start_with() {
+    use wire::create_agent_request::Agent;
+    use wire::{ClaudeCreateConfig, CreateAgentRequest, Kind};
+
+    let host = Host::new(&Script::default());
+    let daemon = host.install.start("boot-1", host.launch()).await;
+    let runtime = runtime(&daemon, &host.install);
+    let api = node::ClientApi::new(&runtime, None);
+    let here = runtime.host();
+    let cwd = host.install.path("work");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let create = |name: &str, model: Option<&str>, remember_model: bool| CreateAgentRequest {
+        agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+        name: Some(name.into()),
+        cwd: cwd.to_string_lossy().into_owned(),
+        agent: Some(Agent::ClaudeSdk(ClaudeCreateConfig {
+            model: model.map(str::to_owned),
+            ..Default::default()
+        })),
+        remember_model,
+        ..CreateAgentRequest::default()
+    };
+    let args_of = |agent: &wire::Agent| {
+        let bytes = std::fs::read(
+            host.install
+                .agent_dir(uuid::Uuid::from_slice(&agent.agent_id).unwrap())
+                .join("spec.1"),
+        )
+        .unwrap();
+        wire::AgentSpec::decode(bytes.as_slice())
+            .unwrap()
+            .provider_args
+    };
+    let before = ask(&api, here, wire::Provider::Claude).await;
+
+    let unpicked = runtime
+        .spawn(create("first", None, false), None)
+        .await
+        .unwrap();
+    assert!(
+        !args_of(&unpicked).contains(&"--model".to_owned()),
+        "with nothing kept, Claude decides"
+    );
+
+    runtime
+        .spawn(create("second", Some("haiku"), true), None)
+        .await
+        .unwrap();
+    let kept = ask(&api, here, wire::Provider::Claude).await;
+    assert_eq!(
+        kept.new_agent.as_ref().and_then(|new| new.model.as_deref()),
+        Some("haiku")
+    );
+    assert_ne!(kept, before);
+
+    let later = runtime
+        .spawn(create("third", None, false), None)
+        .await
+        .unwrap();
+    let args = args_of(&later);
+    assert!(
+        args.windows(2).any(|pair| pair == ["--model", "haiku"]),
+        "{args:?}"
+    );
+
+    // Claude in its own terminal keeps to Claude's settings.
+    let terminal = runtime
+        .spawn(
+            CreateAgentRequest {
+                agent: Agent::defaults(Kind::ClaudePty),
+                ..create("fourth", None, false)
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(!args_of(&terminal).contains(&"--model".to_owned()));
 }

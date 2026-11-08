@@ -3367,7 +3367,16 @@ pub(crate) fn activity_words(kind: &ActivityKind) -> String {
         ),
         ActivityKind::Compacting => "Compacting".to_owned(),
         ActivityKind::SafetyCheck => "Running safety checks".to_owned(),
-        ActivityKind::Retrying { attempt, .. } => format!("Retrying · attempt {attempt}"),
+        ActivityKind::Retrying {
+            attempt,
+            max_attempts: 0,
+            ..
+        } => format!("Retrying · attempt {attempt}"),
+        ActivityKind::Retrying {
+            attempt,
+            max_attempts,
+            ..
+        } => format!("Retrying · attempt {attempt} of {max_attempts}"),
         ActivityKind::Working | ActivityKind::Running { .. } => "Working".to_owned(),
     }
 }
@@ -3383,7 +3392,15 @@ fn quiet_activity(activity: &ui_state::Activity, width: usize, theme: Theme) -> 
     let words = activity_words(&activity.kind);
     let mut line = Line::from(Span::raw("    "));
     push(&mut line, words, theme.muted(), width);
-    if ms >= 1_000 {
+    if let ActivityKind::Retrying { retry_at_ms, .. } = activity.kind {
+        // How long until the next attempt says more than how long since the
+        // last. The activity's own clock is since plus elapsed.
+        let left = retry_at_ms.map_or(0, |at| at - activity.since_ms - activity.elapsed_ms);
+        if left >= 1_000 {
+            let left = text::duration(left - left % 1_000);
+            push(&mut line, format!(" · in {left}"), theme.faint(), width);
+        }
+    } else if ms >= 1_000 {
         let elapsed = text::duration(ms - ms % 1_000);
         push(&mut line, format!(" · {elapsed}"), theme.faint(), width);
     }
@@ -3945,4 +3962,47 @@ fn empty_feed(
         *line = centred;
     }
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn retrying_line(since_ms: i64, elapsed_ms: i64, retry_at_ms: Option<i64>) -> String {
+        let activity = ui_state::Activity {
+            kind: ActivityKind::Retrying {
+                attempt: 6,
+                max_attempts: 10,
+                retry_at_ms,
+            },
+            since_ms,
+            elapsed_ms,
+            turn_elapsed_ms: elapsed_ms,
+        };
+        quiet_activity(&activity, 80, Theme::default())
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>()
+            .trim()
+            .to_owned()
+    }
+
+    /// A retry counts down to its next attempt, and once that moment has
+    /// passed says only that it is trying.
+    #[test]
+    fn a_retry_says_when_the_next_attempt_is() {
+        assert_eq!(
+            retrying_line(1_000, 2_000, Some(22_000)),
+            "Retrying · attempt 6 of 10 · in 19s"
+        );
+        assert_eq!(
+            retrying_line(1_000, 21_000, Some(22_000)),
+            "Retrying · attempt 6 of 10"
+        );
+        assert_eq!(
+            retrying_line(1_000, 2_000, None),
+            "Retrying · attempt 6 of 10"
+        );
+    }
 }

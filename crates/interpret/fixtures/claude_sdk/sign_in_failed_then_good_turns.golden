@@ -23,18 +23,19 @@ item 70320000-0000-4000-8000-000000000000 prompt final input=p2 at=1800000000000
 snapshot WORKING queue=[] working_on="two" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_FAILED - background=?
 ## 6 fact {"channel":"stream","json":{"message":{"content":[{"text":"Fine now.","type":"text"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"type":"assistant","uuid":"m2"}}
 item m2:0 message final at=1800000000000 text="Fine now."
+snapshot WORKING queue=[] working_on="two" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
 ## 7 fact {"channel":"stream","json":{"duration_ms":10,"is_error":false,"subtype":"success","total_cost_usd":0.1,"type":"result","uuid":"r2"}}
 item turn:2 turn final at=1800000000000 text="" #2 TURN_OUTCOME_COMPLETED started=1799999999990
-snapshot IDLE queue=[] working_on="two" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_FAILED - background=?
+snapshot IDLE queue=[] working_on="two" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
 turn_end 2 last=m2:0
 ## 8 input {"id":"p3","prompt":{"text":"three"}}
 effect reply p3 accepted
 effect user 70330000-0000-4000-8000-000000000000 "three"
 item 70330000-0000-4000-8000-000000000000 prompt final input=p3 at=1800000000000 text="three"
-snapshot WORKING queue=[] working_on="three" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_FAILED - background=?
+snapshot WORKING queue=[] working_on="three" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
 ## 9 fact {"channel":"stream","json":{"message":{"content":[{"text":"Still fine.","type":"text"}],"id":"m3","model":"claude-opus-5-5","role":"assistant"},"type":"assistant","uuid":"m3"}}
 item m3:0 message final at=1800000000000 text="Still fine."
 ## 10 fact {"channel":"stream","json":{"duration_ms":10,"is_error":false,"subtype":"success","total_cost_usd":0.1,"type":"result","uuid":"r3"}}
 item turn:3 turn final at=1800000000000 text="" #3 TURN_OUTCOME_COMPLETED started=1799999999990
-snapshot IDLE queue=[] working_on="three" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_FAILED - background=?
+snapshot IDLE queue=[] working_on="three" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN - background=?
 turn_end 3 last=m3:0

@@ -332,10 +332,10 @@ fn body(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'sta
             attempts,
             gave_up,
         } => {
-            let meta = if *gave_up && *attempts > 1 {
-                format!("gave up after {attempts} tries")
-            } else {
-                String::new()
+            let meta = match (*gave_up, *attempts > 1) {
+                (true, true) => format!("gave up after {attempts} tries"),
+                (false, true) => format!("{attempts} tries"),
+                (_, false) => String::new(),
             };
             let subject = if error_kind.is_empty() {
                 first_line(message).to_owned()

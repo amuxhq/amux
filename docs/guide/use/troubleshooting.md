@@ -71,6 +71,9 @@ in the way:
 - **Claude or Codex needs you to sign in.** amux can't sign in for you. On the
   machine the agent runs on, run `claude` and sign in with `/login`, or run
   `codex login`.
+- **Can't reach Claude.** The request got no answer, usually because the
+  machine the agent runs on has lost its connection. Claude keeps trying by
+  itself, and the chat counts down to the next attempt.
 - **A usage limit is reached.** The agent's provider has a limit on how much
   you can use it. The agent's row and its chat say when the limit resets, and
   you can still type your next message in the meantime.

@@ -1416,6 +1416,100 @@ fn item_kinds(stepped: &interpret::Stepped) -> Vec<(String, String, String)> {
         .collect()
 }
 
+fn api_retry(uuid: &str, attempt: u32, error: &str, status: Option<u32>) -> Event {
+    stream(json!({
+        "type": "system", "subtype": "api_retry", "uuid": uuid, "session_id": "s",
+        "attempt": attempt, "max_retries": 10, "retry_delay_ms": 1000,
+        "error_status": status, "error": error,
+    }))
+}
+
+fn good_answer(uuid: &str) -> Event {
+    stream(json!({
+        "type": "assistant", "uuid": uuid, "session_id": "s",
+        "message": {
+            "id": uuid, "type": "message", "role": "assistant", "model": "claude-root",
+            "content": [{"type": "text", "text": "Fine now."}],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        },
+    }))
+}
+
+/// The sign-in state the step published, if it published one.
+fn sign_in_of(stepped: &interpret::Stepped) -> Option<wire::SignInState> {
+    sdk_snapshot(stepped)
+        .and_then(|(_, snapshot)| snapshot.sign_in)
+        .map(|sign_in| sign_in.state())
+}
+
+/// Claude working through a lost connection and a stray 401 is one row that
+/// moves on, says what went wrong in words, and is no sign-in problem. The
+/// next failure after an answer is a new row.
+#[test]
+fn a_run_of_retries_is_one_row_and_no_sign_in_problem() {
+    use prost::Message as _;
+    let mut state = idle_on_root();
+    ClaudeSdk::step(&mut state, stream(initialized(&[])));
+    let retries = [
+        ("r1", 1, "unknown", None, "", "Can't reach Claude"),
+        ("r2", 2, "unknown", None, "", "Can't reach Claude"),
+        (
+            "r3",
+            3,
+            "authentication_failed",
+            Some(401),
+            "authentication_failed",
+            "HTTP 401",
+        ),
+    ];
+    for (uuid, attempt, error, status, kind, message) in retries {
+        let stepped = ClaudeSdk::step(&mut state, api_retry(uuid, attempt, error, status));
+        assert_ne!(sign_in_of(&stepped), Some(wire::SignInState::Failed));
+        let [item] = &stepped.step.items[..] else {
+            panic!("one item: {:?}", stepped.step.items);
+        };
+        assert_eq!(item.key, "r1");
+        let Some(wire::claude_item::Kind::ApiError(row)) =
+            wire::ClaudeItem::decode(item.body.as_slice()).unwrap().kind
+        else {
+            panic!("an API error");
+        };
+        assert_eq!(
+            (row.error_kind.as_str(), row.message.as_str(), row.attempt),
+            (kind, message, attempt)
+        );
+        assert!(row.will_retry);
+    }
+    ClaudeSdk::step(&mut state, good_answer("m1"));
+    let stepped = ClaudeSdk::step(&mut state, api_retry("r4", 1, "unknown", None));
+    assert_eq!(stepped.step.items[0].key, "r4");
+}
+
+/// Claude stopping on a refused sign-in raises the card, and the next real
+/// answer takes it down: Claude says nothing else when the sign-in recovers.
+#[test]
+fn an_answer_from_the_model_ends_a_failed_sign_in() {
+    let mut state = idle_on_root();
+    ClaudeSdk::step(&mut state, stream(initialized(&[])));
+    let refused = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "assistant", "uuid": "e1", "session_id": "s", "error": "authentication_failed",
+            "message": {
+                "id": "e1", "type": "message", "role": "assistant", "model": "<synthetic>",
+                "content": [{"type": "text", "text": "Invalid API key"}],
+                "usage": {"input_tokens": 0, "output_tokens": 0},
+            },
+        })),
+    );
+    assert_eq!(sign_in_of(&refused), Some(wire::SignInState::Failed));
+    let answered = ClaudeSdk::step(&mut state, good_answer("m1"));
+    let (_, snapshot) = sdk_snapshot(&answered).expect("the sign-in changed");
+    let sign_in = snapshot.sign_in.expect("a sign-in state");
+    assert_eq!(sign_in.state(), wire::SignInState::SignedIn);
+    assert!(sign_in.message.is_empty());
+}
+
 /// A subagent's frames are its own: they start no turn, set no model or
 /// context, and draw nothing at the top level, not its text, thinking,
 /// error or interruption; its tool calls hang under the call that started

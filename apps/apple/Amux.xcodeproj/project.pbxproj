@@ -153,6 +153,7 @@
 		4EDD1CEB63161D803A79A9B3 /* components.composer-slash-light.png in Resources */ = {isa = PBXBuildFile; fileRef = F9A659C06ACC81C034B66E55 /* components.composer-slash-light.png */; };
 		5096CF7EEBA4DB106D829A8A /* components.ask-permission-create-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 4762EEEEBC63DA7B30B0C26B /* components.ask-permission-create-light.png */; };
 		5106CD688A312E655A041162 /* components.row-subagent-done-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 757787B49189F5DDD342BD5E /* components.row-subagent-done-dark.png */; };
+		51DB9E59479028C1F76E21AC /* components.row-prompt-quote-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = DDF37F1927AAAADC1BF76185 /* components.row-prompt-quote-dark.png */; };
 		51EFAFAF1370163A70B400E5 /* components.settings-paywall-light.png in Resources */ = {isa = PBXBuildFile; fileRef = EA810720E60CA54A54B1149A /* components.settings-paywall-light.png */; };
 		525EF880AEEEE49C657CF985 /* components.row-prose-working-note-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 805D717887BD6709C470725D /* components.row-prose-working-note-light.png */; };
 		52826887C352A1E902ECC213 /* components.chat-working-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = E78D7EB98A1F21AA719BFB69 /* components.chat-working-dark.png */; };
@@ -288,6 +289,7 @@
 		9078780D805CA12D48E45961 /* components.ask-not-confirmed-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 0F28BB90D79D277F851D042F /* components.ask-not-confirmed-light.png */; };
 		9130263490F890FEC042184F /* components.chat-paging-unreachable-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 86B00A7BE95F5390AE6962F9 /* components.chat-paging-unreachable-light.png */; };
 		9172787E1D5ACE4143F14310 /* components.row-file-change-large-text-light.png in Resources */ = {isa = PBXBuildFile; fileRef = BABD03770CD5B16F480193F1 /* components.row-file-change-large-text-light.png */; };
+		92CCC3786DED05EC9D81C9BF /* components.row-prompt-quote-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 304A990211246FA7F9701DDD /* components.row-prompt-quote-light.png */; };
 		9308FC83ECBD8BCD98284380 /* components.ask-permission-terminal-light.png in Resources */ = {isa = PBXBuildFile; fileRef = F460A9D995FBAC0E48BB9818 /* components.ask-permission-terminal-light.png */; };
 		930E8F9035647489836C24CA /* components.ask-link-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 1E80E1564DC79475C2BFD322 /* components.ask-link-dark.png */; };
 		936741FA3262BF40728CDC16 /* components.hosts-list-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 8BF1AA35074D785B860A3DC5 /* components.hosts-list-dark.png */; };
@@ -647,6 +649,7 @@
 		2F3A7B6C7E84ABD43275DF2C /* components.row-auto-review-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-auto-review-light.png"; sourceTree = "<group>"; };
 		2F7BF6A7C2601AB2CCA368C0 /* components.chat-plan-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.chat-plan-dark.png"; sourceTree = "<group>"; };
 		2F8FBBE370B5BBAEE692668B /* components.fleet-first-run-window-open-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.fleet-first-run-window-open-light.png"; sourceTree = "<group>"; };
+		304A990211246FA7F9701DDD /* components.row-prompt-quote-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-prompt-quote-light.png"; sourceTree = "<group>"; };
 		30C0098629296D8379C42FE7 /* components.chat-overview-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.chat-overview-light.png"; sourceTree = "<group>"; };
 		311332D6E3B3B4E21025AAFD /* components.composer-thinking-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.composer-thinking-dark.png"; sourceTree = "<group>"; };
 		31897EB68EF3D005F06E1542 /* components.chat-changes-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.chat-changes-dark.png"; sourceTree = "<group>"; };
@@ -963,6 +966,7 @@
 		DBFD5D04CE03E23D05ABA94A /* components.chat-paging-unreachable-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.chat-paging-unreachable-dark.png"; sourceTree = "<group>"; };
 		DC3D2C9220CDE6585946B0C0 /* components.ask-question-reply-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.ask-question-reply-light.png"; sourceTree = "<group>"; };
 		DC616885FAC427581E1996CC /* components.row-command-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-command-light.png"; sourceTree = "<group>"; };
+		DDF37F1927AAAADC1BF76185 /* components.row-prompt-quote-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-prompt-quote-dark.png"; sourceTree = "<group>"; };
 		DE931318B439503071F8949E /* components.pair-needs-account-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.pair-needs-account-dark.png"; sourceTree = "<group>"; };
 		DEA267907ED04173923F48F1 /* components.pair-sign-in-offered-offline-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.pair-sign-in-offered-offline-light.png"; sourceTree = "<group>"; };
 		DEC73A87EC252BF07E9F617C /* components.fleet-first-run-on-the-account-free-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.fleet-first-run-on-the-account-free-light.png"; sourceTree = "<group>"; };
@@ -1566,6 +1570,8 @@
 				523F4CABC2F42CC8CE0DFD34 /* components.row-prompt-attachments-light.png */,
 				368A0445AC16BBBED1ACA499 /* components.row-prompt-dark.png */,
 				45220B0C287DA91654FBB4BE /* components.row-prompt-light.png */,
+				DDF37F1927AAAADC1BF76185 /* components.row-prompt-quote-dark.png */,
+				304A990211246FA7F9701DDD /* components.row-prompt-quote-light.png */,
 				E3C49B4947DF9FE74B11419B /* components.row-prompt-steered-dark.png */,
 				E4712611210AA150F5921C5B /* components.row-prompt-steered-light.png */,
 				7CA633D6597DD871BFB43351 /* components.row-prose-dark.png */,
@@ -2269,6 +2275,8 @@
 				E84ACC5D0A64C772F8BA7303 /* components.row-prompt-attachments-light.png in Resources */,
 				25B5EAE23E655F6DAC70977F /* components.row-prompt-dark.png in Resources */,
 				E58B19DABFCCF09CF8579852 /* components.row-prompt-light.png in Resources */,
+				51DB9E59479028C1F76E21AC /* components.row-prompt-quote-dark.png in Resources */,
+				92CCC3786DED05EC9D81C9BF /* components.row-prompt-quote-light.png in Resources */,
 				5C3E9C28DB993391640A3D28 /* components.row-prompt-steered-dark.png in Resources */,
 				41522FFEE8F25989501A6A4A /* components.row-prompt-steered-light.png in Resources */,
 				7A7CFABC0D355BD52D12075C /* components.row-prose-dark.png in Resources */,

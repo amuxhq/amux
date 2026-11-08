@@ -16,6 +16,7 @@ use ui_view::{LIVE_STEPS, Row, RunCounts, ToolRows, chat_rows_for};
 
 use super::feed::{self, Header, LineHits, Placement};
 use super::rows::{RowFacts, RowState, row_lines};
+use super::selection::{FeedSelection, LineText, Piece, joined};
 use crate::theme::Theme;
 
 /// How a chat draws its runs of tool steps: the person's choice, kept for
@@ -107,6 +108,8 @@ pub struct Block {
     pub lines: Vec<Line<'static>>,
     /// What clicking along each line does, one entry per line.
     pub hits: Vec<LineHits>,
+    /// How each line reads when copied.
+    pub text: Vec<LineText>,
     pub toggle: Toggle,
 }
 
@@ -121,6 +124,8 @@ pub struct Laid {
     /// sit above the screen.
     pub blocks: Vec<Block>,
     pub top_offset: usize,
+    /// Blank lines padding a short chat above its first row.
+    pub pad: usize,
     /// The feed shows the newest row at its bottom.
     pub at_bottom: bool,
     /// An older page to ask for, and its size, when the reader is within a
@@ -194,12 +199,14 @@ impl Frame<'_> {
             return None;
         }
         let hits = vec![Vec::new(); lines.len()];
+        let text = lines.iter().map(LineText::of).collect();
         Some(Block {
             key: shown.id.clone(),
             order,
             row: shown,
             lines,
             hits,
+            text,
             toggle: Toggle::Row,
         })
     }
@@ -311,6 +318,7 @@ impl Frame<'_> {
             facts.patch = ui_view::patch_head(state, &row.id, usize::MAX);
         }
         let drawn = feed::row_lines(&row, &placement, expanded, &facts, self.width, self.theme)?;
+        let text = drawn.line_text();
         let mut lines = drawn.lines;
         if self.focus == Some(&row.id) {
             for line in &mut lines {
@@ -329,6 +337,7 @@ impl Frame<'_> {
             row,
             lines,
             hits: drawn.hits,
+            text,
             toggle,
         })
     }
@@ -444,8 +453,8 @@ impl Frame<'_> {
             .chain(self.tail.iter().map(|_| Vec::new()))
             .skip(top_offset)
             .collect();
-        if lines.len() < self.height {
-            let pad = self.height - lines.len();
+        let pad = self.height.saturating_sub(lines.len());
+        if pad > 0 {
             let mut padded = vec![Line::default(); pad];
             padded.append(&mut lines);
             lines = padded;
@@ -458,6 +467,7 @@ impl Frame<'_> {
             hits,
             blocks,
             top_offset,
+            pad,
             at_bottom: true,
             ..Laid::default()
         }
@@ -515,6 +525,36 @@ impl Frame<'_> {
             at_bottom: false,
             ..Laid::default()
         })
+    }
+
+    /// The words between a selection's ends, wrapped lines rejoined. Rows
+    /// scrolled out of view are drawn again to read them.
+    pub fn selected_text(&self, state: &SessionState, selection: &FeedSelection) -> String {
+        let (start, end) = selection.bounds();
+        let mut pieces = Vec::new();
+        for held in state.transcript().range(start.order..=end.order) {
+            let order = held.item.order;
+            let Some(block) = self.block(state, order) else {
+                continue;
+            };
+            for (at, line) in block.lines.iter().enumerate() {
+                if !selection.covers(order, at) {
+                    continue;
+                }
+                let text = block.text[at];
+                let piece = selection
+                    .columns(order, at, text)
+                    .map_or_else(String::new, |(from, to)| {
+                        crate::text::columns(line, from, to)
+                    });
+                pieces.push(Piece {
+                    text: piece,
+                    join: text.join,
+                    exact: text.exact,
+                });
+            }
+        }
+        joined(&pieces)
     }
 
     /// The anchor `lines` above (negative) or below the top of `laid`;

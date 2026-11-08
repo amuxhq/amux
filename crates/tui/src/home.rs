@@ -19,19 +19,30 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use settings::ChatInSetting;
+use sha2::{Digest, Sha256};
 use ui_state::{ActivityKind, AgentKey, Attention, Connection, FleetState};
 use ui_view::{
     ActivityLine, ExitCause, FleetRow, FleetSection, FleetView, Offline, Reach, SecondLine,
     SectionKind, SessionLine,
 };
-use wire::{Attachment, Kind, Lifecycle, Said, Wants};
+use wire::{Attachment, Kind, Lifecycle, Said, Wants, attachment};
 
 use crate::chat::composer::editor_lines;
+use crate::clipboard::{Clip, ClipboardContent};
 use crate::editor::Editor;
 use crate::hosts;
 use crate::setup::{Form, FormHit, FormOutcome, Item as Setting, Pick, Picker, Setup};
 use crate::text::{self, pad_to, push};
 use crate::theme::Theme;
+
+/// A file on a new agent's draft. Files are stored in their agent's
+/// directory, and this agent does not exist yet, so the draft holds the
+/// bytes until it does.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HeldFile {
+    pub blob: wire::BlobRef,
+    pub bytes: Vec<u8>,
+}
 
 /// What a fleet key asks the event loop to do.
 #[derive(Clone, Debug, PartialEq)]
@@ -44,8 +55,12 @@ pub enum FleetEffect {
         setup: Box<Setup>,
         text: String,
         attachments: Vec<Attachment>,
+        /// The files among `attachments`, to store once the agent exists.
+        files: Vec<HeldFile>,
         open: bool,
     },
+    /// Ctrl+V in the new agent's draft: read the clipboard into it.
+    PasteClipboard,
     Rename {
         agent: AgentKey,
         name: String,
@@ -165,6 +180,8 @@ impl Laid {
 #[derive(Debug, Default)]
 pub struct Draft {
     pub editor: Editor,
+    /// The files attached to the draft, as bytes until the agent exists.
+    files: Vec<HeldFile>,
     /// What will run it and where; filled from the defaults when it first
     /// shows.
     pub setup: Option<Setup>,
@@ -437,6 +454,55 @@ impl Home {
             (None, Some(filter)) if self.filtering => filter.kill_all(),
             _ => false,
         }
+    }
+
+    /// What Ctrl+V found in the new agent's draft: text follows the paste
+    /// rules, an image or a file waits with the draft.
+    pub fn paste_clipboard(&mut self, content: ClipboardContent) -> Result<(), String> {
+        if !self.draft.open || self.draft.starting {
+            return Ok(());
+        }
+        match crate::clipboard::clip(content)? {
+            Clip::Text(text) => self.draft.editor.paste(&text),
+            Clip::File { name, mime, bytes } => {
+                let blob = wire::BlobRef {
+                    hash: Sha256::digest(&bytes).to_vec(),
+                    size: bytes.len() as u64,
+                    name,
+                    mime,
+                };
+                self.draft
+                    .editor
+                    .attach(crate::clipboard::blob_attachment(blob.clone()));
+                self.draft.files.push(HeldFile { blob, bytes });
+            }
+            Clip::Nothing => {}
+        }
+        Ok(())
+    }
+
+    /// The held files the draft still has; one whose chip was deleted is
+    /// not stored.
+    fn files_in_draft(&self) -> Vec<HeldFile> {
+        let attached: Vec<&wire::BlobRef> = self
+            .draft
+            .editor
+            .attachments()
+            .iter()
+            .filter_map(|attachment| match &attachment.of {
+                Some(attachment::Of::Image(blob) | attachment::Of::File(blob)) => Some(blob),
+                _ => None,
+            })
+            .collect();
+        let mut files: Vec<HeldFile> = Vec::new();
+        for file in &self.draft.files {
+            if attached.iter().any(|blob| blob.hash == file.blob.hash)
+                && !files.iter().any(|kept| kept.blob.hash == file.blob.hash)
+            {
+                files.push(file.clone());
+            }
+        }
+        files
     }
 
     /// A bracketed paste types into whichever field has the keys. A name
@@ -866,6 +932,7 @@ impl Home {
                         setup: setup.started(fleet),
                         text: String::new(),
                         attachments: Vec::new(),
+                        files: Vec::new(),
                         open: true,
                     }]
                 }
@@ -906,6 +973,7 @@ impl Home {
         }
         match key.code {
             KeyCode::Esc => self.leave_draft(),
+            KeyCode::Char('v') if ctrl => return vec![FleetEffect::PasteClipboard],
             KeyCode::Char('s') if ctrl => self.draft.prefix = true,
             KeyCode::BackTab => {
                 if let Some(setup) = &mut self.draft.setup {
@@ -930,6 +998,7 @@ impl Home {
                     setup: setup.started(fleet),
                     text: self.draft.editor.text().trim_end().to_owned(),
                     attachments: self.draft.editor.attachments().to_vec(),
+                    files: self.files_in_draft(),
                     open: !ctrl,
                 }];
             }
@@ -1031,6 +1100,7 @@ impl Home {
                             setup: setup.started(fleet),
                             text: String::new(),
                             attachments: Vec::new(),
+                            files: Vec::new(),
                             open: true,
                         }];
                     }

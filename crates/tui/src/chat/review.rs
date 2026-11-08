@@ -9,6 +9,8 @@
 //! attachment in the chat's draft, which the chat keeps in step with the
 //! page as comments are saved and deleted.
 
+use std::collections::HashSet;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Frame as Paint;
 use ratatui::layout::{Position, Rect};
@@ -95,6 +97,10 @@ pub struct ReviewPage {
     list_top: usize,
     /// The list's files on the last frame, for clicks: (row, columns, file).
     list_spots: Vec<(u16, (u16, u16), usize)>,
+    /// Where the stream was last drawn, and the columns of each of its
+    /// rows that are a diff's gutter rather than code.
+    stream_area: Rect,
+    stream_gutters: Vec<u16>,
     /// The list's files on the last frame by the column's own lines.
     list_rows: Vec<(usize, usize)>,
 }
@@ -119,6 +125,8 @@ impl ReviewPage {
             order: Vec::new(),
             list_top: 0,
             list_spots: Vec::new(),
+            stream_area: Rect::default(),
+            stream_gutters: Vec::new(),
             list_rows: Vec::new(),
         };
         page.reorder();
@@ -359,6 +367,16 @@ impl ReviewPage {
         }
     }
 
+    /// Where a drag selects text.
+    pub fn stream_area(&self) -> Rect {
+        self.stream_area
+    }
+
+    /// The columns of each of the stream's rows that are not code.
+    pub fn stream_gutters(&self) -> &[u16] {
+        &self.stream_gutters
+    }
+
     /// A click on the page: a file in the list takes the stream to it.
     pub fn click(&mut self, x: u16, y: u16) {
         let file = self
@@ -526,7 +544,7 @@ impl ReviewPage {
         } else {
             width
         };
-        let (body, selected, cursor) = self.body(stream_width, theme);
+        let (body, selected, cursor, code_rows, gutter) = self.body(stream_width, theme);
         // A blank above the header keeps it off the terminal's edge, as in
         // the chat; a blank under it.
         let top = vec![Line::default(), self.title(width, theme), Line::default()];
@@ -541,6 +559,15 @@ impl ReviewPage {
             self.scroll = (last + 1).saturating_sub(body_height);
         }
         self.scroll = self.scroll.min(body.len().saturating_sub(body_height));
+        self.stream_gutters = (self.scroll..self.scroll + body_height)
+            .map(|row| {
+                if code_rows.contains(&row) {
+                    gutter as u16
+                } else {
+                    0
+                }
+            })
+            .collect();
         let stream: Vec<Line<'static>> = body
             .into_iter()
             .skip(self.scroll)
@@ -589,6 +616,12 @@ impl ReviewPage {
         lines.push(hint);
         paint.render_widget(Paragraph::new(lines), area);
         let stream_x = if list_shown { list_width + 1 } else { 0 };
+        self.stream_area = Rect {
+            x: area.x + stream_x as u16,
+            y: area.y + body_top as u16,
+            width: stream_width as u16,
+            height: body_height as u16,
+        };
         if let Some((col, row)) = list_cursor {
             paint.set_cursor_position(Position::new(
                 area.x + col as u16,
@@ -785,7 +818,13 @@ impl ReviewPage {
         &self,
         width: usize,
         theme: Theme,
-    ) -> (Vec<Line<'static>>, (usize, usize), Option<(usize, usize)>) {
+    ) -> (
+        Vec<Line<'static>>,
+        (usize, usize),
+        Option<(usize, usize)>,
+        HashSet<usize>,
+        usize,
+    ) {
         let digits = self
             .doc
             .files
@@ -803,6 +842,7 @@ impl ReviewPage {
         let mut lines: Vec<Line<'static>> = Vec::new();
         let mut selected = (0, 0);
         let mut cursor = None;
+        let mut code_rows = HashSet::new();
         for (t, target) in self.targets.iter().enumerate() {
             let is_selected = t == self.at.min(self.targets.len().saturating_sub(1));
             let bar = if is_selected {
@@ -902,6 +942,7 @@ impl ReviewPage {
                     if diff_line.kind != LineKind::Context {
                         text::fill(&mut row, style, width);
                     }
+                    code_rows.insert(lines.len());
                     lines.push(row);
                     &diff_line.comments
                 }
@@ -950,7 +991,7 @@ impl ReviewPage {
             );
             lines.push(line);
         }
-        (lines, selected, cursor)
+        (lines, selected, cursor, code_rows, gutter)
     }
 }
 

@@ -1,6 +1,18 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "> The retry only fires when the socket closes cleanly.\n\nOh **really**?" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "> The retry only fires when the socket closes cleanly.\n\nOh **really**?"
+          }
+        }
+      }
+    },
     "      Code::InvalidPin => \"wrong PIN\"," : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState" : "manual",
@@ -3841,6 +3853,18 @@
         }
       }
     },
+    "p4" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "p4"
+          }
+        }
+      }
+    },
     "page" : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState" : "manual",
@@ -3993,6 +4017,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "prompt-attachments"
+          }
+        }
+      }
+    },
+    "prompt-quote" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "prompt-quote"
           }
         }
       }

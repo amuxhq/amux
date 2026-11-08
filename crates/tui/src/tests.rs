@@ -24,6 +24,7 @@ const H: u16 = 30;
 mod narrow;
 mod onboarding;
 mod round2;
+mod selection;
 mod text_layout;
 
 fn theme() -> Theme {
@@ -1469,6 +1470,7 @@ fn raw_attach_is_only_for_terminals_on_this_machine() {
         local_host: b"a".to_vec(),
         layout: None,
         chat_in: settings::ChatInSetting::Amux,
+        system_clipboard: false,
     };
     let agent = |host: &[u8], kind: Kind| wire::Agent {
         host_id: host.to_vec(),
@@ -3145,16 +3147,18 @@ fn click(view: &mut ChatView, state: &SessionState, screen: &str, words: &str) -
         .lines()
         .position(|line| line.contains(words))
         .unwrap_or_else(|| panic!("{words} is not on\n{screen}"));
+    let press = |kind| MouseEvent {
+        kind,
+        column: 6,
+        row: row as u16,
+        modifiers: KeyModifiers::NONE,
+    };
     view.mouse(
         state,
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column: 6,
-            row: row as u16,
-            modifiers: KeyModifiers::NONE,
-        },
+        press(MouseEventKind::Down(MouseButton::Left)),
         theme(),
-    )
+    );
+    view.mouse(state, press(MouseEventKind::Up(MouseButton::Left)), theme())
 }
 
 /// Tool steps between two replies fold to one line of counts, which opens

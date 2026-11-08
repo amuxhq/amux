@@ -6,6 +6,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::chat::selection::Join;
 use crate::theme::Theme;
 
 /// Display width in terminal cells: CJK and emoji two, combining marks zero.
@@ -143,6 +144,49 @@ pub(crate) fn push_hints(
         cut(line);
     }
     spots
+}
+
+/// Whether a character at `at` of `width` has a cell in `from..to`.
+fn covered(at: usize, width: usize, from: usize, to: usize) -> bool {
+    at < to && at + width.max(1) > from
+}
+
+/// The characters of `line` with a cell in `from..to`.
+pub(crate) fn columns(line: &Line<'_>, from: usize, to: usize) -> String {
+    let mut out = String::new();
+    let mut at = 0;
+    for span in &line.spans {
+        for grapheme in span.content.graphemes(true) {
+            let width = str_width(grapheme);
+            if covered(at, width, from, to) {
+                out.push_str(grapheme);
+            }
+            at += width;
+        }
+    }
+    out
+}
+
+/// `line` with columns `from..to` patched by `style`.
+pub(crate) fn highlight(line: &mut Line<'static>, from: usize, to: usize, style: Style) {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut at = 0;
+    for span in &line.spans {
+        for grapheme in span.content.graphemes(true) {
+            let width = str_width(grapheme);
+            let ink = if covered(at, width, from, to) {
+                span.style.patch(style)
+            } else {
+                span.style
+            };
+            match spans.last_mut() {
+                Some(last) if last.style == ink => last.content.to_mut().push_str(grapheme),
+                _ => spans.push(Span::styled(grapheme.to_owned(), ink)),
+            }
+            at += width;
+        }
+    }
+    line.spans = spans;
 }
 
 /// Columns between tab stops in an agent's code.
@@ -352,12 +396,21 @@ pub(crate) fn wrap(text: &str, width: usize) -> Vec<String> {
 /// starts on the next line, leaving the first piece empty, as does all of
 /// it when no room is left at all.
 pub(crate) fn wrap_after(text: &str, first: usize, width: usize) -> Vec<String> {
+    wrap_after_joined(text, first, width)
+        .into_iter()
+        .map(|(line, _)| line)
+        .collect()
+}
+
+/// [`wrap_after`], with how each line continues the one before it.
+pub(crate) fn wrap_after_joined(text: &str, first: usize, width: usize) -> Vec<(String, Join)> {
     let width = width.max(1);
     let first = first.min(width);
-    let mut out: Vec<String> = Vec::new();
+    let mut out: Vec<(String, Join)> = Vec::new();
     for paragraph in text.split('\n') {
         let mut line = String::new();
         let mut used = 0usize;
+        let mut join = Join::New;
         for word in words(paragraph) {
             let limit = if out.is_empty() { first } else { width };
             let w = str_width(word);
@@ -367,12 +420,14 @@ pub(crate) fn wrap_after(text: &str, first: usize, width: usize) -> Vec<String> 
                 continue;
             }
             if word.trim().is_empty() {
-                out.push(std::mem::take(&mut line));
+                out.push((std::mem::take(&mut line), join));
+                join = Join::Space;
                 used = 0;
                 continue;
             }
             if !line.is_empty() || (out.is_empty() && w <= width) {
-                out.push(std::mem::take(&mut line).trim_end().to_owned());
+                out.push((std::mem::take(&mut line).trim_end().to_owned(), join));
+                join = Join::Space;
             }
             let mut rest = word;
             loop {
@@ -383,7 +438,8 @@ pub(crate) fn wrap_after(text: &str, first: usize, width: usize) -> Vec<String> 
                 if limit == 0 {
                     // A full first line takes nothing; the word starts on
                     // the next.
-                    out.push(std::mem::take(&mut line).trim_end().to_owned());
+                    out.push((std::mem::take(&mut line).trim_end().to_owned(), join));
+                    join = Join::Space;
                     continue;
                 }
                 let head = clip_to_width(rest, limit);
@@ -392,13 +448,14 @@ pub(crate) fn wrap_after(text: &str, first: usize, width: usize) -> Vec<String> 
                 } else {
                     head
                 };
-                out.push(head.to_owned());
+                out.push((head.to_owned(), join));
+                join = Join::Tight;
                 rest = &rest[head.len()..];
             }
             line.push_str(rest);
             used = str_width(rest);
         }
-        out.push(line.trim_end().to_owned());
+        out.push((line.trim_end().to_owned(), join));
     }
     out
 }

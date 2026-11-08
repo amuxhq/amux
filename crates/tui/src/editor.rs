@@ -191,6 +191,43 @@ impl Editor {
         }
     }
 
+    /// Quotes `words` at the cursor as markdown `> ` lines of their own, a
+    /// blank line either side, leaving the cursor where the reply goes.
+    pub fn quote(&mut self, words: &str) {
+        let before = &self.text[..self.cursor];
+        let mut block = String::new();
+        if !before.is_empty() {
+            if !before.ends_with('\n') {
+                block.push('\n');
+            }
+            if !before.ends_with("\n\n") {
+                block.push('\n');
+            }
+        }
+        for line in words.lines() {
+            block.push('>');
+            if !line.is_empty() {
+                block.push(' ');
+                block.push_str(line);
+            }
+            block.push('\n');
+        }
+        block.push('\n');
+        self.insert_str(&block);
+    }
+
+    /// Removes characters `from..to`, counted as the cursor is.
+    pub fn remove_chars(&mut self, from: usize, to: usize) {
+        let byte = |chars: usize| {
+            self.text
+                .char_indices()
+                .nth(chars)
+                .map_or(self.text.len(), |(at, _)| at)
+        };
+        let (from, to) = (byte(from), byte(to));
+        self.cut(from, to);
+    }
+
     /// How many attachments sit before byte offset `at`.
     fn index_at(&self, at: usize) -> usize {
         self.text[..at].matches(PLACEHOLDER).count()

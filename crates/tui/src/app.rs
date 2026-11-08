@@ -59,6 +59,9 @@ pub struct TuiConfig {
     /// Where the person chats with their agents: in amux, or in each
     /// agent's own terminal, attached on start.
     pub chat_in: settings::ChatInSetting,
+    /// This client runs on the machine the person sits at, so a copy can
+    /// go straight to its clipboard as well as through the terminal.
+    pub system_clipboard: bool,
 }
 
 /// How this client lays its screens out, kept between runs: a person's
@@ -69,6 +72,9 @@ pub struct Layout {
     /// The chat's overview pane stays open across chats until closed.
     #[serde(default)]
     pub overview: bool,
+    /// Text dragged over in a chat stays off the clipboard until `c`.
+    #[serde(default)]
+    pub no_copy_on_select: bool,
     /// What a chat's changes are counted against.
     #[serde(default)]
     pub comparison: crate::chat::Comparison,
@@ -348,6 +354,136 @@ fn terminal_elsewhere(agent: &Agent, config: &TuiConfig) -> Option<&'static str>
 }
 
 /// A composer's words and attachments, as the daemon keeps them.
+/// How long a new agent's first file waits to be taken: an agent on another
+/// host reaches this daemon's list a moment after its create call returns.
+const STORE_TRIES: u32 = 8;
+
+/// Stores a file with its new agent. Refused as an unknown agent, it tries
+/// again while the agent's row is on its way.
+async fn store_file(
+    client: &dyn Client,
+    agent_id: &[u8],
+    file: crate::home::HeldFile,
+) -> Result<(), String> {
+    let request = wire::PutBlobRequest {
+        agent_id: agent_id.to_vec(),
+        name: file.blob.name.clone(),
+        mime: file.blob.mime.clone(),
+        bytes: file.bytes,
+    };
+    let mut wait = Duration::from_millis(100);
+    for attempt in 1..=STORE_TRIES {
+        match client.put_blob(request.clone()).await {
+            Ok(_) => return Ok(()),
+            Err(error)
+                if error.code() == Some(wire::ErrorCode::NotFound) && attempt < STORE_TRIES =>
+            {
+                tokio::time::sleep(wait).await;
+                wait *= 2;
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Err("its agent never appeared".to_owned())
+}
+
+/// A new agent whose first prompt carries files: created without the
+/// prompt, since files are stored in an agent's directory, then the files,
+/// then the prompt. A failure after the create leaves the agent running:
+/// the second value says why and holds the draft for its composer, less any
+/// file that was not stored.
+async fn start_with_files(
+    client: &dyn Client,
+    setup: &crate::setup::Setup,
+    text: &str,
+    attachments: Vec<wire::Attachment>,
+    files: Vec<crate::home::HeldFile>,
+) -> Result<(wire::Agent, Option<(String, wire::Draft)>), String> {
+    let agent = client
+        .create_agent(setup.request(inputs::input_id(), None))
+        .await
+        .map_err(|error| error.to_string())?;
+    let mut failed: Vec<(Vec<u8>, String, String)> = Vec::new();
+    for file in files {
+        let (hash, name) = (file.blob.hash.clone(), file.blob.name.clone());
+        if let Err(why) = store_file(client, &agent.agent_id, file).await {
+            failed.push((hash, name, why));
+        }
+    }
+    if let Some((_, name, why)) = failed.first() {
+        let hashes: Vec<&[u8]> = failed.iter().map(|(hash, ..)| hash.as_slice()).collect();
+        let why = format!("could not attach {name}: {why}; your message is in its composer");
+        return Ok((
+            agent,
+            Some((why, without_files(text, attachments, &hashes))),
+        ));
+    }
+    let kept = wire::Draft {
+        text: text.to_owned(),
+        attachments: attachments.clone(),
+    };
+    let Some(input) = inputs::prompt(setup.kind(), text, attachments) else {
+        let why = "your first message could not be sent; it is in the composer".to_owned();
+        return Ok((agent, Some((why, kept))));
+    };
+    let request = wire::SendInputRequest {
+        agent_id: agent.agent_id.clone(),
+        input: Some(input),
+    };
+    let trouble = first_message_trouble(client.send_input(request).await).map(|why| (why, kept));
+    Ok((agent, trouble))
+}
+
+/// What to say of a first message that was not plainly accepted, for the
+/// words waiting in the composer. A reply lost on the way may mean it
+/// arrived, so that says to look before sending it again.
+fn first_message_trouble(
+    outcome: Result<wire::SendInputResponse, client::RpcError>,
+) -> Option<String> {
+    const MAY_HAVE: &str = "your first message may have reached the agent: check before sending \
+                            it again. It is in the composer";
+    let not_sent =
+        |why: String| format!("your first message was not sent: {why}; it is in the composer");
+    match outcome {
+        Ok(reply) => match reply.of {
+            Some(wire::send_input_response::Of::Accepted(_)) => None,
+            Some(wire::send_input_response::Of::Rejected(rejected)) => Some(not_sent(
+                crate::chat::refusal_words(&ui_state::refusal(&rejected)),
+            )),
+            None => Some(MAY_HAVE.to_owned()),
+        },
+        Err(client::RpcError::Transport(_)) => Some(MAY_HAVE.to_owned()),
+        Err(error) if error.code() == Some(wire::ErrorCode::Aborted) => Some(MAY_HAVE.to_owned()),
+        Err(error) => Some(not_sent(error.to_string())),
+    }
+}
+
+/// A draft less the attachments holding one of `hashes`, each with its
+/// place in the text.
+fn without_files(text: &str, attachments: Vec<wire::Attachment>, hashes: &[&[u8]]) -> wire::Draft {
+    let mut remaining = attachments.into_iter();
+    let mut draft = wire::Draft::default();
+    for c in text.chars() {
+        if c != attachments::PLACEHOLDER {
+            draft.text.push(c);
+            continue;
+        }
+        let Some(attachment) = remaining.next() else {
+            continue;
+        };
+        let lost = matches!(
+            &attachment.of,
+            Some(wire::attachment::Of::Image(blob) | wire::attachment::Of::File(blob))
+                if hashes.contains(&blob.hash.as_slice())
+        );
+        if !lost {
+            draft.text.push(c);
+            draft.attachments.push(attachment);
+        }
+    }
+    draft
+}
+
 fn composer_draft(editor: &crate::editor::Editor) -> wire::Draft {
     wire::Draft {
         text: editor.text().to_owned(),
@@ -462,6 +598,9 @@ impl App {
             if state.phase() == PhaseView::Working || state.transcript().is_empty() {
                 at(Instant::now() + Duration::from_millis(250));
             }
+            if chat.view.selecting_past_edge() {
+                at(Instant::now() + Duration::from_millis(60));
+            }
         }
         if let Some(renew) = self.desk_next_tick() {
             at(renew);
@@ -477,6 +616,11 @@ impl App {
     /// Drops what has expired; true when that changed the screen.
     pub fn tick(&mut self) -> bool {
         self.desk_tick();
+        let theme = self.theme();
+        if let Some(chat) = &mut self.chat {
+            let state = chat.session.state();
+            chat.view.edge_tick(&state, theme);
+        }
         let mut changed = false;
         if self
             .quit_armed
@@ -545,6 +689,7 @@ impl App {
                         view.pane_folds = self.layout.folds_of(&agent.agent);
                         view.comparison = self.layout.comparison;
                         view.tools = self.layout.tools_of(&agent.agent);
+                        view.copy_on_select = !self.layout.no_copy_on_select;
                         self.home.select(agent.clone());
                         self.chat = Some(OpenChat {
                             session,
@@ -948,11 +1093,7 @@ impl App {
             KeyCode::Char('y') => {
                 if let Some(text) = chat.view.copy_text() {
                     drop(state);
-                    match crate::terminal::write_osc52(&mut std::io::stdout(), &text) {
-                        Ok(Some(notice)) => self.notice(notice, Tone::Info),
-                        Ok(None) => self.notice("copied", Tone::Info),
-                        Err(error) => self.notice(format!("could not copy: {error}"), Tone::Warn),
-                    }
+                    self.copy(&text, true);
                 }
             }
             KeyCode::Char('n') => {
@@ -1087,11 +1228,46 @@ impl App {
             FleetEffect::Report => self.report_asked = true,
             FleetEffect::Open(agent) => self.open(agent),
             FleetEffect::Attach(agent) => return self.raw_attach(&agent),
+            FleetEffect::PasteClipboard => {
+                if let Err(error) = self.home.paste_clipboard(read_clipboard()) {
+                    self.notice(error, Tone::Warn);
+                }
+            }
+            FleetEffect::Start {
+                setup,
+                text,
+                attachments,
+                files,
+                open,
+            } if !files.is_empty() => {
+                let attach = setup.chat_in == settings::ChatInSetting::Native;
+                let fleet = self.fleet.clone();
+                let events = self.events.clone();
+                self.spawn(async move {
+                    let (agent, trouble) =
+                        match start_with_files(&*client, &setup, &text, attachments, files).await {
+                            Ok(started) => started,
+                            Err(error) => return Some(AppEvent::StartFailed(error)),
+                        };
+                    // The agent runs either way: what could not be sent
+                    // waits in its composer, and says why.
+                    if let Some((why, draft)) = trouble {
+                        fleet.keep_draft(&ui_state::agent_key(&agent), draft);
+                        let _ = events.send(AppEvent::Notice(why, Tone::Warn));
+                    }
+                    Some(AppEvent::Started {
+                        agent,
+                        open,
+                        attach,
+                    })
+                });
+            }
             FleetEffect::Start {
                 setup,
                 text,
                 attachments,
                 open,
+                ..
             } => {
                 let attach = setup.chat_in == settings::ChatInSetting::Native;
                 self.spawn(async move {
@@ -1358,8 +1534,24 @@ impl App {
                 return self.raw_attach(&agent);
             }
             ChatEffect::Notice(words) => self.notice(words, Tone::Info),
+            ChatEffect::Copy(text) => self.copy(&text, false),
         }
         None
+    }
+
+    /// Text onto the clipboard: this machine's directly when it is the one
+    /// the person sits at, since a terminal may refuse the sequence that
+    /// reaches it from over ssh. `announce` says so in the notice line.
+    fn copy(&mut self, text: &str, announce: bool) {
+        if self.config.system_clipboard {
+            crate::clipboard::write_text(text);
+        }
+        match crate::terminal::write_osc52(&mut std::io::stdout(), text) {
+            Ok(Some(notice)) => self.notice(notice, Tone::Info),
+            Ok(None) if announce => self.notice("copied", Tone::Info),
+            Ok(None) => {}
+            Err(error) => self.notice(format!("could not copy: {error}"), Tone::Warn),
+        }
     }
 
     /// Hands the terminal to the agent's own interface when it is on this
@@ -2087,6 +2279,26 @@ fn ctrl_held(key: &KeyEvent) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_first_message_is_kept_unless_the_agent_accepted_it() {
+        use wire::send_input_response::Of;
+
+        use super::first_message_trouble as trouble;
+        let reply = |of| Ok(wire::SendInputResponse { of: Some(of) });
+        assert_eq!(trouble(reply(Of::Accepted(Default::default()))), None);
+        let refused = trouble(reply(Of::Rejected(wire::Rejected {
+            detail: Some("the agent has exited".into()),
+            ..Default::default()
+        })))
+        .expect("a refusal keeps the draft");
+        assert!(refused.contains("not sent"), "{refused}");
+        assert!(refused.contains("the agent has exited"), "{refused}");
+        let lost = trouble(Err(client::RpcError::Transport("reset".into())))
+            .expect("a lost reply keeps the draft");
+        assert!(lost.contains("may have reached"), "{lost}");
+        assert!(trouble(Ok(wire::SendInputResponse { of: None })).is_some());
+    }
+
     use super::open_url;
 
     #[test]

@@ -1028,6 +1028,7 @@ fn raw_attach_to_a_stopped_agent_says_it_is_stopped() {
         local_host: b"a".to_vec(),
         layout: None,
         chat_in: settings::ChatInSetting::Amux,
+        system_clipboard: false,
     };
     for kind in [Kind::ClaudePty, Kind::Codex] {
         let stopped = wire::Agent {

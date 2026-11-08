@@ -102,12 +102,22 @@ its folder and host, how much of its context it has used, and
 - **Ctrl+X** interrupts the turn. The agent stays ready for your next message.
 - **Shift+Tab** steps through the agent's modes or permissions, such as
   Claude's plan mode or accept edits.
-- **Ctrl+V** attaches an image or file from the clipboard. A long paste
-  becomes a single chip rather than filling the box.
+- **Ctrl+V** attaches an image or file from the clipboard, in a new agent's
+  first message too. A long paste becomes a single chip rather than filling
+  the box.
 - **Ctrl+O** opens the overview beside the chat: the agent's tasks, its
   background jobs, the files it changed, and how close it is to its usage
   limits.
 - **Shift+Enter** or **Ctrl+J** starts a new line.
+- **Drag** over text to select it. It's copied when you let go, and the keys
+  it offers appear under the box: **R** quotes it in your reply and **Esc**
+  lets it go. Any other key lets it go and types as usual.
+
+Text between `**` or `*` shows bold or italic as you type, and a `` ` `` pair
+shows as code; the marks stay so you can edit them. A quote collapses once
+you move out of it if it's long. Click the count to open it again, or press
+Backspace just below it to remove the whole quote. Once sent, your message
+renders as markdown, like the agent's replies.
 
 The agent's tool steps fold into one line between its replies, such as
 `▸ 3 commands · 2 edits · 4 reads`. Click it to see each step, and click a
@@ -195,11 +205,13 @@ Press `,` on home for settings:
 - whether amux keeps this machine awake while it's plugged in
 - your repositories, the folders offered first when you start an agent
 - where you chat with agents
+- whether selecting text copies it; turned off, press **C** to copy
 - usage counts and automatic reports ([What amux sends](../understand/what-amux-sends.md))
 - your account: who's signed in, and on which plan
 
 These settings belong to the machine, so your phone and every other terminal
-see a change at once.
+see a change at once. Copying when you select is the exception: it applies to
+every terminal on this machine and doesn't affect your phone.
 
 A few more live only in the config file, `~/.config/amux/config.toml`.
 `amux config edit` opens it.

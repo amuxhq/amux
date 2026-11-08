@@ -588,7 +588,7 @@ async fn a_host_under_a_managed_mcp_config_still_asks_claude() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_persons_pick_is_what_later_agents_start_with() {
     use wire::create_agent_request::Agent;
-    use wire::{ClaudeCreateConfig, CreateAgentRequest, Kind};
+    use wire::{ClaudeCreateConfig, CreateAgentRequest};
 
     let host = Host::new(&Script::default());
     let daemon = host.install.start("boot-1", host.launch()).await;
@@ -651,16 +651,21 @@ async fn a_persons_pick_is_what_later_agents_start_with() {
         "{args:?}"
     );
 
-    // Claude in its own terminal keeps to Claude's settings.
-    let terminal = runtime
-        .spawn(
-            CreateAgentRequest {
-                agent: Agent::defaults(Kind::ClaudePty),
-                ..create("fourth", None, false)
-            },
-            None,
-        )
-        .await
-        .unwrap();
-    assert!(!args_of(&terminal).contains(&"--model".to_owned()));
+    // Claude in its own terminal keeps to Claude's settings. Windows does not
+    // host terminal Claude (see docs/ARCHITECTURE.md, "Windows, as a stated
+    // cost").
+    #[cfg(unix)]
+    {
+        let terminal = runtime
+            .spawn(
+                CreateAgentRequest {
+                    agent: Agent::defaults(wire::Kind::ClaudePty),
+                    ..create("fourth", None, false)
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert!(!args_of(&terminal).contains(&"--model".to_owned()));
+    }
 }

@@ -493,9 +493,10 @@ fn manage_agent(journey: &mut TerminalJourney) -> Proved {
     journey.assigned.push(name.clone());
     journey.frame(&pane, "created")?;
 
-    // Renamed in place on home: the host lists the same agent under the name.
+    // Renamed in place on home, where a nameless agent goes by its provider's
+    // title: the host lists the same agent under the name.
     journey.home(&pane)?;
-    journey.select_agent(&pane, &name)?;
+    journey.select_agent(&pane, "Fake session title")?;
     journey.keys(&pane, &["r", "C-u"])?;
     journey.type_text(&pane, "helper")?;
     journey.keys(&pane, &["Enter"])?;

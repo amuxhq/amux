@@ -73,6 +73,18 @@ class Exemption:
 
 EXEMPTIONS = [
     Exemption(
+        "crates/interpret/src/codex/title.rs",
+        "output_schema",
+        r"json!",
+        "a JSON Schema amux writes for the title's own answer, which Codex passes to the model",
+    ),
+    Exemption(
+        "crates/interpret/src/codex/title.rs",
+        "hidden_config",
+        r"\[\"config\"\]\[\"mcp_servers\"\]|\.as_object\(\)|Value::Object",
+        "Codex's launch configuration: each MCP server is whatever the person configured, sent back whole",
+    ),
+    Exemption(
         "crates/interpret/src/claude_common.rs",
         "without_image_bytes",
         r".",

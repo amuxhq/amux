@@ -1,5 +1,5 @@
 
-  <name> │ /tmp/journey/aj-xxxxxxxx/net/desk/work                                        1 │ [Diff] │ [Home]
+  Fake session title │ /tmp/journey/aj-xxxxxxxx/net/desk/work                            1 │ [Diff] │ [Home]
 
 
 
@@ -28,7 +28,7 @@
     Worked <t>
 
   ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-  │ › Message <name>                                                                                       │
+  │ › Message Fake session title                                                                           │
   ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
 
   shift+tab permission   ctrl+a more

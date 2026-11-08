@@ -283,11 +283,6 @@
       {"literal": "\"sh.amux.network-watch\"", "context": "private let queue = DispatchQueue(label: \"sh.amux.network-watch\", qos: .utility)", "reason": "Dispatch queue label for debugging tools, not app interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/NewAgentStore.swift": [
-      {"literal": "\"/\"", "context": "let trimmed = directory.hasSuffix(\"/\") ? String(directory.dropLast()) : directory", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
-      {"literal": "\"/\"", "context": "let last = trimmed.split(separator: \"/\").last.map(String.init)", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
-      {"literal": "\"agent\"", "context": "let base = last.flatMap { $0.isEmpty ? nil : $0 } ?? \"agent\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"\\(base)-\\(number)\"", "context": "while names.contains(\"\\(base)-\\(number)\") { number += 1 }", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
-      {"literal": "\"\\(base)-\\(number)\"", "context": "return \"\\(base)-\\(number)\"", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"/\"", "context": "let name = path.split(separator: \"/\").last.map(String.init) ?? path", "reason": "Path separator, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/ReportAssembly.swift": [

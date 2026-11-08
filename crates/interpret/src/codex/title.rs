@@ -9,6 +9,7 @@ use codex_protocol::items::{TextInput, ThreadItem, UserInput};
 use codex_protocol::server::{ServerNotification, ThreadResponse};
 use codex_protocol::thread::{ReasoningEffort, SandboxMode};
 use codex_protocol::{ClientRequest, RpcError};
+use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use super::{Effect, Emit, Request, State, Titling};
@@ -71,9 +72,16 @@ fn output_schema() -> Value {
     })
 }
 
+/// What the hidden thread answers, by the schema it is given.
+#[derive(Deserialize)]
+struct TitleAnswer {
+    title: String,
+}
+
 fn title_in(answer: &str) -> Option<String> {
-    let answer: Value = serde_json::from_str(answer).ok()?;
-    answer.get("title")?.as_str().map(str::to_owned)
+    serde_json::from_str::<TitleAnswer>(answer)
+        .ok()
+        .map(|answer| answer.title)
 }
 
 /// The configuration a hidden thread runs under, given the server's own.

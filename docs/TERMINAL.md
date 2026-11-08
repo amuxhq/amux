@@ -45,8 +45,11 @@ is drawn only while its words are on screen, so a block scrolled half off leaves
 Ink goes by importance, in four steps mixed from the terminal's own text and ground: brightest for what the eye
 should land on (names, the key in a legend), normal for what you act on, grey for what you read, faint for what
 you look up (ages, folders, hosts, counts). Colour marks meaning only: the attention ink (the terminal's blue) for
-what needs you, red for failure, the terminal's cyan for code and paths inside the agent's text, and green and red
-for lines added and removed wherever you read a diff. Anything that looks like a control can be clicked, and every
+what needs you and for headings and links in the agent's text, red for failure, the terminal's cyan for code and
+paths inside the agent's text, green and red for lines added and removed wherever you read a diff or its counts,
+and the terminal's yellow for what is worth noticing, like a usage limit near. Your own messages sit on a surface
+washed with the terminal's blue. An agent that acts without asking has a heavy yellow composer box, heavy so that it
+shows in a scheme whose yellow is pale. Anything that looks like a control can be clicked, and every
 key in a key line too.
 
 ### Setting up

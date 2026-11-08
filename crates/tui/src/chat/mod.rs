@@ -2346,8 +2346,14 @@ impl ChatView {
                 let inner = width.saturating_sub(2 * MARGIN + 4).max(1);
                 self.ask.set_room(usize::from(area.height), self.attach);
                 let drawn = self.ask.box_lines(card, inner, theme);
-                let (lines, mode, _) =
-                    framed(drawn.lines, theme.attention(), &summary, width, theme);
+                let (lines, mode, _) = framed(
+                    drawn.lines,
+                    theme.attention(),
+                    &ROUNDED,
+                    &summary,
+                    width,
+                    theme,
+                );
                 let at = bottom.len();
                 if let Some((row, col)) = drawn.cursor {
                     cursor = Some((at + 1 + row, MARGIN + 2 + col));
@@ -2450,7 +2456,12 @@ impl ChatView {
             if let Some((words, ink)) = words
                 && let Some(top) = bottom.get_mut(at)
             {
-                *top = marked_edge_in(&words, ink, width, theme);
+                let edge = if unguarded(&summary) {
+                    theme.warning()
+                } else {
+                    theme.muted()
+                };
+                *top = marked_edge_in(&words, ink, edge, box_glyphs(&summary), width);
             }
         }
         // A blank line lets the composer's box breathe above the keys.
@@ -2939,20 +2950,32 @@ impl ChatView {
             };
             right.push(Span::styled(words, style));
         }
-        let diff = diff_words(state, self.comparison);
+        let diff_hovered = self.hover == Some(HeaderControl::Diff);
+        let home_hovered = self.hover == Some(HeaderControl::Home);
+        let home_style = if home_hovered {
+            theme.emphasis()
+        } else {
+            theme.muted()
+        };
         let mut controls = Vec::new();
-        for (words, control) in [
-            (diff, HeaderControl::Diff),
-            ("[Home]".to_owned(), HeaderControl::Home),
+        for (spans, control) in [
+            (
+                diff_spans(state, self.comparison, diff_hovered, theme),
+                HeaderControl::Diff,
+            ),
+            (
+                vec![Span::styled("[Home]", home_style)],
+                HeaderControl::Home,
+            ),
         ] {
             gap(&mut right);
-            let style = if self.hover == Some(control) {
-                theme.emphasis()
-            } else {
-                theme.muted()
-            };
-            controls.push((right.len(), text::str_width(&words), control));
-            right.push(Span::styled(words, style));
+            let columns = spans
+                .iter()
+                .map(|span| text::str_width(&span.content))
+                .sum();
+            // A control may be several spans; its columns start at the first.
+            controls.push((right.len(), columns, control));
+            right.extend(spans);
         }
         let right_width: usize = right
             .iter()
@@ -3018,8 +3041,14 @@ fn change_totals(state: &SessionState, comparison: Comparison) -> Option<wire::C
 /// The header's way to the review page, with the change totals of the
 /// comparison shown: "[Diff +42 −7]" for uncommitted changes, "[Diff vs
 /// main +120 −30]" for everything on the branch, a bare "[Diff]" with
-/// nothing to count.
-fn diff_words(state: &SessionState, comparison: Comparison) -> String {
+/// nothing to count. Each count wears what it counts, unless hovered, when
+/// the whole control lights as one.
+fn diff_spans(
+    state: &SessionState,
+    comparison: Comparison,
+    hovered: bool,
+    theme: Theme,
+) -> Vec<Span<'static>> {
     let against = match comparison {
         Comparison::Uncommitted => None,
         Comparison::OnBranch => state
@@ -3028,6 +3057,12 @@ fn diff_words(state: &SessionState, comparison: Comparison) -> String {
             .as_ref()
             .and_then(|git| git.base_branch.as_deref()),
     };
+    let control = if hovered {
+        theme.emphasis()
+    } else {
+        theme.muted()
+    };
+    let mut spans = Vec::new();
     let mut words = "[Diff".to_owned();
     if let Some(base) = against {
         words.push_str(&format!(" vs {base}"));
@@ -3035,10 +3070,32 @@ fn diff_words(state: &SessionState, comparison: Comparison) -> String {
     if let Some(totals) = change_totals(state, comparison)
         .filter(|totals| totals.added + totals.removed > 0 || totals.files > 0)
     {
-        words.push_str(&format!(" +{} −{}", totals.added, totals.removed));
+        let count = |words: String, changed: u64, ink: ratatui::style::Style| {
+            let ink = if hovered {
+                control
+            } else if changed > 0 {
+                ink
+            } else {
+                theme.faint()
+            };
+            Span::styled(words, ink)
+        };
+        spans.push(Span::styled(words, control));
+        spans.push(count(
+            format!(" +{}", totals.added),
+            totals.added.into(),
+            theme.ok(),
+        ));
+        spans.push(count(
+            format!(" −{}", totals.removed),
+            totals.removed.into(),
+            theme.error(),
+        ));
+        words = String::new();
     }
     words.push(']');
-    words
+    spans.push(Span::styled(words, control));
+    spans
 }
 
 /// Where the chat stands, only when that is a problem the person should
@@ -3157,7 +3214,7 @@ fn sign_in_box(
     const MARGIN: usize = 2;
     let inner = width.saturating_sub(2 * MARGIN + 4).max(1);
     let body = sign_in_lines(kind, host, sign_in, inner, theme);
-    let (lines, mode, _) = framed(body, theme.attention(), controls, width, theme);
+    let (lines, mode, _) = framed(body, theme.attention(), &ROUNDED, controls, width, theme);
     (lines, mode)
 }
 
@@ -3328,7 +3385,7 @@ pub(crate) fn composer_lines(
     if let Some((words, ink)) = edge_title(None, false, composer, host, reach, None, theme)
         && let Some(top) = lines.first_mut()
     {
-        *top = marked_edge_in(&words, ink, width, theme);
+        *top = marked_edge_in(&words, ink, theme.muted(), &ROUNDED, width);
     }
     lines
 }
@@ -3445,14 +3502,20 @@ fn boxed_composer(
     }
     let skip = (row + 1).saturating_sub(COMPOSER_LINES);
     // Holding the keys, the box's edge is grey; otherwise it recedes to a
-    // hairline. The words on its edge keep their own inks.
-    let edge = if focused {
+    // hairline. An agent that acts without asking keeps it in the warning ink
+    // either way: that is true of the chat, not of where the keys are. The
+    // words on its edge keep their own inks. Its line is heavy as well (see
+    // `box_glyphs`).
+    let edge = if unguarded(controls) {
+        theme.warning()
+    } else if focused {
         theme.muted()
     } else {
         theme.hairline()
     };
     let body = body.into_iter().skip(skip).take(COMPOSER_LINES).collect();
-    let (lines, mode, label) = framed(body, edge, controls, width, theme);
+    let glyphs = box_glyphs(controls);
+    let (lines, mode, label) = framed(body, edge, glyphs, controls, width, theme);
     Boxed {
         lines,
         cursor: (1 + row - skip, MARGIN + 2 + col),
@@ -3464,24 +3527,81 @@ fn boxed_composer(
     }
 }
 
+/// The characters of the composer's box.
+struct BoxGlyphs {
+    top_left: &'static str,
+    top_right: &'static str,
+    bottom_left: &'static str,
+    bottom_right: &'static str,
+    across: &'static str,
+    down: &'static str,
+}
+
+const ROUNDED: BoxGlyphs = BoxGlyphs {
+    top_left: "╭",
+    top_right: "╮",
+    bottom_left: "╰",
+    bottom_right: "╯",
+    across: "─",
+    down: "│",
+};
+
+const HEAVY: BoxGlyphs = BoxGlyphs {
+    top_left: "┏",
+    top_right: "┓",
+    bottom_left: "┗",
+    bottom_right: "┛",
+    across: "━",
+    down: "┃",
+};
+
+/// The box for this agent: heavy when it acts without asking, because the
+/// warning ink is the terminal's yellow and some schemes' yellow is pale
+/// enough to pass for the ordinary edge. The shape says it in any scheme.
+fn box_glyphs(controls: &ui_view::ControlsSummary) -> &'static BoxGlyphs {
+    if unguarded(controls) {
+        &HEAVY
+    } else {
+        &ROUNDED
+    }
+}
+
+/// Whether this agent acts without asking first.
+fn unguarded(controls: &ui_view::ControlsSummary) -> bool {
+    controls
+        .permission
+        .as_ref()
+        .is_some_and(|permission| permission.never_asks)
+}
+
 /// The composer box's top edge with `words` on it in `ink`, after a short
 /// run of the edge.
 fn marked_edge_in(
     words: &str,
     ink: ratatui::style::Style,
+    edge: ratatui::style::Style,
+    glyphs: &BoxGlyphs,
     width: usize,
-    theme: Theme,
 ) -> Line<'static> {
     const MARGIN: usize = 2;
-    let edge = theme.muted();
     let span = width.saturating_sub(2 * MARGIN + 2);
     let mut top = Line::from(Span::raw(" ".repeat(MARGIN)));
-    push(&mut top, "╭─ ", edge, width);
+    push(
+        &mut top,
+        format!("{}{} ", glyphs.top_left, glyphs.across),
+        edge,
+        width,
+    );
     push(&mut top, words, ink, width);
     push(&mut top, " ", edge, width);
     let used = text::line_width(&top) - MARGIN - 1;
-    push(&mut top, "─".repeat(span.saturating_sub(used)), edge, width);
-    push(&mut top, "╮", edge, width);
+    push(
+        &mut top,
+        glyphs.across.repeat(span.saturating_sub(used)),
+        edge,
+        width,
+    );
+    push(&mut top, glyphs.top_right, edge, width);
     top
 }
 
@@ -3492,6 +3612,7 @@ fn marked_edge_in(
 fn framed(
     body: Vec<Line<'static>>,
     edge: ratatui::style::Style,
+    glyphs: &BoxGlyphs,
     controls: &ui_view::ControlsSummary,
     width: usize,
     theme: Theme,
@@ -3500,16 +3621,16 @@ fn framed(
     let span = width.saturating_sub(2 * MARGIN + 2);
     let mut out = Vec::new();
     let mut top = Line::from(Span::raw(" ".repeat(MARGIN)));
-    push(&mut top, "╭", edge, width);
-    push(&mut top, "─".repeat(span), edge, width);
-    push(&mut top, "╮", edge, width);
+    push(&mut top, glyphs.top_left, edge, width);
+    push(&mut top, glyphs.across.repeat(span), edge, width);
+    push(&mut top, glyphs.top_right, edge, width);
     out.push(top);
     for line in body {
         let mut boxed = Line::from(Span::raw(" ".repeat(MARGIN)));
-        push(&mut boxed, "│ ", edge, width);
+        push(&mut boxed, format!("{} ", glyphs.down), edge, width);
         boxed.spans.extend(line.spans);
         text::pad_to(&mut boxed, width - MARGIN - 1);
-        push(&mut boxed, "│", edge, width);
+        push(&mut boxed, glyphs.down, edge, width);
         out.push(boxed);
     }
     // "Opus (high) · accept edits": the model faint by its name, its
@@ -3530,21 +3651,32 @@ fn framed(
         if !label.is_empty() {
             label.push(Span::styled(" · ", theme.faint()));
         }
-        label.push(Span::styled(mode.clone(), theme.text()));
+        // A permission under which the agent acts without asking is the one
+        // setting worth noticing at a glance.
+        let unguarded = unguarded(controls);
+        match mode.split_once(" · ").filter(|_| unguarded) {
+            // The permission leads; a mode after it is not the risk.
+            Some((permission, rest)) => {
+                label.push(Span::styled(permission.to_owned(), theme.warning()));
+                label.push(Span::styled(format!(" · {rest}"), theme.text()));
+            }
+            None if unguarded => label.push(Span::styled(mode.clone(), theme.warning())),
+            None => label.push(Span::styled(mode.clone(), theme.text())),
+        }
     }
     let label_width: usize = label
         .iter()
         .map(|part| text::str_width(&part.content))
         .sum();
     let mut bottom = Line::from(Span::raw(" ".repeat(MARGIN)));
-    push(&mut bottom, "╰", edge, width);
+    push(&mut bottom, glyphs.bottom_left, edge, width);
     let mut mode = None;
     let mut label_at = None;
     if label.is_empty() || label_width + 6 > span {
-        push(&mut bottom, "─".repeat(span), edge, width);
+        push(&mut bottom, glyphs.across.repeat(span), edge, width);
     } else {
         let rule = span.saturating_sub(label_width + 3).max(1);
-        push(&mut bottom, "─".repeat(rule), edge, width);
+        push(&mut bottom, glyphs.across.repeat(rule), edge, width);
         push(&mut bottom, " ", edge, width);
         label_at = Some(text::line_width(&bottom));
         bottom.spans.extend(label);
@@ -3552,10 +3684,10 @@ fn framed(
             let to = text::line_width(&bottom);
             mode = Some((to - text::str_width(words), to));
         }
-        push(&mut bottom, " ─", edge, width);
+        push(&mut bottom, format!(" {}", glyphs.across), edge, width);
     }
     text::pad_to(&mut bottom, width - MARGIN - 1);
-    push(&mut bottom, "╯", edge, width);
+    push(&mut bottom, glyphs.bottom_right, edge, width);
     out.push(bottom);
     (out, mode, label_at)
 }

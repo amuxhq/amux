@@ -443,12 +443,20 @@ pub fn pane_lines(
                     // Each window on two lines: its name and how full it
                     // is, then its state and when it resets, in the ink
                     // of its state.
-                    let (state, ink) = match window.state {
-                        UsageState::Blocked => (Some("reached"), theme.warning()),
-                        UsageState::NearLimit => (Some("near"), theme.text()),
-                        UsageState::Ok => (Some("fine"), theme.muted()),
-                        UsageState::Unspecified => (None, theme.muted()),
+                    let (state, ink, figure) = match window.state {
+                        UsageState::Blocked => (Some("reached"), theme.warning(), theme.warning()),
+                        UsageState::NearLimit => (Some("near"), theme.text(), theme.warning()),
+                        UsageState::Ok => (Some("fine"), theme.muted(), theme.muted()),
+                        UsageState::Unspecified => (None, theme.muted(), theme.muted()),
                     };
+                    // How full it is and what that means carry the warning;
+                    // a window that is fine says so quietly.
+                    let state_ink =
+                        if matches!(window.state, UsageState::Blocked | UsageState::NearLimit) {
+                            theme.warning()
+                        } else {
+                            theme.faint()
+                        };
                     let used = window
                         .used_percent
                         .map_or("—".to_owned(), |used| format!("{used:.0}% used"));
@@ -461,18 +469,24 @@ pub fn pane_lines(
                         inner,
                     );
                     pad_to(&mut line, inner.saturating_sub(text::str_width(&used)));
-                    push(&mut line, used, ink, inner);
+                    push(&mut line, used, figure, inner);
                     push_line(&mut out, line, Some(entry), None);
                     let resets = window
                         .resets_at_ms
                         .filter(|at| *at > now_ms)
                         .map(|at| format!("resets {}", super::composer::resets(at, now_ms)));
-                    let words: Vec<String> =
-                        state.map(str::to_owned).into_iter().chain(resets).collect();
-                    if !words.is_empty() {
+                    if state.is_some() || resets.is_some() {
                         let mut line = Line::default();
                         pad_to(&mut line, 2);
-                        push(&mut line, words.join(" · "), theme.faint(), inner);
+                        if let Some(state) = state {
+                            push(&mut line, state, state_ink, inner);
+                            if resets.is_some() {
+                                push(&mut line, " · ", theme.faint(), inner);
+                            }
+                        }
+                        if let Some(resets) = resets {
+                            push(&mut line, resets, theme.faint(), inner);
+                        }
                         push_line(&mut out, line, Some(entry), None);
                     }
                     entry += 1;

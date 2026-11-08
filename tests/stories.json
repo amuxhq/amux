@@ -273,6 +273,12 @@
       "clients": ["phone", "terminal"]
     },
     {
+      "name": "chat.formatted",
+      "shows": "A reply using every markdown form, on an agent with full access.",
+      "clients": ["terminal"],
+      "why": "It is there to judge the terminal's palette on formatted text; the phone has its own colours."
+    },
+    {
       "name": "chat.asking",
       "shows": "A chat whose agent is asking: the ask stands in the composer's place.",
       "clients": ["phone", "terminal"]
@@ -316,6 +322,12 @@
       "name": "chat.settings",
       "shows": "Changing the agent's model, effort or permission from its chat.",
       "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "chat.permissions",
+      "shows": "The permission picker on an agent with full access, which is marked as acting without asking.",
+      "clients": ["terminal"],
+      "why": "It is there to judge the terminal's warning colours; the phone has its own."
     },
     {
       "name": "chat.delete",

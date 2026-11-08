@@ -206,6 +206,8 @@ pub struct State {
     tools_withheld: bool,
     #[serde(with = "serde_pb::opt_msg")]
     sign_in: Option<SignIn>,
+    /// The item key of the run of failed API attempts under way.
+    retry_key: Option<String>,
     /// Claude's background jobs; the shared part publishes them.
     jobs: Jobs,
     /// Tasks Claude marks ambient, its own work rather than the person's.
@@ -283,6 +285,7 @@ impl State {
             servers: Vec::new(),
             tools_withheld: false,
             sign_in: None,
+            retry_key: None,
             jobs: Jobs::default(),
             slash: None,
             synthetic: None,

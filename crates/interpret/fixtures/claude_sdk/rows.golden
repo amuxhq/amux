@@ -26,7 +26,7 @@ snapshot WORKING queue=[] working_on="go" at=1800000000000 asks=[] session=s1 mo
 item mn api_error final at=1800000000000 text="" refusal "Declined" retry=false 0/0
 ## 8 tick 1800000001000
 ## 9 fact {"channel":"stream","json":{"attempt":2,"error":"server_error","error_status":529,"max_retries":10,"retry_delay_ms":4000,"subtype":"api_retry","type":"system","uuid":"ar"}}
-item ar api_error final at=1800000001000 text="" server_error "server_error (529)" retry=true 2/10 at=1800000005000
+item ar api_error final at=1800000001000 text="" server_error "HTTP 529" retry=true 2/10 at=1800000005000
 ## 10 fact {"channel":"stream","json":{"message":{"content":[{"text":"On it.","type":"text"},{"id":"t1","input":{"working_on":"Fixing the parser"},"name":"mcp__amux__status","type":"tool_use"},{"id":"s1","name":"web_search","type":"server_tool_use"}],"id":"m1","model":"claude-sonnet-5","role":"assistant"},"type":"assistant","uuid":"m1"}}
 item m1:0 message final at=1800000001000 text="On it."
 item m1:2 unrecognized final at=1800000001000 text="" assistant/server_tool_use ""

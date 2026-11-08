@@ -334,17 +334,20 @@ public enum ChatWords {
 
     /// "Running cargo test · 12s", as one sentence to hear. `subject` names
     /// the call a Running line points at, when the chat holds it.
-    public static func activity(_ kind: ActivityKind, elapsedMs: Int64, subject: String?) -> String {
-        let parts = activityParts(kind, elapsedMs: elapsedMs, subject: subject)
+    public static func activity(
+        _ kind: ActivityKind, elapsedMs: Int64, subject: String?, sinceMs: Int64 = 0
+    ) -> String {
+        let parts = activityParts(kind, elapsedMs: elapsedMs, subject: subject, sinceMs: sinceMs)
         return [[parts.words, parts.subject].compactMap { $0 }.joined(separator: " "), parts.time]
             .compactMap { $0 }.joined(separator: " · ")
     }
 
     /// The activity line in its three drawn parts: the words, the subject a
     /// Running line names (set in mono), and the elapsed time at the end.
-    /// Only the busy states that last a while are timed.
+    /// Only the busy states that last a while are timed. A retry counts down
+    /// to its next attempt instead, from `sinceMs`, when the line has one.
     public static func activityParts(
-        _ kind: ActivityKind, elapsedMs: Int64, subject: String?
+        _ kind: ActivityKind, elapsedMs: Int64, subject: String?, sinceMs: Int64 = 0
     ) -> (words: String, subject: String?, time: String?) {
         let elapsed = duration(elapsedMs / 1_000 * 1_000)
         switch kind {
@@ -359,10 +362,12 @@ public enum ChatWords {
                 : String(localized: "\(count) subagents working"), nil, nil)
         case .compacting: return (String(localized: "Compacting"), nil, nil)
         case .safetyCheck: return (String(localized: "Running safety checks"), nil, nil)
-        case .retrying(let attempt, let most, _):
+        case .retrying(let attempt, let most, let retryAt):
+            let left = sinceMs > 0 ? (retryAt ?? 0) - sinceMs - elapsedMs : 0
             return (most > 0
                 ? String(localized: "Retrying · attempt \(attempt) of \(most)")
-                : String(localized: "Retrying · attempt \(attempt)"), nil, nil)
+                : String(localized: "Retrying · attempt \(attempt)"), nil,
+                left > 0 ? String(localized: "in \(duration(left))") : nil)
         }
     }
 

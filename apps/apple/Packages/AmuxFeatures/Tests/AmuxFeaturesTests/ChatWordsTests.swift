@@ -158,6 +158,11 @@ final class ChatWordsTests: XCTestCase {
         XCTAssertEqual(
             ChatWords.activity(.retrying(attempt: 2, maxAttempts: 10, retryAtMs: nil), elapsedMs: 0, subject: nil),
             "Retrying · attempt 2 of 10")
+        XCTAssertEqual(
+            ChatWords.activity(
+                .retrying(attempt: 2, maxAttempts: 10, retryAtMs: 20_000), elapsedMs: 1_000, subject: nil,
+                sinceMs: 10_000),
+            "Retrying · attempt 2 of 10 · in 9s")
     }
 
     /// The line draws its subject in mono and its time at the right end, so

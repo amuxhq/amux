@@ -437,7 +437,8 @@ struct ActivityLine: View {
     }
 
     private func words(elapsed: Int64) -> some View {
-        let parts = ChatWords.activityParts(activity.kind, elapsedMs: elapsed, subject: subject)
+        let parts = ChatWords.activityParts(
+            activity.kind, elapsedMs: elapsed, subject: subject, sinceMs: activity.sinceMs)
         return HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(parts.words)
                 .designFont(.detail, design)
@@ -461,7 +462,8 @@ struct ActivityLine: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(ChatWords.activity(activity.kind, elapsedMs: elapsed, subject: subject))
+        .accessibilityLabel(
+            ChatWords.activity(activity.kind, elapsedMs: elapsed, subject: subject, sinceMs: activity.sinceMs))
     }
 
     @ViewBuilder private var rule: some View {

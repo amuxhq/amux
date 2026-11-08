@@ -20,7 +20,7 @@
      5 70320000-0000-4000-8000-000000000000 Prompt { text: [Text("go")], steered: false }
      6 mr ModelSwitch { to: "claude-sonnet-5", reason: "The request was declined by the safety system" }
      7 mn Error { error_kind: "refusal", message: "Declined", attempts: 0, gave_up: true } attention
-     8 ar Error { error_kind: "server_error", message: "server_error (529)", attempts: 2, gave_up: false }
+     8 ar Error { error_kind: "server_error", message: "HTTP 529", attempts: 2, gave_up: false }
      9 m1:0 Prose { text: [Text("On it.")], streaming: false, working_note: false }
     10 m1:2 Unrecognized { what: "assistant/server_tool_use", summary: "" }
     11 e3 Error { error_kind: "server_error", message: "API Error: 529 overloaded", attempts: 0, gave_up: true } attention

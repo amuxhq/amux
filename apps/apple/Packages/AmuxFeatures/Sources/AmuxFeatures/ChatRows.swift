@@ -201,8 +201,9 @@ public struct ChatRowView: View {
             GridRow(
                 kind: "error", glyph: "exclamationmark.triangle", failed: true, rail: rail,
                 verb: errorKind.isEmpty ? ChatWords.firstLine(message) : errorKind,
-                meta: RowMeta(gaveUp && attempts > 1
-                    ? String(localized: "gave up after \(attempts) tries") : ""),
+                meta: RowMeta(attempts <= 1 ? ""
+                    : gaveUp ? String(localized: "gave up after \(attempts) tries")
+                    : String(localized: "\(attempts) tries")),
                 detail: detailed ? message : nil, detailLines: expanded ? nil : 3,
                 opens: detailed, open: expanded, toggle: toggle)
         case .modelSwitch(let to, let reason):

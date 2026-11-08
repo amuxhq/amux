@@ -45,6 +45,9 @@ fn written_opt(text: Option<&str>) -> Option<String> {
 /// The error Claude reports when the API rejects its credential.
 const AUTHENTICATION_FAILED: &str = "authentication_failed";
 
+/// The error Claude reports when it has no better word for a failure.
+const UNKNOWN_ERROR: &str = "unknown";
+
 /// What one of Claude's task frames says about a task: its start, an update,
 /// progress, or the notification that it ended.
 #[derive(Default)]
@@ -96,6 +99,12 @@ impl State {
     }
 
     fn message(&mut self, emit: &mut Emit, message: Message) {
+        if matches!(
+            message,
+            Message::StreamEvent(_) | Message::Assistant(_) | Message::User(_) | Message::Result(_)
+        ) {
+            self.retry_key = None;
+        }
         match message {
             Message::System(init) => self.init(emit, &init),
             Message::StreamEvent(event) => self.stream_event(
@@ -215,23 +224,29 @@ impl State {
                     wire::IncarnationEnd::default(),
                 );
             }
+            // A retry says nothing about the sign-in, even a 401: Claude
+            // can recover from it by itself, and says so when it can't.
             Message::ApiRetry(retry) => {
-                let error = retry.error.as_str();
-                if error == AUTHENTICATION_FAILED {
-                    self.sign_in_failed(error);
-                }
-                let status = retry
-                    .error_status
-                    .map(|status| format!(" ({status})"))
-                    .unwrap_or_default();
+                let (error, message) = match (retry.error.as_str(), retry.error_status) {
+                    // No status means no answer from the API at all.
+                    (UNKNOWN_ERROR, None) => ("", "Can't reach Claude".to_owned()),
+                    (error, Some(status)) => (error, format!("HTTP {status}")),
+                    (error, None) => (error, String::new()),
+                };
                 let retry_at_ms = Some(self.shared.now_ms() + retry.retry_delay_ms as i64);
+                // A run of failed attempts is one row that moves on with
+                // each attempt, under the first attempt's key.
+                let key = self
+                    .retry_key
+                    .get_or_insert_with(|| retry.uuid.clone())
+                    .clone();
                 self.shared.item(
                     emit,
                     ItemDraft {
-                        key: retry.uuid.clone(),
+                        key,
                         body: item_body(Kind::ApiError(wire::ApiError {
                             error_kind: error.to_owned(),
-                            message: format!("{error}{status}"),
+                            message,
                             will_retry: true,
                             attempt: retry.attempt,
                             max_attempts: retry.max_retries,
@@ -873,6 +888,9 @@ impl State {
                 },
             );
             return;
+        }
+        if message.model != "<synthetic>" {
+            crate::notice::model_answered(&mut self.sign_in);
         }
         let base = self.blocks.get(&message_id).copied().unwrap_or(0);
         // A built-in command Claude runs itself answers as the `<synthetic>`

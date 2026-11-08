@@ -7220,7 +7220,8 @@ pub struct CreateAgentRequest {
     /// folder's canonical path as the agent's cwd.
     #[prost(string, tag = "5")]
     pub cwd: ::prost::alloc::string::String,
-    /// The first prompt, with attachments, queued before the agent starts.
+    /// The first prompt, with attachments: the agent's first turn, written to
+    /// the provider once it takes input.
     #[prost(message, optional, tag = "9")]
     pub initial_prompt: ::core::option::Option<PromptSubmission>,
     /// Start the agent in a new git worktree of cwd's repository, on a new
@@ -14137,7 +14138,7 @@ pub struct AgentSpec {
     /// The n in spec.<n>.
     #[prost(uint32, tag = "11")]
     pub incarnation: u32,
-    /// What seeds the child's queue: the spawn's prompt, or a parent's
+    /// The incarnation's first input: the spawn's prompt, or a parent's
     /// message on a parent-driven resume. Daemon-owned; a client never
     /// supplies an envelope.
     #[prost(message, optional, tag = "12")]

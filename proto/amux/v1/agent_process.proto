@@ -38,7 +38,7 @@ message AgentSpec {
   int64 created_at_ms = 10;
   // The n in spec.<n>.
   uint32 incarnation = 11;
-  // What seeds the child's queue: the spawn's prompt, or a parent's
+  // The incarnation's first input: the spawn's prompt, or a parent's
   // message on a parent-driven resume. Daemon-owned; a client never
   // supplies an envelope.
   optional Bootstrap bootstrap = 12;

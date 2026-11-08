@@ -451,7 +451,9 @@ impl State {
                 self.tasks = Some(Vec::new());
             }
         }
-        self.boundary(emit, kind, wire::IncarnationEnd::default());
+        if !(kind == BoundaryKind::Started && std::mem::take(&mut self.started_drawn)) {
+            self.boundary(emit, kind, wire::IncarnationEnd::default());
+        }
     }
 
     /// A call inside a subagent: a step on its Agent row, and an ask it
@@ -1387,6 +1389,9 @@ impl State {
                 .unwrap_or_default(),
         };
         self.local_turn = false;
+        if self.shared.drawn_early(&input_id) {
+            return;
+        }
         // A message from another agent went in labelled; its row is the
         // words alone, as an agent message's row is.
         let text = self
@@ -1455,6 +1460,9 @@ impl State {
             Some(entry) => (entry.input_id, entry.attachments),
             None => (self.folded_prompt(&text).unwrap_or_default(), Vec::new()),
         };
+        if self.shared.drawn_early(&input_id) {
+            return;
+        }
         self.shared.item(
             emit,
             ItemDraft {

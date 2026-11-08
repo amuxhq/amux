@@ -134,8 +134,14 @@ open asks, the set of accepted but unconsumed agent messages, `working_on`,
 the turn counter, the prompts awaiting their reflection, the items still
 open, and the last snapshot. A person's prompt goes to the provider at once
 when it is ready (started, no turn running, no ask open, no typed prompt
-still waiting for the provider to record it) and nothing waits ahead of it, and is answered accepted; otherwise it waits in the queue,
-answered accepted and queued, and goes when the provider next becomes ready.
+still waiting for the provider to record it) and nothing waits ahead of it, and is answered accepted. A new agent's first
+prompt, given before its provider can take input with nothing ahead of it, is
+that first turn already: it is answered accepted, drawn under the started
+boundary by the agent's first event, and held out of the queue until the
+provider is ready; a slash or shell command, or another agent's message, is
+queued instead, and so is a resumed agent's first prompt. Anything else waits in
+the queue, answered accepted and queued, and goes when the provider next becomes
+ready.
 `Shared` also derives the phase: needs you whenever an ask is open; starting
 until the provider accepts input; working while a turn runs; idle otherwise.
 

@@ -12,7 +12,7 @@
         }
       },
       "expect": {
-        "reply": "queued",
+        "reply": "accepted",
         "phase": "STARTING"
       }
     },

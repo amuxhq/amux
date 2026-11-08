@@ -1,9 +1,5 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 1 input {"id":"p1","prompt":{"text":"first"}}
-  composer Send activity=None queue=[QueuedRow { input_id: [112, 49], text: [Text("first")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
-## 2 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
-  composer Send activity=None queue=[] underway=[] refused=[]
 ## 3 fact {"channel":"transcript","json":{"message":{"content":"first","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 4 input {"id":"p2","prompt":{"text":"second"}}
@@ -24,7 +20,7 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
-     2 u1 Prompt { text: [Text("first")], steered: false }
+     2 prompt:7031 Prompt { text: [Text("first")], steered: false }
      3 turn:1 Stopped
      4 u3 SlashOutput { command: "/compact", args: "", output: "Compacted" }
      5 boundary:2 Boundary { kind: Compacted, cause: "" }

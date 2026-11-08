@@ -91,7 +91,8 @@ message CreateAgentRequest {
     ClaudeCreateConfig claude_sdk = 7;
     CodexCreateConfig codex = 8;
   }
-  // The first prompt, with attachments, queued before the agent starts.
+  // The first prompt, with attachments: the agent's first turn, written to
+  // the provider once it takes input.
   optional PromptSubmission initial_prompt = 9;
   // Start the agent in a new git worktree of cwd's repository, on a new
   // branch named after the agent, made from whatever cwd has checked out.

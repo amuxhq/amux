@@ -317,6 +317,9 @@ impl AppRuntime {
                 cwd: agent.cwd.clone(),
                 agent: config,
                 new_worktree: agent.new_worktree,
+                // A value is present here only because the person picked it.
+                remember_model: agent.model.is_some(),
+                remember_effort: agent.effort.is_some(),
                 ..Default::default()
             })
             .await?;

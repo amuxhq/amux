@@ -261,7 +261,7 @@ pub fn create(cwd: &Path, name: &str, prompt: Option<&str>) -> CreateAgentReques
         cwd: cwd.to_string_lossy().into_owned(),
         agent: wire::create_agent_request::Agent::defaults(Kind::ClaudeSdk),
         initial_prompt: prompt.map(|text| submission(b"p0", text)),
-        new_worktree: false,
+        ..CreateAgentRequest::default()
     }
 }
 

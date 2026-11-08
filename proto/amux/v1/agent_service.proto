@@ -99,6 +99,10 @@ message CreateAgentRequest {
   // repository or the branch exists. The name is valid as a branch, so it
   // is the branch as given.
   bool new_worktree = 10;
+  // The agent config's model and effort are a person's picks, so its host
+  // starts its later agents of this kind on them too.
+  bool remember_model = 11;
+  bool remember_effort = 12;
 }
 
 message CreateAgentResponse {

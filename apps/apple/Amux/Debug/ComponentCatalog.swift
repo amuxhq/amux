@@ -1525,7 +1525,7 @@ extension CatalogFixtures {
             OfferedMode(value: "default", displayName: "Default", normal: true, settable: true),
             OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true),
         ],
-        skills: [])
+        skills: [], newAgent: nil)
 
     static let claudeCatalogue = Catalogue(
         models: [
@@ -1540,7 +1540,7 @@ extension CatalogFixtures {
             OfferedPermission(value: "bypassPermissions", displayName: "Bypass permissions", normal: false, neverAsks: true, settable: true, models: []),
         ],
         modes: [],
-        skills: [])
+        skills: [], newAgent: nil)
 }
 
 private extension QuestionResponse {

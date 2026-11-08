@@ -1048,7 +1048,7 @@ impl Net {
                 .prompt
                 .as_deref()
                 .map(|text| submission(b"testnet-first", text)),
-            new_worktree: false,
+            ..CreateAgentRequest::default()
         };
         let agent = match self.hosts[&decl.host].process.clone() {
             Some(process) => process
@@ -1824,8 +1824,8 @@ impl Net {
             // terminal client starts on the small models; any client may
             // still choose another.
             text.push_str(&format!(
-                "[new_agent.claude]\nmodel = \"{SMALL_CLAUDE}\"\neffort = \"medium\"\npermission = \"default\"\n\
-                 [new_agent.codex]\nmodel = \"{SMALL_CODEX}\"\neffort = \"medium\"\npermission = \"default\"\n",
+                "[new_agent.claude]\nmodel = \"{SMALL_CLAUDE}\"\neffort = \"medium\"\n\
+                 [new_agent.codex]\nmodel = \"{SMALL_CODEX}\"\neffort = \"medium\"\n",
             ));
         }
         Ok(text)

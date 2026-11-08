@@ -200,11 +200,20 @@ impl ProfileRuntime {
             return Ok(rejected(Refusal::Exited));
         }
         let input_id = input.input_id.clone();
+        // Only a person changes a chat's model or effort, so it is the same
+        // act as picking them for a new agent, and sticks the same way.
+        let picked = crate::spec::Picked::of_input(&input);
         let verdict = self
             .relay(id, input_id, ctl_frame::Of::Input(input))
             .await?;
-        if rejection(&verdict).is_some_and(|rejected| rejected.refusal() == Refusal::Exiting) {
-            self.mark_exiting(id);
+        match rejection(&verdict) {
+            Some(rejected) if rejected.refusal() == Refusal::Exiting => self.mark_exiting(id),
+            None => {
+                if let Some(picked) = picked {
+                    self.remember_pick(picked).await;
+                }
+            }
+            Some(_) => {}
         }
         Ok(verdict)
     }

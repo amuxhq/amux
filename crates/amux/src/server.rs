@@ -72,6 +72,7 @@ fn launch(config: &InstallationConfig) -> Result<Launch> {
         agent: config.agent,
         repositories: config.repositories(),
         claude_kind: node::claude_kind(config),
+        new_agent: config.new_agent.clone(),
         ..Launch::default()
     })
 }

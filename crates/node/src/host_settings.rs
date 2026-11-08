@@ -186,6 +186,62 @@ impl HostSettings {
         request: &UpdateSettingsRequest,
     ) -> Result<InstallationConfig, SettingsError> {
         let changes = changes(request, self.home())?;
+        self.write(&changes, |held| {
+            if let (Some(on), Some(login)) = (request.start_at_login, &self.login)
+                && (on != held.start_at_login || on != login.is_on())
+            {
+                login.set(on)?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Keeps a person's pick as what later agents of its kind start with.
+    /// Answers None when the settings already say so.
+    pub(crate) fn remember(
+        &self,
+        picked: &crate::spec::Picked,
+    ) -> Result<Option<InstallationConfig>, SettingsError> {
+        let (model_key, effort_key, held) = {
+            let new_agent = self.current().new_agent;
+            match picked.kind {
+                wire::Kind::Codex => (
+                    "new_agent.codex.model",
+                    "new_agent.codex.effort",
+                    new_agent.codex,
+                ),
+                _ => (
+                    "new_agent.claude.model",
+                    "new_agent.claude.effort",
+                    new_agent.claude,
+                ),
+            }
+        };
+        let mut changes: Vec<Change> = Vec::new();
+        if let Some(model) = picked.model.as_ref().filter(|model| **model != held.model) {
+            changes.push((model_key, model.clone().map(Into::into)));
+        }
+        if let Some(effort) = picked
+            .effort
+            .as_ref()
+            .filter(|effort| Some(*effort) != held.effort.as_ref())
+        {
+            changes.push((effort_key, Some(effort.clone().into())));
+        }
+        if changes.is_empty() {
+            return Ok(None);
+        }
+        self.write(&changes, |_| Ok(())).map(Some)
+    }
+
+    /// Puts `changes` in the file (or in memory) and answers the settings
+    /// they leave. `before` runs once they are known to be valid, before
+    /// anything is written, and may refuse them.
+    fn write(
+        &self,
+        changes: &[Change],
+        before: impl FnOnce(&InstallationConfig) -> Result<(), SettingsError>,
+    ) -> Result<InstallationConfig, SettingsError> {
         let mut held = self.held.lock().unwrap();
         // A change made beside the daemon since it last looked is kept.
         if let Some(path) = &self.file {
@@ -195,7 +251,7 @@ impl HostSettings {
                 Err(error) => return Err(error.into()),
             };
         }
-        let (text, edited) = settings::edit::edit(&held.text, &changes)?;
+        let (text, edited) = settings::edit::edit(&held.text, changes)?;
         let config = match &self.file {
             Some(path) => read(&text, path)?,
             None => InstallationConfig {
@@ -203,11 +259,7 @@ impl HostSettings {
                 ..edited
             },
         };
-        if let (Some(on), Some(login)) = (request.start_at_login, &self.login)
-            && (on != held.config.start_at_login || on != login.is_on())
-        {
-            login.set(on)?;
-        }
+        before(&held.config)?;
         if let Some(path) = &self.file {
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
@@ -507,5 +559,57 @@ mod tests {
         assert_eq!(claude_kind(&config), wire::Kind::ClaudePty);
         assert!(!settings.current().telemetry);
         assert!(settings.reread().is_none());
+    }
+
+    fn picked(
+        kind: wire::Kind,
+        model: Option<Option<&str>>,
+        effort: Option<&str>,
+    ) -> crate::spec::Picked {
+        crate::spec::Picked {
+            kind,
+            model: model.map(|model| model.map(str::to_owned)),
+            effort: effort.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn a_pick_is_kept_under_its_agent_and_can_be_forgotten() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "# mine\ntelemetry = false\n").unwrap();
+        let settings = HostSettings::new(SettingsOptions {
+            file: Some(path.clone()),
+            ..Default::default()
+        });
+
+        let kept = settings
+            .remember(&picked(
+                wire::Kind::ClaudeSdk,
+                Some(Some("sonnet")),
+                Some("low"),
+            ))
+            .unwrap()
+            .expect("a change");
+        assert_eq!(kept.new_agent.claude.model.as_deref(), Some("sonnet"));
+        assert_eq!(kept.new_agent.claude.effort.as_deref(), Some("low"));
+        assert_eq!(kept.new_agent.codex, Default::default());
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with("# mine\ntelemetry = false\n"), "{text}");
+
+        assert!(
+            settings
+                .remember(&picked(wire::Kind::ClaudeSdk, Some(Some("sonnet")), None))
+                .unwrap()
+                .is_none(),
+            "already so: the file is left alone"
+        );
+
+        let forgotten = settings
+            .remember(&picked(wire::Kind::ClaudeSdk, Some(None), None))
+            .unwrap()
+            .expect("a change");
+        assert_eq!(forgotten.new_agent.claude.model, None);
+        assert_eq!(forgotten.new_agent.claude.effort.as_deref(), Some("low"));
     }
 }

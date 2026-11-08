@@ -304,7 +304,7 @@ public struct NewAgent: View {
         let items = [MenuItem(title: hostDefault, chosen: model.model == nil) {
             model.choose(.model(nil))
         }] + view.models.map { offered in
-            MenuItem(title: offered.displayName, chosen: offered.current) {
+            MenuItem(title: offered.displayName, chosen: model.model != nil && offered.current) {
                 model.choose(.model(offered.value))
             }
         }
@@ -318,7 +318,7 @@ public struct NewAgent: View {
         let items = [MenuItem(
             title: String(localized: "Model default"), chosen: model.effort == nil
         ) { model.choose(.effort(nil)) }] + view.efforts.map { effort in
-            MenuItem(title: worded(effort), chosen: effort.current) {
+            MenuItem(title: worded(effort), chosen: model.effort != nil && effort.current) {
                 model.choose(.effort(effort.value))
             }
         }
@@ -335,7 +335,7 @@ public struct NewAgent: View {
         }] + view.permissions.map { permission in
             MenuItem(
                 title: ChatWords.permission(permission),
-                destructive: permission.neverAsks, chosen: permission.current
+                destructive: permission.neverAsks, chosen: model.permission != nil && permission.current
             ) { model.choose(.permission(permission.value)) }
         }
         return picker(

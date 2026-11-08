@@ -78,6 +78,9 @@ pub const FANOUT_CAPACITY: usize = 4 * INGEST_BATCH;
 /// a change affects the next incarnation and never a running agent.
 #[derive(Clone, Debug)]
 pub struct Launch {
+    /// A person's remembered model and effort per agent; what is unset is
+    /// the provider's own to decide.
+    pub new_agent: settings::NewAgentSettings,
     /// The canonical install path: `amux agent <dir>` runs from it, and the
     /// agent's hooks and tool server run from it too.
     pub install_path: PathBuf,
@@ -151,6 +154,7 @@ pub const REPLICA_BLOB_BUDGET_BYTES: u64 = 512 << 20;
 impl Default for Launch {
     fn default() -> Self {
         Self {
+            new_agent: settings::NewAgentSettings::default(),
             install_path: std::env::current_exe().unwrap_or_else(|_| PathBuf::from("amux")),
             claude_command: "claude".to_owned(),
             codex_command: "codex".to_owned(),
@@ -419,6 +423,8 @@ pub struct ProfileRuntime {
     /// The installation's onboarding state, which this profile's agents
     /// move.
     onboarding: Arc<crate::onboarding::Onboarding>,
+    /// Where a person's model and effort picks are kept.
+    remember_pick: spec::PickKeeper,
 }
 
 /// A write waiting for its verdict: its number, and where the verdict
@@ -633,6 +639,8 @@ pub struct Profile {
     pub worktrees: crate::worktree::GitWorktrees,
     /// The installation's onboarding state.
     pub(crate) onboarding: Arc<crate::onboarding::Onboarding>,
+    /// Where a person's model and effort picks are kept.
+    pub(crate) remember_pick: spec::PickKeeper,
 }
 
 impl ProfileRuntime {
@@ -654,7 +662,9 @@ impl ProfileRuntime {
             auto_reports,
             worktrees,
             onboarding,
+            remember_pick,
         } = profile;
+        let offers = crate::offers::Offers::load(&dir, &launch);
         let options = daemon_core::StartOptions {
             generation,
             agents: dir.join(AGENTS),
@@ -698,11 +708,12 @@ impl ProfileRuntime {
             replicas: Mutex::new(crate::replicas::Replicas::default()),
             replica_blobs: Mutex::new(None),
             hosts: watch::Sender::new(Vec::new()),
-            offers: crate::offers::Offers::load(&dir),
+            offers,
             dir,
             analytics,
             turns: crate::telemetry::Turns::default(),
             onboarding,
+            remember_pick,
         });
         core.expect("built with the runtime").start(&runtime.driver);
         runtime.tell_own_host();
@@ -956,7 +967,17 @@ impl ProfileRuntime {
         if let Some(edge) = self.edge() {
             self.runs_kind(&edge.capabilities(), &edge.host_name(), kind)?;
         }
-        let resolved = spec::resolve(agent);
+        let picked = spec::picked_at_creation(agent, &request);
+        let provider = match kind {
+            Kind::Codex => crate::Provider::Codex,
+            _ => crate::Provider::Claude,
+        };
+        let filled = spec::with_remembered(
+            agent,
+            &self.launch().new_agent,
+            self.offers().offered(provider).as_ref(),
+        );
+        let resolved = spec::resolve(&filled);
         let mut request = request;
         let bootstrap = request
             .initial_prompt
@@ -1022,8 +1043,24 @@ impl ProfileRuntime {
             recent,
             spec,
         };
-        self.registry_row(id, ClientRequest::CreateAgent(Box::new(create)))
-            .await
+        let created = self
+            .registry_row(id, ClientRequest::CreateAgent(Box::new(create)))
+            .await?;
+        if let Some(picked) = picked {
+            self.remember_pick(picked).await;
+        }
+        Ok(created)
+    }
+
+    /// Keeps a person's model or effort as what this host's later agents
+    /// of that kind start with. Failing to keep it costs nothing but the
+    /// memory, so it is only logged.
+    pub(crate) async fn remember_pick(&self, picked: spec::Picked) {
+        let remember = self.remember_pick.clone();
+        let kept = tokio::task::spawn_blocking(move || remember.keep(picked)).await;
+        if let Err(error) = kept {
+            tracing::warn!(%error, "keeping a new agent default");
+        }
     }
 
     /// Where this host offers to start an agent: see
@@ -1211,7 +1248,10 @@ impl ProfileRuntime {
         self.folder_catalogue(crate::Provider::Claude, Path::new(cwd))
             .await
             .ok()
-            .map(|offered| offered.catalogue)
+            .map(|offered| wire::Catalogue {
+                new_agent: None,
+                ..offered.catalogue
+            })
     }
 
     /// Starts the process the core asked for: the handle at once, so the

@@ -86,13 +86,13 @@ enum Command {
         /// Chat with it in this interface instead of the configured one.
         #[arg(long = "in", value_name = "INTERFACE")]
         interface: Option<settings::ChatInSetting>,
-        /// Its model; `new_agent.<agent>.model` otherwise.
+        /// Its model; the host's default otherwise.
         #[arg(long)]
         model: Option<String>,
-        /// Its reasoning effort; `new_agent.<agent>.effort` otherwise.
+        /// Its reasoning effort; the host's default otherwise.
         #[arg(long)]
         effort: Option<String>,
-        /// Its permission; `new_agent.<agent>.permission` otherwise.
+        /// Its permission; the provider's own default otherwise.
         #[arg(long)]
         permission: Option<String>,
         /// Its first prompt.
@@ -552,7 +552,6 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                         verbs::create(
                             &mut client,
                             &selected.id,
-                            &config,
                             verbs::Create {
                                 agent,
                                 interface,

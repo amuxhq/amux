@@ -93,7 +93,6 @@ async fn a_draft_left_in_a_chat_is_in_its_composer_when_the_chat_opens_again() {
         local_host: net.host("desk").unwrap().host_id.as_bytes().to_vec(),
         layout: None,
         chat_in: settings::ChatInSetting::Amux,
-        defaults: settings::NewAgentSettings::default(),
     };
     let mut app = tui::App::new(client, fleet, config);
     let mut changed = app.fleet.changed();
@@ -166,7 +165,6 @@ async fn desk_of(names: &[&str]) -> (Net, std::sync::Arc<dyn client::Client>, tu
         local_host: net.host("desk").unwrap().host_id.as_bytes().to_vec(),
         layout: None,
         chat_in: settings::ChatInSetting::Amux,
-        defaults: settings::NewAgentSettings::default(),
     };
     (net, client, config)
 }
@@ -626,7 +624,6 @@ async fn raw_attach_from_a_far_agents_chat_does_not_say_enter_opens_its_chat() {
         local_host: net.host("laptop").unwrap().host_id.as_bytes().to_vec(),
         layout: None,
         chat_in: settings::ChatInSetting::Amux,
-        defaults: settings::NewAgentSettings::default(),
     };
     let mut app = app_listing(client, config, &[far.as_bytes()]).await;
     open_chat(&mut app, far.as_bytes()).await;
@@ -688,7 +685,6 @@ async fn far_chat_via(
         local_host: net.host("desk").unwrap().host_id.as_bytes().to_vec(),
         layout: None,
         chat_in: settings::ChatInSetting::Amux,
-        defaults: settings::NewAgentSettings::default(),
     };
     let mut app = app_listing(client, config, &[id.as_bytes()]).await;
     open_chat(&mut app, id.as_bytes()).await;

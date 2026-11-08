@@ -736,6 +736,32 @@ pub struct Model {
     pub extra: Extra,
 }
 
+/// What `config/read` answers: Codex's settings as they resolve.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ConfigReadResponse {
+    pub config: ResolvedConfig,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// The settings a new thread would start with. An approval policy may be a
+/// word or a granular object, so it stays a raw value here.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ResolvedConfig {
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub model_reasoning_effort: Option<String>,
+    #[serde(default)]
+    pub approval_policy: Option<serde_json::Value>,
+    #[serde(default)]
+    pub sandbox_mode: Option<String>,
+    #[serde(default)]
+    pub approvals_reviewer: Option<String>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReasoningEffortOption {

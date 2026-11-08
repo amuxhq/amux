@@ -36,6 +36,7 @@ method_enum! {
         "model/list" => ModelList(ModelListParams),
         "skills/list" => SkillsList(SkillsListParams),
         "account/read" => AccountRead(AccountReadParams),
+        "config/read" => ConfigRead(ConfigReadParams),
     }
 }
 
@@ -289,6 +290,12 @@ pub struct SkillsListParams {
 pub struct AccountReadParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refresh_token: Option<bool>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ConfigReadParams {
     #[serde(flatten)]
     pub extra: Extra,
 }

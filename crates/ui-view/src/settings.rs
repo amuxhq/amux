@@ -557,18 +557,41 @@ pub fn controls(state: &SessionState) -> ControlsSummary {
 /// offers and what is chosen so far: only what can be set when it starts
 /// (a permission the chosen model does not take is not listed), with each
 /// chosen value marked, and one the catalogue does not list kept as a
-/// choice. The mode in force is marked when none is chosen: the normal one.
+/// choice. What is not chosen is marked at what the agent will start with,
+/// when the host has said; a remembered effort or permission the model does
+/// not take is not what it starts with. The mode in force is marked when
+/// none is chosen: the normal one.
 pub fn new_agent_settings(catalogue: &wire::Catalogue, chosen: &NewAgentChoices) -> SettingsView {
-    let models = model_choices(&catalogue.models, chosen.model.as_deref(), String::new);
+    let starting = catalogue.new_agent.clone().unwrap_or_default();
+    let models = model_choices(
+        &catalogue.models,
+        chosen.model.as_deref().or(starting.model.as_deref()),
+        String::new,
+    );
     let model = models.iter().find(|model| model.current);
-    let efforts = effort_choices(model, chosen.effort.as_deref());
+    let efforts = effort_choices(
+        model,
+        chosen
+            .effort
+            .as_deref()
+            .or(starting_effort(&starting, model)),
+    );
     let model_value = model.map(|model| model.value.as_str());
+    let offered = |permission: &wire::OfferedPermission| {
+        permission.settable && takes(&permission.models, model_value)
+    };
+    let starting_permission = starting.permission.as_deref().filter(|value| {
+        catalogue
+            .permissions
+            .iter()
+            .any(|permission| permission.value == *value && offered(permission))
+    });
     let mut permissions = permission_choices(
         catalogue
             .permissions
             .iter()
-            .filter(|offered| offered.settable && takes(&offered.models, model_value)),
-        chosen.permission.as_deref(),
+            .filter(|permission| offered(permission)),
+        chosen.permission.as_deref().or(starting_permission),
         model_value,
     );
     // One the catalogue has but this model does not take keeps its name.
@@ -598,17 +621,57 @@ pub fn new_agent_settings(catalogue: &wire::Catalogue, chosen: &NewAgentChoices)
     }
 }
 
-/// `chosen` with `pick` applied. Another model starts at its own default
-/// effort, and a permission it does not take gives way to the normal one
-/// (else the host's default). A model the catalogue does not list says
-/// nothing of its efforts, so the effort stays. Picking the normal mode
-/// leaves the mode unchosen.
+/// The effort a new agent on `model` starts with when none is chosen: the
+/// host's, when the model takes it, else the model's own.
+fn starting_effort<'a>(
+    starting: &'a wire::NewAgentDefaults,
+    model: Option<&'a ModelChoice>,
+) -> Option<&'a str> {
+    let Some(model) = model else {
+        return starting.effort.as_deref();
+    };
+    starting
+        .effort
+        .as_deref()
+        .filter(|effort| model.efforts.is_empty() || model.efforts.iter().any(|e| e == effort))
+        .or(model.default_effort.as_deref())
+}
+
+/// `chosen` with `pick` applied; None in `chosen` always means the person
+/// has not picked it, and a pick of what is already in force changes
+/// nothing. Another model leaves its effort unpicked, so it starts at what
+/// that model would, and a permission it does not take gives way to the
+/// normal one (else the host's default). A model the catalogue does not
+/// list says nothing of its efforts, so the effort stays. Picking the
+/// normal mode leaves the mode unchosen.
 pub fn new_agent_pick(
     catalogue: &wire::Catalogue,
     chosen: &NewAgentChoices,
     pick: &NewAgentPick,
 ) -> NewAgentChoices {
     let mut next = chosen.clone();
+    let view = new_agent_settings(catalogue, chosen);
+    match pick {
+        NewAgentPick::Model(Some(value))
+            if chosen.model.is_none()
+                && view
+                    .models
+                    .iter()
+                    .any(|model| model.current && model.value == *value) =>
+        {
+            return next;
+        }
+        NewAgentPick::Effort(Some(value))
+            if chosen.effort.is_none()
+                && view
+                    .efforts
+                    .iter()
+                    .any(|effort| effort.current && effort.value == *value) =>
+        {
+            return next;
+        }
+        _ => {}
+    }
     match pick {
         NewAgentPick::Model(model) => {
             if *model == chosen.model {
@@ -619,8 +682,7 @@ pub fn new_agent_pick(
                 .as_deref()
                 .and_then(|model| offered_model(&catalogue.models, model));
             match (model, entry) {
-                (_, Some(entry)) => next.effort = entry.default_effort.clone(),
-                (None, None) => next.effort = None,
+                (_, Some(_)) | (None, None) => next.effort = None,
                 (Some(_), None) => {}
             }
             let model_value = entry.map(|entry| entry.value.as_str()).or(model.as_deref());

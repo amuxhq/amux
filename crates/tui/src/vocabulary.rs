@@ -298,7 +298,6 @@ pub fn desk_home() -> crate::home::Home {
         version: String::new(),
         working_dir: "~/src/amux".into(),
         chat_in: settings::ChatInSetting::Amux,
-        defaults: settings::NewAgentSettings::default(),
     })
 }
 

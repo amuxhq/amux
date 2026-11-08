@@ -1292,6 +1292,7 @@ fn settings_offering(
         kind,
         body,
         wire::Catalogue {
+            new_agent: None,
             models,
             commands,
             permissions,
@@ -1940,7 +1941,7 @@ fn a_new_agents_pick_keeps_its_choices_consistent() {
         mode: None,
     };
     let sol = pick(&chosen, NewAgentPick::Model(Some("sol".into())));
-    assert_eq!(sol.effort.as_deref(), Some("medium"), "its own default");
+    assert_eq!(sol.effort, None, "left to start at what sol would");
     assert_eq!(
         sol.permission.as_deref(),
         Some("default"),
@@ -1966,6 +1967,86 @@ fn a_new_agents_pick_keeps_its_choices_consistent() {
     assert_eq!(normal.mode, None, "the normal mode is no choice at all");
     let effort = pick(&chosen, NewAgentPick::Effort(None));
     assert_eq!(effort.effort, None);
+}
+
+#[test]
+fn a_new_agent_with_nothing_picked_shows_what_it_will_start_with() {
+    let catalogue = wire::Catalogue {
+        new_agent: Some(wire::NewAgentDefaults {
+            model: Some("astra".into()),
+            effort: Some("high".into()),
+            permission: Some("auto".into()),
+        }),
+        ..new_agent_catalogue()
+    };
+    let view = new_agent_settings(&catalogue, &NewAgentChoices::default());
+    assert_eq!(
+        view.models
+            .iter()
+            .find(|model| model.current)
+            .map(|model| model.value.as_str()),
+        Some("astra")
+    );
+    assert_eq!(
+        view.efforts
+            .iter()
+            .find(|effort| effort.current)
+            .map(|effort| effort.value.as_str()),
+        Some("high")
+    );
+    assert_eq!(
+        view.permissions
+            .iter()
+            .find(|permission| permission.current)
+            .map(|permission| permission.value.as_str()),
+        Some("auto")
+    );
+
+    let on_sol = new_agent_settings(
+        &catalogue,
+        &NewAgentChoices {
+            model: Some("sol".into()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        on_sol
+            .efforts
+            .iter()
+            .find(|effort| effort.current)
+            .map(|effort| effort.value.as_str()),
+        Some("medium"),
+        "a starting effort this model cannot take gives way to its own"
+    );
+    assert!(
+        on_sol
+            .permissions
+            .iter()
+            .all(|permission| !permission.current),
+        "a starting permission this model cannot take is not marked"
+    );
+}
+
+#[test]
+fn picking_what_is_already_in_force_is_no_pick() {
+    let catalogue = wire::Catalogue {
+        new_agent: Some(wire::NewAgentDefaults {
+            model: Some("astra".into()),
+            effort: Some("high".into()),
+            permission: None,
+        }),
+        ..new_agent_catalogue()
+    };
+    let nothing = NewAgentChoices::default();
+    let pick = |pick: NewAgentPick| new_agent_pick(&catalogue, &nothing, &pick);
+    assert_eq!(pick(NewAgentPick::Model(Some("astra".into()))), nothing);
+    assert_eq!(pick(NewAgentPick::Effort(Some("high".into()))), nothing);
+    assert_eq!(
+        pick(NewAgentPick::Model(Some("sol".into())))
+            .model
+            .as_deref(),
+        Some("sol")
+    );
 }
 
 fn tool_item(

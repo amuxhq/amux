@@ -11,16 +11,19 @@ use std::time::Duration;
 use claude_protocol::stream::init::AccountInfo;
 use claude_protocol::stream::{self as claude_stream};
 use codex_protocol::client::{
-    AccountReadParams, Capabilities, ClientInfo, InitializeParams, ModelListParams,
-    SkillsListParams,
+    AccountReadParams, Capabilities, ClientInfo, ConfigReadParams, InitializeParams,
+    ModelListParams, SkillsListParams,
 };
-use codex_protocol::server::{AccountReadResponse, ModelListResponse, SkillsListResponse};
+use codex_protocol::server::{
+    AccountReadResponse, ConfigReadResponse, ModelListResponse, SkillsListResponse,
+};
 use codex_protocol::{ClientMessage, ClientNotification, ClientRequest, RequestId, ServerMessage};
 use prost::Message as _;
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 use wire::{Catalogue, Provider, ProviderOffer};
 
 const INITIALIZE: &str = "amux-catalogue";
+const SETTINGS: &str = "amux-settings";
 
 /// The provider a word on the command line names: the `Provider` value's
 /// own name, lowercase, without the enum's prefix, as the daemon writes it.
@@ -113,21 +116,25 @@ async fn ask_claude(command: &str) -> Result<(Catalogue, bool), String> {
         .await
         .map_err(|error| format!("writing to Claude: {error}"))?;
     let mut lines = BufReader::new(stdout).lines();
-    let answer = loop {
-        let Some(line) = lines
-            .next_line()
-            .await
-            .map_err(|error| format!("reading Claude: {error}"))?
-        else {
-            return Err("Claude ended before it answered".to_owned());
-        };
-        if let Ok(claude_stream::Output::ControlResponse(response)) =
-            claude_stream::decode(line.as_bytes())
-            && response.request_id() == INITIALIZE
-        {
-            break response;
-        }
-    };
+    let answer = claude_answer(&mut lines, INITIALIZE).await?;
+    let settings = claude_stream::ControlRequest::new(
+        SETTINGS,
+        claude_stream::ControlRequestBody::GetSettings(Default::default()),
+    );
+    let mut line = claude_stream::encode(&claude_stream::Input::ControlRequest(settings));
+    line.push(b'\n');
+    stdin
+        .write_all(&line)
+        .await
+        .map_err(|error| format!("writing to Claude: {error}"))?;
+    // A Claude that cannot say leaves the new agent's values unnamed; what
+    // it offers still stands.
+    let applied = claude_answer(&mut lines, SETTINGS)
+        .await
+        .ok()
+        .and_then(|response| response.result::<claude_stream::SettingsResult>())
+        .and_then(Result::ok)
+        .map(|settings| settings.applied);
     drop(stdin);
     let _ = child.start_kill();
     let initialized = match answer.result::<claude_stream::InitializationResult>() {
@@ -141,9 +148,31 @@ async fn ask_claude(command: &str) -> Result<(Catalogue, bool), String> {
         }
     };
     Ok((
-        interpret::claude_sdk::host_catalogue(&initialized),
+        interpret::claude_sdk::host_catalogue(&initialized, applied.as_ref()),
         claude_signed_in(&initialized.account),
     ))
+}
+
+/// Claude's answer to the control request named `id`.
+async fn claude_answer(
+    lines: &mut tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
+    id: &str,
+) -> Result<claude_stream::ControlResponse, String> {
+    loop {
+        let Some(line) = lines
+            .next_line()
+            .await
+            .map_err(|error| format!("reading Claude: {error}"))?
+        else {
+            return Err("Claude ended before it answered".to_owned());
+        };
+        if let Ok(claude_stream::Output::ControlResponse(response)) =
+            claude_stream::decode(line.as_bytes())
+            && response.request_id() == id
+        {
+            return Ok(response);
+        }
+    }
 }
 
 /// Signed out, Claude names no credential, only its backend; one other than
@@ -223,7 +252,12 @@ async fn ask_codex(command: &str) -> Result<(Catalogue, bool), String> {
                 ..Default::default()
             }))
             .await?;
-        Ok::<_, String>((models, skills, account))
+        // A Codex that cannot say leaves the defaults to its model list.
+        let config: Option<ConfigReadResponse> = codex
+            .ask(ClientRequest::ConfigRead(ConfigReadParams::default()))
+            .await
+            .ok();
+        Ok::<_, String>((models, skills, account, config))
     }
     .await;
     // The end of its input ends a stdio server; one that lingers is killed.
@@ -234,9 +268,14 @@ async fn ask_codex(command: &str) -> Result<(Catalogue, bool), String> {
     {
         let _ = child.start_kill();
     }
-    let (models, skills, account) = asked.map_err(|error| format!("asking Codex: {error}"))?;
+    let (models, skills, account, config) =
+        asked.map_err(|error| format!("asking Codex: {error}"))?;
     let signed_in = account.account.is_some() || !account.requires_openai_auth;
-    Ok((interpret::codex::host_catalogue(&models, skills), signed_in))
+    let config = config.map(|read| read.config);
+    Ok((
+        interpret::codex::host_catalogue(&models, skills, config.as_ref()),
+        signed_in,
+    ))
 }
 
 /// How long Codex has to exit once the probe has closed its input.

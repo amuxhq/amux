@@ -1284,13 +1284,17 @@ public struct Catalogue: Codable, Hashable, Sendable {
     /// Codex's skills, which a person mentions as "$name" anywhere in a
     /// message; empty for Claude, whose skills are among its commands.
     public var skills: [OfferedSkill]
+    /// What a new agent on this host starts with when nothing is chosen;
+    /// absent from a catalogue an agent wrote about its own session.
+    public var newAgent: NewAgentDefaults?
 
-    public init(models: [OfferedModel], commands: [OfferedCommand], permissions: [OfferedPermission], modes: [OfferedMode], skills: [OfferedSkill]) {
+    public init(models: [OfferedModel], commands: [OfferedCommand], permissions: [OfferedPermission], modes: [OfferedMode], skills: [OfferedSkill], newAgent: NewAgentDefaults?) {
         self.models = models
         self.commands = commands
         self.permissions = permissions
         self.modes = modes
         self.skills = skills
+        self.newAgent = newAgent
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1299,6 +1303,7 @@ public struct Catalogue: Codable, Hashable, Sendable {
         case permissions
         case modes
         case skills
+        case newAgent = "new_agent"
     }
 }
 
@@ -4271,6 +4276,27 @@ public struct NewAgentChoices: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case effort
         case mode
+        case model
+        case permission
+    }
+}
+
+/// A new agent's starting settings, by catalogue values: the host's remembered
+/// pick, else what the provider itself would use. An absent value is one
+/// neither can name, and the provider decides it when the agent starts.
+public struct NewAgentDefaults: Codable, Hashable, Sendable {
+    public var effort: String?
+    public var model: String?
+    public var permission: String?
+
+    public init(effort: String?, model: String?, permission: String?) {
+        self.effort = effort
+        self.model = model
+        self.permission = permission
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case effort
         case model
         case permission
     }

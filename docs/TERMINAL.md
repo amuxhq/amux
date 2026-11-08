@@ -148,9 +148,10 @@ chats with their agents, the installation's `ui.chat_in`:
   handed straight to the new agent (see [raw attach](#raw-attach)); started on another machine its chat opens
   instead, and says why.
 
-A new agent always shows the values it will start with: each agent's model, effort and permission come from the
-installation's `new_agent.claude` and `new_agent.codex`, and the leader then `n` from a chat starts from that
-chat's agent, folder and host instead.
+A new agent always shows the values it will start with, as the host's catalogue names them: `new_agent.claude` and
+`new_agent.codex` hold a person's remembered model and effort, and whatever they do not set is what the provider's own
+settings resolve to. amux ships no values of its own and never writes the provider's settings. The leader then `n` from
+a chat starts from that chat's agent, folder and host instead.
 
 ### Hosts
 
@@ -378,15 +379,13 @@ chat_in = "amux"      # amux, or native: chat in each agent's own interface, Cla
 [keybinds]
 leader = "ctrl+a"     # ctrl+<a-z>
 
-[new_agent.claude]
+[new_agent.claude]    # unset until a person picks one in amux
 model = "opus"
 effort = "high"
-permission = "default"
 
 [new_agent.codex]
 model = "gpt-6.1-sol"
 effort = "medium"
-permission = "default"
 ```
 
 `theme = "terminal"` asks the terminal for its own colours at startup and derives the palette from them, falling back

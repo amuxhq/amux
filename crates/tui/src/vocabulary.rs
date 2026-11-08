@@ -2616,6 +2616,74 @@ pub fn chat_settings() -> ChatScene {
     ChatScene { view, state, now }
 }
 
+/// A reply using every markdown form, on a Codex chat with full access, so
+/// one screen shows how formatted prose and the permission edge are drawn.
+pub fn chat_formatted() -> ChatScene {
+    use prost::Message as _;
+    use ui_state::Msg;
+    use wire::codex_item::Kind as K;
+
+    const REPLY: &str = "\
+# Grouping the changed files
+
+The overview now lists files under their folders. See the \
+[design notes](https://amux.sh/docs) or https://amux.sh for more.
+
+## What changed
+
+- **Folders** come after root files
+- `crates/tui/src/chat/pane.rs` draws the headings
+- *Renames* keep their old path
+
+> A quote from the earlier discussion.
+
+### Next
+
+```rust
+fn group(files: &[File]) -> Vec<Folder> {
+    todo!(\"sort by folder\")
+}
+```
+";
+    let (_, _, mut state, _) = control_chats()
+        .into_iter()
+        .find(|(name, ..)| *name == "chat_controls_codex")
+        .expect("the full-access Codex chat is drawn");
+    let now = written_at();
+    let reply = wire::Item {
+        key: "k3".into(),
+        order: 3,
+        revision: 3,
+        text: REPLY.into(),
+        kind: wire::Kind::Codex as i32,
+        body: wire::CodexItem {
+            kind: Some(K::Message(wire::Text { complete: true })),
+        }
+        .encode_to_vec(),
+        at_ms: now,
+        ..Default::default()
+    };
+    state.update(Msg::Event(wire::SessionEvent {
+        of: Some(wire::session_event::Of::Item(reply)),
+    }));
+    let view = crate::chat::ChatView::new(b"agent".to_vec(), now, false);
+    ChatScene { view, state, now }
+}
+
+/// A Codex chat with full access and its permission picker open.
+pub fn chat_permissions() -> ChatScene {
+    let (_, _, state, keys) = control_chats()
+        .into_iter()
+        .find(|(name, ..)| *name == "chat_controls_codex")
+        .expect("the full-access Codex chat is drawn");
+    let now = written_at();
+    let mut view = crate::chat::ChatView::new(b"agent".to_vec(), now, false);
+    for key in keys {
+        view.key(&state, key, Theme::default());
+    }
+    ChatScene { view, state, now }
+}
+
 /// The chats [`chat_controls`] draws, each with the keys pressed on it.
 #[allow(clippy::type_complexity)]
 fn control_chats() -> Vec<(

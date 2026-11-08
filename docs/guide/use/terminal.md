@@ -101,7 +101,8 @@ its folder and host, how much of its context it has used, and
   an empty box to send a queued message straight away, or take it back.
 - **Ctrl+X** interrupts the turn. The agent stays ready for your next message.
 - **Shift+Tab** steps through the agent's modes or permissions, such as
-  Claude's plan mode or accept edits.
+  Claude's plan mode or accept edits. When a permission lets the agent act
+  without asking you first, the box gets a heavy yellow border.
 - **Ctrl+V** attaches an image or file from the clipboard. A long paste
   becomes a single chip rather than filling the box.
 - **Ctrl+O** opens the overview beside the chat: the agent's tasks, its

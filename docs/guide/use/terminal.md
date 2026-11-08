@@ -79,8 +79,7 @@ you picked. If Claude or Codex isn't signed in there, the picker says so.
 A new agent starts on the model, effort and permission Claude or Codex is
 already set to on that host, so amux and Claude's own terminal app agree until
 you choose otherwise. When you pick a model or effort in amux, for a new agent
-or in a chat, later agents on that host start on it too. Claude's **Default**
-model goes back to following Claude's own setting. Permissions never stick: a
+or in a chat, later agents on that host start on it too. Permissions never stick: a
 permission you pick applies to that agent only. An agent you use in Claude's
 own terminal app always follows Claude's settings.
 
@@ -210,9 +209,9 @@ A few more live only in the config file, `~/.config/amux/config.toml`.
 theme = "terminal"    # terminal (your terminal's own colours), dark or light
 ```
 
-`amux config unset new_agent.claude.effort` forgets a remembered effort, and
-`new_agent.claude.model`, `new_agent.codex.model` and `new_agent.codex.effort`
-work the same way.
+To go back to following Claude or Codex after picking in amux, forget the
+remembered value: `amux config unset new_agent.claude.model`, and likewise
+`new_agent.claude.effort`, `new_agent.codex.model` and `new_agent.codex.effort`.
 
 ## Commands
 

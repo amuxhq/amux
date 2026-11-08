@@ -2650,7 +2650,7 @@ fn control_chats() -> Vec<(
     };
     let codex = vec![
         permission("read-only", "Read only", true),
-        permission("default", "Default", true),
+        permission("default", "Ask", true),
         permission("auto", "Auto", true),
         OfferedPermission {
             never_asks: true,
@@ -2660,7 +2660,7 @@ fn control_chats() -> Vec<(
     let codex_modes = vec![
         OfferedMode {
             value: "default".into(),
-            display_name: "Default".into(),
+            display_name: "Normal".into(),
             normal: true,
             settable: true,
         },

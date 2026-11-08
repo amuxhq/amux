@@ -168,22 +168,15 @@ pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
 }
 
 /// A person's model or effort pick, for the host to start later agents of
-/// its kind on. None leaves that setting as it was; `Some(None)` forgets it.
+/// its kind on. None leaves that setting as it was.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Picked {
     pub kind: Kind,
-    pub model: Option<Option<String>>,
+    pub model: Option<String>,
     pub effort: Option<String>,
 }
 
 impl Picked {
-    /// `model` as kept: Claude's "default" entry means going back to
-    /// following Claude's own settings, so nothing is kept for it.
-    fn model(kind: Kind, model: Option<String>) -> Option<Option<String>> {
-        let model = model?;
-        Some((kind != Kind::ClaudeSdk || model != "default").then_some(model))
-    }
-
     /// A pick worth keeping: only amux's own chat keeps them, since Claude
     /// in its own terminal follows Claude's settings.
     fn worth_keeping(self) -> Option<Self> {
@@ -210,7 +203,7 @@ impl Picked {
         };
         Self {
             kind,
-            model: Self::model(kind, model),
+            model,
             effort,
         }
         .worth_keeping()
@@ -227,10 +220,9 @@ pub fn picked_at_creation(
         Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude) => (&claude.model, &claude.effort),
         Agent::Codex(codex) => (&codex.model, &codex.effort),
     };
-    let kind = agent.kind();
     Picked {
-        kind,
-        model: Picked::model(kind, model.clone().filter(|_| request.remember_model)),
+        kind: agent.kind(),
+        model: model.clone().filter(|_| request.remember_model),
         effort: effort.clone().filter(|_| request.remember_effort),
     }
     .worth_keeping()
@@ -658,24 +650,11 @@ mod tests {
             picked_at_creation(&agent, &request(true, false)),
             Some(Picked {
                 kind: Kind::ClaudeSdk,
-                model: Some(Some("sonnet".into())),
+                model: Some("sonnet".into()),
                 effort: None,
             })
         );
         let terminal = Agent::ClaudePty(claude(Some("sonnet")));
         assert_eq!(picked_at_creation(&terminal, &request(true, true)), None);
-    }
-
-    #[test]
-    fn claudes_default_entry_forgets_the_remembered_model() {
-        let agent = Agent::ClaudeSdk(claude(Some("default")));
-        let request = wire::CreateAgentRequest {
-            remember_model: true,
-            ..Default::default()
-        };
-        assert_eq!(
-            picked_at_creation(&agent, &request).map(|picked| picked.model),
-            Some(Some(None))
-        );
     }
 }

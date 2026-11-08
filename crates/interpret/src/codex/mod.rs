@@ -416,13 +416,7 @@ pub const PERMISSIONS: [NamedPermission; 4] = [
     named("read-only", "Read only", "on-request", "read-only", "user"),
     NamedPermission {
         normal: true,
-        ..named(
-            "default",
-            "Default",
-            "on-request",
-            "workspace-write",
-            "user",
-        )
+        ..named("default", "Ask", "on-request", "workspace-write", "user")
     },
     named(
         "auto",
@@ -444,7 +438,7 @@ pub const PERMISSIONS: [NamedPermission; 4] = [
 ];
 
 /// Codex's modes: its collaboration modes, value and name.
-const MODES: [(&str, &str); 2] = [("default", "Default"), ("plan", "Plan")];
+const MODES: [(&str, &str); 2] = [("default", "Normal"), ("plan", "Plan")];
 
 /// The permission a catalogue value names.
 pub fn permission(value: &str) -> Option<&'static NamedPermission> {

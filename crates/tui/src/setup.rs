@@ -264,12 +264,15 @@ impl Setup {
         // which Shift+Tab steps, speaks only when it is not the normal one,
         // as in a chat.
         let view = self.view();
+        // Nothing named while the host has not said; once it has, a setting
+        // it cannot name is left off.
+        let waiting = if self.offered.is_none() { "…" } else { "" };
         let mut model = view
             .models
             .iter()
             .find(|model| model.current)
             .map(|model| model.display_name.clone())
-            .unwrap_or_else(|| "Default".to_owned());
+            .unwrap_or_else(|| waiting.to_owned());
         if let Some(effort) = view.efforts.iter().find(|effort| effort.current) {
             model.push_str(&format!(" ({})", effort.value));
         }
@@ -278,7 +281,7 @@ impl Setup {
             .iter()
             .find(|permission| permission.current)
             .map(crate::words::permission_words)
-            .unwrap_or_else(|| "Default".to_owned());
+            .unwrap_or_else(|| waiting.to_owned());
         let mut agent = self.agent.name().to_owned();
         if signed_in(fleet, &self.host, self.agent.provider()) == Some(false) {
             agent.push_str(" (not signed in)");
@@ -291,6 +294,7 @@ impl Setup {
         if let Some(mode) = view.modes.iter().find(|mode| mode.current && !mode.normal) {
             runs.push((Item::Mode, crate::words::mode_words(mode)));
         }
+        runs.retain(|(_, words)| !words.is_empty());
         let folder = match self.folder.as_str() {
             "" => "+ Folder".to_owned(),
             folder => self.shown(folder),
@@ -640,17 +644,13 @@ pub(crate) fn model_choices(view: &SettingsView) -> Vec<Choice> {
         .collect()
 }
 
-/// The current model's efforts, its default marked.
+/// The current model's efforts.
 pub(crate) fn effort_choices(view: &SettingsView) -> Vec<Choice> {
     view.efforts
         .iter()
         .map(|effort| Choice {
             label: effort.value.clone(),
-            detail: if effort.default {
-                "default".into()
-            } else {
-                String::new()
-            },
+            detail: String::new(),
             value: effort.value.clone(),
             current: effort.current,
             disabled: false,

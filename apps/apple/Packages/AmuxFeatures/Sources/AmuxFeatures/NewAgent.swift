@@ -297,14 +297,13 @@ public struct NewAgent: View {
         return rows
     }
 
-    private var hostDefault: String { String(localized: "Host default") }
+    /// What a setting reads when the host cannot name it.
+    private var unnamed: String { "…" }
 
     private func modelPicker(_ view: SettingsView) -> some View {
-        let current = view.models.first(where: \.current)?.displayName ?? hostDefault
-        let items = [MenuItem(title: hostDefault, chosen: model.model == nil) {
-            model.choose(.model(nil))
-        }] + view.models.map { offered in
-            MenuItem(title: offered.displayName, chosen: model.model != nil && offered.current) {
+        let current = view.models.first(where: \.current)?.displayName ?? unnamed
+        let items = view.models.map { offered in
+            MenuItem(title: offered.displayName, chosen: offered.current) {
                 model.choose(.model(offered.value))
             }
         }
@@ -312,30 +311,23 @@ public struct NewAgent: View {
     }
 
     private func effortPicker(_ view: SettingsView) -> some View {
-        let worded = { (effort: EffortChoice) in
-            effort.default ? String(localized: "\(effort.value) (default)") : effort.value
-        }
-        let items = [MenuItem(
-            title: String(localized: "Model default"), chosen: model.effort == nil
-        ) { model.choose(.effort(nil)) }] + view.efforts.map { effort in
-            MenuItem(title: worded(effort), chosen: model.effort != nil && effort.current) {
+        let items = view.efforts.map { effort in
+            MenuItem(title: effort.value, chosen: effort.current) {
                 model.choose(.effort(effort.value))
             }
         }
         return picker(
             String(localized: "Effort"), id: "new-agent.effort",
-            current: model.effort ?? String(localized: "Model default"), items: items)
+            current: view.efforts.first(where: \.current)?.value ?? unnamed, items: items)
     }
 
     private func permissionPicker(_ view: SettingsView) -> some View {
-        let current = view.permissions.first(where: \.current).map(ChatWords.permission) ?? hostDefault
+        let current = view.permissions.first(where: \.current).map(ChatWords.permission) ?? unnamed
         // One that acts without asking reads red, as on a chat's settings.
-        let items = [MenuItem(title: hostDefault, chosen: model.permission == nil) {
-            model.choose(.permission(nil))
-        }] + view.permissions.map { permission in
+        let items = view.permissions.map { permission in
             MenuItem(
                 title: ChatWords.permission(permission),
-                destructive: permission.neverAsks, chosen: model.permission != nil && permission.current
+                destructive: permission.neverAsks, chosen: permission.current
             ) { model.choose(.permission(permission.value)) }
         }
         return picker(
@@ -350,7 +342,7 @@ public struct NewAgent: View {
         }
         return picker(
             String(localized: "Mode"), id: "new-agent.mode",
-            current: view.modes.first(where: \.current).map(ChatWords.mode) ?? hostDefault, items: items)
+            current: view.modes.first(where: \.current).map(ChatWords.mode) ?? unnamed, items: items)
     }
 
     private func picker(_ label: String, id: String, current: String, items: [MenuItem]) -> some View {

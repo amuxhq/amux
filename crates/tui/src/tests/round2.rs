@@ -1112,7 +1112,7 @@ fn an_invalid_new_agent_name_is_refused_on_the_spot() {
         Some("a-very-long-agent-name-that-fills-most-of-the-edge")
     );
     assert!(
-        edge.contains("Default") && edge.contains('…'),
+        edge.contains("a-very-long-agent-name-that…") && edge.contains("Claude · …"),
         "the name pushed the model off the edge instead of shortening: {edge:?}"
     );
 }

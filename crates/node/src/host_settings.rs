@@ -218,8 +218,12 @@ impl HostSettings {
             }
         };
         let mut changes: Vec<Change> = Vec::new();
-        if let Some(model) = picked.model.as_ref().filter(|model| **model != held.model) {
-            changes.push((model_key, model.clone().map(Into::into)));
+        if let Some(model) = picked
+            .model
+            .as_ref()
+            .filter(|model| Some(*model) != held.model.as_ref())
+        {
+            changes.push((model_key, Some(model.clone().into())));
         }
         if let Some(effort) = picked
             .effort
@@ -561,20 +565,16 @@ mod tests {
         assert!(settings.reread().is_none());
     }
 
-    fn picked(
-        kind: wire::Kind,
-        model: Option<Option<&str>>,
-        effort: Option<&str>,
-    ) -> crate::spec::Picked {
+    fn picked(kind: wire::Kind, model: Option<&str>, effort: Option<&str>) -> crate::spec::Picked {
         crate::spec::Picked {
             kind,
-            model: model.map(|model| model.map(str::to_owned)),
+            model: model.map(str::to_owned),
             effort: effort.map(str::to_owned),
         }
     }
 
     #[test]
-    fn a_pick_is_kept_under_its_agent_and_can_be_forgotten() {
+    fn a_pick_is_kept_under_its_agent() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
         std::fs::write(&path, "# mine\ntelemetry = false\n").unwrap();
@@ -584,11 +584,7 @@ mod tests {
         });
 
         let kept = settings
-            .remember(&picked(
-                wire::Kind::ClaudeSdk,
-                Some(Some("sonnet")),
-                Some("low"),
-            ))
+            .remember(&picked(wire::Kind::ClaudeSdk, Some("sonnet"), Some("low")))
             .unwrap()
             .expect("a change");
         assert_eq!(kept.new_agent.claude.model.as_deref(), Some("sonnet"));
@@ -599,17 +595,10 @@ mod tests {
 
         assert!(
             settings
-                .remember(&picked(wire::Kind::ClaudeSdk, Some(Some("sonnet")), None))
+                .remember(&picked(wire::Kind::ClaudeSdk, Some("sonnet"), None))
                 .unwrap()
                 .is_none(),
             "already so: the file is left alone"
         );
-
-        let forgotten = settings
-            .remember(&picked(wire::Kind::ClaudeSdk, Some(None), None))
-            .unwrap()
-            .expect("a change");
-        assert_eq!(forgotten.new_agent.claude.model, None);
-        assert_eq!(forgotten.new_agent.claude.effort.as_deref(), Some("low"));
     }
 }

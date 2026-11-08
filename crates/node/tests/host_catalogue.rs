@@ -584,7 +584,7 @@ async fn a_host_under_a_managed_mcp_config_still_asks_claude() {
 }
 
 /// A person's pick is what later agents start with, in every client's
-/// catalogue and in the agent's own launch, until they go back to Claude's.
+/// catalogue and in the agent's own launch.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_persons_pick_is_what_later_agents_start_with() {
     use wire::create_agent_request::Agent;
@@ -663,14 +663,4 @@ async fn a_persons_pick_is_what_later_agents_start_with() {
         .await
         .unwrap();
     assert!(!args_of(&terminal).contains(&"--model".to_owned()));
-
-    // Claude's own default entry goes back to following Claude.
-    runtime
-        .spawn(create("fifth", Some("default"), true), None)
-        .await
-        .unwrap();
-    assert_eq!(
-        ask(&api, here, wire::Provider::Claude).await.new_agent,
-        before.new_agent
-    );
 }

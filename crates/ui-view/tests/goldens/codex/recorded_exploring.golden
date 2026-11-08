@@ -44,10 +44,10 @@
   effort  max
   effort  ultra
   permission* "read-only" "Read only"
-  permission  "default" "Default" normal
+  permission  "default" "Ask" normal
   permission  "auto" "Auto"
   permission  "full-access" "Full access" never_asks
-  mode  "default" "Default" normal
+  mode  "default" "Normal" normal
   mode  "plan" "Plan"
   changes: model Pick · effort Pick · permission Pick · mode Pick
   command /model source="" hint="[model]" "Choose the model the agent runs"

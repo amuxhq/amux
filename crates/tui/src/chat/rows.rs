@@ -7,6 +7,7 @@ use ratatui::text::{Line, Span};
 use ui_view::{AttachmentView, CallPhase, ExploreVerb, LineKind, PatchHead, Row, RowKind, Segment};
 use wire::{BoundaryKind, EnvelopeKind, SendState};
 
+use super::selection::Join;
 use crate::text::{self, first_line, push};
 use crate::theme::Theme;
 
@@ -185,6 +186,15 @@ pub(crate) fn markdown_linked(
         .collect()
 }
 
+/// Where [`markdown_linked`]'s lines start their words and how each
+/// continues the one before, line for line.
+pub(crate) fn markdown_copy(source: &str, width: usize, theme: Theme) -> Vec<(usize, Join, bool)> {
+    crate::markdown::markdown_lines(source, width.saturating_sub(INDENT).max(1), theme)
+        .iter()
+        .map(|line| (INDENT + line.copy_from, line.join, line.exact))
+        .collect()
+}
+
 /// An attachment's chip, from its reference alone.
 pub fn chip(view: &AttachmentView) -> String {
     match view {
@@ -203,6 +213,18 @@ pub fn chip(view: &AttachmentView) -> String {
     }
 }
 
+/// How a sent message's drawn line reads when copied.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct RowShape {
+    pub join: Join,
+    /// The columns before its words: a quote's rail.
+    pub from: usize,
+    /// A code line, copied as drawn.
+    pub exact: bool,
+    /// The links on it by column.
+    pub links: Vec<Link>,
+}
+
 /// Text with chips at their places, wrapped at `width` in `style`.
 pub fn segment_lines(
     segments: &[Segment],
@@ -210,7 +232,22 @@ pub fn segment_lines(
     style: Style,
     theme: Theme,
 ) -> Vec<Line<'static>> {
+    segment_rows(segments, width, style, theme)
+        .into_iter()
+        .map(|(line, _)| line)
+        .collect()
+}
+
+/// [`segment_lines`], each with how it reads when copied. A line starting
+/// `>` is a quote: on a rail in the quieter ink, as the composer shows it.
+pub(crate) fn segment_rows(
+    segments: &[Segment],
+    width: usize,
+    style: Style,
+    theme: Theme,
+) -> Vec<(Line<'static>, RowShape)> {
     let mut lines: Vec<Line<'static>> = vec![Line::default()];
+    let mut shapes = vec![RowShape::default()];
     let width = width.max(1);
     for segment in segments {
         match segment {
@@ -218,14 +255,41 @@ pub fn segment_lines(
                 for (i, part) in text.split('\n').enumerate() {
                     if i > 0 {
                         lines.push(Line::default());
+                        shapes.push(RowShape::default());
+                    }
+                    let used = lines.last().map_or(0, text::line_width);
+                    if used == 0 && part.starts_with('>') {
+                        let body = &part[1..];
+                        let body = body.strip_prefix(' ').unwrap_or(body);
+                        let room = width.saturating_sub(2).max(1);
+                        let wrapped = text::wrap_after_joined(body, room, room);
+                        for (j, (piece, join)) in wrapped.into_iter().enumerate() {
+                            if j > 0 {
+                                lines.push(Line::default());
+                                shapes.push(RowShape {
+                                    join,
+                                    ..RowShape::default()
+                                });
+                            }
+                            if let (Some(last), Some(shape)) = (lines.last_mut(), shapes.last_mut())
+                            {
+                                shape.from = 2;
+                                last.spans.push(Span::styled("│ ", theme.faint()));
+                                last.spans.push(Span::styled(piece, theme.muted()));
+                            }
+                        }
+                        continue;
                     }
                     // Words after a chip fill what is left of its line, then
                     // wrap at the message's whole width.
-                    let used = lines.last().map_or(0, text::line_width);
-                    let wrapped = text::wrap_after(part, width.saturating_sub(used), width);
-                    for (j, piece) in wrapped.into_iter().enumerate() {
+                    let wrapped = text::wrap_after_joined(part, width.saturating_sub(used), width);
+                    for (j, (piece, join)) in wrapped.into_iter().enumerate() {
                         if j > 0 {
                             lines.push(Line::default());
+                            shapes.push(RowShape {
+                                join,
+                                ..RowShape::default()
+                            });
                         }
                         if let Some(last) = lines.last_mut() {
                             last.spans.push(Span::styled(piece, style));
@@ -238,6 +302,7 @@ pub fn segment_lines(
                 let used = lines.last().map_or(0, text::line_width);
                 if used > 0 && used + text::str_width(&chip) + 1 > width {
                     lines.push(Line::default());
+                    shapes.push(RowShape::default());
                 } else if used > 0
                     && let Some(last) = lines.last_mut()
                 {
@@ -252,7 +317,19 @@ pub fn segment_lines(
             }
         }
     }
-    lines
+    lines.into_iter().zip(shapes).collect()
+}
+
+/// The columns of a [`patch_lines`] row before its code: the line number,
+/// its rule and the sign.
+pub(crate) fn patch_gutter(patch: &ui_view::PatchHead) -> usize {
+    let digits = patch
+        .lines
+        .iter()
+        .filter_map(|line| line.number)
+        .max()
+        .map_or(0, |n| n.to_string().len());
+    if digits > 0 { digits + 3 + 1 } else { 1 }
 }
 
 pub(crate) fn explore_verb(verb: ExploreVerb) -> &'static str {

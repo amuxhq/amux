@@ -380,7 +380,7 @@ pub fn settings_page(signed_in: bool) -> SettingsScene {
         screen: SettingsScreen::new(settings, Some(profile(signed_in)), "Mac"),
     };
     if !signed_in {
-        for _ in 0..9 {
+        for _ in 0..10 {
             scene.key(KeyCode::Down);
         }
     }

@@ -19,6 +19,7 @@ use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagE
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
+use crate::chat::selection::Join;
 use crate::highlight;
 use crate::text::{clip_to_width, str_width};
 use crate::theme::Theme;
@@ -28,6 +29,13 @@ use crate::theme::Theme;
 pub(crate) struct MdLine {
     pub spans: Vec<Span<'static>>,
     pub links: Vec<(usize, usize, String)>,
+    /// The column copied text starts at: past a quote's rail and, on a
+    /// wrapped line, past the hanging indent.
+    pub copy_from: usize,
+    /// How the line continues the one before it when copied.
+    pub join: Join,
+    /// A code line: copied with its spacing as drawn.
+    pub exact: bool,
 }
 
 /// A styled run of inline text, with the link it belongs to.
@@ -494,8 +502,24 @@ impl Drawer {
     }
 
     fn push_line(&mut self, spans: Vec<Span<'static>>, links: Vec<(usize, usize, String)>) {
+        self.push_copied(spans, links, 0, Join::New);
+    }
+
+    fn push_copied(
+        &mut self,
+        spans: Vec<Span<'static>>,
+        links: Vec<(usize, usize, String)>,
+        copy_from: usize,
+        join: Join,
+    ) {
         self.last_blank = false;
-        self.out.push(MdLine { spans, links });
+        self.out.push(MdLine {
+            spans,
+            links,
+            copy_from,
+            join,
+            exact: false,
+        });
     }
 
     /// One blank line between blocks, carrying a quote's rail inside it.
@@ -510,8 +534,9 @@ impl Drawer {
             .map(|_| Span::styled("│", self.theme.faint()))
             .collect();
         self.out.push(MdLine {
+            copy_from: spans_width(&rail),
             spans: rail,
-            links: Vec::new(),
+            ..MdLine::default()
         });
         self.last_blank = true;
     }
@@ -525,15 +550,30 @@ impl Drawer {
         if runs.iter().all(|run| run.text.trim().is_empty()) {
             return;
         }
+        // A list's marker is copied with its first line; rails and hanging
+        // indents are not.
+        let rails = 2 * self
+            .containers
+            .iter()
+            .take_while(|container| matches!(container, Container::Quote))
+            .count();
+        let marked = self
+            .containers
+            .iter()
+            .any(|container| matches!(container, Container::Item { used: false, .. }));
         let (first, rest) = self.prefixes();
         let room = self
             .width
             .saturating_sub(spans_width(&first).max(spans_width(&rest)))
             .max(1);
-        for (i, pieces) in wrap(&runs, room).into_iter().enumerate() {
+        for (i, (pieces, join)) in wrap_joined(&runs, room).into_iter().enumerate() {
             let prefix = if i == 0 { &first } else { &rest };
+            let copy_from = match (i, marked) {
+                (0, true) => rails,
+                _ => spans_width(prefix),
+            };
             let (spans, links) = placed(prefix, &pieces);
-            self.push_line(spans, links);
+            self.push_copied(spans, links, copy_from, join);
         }
         self.fresh_item = false;
     }
@@ -567,9 +607,14 @@ impl Drawer {
                 } else {
                     rest.clone()
                 };
+                let copy_from = spans_width(&spans) + 2;
                 spans.push(indent.clone());
                 spans.extend(row);
-                self.push_line(spans, Vec::new());
+                let join = if i == 0 { Join::New } else { Join::Tight };
+                self.push_copied(spans, Vec::new(), copy_from, join);
+                if let Some(drawn) = self.out.last_mut() {
+                    drawn.exact = true;
+                }
             }
         }
         self.fresh_item = false;
@@ -704,7 +749,7 @@ impl Drawer {
             }
             MdLine {
                 spans,
-                links: Vec::new(),
+                ..MdLine::default()
             }
         };
         let mut lines: Vec<MdLine> = Vec::new();
@@ -742,7 +787,11 @@ impl Drawer {
                     }
                     col += left + used + right;
                 }
-                lines.push(MdLine { spans, links });
+                lines.push(MdLine {
+                    spans,
+                    links,
+                    ..MdLine::default()
+                });
             }
             // With rules between rows, the header's is one ink stronger so
             // the header stays apart from them.
@@ -888,6 +937,14 @@ fn url_end(text: &str) -> usize {
 /// (a URL that fits any line is never broken); a hard break starts a line.
 /// The space between two words of one link carries its underline.
 fn wrap(runs: &[Run], width: usize) -> Vec<Vec<Run>> {
+    wrap_joined(runs, width)
+        .into_iter()
+        .map(|(line, _)| line)
+        .collect()
+}
+
+/// [`wrap`], with how each line continues the one before it.
+fn wrap_joined(runs: &[Run], width: usize) -> Vec<(Vec<Run>, Join)> {
     let width = width.max(1);
     enum Token {
         Word(Vec<Run>),
@@ -935,12 +992,14 @@ fn wrap(runs: &[Run], width: usize) -> Vec<Vec<Run>> {
     }
 
     let mut lines: Vec<Vec<Run>> = vec![Vec::new()];
+    let mut joins = vec![Join::New];
     let mut used = 0;
     let mut spaced = false;
     for token in tokens {
         match token {
             Token::Break => {
                 lines.push(Vec::new());
+                joins.push(Join::New);
                 used = 0;
                 spaced = false;
             }
@@ -968,6 +1027,7 @@ fn wrap(runs: &[Run], width: usize) -> Vec<Vec<Run>> {
                 } else if needed <= width {
                     if used > 0 {
                         lines.push(Vec::new());
+                        joins.push(Join::Space);
                     }
                     lines.last_mut().expect("a line").extend(pieces);
                     used = needed;
@@ -976,6 +1036,7 @@ fn wrap(runs: &[Run], width: usize) -> Vec<Vec<Run>> {
                     // word is broken.
                     if used > 0 {
                         lines.push(Vec::new());
+                        joins.push(Join::Space);
                         used = 0;
                     }
                     for piece in pieces {
@@ -983,6 +1044,7 @@ fn wrap(runs: &[Run], width: usize) -> Vec<Vec<Run>> {
                         while !rest.is_empty() {
                             if used == width {
                                 lines.push(Vec::new());
+                                joins.push(Join::Tight);
                                 used = 0;
                             }
                             let take = clip_to_width(rest, width - used);
@@ -1007,8 +1069,9 @@ fn wrap(runs: &[Run], width: usize) -> Vec<Vec<Run>> {
     }
     if lines.last().is_some_and(Vec::is_empty) && lines.len() > 1 {
         lines.pop();
+        joins.pop();
     }
-    lines
+    lines.into_iter().zip(joins).collect()
 }
 
 /// A code line split into rows of at most `width` columns, its spacing

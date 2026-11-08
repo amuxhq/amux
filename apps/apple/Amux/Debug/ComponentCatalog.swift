@@ -107,6 +107,9 @@ enum ComponentCatalog {
                        .attachment(.file(F.log)), .attachment(.text(name: "Pasted text", lines: 240, text: ""))],
                 steered: false))),
             row("prompt-steered", r("p3", 3, .prompt(text: [.text("Use the new error table instead.")], steered: true))),
+            row("prompt-quote", height: 150, r("p4", 4, .prompt(
+                text: [.text("> The retry only fires when the socket closes cleanly.\n\nOh **really**?")],
+                steered: false))),
             row("prose", height: 330, readiness: true, r("s1", 4, .prose(
                 text: [.text(F.markdown)], streaming: false, workingNote: false))),
             row("prose-working-note", height: 120, readiness: true, r("s2", 5, .prose(

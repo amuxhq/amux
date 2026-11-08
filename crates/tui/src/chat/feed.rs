@@ -11,6 +11,8 @@
 //! Rows that are neither text nor a step (asks, errors, boundaries) keep
 //! their own drawing from [`super::rows`].
 
+use std::collections::BTreeMap;
+
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ui_state::Key;
@@ -20,9 +22,10 @@ use ui_view::{
 };
 
 use super::rows::{
-    RowFacts, call_verb, chip, detail, explore_verb, markdown_linked, patch_lines, segment_lines,
-    state_meta,
+    RowFacts, RowShape, call_verb, chip, detail, explore_verb, markdown_copy, markdown_linked,
+    patch_gutter, patch_lines, segment_rows, state_meta,
 };
+use super::selection::{Join, LineText};
 use crate::text::{self, first_line, pad_to, push, push_right};
 use crate::theme::Theme;
 
@@ -89,9 +92,26 @@ pub struct Header {
 pub struct Drawn {
     pub lines: Vec<Line<'static>>,
     pub hits: Vec<LineHits>,
+    /// How the lines that are more than their ink read when copied, by
+    /// line; any other reads as drawn.
+    copy: BTreeMap<usize, LineText>,
 }
 
 impl Drawn {
+    /// How each line reads when copied.
+    pub fn line_text(&self) -> Vec<LineText> {
+        self.lines
+            .iter()
+            .enumerate()
+            .map(|(at, line)| {
+                self.copy
+                    .get(&at)
+                    .copied()
+                    .unwrap_or_else(|| LineText::of(line))
+            })
+            .collect()
+    }
+
     fn line(&mut self, line: Line<'static>) {
         self.lines.push(line);
         self.hits.push(Vec::new());
@@ -398,12 +418,23 @@ fn prompt_block(
     let inner = width.saturating_sub(2 * EDGE);
     let inset = WORDS - EDGE;
     let room = inner.saturating_sub(2 * inset + text::str_width(when) + 2);
-    for (i, (words, hit)) in message_lines(words, room, toggle, theme)
+    for (i, (words, hit, shape)) in message_lines(words, room, toggle, theme)
         .into_iter()
         .enumerate()
     {
         let mut line = Line::from(Span::raw(" ".repeat(inset)));
         line.spans.extend(words.spans);
+        // The time at the right is not the message's words, nor a quote's
+        // rail.
+        drawn.copy.insert(
+            drawn.lines.len(),
+            LineText {
+                from: EDGE + inset + shape.from,
+                to: EDGE + text::line_width(&line),
+                join: shape.join,
+                exact: shape.exact,
+            },
+        );
         // Muted rather than faint: faint falls below the readable floor on
         // the block's surface.
         if i == 0 {
@@ -412,7 +443,16 @@ fn prompt_block(
         let line = tinted(line, surface, width);
         match hit {
             Some(hit) => drawn.hit_line(line, hit),
-            None => drawn.line(line),
+            None => {
+                let margin = EDGE + inset;
+                let hits = shape
+                    .links
+                    .into_iter()
+                    .map(|(from, to, url)| (Some((margin + from, margin + to)), FeedHit::Link(url)))
+                    .collect();
+                drawn.lines.push(line);
+                drawn.hits.push(hits);
+            }
         }
     }
     drawn.line(tinted(Line::default(), surface, width));
@@ -429,11 +469,13 @@ fn message_lines(
     room: usize,
     toggle: Option<(&Key, bool)>,
     theme: Theme,
-) -> Vec<(Line<'static>, Option<FeedHit>)> {
+) -> Vec<(Line<'static>, Option<FeedHit>, RowShape)> {
     let room = room.max(1);
-    let mut out: Vec<(Line<'static>, Option<FeedHit>)> = Vec::new();
+    let mut out: Vec<(Line<'static>, Option<FeedHit>, RowShape)> = Vec::new();
     let mut run: Vec<Segment> = Vec::new();
-    let flush = |run: &mut Vec<Segment>, out: &mut Vec<(Line<'static>, Option<FeedHit>)>| {
+    let plain = |line| (line, None, RowShape::default());
+    let flush = |run: &mut Vec<Segment>,
+                 out: &mut Vec<(Line<'static>, Option<FeedHit>, RowShape)>| {
         // The space a chip leaves after itself is not a line of its own.
         let blank = run.iter().all(|segment| match segment {
             Segment::Text(text) => text.trim().is_empty(),
@@ -447,11 +489,35 @@ fn message_lines(
             {
                 *text = text.trim_start().to_owned();
             }
-            out.extend(
-                segment_lines(run, room, theme.text(), theme)
-                    .into_iter()
-                    .map(|line| (line, None)),
-            );
+            // Words alone read as the agent's do. Words among chips keep the
+            // chips at their places in the line, which markdown cannot.
+            let words: Option<String> = run
+                .iter()
+                .map(|segment| match segment {
+                    Segment::Text(text) => Some(text.as_str()),
+                    Segment::Attachment(_) => None,
+                })
+                .collect();
+            match words {
+                Some(source) => out.extend(
+                    crate::markdown::markdown_lines(&source, room, theme)
+                        .iter()
+                        .map(|line| {
+                            let shape = RowShape {
+                                join: line.join,
+                                from: line.copy_from,
+                                exact: line.exact,
+                                links: line.links.clone(),
+                            };
+                            (Line::from(line.spans.clone()), None, shape)
+                        }),
+                ),
+                None => out.extend(
+                    segment_rows(run, room, theme.text(), theme)
+                        .into_iter()
+                        .map(|(line, shape)| (line, None, shape)),
+                ),
+            }
         }
         run.clear();
     };
@@ -477,7 +543,7 @@ fn message_lines(
         if long && !open {
             let hidden = lines.len() - PASTE_LINES;
             lines.truncate(PASTE_LINES);
-            out.extend(lines.into_iter().map(|line| (line, None)));
+            out.extend(lines.into_iter().map(plain));
             let s = if hidden == 1 { "" } else { "s" };
             let mut more = Line::default();
             push(
@@ -489,19 +555,19 @@ fn message_lines(
             if toggle.is_some() {
                 push(&mut more, "[Show All]", theme.muted(), room);
             }
-            out.push((more, hit()));
+            out.push((more, hit(), RowShape::default()));
         } else {
-            out.extend(lines.into_iter().map(|line| (line, None)));
+            out.extend(lines.into_iter().map(plain));
             if long {
                 let mut less = Line::default();
                 push(&mut less, "[Show Less]", theme.muted(), room);
-                out.push((less, hit()));
+                out.push((less, hit(), RowShape::default()));
             }
         }
     }
     flush(&mut run, &mut out);
     if out.is_empty() {
-        out.push((Line::default(), None));
+        out.push(plain(Line::default()));
     }
     out
 }
@@ -672,7 +738,21 @@ fn prose(drawn: &mut Drawn, words: &[Segment], streaming: bool, width: usize, th
     if lines.is_empty() {
         return;
     }
-    for (line, links) in lines {
+    let copied = markdown_copy(source, width.saturating_sub(2), theme);
+    for ((line, links), (from, join, exact)) in lines.into_iter().zip(copied) {
+        drawn.copy.insert(
+            drawn.lines.len(),
+            LineText {
+                from,
+                to: if exact {
+                    text::line_width(&line)
+                } else {
+                    LineText::of(&line).to
+                },
+                join,
+                exact,
+            },
+        );
         drawn.lines.push(line);
         drawn.hits.push(
             links
@@ -1221,6 +1301,7 @@ fn step(
     if verb.is_empty() && subject.is_empty() {
         return None;
     }
+    let heading_from = drawn.lines.len();
     // An open ask points at this step: it waits on the person, so it reads
     // as the step under way, marked in the attention ink, and nothing it has not
     // done yet is said about it.
@@ -1342,14 +1423,50 @@ fn step(
             drawn.hit_line(more, FeedHit::Step(row.id.clone()));
         }
     }
+    // The rail and the mark beside the words are the drawing's.
+    for at in heading_from..drawn.lines.len() {
+        let to = LineText::of(&drawn.lines[at]).to;
+        drawn.copy.insert(
+            at,
+            LineText {
+                from: WORDS,
+                to,
+                ..LineText::default()
+            },
+        );
+    }
     if expanded {
-        for line in step_detail(row, facts, width, theme) {
+        let patch = facts
+            .patch
+            .as_ref()
+            .filter(|_| matches!(row.kind, RowKind::FileChange { .. }));
+        for (at, line) in step_detail(row, facts, width, theme)
+            .into_iter()
+            .enumerate()
+        {
+            let code_from = patch
+                .filter(|patch| at < patch.lines.len())
+                .map(patch_gutter);
             let mut railed = Line::default();
             pad_to(&mut railed, EDGE);
             push(&mut railed, "│", theme.hairline(), width);
             pad_to(&mut railed, DETAIL);
             // The detail's own indent gives way to the rail and the column.
             railed.spans.extend(line.spans.into_iter().skip(1));
+            let copied = match code_from {
+                Some(gutter) => LineText {
+                    from: DETAIL + gutter,
+                    to: text::line_width(&railed),
+                    join: Join::New,
+                    exact: true,
+                },
+                None => LineText {
+                    from: DETAIL,
+                    to: LineText::of(&railed).to,
+                    ..LineText::default()
+                },
+            };
+            drawn.copy.insert(drawn.lines.len(), copied);
             drawn.hit_line(railed, FeedHit::Step(row.id.clone()));
         }
     }

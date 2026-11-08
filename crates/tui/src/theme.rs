@@ -69,6 +69,8 @@ pub struct Tokens {
     pub emphasis: Token,
     pub attention: Token,
     pub user_surface: Token,
+    /// Behind text dragged over with the mouse.
+    pub selection: Token,
     pub panel: Token,
     /// Section rules: a line that separates without being read.
     pub hairline: Token,
@@ -244,6 +246,7 @@ impl Theme {
                 // black, so in that face attention takes light cyan.
                 attention: Token::new((108, 160, 232), Color::LightCyan),
                 user_surface: Token::new((24, 34, 46), Color::Black),
+                selection: Token::new((52, 68, 92), Color::Blue),
                 panel: Token::new((23, 27, 34), Color::Blue),
                 hairline: Token::new((44, 50, 58), Color::DarkGray),
                 focus: Token::new((156, 140, 214), Color::Magenta),
@@ -277,6 +280,7 @@ impl Theme {
                 emphasis: Token::new((21, 24, 31), Color::Black),
                 attention: Token::new((38, 94, 168), Color::Blue),
                 user_surface: Token::new((232, 239, 246), Color::Cyan),
+                selection: Token::new((190, 210, 235), Color::Cyan),
                 panel: Token::new((240, 240, 238), Color::Gray),
                 hairline: Token::new((220, 223, 228), Color::Gray),
                 focus: Token::new((109, 78, 156), Color::Magenta),
@@ -348,6 +352,7 @@ impl Theme {
             // message is the one thing on the screen they do not need to
             // find, so its surface states where it is rather than shouting.
             user_surface: surface(0.10),
+            selection: surface(0.28),
             panel: surface(0.055),
             hairline: surface(0.2),
             // Both tints start as the same plain surface and are tinted by
@@ -389,6 +394,17 @@ impl Theme {
     /// Body text.
     pub(crate) fn text(self) -> Style {
         Style::default().fg(self.color(self.tokens.text))
+    }
+
+    /// Text dragged over with the mouse: one ink on one surface, whatever
+    /// it was drawn in.
+    pub(crate) fn selection(self) -> Style {
+        // A palette adopted from the terminal cannot paint an exact shade
+        // of its ground in sixteen colours, and a selection has to show.
+        if self.adopted && self.mode == ColorMode::Ansi {
+            return Style::default().add_modifier(Modifier::REVERSED);
+        }
+        self.text().bg(self.color(self.tokens.selection))
     }
 
     /// De-emphasis: markers, rules, continuations, and hints.

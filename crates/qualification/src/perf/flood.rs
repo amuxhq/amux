@@ -382,7 +382,10 @@ async fn capacity(net: &mut Net, options: &FloodOptions) -> Result<MetricRun> {
     let cursors = cursors_rx
         .await
         .context("the origin's core read its cursors")??;
-    let deadline = Instant::now() + PATIENCE;
+    // How long the writers take depends only on the machine, and a loaded
+    // runner's debug build takes most of a patience to write the smoke's
+    // backlog, so only writers that have stopped are a failure.
+    let mut progress = (Instant::now(), 0);
     let ends = loop {
         let ends = journals(net, &names)?;
         let mut behind = 0;
@@ -392,9 +395,12 @@ async fn capacity(net: &mut Net, options: &FloodOptions) -> Result<MetricRun> {
         if behind >= options.backlog {
             break ends;
         }
+        if behind > progress.1 {
+            progress = (Instant::now(), behind);
+        }
         ensure!(
-            Instant::now() < deadline,
-            "the agents wrote {behind} of {} bytes ahead of ingest",
+            progress.0.elapsed() < PATIENCE,
+            "the agents stopped at {behind} of {} bytes ahead of ingest",
             options.backlog
         );
         tokio::time::sleep(Duration::from_millis(10)).await;

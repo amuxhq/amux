@@ -96,10 +96,12 @@ final class ChatFeedTests: XCTestCase {
 
     /// The pixels of the rows between the header and the composer, as the
     /// screen shows them. The band starts below the soft edge under the
-    /// header, which blurs in whatever rows are scrolled past above it.
+    /// header, which blurs in whatever rows are scrolled past above it, and
+    /// ends above the glass way back to the newest row a reader in history
+    /// has standing over the rows, which is not the rows.
     private func rowsBand() throws -> Data {
         let window = try XCTUnwrap(self.window)
-        let band = CGRect(x: 0, y: 200, width: window.bounds.width, height: 500)
+        let band = CGRect(x: 0, y: 200, width: window.bounds.width, height: 420)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.preferredRange = .standard

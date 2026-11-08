@@ -20,7 +20,8 @@ class UnitRecipeTests(unittest.TestCase):
         with patch.object(recipe, "suites", return_value=["AmuxAppTests", "CoreTests"]):
             self.assertEqual(
                 recipe.selected(["-quiet"]),
-                ["-quiet", "-only-testing:AmuxAppTests", "-only-testing:CoreTests"],
+                ["-quiet", "-only-testing:AmuxAppTests", "-only-testing:CoreTests",
+            "-only-testing:AmuxUITests/ChatFingerTests"],
             )
         self.assertNotIn("AmuxComponentSnapshotTests", recipe.suites())
 

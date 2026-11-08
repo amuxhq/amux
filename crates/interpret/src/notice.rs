@@ -179,6 +179,19 @@ pub(crate) fn signed_out() -> BlockedNotice {
     }
 }
 
+/// The model answered, so the sign-in works. A provider that recovers by
+/// itself reports no change of sign-in, and a card stating otherwise takes
+/// the place of the composer.
+pub(crate) fn model_answered(sign_in: &mut Option<wire::SignIn>) {
+    if let Some(sign_in) = sign_in
+        .as_mut()
+        .filter(|sign_in| sign_in.state != wire::SignInState::SignedIn as i32)
+    {
+        sign_in.state = wire::SignInState::SignedIn as i32;
+        sign_in.message.clear();
+    }
+}
+
 pub(crate) fn usage_spent(resets_at_ms: Option<i64>) -> BlockedNotice {
     BlockedNotice {
         why: Some(blocked_notice::Why::Usage(UsageBlock { resets_at_ms })),

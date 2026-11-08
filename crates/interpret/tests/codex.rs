@@ -1350,6 +1350,58 @@ fn idle_codex() -> State {
     state
 }
 
+fn refused(will_retry: bool) -> Event {
+    rpc(json!({"method": "error", "params": {
+        "threadId": "t1", "turnId": "turn-1", "willRetry": will_retry,
+        "error": {"message": "refused", "codexErrorInfo": "unauthorized", "additionalDetails": null},
+    }}))
+}
+
+/// The sign-in state the step published, if it published one.
+fn sign_in_of(stepped: &interpret::Stepped) -> Option<wire::SignInState> {
+    use prost::Message as _;
+    let snapshot = stepped.step.snapshot.as_ref()?;
+    let body = wire::CodexSnapshot::decode(snapshot.body.as_slice()).unwrap();
+    body.sign_in.map(|sign_in| sign_in.state())
+}
+
+/// A 401 Codex is retrying is no sign-in problem. Giving up on one raises
+/// the card, and the model's next answer takes it down.
+#[test]
+fn only_giving_up_on_a_401_fails_the_sign_in_and_an_answer_ends_it() {
+    let mut state = idle_codex();
+    let retried = Codex::step(&mut state, refused(true));
+    assert_ne!(sign_in_of(&retried), Some(wire::SignInState::Failed));
+    let stopped = Codex::step(&mut state, refused(false));
+    assert_eq!(sign_in_of(&stopped), Some(wire::SignInState::Failed));
+    let answered = Codex::step(
+        &mut state,
+        rpc(json!({"method": "item/started", "params": {
+            "threadId": "t1", "turnId": "turn-2",
+            "item": {"type": "agentMessage", "id": "m1", "text": ""},
+        }})),
+    );
+    assert_eq!(sign_in_of(&answered), Some(wire::SignInState::SignedIn));
+}
+
+/// A turn can end on a 401 with no error notification of its own, after
+/// retries that said nothing about the sign-in.
+#[test]
+fn a_turn_that_ends_on_a_401_fails_the_sign_in() {
+    let mut state = idle_codex();
+    Codex::step(&mut state, refused(true));
+    let ended = Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {
+                "id": "turn-1", "status": "failed",
+                "error": {"message": "refused", "codexErrorInfo": "unauthorized", "additionalDetails": null},
+            }}}),
+        ),
+    );
+    assert_eq!(sign_in_of(&ended), Some(wire::SignInState::Failed));
+}
+
 /// What sending `text` as a prompt wrote to Codex, and the replies to it.
 fn slash(state: &mut State, id: &[u8], text: &str) -> (Vec<Value>, Vec<String>) {
     let stepped = Codex::step(state, prompt(id, text));

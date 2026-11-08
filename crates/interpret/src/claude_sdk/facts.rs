@@ -833,20 +833,6 @@ impl State {
         });
     }
 
-    /// The model answered, so the sign-in works. Claude reports no change of
-    /// sign-in when it recovers by itself, and the card stating otherwise
-    /// takes the place of the composer.
-    fn answered(&mut self) {
-        if let Some(sign_in) = self
-            .sign_in
-            .as_mut()
-            .filter(|sign_in| sign_in.state != SignInState::SignedIn as i32)
-        {
-            sign_in.state = SignInState::SignedIn as i32;
-            sign_in.message.clear();
-        }
-    }
-
     // --- whole messages --------------------------------------------------
 
     fn assistant(&mut self, emit: &mut Emit, assistant: &AssistantMessage) {
@@ -904,7 +890,7 @@ impl State {
             return;
         }
         if message.model != "<synthetic>" {
-            self.answered();
+            crate::notice::model_answered(&mut self.sign_in);
         }
         let base = self.blocks.get(&message_id).copied().unwrap_or(0);
         // A built-in command Claude runs itself answers as the `<synthetic>`

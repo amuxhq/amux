@@ -406,6 +406,20 @@ impl State {
         }
     }
 
+    /// Codex stopped on this error. Only here does a 401 mean the sign-in
+    /// failed: one Codex is still retrying can recover by itself.
+    fn gave_up(&mut self, error: &TurnError) {
+        if unauthorized(error) {
+            self.sign_in = Some(SignIn {
+                state: SignInState::Failed as i32,
+                account: String::new(),
+                message: error_message(error),
+            });
+        }
+        let why = self.blocked_by(error);
+        self.shared.stopped_by(why);
+    }
+
     fn error_item(&mut self, emit: &mut Emit, key: String, error: ApiError) {
         self.emit_item(
             emit,
@@ -1818,16 +1832,8 @@ impl State {
             (0, 0)
         };
         let message = error_message(&error);
-        if unauthorized(&error) {
-            self.sign_in = Some(SignIn {
-                state: SignInState::Failed as i32,
-                account: String::new(),
-                message: message.clone(),
-            });
-        }
         if !will_retry {
-            let why = self.blocked_by(&error);
-            self.shared.stopped_by(why);
+            self.gave_up(&error);
         }
         let turn = notification.turn_id;
         self.error_item(
@@ -1938,6 +1944,7 @@ impl State {
                 }
             }
             ThreadItem::AgentMessage(message) => {
+                crate::notice::model_answered(&mut self.sign_in);
                 let kind = self.streamed.get(&id).cloned().unwrap_or(
                     if message.phase == Some(MessagePhase::Commentary) {
                         Streamed::WorkingNote
@@ -2481,8 +2488,7 @@ impl State {
         if let Some(error) = &turn.error
             && self.final_error.as_deref() != Some(turn_id.as_str())
         {
-            let why = self.blocked_by(error);
-            self.shared.stopped_by(why);
+            self.gave_up(error);
             self.error_item(
                 emit,
                 format!("error:{turn_id}"),

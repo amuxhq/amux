@@ -185,6 +185,18 @@ public struct ChatScreen: View {
                 .buttonStyle(.amuxControl)
                 .padding(.bottom, 10)
                 .identified("chat.newActivity", label: String(localized: "New activity"), value: "shown")
+            } else if !model.following {
+                Button { model.jumpToNewest() } label: {
+                    Image(systemName: "arrow.down")
+                        .designFont(.bodyEmphasis, design)
+                        .foregroundStyle(design.ink.color)
+                        .frame(width: 44, height: 44)
+                        .frosted(Circle(), as: .glass)
+                }
+                .buttonStyle(.amuxControl)
+                .padding(.bottom, 10)
+                .accessibilityLabel(String(localized: "Go to newest"))
+                .identified("chat.toNewest", label: String(localized: "Go to newest"), value: "shown")
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {

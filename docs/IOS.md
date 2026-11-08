@@ -956,11 +956,20 @@ What the leaf owns, and what stays in `ChatModel`:
   still to the pixel under a landing page and under arrivals, holds the
   bottom while following, and shows a streamed chat exactly as the same
   rows open.
+- When heights change. Only at the start of a layout pass, with the move
+  that answers them, before the cells are placed. UIKit asks for rows at
+  other moments, among them while a finger moves the list, ahead of the
+  scroll callback that judges where the reader is: a row above the reader
+  measured shorter than its estimate there shrank the list with the offset
+  not yet answering it, and the reader read as past the bottom. Rows under
+  a finger are held even while following. `ChatFingerTests` drags the list
+  with real touches; setting its offset never brings those moments about.
 - Where the reader is. Following is read from the scroll view at each
   move, never from the callbacks that end one, which UIKit skips whenever
   something else stops the movement. The reader moving the list away from
-  the bottom stops following at once, so rows arriving meanwhile are held
-  by the session and New activity shows; the reader bringing the bottom
+  the bottom stops following at once, so a glass arrow back to the newest
+  row stands over the rows, and rows arriving meanwhile are held by the
+  session and it becomes New activity; the reader bringing the bottom
   within 24 pt follows again at once, mid-flick included. Any other move
   follows only by landing on the bottom, as UIKit does when the rows under
   a reader shrink, so the status bar's scroll to the top is not held back.
@@ -968,7 +977,7 @@ What the leaf owns, and what stays in `ChatModel`:
   tells the session. A cell among the first twenty coming on screen asks
   the model for the page before the oldest row.
 - Going to the newest row. `ChatModel.toNewest` is bumped when somebody
-  asks for it (a send, a resume, a reset, New activity), never on an
+  asks for it (a send, a resume, a reset, the way back), never on an
   arrival; the leaf goes to the bottom at once with the move that keeps
   it, which is nothing when the list is already there.
 - What the door reads. Each hosted cell reports the elements it declared

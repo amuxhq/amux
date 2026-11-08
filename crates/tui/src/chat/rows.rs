@@ -168,27 +168,21 @@ pub(crate) type Link = (usize, usize, String);
 pub(crate) fn markdown_linked(
     source: &str,
     width: usize,
-    wide: usize,
     theme: Theme,
 ) -> Vec<(Line<'static>, Vec<Link>)> {
-    crate::markdown::markdown_lines_wide(
-        source,
-        width.saturating_sub(INDENT).max(1),
-        wide.saturating_sub(INDENT).max(1),
-        theme,
-    )
-    .iter()
-    .map(|line| {
-        let mut spans = vec![Span::raw(" ".repeat(INDENT))];
-        spans.extend(line.spans.iter().cloned());
-        let links = line
-            .links
-            .iter()
-            .map(|(from, to, url)| (INDENT + from, INDENT + to, url.clone()))
-            .collect();
-        (Line::from(spans), links)
-    })
-    .collect()
+    crate::markdown::markdown_lines(source, width.saturating_sub(INDENT).max(1), theme)
+        .iter()
+        .map(|line| {
+            let mut spans = vec![Span::raw(" ".repeat(INDENT))];
+            spans.extend(line.spans.iter().cloned());
+            let links = line
+                .links
+                .iter()
+                .map(|(from, to, url)| (INDENT + from, INDENT + to, url.clone()))
+                .collect();
+            (Line::from(spans), links)
+        })
+        .collect()
 }
 
 /// An attachment's chip, from its reference alone.

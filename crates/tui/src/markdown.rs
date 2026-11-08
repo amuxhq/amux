@@ -71,26 +71,15 @@ pub(crate) fn markdown_rows(source: &str, width: usize, theme: Theme) -> Vec<Vec
         .collect()
 }
 
-/// The source drawn as lines with their links, wrapped at `width`.
+/// The source drawn as lines with their links, wrapped at `width`. Kept for
+/// the next frame by content, width and theme, so a message is parsed again
+/// only while it changes.
 pub(crate) fn markdown_lines(source: &str, width: usize, theme: Theme) -> Rc<Vec<MdLine>> {
-    markdown_lines_wide(source, width, width, theme)
-}
-
-/// [`markdown_lines`] with tables free to use `wide` columns, wider than
-/// the reading measure prose keeps to. Kept for the next frame by content,
-/// widths and theme, so a message is parsed again only while it changes.
-pub(crate) fn markdown_lines_wide(
-    source: &str,
-    width: usize,
-    wide: usize,
-    theme: Theme,
-) -> Rc<Vec<MdLine>> {
-    type Kept = HashMap<(u64, usize, usize, bool), (Theme, Rc<Vec<MdLine>>)>;
+    type Kept = HashMap<(u64, usize, bool), (Theme, Rc<Vec<MdLine>>)>;
     thread_local! {
         static KEPT: RefCell<Kept> = RefCell::new(HashMap::new());
     }
     let width = width.max(1);
-    let wide = wide.max(width);
     let hash = {
         let mut hasher = DefaultHasher::new();
         source.hash(&mut hasher);
@@ -98,7 +87,7 @@ pub(crate) fn markdown_lines_wide(
     };
     // Drawn before the grammars arrived, code is plain: draw it again once
     // they have.
-    let key = (hash, width, wide, highlight::ready());
+    let key = (hash, width, highlight::ready());
     if let Some(lines) = KEPT.with(|kept| {
         kept.borrow()
             .get(&key)
@@ -107,7 +96,7 @@ pub(crate) fn markdown_lines_wide(
     }) {
         return lines;
     }
-    let lines = Rc::new(render(source, width, wide, theme));
+    let lines = Rc::new(render(source, width, theme));
     KEPT.with(|kept| {
         let mut kept = kept.borrow_mut();
         if kept.len() > 512 {
@@ -118,10 +107,10 @@ pub(crate) fn markdown_lines_wide(
     lines
 }
 
-fn render(source: &str, width: usize, wide: usize, theme: Theme) -> Vec<MdLine> {
+fn render(source: &str, width: usize, theme: Theme) -> Vec<MdLine> {
     let options =
         Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS | Options::ENABLE_STRIKETHROUGH;
-    let mut drawer = Drawer::new(width, wide, theme);
+    let mut drawer = Drawer::new(width, theme);
     for event in Parser::new_ext(source, options) {
         drawer.event(event);
     }
@@ -156,10 +145,7 @@ struct Table {
 }
 
 struct Drawer {
-    /// The reading measure prose wraps at.
     width: usize,
-    /// How wide a table may run.
-    wide: usize,
     theme: Theme,
     out: Vec<MdLine>,
     runs: Vec<Run>,
@@ -181,10 +167,9 @@ struct Drawer {
 }
 
 impl Drawer {
-    fn new(width: usize, wide: usize, theme: Theme) -> Drawer {
+    fn new(width: usize, theme: Theme) -> Drawer {
         Drawer {
             width,
-            wide,
             theme,
             out: Vec::new(),
             runs: Vec::new(),
@@ -592,14 +577,14 @@ impl Drawer {
 
     /// A table: aligned columns under a bold header, with inner rules only:
     /// a hairline between columns, one under the header, and one under
-    /// every row once any cell wraps. It may use the chat's full width;
-    /// columns shrink by their content, the widest first and not below
-    /// their longest word where that can be helped. When a column would
-    /// drop below [`MIN_COLUMN`], each row is drawn as a record instead.
+    /// every row once any cell wraps. Columns shrink by their content, the
+    /// widest first and not below their longest word where that can be
+    /// helped. When a column would drop below [`MIN_COLUMN`], each row is
+    /// drawn as a record instead.
     fn draw_table(&mut self, table: Table) {
         let theme = self.theme;
         let (first, rest) = self.prefixes();
-        let room = self.wide.saturating_sub(spans_width(&rest)).max(1);
+        let room = self.width.saturating_sub(spans_width(&rest)).max(1);
         let columns = table.rows.iter().map(Vec::len).max().unwrap_or(0);
         if columns == 0 {
             return;
@@ -788,7 +773,7 @@ impl Drawer {
 
     /// A table too wide for its columns, drawn as records: each row's
     /// "Header: value" lines, headers bold, values wrapping under
-    /// themselves, a hairline across the reading width between records.
+    /// themselves, a hairline across the width between records.
     fn records(&mut self, table: &Table, first: Vec<Span<'static>>, rest: Vec<Span<'static>>) {
         let theme = self.theme;
         let room = self.width.saturating_sub(spans_width(&rest)).max(1);

@@ -30,8 +30,6 @@ use crate::theme::Theme;
 const EDGE: usize = 2;
 /// Where words start.
 pub(crate) const WORDS: usize = 4;
-/// The longest line of the agent's text, in columns, on a wide terminal.
-const READING: usize = 100;
 /// Where a step's detail starts, under its words.
 const DETAIL: usize = 6;
 /// Lines of a step's detail before it is cut with a count.
@@ -665,16 +663,12 @@ fn prose(drawn: &mut Drawn, words: &[Segment], streaming: bool, width: usize, th
             Segment::Attachment(view) => chip(view),
         })
         .collect();
-    // A comfortable measure on a wide terminal: lines run to at most
-    // READING columns of text, however wide the screen.
-    let wrap = width.saturating_sub(2).min(READING + WORDS);
     let source = if streaming {
         crate::markdown::streaming_source(&source)
     } else {
         source.as_str()
     };
-    // Tables may run the chat's full width.
-    let lines = markdown_linked(source, wrap, width.saturating_sub(2), theme);
+    let lines = markdown_linked(source, width.saturating_sub(2), theme);
     if lines.is_empty() {
         return;
     }

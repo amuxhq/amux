@@ -188,7 +188,7 @@ Enter on a row opens its chat. From top to bottom:
   - the message that started the turn owning the feed's top line stays pinned under the header, cut to one line,
     as you scroll through a long answer; as the next turn's message nears the top the pinned one fades, then that
     message takes the pin. Clicking it scrolls to the message;
-  - everything the agent wrote is in one reading ink, at most 100 columns a line; code and paths wear the
+  - everything the agent wrote is in one reading ink, across the chat's full width; code and paths wear the
     terminal's cyan, and code blocks are highlighted in its palette. A single line break in its text stays a line
     break, as Claude's and Codex's own interfaces draw it; a blank line parts paragraphs. Thinking is never drawn;
   - each run of tool steps between two pieces of its text folds to one faint line of what the steps did

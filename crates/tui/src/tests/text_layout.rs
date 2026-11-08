@@ -38,6 +38,26 @@ fn reply(order: u64, words: &str) -> Item {
     }
 }
 
+/// An agent's words use a wide terminal's whole width.
+#[test]
+fn an_agents_words_run_the_full_width_of_a_wide_terminal() {
+    let said = "word ".repeat(60);
+    let state = chat(vec![reply(1, said.trim_end())]);
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    let rows = rows_of(&mut view, &state, 0, 200, 24);
+    let widest = rows
+        .iter()
+        .filter(|row| row.contains("word"))
+        .map(|row| row.trim().len())
+        .max()
+        .unwrap_or(0);
+    assert!(
+        widest > 150,
+        "widest line is {widest}:\n{}",
+        rows.join("\n")
+    );
+}
+
 /// The same, at the boundary that decides it: segment_lines wraps a text
 /// segment that follows a chip at the room left on the chip's line for
 /// every line, not only the first.

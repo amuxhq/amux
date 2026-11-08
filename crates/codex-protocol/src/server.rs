@@ -171,6 +171,8 @@ pub struct ThreadStatusChanged {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadNameUpdated {
     pub thread_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_name: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }

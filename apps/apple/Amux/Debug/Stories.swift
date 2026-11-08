@@ -250,7 +250,7 @@ enum StoryFleet {
     ) -> FleetRow {
         FleetRow(
             card: FleetCard(
-                agent: key(index, on: host), name: name, kind: kind, attention: attention,
+                agent: key(index, on: host), name: name, handle: name, kind: kind, attention: attention,
                 cwd: "/Users/ada/src/\(name)", phaseSinceMs: ms(minutesAgo: minutes),
                 host: host.name, hostReach: reach, children: children, familyAttention: attention,
                 members: children + 1, descendants: children, backgroundJobs: 0, settleHeld: false, filing: filing, topLevel: true,

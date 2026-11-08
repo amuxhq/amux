@@ -358,6 +358,14 @@ pub struct Shared<A: OpenAsk> {
     #[serde(with = "serde_pb::bytes_set")]
     taken_messages: BTreeSet<Vec<u8>>,
     working_on: Option<String>,
+    /// What a person reads the agent as, when it is not the name.
+    title: Option<String>,
+    /// Nobody chose the name, so the provider's title stands in for it.
+    provider_titles: bool,
+    /// The newest title a person gave in the provider's own interface.
+    /// Claude writes it again as the conversation goes on and at each
+    /// resume; only a new one is news, so a rename in amux stays.
+    person_title: Option<String>,
     /// Why the turn now over could not finish, from the provider's own
     /// failure, until the next turn starts.
     #[serde(with = "serde_pb::opt_msg")]
@@ -420,6 +428,9 @@ impl<A: OpenAsk> Shared<A> {
             pending_messages: BTreeSet::new(),
             taken_messages: BTreeSet::new(),
             working_on: None,
+            title: spec.title.clone(),
+            provider_titles: !spec.name_given,
+            person_title: None,
             trouble: None,
             plan_title: String::new(),
             declared: false,
@@ -448,6 +459,10 @@ impl<A: OpenAsk> Shared<A> {
     pub fn reincarnate(&mut self, spec: &AgentSpec) {
         self.stopping = false;
         self.leaving = false;
+        // The row's word, which a rename while the agent was not running
+        // has changed.
+        self.title.clone_from(&spec.title);
+        self.provider_titles = !spec.name_given;
         // A new provider process runs nothing in the background yet.
         self.set_jobs(Vec::new());
         self.now_ms = self.now_ms.max(spec.created_at_ms);
@@ -592,6 +607,7 @@ impl<A: OpenAsk> Shared<A> {
             body,
             phase,
             working_on: self.working_on.clone(),
+            title: self.title.clone(),
             at_ms: self.now_ms,
             phase_since_ms,
             git: self.git.clone(),
@@ -1221,6 +1237,48 @@ impl<A: OpenAsk> Shared<A> {
             && self.pending_messages.is_empty()
     }
 
+    // --- title -----------------------------------------------------------
+
+    /// Whether a title from the provider is still wanted.
+    pub fn wants_title(&self) -> bool {
+        self.provider_titles && self.title.is_none()
+    }
+
+    /// The title the provider gave the conversation. A name somebody chose
+    /// outranks it.
+    pub fn provider_titled(&mut self, title: &str) {
+        if self.provider_titles {
+            self.title = shown_title(title).or(self.title.take());
+        }
+    }
+
+    /// A title a person gave inside the provider's own interface.
+    pub fn person_titled(&mut self, title: &str) {
+        let title = shown_title(title);
+        if title.is_some() && title != self.person_title {
+            self.person_title.clone_from(&title);
+            self.title = title;
+        }
+    }
+
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+
+    /// What the provider's own interfaces should call the conversation;
+    /// None while a title is still to come.
+    pub fn thread_name(&self, name: &str) -> Option<String> {
+        self.title
+            .clone()
+            .or_else(|| (!self.provider_titles).then(|| name.to_owned()))
+    }
+
+    /// The agent was renamed: the name is what shows from now on.
+    pub fn renamed(&mut self) {
+        self.title = None;
+        self.provider_titles = false;
+    }
+
     // --- working_on ------------------------------------------------------
 
     /// Set from the status tool call; never cleared automatically.
@@ -1256,6 +1314,12 @@ impl<A: OpenAsk> Shared<A> {
 /// Clients print these fields as they are, `amux ls` straight to a
 /// terminal, so every field made of a provider's or an agent's words goes
 /// through this one cleaner.
+fn shown_title(title: &str) -> Option<String> {
+    let title = without_terminal_codes(title);
+    let title = title.trim();
+    (!title.is_empty()).then(|| title.to_owned())
+}
+
 pub fn without_terminal_codes(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();

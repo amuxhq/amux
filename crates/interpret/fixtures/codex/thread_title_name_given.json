@@ -1,0 +1,52 @@
+{
+  "about": "A thread whose name was chosen is not titled: no hidden thread is asked, and the name is what the thread carries.",
+  "spec": {
+    "created_at_ms": 1800000000000,
+    "name": "quiet-otter"
+  },
+  "events": [
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "id": "agent-thread",
+          "result": {
+            "thread": {
+              "id": "t1",
+              "cliVersion": "0.166.0",
+              "turns": []
+            },
+            "model": "gpt-6-astra",
+            "approvalPolicy": "on-request",
+            "sandbox": {
+              "type": "workspaceWrite"
+            },
+            "reasoningEffort": "medium"
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "item/completed",
+          "params": {
+            "threadId": "t1",
+            "turnId": "turn-1",
+            "item": {
+              "type": "userMessage",
+              "id": "u1",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Please fix the flaky login retry test"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

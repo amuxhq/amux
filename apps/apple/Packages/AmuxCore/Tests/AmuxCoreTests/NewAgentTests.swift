@@ -12,19 +12,19 @@ final class NewAgentTests: XCTestCase {
             Directory(path: "/src/relay", name: "relay"),
         ])
 
-    func testTheMostRecentDirectoryIsPrefilledAndNamedNewOnItsHost() {
+    func testTheMostRecentDirectoryIsPrefilledAndTheNameLeftToTheHost() {
         let store = NewAgentStore()
         store.open(on: Cards.desk)
         store.remember([Cards.row(1, "amux")])
         store.listed(.success(listed), asked: store.asking())
         XCTAssertEqual(store.listing, .ready)
         XCTAssertEqual(store.directory, "/src/amux")
-        XCTAssertEqual(store.name, "amux-2", "amux is taken on the desk")
+        XCTAssertEqual(store.name, "", "nobody typed one")
         XCTAssertTrue(store.ready)
         XCTAssertEqual(
             store.request,
             NewAgent(hostId: Cards.desk.bytes, kind: .claudeSdk, cwd: "/src/amux",
-                     name: "amux-2", effort: nil, mode: nil, model: nil, newWorktree: nil, permission: nil))
+                     name: "", effort: nil, mode: nil, model: nil, newWorktree: nil, permission: nil))
     }
 
     func testAHostThatCannotListOffersWhereItsAgentsWork() {
@@ -136,12 +136,13 @@ final class NewAgentTests: XCTestCase {
         XCTAssertEqual(store.provider, .claude, "with no agents, Claude")
     }
 
-    func testAnEmptyNameBlocksStartingAndARefusalIsSaid() {
+    func testANameIsOptionalAndARefusalIsSaid() {
         let store = NewAgentStore()
         store.open(on: Cards.desk)
         store.choose(directory: "/src/x")
         store.choose(name: "  ")
-        XCTAssertFalse(store.ready)
+        XCTAssertTrue(store.ready, "nobody has to name an agent")
+        XCTAssertEqual(store.request?.name, "", "the host names it")
         store.choose(name: "x")
         store.starts()
         XCTAssertFalse(store.ready)
@@ -203,7 +204,7 @@ final class NewAgentTests: XCTestCase {
         store.newWorktree = true
         XCTAssertEqual(
             store.request,
-            NewAgent(hostId: Cards.desk.bytes, kind: .codex, cwd: "/src/x", name: "x",
+            NewAgent(hostId: Cards.desk.bytes, kind: .codex, cwd: "/src/x", name: "",
                      effort: "high", mode: "plan", model: "gpt-6-astra", newWorktree: true,
                      permission: "auto"))
 

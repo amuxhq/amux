@@ -292,7 +292,7 @@ message Item {
 ```
 
 `Snapshot` carries the same split: kind-neutral envelope fields (`revision`,
-the `queue` of `QueuedInput`s, `phase`, `working_on`, `at_ms`,
+the `queue` of `QueuedInput`s, `phase`, `working_on`, `title`, `at_ms`,
 `phase_since_ms`, `git`, `background_jobs`) and a per-kind `body`.
 `background_jobs` is how many jobs the body's background list holds (zero
 while it is unknown), so the daemon can put the count on the inventory row
@@ -663,7 +663,10 @@ off between attempts. A paired host following this host's inventory does the
 same: on `Lagged` it follows again under the same session, and its sources
 for that host's agents keep running.
 
-`Agent` is the inventory row. It carries `kind`, `name` (always set),
+`Agent` is the inventory row. It carries `kind`, `name` (always set, unique
+on its host), `title` (what a person reads it as when present: its provider's
+title for a conversation nobody named, or one a person gave in the provider's
+own interface; copied from the snapshot envelope and cleared by a rename),
 `cwd`, `parent` (a host and an id, since families cross hosts), `lifecycle`
 with `exit_cause` and `exit_detail`, `phase`, `working_on`, `phase_since_ms`
 (on the origin host's clock; the row's creation time until its first

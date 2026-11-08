@@ -26,7 +26,8 @@ use claude_protocol::stream::control::{
 };
 use claude_protocol::stream::{
     self as claude_stream, ControlRequest, ControlRequestBody, ControlResponse, FlagSettings,
-    PermissionMode, PermissionResult, PermissionUpdate, PermissionUpdateDestination,
+    GenerateSessionTitleRequest, PermissionMode, PermissionResult, PermissionUpdate,
+    PermissionUpdateDestination,
 };
 use prost::Message as _;
 use serde::{Deserialize, Serialize};
@@ -117,6 +118,8 @@ enum Request {
     Settings,
     /// A stop for one background job, by its task id.
     StopJob(String),
+    /// A title for the session.
+    Title,
 }
 
 /// What a call's task has done so far, and whether it ended.
@@ -147,6 +150,8 @@ struct TaskState {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct State {
     shared: Shared<wire::Ask>,
+    /// This process has been asked for a title, once being enough.
+    title_asked: bool,
     incarnation: u32,
     session: Option<String>,
     model: Option<String>,
@@ -251,6 +256,7 @@ impl State {
     fn new(spec: &AgentSpec) -> Self {
         Self {
             shared: Shared::new(spec, ClaudeSdk::KIND),
+            title_asked: false,
             incarnation: spec.incarnation,
             session: None,
             model: None,
@@ -367,6 +373,29 @@ impl State {
         )));
     }
 
+    /// Asks Claude to title the session from the first prompt that says
+    /// what it is about. A terminal Claude does this by itself.
+    fn ask_title(&mut self, emit: &mut Emit, prompt: &str) {
+        let prompt = prompt.trim();
+        if self.title_asked
+            || !self.shared.wants_title()
+            || prompt.is_empty()
+            || prompt.starts_with('/')
+        {
+            return;
+        }
+        self.title_asked = true;
+        self.control_request(
+            emit,
+            Request::Title,
+            ControlRequestBody::GenerateSessionTitle(GenerateSessionTitleRequest {
+                description: prompt.to_owned(),
+                persist: true,
+                extensions: Default::default(),
+            }),
+        );
+    }
+
     // --- inputs ----------------------------------------------------------
 
     /// An immediate hand-off to Claude's own queue: a message sent while a
@@ -450,11 +479,13 @@ impl State {
                         },
                     );
                     self.unanswered.insert(uuid.clone());
+                    let prompt = text.clone();
                     emit.effect(Effect::UserMessage {
                         uuid,
                         text,
                         attachments: entry.attachments,
                     });
+                    self.ask_title(emit, &prompt);
                 }
             }
             claude_sdk_input::Of::Interrupt(_) => {
@@ -624,6 +655,7 @@ impl State {
             text: crate::shared::provider_text(&entry),
             attachments: entry.attachments.clone(),
         });
+        self.ask_title(emit, &entry.text);
         self.shared.item(
             emit,
             ItemDraft {
@@ -964,6 +996,7 @@ impl Interpreter for ClaudeSdk {
 
     fn reincarnate(mut state: State, spec: &AgentSpec) -> (State, Step) {
         state.shared.reincarnate(spec);
+        state.title_asked = false;
         state.jobs.clear();
         // A new process: its first init is the incarnation's boundary.
         state.incarnation = spec.incarnation;
@@ -985,8 +1018,7 @@ impl Interpreter for ClaudeSdk {
             Event::Fact(fact) => state.fact(&mut emit, fact),
             Event::Input(input) => state.input(&mut emit, input),
             Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
-            // Claude has no name of its own to take.
-            Event::Rename { .. } => {}
+            Event::Rename { .. } => state.shared.renamed(),
             Event::ProviderExit { code } => state.exited(&mut emit, crate::provider_exit(code)),
             Event::Exiting(exiting) => state.exited(&mut emit, exiting),
             Event::DaemonLost => {

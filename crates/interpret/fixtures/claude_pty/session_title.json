@@ -1,0 +1,75 @@
+{
+  "about": "A terminal Claude's own title shows for a conversation nobody named, and a /rename outranks it. Claude writes both again as it goes on; only a new /rename is news, so a rename in amux stays.",
+  "spec": {
+    "created_at_ms": 1800000000000,
+    "name": "quiet-otter",
+    "unnamed": true
+  },
+  "events": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "hook_event_name": "SessionStart",
+          "source": "startup",
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "model": "claude-opus-5-5"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "type": "ai-title",
+          "aiTitle": "Why the sky is blue",
+          "sessionId": "s1"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "type": "custom-title",
+          "customTitle": "Sky colour",
+          "sessionId": "s1"
+        }
+      }
+    },
+    {
+      "rename": {
+        "name": "sky-work"
+      }
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "type": "custom-title",
+          "customTitle": "Sky colour",
+          "sessionId": "s1"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "type": "ai-title",
+          "aiTitle": "Why the sky is blue",
+          "sessionId": "s1"
+        }
+      }
+    }
+  ]
+}

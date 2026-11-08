@@ -22,7 +22,7 @@ enum Cards {
     ) -> FleetRow {
         FleetRow(
             card: FleetCard(
-                agent: key(index, on: host), name: name, kind: kind, attention: attention,
+                agent: key(index, on: host), name: name, handle: name, kind: kind, attention: attention,
                 cwd: "/Users/pat/source/\(name)",
                 phaseSinceMs: Int64(now.addingTimeInterval(-60 * minutesAgo)
                     .timeIntervalSince1970 * 1000),

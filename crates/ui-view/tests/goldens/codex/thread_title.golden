@@ -1,0 +1,16 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 2 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-1","items":[],"status":"inProgress"}}}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 u1 Prompt { text: [Text("Please fix the flaky login retry test")], steered: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context None sign-in None
+== settings
+  model* unlisted gpt-6-astra "GPT-6 Astra" efforts=[]
+  effort* unlisted medium
+  permission* unlisted "default" "default" unsettable
+  changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("GPT-6 Astra") effort=Some("medium") permission=None mode=None

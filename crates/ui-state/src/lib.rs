@@ -20,7 +20,7 @@ mod transcript;
 pub use body::{AgentState, Fold, ItemBody, ItemClass, OpenAsk, ToolFacts, Usage, decode_snapshot};
 pub use fleet::{
     AgentKey, Attention, ExitCause, Families, FleetMsg, FleetState, HostId, agent_key, attention,
-    exit_cause, exit_words, parent_key,
+    exit_cause, exit_words, parent_key, shown_name,
 };
 pub use inputs::{
     InputId, InputOutcome, InputState, InputWhat, Inputs, Refusal, SentInput, refusal,

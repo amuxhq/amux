@@ -1,0 +1,21 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"agent","json":{"type":"launch"}}
+effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue cd96cd29
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 2 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
+effect follow "/t/s1.jsonl"
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 3 fact {"channel":"transcript","json":{"aiTitle":"Why the sky is blue","sessionId":"s1","type":"ai-title"}}
+snapshot title "Why the sky is blue"
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 4 fact {"channel":"transcript","json":{"customTitle":"Sky colour","sessionId":"s1","type":"custom-title"}}
+snapshot title "Sky colour"
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 5 rename {"name":"sky-work"}
+snapshot title "-"
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 6 fact {"channel":"transcript","json":{"customTitle":"Sky colour","sessionId":"s1","type":"custom-title"}}
+## 7 fact {"channel":"transcript","json":{"aiTitle":"Why the sky is blue","sessionId":"s1","type":"ai-title"}}

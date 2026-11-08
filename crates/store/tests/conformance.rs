@@ -267,6 +267,7 @@ fn snapshots_copy_their_envelope_onto_the_row() {
             phase_since_ms: 700,
             git: Some(git.clone()),
             background_jobs: 2,
+            title: Some("Fix the build".into()),
             ..snapshot(Phase::Working, Some("fixing the build"), 777)
         }),
         ..Default::default()
@@ -283,6 +284,7 @@ fn snapshots_copy_their_envelope_onto_the_row() {
     assert_eq!(row.phase_since_ms, Some(700));
     assert_eq!(row.git, Some(git));
     assert_eq!(row.background_jobs, 2);
+    assert_eq!(row.title.as_deref(), Some("Fix the build"));
     assert_eq!(held_snapshot(&row), 2);
     assert_eq!(row.snapshot.as_ref(), Some(snap));
 }

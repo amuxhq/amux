@@ -22,7 +22,7 @@ message AgentSpec {
   // spawn.
   string cwd = 3;
   // The agent's name when this incarnation was spawned; a rename while it
-  // runs reaches the row, and a Codex agent hears it on ctl.sock.
+  // runs reaches the row, and the agent hears it on ctl.sock.
   string name = 4;
   // The inventory row's parent, host and id, so a child resumed from its
   // spec on one host still addresses a parent on another.
@@ -50,6 +50,11 @@ message AgentSpec {
   // what its git facts measure the branch against. Absent otherwise, and
   // the repository's default branch is the base.
   optional string base_branch = 14;
+  // Whether a person or a parent chose the name. Then the agent's provider
+  // does not title it, and the name is what shows.
+  bool name_given = 15;
+  // The inventory row's title when this incarnation was spawned.
+  optional string title = 16;
 }
 
 message Bootstrap {
@@ -112,8 +117,8 @@ message CtlFrame {
     // Daemon to agent: asks for its part of a dump bundle, answered by
     // `dump`.
     AgentDumpRequest dump_request = 5;
-    // Daemon to agent (Codex): the agent was renamed; Codex's thread takes
-    // the name so Codex's own app shows what amux does.
+    // Daemon to agent: the agent was renamed, which ends its title. Codex's
+    // thread takes the name so Codex's own app shows what amux does.
     Rename rename = 6;
     // Daemon to agent.
     Stop stop = 7;

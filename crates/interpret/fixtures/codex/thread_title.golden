@@ -1,0 +1,35 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"rpc","json":{"id":"agent-thread","result":{"approvalPolicy":"on-request","model":"gpt-6-astra","reasoningEffort":"medium","sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.166.0","id":"t1","turns":[]}}}}
+effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"t1\"}}"
+effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
+effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-6-astra model_name="GPT-6 Astra" effort=medium permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+## 2 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-1","items":[],"status":"inProgress"}}}}
+snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-6-astra model_name="GPT-6 Astra" effort=medium permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+## 3 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"content":[{"text":"Please fix the flaky login retry test","type":"text"}],"id":"u1","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
+effect write "{\"id\":\"amux-1\",\"method\":\"config/read\",\"params\":{\"cwd\":\"\",\"includeLayers\":false}}"
+item u1 prompt final at=1800000000000 text="Please fix the flaky login retry test"
+## 4 fact {"channel":"rpc","json":{"id":"amux-1","result":{"config":{"mcp_servers":{"amux":{"command":"amux"},"linear":{"url":"https://example.test"}}}}}}
+effect write "{\"id\":\"amux-2\",\"method\":\"thread/start\",\"params\":{\"config\":{\"cloud.skills.enabled\":false,\"features.apps\":false,\"features.code_mode\":false,\"features.code_mode_only\":false,\"features.context_management\":false,\"features.current_time_reminder\":false,\"features.deferred_executor\":false,\"features.enable_fanout\":false,\"features.goals\":false,\"features.hooks\":false,\"features.image_generation\":false,\"features.memories\":false,\"features.multi_agent\":false,\"features.multi_agent_v2\":false,\"features.plugins\":false,\"features.request_permissions_tool\":false,\"features.shell_snapshot\":false,\"features.shell_tool\":false,\"features.standalone_web_search\":false,\"features.token_budget\":false,\"features.tool_suggest\":false,\"features.unified_exec\":false,\"features.view_image\":false,\"mcp_servers\":{\"amux\":{\"command\":\"amux\",\"enabled\":false},\"linear\":{\"enabled\":false,\"url\":\"https://example.test\"}},\"skills.include_instructions\":false,\"tools.experimental_request_user_input.enabled\":false,\"tools.update_plan.enabled\":false,\"web_search\":\"disabled\"},\"cwd\":\"\",\"ephemeral\":true,\"model\":\"gpt-6-astra\",\"sandbox\":\"read-only\"}}"
+## 5 fact {"channel":"rpc","json":{"id":"amux-2","result":{"approvalPolicy":"never","model":"gpt-6-astra","sandbox":{"type":"readOnly"},"thread":{"cliVersion":"0.166.0","id":"hidden","turns":[]}}}}
+effect write "{\"id\":\"amux-3\",\"method\":\"turn/start\",\"params\":{\"input\":[{\"text\":\"Generate a concise, single-line task title of at most 36 characters and under five words where possible. Start with an imperative verb. Capitalize only the first word unless the user's language, proper nouns, acronyms, or code terms require otherwise. Preserve ticket references exactly. Write in the user's language. Do not use quotes, markdown, or trailing punctuation. Do not answer the request.\\n\\nUser prompt:\\nPlease fix the flaky login retry test\",\"text_elements\":[],\"type\":\"text\"}],\"model\":\"gpt-6-astra\",\"outputSchema\":{\"additionalProperties\":false,\"properties\":{\"title\":{\"maxLength\":36,\"minLength\":1,\"type\":\"string\"}},\"required\":[\"title\"],\"type\":\"object\"},\"threadId\":\"hidden\"}}"
+## 6 fact {"channel":"rpc","json":{"method":"thread/started","params":{"thread":{"cliVersion":"0.166.0","id":"hidden","turns":[]}}}}
+## 7 fact {"channel":"rpc","json":{"id":"amux-3","result":{"turn":{"id":"h1","items":[],"status":"inProgress"}}}}
+## 8 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"hidden","turn":{"id":"h1","items":[],"status":"inProgress"}}}}
+## 9 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"m1","text":"{\"title\":\"Fix flaky login retry test\"}","type":"agentMessage"},"threadId":"hidden","turnId":"h1"}}}
+## 10 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"hidden","turn":{"id":"h1","items":[],"status":"completed"}}}}
+effect write "{\"id\":\"amux-unsubscribe-hidden\",\"method\":\"thread/unsubscribe\",\"params\":{\"threadId\":\"hidden\"}}"
+effect write "{\"id\":\"amux-name-1\",\"method\":\"thread/name/set\",\"params\":{\"name\":\"Fix flaky login retry test\",\"threadId\":\"t1\"}}"
+snapshot title "Fix flaky login retry test"
+snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-6-astra model_name="GPT-6 Astra" effort=medium permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+## 11 fact {"channel":"rpc","json":{"method":"thread/name/updated","params":{"threadId":"t1","threadName":"Fix flaky login retry test"}}}
+## 12 fact {"channel":"rpc","json":{"method":"thread/name/updated","params":{"threadId":"t1","threadName":"Login retries"}}}
+snapshot title "Login retries"
+snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-6-astra model_name="GPT-6 Astra" effort=medium permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+## 13 rename {"name":"login-work"}
+effect write "{\"id\":\"amux-name-2\",\"method\":\"thread/name/set\",\"params\":{\"name\":\"login-work\",\"threadId\":\"t1\"}}"
+snapshot title "-"
+snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-6-astra model_name="GPT-6 Astra" effort=medium permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+## 14 fact {"channel":"rpc","json":{"method":"thread/name/updated","params":{"threadId":"t1","threadName":"login-work"}}}

@@ -9,6 +9,12 @@ pub use crate::model::{AgentKey, Attention, ExitCause, HostId};
 use crate::session::Connection;
 
 /// The key naming an agent's row.
+/// What a person reads the agent as: its title when it has one, else its
+/// name. Addressing an agent, or renaming it, still takes the name.
+pub fn shown_name(agent: &Agent) -> &str {
+    agent.title.as_deref().unwrap_or(&agent.name)
+}
+
 pub fn agent_key(agent: &Agent) -> AgentKey {
     AgentKey {
         host: agent.host_id.clone(),

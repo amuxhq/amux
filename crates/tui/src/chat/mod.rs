@@ -1997,7 +1997,7 @@ impl ChatView {
             && let Some(page) = &mut self.review
         {
             // Its header names the agent and where it works, as the chat's.
-            let name = state.agent().name.clone();
+            let name = ui_state::shown_name(state.agent()).to_owned();
             let cwd = &state.agent().cwd;
             let place = if self.local {
                 text::tilde(cwd)
@@ -2081,7 +2081,7 @@ impl ChatView {
         // Lying over the feed, the pane leaves the feed the columns to its
         // left, and the feed's words wrap there rather than hide under it.
         let feed_width = if side { full - pane_width } else { full };
-        let name = state.agent().name.clone();
+        let name = ui_state::shown_name(state.agent()).to_owned();
         let host = state
             .host()
             .map(|host| host.name().to_owned())

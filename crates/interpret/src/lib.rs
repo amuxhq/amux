@@ -142,8 +142,9 @@ pub enum Event {
     /// is the daemon's word, never a client's. The reply is keyed by the
     /// envelope id.
     AgentMessage(Envelope),
-    /// The daemon's word that the agent was renamed. Only Codex hears it:
-    /// its thread takes the name, so Codex's own app shows what amux does.
+    /// The daemon's word that the agent was renamed, which ends its title.
+    /// Codex's thread takes the name, so Codex's own app shows what amux
+    /// does.
     Rename {
         name: String,
     },

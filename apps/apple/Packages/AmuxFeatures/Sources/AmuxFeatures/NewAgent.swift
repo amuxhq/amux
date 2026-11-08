@@ -396,7 +396,7 @@ public struct NewAgent: View {
                     .designFont(.body, design)
                     .foregroundStyle(design.ink.color)
                 TextField(
-                    "Name",
+                    "Optional",
                     text: Binding(get: { model.name }, set: { model.choose(name: $0) }))
                     .textFieldStyle(.plain)
                     .multilineTextAlignment(.trailing)

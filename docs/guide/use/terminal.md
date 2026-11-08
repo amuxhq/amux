@@ -47,7 +47,7 @@ On home:
 | Enter | Open the agent's chat |
 | `n` | Start a new agent |
 | `/` | Filter by name, branch, folder or host |
-| `r` | Rename the agent |
+| `r` | Rename the agent. Its new name replaces any title. |
 | `x` | Settle the agent, asking first if that would cut work short; on a settled agent, delete it, asking first |
 | `p` | Pin or unpin the agent |
 | `h` | Your hosts, and how each one is reached |
@@ -71,7 +71,7 @@ letter to change one:
 | `d` | The folder. Your repositories come first, then folders your agents used lately, or type a path. |
 | `h` | The host, to start the agent on another of your machines |
 | `w` | A new worktree of the folder's repository, so the agent works without touching your checkout |
-| `n` | The name. amux names the agent for you if you don't. |
+| `n` | The name, which is optional. Leave it and the agent goes by the title Claude or Codex gives the conversation. |
 
 The models and permissions on offer are whatever that agent offers on the host
 you picked. If Claude or Codex isn't signed in there, the picker says so.

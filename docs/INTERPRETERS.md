@@ -696,7 +696,16 @@ answer.
   every incarnation, the interpreter names the thread with the agent's name
   from the spec (`thread/name/set`, ids `amux-name-<n>`), and again on the
   `rename` frame the daemon sends when the agent is renamed, so Codex's own
-  app shows the name amux does.
+  app shows the name amux does. A thread nobody named waits for its title
+  and takes that instead.
+- **The title.** Codex's app server titles nothing; its terminal asks a hidden
+  thread. The interpreter does the same at the first prompt of a thread that
+  wants one: `config/read`, for the MCP servers to shut off, then an
+  `ephemeral`, read-only `thread/start` with every tool off, and one
+  `turn/start` with an `outputSchema`, on Codex's small title model where
+  `model/list` offers it. Everything the hidden thread says stops at the
+  interpreter. A `thread/name/updated` that is neither the agent's name nor
+  its title is a person renaming the thread in Codex.
 - **A fresh thread on disk.** Codex writes a thread to disk at its first
   turn, and its own app resumes from what is on disk (it asks for the
   thread without its turns and pages them), so until then the app cannot

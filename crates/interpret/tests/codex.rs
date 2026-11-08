@@ -40,6 +40,8 @@ goldens! {
     a_plan_is_decided_from_codexs_own_app => "co_drive_plan",
     questions_are_skipped_noted_or_replied_to => "question_answers",
     the_thread_carries_the_agents_name => "thread_name",
+    an_unnamed_thread_is_titled_on_a_hidden_thread => "thread_title",
+    a_named_thread_is_not_titled => "thread_title_name_given",
     amuxs_own_tools_are_approved_without_asking => "amux_tool_approval",
     a_failed_turn_start_drops_its_pending_interrupt => "interrupt_turn_start_failed",
     an_exit_drops_a_pending_interrupt => "interrupt_exited",

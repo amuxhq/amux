@@ -1,0 +1,64 @@
+{
+  "about": "A headless Claude titles nothing by itself, so it is asked, with the first prompt. A title a person gives outranks it, and a rename in amux outranks both.",
+  "spec": {
+    "created_at_ms": 1800000000000,
+    "name": "quiet-otter",
+    "unnamed": true
+  },
+  "events": [
+    {
+      "input": {
+        "id": "p1",
+        "prompt": {
+          "text": "Please fix the flaky login retry test"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "system",
+          "subtype": "init",
+          "uuid": "init-s1",
+          "session_id": "s1",
+          "claude_code_version": "2.1.319",
+          "model": "claude-opus-5-5",
+          "permissionMode": "default"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "control_response",
+          "response": {
+            "subtype": "success",
+            "request_id": "amux-1",
+            "response": {
+              "title": "Fix flaky login retry test"
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "system",
+          "subtype": "session_title_changed",
+          "title": "Login retries",
+          "uuid": "t1",
+          "session_id": "s1"
+        }
+      }
+    },
+    {
+      "rename": {
+        "name": "login-work"
+      }
+    }
+  ]
+}

@@ -138,6 +138,7 @@ message Agent {
   bytes host_id = 2;
   Kind kind = 3;
   // Every agent has one: the one it was given, else one the daemon chose.
+  // Unique on its host: what agents and commands address it by.
   string name = 4;
   string cwd = 5;
   optional AgentRef parent = 6;
@@ -167,6 +168,11 @@ message Agent {
   // When the filing last changed, on the clock of the agent's host; pins
   // are listed in this order.
   int64 filed_at_ms = 19;
+  // What a person reads this agent as, in place of the name when present:
+  // the title its provider gave a conversation nobody named, or the one a
+  // person gave inside the provider's own interface. Not unique. Copied from
+  // the snapshot envelope; renaming the agent clears it.
+  optional string title = 20;
 }
 
 enum Filing {

@@ -376,6 +376,7 @@ impl Engine {
                 }
                 None
             }
+            "generate_session_title" => Some(json!({ "title": "Fake session title" })),
             "get_settings" => Some(json!({
                 "applied": { "model": self.model, "effort": self.applied_effort() },
             })),

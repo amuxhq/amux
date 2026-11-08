@@ -1,0 +1,229 @@
+{
+  "about": "A thread nobody named is titled from its first prompt on a hidden thread of its own, which nothing else hears of. The thread takes the title; a person's rename in Codex or in amux outranks it.",
+  "spec": {
+    "created_at_ms": 1800000000000,
+    "name": "quiet-otter",
+    "unnamed": true
+  },
+  "events": [
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "id": "agent-thread",
+          "result": {
+            "thread": {
+              "id": "t1",
+              "cliVersion": "0.166.0",
+              "turns": []
+            },
+            "model": "gpt-6-astra",
+            "approvalPolicy": "on-request",
+            "sandbox": {
+              "type": "workspaceWrite"
+            },
+            "reasoningEffort": "medium"
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "turn/started",
+          "params": {
+            "threadId": "t1",
+            "turn": {
+              "id": "turn-1",
+              "status": "inProgress",
+              "items": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "item/completed",
+          "params": {
+            "threadId": "t1",
+            "turnId": "turn-1",
+            "item": {
+              "type": "userMessage",
+              "id": "u1",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Please fix the flaky login retry test"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "id": "amux-1",
+          "result": {
+            "config": {
+              "mcp_servers": {
+                "amux": {
+                  "command": "amux"
+                },
+                "linear": {
+                  "url": "https://example.test"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "id": "amux-2",
+          "result": {
+            "thread": {
+              "id": "hidden",
+              "cliVersion": "0.166.0",
+              "turns": []
+            },
+            "model": "gpt-6-astra",
+            "approvalPolicy": "never",
+            "sandbox": {
+              "type": "readOnly"
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "thread/started",
+          "params": {
+            "thread": {
+              "id": "hidden",
+              "cliVersion": "0.166.0",
+              "turns": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "id": "amux-3",
+          "result": {
+            "turn": {
+              "id": "h1",
+              "status": "inProgress",
+              "items": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "turn/started",
+          "params": {
+            "threadId": "hidden",
+            "turn": {
+              "id": "h1",
+              "status": "inProgress",
+              "items": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "item/completed",
+          "params": {
+            "threadId": "hidden",
+            "turnId": "h1",
+            "item": {
+              "type": "agentMessage",
+              "id": "m1",
+              "text": "{\"title\":\"Fix flaky login retry test\"}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "turn/completed",
+          "params": {
+            "threadId": "hidden",
+            "turn": {
+              "id": "h1",
+              "status": "completed",
+              "items": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "thread/name/updated",
+          "params": {
+            "threadId": "t1",
+            "threadName": "Fix flaky login retry test"
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "thread/name/updated",
+          "params": {
+            "threadId": "t1",
+            "threadName": "Login retries"
+          }
+        }
+      }
+    },
+    {
+      "rename": {
+        "name": "login-work"
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "thread/name/updated",
+          "params": {
+            "threadId": "t1",
+            "threadName": "login-work"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1306,18 +1306,18 @@ enum CatalogFixtures {
 
     static let docsSweep = FleetCard(
         agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 5, count: 16)),
-        name: "docs-sweep", kind: .claudeSdk, attention: .exited, cwd: "", phaseSinceMs: 0,
+        name: "docs-sweep", handle: "docs-sweep", kind: .claudeSdk, attention: .exited, cwd: "", phaseSinceMs: 0,
         host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .exited,
         members: 1, descendants: 0, backgroundJobs: 0, settleHeld: false, filing: .active, topLevel: true, branch: nil, exitCause: .finished)
 
     static let family = FamilyHeader(
         children: [
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 3, count: 16)),
-                      name: "worker-2", kind: .claudeSdk, attention: .needsYou, cwd: "", phaseSinceMs: 0,
+                      name: "worker-2", handle: "worker-2", kind: .claudeSdk, attention: .needsYou, cwd: "", phaseSinceMs: 0,
                       host: "Laptop", hostReach: .online(.direct), children: 0, familyAttention: .needsYou,
                       members: 1, descendants: 0, backgroundJobs: 0, settleHeld: false, filing: .active, topLevel: true, branch: nil, exitCause: nil),
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 4, count: 16)),
-                      name: "worker-3", kind: .codex, attention: .working, cwd: "", phaseSinceMs: 0,
+                      name: "worker-3", handle: "worker-3", kind: .codex, attention: .working, cwd: "", phaseSinceMs: 0,
                       host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .working,
                       members: 1, descendants: 0, backgroundJobs: 0, settleHeld: false, filing: .active, topLevel: true, branch: nil, exitCause: nil),
         ],

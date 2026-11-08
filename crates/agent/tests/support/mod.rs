@@ -267,6 +267,7 @@ impl Agent {
             kind: setup.kind as i32,
             cwd: work.to_str().unwrap().to_owned(),
             name: "test".into(),
+            name_given: true,
             parent: setup.parent.then(|| AgentRef {
                 host_id: vec![1; 16],
                 agent_id: vec![2; 16],

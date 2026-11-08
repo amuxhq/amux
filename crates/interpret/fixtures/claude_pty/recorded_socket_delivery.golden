@@ -15,6 +15,7 @@ effect reply env-busy queued
 item agent-message:656e762d62757379 agent_message final input=env-busy at=0 text="A2A_SOCKET_BUSY_21240"
 pending [env-busy,env-idle]
 ## 4 recorded 0: fact Transcript type=custom-title
+snapshot title "recipient"
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 7 recorded 3: fact Transcript type=permission-mode
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=? model_name=? effort=? mode=bypassPermissions context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?

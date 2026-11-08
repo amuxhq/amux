@@ -1083,6 +1083,45 @@ async fn a_create_without_a_kind_is_invalid() {
     daemon.shutdown().await.unwrap();
 }
 
+/// Nobody named it, so the row carries the title Claude gave the
+/// conversation; a rename ends that for good.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unnamed_agent_shows_its_providers_title_until_it_is_renamed() {
+    let install = Install::new();
+    let daemon = install
+        .start("boot-1", install.launch("idle", vec![]))
+        .await;
+    let runtime = runtime(&daemon, &install);
+    let created = runtime
+        .spawn(
+            wire::CreateAgentRequest {
+                agent: wire::create_agent_request::Agent::defaults(wire::Kind::ClaudeSdk),
+                initial_prompt: Some(submission(b"p1", "fix the login test")),
+                name: None,
+                ..create(&install.work, "unused", None)
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(created.title.is_none(), "no title before Claude gives one");
+    let id = id_of(&created);
+    until("the title reaches the row", || async {
+        let title = runtime.agent(id).await.map_err(|e| e.to_string())?.title;
+        (title.as_deref() == Some("Fake session title"))
+            .then_some(())
+            .ok_or(format!("{title:?}"))
+    })
+    .await
+    .unwrap();
+    let renamed = runtime.rename(id, "login-work").await.unwrap();
+    assert_eq!(renamed.name, "login-work");
+    assert_eq!(renamed.title, None, "the name is what shows now");
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn renaming_a_live_codex_agent_renames_its_thread() {
     let install = Install::new();

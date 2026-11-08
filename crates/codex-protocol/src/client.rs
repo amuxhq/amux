@@ -36,6 +36,7 @@ method_enum! {
         "model/list" => ModelList(ModelListParams),
         "skills/list" => SkillsList(SkillsListParams),
         "account/read" => AccountRead(AccountReadParams),
+        "config/read" => ConfigRead(ConfigReadParams),
     }
 }
 
@@ -90,6 +91,23 @@ pub struct ThreadStartParams {
     pub approvals_reviewer: Option<ApprovalsReviewer>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<SandboxMode>,
+    /// Kept in memory only, and listed nowhere.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ephemeral: Option<bool>,
+    /// Configuration overrides for this thread, by dotted key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigReadParams {
+    #[serde(default)]
+    pub include_layers: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -245,6 +263,9 @@ pub struct TurnStartParams {
     pub sandbox_policy: Option<SandboxPolicy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collaboration_mode: Option<CollaborationMode>,
+    /// JSON Schema the turn's final message must match.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<Box<serde_json::Value>>,
     #[serde(flatten)]
     pub extra: Extra,
 }

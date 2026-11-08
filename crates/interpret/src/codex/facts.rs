@@ -587,6 +587,17 @@ impl State {
             }
             _ => {}
         }
+        match request {
+            Request::TitleConfig => return self.title_config_read(emit, result),
+            Request::TitleThread => return self.title_thread_started(emit, result),
+            Request::TitleTurn => {
+                if result.is_err() {
+                    self.title_turn_refused(emit);
+                }
+                return;
+            }
+            _ => {}
+        }
         if let Request::Models { page, listed } = request {
             return self.models_listed(emit, page, listed, result.ok().as_ref());
         }
@@ -661,6 +672,9 @@ impl State {
                     Request::Interrupt
                     | Request::Models { .. }
                     | Request::Name
+                    | Request::TitleConfig
+                    | Request::TitleThread
+                    | Request::TitleTurn
                     | Request::Persist
                     | Request::Skills
                     | Request::Jobs { .. }
@@ -712,6 +726,9 @@ impl State {
             | Request::Compact
             | Request::Models { .. }
             | Request::Name
+            | Request::TitleConfig
+            | Request::TitleThread
+            | Request::TitleTurn
             | Request::Persist
             | Request::Skills
             | Request::Jobs { .. }
@@ -1009,12 +1026,15 @@ impl State {
         if self.name.is_empty() {
             return;
         }
+        let Some(name) = self.shared.thread_name(&self.name) else {
+            return;
+        };
         self.names_set += 1;
         let bytes = self.request_as(
             format!("amux-name-{}", self.names_set),
             ClientRequest::ThreadSetName(ThreadSetNameParams {
                 thread_id: self.thread(),
-                name: self.name.clone(),
+                name,
                 extra: Default::default(),
             }),
             Request::Name,
@@ -1507,6 +1527,9 @@ impl State {
         if let ServerNotification::ServerRequestResolved(resolved) = &notification {
             return self.ask_resolved(emit, &ask_key(&resolved.request_id));
         }
+        if self.title_notified(emit, &notification) {
+            return;
+        }
         // A child thread's activity on the same server is its own; the
         // collaboration item reports it here. Its file changes are kept for
         // its approvals to show.
@@ -1527,6 +1550,17 @@ impl State {
             return;
         }
         match notification {
+            // Not the agent's name and not the title amux gave it: a person
+            // renamed the thread in Codex's own interface.
+            ServerNotification::ThreadNameUpdated(updated) => {
+                if let Some(name) = updated.thread_name
+                    && !self.name.is_empty()
+                    && name != self.name
+                    && Some(name.as_str()) != self.shared.title()
+                {
+                    self.shared.person_titled(&name);
+                }
+            }
             ServerNotification::ThreadStarted(started) => {
                 self.thread_started(emit, &started.thread, None, false);
             }
@@ -1680,7 +1714,6 @@ impl State {
             ServerNotification::ServerRequestResolved(_) => {}
             // Nothing a client draws, or what another fact already covers.
             ServerNotification::ThreadStatusChanged(_)
-            | ServerNotification::ThreadNameUpdated(_)
             | ServerNotification::ThreadGoalCleared(_)
             | ServerNotification::RemoteControlStatusChanged(_)
             | ServerNotification::TerminalInteraction(_)
@@ -2092,6 +2125,15 @@ impl State {
         content: &[UserInput],
     ) {
         let first_in_turn = !std::mem::replace(&mut self.turn_prompted, true);
+        let typed = content
+            .iter()
+            .filter_map(|input| match input {
+                UserInput::Text(text) => Some(text.text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        self.ask_title(emit, &typed);
         let ours =
             |input_id: &[u8]| client_id.is_none_or(|sent| sent == client_message_id(input_id));
         let prompt = self

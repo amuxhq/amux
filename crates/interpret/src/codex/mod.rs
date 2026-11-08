@@ -35,6 +35,7 @@
 
 mod facts;
 mod recording;
+mod title;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -246,6 +247,21 @@ fn mentions(text: &str) -> Vec<&str> {
 pub struct Codex;
 
 /// A request this interpreter sent, awaiting its response.
+/// A title asked of a hidden thread (see `title`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+enum Titling {
+    Unasked,
+    /// Reading the configuration and starting the thread.
+    Preparing {
+        prompt: String,
+    },
+    Running {
+        thread: String,
+        answer: Option<String>,
+    },
+    Over,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 enum Request {
     /// `turn/start`. Agent messages that leave the pending set at its
@@ -290,6 +306,12 @@ enum Request {
     },
     /// `thread/name/set`.
     Name,
+    /// `config/read`, to shut a hidden title thread's MCP servers.
+    TitleConfig,
+    /// The hidden thread a title is asked of.
+    TitleThread,
+    /// The hidden thread's one turn.
+    TitleTurn,
     /// `thread/read` with turns, to have the thread written to disk.
     Persist,
     /// `skills/list`.
@@ -519,6 +541,8 @@ pub struct State {
     name: String,
     /// How many times the thread was named, for the requests' ids.
     names_set: u64,
+    /// Where asking for a title has got to in this process.
+    titling: Titling,
     thread_id: Option<String>,
     model: Option<String>,
     launch_model: Option<String>,
@@ -624,6 +648,7 @@ impl State {
             incarnation: spec.incarnation,
             name: spec.name.clone(),
             names_set: 0,
+            titling: Titling::Unasked,
             thread_id: None,
             model: None,
             launch_model: None,
@@ -1054,6 +1079,7 @@ impl State {
     /// name now, or when the handshake names the thread.
     fn rename(&mut self, emit: &mut Emit, name: String) {
         self.name = name;
+        self.shared.renamed();
         if self.thread_id.is_some() {
             self.name_thread(emit);
         }
@@ -1819,6 +1845,8 @@ impl Interpreter for Codex {
         state.shared.reincarnate(spec);
         state.incarnation = spec.incarnation;
         state.name = spec.name.clone();
+        // A hidden thread goes with the process that held it.
+        state.titling = Titling::Unasked;
         state.resume()
     }
 

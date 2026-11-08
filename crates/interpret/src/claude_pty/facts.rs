@@ -1164,8 +1164,10 @@ impl State {
                     self.joined_prompt(emit, row.envelope.uuid.clone(), prompt, at_ms);
                 }
             }
+            Row::AiTitle(row) => self.shared.provider_titled(&row.ai_title),
+            Row::CustomTitle(row) => self.shared.person_titled(&row.custom_title),
             // Everything else is bookkeeping for Claude's own interface:
-            // titles, modes, file history, queue operations, reminders.
+            // modes, file history, queue operations, reminders.
             _ => {}
         }
     }

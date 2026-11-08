@@ -30,6 +30,7 @@ macro_rules! goldens {
 
 goldens! {
     amuxs_own_tools_draw_a_message_or_nothing => "amux_tools",
+    claudes_own_title_shows_until_a_person_names_it => "session_title",
     lifecycle_events_write_boundaries_and_interrupt => "lifecycle",
     plans_are_items_with_their_verdict => "plans",
     a_question_takes_a_reply_instead => "question_reply",

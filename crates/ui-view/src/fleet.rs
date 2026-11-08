@@ -18,7 +18,10 @@ use crate::text::{markdown_words, within, without_direction_controls};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct FleetCard {
     pub agent: AgentKey,
+    /// What a person reads it as: its title, else its name.
     pub name: String,
+    /// The name it is addressed and renamed by.
+    pub handle: String,
     pub kind: Kind,
     pub attention: Attention,
     /// How it ended, once it has.
@@ -338,7 +341,8 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
     let at = ui_state::agent_key(agent);
     let attention = ui_state::attention(agent);
     FleetCard {
-        name: without_direction_controls(&agent.name),
+        name: without_direction_controls(ui_state::shown_name(agent)),
+        handle: without_direction_controls(&agent.name),
         kind: agent.kind(),
         attention,
         exit_cause: (attention == Attention::Exited).then(|| ui_state::exit_cause(agent)),
@@ -415,6 +419,7 @@ pub fn matches(fleet: &FleetState, agent: &Agent, needle: &str) -> bool {
         .then(|| ui_state::exit_words(agent.exit_cause, agent.exit_detail.as_deref()));
     [
         Some(agent.name.as_str()),
+        agent.title.as_deref(),
         branch,
         Some(agent.cwd.as_str()),
         host,
@@ -565,7 +570,7 @@ fn push(
                 .map(|member| {
                     let key = ui_state::agent_key(member);
                     LoudMember {
-                        name: without_direction_controls(&member.name),
+                        name: without_direction_controls(ui_state::shown_name(member)),
                         second_line: second_line(fleet, local_host, member, lines.get(&key)),
                         agent: key,
                     }

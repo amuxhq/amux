@@ -3045,7 +3045,10 @@ public enum Filing: String, Codable, Hashable, Sendable, CaseIterable {
 
 public struct FleetCard: Codable, Hashable, Sendable {
     public var agent: AgentKey
+    /// What a person reads it as: its title, else its name.
     public var name: String
+    /// The name it is addressed and renamed by.
+    public var handle: String
     public var kind: Kind
     public var attention: Attention
     public var cwd: String
@@ -3077,9 +3080,10 @@ public struct FleetCard: Codable, Hashable, Sendable {
     /// How it ended, once it has.
     public var exitCause: ExitCause?
 
-    public init(agent: AgentKey, name: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, settleHeld: Bool, filing: Filing, topLevel: Bool, branch: String?, exitCause: ExitCause?) {
+    public init(agent: AgentKey, name: String, handle: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, settleHeld: Bool, filing: Filing, topLevel: Bool, branch: String?, exitCause: ExitCause?) {
         self.agent = agent
         self.name = name
+        self.handle = handle
         self.kind = kind
         self.attention = attention
         self.cwd = cwd
@@ -3101,6 +3105,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case agent
         case name
+        case handle
         case kind
         case attention
         case cwd

@@ -273,6 +273,7 @@ fn is_ask(notice: &wire::Notice) -> bool {
 fn copy_envelope(row: &mut AgentRow, snapshot: &Snapshot) {
     row.phase = snapshot.phase;
     row.working_on = snapshot.working_on.clone();
+    row.title = snapshot.title.clone();
     row.phase_since_ms = Some(snapshot.phase_since_ms);
     row.git = snapshot.git.clone();
     row.background_jobs = snapshot.background_jobs;

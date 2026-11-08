@@ -111,8 +111,6 @@ public final class NewAgentStore {
     /// The agent the host started, once it confirms.
     public private(set) var created: AgentKey?
 
-    /// Names already taken on each host, so a suggestion is new there.
-    @ObservationIgnored private var taken: [HostId: Set<String>] = [:]
     /// Where the fleet's agents on each host work, newest first: what the
     /// chooser offers when the host lists nothing of its own.
     @ObservationIgnored private var worked: [HostId: [Directory]] = [:]
@@ -195,18 +193,15 @@ public final class NewAgentStore {
             .max(by: { $0.lastActivity < $1.lastActivity }), let usual = Provider(latest.card.kind) {
             provider = usual
         }
-        var names: [HostId: Set<String>] = [:]
         var places: [HostId: [Directory]] = [:]
         for row in rows.sorted(by: { $0.lastActivity > $1.lastActivity }) {
             guard let host = row.hostId else { continue }
-            names[host, default: []].insert(row.name)
             let path = row.workingDirectory
             guard !path.isEmpty, !(places[host] ?? []).contains(where: { $0.path == path })
             else { continue }
             let name = path.split(separator: "/").last.map(String.init) ?? path
             places[host, default: []].append(Directory(path: path, name: name))
         }
-        taken = names
         worked = places
     }
 
@@ -337,19 +332,9 @@ public final class NewAgentStore {
         typed.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    public var name: String { typedName ?? suggestedName }
-
-    /// The directory's own name, made new on its host, or "agent".
-    public var suggestedName: String {
-        let trimmed = directory.hasSuffix("/") ? String(directory.dropLast()) : directory
-        let last = trimmed.split(separator: "/").last.map(String.init)
-        let base = last.flatMap { $0.isEmpty ? nil : $0 } ?? "agent"
-        let names = machine.flatMap { taken[$0] } ?? []
-        guard names.contains(base) else { return base }
-        var number = 2
-        while names.contains("\(base)-\(number)") { number += 1 }
-        return "\(base)-\(number)"
-    }
+    /// What the person typed. Left empty, the host names the agent and its
+    /// provider titles it.
+    public var name: String { typedName ?? "" }
 
     public func choose(name written: String) {
         typedName = written
@@ -359,7 +344,7 @@ public final class NewAgentStore {
     public var chosenName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     public var ready: Bool {
-        machine != nil && !directory.isEmpty && !chosenName.isEmpty && !starting
+        machine != nil && !directory.isEmpty && !starting
     }
 
     /// What starting asks the host for.
@@ -382,7 +367,6 @@ public final class NewAgentStore {
         switch result {
         case .success(let agent):
             created = agent
-            if let machine { taken[machine, default: []].insert(chosenName) }
         case .failure(let refusal):
             failure = refusal.description
         }

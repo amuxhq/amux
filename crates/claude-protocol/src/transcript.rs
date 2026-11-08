@@ -31,6 +31,7 @@ tagged_enum! {
         "permission-mode" => PermissionMode(PermissionModeRow),
         "atis-latch" => AtisLatch(AtisLatchRow),
         "ai-title" => AiTitle(AiTitleRow),
+        "custom-title" => CustomTitle(CustomTitleRow),
         "agent-name" => AgentName(AgentNameRow),
         "last-prompt" => LastPrompt(LastPromptRow),
         "queue-operation" => QueueOperation(QueueOperationRow),
@@ -73,6 +74,7 @@ impl Row {
             Self::PermissionMode(row) => Some(&row.session_id),
             Self::AtisLatch(row) => Some(&row.session_id),
             Self::AiTitle(row) => Some(&row.session_id),
+            Self::CustomTitle(row) => Some(&row.session_id),
             Self::AgentName(row) => Some(&row.session_id),
             Self::LastPrompt(row) => Some(&row.session_id),
             Self::QueueOperation(row) => Some(&row.session_id),
@@ -440,6 +442,17 @@ pub struct AtisLatchRow {
 #[serde(rename_all = "camelCase")]
 pub struct AiTitleRow {
     pub session_id: String,
+    pub ai_title: String,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
+/// The title a person gave the session with `/rename`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomTitleRow {
+    pub session_id: String,
+    pub custom_title: String,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

@@ -15,7 +15,8 @@ pub mod types;
 
 pub use control::{
     ControlCancelRequest, ControlRequest, ControlRequestBody, ControlResponse, ElicitationResult,
-    FlagSettings, InterruptResult, SetPermissionModeResult, SettingsResult,
+    FlagSettings, GenerateSessionTitleRequest, InterruptResult, SessionTitleResult,
+    SetPermissionModeResult, SettingsResult,
 };
 pub use init::InitializationResult;
 pub use message::*;

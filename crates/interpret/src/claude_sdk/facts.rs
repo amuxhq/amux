@@ -7,8 +7,8 @@ use claude_protocol::stream::init::SlashCommand;
 use claude_protocol::stream::{
     self, AssistantMessage, CompactTrigger, ContentBlock, ControlRequest, ControlRequestBody,
     ControlResponse, InitializationResult, Message, MessageContent, ModelUsage, Output,
-    RateLimitInfo, ResultCommon, ResultError, ResultMessage, SettingsResult, StreamDelta,
-    StreamEvent, SystemInitMessage, TaskUsage, Usage, UserMessageOutput,
+    RateLimitInfo, ResultCommon, ResultError, ResultMessage, SessionTitleResult, SettingsResult,
+    StreamDelta, StreamEvent, SystemInitMessage, TaskUsage, Usage, UserMessageOutput,
 };
 use prost::Message as _;
 use serde::Deserialize;
@@ -128,6 +128,7 @@ impl State {
                 self.taken(&replay.uuid);
             }
             Message::Result(result) => self.result(emit, &result),
+            Message::SessionTitleChanged(changed) => self.shared.person_titled(&changed.title),
             Message::CommandLifecycle(lifecycle) => {
                 if lifecycle.state == "started" {
                     self.taken(&lifecycle.command_uuid);
@@ -1466,6 +1467,11 @@ impl State {
                 let error = response.response.error.as_deref().unwrap_or_default();
                 if let Some(jobs) = self.jobs.stop_refused(&task, without_terminal_codes(error)) {
                     self.shared.set_jobs(jobs);
+                }
+            }
+            Some(Request::Title) if ok => {
+                if let Some(Ok(titled)) = response.result::<SessionTitleResult>() {
+                    self.shared.provider_titled(&titled.title);
                 }
             }
             Some(Request::Effort(Some(effort))) if ok => self.effort = Some(effort),

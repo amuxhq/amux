@@ -46,6 +46,7 @@ pub enum Message {
     PermissionDenied(PermissionDeniedMessage),
     ConversationReset(ConversationResetMessage),
     CommandLifecycle(CommandLifecycleMessage),
+    SessionTitleChanged(SessionTitleChangedMessage),
     UnknownSystem(RawFrame),
     Unknown(RawFrame),
 }
@@ -79,6 +80,7 @@ impl Message {
             "init" => parse_known(raw, true).map(Self::System),
             "compact_boundary" => parse_known(raw, true).map(Self::CompactBoundary),
             "status" => parse_known(raw, true).map(Self::Status),
+            "session_title_changed" => parse_known(raw, true).map(Self::SessionTitleChanged),
             "api_retry" => parse_known(raw, true).map(Self::ApiRetry),
             "model_refusal_fallback" => parse_known(raw, true).map(Self::ModelRefusalFallback),
             "model_refusal_no_fallback" => parse_known(raw, true).map(Self::ModelRefusalNoFallback),
@@ -341,4 +343,13 @@ fn required_option<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
     deserializer: D,
 ) -> Result<Option<T>, D::Error> {
     Option::<T>::deserialize(deserializer)
+}
+
+/// The session's title was set by a person, with `/rename` or through the
+/// host. A generated title does not raise this.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionTitleChangedMessage {
+    pub title: String,
+    #[serde(flatten)]
+    pub extensions: Extensions,
 }

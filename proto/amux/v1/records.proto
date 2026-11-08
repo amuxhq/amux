@@ -199,6 +199,9 @@ message Snapshot {
   // a body. Never an exit: a process that has gone says nothing, and its
   // daemon writes that notice itself.
   optional Notice notice = 12;
+  // The agent's title (Agent.title). The daemon copies it onto the inventory
+  // row.
+  optional string title = 13;
 }
 
 // What a notification says, in data rather than sentences: each client words

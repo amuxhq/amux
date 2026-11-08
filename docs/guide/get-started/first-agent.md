@@ -37,7 +37,7 @@ change one:
 | **h** | the computer it runs on |
 | **w** | a new worktree, so it works without touching your checkout |
 | **m**, **e**, **p** | the model, the effort, the permission |
-| **n** | the name (amux names it for you otherwise) |
+| **n** | the name, which is optional: leave it and the agent goes by the title Claude or Codex gives the conversation |
 
 **From the command line.** In the folder you want it to work in:
 
@@ -54,7 +54,7 @@ The home screen lists your agents in three sections:
 - **Live:** agents starting, working, or idle and ready for more.
 - **Exited:** agents that have finished. It's folded until you open it.
 
-Each row shows the agent's name and branch, which agent it is, its folder,
+Each row shows what the agent is called (the title of its conversation, or the name if you gave one) and its branch, which agent it is, its folder,
 the computer it's on when that isn't this one, and how long it's been that
 way. A filled **●** means it's working, and in blue it means it needs you.
 The line underneath says what it's doing now or what it's asking.

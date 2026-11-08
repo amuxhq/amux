@@ -431,6 +431,10 @@ pub struct Snapshot {
     /// daemon writes that notice itself.
     #[prost(message, optional, boxed, tag = "12")]
     pub notice: ::core::option::Option<::prost::alloc::boxed::Box<Notice>>,
+    /// The agent's title (Agent.title). The daemon copies it onto the inventory
+    /// row.
+    #[prost(string, optional, tag = "13")]
+    pub title: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for Snapshot {
     const NAME: &'static str = "Snapshot";
@@ -4233,6 +4237,7 @@ pub struct Agent {
     #[prost(enumeration = "Kind", tag = "3")]
     pub kind: i32,
     /// Every agent has one: the one it was given, else one the daemon chose.
+    /// Unique on its host: what agents and commands address it by.
     #[prost(string, tag = "4")]
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag = "5")]
@@ -4278,6 +4283,12 @@ pub struct Agent {
     /// are listed in this order.
     #[prost(int64, tag = "19")]
     pub filed_at_ms: i64,
+    /// What a person reads this agent as, in place of the name when present:
+    /// the title its provider gave a conversation nobody named, or the one a
+    /// person gave inside the provider's own interface. Not unique. Copied from
+    /// the snapshot envelope; renaming the agent clears it.
+    #[prost(string, optional, tag = "20")]
+    pub title: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for Agent {
     const NAME: &'static str = "Agent";
@@ -7171,7 +7182,8 @@ pub struct CreateAgentRequest {
     #[prost(message, optional, tag = "2")]
     pub host: ::core::option::Option<HostRef>,
     /// Lowercase letters, digits and hyphens, starting with a letter or digit
-    /// (wire::agent_name_problem); the host picks a free one when absent.
+    /// (wire::agent_name_problem); the host picks a free one when absent, and
+    /// the agent then shows the title its provider gives the conversation.
     #[prost(string, optional, tag = "3")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(message, optional, tag = "4")]
@@ -7238,8 +7250,8 @@ impl ::prost::Name for CreateAgentResponse {
 pub struct RenameAgentRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
-    /// As CreateAgentRequest's name. The agent's branch keeps the name it
-    /// was made with.
+    /// As CreateAgentRequest's name. Clears the agent's title, so this name is
+    /// what shows. The agent's branch keeps the name it was made with.
     #[prost(string, tag = "2")]
     pub name: ::prost::alloc::string::String,
 }
@@ -14065,7 +14077,7 @@ pub struct AgentSpec {
     #[prost(string, tag = "3")]
     pub cwd: ::prost::alloc::string::String,
     /// The agent's name when this incarnation was spawned; a rename while it
-    /// runs reaches the row, and a Codex agent hears it on ctl.sock.
+    /// runs reaches the row, and the agent hears it on ctl.sock.
     #[prost(string, tag = "4")]
     pub name: ::prost::alloc::string::String,
     /// The inventory row's parent, host and id, so a child resumed from its
@@ -14107,6 +14119,13 @@ pub struct AgentSpec {
     /// the repository's default branch is the base.
     #[prost(string, optional, tag = "14")]
     pub base_branch: ::core::option::Option<::prost::alloc::string::String>,
+    /// Whether a person or a parent chose the name. Then the agent's provider
+    /// does not title it, and the name is what shows.
+    #[prost(bool, tag = "15")]
+    pub name_given: bool,
+    /// The inventory row's title when this incarnation was spawned.
+    #[prost(string, optional, tag = "16")]
+    pub title: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for AgentSpec {
     const NAME: &'static str = "AgentSpec";
@@ -14242,8 +14261,8 @@ pub mod ctl_frame {
         /// `dump`.
         #[prost(message, tag = "5")]
         DumpRequest(super::AgentDumpRequest),
-        /// Daemon to agent (Codex): the agent was renamed; Codex's thread takes
-        /// the name so Codex's own app shows what amux does.
+        /// Daemon to agent: the agent was renamed, which ends its title. Codex's
+        /// thread takes the name so Codex's own app shows what amux does.
         #[prost(message, tag = "6")]
         Rename(super::Rename),
         /// Daemon to agent.

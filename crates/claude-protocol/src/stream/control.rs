@@ -43,6 +43,7 @@ tagged_enum! {
         "apply_flag_settings" => ApplyFlagSettings(ApplyFlagSettingsRequest),
         "get_settings" => GetSettings(Extensions),
         "stop_task" => StopTask(StopTaskRequest),
+        "generate_session_title" => GenerateSessionTitle(GenerateSessionTitleRequest),
         // What Claude asks of amux.
         "can_use_tool" => CanUseTool(CanUseToolRequest),
         "elicitation" => Elicitation(ElicitationRequestBody),
@@ -54,6 +55,24 @@ tagged_enum! {
 pub struct InitializeRequestBody {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub per_task_stop_affordance: Option<bool>,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
+/// Asks Claude for a title for the session, which it writes to the
+/// transcript when `persist` is set. A headless Claude titles nothing by
+/// itself.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerateSessionTitleRequest {
+    pub description: String,
+    pub persist: bool,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionTitleResult {
+    pub title: String,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

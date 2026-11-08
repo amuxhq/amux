@@ -163,9 +163,10 @@ fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(),
         Option<String>,
         Option<Vec<u8>>,
         Option<Vec<u8>>,
+        Option<String>,
     );
     let mut read = tx.prepare(
-        "SELECT rowid, kind, name, cwd, exit_detail, working_on, git, snapshot FROM agents",
+        "SELECT rowid, kind, name, cwd, exit_detail, working_on, git, snapshot, title FROM agents",
     )?;
     let rows = read
         .query_map([], |row| {
@@ -178,10 +179,11 @@ fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(),
                 row.get(5)?,
                 row.get(6)?,
                 row.get(7)?,
+                row.get(8)?,
             ))
         })?
         .collect::<Result<Vec<Row>, _>>()?;
-    for (rowid, kind, name, cwd, exit_detail, working_on, git, snapshot) in rows {
+    for (rowid, kind, name, cwd, exit_detail, working_on, git, snapshot, title) in rows {
         let git = git
             .map(|bytes| wire::Git::decode(bytes.as_slice()))
             .transpose()
@@ -195,6 +197,7 @@ fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(),
                 exit_detail,
                 working_on,
                 git,
+                title,
                 ..Default::default()
             },
         );
@@ -204,7 +207,7 @@ fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(),
             .map_err(|error| StoreError::Corrupt(error.to_string()))?
             .map(|snapshot| redacted(redactor, &snapshot).encode_to_vec());
         tx.execute(
-            "UPDATE agents SET name = ?2, cwd = ?3, exit_detail = ?4, working_on = ?5, \
+            "UPDATE agents SET name = ?2, cwd = ?3, exit_detail = ?4, working_on = ?5, title = ?8, \
              git = ?6, snapshot = ?7 WHERE rowid = ?1",
             params![
                 rowid,
@@ -214,6 +217,7 @@ fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(),
                 agent.working_on,
                 agent.git.map(|git| git.encode_to_vec()),
                 snapshot,
+                agent.title,
             ],
         )?;
     }

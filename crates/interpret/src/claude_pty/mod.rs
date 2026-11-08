@@ -1519,8 +1519,7 @@ impl Interpreter for ClaudePty {
             Event::Fact(fact) => state.fact(&mut emit, fact),
             Event::Input(input) => state.input(&mut emit, input),
             Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
-            // Claude has no name of its own to take.
-            Event::Rename { .. } => {}
+            Event::Rename { .. } => state.shared.renamed(),
             Event::ProviderExit { code } => state.exited(&mut emit, crate::provider_exit(code)),
             Event::Exiting(exiting) => state.exited(&mut emit, exiting),
             Event::DaemonLost => {

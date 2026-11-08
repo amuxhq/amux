@@ -326,7 +326,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
             Event::Fact(_) => {}
             Event::Input(input) => Self::input(state, &mut emit, input),
             Event::AgentMessage(envelope) => Self::agent_message(state, &mut emit, envelope),
-            Event::Rename { .. } => {}
+            Event::Rename { .. } => state.shared.renamed(),
             Event::ProviderExit { code } => {
                 // A session end closes every open ask, outcome unknown.
                 state.shared.close_all_asks();

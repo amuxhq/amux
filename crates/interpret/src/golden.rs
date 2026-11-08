@@ -170,6 +170,9 @@ struct FixtureSpec {
     /// passed them.
     #[serde(default)]
     provider_args: Vec<String>,
+    /// Nobody chose the agent's name, so its provider titles it.
+    #[serde(default)]
+    unnamed: bool,
 }
 
 #[derive(Deserialize)]
@@ -554,6 +557,7 @@ pub fn run_golden<I: Interpreter>(fixture: &Path) -> GoldenReport {
 
 fn spec<I: Interpreter>(spec: &FixtureSpec) -> AgentSpec {
     AgentSpec {
+        name_given: !spec.unnamed,
         agent_id: spec
             .agent_id
             .as_deref()
@@ -1600,6 +1604,7 @@ fn is_silent(step: &Step) -> bool {
 struct Carried<'a> {
     git: Option<&'a wire::Git>,
     catalogue: Option<&'a Vec<u8>>,
+    title: Option<&'a str>,
 }
 
 fn render_frame<'a, I: Interpreter>(
@@ -1641,6 +1646,10 @@ fn render_frame<'a, I: Interpreter>(
                 .catalogue
                 .map_or("-".to_owned(), |hash| short_hash(hash));
             let _ = writeln!(out, "snapshot catalogue {label}");
+        }
+        if snapshot.title.as_deref() != carried.title {
+            carried.title = snapshot.title.as_deref();
+            let _ = writeln!(out, "snapshot title {:?}", carried.title.unwrap_or("-"));
         }
         let _ = writeln!(
             out,

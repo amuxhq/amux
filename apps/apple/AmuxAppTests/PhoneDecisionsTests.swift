@@ -400,7 +400,7 @@ final class PhoneDecisionsTests: XCTestCase {
     func testAHomeRowCountsItsBackgroundJobs() async throws {
         let card = FleetCard(
             agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 9, count: 16)),
-            name: "cx", kind: .codex, attention: .idle, cwd: "~/src", phaseSinceMs: 0,
+            name: "cx", handle: "cx", kind: .codex, attention: .idle, cwd: "~/src", phaseSinceMs: 0,
             host: "desk", hostReach: .online(.direct), children: 0, familyAttention: .idle,
             members: 1, descendants: 0, backgroundJobs: 2, settleHeld: false, filing: .active, topLevel: true, branch: nil, exitCause: nil)
         let fleet = FleetStore()

@@ -200,6 +200,9 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
         kind: at.kind as i32,
         cwd: at.cwd.to_owned(),
         name: at.name.to_owned(),
+        // The daemon sets these from what the create said and the row.
+        name_given: false,
+        title: None,
         parent: at.parent,
         provider_args: at.resolved.provider_args.clone(),
         provider_env: launch

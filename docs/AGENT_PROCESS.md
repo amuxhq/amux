@@ -444,9 +444,10 @@ answers with is written to `private/provider-session`, as is the thread a
 the one that replaces a thread with no history: from then on that thread is
 the agent's conversation. A resume keeps the thread it resumed. Straight after, the interpreter names the thread
 with the agent's name (`thread/name/set`), and names it again when the agent
-is renamed: the daemon tells a running Codex agent with a `rename` frame, and a
+is renamed: the daemon tells a running agent with a `rename` frame, and a
 resumed agent's spec carries its current name, so Codex's own app shows the
-name amux does. A thread that has not run a turn has nothing on disk, and
+name amux does. An agent nobody named has its thread left unnamed until its
+title comes, and the thread then takes the title ([INTERPRETERS](INTERPRETERS.md)). A thread that has not run a turn has nothing on disk, and
 Codex's own app, which resumes from what is on disk, cannot attach to it;
 naming does not change that. When a started thread has no turns the
 interpreter also reads it with its turns (`thread/read`), which has Codex

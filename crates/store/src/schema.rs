@@ -45,6 +45,8 @@ CREATE TABLE agents (
   background_jobs     INTEGER NOT NULL DEFAULT 0, -- copied from the newest snapshot: jobs the provider runs in the background
   descendants         INTEGER NOT NULL DEFAULT 0, -- live agents below this one: own rows counted here, replicas as their origin counts
   filing              INTEGER NOT NULL DEFAULT 1, -- amux.v1.Filing: how the person filed the agent, apart from its lifecycle
+  title               TEXT,              -- what a person reads the agent as, when it is not the name
+  name_given          INTEGER NOT NULL DEFAULT 0, -- a person or a parent chose the name
   filed_at_ms         INTEGER NOT NULL DEFAULT 0, -- when the filing last changed, on the origin's clock; pins list in this order
   PRIMARY KEY (origin_host, agent_id)
 ) STRICT;

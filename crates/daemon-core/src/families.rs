@@ -606,6 +606,7 @@ impl Daemon {
     fn new_row(&self, create: &Create, name: &str, cwd: &str) -> AgentRow {
         let mut row = AgentRow::new(self.own_key(create.agent), create.spec.kind(), cwd);
         row.name = name.to_owned();
+        row.name_given = create.given.is_some();
         row.parent = create
             .spec
             .parent
@@ -668,6 +669,7 @@ impl Daemon {
         out: &mut Vec<Output>,
     ) -> Doing {
         let mut spec = create.spec;
+        spec.name_given = create.given.is_some();
         spec.name = name;
         spec.cwd = cwd;
         spec.incarnation = 1;
@@ -752,8 +754,10 @@ impl Daemon {
         let mut row = self.store.agent(&key)?.ok_or(Refusal::NotFound)?;
         let mut spec = spec.ok_or(Refusal::NoSpec)?;
         // The name it has now: a rename while it was not running reaches
-        // its Codex thread this way.
+        // the agent this way.
         spec.name = row.name.clone();
+        spec.name_given = row.name_given;
+        spec.title = row.title.clone();
         spec.created_at_ms = self.timers.now_ms as i64;
         row.lifecycle = Lifecycle::Live as i32;
         row.exit_cause = ExitCause::Unspecified as i32;
@@ -941,13 +945,14 @@ impl Daemon {
                 return Err(Refusal::NameTaken(name));
             }
             row.name = name;
+            row.name_given = true;
+            row.title = None;
             self.put_own_row(&row, out)?;
-            if row.kind == wire::Kind::Codex as i32
-                && self
-                    .families
-                    .processes
-                    .get(&agent)
-                    .is_some_and(|process| process.hello)
+            if self
+                .families
+                .processes
+                .get(&agent)
+                .is_some_and(|process| process.hello)
             {
                 out.push(Output::WriteControl {
                     agent,
@@ -1388,7 +1393,7 @@ impl Daemon {
             agent_id: row.agent.agent.clone(),
             revision: row.next_revision,
             due_at_ms: self.timers.now_ms as i64 + self.settings.notify_delay_ms,
-            name: row.name.clone(),
+            name: row.title.clone().unwrap_or_else(|| row.name.clone()),
             notice: wire::Notice {
                 of: Some(wire::notice::Of::Died(wire::DiedNotice {
                     cause: cause.cause,

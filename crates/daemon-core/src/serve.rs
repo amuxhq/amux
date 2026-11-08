@@ -606,6 +606,7 @@ pub fn to_wire(row: &AgentRow) -> Agent {
         background_jobs: row.background_jobs,
         filing: row.filing,
         filed_at_ms: row.filed_at_ms,
+        title: row.title.clone(),
     }
 }
 

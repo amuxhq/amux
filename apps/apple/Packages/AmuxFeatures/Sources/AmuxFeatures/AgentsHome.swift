@@ -539,7 +539,7 @@ public struct AgentsHome: View {
             }
         }
         Button {
-            newName = row.name
+            newName = row.card.handle
             renaming = row
         } label: { Label("Rename", systemImage: "pencil") }
         if row.settled {

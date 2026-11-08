@@ -130,6 +130,11 @@ pub struct AgentRow {
     pub filing: i32,
     /// When the filing last changed, on the origin's clock.
     pub filed_at_ms: i64,
+    /// Copied from the snapshot envelope at commit; a rename clears it.
+    pub title: Option<String>,
+    /// A person or a parent chose the name, so the provider does not title
+    /// the agent.
+    pub name_given: bool,
 }
 
 impl AgentRow {
@@ -176,6 +181,8 @@ impl AgentRow {
             descendants: 0,
             filing: wire::Filing::Active as i32,
             filed_at_ms: 0,
+            title: None,
+            name_given: false,
         }
     }
 }

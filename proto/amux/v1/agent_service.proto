@@ -77,7 +77,8 @@ message CreateAgentRequest {
   // The host that runs it; absent means this host.
   optional HostRef host = 2;
   // Lowercase letters, digits and hyphens, starting with a letter or digit
-  // (wire::agent_name_problem); the host picks a free one when absent.
+  // (wire::agent_name_problem); the host picks a free one when absent, and
+  // the agent then shows the title its provider gives the conversation.
   optional string name = 3;
   optional AgentRef parent = 4;
   // A folder on the agent's host, as the person typed it: the host reads `~`
@@ -107,8 +108,8 @@ message CreateAgentResponse {
 
 message RenameAgentRequest {
   bytes agent_id = 1;
-  // As CreateAgentRequest's name. The agent's branch keeps the name it
-  // was made with.
+  // As CreateAgentRequest's name. Clears the agent's title, so this name is
+  // what shows. The agent's branch keeps the name it was made with.
   string name = 2;
 }
 

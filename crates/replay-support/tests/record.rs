@@ -386,6 +386,7 @@ fn marked_history() -> ClientSessionHistory {
         body: snapshot_body.encode_to_vec(),
         phase: wire::Phase::Working as i32,
         working_on: Some(marked()),
+        title: None,
         at_ms: 5,
         phase_since_ms: 1,
         git: Some(wire::Git {

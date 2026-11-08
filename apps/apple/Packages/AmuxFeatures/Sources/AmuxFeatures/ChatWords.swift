@@ -562,32 +562,32 @@ public enum ChatWords {
         }
     }
 
-    /// What settling an agent cuts short, as the settle confirm says it:
+    /// What closing an agent cuts short, as the close confirm says it:
     /// "desk-1 is working and has 2 background jobs and 1 subagent." Nil when
-    /// settling cuts nothing under way, so it settles without asking.
-    public static func settleCuts(name: String, phase: PhaseView?, jobs: Int, subAgents: Int) -> String? {
+    /// closing cuts nothing under way, so it closes without asking.
+    public static func closeCuts(name: String, phase: PhaseView?, jobs: Int, subAgents: Int) -> String? {
         let turn: Turn = switch phase {
         case .working?: .working
         case .needsYou?: .needsYou
         default: .none
         }
-        return settleCuts(name: name, turn: turn, jobs: jobs, subAgents: subAgents)
+        return closeCuts(name: name, turn: turn, jobs: jobs, subAgents: subAgents)
     }
 
     /// The same, from what a fleet row knows of the agent.
-    public static func settleCuts(name: String, attention: Attention, jobs: Int, subAgents: Int) -> String? {
+    public static func closeCuts(name: String, attention: Attention, jobs: Int, subAgents: Int) -> String? {
         let turn: Turn = switch attention {
         case .working: .working
         case .needsYou: .needsYou
         default: .none
         }
-        return settleCuts(name: name, turn: turn, jobs: jobs, subAgents: subAgents)
+        return closeCuts(name: name, turn: turn, jobs: jobs, subAgents: subAgents)
     }
 
-    /// Whether a turn is under way that a settle would cut.
+    /// Whether a turn is under way that a close would cut.
     private enum Turn { case working, needsYou, none }
 
-    private static func settleCuts(name: String, turn: Turn, jobs: Int, subAgents: Int) -> String? {
+    private static func closeCuts(name: String, turn: Turn, jobs: Int, subAgents: Int) -> String? {
         var held: [String] = []
         if jobs > 0 {
             held.append(jobs == 1 ? String(localized: "1 background job") : String(localized: "\(jobs) background jobs"))

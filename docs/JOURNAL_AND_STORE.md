@@ -511,9 +511,9 @@ counted in the store's SQL.
 [`crates/store/src/retention.rs`](../crates/store/src/retention.rs)), against
 the profile's own budget:
 
-1. Remove settled agents that have exited whole, least recent activity first.
-   An agent the person has not settled is never removed whole, live or not:
-   an exited one they never looked at stays in their fleet. A settled child
+1. Remove closed agents that have exited whole, least recent activity first.
+   An agent the person has not closed is never removed whole, live or not:
+   an exited one they never looked at stays in their fleet. A closed child
    whose parent is live is skipped, because its parent can still send to
    it; under an exited parent it goes, even one the person kept, so a
    long-lived agent's finished one-shot children are reclaimed. A parent

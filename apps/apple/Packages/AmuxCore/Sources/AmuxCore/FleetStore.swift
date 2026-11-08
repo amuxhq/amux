@@ -24,9 +24,9 @@ extension FleetRow: Identifiable {
     /// How the person filed it, apart from its lifecycle.
     public var filing: Filing { card.filing }
     public var pinned: Bool { card.filing == .pinned }
-    public var settled: Bool { card.filing == .settled }
+    public var closed: Bool { card.filing == .closed }
     /// It has no parent, so it may be pinned.
-    public var pinnable: Bool { card.topLevel && !settled }
+    public var pinnable: Bool { card.topLevel && !closed }
     /// A folded family's head speaking for a member that needs the person.
     public var speaksForAMember: Bool { loud != nil }
 
@@ -61,7 +61,7 @@ public final class FleetStore {
     /// Every row on screen, families expanded where asked.
     public private(set) var rows: [FleetRow] = []
     /// Home's sections as the runtime groups them: a family sits where its
-    /// head is filed, pinned or settled, else in the section of its loudest
+    /// head is filed, pinned or closed, else in the section of its loudest
     /// member.
     public private(set) var sections: [FleetSection] = []
     /// Agents across the fleet that need the person, and that are working
@@ -189,9 +189,9 @@ public final class FleetStore {
 
     public var subtitle: String {
         guard needYou > 0 else { return "Nothing needs you · \(working) working" }
-        // A folded family stands for every member under it. Settled agents
+        // A folded family stands for every member under it. Closed agents
         // are put away on their own page and are not counted here.
-        let agents = rows.filter { !$0.settled }
+        let agents = rows.filter { !$0.closed }
             .reduce(0) { $0 + ($1.expanded ? 1 : Int($1.card.members)) }
         return "\(needYou) need you · \(agents) agent\(agents == 1 ? "" : "s")"
     }
@@ -222,8 +222,8 @@ public final class FleetStore {
         }
     }
 
-    /// The settled agents, newest settled first, folded away from home.
-    public var settled: FleetSection? { sections.first { $0.kind == .settled } }
+    /// The closed agents, newest closed first, folded away from home.
+    public var closed: FleetSection? { sections.first { $0.kind == .closed } }
 
     public var unreachableHost: String? {
         machines.filter { !$0.online }.map(\.name).sorted().first

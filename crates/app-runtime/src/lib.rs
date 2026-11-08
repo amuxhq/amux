@@ -385,13 +385,13 @@ impl AppRuntime {
                 })
                 .await
                 .map(drop),
-            AgentAct::Settle => self.fleet.settle(agent).await.map(drop),
-            AgentAct::CancelSettle => {
-                self.fleet.cancel_settle(agent);
+            AgentAct::Close => self.fleet.close_agent(agent).await.map(drop),
+            AgentAct::CancelClose => {
+                self.fleet.cancel_close(agent);
                 Ok(())
             }
             AgentAct::Pin => self.fleet.file(agent, Filing::Pinned).await.map(drop),
-            AgentAct::Unfile => self.fleet.file(agent, Filing::Active).await.map(drop),
+            AgentAct::Unfile => self.fleet.file(agent, Filing::Open).await.map(drop),
             AgentAct::Delete => self
                 .client
                 .delete_agent(DeleteAgentRequest { agent_id })

@@ -144,7 +144,7 @@ fn said(rejected: &Rejected) -> String {
         Refusal::Draining => "the recipient is finishing its last turn and takes nothing new",
         Refusal::Exiting => "the recipient is stopping",
         Refusal::Exited => "the recipient has stopped",
-        Refusal::Settled => {
+        Refusal::AgentClosed => {
             "the recipient is settled, done with; only the person or its parent start it again"
         }
         Refusal::HostUnreachable => "the recipient's host cannot be reached",

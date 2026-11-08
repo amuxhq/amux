@@ -1281,11 +1281,11 @@ impl Net {
 
     /// Settles the agent on its own host, as a person does there: it exits
     /// and can be resumed.
-    pub async fn settle_agent(&self, name: &str) -> Result<Ack, NetError> {
+    pub async fn close_agent(&self, name: &str) -> Result<Ack, NetError> {
         let agent = self.agent(name)?.clone();
         let request = wire::FileAgentRequest {
             agent_id: agent.id.as_bytes().to_vec(),
-            filing: wire::Filing::Settled as i32,
+            filing: wire::Filing::Closed as i32,
         };
         match &self.hosts[&agent.host].process {
             Some(process) => {

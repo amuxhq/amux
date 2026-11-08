@@ -1263,7 +1263,7 @@ async fn retention_sweep() {
     for (name, at) in [("old-1", 1_000), ("old-2", 2_000)] {
         let mut agent = SyntheticAgent::new(&install, name, BIG_SEGMENTS);
         let mut row = agent.row(&install);
-        row.filing = wire::Filing::Settled as i32;
+        row.filing = wire::Filing::Closed as i32;
         install.store().put_agent(&row).unwrap();
         for n in 0..30 {
             agent.append(&item(&format!("{name}-{n}"), &kilobyte(n)));

@@ -138,10 +138,10 @@ pub struct AgentRow {
 }
 
 impl AgentRow {
-    /// Whether the person settled the agent: done with, and the only kind
+    /// Whether the person closed the agent: done with, and the only kind
     /// retention removes.
-    pub fn is_settled(&self) -> bool {
-        self.filing == wire::Filing::Settled as i32
+    pub fn is_closed(&self) -> bool {
+        self.filing == wire::Filing::Closed as i32
     }
 
     /// The newest snapshot's at_ms, never commit time. A replica's
@@ -179,7 +179,7 @@ impl AgentRow {
             owes_report: true,
             background_jobs: 0,
             descendants: 0,
-            filing: wire::Filing::Active as i32,
+            filing: wire::Filing::Open as i32,
             filed_at_ms: 0,
             title: None,
             name_given: false,

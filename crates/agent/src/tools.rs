@@ -255,12 +255,12 @@ impl Server {
                     |agent| agent.name.clone(),
                 )
         };
-        // The person is done with a settled agent, so it is not offered as
+        // The person is done with a closed agent, so it is not offered as
         // one to work with; naming it still answers why it will not take a
         // message.
         let rows = agents
             .iter()
-            .filter(|agent| agent.filing() != Filing::Settled)
+            .filter(|agent| agent.filing() != Filing::Closed)
             .map(|agent| {
                 let mut row = json!({
                     "name": agent.name,
@@ -415,8 +415,8 @@ impl Server {
         .to_string())
     }
 
-    /// A real stop, as a person's settle: the child ends now, filed away as
-    /// done with, and the daemon settles its descendants on every host with
+    /// A real stop, as a person's close: the child ends now, filed away as
+    /// done with, and the daemon closes its descendants on every host with
     /// it. Only a direct child: the daemon checks the lineage and refuses
     /// the rest. Answers once the child has ended.
     async fn stop(&self, arguments: &Value) -> Answer {
@@ -424,7 +424,7 @@ impl Server {
         let child = self.resolve(&name).await?;
         let request = FileAgentRequest {
             agent_id: child.agent_id.clone(),
-            filing: Filing::Settled as i32,
+            filing: Filing::Closed as i32,
         };
         self.daemon_once(format!("the stop for {name}"), |mut client| {
             let request = request.clone();

@@ -18,7 +18,7 @@ enum Cards {
         depth: UInt32 = 0, children: UInt32 = 0, family: Attention? = nil,
         members: UInt32 = 1, expanded: Bool = false, loud: LoudMember? = nil,
         kind: Kind = .claudeSdk, reach: Reach = .online(.direct), host: HostId = desk,
-        filing: Filing = .active
+        filing: Filing = .open
     ) -> FleetRow {
         FleetRow(
             card: FleetCard(
@@ -27,13 +27,13 @@ enum Cards {
                 phaseSinceMs: Int64(now.addingTimeInterval(-60 * minutesAgo)
                     .timeIntervalSince1970 * 1000),
                 host: "desk", hostReach: reach, children: children,
-                familyAttention: family ?? attention, members: members, descendants: 0, backgroundJobs: 0, settleHeld: false, filing: filing, topLevel: true,
+                familyAttention: family ?? attention, members: members, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: filing, topLevel: true,
                 branch: nil, exitCause: attention == .exited ? .ended : nil),
             depth: depth, expanded: expanded, secondLine: .blank, loud: loud)
     }
 
     /// The runtime's sections for rows listed heads first, each family's
-    /// members after its head: a family the person pinned or settled sits
+    /// members after its head: a family the person pinned or closed sits
     /// in that section, any other in the section of its loudest member, in
     /// the order given. The fleet's counts are the rows' unless
     /// given, as they are where a folded family hides somebody.
@@ -44,7 +44,7 @@ enum Cards {
             if row.depth == 0 {
                 kind = switch (row.card.filing, row.card.familyAttention) {
                 case (.pinned, _): .pinned
-                case (.settled, _): .settled
+                case (.closed, _): .closed
                 case (_, .needsYou): .needsYou
                 default: .live
                 }
@@ -56,13 +56,13 @@ enum Cards {
             UInt32(rows.filter { wanted.contains($0.card.attention) }.count)
         }
         return FleetView(
-            sections: [SectionKind.pinned, .needsYou, .live, .settled].compactMap { sections[$0] },
+            sections: [SectionKind.pinned, .needsYou, .live, .closed].compactMap { sections[$0] },
             needYou: needYou.map(UInt32.init) ?? counted([.needsYou]),
             working: working.map(UInt32.init) ?? counted([.working, .starting]))
     }
 
     private static func section(_ kind: SectionKind) -> FleetSection {
-        FleetSection(kind: kind, families: 0, foldedByDefault: kind == .settled, rows: [])
+        FleetSection(kind: kind, families: 0, foldedByDefault: kind == .closed, rows: [])
     }
 
     static func host(
@@ -110,19 +110,19 @@ final class FleetStoreTests: XCTestCase {
             "ages are read against \(fleet.orderedAt), before the row's own change at \(row.lastActivity), so it reads \(row.age(at: fleet.orderedAt))")
     }
 
-    /// An agent that exited and nobody settled is an ordinary row; a
-    /// settled one is put away in its own section, which the subtitle does
+    /// An agent that exited and nobody closed is an ordinary row; a
+    /// closed one is put away in its own section, which the subtitle does
     /// not count.
-    func testOnlySettledAgentsArePutAway() {
+    func testOnlyClosedAgentsArePutAway() {
         let fleet = FleetStore(now: Cards.now)
         fleet.show(
             Cards.view([
                 Cards.row(1, "live"), Cards.row(2, "done", attention: .exited),
-                Cards.row(3, "put-away", attention: .exited, filing: .settled),
+                Cards.row(3, "put-away", attention: .exited, filing: .closed),
             ], needYou: 1), hosts: [])
-        XCTAssertEqual(fleet.sections.map(\.kind), [.live, .settled])
+        XCTAssertEqual(fleet.sections.map(\.kind), [.live, .closed])
         XCTAssertEqual(fleet.sections[0].rows.map(\.name), ["live", "done"])
-        XCTAssertEqual(fleet.settled?.rows.map(\.name), ["put-away"])
+        XCTAssertEqual(fleet.closed?.rows.map(\.name), ["put-away"])
         XCTAssertEqual(fleet.subtitle, "1 need you · 2 agents")
     }
 

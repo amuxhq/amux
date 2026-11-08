@@ -407,7 +407,7 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
         .await
         .unwrap();
     runtime
-        .file(recipient.id, daemon_core::Filing::Settled)
+        .file(recipient.id, daemon_core::Filing::Closed)
         .await
         .unwrap();
     let refused = runtime
@@ -426,7 +426,7 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
         .await
         .unwrap_err();
     assert!(
-        matches!(refused, RelayError::Rejected(ref rejected) if rejected.refusal() == wire::Refusal::Settled)
+        matches!(refused, RelayError::Rejected(ref rejected) if rejected.refusal() == wire::Refusal::AgentClosed)
     );
     crash(daemon, runtime).await;
 }
@@ -1464,7 +1464,7 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
         .await
         .unwrap_err();
     assert!(
-        matches!(refused, RelayError::Rejected(ref rejected) if rejected.refusal() == wire::Refusal::Settled)
+        matches!(refused, RelayError::Rejected(ref rejected) if rejected.refusal() == wire::Refusal::AgentClosed)
     );
 
     kill_all(&runtime).await;

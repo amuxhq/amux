@@ -252,11 +252,11 @@ pub(crate) enum Op {
 /// `Filing` without its unspecified value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Filing {
-    Active,
+    Open,
     /// Kept at the top of the fleet; only an agent with no parent.
     Pinned,
-    /// Done with: stopped when live, and its children settled with it.
-    Settled,
+    /// Done with: stopped when live, and its children closed with it.
+    Closed,
 }
 
 impl Filing {
@@ -264,17 +264,17 @@ impl Filing {
     pub fn from_wire(filing: wire::Filing) -> Option<Self> {
         match filing {
             wire::Filing::Unspecified => None,
-            wire::Filing::Active => Some(Self::Active),
+            wire::Filing::Open => Some(Self::Open),
             wire::Filing::Pinned => Some(Self::Pinned),
-            wire::Filing::Settled => Some(Self::Settled),
+            wire::Filing::Closed => Some(Self::Closed),
         }
     }
 
     fn to_wire(self) -> wire::Filing {
         match self {
-            Self::Active => wire::Filing::Active,
+            Self::Open => wire::Filing::Open,
             Self::Pinned => wire::Filing::Pinned,
-            Self::Settled => wire::Filing::Settled,
+            Self::Closed => wire::Filing::Closed,
         }
     }
 }
@@ -765,8 +765,8 @@ impl Daemon {
         row.incarnation = spec.incarnation;
         self.store.remove_notifications(&row.agent.agent)?;
         // Resumed by the person or its parent: no longer done with.
-        if row.is_settled() {
-            row.filing = wire::Filing::Active as i32;
+        if row.is_closed() {
+            row.filing = wire::Filing::Open as i32;
             row.filed_at_ms = self.timers.now_ms as i64;
         }
         self.put_own_row(&row, out)?;
@@ -825,9 +825,9 @@ impl Daemon {
         }))
     }
 
-    /// Files the agent as the person asked. Settling writes the filing
+    /// Files the agent as the person asked. Closing writes the filing
     /// first, so its children here and on every host that follows its row
-    /// are settled with it, then stops it when it is live and answers once
+    /// are closed with it, then stops it when it is live and answers once
     /// it has ended.
     fn begin_file(
         &mut self,
@@ -846,10 +846,10 @@ impl Daemon {
             row.filed_at_ms = self.timers.now_ms as i64;
             self.put_own_row(&row, out)?;
         }
-        if filing != Filing::Settled {
+        if filing != Filing::Closed {
             return Ok(Began::Finished(Box::new(Ok(Some(to_wire(&row))))));
         }
-        self.parent_changed(&key, ParentSays::Settled, out)?;
+        self.parent_changed(&key, ParentSays::Closed, out)?;
         self.begin_ending(agent, false, Then::Answer, out)
     }
 
@@ -1260,8 +1260,8 @@ impl Daemon {
     // --- the family rule ---------------------------------------------------------
 
     /// Each of this host's own agents under `parent`, whose row now says
-    /// `says`, follows it: exited stops each live child, settled settles
-    /// each child not yet settled, deleted deletes each child. A parent that is merely out of reach says neither, so
+    /// `says`, follows it: exited stops each live child, closed closes
+    /// each child not yet closed, deleted deletes each child. A parent that is merely out of reach says neither, so
     /// its children carry on and their reports wait in the outbox.
     pub(crate) fn parent_changed(
         &mut self,
@@ -1272,7 +1272,7 @@ impl Daemon {
         for child in self.store.agents_of_parent(parent)? {
             if child.agent.host != self.store.own_host()
                 || (says == ParentSays::Exited && child.lifecycle != Lifecycle::Live as i32)
-                || (says == ParentSays::Settled && child.is_settled())
+                || (says == ParentSays::Closed && child.is_closed())
             {
                 continue;
             }
@@ -1300,7 +1300,7 @@ impl Daemon {
         }
         let op = match says {
             ParentSays::Exited => Op::Stop,
-            ParentSays::Settled => Op::File(Filing::Settled),
+            ParentSays::Closed => Op::File(Filing::Closed),
             ParentSays::Deleted => Op::Delete,
         };
         self.registry_call(Caller::Family, child, op, out);
@@ -1406,7 +1406,7 @@ impl Daemon {
         Ok(())
     }
 
-    /// Marks the row exited, then settles what the process leaves: its
+    /// Marks the row exited, then closes what the process leaves: its
     /// unsent notifications go, since no push may name an agent that is
     /// gone, a top-level agent that died is news, and a child whose incarnation ended without sending its last
     /// report tells its parent it failed: its turn was open, or it ended
@@ -1428,9 +1428,9 @@ impl Daemon {
             row.exit_detail = fallback.detail;
         }
         // A one-shot child that did its work is done with, as its parent
-        // settling it would make it.
-        if row.exit_cause == ExitCause::Finished as i32 && !row.is_settled() {
-            row.filing = wire::Filing::Settled as i32;
+        // closing it would make it.
+        if row.exit_cause == ExitCause::Finished as i32 && !row.is_closed() {
+            row.filing = wire::Filing::Closed as i32;
             row.filed_at_ms = self.timers.now_ms as i64;
         }
         let cause = wire::IncarnationEnd {
@@ -1733,16 +1733,16 @@ mod tests {
     }
 
     #[test]
-    fn settling_a_parent_files_it_and_its_child_and_stops_both() {
+    fn closing_a_parent_files_it_and_its_child_and_stops_both() {
         let mut rig = rig();
         rig.live(PARENT, "lead", None);
         rig.live(CHILD, "helper", Some(PARENT));
         let (call, out) = rig.call(ClientRequest::FileAgent {
             agent: PARENT,
-            filing: Filing::Settled,
+            filing: Filing::Closed,
         });
-        assert!(rig.row(PARENT).unwrap().is_settled());
-        assert!(rig.row(CHILD).unwrap().is_settled(), "{out:?}");
+        assert!(rig.row(PARENT).unwrap().is_closed());
+        assert!(rig.row(CHILD).unwrap().is_closed(), "{out:?}");
         assert_eq!(stops(&out, PARENT), [false], "{out:?}");
         assert_eq!(stops(&out, CHILD), [false], "{out:?}");
         assert!(answer_of(&out, call).is_none(), "answered once it ended");
@@ -1753,7 +1753,7 @@ mod tests {
         let row = answer_of(&gone, call).expect("the settle is answered with its row");
         assert_eq!(
             (row.lifecycle(), row.filing()),
-            (Lifecycle::Exited, wire::Filing::Settled)
+            (Lifecycle::Exited, wire::Filing::Closed)
         );
     }
 
@@ -1778,18 +1778,18 @@ mod tests {
     }
 
     #[test]
-    fn a_resume_files_a_settled_agent_active_again() {
+    fn a_resume_files_a_closed_agent_active_again() {
         let mut rig = rig();
         rig.live(PARENT, "lead", None);
         rig.call(ClientRequest::FileAgent {
             agent: PARENT,
-            filing: Filing::Settled,
+            filing: Filing::Closed,
         });
         rig.step(Input::ControlClosed {
             agent: PARENT,
             ended: Ended::Exited,
         });
-        assert!(rig.row(PARENT).unwrap().is_settled());
+        assert!(rig.row(PARENT).unwrap().is_closed());
         let (_, out) = rig.call(ClientRequest::ResumeAgent(Box::new(Resume {
             agent: PARENT,
             bootstrap: None,
@@ -1816,7 +1816,7 @@ mod tests {
         let row = rig.row(PARENT).unwrap();
         assert_eq!(
             (row.lifecycle, row.filing),
-            (Lifecycle::Live as i32, wire::Filing::Active as i32)
+            (Lifecycle::Live as i32, wire::Filing::Open as i32)
         );
     }
 
@@ -1871,7 +1871,7 @@ mod tests {
 
         rig.call(ClientRequest::FileAgent {
             agent: PARENT,
-            filing: Filing::Settled,
+            filing: Filing::Closed,
         });
         let (resume, out) = rig.call(ClientRequest::ResumeAgent(Box::new(Resume {
             agent: PARENT,
@@ -2077,7 +2077,7 @@ mod tests {
         rig.step(Input::AgentHello { agent: PARENT });
         rig.call(ClientRequest::FileAgent {
             agent: PARENT,
-            filing: Filing::Settled,
+            filing: Filing::Closed,
         });
         rig.call(ClientRequest::DeleteAgent { agent: PARENT });
 

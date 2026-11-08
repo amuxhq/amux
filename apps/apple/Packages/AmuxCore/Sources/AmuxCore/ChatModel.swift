@@ -965,7 +965,7 @@ public final class ChatModel {
         return switch refused.reason {
         case .exited: String(localized: "it had exited")
         case .exiting: String(localized: "it was exiting")
-        case .settled: String(localized: "it is settled")
+        case .agentClosed: String(localized: "it is settled")
         case .draining: String(localized: "its host is shutting down")
         case .hostUnreachable: String(localized: "its host is away")
         case .unsupported: String(localized: "this agent can’t take it")

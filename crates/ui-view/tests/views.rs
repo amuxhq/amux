@@ -451,7 +451,7 @@ fn a_settled_child_is_not_listed_under_its_family_nor_counted_there() {
     // start it again.
     let mut stopped = fleet_entry("a", "stopped", Phase::Idle, Some("parent"), 60);
     stopped.lifecycle = wire::Lifecycle::Exited as i32;
-    stopped.filing = wire::Filing::Settled as i32;
+    stopped.filing = wire::Filing::Closed as i32;
     fleet.update(listed(stopped));
     let all = |_: &wire::Agent| true;
     let expand: HashSet<Vec<u8>> = [b"parent".to_vec()].into();
@@ -499,7 +499,7 @@ fn the_fleet_places_families_by_filing_then_by_their_loudest_member_newest_first
     fleet.update(listed(gone));
     let mut done = fleet_entry("a", "done", Phase::Idle, None, 3000);
     done.lifecycle = wire::Lifecycle::Exited as i32;
-    done.filing = wire::Filing::Settled as i32;
+    done.filing = wire::Filing::Closed as i32;
     fleet.update(listed(done));
     // Pinned, it stays at the top whatever it does.
     let mut kept = fleet_entry("a", "kept", Phase::Idle, None, 1);
@@ -519,7 +519,7 @@ fn the_fleet_places_families_by_filing_then_by_their_loudest_member_newest_first
             (Live, "gone".into(), 0),
             (Live, "quiet".into(), 0),
             (Live, "busy".into(), 0),
-            (Settled, "done".into(), 0),
+            (Closed, "done".into(), 0),
         ]
     );
     assert_eq!(

@@ -256,7 +256,7 @@ async fn replica_agent_is_refused_on_every_read_and_input() {
             peer.agents
                 .file_agent(FileAgentRequest {
                     agent_id: coder.clone(),
-                    filing: wire::Filing::Settled as i32,
+                    filing: wire::Filing::Closed as i32,
                 })
                 .await
                 .err(),

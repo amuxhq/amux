@@ -3341,7 +3341,7 @@ pub(crate) fn refusal_words(refusal: &Refusal) -> String {
     }
     match refusal.reason {
         wire::Refusal::Exited => "it had exited",
-        wire::Refusal::Settled => "it was settled",
+        wire::Refusal::AgentClosed => "it was settled",
         wire::Refusal::Exiting => "it was exiting",
         wire::Refusal::Draining => "its host is shutting down",
         wire::Refusal::HostUnreachable => "its host is away",

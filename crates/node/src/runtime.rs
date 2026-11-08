@@ -1405,10 +1405,10 @@ impl ProfileRuntime {
 
     // --- file, delete, rename --------------------------------------------
 
-    /// Files an agent as the person asked. Settling a live agent stops its
+    /// Files an agent as the person asked. Closing a live agent stops its
     /// process now: the running turn is cancelled the provider's own way
     /// and the agent exits, resumable; a stop that overruns the stop
-    /// deadline kills. Its children, on this host or another, are settled
+    /// deadline kills. Its children, on this host or another, are closed
     /// with it by the family rule once their host sees its row.
     pub async fn file(
         &self,

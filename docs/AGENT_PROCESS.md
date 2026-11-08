@@ -205,7 +205,7 @@ one someone wants to look at.
 
 Nothing a person does in a chat stops the process. A chat's interrupt is the
 interrupt input, which cancels the turn and leaves the agent live and idle.
-Process stops come from the daemon: a settle (`FileAgent`, `amux settle`, an
+Process stops come from the daemon: a close (`FileAgent`, `amux settle`, an
 agent's stop tool), the family rule, and the first step of a delete each send
 `Stop` on the control socket, and the agent cancels its turn the provider's own way and exits. There is no "stop when
 done": the agent's own drain, finishing its turn, happens only when its daemon

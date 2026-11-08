@@ -1128,13 +1128,13 @@ impl App {
                     })
                 })
             }
-            FleetEffect::CancelSettle(agent) => self.fleet.cancel_settle(&agent),
-            FleetEffect::Settle(agent) => {
+            FleetEffect::CancelClose(agent) => self.fleet.cancel_close(&agent),
+            FleetEffect::Close(agent) => {
                 let fleet = self.fleet.clone();
                 self.spawn(async move {
                     // A settle whose host cannot be reached is held by the
                     // fleet and shown on the agent's row until it goes.
-                    match fleet.settle(&agent).await {
+                    match fleet.close_agent(&agent).await {
                         Ok(_) => None,
                         Err(error) => Some(AppEvent::Notice(
                             format!("could not settle: {error}"),
@@ -1144,7 +1144,7 @@ impl App {
                 })
             }
             FleetEffect::Pin(agent) => self.file(agent, wire::Filing::Pinned, "pin"),
-            FleetEffect::Unpin(agent) => self.file(agent, wire::Filing::Active, "unpin"),
+            FleetEffect::Unpin(agent) => self.file(agent, wire::Filing::Open, "unpin"),
             FleetEffect::Delete(agent) => self.spawn(async move {
                 let request = DeleteAgentRequest {
                     agent_id: agent.agent,

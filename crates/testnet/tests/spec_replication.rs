@@ -488,7 +488,7 @@ async fn a_rewound_origin_resets_a_settled_replica_too() {
     wait_origin_says(&net, "brief", "t1-0").await;
     net.runtime("desk")
         .unwrap()
-        .file(brief.id, daemon_core::Filing::Settled)
+        .file(brief.id, daemon_core::Filing::Closed)
         .await
         .unwrap();
     let laptop = net.runtime("laptop").unwrap();

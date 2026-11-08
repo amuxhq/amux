@@ -29,10 +29,10 @@ service AgentService {
   rpc ResolveAgent(ResolveAgentRequest) returns (ResolveAgentResponse);
   rpc CreateAgent(CreateAgentRequest) returns (CreateAgentResponse);
   rpc RenameAgent(RenameAgentRequest) returns (RenameAgentResponse);
-  // Pins, settles or returns the agent to active. Settling a live agent
-  // stops it, resumable, and settles its children with it.
+  // Pins, closes or returns the agent to open. Closing a live agent
+  // stops it, resumable, and closes its children with it.
   rpc FileAgent(FileAgentRequest) returns (FileAgentResponse);
-  // Spawn the directory again, filed active when it was settled.
+  // Spawn the directory again, filed open when it was closed.
   rpc ResumeAgent(ResumeAgentRequest) returns (ResumeAgentResponse);
   // Removes the agent for good, stopping it first when it is live. Its
   // children, on any host, follow on their own hosts by the family rule.
@@ -117,10 +117,10 @@ message RenameAgentResponse {
   Agent agent = 1;
 }
 
-// FILING_SETTLED ends a live agent now: the running turn is cancelled the
+// FILING_CLOSED ends a live agent now: the running turn is cancelled the
 // provider's own way and the agent exits, resumable. Named apart from the
 // Interrupt input, which ends only the turn. FILING_PINNED is refused for an
-// agent with a parent; FILING_ACTIVE files the agent back without resuming
+// agent with a parent; FILING_OPEN files the agent back without resuming
 // it.
 message FileAgentRequest {
   bytes agent_id = 1;

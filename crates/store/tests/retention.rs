@@ -58,7 +58,7 @@ fn add(
     if !live {
         let mut row = store.agent(agent).unwrap().unwrap();
         row.lifecycle = Lifecycle::Exited as i32;
-        row.filing = wire::Filing::Settled as i32;
+        row.filing = wire::Filing::Closed as i32;
         store.put_agent(&row).unwrap();
     }
 }
@@ -411,28 +411,28 @@ fn retention_stops_as_soon_as_the_pool_fits() {
 }
 
 #[test]
-fn retention_never_removes_an_exited_agent_the_person_has_not_settled() {
+fn retention_never_removes_an_exited_agent_the_person_has_not_closed() {
     let mut store = fresh();
     add(&mut store, &own("crashed"), 3, 1, false, None);
     let mut row = store.agent(&own("crashed")).unwrap().unwrap();
-    row.filing = wire::Filing::Active as i32;
+    row.filing = wire::Filing::Open as i32;
     store.put_agent(&row).unwrap();
     add(&mut store, &own("settled"), 3, 2, false, None);
     let sweep = store.sweep_own(0, ROW, 1).unwrap();
-    // The settled agent goes whole; the one never settled is only trimmed.
+    // The closed agent goes whole; the one never closed is only trimmed.
     assert_eq!(sweep.removed, [own("settled")]);
     assert!(store.agent(&own("crashed")).unwrap().is_some());
 }
 
 #[test]
-fn retention_frees_the_settled_children_of_a_parent_the_person_kept() {
+fn retention_frees_the_closed_children_of_a_parent_the_person_kept() {
     let mut store = fresh();
-    // The parent exited and was never settled; its one-shot child finished
-    // and settled itself.
+    // The parent exited and was never closed; its one-shot child finished
+    // and closed itself.
     let parent = own("long-lived");
     add(&mut store, &parent, 1, 900, false, None);
     let mut row = store.agent(&parent).unwrap().unwrap();
-    row.filing = wire::Filing::Active as i32;
+    row.filing = wire::Filing::Open as i32;
     store.put_agent(&row).unwrap();
     add(
         &mut store,

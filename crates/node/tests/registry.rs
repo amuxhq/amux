@@ -484,7 +484,7 @@ async fn a_stop_and_a_kill_end_the_process_and_record_why() {
         let stopped = if mode == "kill" {
             runtime.kill_agent(id).await
         } else {
-            runtime.file(id, Filing::Settled).await
+            runtime.file(id, Filing::Closed).await
         }
         .expect("the stop completes");
         assert_eq!(stopped.lifecycle, Lifecycle::Exited as i32, "{mode:?}");
@@ -820,7 +820,7 @@ async fn a_spawn_for_an_exited_parent_is_refused() {
     until("the turn to start", || working(&runtime, parent))
         .await
         .unwrap();
-    runtime.file(parent, Filing::Settled).await.unwrap();
+    runtime.file(parent, Filing::Closed).await.unwrap();
 
     let refusal = runtime
         .spawn(
@@ -873,7 +873,7 @@ async fn a_child_asked_for_while_its_parent_stops_never_outlives_it() {
         let (release, gate) = std::sync::mpsc::channel::<()>();
         let mut hold = std::pin::pin!(runtime.read_store(move |_| gate.recv().is_ok()));
         assert!(poll_once(&mut hold).await.is_pending());
-        let mut stop = std::pin::pin!(runtime.file(parent, Filing::Settled));
+        let mut stop = std::pin::pin!(runtime.file(parent, Filing::Closed));
         let early_stop = poll_once(&mut stop).await;
         let mut spawn = std::pin::pin!(runtime.spawn(
             create(&install.work, "late-child", Some("hold")),
@@ -1253,7 +1253,7 @@ async fn a_restarted_daemon_adopts_live_agents_and_sweeps_exited_ones() {
     assert_eq!(marker, Some(Marker::CaughtUp));
 
     // The adopted agent is the registry's like any other: it stops.
-    let stopped = runtime.file(stays, Filing::Settled).await.unwrap();
+    let stopped = runtime.file(stays, Filing::Closed).await.unwrap();
     assert_eq!(stopped.exit_cause(), ExitCause::Stopped);
     drop(runtime);
     daemon.shutdown().await.unwrap();
@@ -1302,7 +1302,7 @@ async fn the_stop_deadline_kills_an_agent_adopted_from_an_earlier_daemon() {
         .status()
         .unwrap();
     assert!(frozen.success(), "the agent process is frozen");
-    let stopped = runtime.file(id, Filing::Settled).await;
+    let stopped = runtime.file(id, Filing::Closed).await;
     // Let a process the kill missed run, finish its turn and go.
     let _ = std::process::Command::new("pkill")
         .args(["-CONT", "-f", &format!("agent {}", dir.display())])
@@ -1728,7 +1728,7 @@ async fn a_codex_resume_after_a_kill_waits_for_the_old_server_instead_of_racing_
         .status()
         .unwrap();
     assert!(frozen.success(), "the agent process is frozen");
-    let stopped = runtime.file(id, Filing::Settled).await.unwrap();
+    let stopped = runtime.file(id, Filing::Closed).await.unwrap();
     assert_eq!(stopped.exit_cause(), ExitCause::Killed);
 
     runtime
@@ -1850,7 +1850,7 @@ async fn a_codex_server_that_ignores_terminate_does_not_hold_its_thread_from_the
         .status()
         .unwrap();
     assert!(frozen.success(), "the agent process is frozen");
-    let stopped = runtime.file(id, Filing::Settled).await.unwrap();
+    let stopped = runtime.file(id, Filing::Closed).await.unwrap();
     assert_eq!(stopped.exit_cause(), ExitCause::Killed);
 
     runtime
@@ -2047,7 +2047,7 @@ async fn a_persons_stop_ends_a_working_agent_as_stopped_within_seconds() {
     let started = std::time::Instant::now();
     // The stop every client sends today; the decided wire has no mode.
     let stopped =
-        tokio::time::timeout(Duration::from_secs(8), runtime.file(id, Filing::Settled)).await;
+        tokio::time::timeout(Duration::from_secs(8), runtime.file(id, Filing::Closed)).await;
     let took = started.elapsed();
     kill_all(&runtime).await;
     let row = runtime.agent(id).await.unwrap();

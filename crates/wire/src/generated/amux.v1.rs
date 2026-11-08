@@ -4275,7 +4275,7 @@ pub struct Agent {
     #[prost(uint32, tag = "17")]
     pub background_jobs: u32,
     /// How the person filed the agent, apart from its lifecycle: an exited
-    /// agent left active reads as an ordinary one, and a settled one is done
+    /// agent left open reads as an ordinary one, and a closed one is done
     /// with.
     #[prost(enumeration = "Filing", tag = "18")]
     pub filing: i32,
@@ -4415,13 +4415,13 @@ impl RouteKind {
 #[repr(i32)]
 pub enum Filing {
     Unspecified = 0,
-    Active = 1,
+    Open = 1,
     /// Kept at the top of the fleet. Only an agent with no parent is pinned.
     Pinned = 2,
     /// Done with: stopped when it was live, out of other agents' listing, and
     /// the only kind retention deletes. A message from the person or its own
     /// parent resumes it, filed active again.
-    Settled = 3,
+    Closed = 3,
 }
 impl Filing {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -4431,18 +4431,18 @@ impl Filing {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             Self::Unspecified => "FILING_UNSPECIFIED",
-            Self::Active => "FILING_ACTIVE",
+            Self::Open => "FILING_OPEN",
             Self::Pinned => "FILING_PINNED",
-            Self::Settled => "FILING_SETTLED",
+            Self::Closed => "FILING_CLOSED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "FILING_UNSPECIFIED" => Some(Self::Unspecified),
-            "FILING_ACTIVE" => Some(Self::Active),
+            "FILING_OPEN" => Some(Self::Open),
             "FILING_PINNED" => Some(Self::Pinned),
-            "FILING_SETTLED" => Some(Self::Settled),
+            "FILING_CLOSED" => Some(Self::Closed),
             _ => None,
         }
     }
@@ -6391,8 +6391,8 @@ pub enum Refusal {
     ConversationElsewhere = 8,
     /// The prompt is longer than the agent takes; the detail names the limit.
     TooLong = 9,
-    /// The agent is settled: only the person or its own parent resume it.
-    Settled = 10,
+    /// The agent is closed: only the person or its own parent resume it.
+    AgentClosed = 10,
 }
 impl Refusal {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -6411,7 +6411,7 @@ impl Refusal {
             Self::HostUnreachable => "REFUSAL_HOST_UNREACHABLE",
             Self::ConversationElsewhere => "REFUSAL_CONVERSATION_ELSEWHERE",
             Self::TooLong => "REFUSAL_TOO_LONG",
-            Self::Settled => "REFUSAL_SETTLED",
+            Self::AgentClosed => "REFUSAL_AGENT_CLOSED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -6427,7 +6427,7 @@ impl Refusal {
             "REFUSAL_HOST_UNREACHABLE" => Some(Self::HostUnreachable),
             "REFUSAL_CONVERSATION_ELSEWHERE" => Some(Self::ConversationElsewhere),
             "REFUSAL_TOO_LONG" => Some(Self::TooLong),
-            "REFUSAL_SETTLED" => Some(Self::Settled),
+            "REFUSAL_AGENT_CLOSED" => Some(Self::AgentClosed),
             _ => None,
         }
     }
@@ -7280,10 +7280,10 @@ impl ::prost::Name for RenameAgentResponse {
         "type.googleapis.com/amux.v1.RenameAgentResponse".into()
     }
 }
-/// FILING_SETTLED ends a live agent now: the running turn is cancelled the
+/// FILING_CLOSED ends a live agent now: the running turn is cancelled the
 /// provider's own way and the agent exits, resumable. Named apart from the
 /// Interrupt input, which ends only the turn. FILING_PINNED is refused for an
-/// agent with a parent; FILING_ACTIVE files the agent back without resuming
+/// agent with a parent; FILING_OPEN files the agent back without resuming
 /// it.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FileAgentRequest {
@@ -7785,8 +7785,8 @@ pub mod agent_service_client {
                 .insert(GrpcMethod::new("amux.v1.AgentService", "RenameAgent"));
             self.inner.unary(req, path, codec).await
         }
-        /// Pins, settles or returns the agent to active. Settling a live agent
-        /// stops it, resumable, and settles its children with it.
+        /// Pins, closes or returns the agent to open. Closing a live agent
+        /// stops it, resumable, and closes its children with it.
         pub async fn file_agent(
             &mut self,
             request: impl tonic::IntoRequest<super::FileAgentRequest>,
@@ -7811,7 +7811,7 @@ pub mod agent_service_client {
                 .insert(GrpcMethod::new("amux.v1.AgentService", "FileAgent"));
             self.inner.unary(req, path, codec).await
         }
-        /// Spawn the directory again, filed active when it was settled.
+        /// Spawn the directory again, filed open when it was closed.
         pub async fn resume_agent(
             &mut self,
             request: impl tonic::IntoRequest<super::ResumeAgentRequest>,
@@ -8074,8 +8074,8 @@ pub mod agent_service_server {
             tonic::Response<super::RenameAgentResponse>,
             tonic::Status,
         >;
-        /// Pins, settles or returns the agent to active. Settling a live agent
-        /// stops it, resumable, and settles its children with it.
+        /// Pins, closes or returns the agent to open. Closing a live agent
+        /// stops it, resumable, and closes its children with it.
         async fn file_agent(
             &self,
             request: tonic::Request<super::FileAgentRequest>,
@@ -8083,7 +8083,7 @@ pub mod agent_service_server {
             tonic::Response<super::FileAgentResponse>,
             tonic::Status,
         >;
-        /// Spawn the directory again, filed active when it was settled.
+        /// Spawn the directory again, filed open when it was closed.
         async fn resume_agent(
             &self,
             request: tonic::Request<super::ResumeAgentRequest>,

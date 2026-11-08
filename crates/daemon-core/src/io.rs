@@ -649,8 +649,8 @@ pub enum ShellWork {
 pub enum ParentSays {
     /// The parent exited, whatever the cause: its children stop.
     Exited,
-    /// The person settled the parent: its children are settled with it.
-    Settled,
+    /// The person closed the parent: its children are closed with it.
+    Closed,
     /// The parent is gone from its host for good: its children are stopped
     /// and deleted.
     Deleted,
@@ -797,7 +797,7 @@ mod tests {
                     host: HostId([2; 16]),
                     request: Box::new(PeerRequest::FileAgent(wire::FileAgentRequest {
                         agent_id: vec![3],
-                        filing: wire::Filing::Settled as i32,
+                        filing: wire::Filing::Closed as i32,
                     })),
                 },
             },

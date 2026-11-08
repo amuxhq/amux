@@ -667,9 +667,9 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
     let stopping = tokio::spawn({
         let fleet = fleet.clone();
         let key = key.clone();
-        async move { fleet.settle(&key).await }
+        async move { fleet.close_agent(&key).await }
     });
-    let (request, reply) = calls.settle().await;
+    let (request, reply) = calls.close_agent().await;
     assert_eq!(request.agent_id, b"a");
     reply
         .send(Err(client::RpcError::Refused(wire::Error {
@@ -678,9 +678,9 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
             details: Vec::new(),
         })))
         .ok();
-    assert_eq!(stopping.await.unwrap().unwrap(), ui_runtime::Settle::Held);
+    assert_eq!(stopping.await.unwrap().unwrap(), ui_runtime::Close::Held);
     assert!(
-        fleet.state().settle_held(&key),
+        fleet.state().close_held(&key),
         "the row shows the stop held"
     );
 
@@ -689,11 +689,11 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
     feed.send(inventory_host(wire::trusted::Reach::Online(
         wire::RouteKind::Direct as i32,
     )));
-    let (request, reply) = calls.settle().await;
+    let (request, reply) = calls.close_agent().await;
     assert_eq!(request.agent_id, b"a");
     reply.send(Ok(wire::Agent::default())).ok();
     until(fleet.changed(), || {
-        (!fleet.state().settle_held(&key)).then_some(())
+        (!fleet.state().close_held(&key)).then_some(())
     })
     .await;
 
@@ -701,9 +701,9 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
     let stopping = tokio::spawn({
         let fleet = fleet.clone();
         let key = key.clone();
-        async move { fleet.settle(&key).await }
+        async move { fleet.close_agent(&key).await }
     });
-    let (_, reply) = calls.settle().await;
+    let (_, reply) = calls.close_agent().await;
     reply
         .send(Err(client::RpcError::Refused(wire::Error {
             code: wire::ErrorCode::Unavailable as i32,
@@ -711,12 +711,12 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
             details: Vec::new(),
         })))
         .ok();
-    assert_eq!(stopping.await.unwrap().unwrap(), ui_runtime::Settle::Held);
-    fleet.cancel_settle(&key);
+    assert_eq!(stopping.await.unwrap().unwrap(), ui_runtime::Close::Held);
+    fleet.cancel_close(&key);
     feed.send(inventory_host(wire::trusted::Reach::Away(wire::Empty {})));
     feed.send(inventory_host(wire::trusted::Reach::Online(
         wire::RouteKind::Direct as i32,
     )));
     calls.none().await;
-    assert!(!fleet.state().settle_held(&key));
+    assert!(!fleet.state().close_held(&key));
 }

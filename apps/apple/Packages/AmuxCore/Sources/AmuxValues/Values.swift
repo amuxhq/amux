@@ -262,12 +262,12 @@ public enum AgentAct: Codable, Hashable, Sendable {
     /// Files it as done with, stopping it now when live. One whose host
     /// cannot be reached is held, shown on its card, and goes when the
     /// host is back.
-    case settle
-    /// Takes back a held settle.
-    case cancelSettle
+    case close
+    /// Takes back a held close.
+    case cancelClose
     /// Keeps it at the top of the fleet; only an agent with no parent.
     case pin
-    /// Files it back as active: un-pinned, or un-settled without resuming.
+    /// Files it back as open: un-pinned, or reopened without resuming.
     case unfile
 
     private enum Tag: String, CodingKey {
@@ -280,8 +280,8 @@ public enum AgentAct: Codable, Hashable, Sendable {
         {
             switch _name {
             case "Delete": self = .delete
-            case "Settle": self = .settle
-            case "CancelSettle": self = .cancelSettle
+            case "Close": self = .close
+            case "CancelClose": self = .cancelClose
             case "Pin": self = .pin
             case "Unfile": self = .unfile
             default:
@@ -311,12 +311,12 @@ public enum AgentAct: Codable, Hashable, Sendable {
         case .rename(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .rename)
-        case .settle:
+        case .close:
             var _container = encoder.singleValueContainer()
-            try _container.encode("Settle")
-        case .cancelSettle:
+            try _container.encode("Close")
+        case .cancelClose:
             var _container = encoder.singleValueContainer()
-            try _container.encode("CancelSettle")
+            try _container.encode("CancelClose")
         case .pin:
             var _container = encoder.singleValueContainer()
             try _container.encode("Pin")
@@ -3034,13 +3034,13 @@ public enum FileStatus: String, Codable, Hashable, Sendable, CaseIterable {
 
 public enum Filing: String, Codable, Hashable, Sendable, CaseIterable {
     case unspecified = "Unspecified"
-    case active = "Active"
+    case open = "Open"
     /// Kept at the top of the fleet. Only an agent with no parent is pinned.
     case pinned = "Pinned"
     /// Done with: stopped when it was live, out of other agents' listing, and
     /// the only kind retention deletes. A message from the person or its own
     /// parent resumes it, filed active again.
-    case settled = "Settled"
+    case closed = "Closed"
 }
 
 public struct FleetCard: Codable, Hashable, Sendable {
@@ -3067,9 +3067,9 @@ public struct FleetCard: Codable, Hashable, Sendable {
     public var descendants: UInt32
     /// Jobs its provider runs in the background, as its row reports them.
     public var backgroundJobs: UInt32
-    /// This client's settle of it is held: its host could not be reached,
-    /// and the settle goes when the host is back. Cancel takes it back.
-    public var settleHeld: Bool
+    /// This client's close of it is held: its host could not be reached,
+    /// and the close goes when the host is back. Cancel takes it back.
+    public var closeHeld: Bool
     /// How the person filed it, apart from its lifecycle.
     public var filing: Filing
     /// It has no parent, so it may be pinned.
@@ -3080,7 +3080,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
     /// How it ended, once it has.
     public var exitCause: ExitCause?
 
-    public init(agent: AgentKey, name: String, handle: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, settleHeld: Bool, filing: Filing, topLevel: Bool, branch: String?, exitCause: ExitCause?) {
+    public init(agent: AgentKey, name: String, handle: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, closeHeld: Bool, filing: Filing, topLevel: Bool, branch: String?, exitCause: ExitCause?) {
         self.agent = agent
         self.name = name
         self.handle = handle
@@ -3095,7 +3095,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
         self.members = members
         self.descendants = descendants
         self.backgroundJobs = backgroundJobs
-        self.settleHeld = settleHeld
+        self.closeHeld = closeHeld
         self.filing = filing
         self.topLevel = topLevel
         self.branch = branch
@@ -3117,7 +3117,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
         case members
         case descendants
         case backgroundJobs = "background_jobs"
-        case settleHeld = "settle_held"
+        case closeHeld = "close_held"
         case filing
         case topLevel = "top_level"
         case branch
@@ -3253,7 +3253,7 @@ public struct FleetSection: Codable, Hashable, Sendable {
     public var kind: SectionKind
     /// How many families the section holds, folded or not.
     public var families: UInt32
-    /// Whether the section starts folded: settled agents are done with,
+    /// Whether the section starts folded: closed agents are done with,
     /// rarely opened.
     public var foldedByDefault: Bool
     /// Each family's head, with the members of expanded families under it.
@@ -5397,8 +5397,8 @@ public enum RefusalReason: String, Codable, Hashable, Sendable, CaseIterable {
     case conversationElsewhere = "ConversationElsewhere"
     /// The prompt is longer than the agent takes; the detail names the limit.
     case tooLong = "TooLong"
-    /// The agent is settled: only the person or its own parent resume it.
-    case settled = "Settled"
+    /// The agent is closed: only the person or its own parent resume it.
+    case agentClosed = "AgentClosed"
 }
 
 /// A prompt the agent refused. Its words go back to the composer, with
@@ -6390,9 +6390,9 @@ public enum SecondLine: Codable, Hashable, Sendable {
     }
 }
 
-/// Where a family sits: pinned or settled by how the person filed its head,
+/// Where a family sits: pinned or closed by how the person filed its head,
 /// else by its loudest member. Live holds the starting, working and idle,
-/// and those that ended without being settled: they read as ordinary
+/// and those that ended without being closed: they read as ordinary
 /// agents, which a message resumes.
 public enum SectionKind: String, Codable, Hashable, Sendable, CaseIterable {
     case needsYou = "NeedsYou"
@@ -6400,8 +6400,8 @@ public enum SectionKind: String, Codable, Hashable, Sendable, CaseIterable {
     /// Kept at the top in the order pinned, newest pin first, whatever
     /// their members are doing.
     case pinned = "Pinned"
-    /// Done with, newest settled first.
-    case settled = "Settled"
+    /// Done with, newest closed first.
+    case closed = "Closed"
 }
 
 /// A run of text or one attachment, in reading order. Each placeholder in

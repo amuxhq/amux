@@ -196,8 +196,8 @@ impl AgentService for PeerApi {
     }
 
     /// The calling daemon already held its caller to the filing rules: an
-    /// agent settles only its own children, and only the person pins or
-    /// un-settles.
+    /// agent closes only its own children, and only the person pins or
+    /// reopens.
     async fn file_agent(
         &self,
         request: Request<FileAgentRequest>,
@@ -205,7 +205,7 @@ impl AgentService for PeerApi {
         let runtime = self.own(&request, &request.get_ref().agent_id).await?;
         let request = request.into_inner();
         let Some(filing) = daemon_core::Filing::from_wire(request.filing()) else {
-            return refused("a filing is active, pinned or settled");
+            return refused("a filing is open, pinned or closed");
         };
         runtime
             .file(agent_id(&request.agent_id)?, filing)

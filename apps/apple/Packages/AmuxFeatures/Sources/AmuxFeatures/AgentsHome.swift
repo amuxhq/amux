@@ -12,19 +12,19 @@ public enum HomeAction: Equatable, Sendable {
     /// Lists or folds away a family's members.
     case toggleFamily(AgentKey)
     /// Done with it: stops it when live; a message resumes it.
-    case settle(AgentKey)
-    /// Takes back a settle held while the agent's host is out of reach.
-    case cancelSettle(AgentKey)
+    case close(AgentKey)
+    /// Takes back a close held while the agent's host is out of reach.
+    case cancelClose(AgentKey)
     /// Keeps an agent with no parent at the top of the list.
     case pin(AgentKey)
-    /// Files it back as active: its pin taken away, or un-settled without
+    /// Files it back as open: its pin taken away, or reopened without
     /// resuming it.
     case unfile(AgentKey)
-    /// Removes a settled agent for good, once the person has confirmed it.
+    /// Removes a closed agent for good, once the person has confirmed it.
     case delete(AgentKey)
     case rename(AgentKey, String)
-    /// The settled agents, on a page of their own.
-    case openSettled
+    /// The closed agents, on a page of their own.
+    case showClosed
     case newAgent
     case switchAccount(AccountId)
     case addAccount
@@ -63,11 +63,11 @@ public enum HomeAction: Equatable, Sendable {
 /// The title, its subtitle and the buttons beside it are the system
 /// navigation bar's: a large title that shrinks as the list scrolls, with
 /// glass buttons, the way a chat app's list reads.
-/// Which agents the screen lists: the fleet, with the settled ones behind
-/// one row at its foot, or those settled ones on a page of their own.
+/// Which agents the screen lists: the fleet, with the closed ones behind
+/// one row at its foot, or those closed ones on a page of their own.
 public enum HomeScope: Sendable {
     case fleet
-    case settled
+    case closed
 }
 
 public struct AgentsHome: View {
@@ -109,7 +109,7 @@ public struct AgentsHome: View {
     /// The offer that has stood long enough to be made; see `offer`.
     @State private var offered: Offer?
     @State private var discs = AccountDiscs()
-    /// A row's settle or delete being asked about, and a rename being typed.
+    /// A row's close or delete being asked about, and a rename being typed.
     @State private var confirming: Confirming?
     @State private var renaming: FleetRow?
     @State private var newName = ""
@@ -155,7 +155,7 @@ public struct AgentsHome: View {
                 // phone has a machine at all. One that has paired is not a
                 // phone with nothing paired, and offering to pair again there
                 // would say the pairing it just did never happened.
-                if scope == .settled {
+                if scope == .closed {
                     fleet
                 } else if !model.rows.isEmpty || filtering {
                     fleet
@@ -231,8 +231,8 @@ public struct AgentsHome: View {
             titleVisibility: .visible, presenting: confirming
         ) { asked in
             switch asked {
-            case .settle(let row, _):
-                Button(String(localized: "Settle"), role: .destructive) { actions(.settle(row.id)) }
+            case .close(let row, _):
+                Button(String(localized: "Settle"), role: .destructive) { actions(.close(row.id)) }
                     .identified("home.settle.confirm", label: String(localized: "Settle"))
             case .delete(let row):
                 Button(String(localized: "Delete"), role: .destructive) { actions(.delete(row.id)) }
@@ -396,19 +396,19 @@ public struct AgentsHome: View {
 
     private var sections: [FleetSection] { model.sections }
 
-    /// The agents not settled, in one list: the pinned at the top, then the
+    /// The agents not closed, in one list: the pinned at the top, then the
     /// ones that need the person, then the rest.
     private var live: [FleetRow] {
-        sections.filter { $0.kind != .settled }.flatMap(\.rows)
+        sections.filter { $0.kind != .closed }.flatMap(\.rows)
     }
 
-    /// What the list holds: on the fleet, every agent not settled, and the
-    /// settled ones too while a search is finding them; on the settled
+    /// What the list holds: on the fleet, every agent not closed, and the
+    /// closed ones too while a search is finding them; on the closed
     /// page, only those.
     private var listed: [FleetRow] {
         switch scope {
         case .fleet: live
-        case .settled: model.settled?.rows ?? []
+        case .closed: model.closed?.rows ?? []
         }
     }
 
@@ -431,20 +431,20 @@ public struct AgentsHome: View {
                         .padding(.bottom, Space.s)
                 }
                 if filtering && model.rows.isEmpty { noMatches }
-                if scope == .settled && listed.isEmpty { nothingSettled }
+                if scope == .closed && listed.isEmpty { nothingClosed }
                 ForEach(Array(listed.enumerated()), id: \.element.id) { index, row in
                     swipeable(row, last: index == listed.count - 1)
                 }
-                if scope == .fleet, let settled = model.settled {
+                if scope == .fleet, let closed = model.closed {
                     if filtering {
                         // Found by the search, under the rest, as a chat app
                         // finds archived chats.
-                        heading(Self.title(.settled))
-                        ForEach(Array(settled.rows.enumerated()), id: \.element.id) { index, row in
-                            swipeable(row, last: index == settled.rows.count - 1)
+                        heading(Self.title(.closed))
+                        ForEach(Array(closed.rows.enumerated()), id: \.element.id) { index, row in
+                            swipeable(row, last: index == closed.rows.count - 1)
                         }
                     } else {
-                        settledLink(settled)
+                        closedLink(closed)
                     }
                 }
                 Color.clear.frame(height: 120)
@@ -471,8 +471,8 @@ public struct AgentsHome: View {
             value: sections.map { $0.rows.map(\.id) })
     }
 
-    /// A row with what can be done to it from the list: drawn left, settled
-    /// (or, once settled, back among the agents, or deleted); drawn right,
+    /// A row with what can be done to it from the list: drawn left, closed
+    /// (or, once closed, back among the agents, or deleted); drawn right,
     /// pinned or unpinned; held, all of it and a rename.
     private func swipeable(_ row: FleetRow, last: Bool) -> some View {
         agentRow(row)
@@ -492,7 +492,7 @@ public struct AgentsHome: View {
 
     @ViewBuilder
     private func trailing(_ row: FleetRow) -> some View {
-        if row.settled {
+        if row.closed {
             Button { actions(.unfile(row.id)) } label: {
                 Label(String(localized: "Un-settle"), systemImage: "tray.and.arrow.up")
             }
@@ -500,12 +500,12 @@ public struct AgentsHome: View {
             Button(role: .destructive) { confirming = .delete(row) } label: {
                 Label(String(localized: "Delete"), systemImage: "trash")
             }
-        } else if row.card.settleHeld {
-            Button { actions(.cancelSettle(row.id)) } label: {
+        } else if row.card.closeHeld {
+            Button { actions(.cancelClose(row.id)) } label: {
                 Label(String(localized: "Cancel Settle"), systemImage: "arrow.uturn.backward")
             }
         } else {
-            Button { settle(row) } label: {
+            Button { close(row) } label: {
                 Label(String(localized: "Settle"), systemImage: "checkmark.circle")
             }
             .tint(design.accent.color)
@@ -542,29 +542,29 @@ public struct AgentsHome: View {
             newName = row.card.handle
             renaming = row
         } label: { Label("Rename", systemImage: "pencil") }
-        if row.settled {
+        if row.closed {
             Button { actions(.unfile(row.id)) } label: { Label("Un-settle", systemImage: "tray.and.arrow.up") }
             Button(role: .destructive) { confirming = .delete(row) } label: {
                 Label("Delete Agent", systemImage: "trash")
             }
-        } else if row.card.settleHeld {
-            Button { actions(.cancelSettle(row.id)) } label: {
+        } else if row.card.closeHeld {
+            Button { actions(.cancelClose(row.id)) } label: {
                 Label("Cancel Settle", systemImage: "arrow.uturn.backward")
             }
         } else {
-            Button { settle(row) } label: { Label("Settle", systemImage: "checkmark.circle") }
+            Button { close(row) } label: { Label("Settle", systemImage: "checkmark.circle") }
         }
     }
 
-    /// Settles at once, or asks first when that would cut work short.
-    private func settle(_ row: FleetRow) {
-        let cuts = ChatWords.settleCuts(
+    /// Closes at once, or asks first when that would cut work short.
+    private func close(_ row: FleetRow) {
+        let cuts = ChatWords.closeCuts(
             name: row.name, attention: row.attention, jobs: Int(row.card.backgroundJobs),
             subAgents: Int(row.card.descendants))
         if let cuts {
-            confirming = .settle(row, cuts: cuts)
+            confirming = .close(row, cuts: cuts)
         } else {
-            actions(.settle(row.id))
+            actions(.close(row.id))
         }
     }
 
@@ -579,8 +579,8 @@ public struct AgentsHome: View {
             .accessibilityAddTraits(.isHeader)
     }
 
-    /// The settled page, empty.
-    private var nothingSettled: some View {
+    /// The closed page, empty.
+    private var nothingClosed: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Nothing settled")
                 .designFont(.screenTitle, design)
@@ -668,9 +668,9 @@ public struct AgentsHome: View {
     private func agentRow(_ row: FleetRow) -> some View {
         let state = RowState(row: row)
         let heads = row.depth == 0 && row.children > 0
-        // A settle that is held until the host is back says so before
+        // A close that is held until the host is back says so before
         // anything else the row would say; its menu has the Cancel.
-        let second = row.card.settleHeld
+        let second = row.card.closeHeld
             ? (text: String(localized: "Settle held · sends when \(row.hostName) is back"), ink: FleetWords.Ink.warning)
             : FleetWords.secondLine(
                 row.secondLine, kind: row.card.kind, now: model.orderedAt,
@@ -758,16 +758,16 @@ public struct AgentsHome: View {
         case .pinned: String(localized: "Pinned")
         case .needsYou: String(localized: "Needs you")
         case .live: String(localized: "Live")
-        case .settled: String(localized: "Settled")
+        case .closed: String(localized: "Settled")
         }
     }
 
-    /// The settled agents, behind one row at the foot of the list, as a chat
+    /// The closed agents, behind one row at the foot of the list, as a chat
     /// app keeps its archive: drawn as a row, so it reads as a place to go
     /// rather than a section that unfolds, and at the foot rather than the
     /// top, which belongs to the agents that need the person. Not revealed
     /// by pulling down: that already brings the search and a refresh.
-    private func settledLink(_ section: FleetSection) -> some View {
+    private func closedLink(_ section: FleetSection) -> some View {
         let title = "\(Self.title(section.kind)) · \(section.families)"
         return VStack(spacing: 0) {
             Rectangle()
@@ -775,7 +775,7 @@ public struct AgentsHome: View {
                 .frame(height: design.metrics.hairline)
                 .padding(.leading, Space.margin + AgentRowView.textInset)
                 .accessibilityHidden(true)
-            Button { actions(.openSettled) } label: {
+            Button { actions(.showClosed) } label: {
                 HStack(alignment: .center, spacing: Space.m) {
                     Image(systemName: "archivebox")
                         .font(.system(size: 15, weight: .medium))
@@ -1645,27 +1645,27 @@ struct FleetScope: Identifiable {
 
 /// What the list is asking the person about one row before it acts.
 enum Confirming: Identifiable {
-    /// A settle that would cut work short, with what it cuts.
-    case settle(FleetRow, cuts: String)
+    /// A close that would cut work short, with what it cuts.
+    case close(FleetRow, cuts: String)
     case delete(FleetRow)
 
     var id: String {
         switch self {
-        case .settle(let row, _): "settle.\(row.id)"
+        case .close(let row, _): "settle.\(row.id)"
         case .delete(let row): "delete.\(row.id)"
         }
     }
 
     var title: String {
         switch self {
-        case .settle(let row, _): String(localized: "Settle \(row.name)?")
+        case .close(let row, _): String(localized: "Settle \(row.name)?")
         case .delete(let row): String(localized: "Delete \(row.name)?")
         }
     }
 
     var message: String {
         switch self {
-        case .settle(_, let cuts):
+        case .close(_, let cuts):
             String(localized: "\(cuts) Settling stops it now. Its chat and edits stay, and a message resumes it.")
         case .delete(let row):
             row.card.descendants > 0

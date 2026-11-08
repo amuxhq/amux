@@ -2393,7 +2393,7 @@ fn home_fleet() -> FleetState {
     if let wire::inventory_event::Of::Agent(agent) = &mut archive {
         agent.lifecycle = wire::Lifecycle::Exited as i32;
         agent.exit_cause = wire::ExitCause::Stopped as i32;
-        agent.filing = wire::Filing::Settled as i32;
+        agent.filing = wire::Filing::Closed as i32;
     }
     inventory(&mut fleet, archive);
     inventory(
@@ -2559,7 +2559,7 @@ fn hovering_highlights_a_row_and_its_close_mark_asks_first() {
         "{screen}"
     );
     let effects = home.key(&fleet, key(KeyCode::Enter));
-    assert!(matches!(effects.as_slice(), [FleetEffect::Settle(agent)] if agent.agent == b"w2"));
+    assert!(matches!(effects.as_slice(), [FleetEffect::Close(agent)] if agent.agent == b"w2"));
 }
 
 #[test]

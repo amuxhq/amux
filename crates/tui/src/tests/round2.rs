@@ -375,7 +375,7 @@ fn moving_to_cancel_in_the_stop_window_cancels() {
     assert!(
         !effects
             .iter()
-            .any(|effect| matches!(effect, FleetEffect::Settle(_) | FleetEffect::Delete(_))),
+            .any(|effect| matches!(effect, FleetEffect::Close(_) | FleetEffect::Delete(_))),
         "Enter on [Cancel] did {effects:?}:\n{screen}"
     );
 }
@@ -404,7 +404,7 @@ fn x_settles_an_agent_and_deletes_only_a_settled_one() {
     let screen = home_at(&mut home, &fleet, W, H);
     let effects = home.key(&fleet, key(KeyCode::Enter));
     assert!(
-        matches!(effects.as_slice(), [FleetEffect::Settle(agent)] if agent.agent == b"w1")
+        matches!(effects.as_slice(), [FleetEffect::Close(agent)] if agent.agent == b"w1")
             && !screen.contains("Delete"),
         "x on a live agent did {effects:?}:\n{screen}"
     );
@@ -430,7 +430,7 @@ fn a_held_settle_reads_on_its_row_and_x_cancels_it() {
         .map(ui_state::agent_key)
         .expect("alpha");
     let listing = fleet.listings();
-    fleet.update(ui_state::FleetMsg::HoldSettle {
+    fleet.update(ui_state::FleetMsg::HoldClose {
         agent: alpha.clone(),
         listing,
     });
@@ -441,7 +441,7 @@ fn a_held_settle_reads_on_its_row_and_x_cancels_it() {
     assert!(screen.contains("settle held"), "{screen}");
     let effects = home.key(&fleet, key(KeyCode::Char('x')));
     assert!(
-        matches!(effects.as_slice(), [FleetEffect::CancelSettle(agent)] if *agent == alpha),
+        matches!(effects.as_slice(), [FleetEffect::CancelClose(agent)] if *agent == alpha),
         "x on a held settle did {effects:?}:\n{screen}"
     );
 }
@@ -572,7 +572,7 @@ fn a_sentence_typed_on_home_stops_nothing() {
     assert!(
         !effects
             .iter()
-            .any(|effect| matches!(effect, FleetEffect::Settle(_) | FleetEffect::Delete(_))),
+            .any(|effect| matches!(effect, FleetEffect::Close(_) | FleetEffect::Delete(_))),
         "typing \"so sure, yes\" on home did {effects:?}"
     );
 }
@@ -1130,7 +1130,7 @@ fn deleting_the_last_row_moves_the_highlight_to_the_new_last_row() {
     if let wire::inventory_event::Of::Agent(agent) = &mut attic {
         agent.lifecycle = wire::Lifecycle::Exited as i32;
         agent.exit_cause = wire::ExitCause::Stopped as i32;
-        agent.filing = wire::Filing::Settled as i32;
+        agent.filing = wire::Filing::Closed as i32;
     }
     inventory(&mut fleet, attic);
     let mut home = new_home();

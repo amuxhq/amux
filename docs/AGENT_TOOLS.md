@@ -70,7 +70,7 @@ may have taken the call, and that the call was not made again.
 | `hosts` | none | `{"hosts": [...]}`, the trusted hosts | the same inventory |
 | `send` | `to`, `text`, `context?` | `{"id": "<envelope id>"}` once the recipient has the message | `ResolveAgent`, then `SendMessage` |
 | `spawn` | `kind`, `prompt`, `name?`, `cwd?`, `host?` | `{"name", "id"}` of the child | `CreateAgent` |
-| `stop` | `name` | `{}` once the child has ended | `ResolveAgent`, then `FileAgent` (settled) |
+| `stop` | `name` | `{}` once the child has ended | `ResolveAgent`, then `FileAgent` (closed) |
 | `status` | `working_on`: a string, or null | `ok` | nothing |
 | `attach` | `path`, `name?` | the attachment element | nothing |
 
@@ -137,12 +137,12 @@ person or uses a path it knows. The caller becomes the child's parent; the reque
 
 ### stop
 
-Stops one of the caller's own direct children, exactly as a person's settle
-does: `FileAgent` with `FILING_SETTLED` on the tools socket. The daemon checks
+Stops one of the caller's own direct children, exactly as a person's close
+does: `FileAgent` with `FILING_CLOSED` on the tools socket. The daemon checks
 the lineage and refuses any other agent with `PERMISSION_DENIED`. The child's
 turn is cancelled the provider's own way, the child ends as stopped and filed
-as settled, out of the agents' listing, and the stopped child's own
-descendants are settled with it on their hosts (see [families](#families)).
+as closed, out of the agents' listing, and the stopped child's own
+descendants are closed with it on their hosts (see [families](#families)).
 The child's history stays, and a later `send` from its parent resumes it. There is no
 separate interrupt tool: an agent reaches another agent's queue only by
 messaging it.
@@ -231,10 +231,10 @@ A send goes from the model to the recipient's provider like this:
    on another host it forwards the envelope there
    ([across hosts](#across-hosts)); otherwise it runs the recipient's lane.
 3. A recipient that has exited is resumed with the message as its first
-   input, unless it is settled (by the person, by its parent's `stop`, or
+   input, unless it is closed (by the person, by its parent's `stop`, or
    by finishing as a one-shot child): then only its parent's message
    resumes it, and any other sender is refused in words, that the
-   recipient is settled and only the person or its parent start it again.
+   recipient is closed and only the person or its parent start it again.
 4. The recipient's interpreter receives the `agent_message` frame, writes the
    agent-message item with the envelope id as its input id, marks the message
    pending, answers accepted, and emits an inject effect naming its carrier.
@@ -420,7 +420,7 @@ ordinary peer calls; nothing about them is specific to messaging.
   the sender as stamped and runs the recipient's lane as for a local sender.
   A message that arrived from a peer for a third host is not passed on. A
   message resumes an exited recipient on another host the same way it does
-  locally, a settled one only for its parent, since the parent edge names
+  locally, a closed one only for its parent, since the parent edge names
   the parent's host.
 - **Spawn.** `host` names a trusted host; the local daemon resolves the name
   (an exact match, then one ignoring case, and otherwise `NOT_FOUND` listing

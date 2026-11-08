@@ -1,12 +1,12 @@
 //! Retention: keeping own rows and replica rows under their budgets.
 //!
 //! Own rows are the truth, so they go in the order that loses least:
-//! what the person is done with first (settled agents that have exited,
+//! what the person is done with first (closed agents that have exited,
 //! whole, least recently active first), and only then the oldest rows of
 //! whatever other work is largest, a chunk at a time, never below the newest
 //! rows a stream may still be appending to. An agent the person has not
-//! settled is never removed whole, live or not: an exited one they never
-//! looked at stays in their fleet. A settled child whose parent is live is
+//! closed is never removed whole, live or not: an exited one they never
+//! looked at stays in their fleet. A closed child whose parent is live is
 //! kept too, since its parent can still continue it. Replica rows are a cache, so
 //! agents nobody is following lose all their rows, least recently used
 //! first, keeping only their agents row, and the rest keep their newest rows
@@ -46,9 +46,9 @@ pub enum SweepStep {
     Floor,
 }
 
-/// Work retention keeps whole: live, or not settled by the person.
+/// Work retention keeps whole: live, or not closed by the person.
 fn is_kept(row: &AgentRow) -> bool {
-    row.lifecycle == wire::Lifecycle::Live as i32 || !row.is_settled()
+    row.lifecycle == wire::Lifecycle::Live as i32 || !row.is_closed()
 }
 
 pub(crate) fn sweep_own(
@@ -87,7 +87,7 @@ pub(crate) fn sweep_own(
     Ok(sweep)
 }
 
-/// Removes settled, exited agents whole, least recently active first, until
+/// Removes closed, exited agents whole, least recently active first, until
 /// the pool fits. A parent goes with its descendants, as delete takes them;
 /// one with a descendant still kept stays.
 fn remove_finished(
@@ -122,8 +122,8 @@ fn remove_finished(
     };
     // A live parent may still message its finished children back to work,
     // so they wait for it. A parent that is only kept (exited, never
-    // settled, or pinned and idle) does not hold its settled children: a
-    // long-lived agent's one-shot children settle as they finish, and they
+    // closed, or pinned and idle) does not hold its closed children: a
+    // long-lived agent's one-shot children close as they finish, and they
     // would otherwise never be reclaimed.
     let protected = |row: &AgentRow| {
         row.parent

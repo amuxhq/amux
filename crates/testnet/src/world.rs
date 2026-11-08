@@ -71,7 +71,7 @@ pub trait World {
     async fn delete(&mut self, agent: &str) -> Result<Ack, NetError>;
     /// Settles the agent on its own host, as a client does there, and waits
     /// until it has exited.
-    async fn settle_agent(&self, agent: &str) -> Result<Ack, NetError>;
+    async fn close_agent(&self, agent: &str) -> Result<Ack, NetError>;
     /// Starts an exited agent's next incarnation on its own host, as a
     /// client does there, seeded with `prompt`; its process plays the same
     /// script again.
@@ -231,8 +231,8 @@ impl World for Net {
         Net::delete(self, agent).await
     }
 
-    async fn settle_agent(&self, agent: &str) -> Result<Ack, NetError> {
-        Net::settle_agent(self, agent).await
+    async fn close_agent(&self, agent: &str) -> Result<Ack, NetError> {
+        Net::close_agent(self, agent).await
     }
 
     async fn resume(&mut self, agent: &str, prompt: Option<&str>) -> Result<wire::Agent, NetError> {

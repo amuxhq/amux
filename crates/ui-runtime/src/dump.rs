@@ -35,10 +35,10 @@ impl Structure for FleetMsg {
         match self {
             FleetMsg::Event(event) => inventory(event),
             FleetMsg::Connection(connection) => format!("Connection {connection:?}"),
-            FleetMsg::HoldSettle { agent, listing } => {
-                format!("HoldSettle {} listing {listing}", hex(&agent.agent))
+            FleetMsg::HoldClose { agent, listing } => {
+                format!("HoldClose {} listing {listing}", hex(&agent.agent))
             }
-            FleetMsg::DropSettle(key) => format!("DropSettle {}", hex(&key.agent)),
+            FleetMsg::DropClose(key) => format!("DropClose {}", hex(&key.agent)),
         }
     }
 }

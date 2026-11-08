@@ -976,7 +976,7 @@ impl<'a> Transition<'a> {
                         call: STOP,
                         request: ClientRequest::FileAgent {
                             agent: PARENT,
-                            filing: daemon_core::Filing::Settled,
+                            filing: daemon_core::Filing::Closed,
                         },
                     },
                 );

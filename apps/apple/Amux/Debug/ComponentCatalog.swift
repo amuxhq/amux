@@ -698,10 +698,10 @@ enum ComponentCatalog {
                 ScriptedChat(
                     rows: F.conversation, frame: ScriptedChat.frame(phase: .working),
                     strip: ScriptedChat.strip(background: 2))
-            }, family: F.family, showing: .settle),
+            }, family: F.family, showing: .close),
             chat("delete", chat: {
                 ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .exited(cause: .ended)))
-            }, subject: F.settledSubject, showing: .delete),
+            }, subject: F.closedSubject, showing: .delete),
             chat("delete-family", chat: {
                 ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .exited(cause: .ended)))
             }, family: F.family, showing: .delete),
@@ -1070,9 +1070,9 @@ enum CatalogFixtures {
     static let subject = ChatSubject(
         name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
         reach: .online(.direct))
-    static let settledSubject = ChatSubject(
+    static let closedSubject = ChatSubject(
         name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
-        reach: .online(.direct), filing: .settled)
+        reach: .online(.direct), filing: .closed)
     static let subagentSubject = ChatSubject(
         name: "refactor-auth-tests", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
         reach: .online(.direct), topLevel: false)
@@ -1308,18 +1308,18 @@ enum CatalogFixtures {
         agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 5, count: 16)),
         name: "docs-sweep", handle: "docs-sweep", kind: .claudeSdk, attention: .exited, cwd: "", phaseSinceMs: 0,
         host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .exited,
-        members: 1, descendants: 0, backgroundJobs: 0, settleHeld: false, filing: .active, topLevel: true, branch: nil, exitCause: .finished)
+        members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: .finished)
 
     static let family = FamilyHeader(
         children: [
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 3, count: 16)),
                       name: "worker-2", handle: "worker-2", kind: .claudeSdk, attention: .needsYou, cwd: "", phaseSinceMs: 0,
                       host: "Laptop", hostReach: .online(.direct), children: 0, familyAttention: .needsYou,
-                      members: 1, descendants: 0, backgroundJobs: 0, settleHeld: false, filing: .active, topLevel: true, branch: nil, exitCause: nil),
+                      members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: nil),
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 4, count: 16)),
                       name: "worker-3", handle: "worker-3", kind: .codex, attention: .working, cwd: "", phaseSinceMs: 0,
                       host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .working,
-                      members: 1, descendants: 0, backgroundJobs: 0, settleHeld: false, filing: .active, topLevel: true, branch: nil, exitCause: nil),
+                      members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: nil),
         ],
         attention: .needsYou, needYou: 1, parent: nil)
 }

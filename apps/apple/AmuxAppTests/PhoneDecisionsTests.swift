@@ -109,11 +109,11 @@ final class PhoneDecisionsTests: XCTestCase {
             children: [CatalogFixtures.family.children[1]], attention: .working, needYou: 0, parent: nil)
     }
 
-    // MARK: - Settle, delete, interrupt
+    // MARK: - Close, delete, interrupt
 
-    /// An agent the person has not settled is settled, not deleted, exited
-    /// or not; only a settled one is deleted.
-    func testAnUnsettledAgentOffersSettleAndOnlyASettledOneOffersDelete() async throws {
+    /// An agent the person has not closed is closed, not deleted, exited
+    /// or not; only a closed one is deleted.
+    func testAnUnclosedAgentOffersCloseAndOnlyAClosedOneOffersDelete() async throws {
         _ = try await chat(ScriptedChat(rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .working)))
         let opened1 = try await chatMenuItem("Settle")
         XCTAssertNotNil(opened1, "a live agent's menu offers Settle")
@@ -129,7 +129,7 @@ final class PhoneDecisionsTests: XCTestCase {
         tearDownWindow()
         _ = try await chat(
             ScriptedChat(rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .exited(cause: .ended))),
-            subject: CatalogFixtures.settledSubject)
+            subject: CatalogFixtures.closedSubject)
         let opened3 = try await chatMenuItem("Delete Agent")
         XCTAssertNotNil(opened3, "a settled agent's menu offers Delete Agent")
         XCTAssertNotNil(try menuItem("Un-settle"), "a settled agent's menu offers Un-settle")
@@ -171,19 +171,19 @@ final class PhoneDecisionsTests: XCTestCase {
         XCTAssertNotNil(try menuItem("Interrupt"), "the ask card offers Interrupt to end the turn")
     }
 
-    /// Settling stops the agent now; when that cuts work, the confirm says
+    /// Closing stops the agent now; when that cuts work, the confirm says
     /// what: the turn under way, its background jobs and its subagents.
-    func testSettlingAWorkingAgentNamesWhatTheSettleCuts() async throws {
+    func testClosingAWorkingAgentNamesWhatTheCloseCuts() async throws {
         _ = try await chat(
             ScriptedChat(
                 rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(name: "desk-1", phase: .working),
                 strip: ScriptedChat.strip(background: 2)),
             family: oneChild)
         let found = try await chatMenuItem("Settle")
-        let (button, settle) = try XCTUnwrap(found)
-        MenuSource.run(settle, from: button)
+        let (button, close) = try XCTUnwrap(found)
+        MenuSource.run(close, from: button)
         await spin()
-        XCTAssertFalse(acted.contains(.settle), "the agent was settled with no confirm naming what it cut")
+        XCTAssertFalse(acted.contains(.close), "the agent was settled with no confirm naming what it cut")
         let said = probe.elements.map { [$0.label, $0.value].compactMap { $0 }.joined(separator: " ") }
             .joined(separator: " | ")
         XCTAssertTrue(
@@ -402,7 +402,7 @@ final class PhoneDecisionsTests: XCTestCase {
             agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 9, count: 16)),
             name: "cx", handle: "cx", kind: .codex, attention: .idle, cwd: "~/src", phaseSinceMs: 0,
             host: "desk", hostReach: .online(.direct), children: 0, familyAttention: .idle,
-            members: 1, descendants: 0, backgroundJobs: 2, settleHeld: false, filing: .active, topLevel: true, branch: nil, exitCause: nil)
+            members: 1, descendants: 0, backgroundJobs: 2, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: nil)
         let fleet = FleetStore()
         fleet.show(
             FleetView(

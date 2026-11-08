@@ -123,7 +123,7 @@ async fn a_trusted_host_stays_in_every_snapshot_while_unreachable() {
         &net.client("laptop").unwrap(),
         tonic::Request::new(wire::FileAgentRequest {
             agent_id: net.agent("worker").unwrap().id.as_bytes().to_vec(),
-            filing: wire::Filing::Settled as i32,
+            filing: wire::Filing::Closed as i32,
         }),
     )
     .await

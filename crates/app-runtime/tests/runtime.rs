@@ -376,7 +376,7 @@ async fn older_rows_arrive_below_the_oldest_the_host_holds() {
     // An exited agent's session goes with its last chat; the next chat
     // opens a fresh one with its own tail.
     runtime
-        .agent_act(&worker(&net), &AgentAct::Settle)
+        .agent_act(&worker(&net), &AgentAct::Close)
         .await
         .unwrap();
     let mut changed = runtime.fleet().changed();
@@ -466,7 +466,7 @@ async fn a_reopened_chat_of_an_exited_agent_holds_its_rows_at_once() {
     .await;
     drop(chat);
     runtime
-        .agent_act(&worker(&net), &AgentAct::Settle)
+        .agent_act(&worker(&net), &AgentAct::Close)
         .await
         .unwrap();
     let mut changed = runtime.fleet().changed();

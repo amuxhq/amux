@@ -574,9 +574,9 @@ pub fn authored_home() -> HomeScene {
             // A one-shot child that finished, and one the person put away,
             // are settled; one that crashed reads as an ordinary agent.
             filing: if matches!(name, "doc-sweep" | "clean-up") {
-                wire::Filing::Settled
+                wire::Filing::Closed
             } else {
-                wire::Filing::Active
+                wire::Filing::Open
             } as i32,
             ..Default::default()
         };

@@ -607,12 +607,12 @@ pub enum AgentAct {
     /// Files it as done with, stopping it now when live. One whose host
     /// cannot be reached is held, shown on its card, and goes when the
     /// host is back.
-    Settle,
-    /// Takes back a held settle.
-    CancelSettle,
+    Close,
+    /// Takes back a held close.
+    CancelClose,
     /// Keeps it at the top of the fleet; only an agent with no parent.
     Pin,
-    /// Files it back as active: un-pinned, or un-settled without resuming.
+    /// Files it back as open: un-pinned, or reopened without resuming.
     Unfile,
     Delete,
 }

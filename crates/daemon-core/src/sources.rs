@@ -815,21 +815,21 @@ impl Daemon {
             // every child here follows, however recently it was made.
             self.parent_changed(key, ParentSays::Deleted, out)?;
         }
-        // Which parents this host already held as settled, so a settle that
+        // Which parents this host already held as closed, so a close that
         // came while the link was down is followed and one already followed
-        // is not again: a child the person filed active under a settled
+        // is not again: a child the person filed open under a closed
         // parent stays so through every reconnect.
-        let settled = wire::Filing::Settled as i32;
-        let mut newly_settled = Vec::new();
+        let settled = wire::Filing::Closed as i32;
+        let mut newly_closed = Vec::new();
         for agent in &listed {
             let key = AgentKey::new(agent.host_id.clone(), agent.agent_id.clone());
-            let was_settled = self
+            let was_closed = self
                 .store
                 .agent(&key)?
                 .as_ref()
-                .is_some_and(AgentRow::is_settled);
-            if agent.filing == settled && !was_settled {
-                newly_settled.push(key);
+                .is_some_and(AgentRow::is_closed);
+            if agent.filing == settled && !was_closed {
+                newly_closed.push(key);
             }
             self.put_replica_row(agent, out)?;
         }
@@ -851,8 +851,8 @@ impl Daemon {
                 self.follow(id, ParentSays::Deleted, out);
             }
         }
-        for key in &newly_settled {
-            self.parent_changed(key, ParentSays::Settled, out)?;
+        for key in &newly_closed {
+            self.parent_changed(key, ParentSays::Closed, out)?;
         }
         let exited = wire::Lifecycle::Exited as i32;
         for agent in &listed {
@@ -871,10 +871,10 @@ impl Daemon {
     }
 
     /// A row the host's live stream says changed: written, and when it says
-    /// the agent has just been settled or has just exited, its children here
+    /// the agent has just been closed or has just exited, its children here
     /// follow. Only a change counts, not a row that already said so, so a
-    /// child its person resumed under an exited or settled parent is not
-    /// stopped or settled again by every later change to the parent's row
+    /// child its person resumed under an exited or closed parent is not
+    /// stopped or closed again by every later change to the parent's row
     /// (a recount, a rename).
     fn replica_changed(&mut self, agent: &Agent, out: &mut Vec<Output>) -> Result<(), StoreError> {
         let key = AgentKey::new(agent.host_id.clone(), agent.agent_id.clone());
@@ -883,10 +883,10 @@ impl Daemon {
         let was_exited = held
             .as_ref()
             .is_some_and(|was| was.lifecycle == exited && was.incarnation == agent.incarnation);
-        let was_settled = held.as_ref().is_some_and(AgentRow::is_settled);
+        let was_closed = held.as_ref().is_some_and(AgentRow::is_closed);
         self.put_replica_row(agent, out)?;
-        if agent.filing == wire::Filing::Settled as i32 && !was_settled {
-            self.parent_changed(&key, ParentSays::Settled, out)?;
+        if agent.filing == wire::Filing::Closed as i32 && !was_closed {
+            self.parent_changed(&key, ParentSays::Closed, out)?;
         }
         if agent.lifecycle == exited && !was_exited {
             self.parent_changed(&key, ParentSays::Exited, out)?;
@@ -2322,16 +2322,16 @@ mod tests {
         }
     }
 
-    /// A settle the link missed is followed when the host's listing
+    /// A close the link missed is followed when the host's listing
     /// catches up; one this host already held is not followed again, so a
-    /// child the person filed active under a settled parent stays active
+    /// child the person filed open under a closed parent stays open
     /// through a reconnect.
     #[test]
-    fn a_catch_up_follows_only_a_settle_this_host_had_not_seen() {
+    fn a_catch_up_follows_only_a_close_this_host_had_not_seen() {
         const CHILD: [u8; 16] = *b"child-0000000000";
         let mut daemon = daemon();
         let mut parent = listed(wire::Lifecycle::Exited);
-        parent.filing = wire::Filing::Settled as i32;
+        parent.filing = wire::Filing::Closed as i32;
         let mut child = AgentRow::new(AgentKey::new(OWN, CHILD), wire::Kind::Codex as i32, "/src");
         child.parent = Some(key());
         child.lifecycle = wire::Lifecycle::Exited as i32;
@@ -2345,7 +2345,7 @@ mod tests {
                 .filing
         };
 
-        // Held settled already, as the live stream said: nothing to follow.
+        // Held closed already, as the live stream said: nothing to follow.
         daemon.store.put_agent(&from_wire(&parent)).unwrap();
         let mut out = Vec::new();
         daemon
@@ -2359,11 +2359,11 @@ mod tests {
             )
             .unwrap();
         daemon.step(Input::Swept, &mut out);
-        assert_eq!(filing(&daemon), wire::Filing::Active as i32, "{out:?}");
+        assert_eq!(filing(&daemon), wire::Filing::Open as i32, "{out:?}");
 
-        // Settled while the link was down: the child is settled with it.
+        // Closed while the link was down: the child is closed with it.
         let mut held = from_wire(&parent);
-        held.filing = wire::Filing::Active as i32;
+        held.filing = wire::Filing::Open as i32;
         daemon.store.put_agent(&held).unwrap();
         let mut out = Vec::new();
         daemon
@@ -2377,7 +2377,7 @@ mod tests {
             )
             .unwrap();
         daemon.step(Input::Swept, &mut out);
-        assert_eq!(filing(&daemon), wire::Filing::Settled as i32, "{out:?}");
+        assert_eq!(filing(&daemon), wire::Filing::Closed as i32, "{out:?}");
     }
 
     /// A kind this daemon has no name for is a number it carries: the

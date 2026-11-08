@@ -624,7 +624,7 @@ impl Machine for ComposedNet {
                     origin,
                     ClientRequest::FileAgent {
                         agent,
-                        filing: daemon_core::Filing::Settled,
+                        filing: daemon_core::Filing::Closed,
                     },
                 );
             }

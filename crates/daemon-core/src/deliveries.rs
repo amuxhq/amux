@@ -25,7 +25,7 @@
 //! once per incarnation. A message to an exited agent resumes it, with the
 //! message as the new incarnation's first input: one from the person or the
 //! agent's own parent always, one from another agent unless the
-//! recipient is settled, and a child's report never. A parent on
+//! recipient is closed, and a child's report never. A parent on
 //! another host is sent the report as a message from the child, and that
 //! host's daemon makes the same checks where the parent lives.
 //!
@@ -210,14 +210,14 @@ pub fn delivery_envelope_id(delivery: &Delivery) -> Vec<u8> {
 }
 
 /// Who a message may resume an exited recipient for. Judged against the
-/// recipient's row as the message begins, since the person may settle or
-/// un-settle it while the message waits its turn.
+/// recipient's row as the message begins, since the person may close or
+/// reopen it while the message waits its turn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 enum Wakes {
-    /// The person, or the recipient's own parent: settled or not.
+    /// The person, or the recipient's own parent: closed or not.
     Always,
-    /// Any other agent: unless the recipient is settled.
-    UnlessSettled,
+    /// Any other agent: unless the recipient is closed.
+    UnlessClosed,
     /// A child's report, which is for one incarnation of its parent.
     Never,
 }
@@ -227,8 +227,8 @@ impl Wakes {
     fn judge(self, row: &store::AgentRow) -> Result<(), Refused> {
         match self {
             Self::Always => Ok(()),
-            Self::UnlessSettled if row.is_settled() => Err(Refused::Settled),
-            Self::UnlessSettled => Ok(()),
+            Self::UnlessClosed if row.is_closed() => Err(Refused::AgentClosed),
+            Self::UnlessClosed => Ok(()),
             Self::Never => Err(Refused::Exited),
         }
     }
@@ -654,7 +654,7 @@ impl Daemon {
             _ if incarnation.is_some() => Wakes::Never,
             None => Wakes::Always,
             Some(agent) if recipient.parent.as_ref() == Some(&agent) => Wakes::Always,
-            Some(_) => Wakes::UnlessSettled,
+            Some(_) => Wakes::UnlessClosed,
         };
         let message = Message {
             envelope,
@@ -1202,12 +1202,12 @@ mod tests {
     }
 
     #[test]
-    fn another_agents_message_resumes_an_exited_agent_unless_the_person_settled_it() {
+    fn another_agents_message_resumes_an_exited_agent_unless_the_person_closed_it() {
         let dir = tempfile::tempdir().expect("a temporary directory");
         let mut daemon = daemon(&dir);
         let mut recipient = AgentRow::new(daemon.own_key(PARENT), 1, "/src");
         recipient.lifecycle = wire::Lifecycle::Exited as i32;
-        recipient.filing = wire::Filing::Settled as i32;
+        recipient.filing = wire::Filing::Closed as i32;
         daemon.store.put_agent(&recipient).unwrap();
         daemon
             .store
@@ -1239,12 +1239,12 @@ mod tests {
             out.contains(&Output::EndCall {
                 call: CallId(1),
                 status: Status::Failed(CallError::Message(MessageRefusal::Rejected(refused(
-                    Refused::Settled
+                    Refused::AgentClosed
                 )))),
             }),
             "{out:?}"
         );
-        recipient.filing = wire::Filing::Active as i32;
+        recipient.filing = wire::Filing::Open as i32;
         daemon.store.put_agent(&recipient).unwrap();
         let out = send(&mut daemon, 2, b"second");
         assert!(

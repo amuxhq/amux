@@ -1832,7 +1832,7 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
         peer.agents
             .file_agent(wire::FileAgentRequest {
                 agent_id: short.clone(),
-                filing: wire::Filing::Settled as i32,
+                filing: wire::Filing::Closed as i32,
             })
             .await
             .map(|_| ()),
@@ -3103,7 +3103,7 @@ async fn a_call_to_a_host_only_a_lapsed_account_reached_names_the_lapse_at_once(
             .unwrap()
             .file_agent(tonic::Request::new(wire::FileAgentRequest {
                 agent_id: net.agent("w").unwrap().id.as_bytes().to_vec(),
-                filing: wire::Filing::Settled as i32,
+                filing: wire::Filing::Closed as i32,
             })),
     )
     .await

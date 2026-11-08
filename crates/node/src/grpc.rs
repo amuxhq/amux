@@ -373,12 +373,12 @@ impl AgentService for ClientApi {
         let Some(filing) = daemon_core::Filing::from_wire(request.filing()) else {
             return Err(status(wire_error(
                 ErrorCode::InvalidArgument,
-                "a filing is active, pinned or settled",
+                "a filing is open, pinned or closed",
             )));
         };
-        // An agent settles its own children, as it ends their work; filing
+        // An agent closes its own children, as it ends their work; filing
         // them any other way is the person's.
-        if self.caller.is_some() && filing != daemon_core::Filing::Settled {
+        if self.caller.is_some() && filing != daemon_core::Filing::Closed {
             return Err(status(wire_error(
                 ErrorCode::PermissionDenied,
                 "only the person pins or un-settles an agent",
@@ -396,7 +396,7 @@ impl AgentService for ClientApi {
             return match filed {
                 Ok(filed) => Ok(Response::new(filed)),
                 // Never left, and the lapse is why: answered as unreachable
-                // in the lapse's words, so a client holds the settle as it
+                // in the lapse's words, so a client holds the close as it
                 // holds a send and says the reason.
                 Err(error @ ForwardError::Lapsed { .. }) => Err(status(wire::Error::because(
                     wire::ErrorReason::HostUnreachable,

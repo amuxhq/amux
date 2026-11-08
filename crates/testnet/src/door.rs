@@ -750,7 +750,7 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                 .await?;
             json!({ "verdict": format!("{:?}", verdict.of), "input_id": hex(id.as_bytes()) })
         }
-        Control::SettleAgent { agent } => value(net.settle_agent(&agent).await?),
+        Control::SettleAgent { agent } => value(net.close_agent(&agent).await?),
         Control::Freeze { agent } => value(net.freeze(&agent)?),
         Control::Thaw { agent } => value(net.thaw(&agent)?),
         Control::OpenGate { name } => value(net.open_gate(&name)?),

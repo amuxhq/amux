@@ -40,10 +40,10 @@ pub struct Window {
     pub cap: u32,
 }
 
-/// What became of a person's settle.
+/// What became of a person's close.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Settle {
-    Settled,
+pub enum Close {
+    Closed,
     /// The agent's host could not be reached, so it never left: the fleet
     /// holds it, the row shows it with Cancel, and it goes when the host is
     /// back. Closing the client drops it.
@@ -123,25 +123,25 @@ impl Inner {
             .unwrap_or_else(|poison| poison.into_inner())
     }
 
-    /// Settles the agent, stopping it when live; a settle that never left,
+    /// Closes the agent, stopping it when live; a close that never left,
     /// its host out of reach, is held and goes again when the host is back.
-    async fn settle(self: &Arc<Self>, agent: AgentKey) -> Result<Settle, RpcError> {
+    async fn close_agent(self: &Arc<Self>, agent: AgentKey) -> Result<Close, RpcError> {
         let request = FileAgentRequest {
             agent_id: agent.agent.clone(),
-            filing: Filing::Settled as i32,
+            filing: Filing::Closed as i32,
         };
         let listing = self.model().state.listings();
         match self.client.file_agent(request).await {
             Ok(_) => {
-                self.apply(FleetMsg::DropSettle(agent));
-                Ok(Settle::Settled)
+                self.apply(FleetMsg::DropClose(agent));
+                Ok(Close::Closed)
             }
             Err(error) if never_left(&error) => {
-                self.apply(FleetMsg::HoldSettle { agent, listing });
-                Ok(Settle::Held)
+                self.apply(FleetMsg::HoldClose { agent, listing });
+                Ok(Close::Held)
             }
             Err(error) => {
-                self.apply(FleetMsg::DropSettle(agent));
+                self.apply(FleetMsg::DropClose(agent));
                 Err(error)
             }
         }
@@ -170,7 +170,7 @@ impl Inner {
             )
         );
         let keys = state.update(msg);
-        let released = state.take_released_settles();
+        let released = state.take_released_closes();
         let moved = connection || host || !keys.is_empty();
         model.changed.extend(keys.iter().cloned());
         model.hosts_changed |= host;
@@ -188,8 +188,8 @@ impl Inner {
                 let me = me.clone();
                 tokio::spawn(async move {
                     // Held again if the host went before it landed; any
-                    // other failure is the settle's own, and it is not held.
-                    let _ = me.settle(agent).await;
+                    // other failure is the close's own, and it is not held.
+                    let _ = me.close_agent(agent).await;
                 });
             }
         }
@@ -436,16 +436,16 @@ impl Fleet {
         FleetGuard(self.inner.model())
     }
 
-    /// A person's settle of the agent, stopping it when live. One whose
+    /// A person's close of the agent, stopping it when live. One whose
     /// host cannot be reached never left: it is held, shown on the agent's
-    /// row with Cancel, and goes when the host is back. Pin, un-settle,
+    /// row with Cancel, and goes when the host is back. Pin, reopen,
     /// rename and delete are never held.
-    pub async fn settle(&self, agent: &AgentKey) -> Result<Settle, RpcError> {
-        self.inner.settle(agent.clone()).await
+    pub async fn close_agent(&self, agent: &AgentKey) -> Result<Close, RpcError> {
+        self.inner.close_agent(agent.clone()).await
     }
 
-    /// Pins the agent, or files it back as active (un-pinned, or
-    /// un-settled without resuming it). Never held: a host that cannot be
+    /// Pins the agent, or files it back as open (un-pinned, or
+    /// reopened without resuming it). Never held: a host that cannot be
     /// reached fails it at once, with the reason.
     pub async fn file(&self, agent: &AgentKey, filing: Filing) -> Result<Agent, RpcError> {
         let request = FileAgentRequest {
@@ -455,9 +455,9 @@ impl Fleet {
         self.inner.client.file_agent(request).await
     }
 
-    /// Takes back a held settle before it goes.
-    pub fn cancel_settle(&self, agent: &AgentKey) {
-        self.inner.apply(FleetMsg::DropSettle(agent.clone()));
+    /// Takes back a held close before it goes.
+    pub fn cancel_close(&self, agent: &AgentKey) {
+        self.inner.apply(FleetMsg::DropClose(agent.clone()));
     }
 
     /// The one session for a live agent, held with a small window while no

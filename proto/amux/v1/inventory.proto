@@ -162,7 +162,7 @@ message Agent {
   // The snapshot's count of jobs the provider runs in the background.
   uint32 background_jobs = 17;
   // How the person filed the agent, apart from its lifecycle: an exited
-  // agent left active reads as an ordinary one, and a settled one is done
+  // agent left open reads as an ordinary one, and a closed one is done
   // with.
   Filing filing = 18;
   // When the filing last changed, on the clock of the agent's host; pins
@@ -177,13 +177,13 @@ message Agent {
 
 enum Filing {
   FILING_UNSPECIFIED = 0;
-  FILING_ACTIVE = 1;
+  FILING_OPEN = 1;
   // Kept at the top of the fleet. Only an agent with no parent is pinned.
   FILING_PINNED = 2;
   // Done with: stopped when it was live, out of other agents' listing, and
   // the only kind retention deletes. A message from the person or its own
   // parent resumes it, filed active again.
-  FILING_SETTLED = 3;
+  FILING_CLOSED = 3;
 }
 
 enum Lifecycle {

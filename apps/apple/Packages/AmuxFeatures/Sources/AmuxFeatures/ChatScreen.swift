@@ -18,9 +18,9 @@ public struct ChatSubject: Equatable, Sendable {
     public let descendants: Int
     /// Jobs its provider runs in the background, as its fleet row counts them.
     public let backgroundJobs: Int
-    /// A settle of it from this phone is held: its host cannot be reached,
-    /// and the settle goes when the host is back.
-    public let settleHeld: Bool
+    /// A close of it from this phone is held: its host cannot be reached,
+    /// and the close goes when the host is back.
+    public let closeHeld: Bool
     /// How the person filed it, apart from its lifecycle.
     public let filing: Filing
     /// It has no parent, so it may be pinned.
@@ -28,8 +28,8 @@ public struct ChatSubject: Equatable, Sendable {
 
     public init(
         name: String, host: String, directory: String, branch: String? = nil, reach: Reach,
-        descendants: Int = 0, backgroundJobs: Int = 0, settleHeld: Bool = false,
-        filing: Filing = .active, topLevel: Bool = true
+        descendants: Int = 0, backgroundJobs: Int = 0, closeHeld: Bool = false,
+        filing: Filing = .open, topLevel: Bool = true
     ) {
         self.name = name
         self.host = host
@@ -38,7 +38,7 @@ public struct ChatSubject: Equatable, Sendable {
         self.reach = reach
         self.descendants = descendants
         self.backgroundJobs = backgroundJobs
-        self.settleHeld = settleHeld
+        self.closeHeld = closeHeld
         self.filing = filing
         self.topLevel = topLevel
     }
@@ -71,14 +71,14 @@ public enum ChatAction: Equatable, Sendable {
     case attach(AttachChoice)
     case rename(String)
     /// Done with it: ends its process when live, and a message resumes it.
-    case settle
-    /// Take back a settle held while the agent's host cannot be reached.
-    case cancelSettle
+    case close
+    /// Take back a close held while the agent's host cannot be reached.
+    case cancelClose
     /// Keep it at the top of home, or take its pin away.
     case pin
     case unpin
     /// Back among the agents, without resuming it.
-    case unsettle
+    case reopen
     case delete
     case copyAddress
     /// A parent or child in this chat's family.
@@ -94,9 +94,9 @@ public enum ChatAction: Equatable, Sendable {
 /// What the chat has open over itself; one at a time.
 public enum ChatOverlay: String, Equatable, Sendable {
     case rename
-    /// Settling the agent, when that cuts work short, with what it cuts
+    /// Closing the agent, when that cuts work short, with what it cuts
     /// named first.
-    case settle
+    case close
     case delete
     /// The model, effort and permission mode.
     case settings
@@ -359,20 +359,20 @@ public struct ChatScreen: View {
             value: model.comparison.rawValue)
     }
 
-    /// What settling would cut short, when anything.
-    static func settleCuts(model: ChatModel, subject: ChatSubject, descendants: Int) -> String? {
-        ChatWords.settleCuts(
+    /// What closing would cut short, when anything.
+    static func closeCuts(model: ChatModel, subject: ChatSubject, descendants: Int) -> String? {
+        ChatWords.closeCuts(
             name: subject.name, phase: model.frame?.phase,
             jobs: max(subject.backgroundJobs, model.overview?.jobs.count ?? 0),
             subAgents: descendants)
     }
 
-    /// Settles at once, or asks first when that would cut work short.
-    private func settle() {
-        if Self.settleCuts(model: model, subject: subject, descendants: descendants) == nil {
-            actions(.settle)
+    /// Closes at once, or asks first when that would cut work short.
+    private func close() {
+        if Self.closeCuts(model: model, subject: subject, descendants: descendants) == nil {
+            actions(.close)
         } else {
-            showing = .settle
+            showing = .close
         }
     }
 
@@ -382,7 +382,7 @@ public struct ChatScreen: View {
     /// opened it, so the menu worked under VoiceOver and the drivers and did
     /// nothing for a tap.
     private var overflow: some View {
-        let settled = subject.filing == .settled
+        let closed = subject.filing == .closed
         return Menu {
             Button { choose { overviewOpen = true } } label: {
                 Label("Overview", systemImage: "list.bullet.rectangle")
@@ -391,29 +391,29 @@ public struct ChatScreen: View {
             Button { choose { actions(.copyAddress) } } label: {
                 Label("Copy Address", systemImage: "doc.on.doc")
             }
-            if subject.topLevel && !settled {
+            if subject.topLevel && !closed {
                 if subject.filing == .pinned {
                     Button { choose { actions(.unpin) } } label: { Label("Unpin", systemImage: "pin.slash") }
                 } else {
                     Button { choose { actions(.pin) } } label: { Label("Pin", systemImage: "pin") }
                 }
             }
-            // Settling keeps the agent to resume; only a settled one is
+            // Closing keeps the agent to resume; only a closed one is
             // deleted, so nothing the person has not put away is removed
             // from here.
-            if subject.settleHeld {
-                Button { choose { actions(.cancelSettle) } } label: {
+            if subject.closeHeld {
+                Button { choose { actions(.cancelClose) } } label: {
                     Label("Cancel Settle", systemImage: "arrow.uturn.backward")
                 }
-            } else if settled {
-                Button { choose { actions(.unsettle) } } label: {
+            } else if closed {
+                Button { choose { actions(.reopen) } } label: {
                     Label("Un-settle", systemImage: "tray.and.arrow.up")
                 }
                 Button(role: .destructive) { choose { showing = .delete } } label: {
                     Label("Delete Agent", systemImage: "trash")
                 }
             } else {
-                Button { choose { settle() } } label: {
+                Button { choose { close() } } label: {
                     Label("Settle", systemImage: "checkmark.circle")
                 }
             }
@@ -631,7 +631,7 @@ public struct ChatStanding: View {
     @ViewBuilder
     private var standing: some View {
         VStack(spacing: 8) {
-            if subject.settleHeld { heldSettle }
+            if subject.closeHeld { heldClose }
             if model.frame?.composer.switchedAway == true { switchedAway }
             if let notice = model.notice {
                 // Every notice is something that did not happen, so it reads in
@@ -649,13 +649,13 @@ public struct ChatStanding: View {
                     showing = nil
                     actions(.rename(name))
                 }
-            case .settle?:
-                SettleCard(
-                    name: subject.name, cuts: ChatScreen.settleCuts(model: model, subject: subject, descendants: descendants) ?? "",
+            case .close?:
+                CloseCard(
+                    name: subject.name, cuts: ChatScreen.closeCuts(model: model, subject: subject, descendants: descendants) ?? "",
                     cancel: { showing = nil }
                 ) {
                     showing = nil
-                    actions(.settle)
+                    actions(.close)
                 }
             case .delete?:
                 DeleteCard(name: subject.name, descendants: descendants, cancel: { showing = nil }) {
@@ -717,8 +717,8 @@ public struct ChatStanding: View {
         .identified("chat.switchedAway", label: words)
     }
 
-    /// A settle that has not gone yet, with the way to take it back.
-    private var heldSettle: some View {
+    /// A close that has not gone yet, with the way to take it back.
+    private var heldClose: some View {
         HStack(spacing: 10) {
             Image(systemName: "clock")
                 .font(.system(size: 14))
@@ -728,7 +728,7 @@ public struct ChatStanding: View {
                 .foregroundStyle(design.ink.color)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Button { actions(.cancelSettle) } label: {
+            Button { actions(.cancelClose) } label: {
                 ActionLabel(String(localized: "Cancel"), kind: .outline)
             }
             .buttonStyle(.amuxControl)
@@ -919,13 +919,13 @@ private struct RenameCard: View {
     }
 }
 
-/// Settling an agent that is in the middle of something: a settle is always
-/// now, so what it cuts short is named first. One that cuts nothing settles
+/// Closing an agent that is in the middle of something: a close is always
+/// now, so what it cuts short is named first. One that cuts nothing closes
 /// without asking.
-private struct SettleCard: View {
+private struct CloseCard: View {
     @Environment(\.design) private var design
     let name: String
-    /// What the settle cuts short.
+    /// What the close cuts short.
     let cuts: String
     let cancel: () -> Void
     let confirm: () -> Void
@@ -954,7 +954,7 @@ private struct SettleCard: View {
     }
 }
 
-/// Deleting a settled agent, with what that does named first.
+/// Deleting a closed agent, with what that does named first.
 private struct DeleteCard: View {
     @Environment(\.design) private var design
     let name: String

@@ -89,7 +89,7 @@ pub async fn uninstall(
                 .agents
                 .file_agent(wire::FileAgentRequest {
                     agent_id: agent.agent_id.clone(),
-                    filing: wire::Filing::Settled as i32,
+                    filing: wire::Filing::Closed as i32,
                 })
                 .await
                 .map_err(crate::plain)

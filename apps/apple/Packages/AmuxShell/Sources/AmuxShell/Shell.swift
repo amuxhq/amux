@@ -375,10 +375,10 @@ public struct Shell: View {
             ChangesPage(agent: agent, router: router, stores: stores)
         case .paywall(let from):
             PaywallPage(from: from, router: router, model: paywall, actions: actions)
-        case .settled:
+        case .closed:
             AgentsTab(
                 router: router, accounts: accounts, stores: stores, offerNotifications: false,
-                signingIn: false, scope: .settled, actions: actions)
+                signingIn: false, scope: .closed, actions: actions)
         case .host(let host):
             HostPage(model: stores.hosts, host: host) { action in
                 switch action {
@@ -573,7 +573,7 @@ private struct ChatPage: View {
         let row = stores.fleet.row(agent)
         let host = stores.fleet.host(agent.hostId)
         let name = row?.name ?? model?.frame?.name ?? agent.description
-        // The card counts what a settle cuts on hosts this phone cannot see; a
+        // The card counts what a close cuts on hosts this phone cannot see; a
         // folded family's member has one though home lists no row for it.
         let card = row?.card ?? stores.profile?.card(agent)
         let subject = ChatSubject(
@@ -584,8 +584,8 @@ private struct ChatPage: View {
             reach: host?.reach ?? row?.hostReach ?? .offline(.plain),
             descendants: Int(card?.descendants ?? 0),
             backgroundJobs: Int(card?.backgroundJobs ?? 0),
-            settleHeld: card?.settleHeld ?? false,
-            filing: card?.filing ?? .active,
+            closeHeld: card?.closeHeld ?? false,
+            filing: card?.filing ?? .open,
             topLevel: card?.topLevel ?? true)
         return Standing(subject: subject, family: stores.profile?.family(agent), listed: row != nil)
     }
@@ -596,12 +596,12 @@ private struct ChatPage: View {
         case .attach(let choice): picking = choice
         case .rename(let name): Task { _ = await stores.rename(name, of: agent) }
         // Done with it, so back to the list it is filed away from.
-        case .settle:
-            Task { _ = await stores.settle(agent) }
+        case .close:
+            Task { _ = await stores.close(agent) }
             router.pop()
-        case .cancelSettle: Task { _ = await stores.cancelSettle(agent) }
+        case .cancelClose: Task { _ = await stores.cancelClose(agent) }
         case .pin: Task { _ = await stores.pin(agent) }
-        case .unpin, .unsettle: Task { _ = await stores.unfile(agent) }
+        case .unpin, .reopen: Task { _ = await stores.unfile(agent) }
         case .delete:
             Task {
                 if case .success = await stores.delete(agent) { router.close(.conversation(agent)) }
@@ -652,13 +652,13 @@ private struct AgentsTab: View {
             offerNotifications: offerNotifications, signingIn: signingIn, scope: scope
         ) { action in
             switch action {
-            case .settle(let agent): Task { _ = await stores.settle(agent) }
-            case .cancelSettle(let agent): Task { _ = await stores.cancelSettle(agent) }
+            case .close(let agent): Task { _ = await stores.close(agent) }
+            case .cancelClose(let agent): Task { _ = await stores.cancelClose(agent) }
             case .pin(let agent): Task { _ = await stores.pin(agent) }
             case .unfile(let agent): Task { _ = await stores.unfile(agent) }
             case .delete(let agent): Task { _ = await stores.delete(agent) }
             case .rename(let agent, let name): Task { _ = await stores.rename(name, of: agent) }
-            case .openSettled: router.open(.settled)
+            case .showClosed: router.open(.closed)
             case .open(let agent):
                 router.open(.conversation(agent))
             case .newAgent: router.composing = true

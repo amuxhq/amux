@@ -608,7 +608,7 @@ mod stories {
         net.current("laptop", "quiet").await.unwrap();
 
         // An agent that exits: its source closes once its catch-up has landed.
-        net.settle_agent("quiet").await.unwrap();
+        net.close_agent("quiet").await.unwrap();
         net.until("quiet's source to close", || async {
             let open = net
                 .open_sources("laptop")

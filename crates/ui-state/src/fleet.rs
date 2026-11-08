@@ -89,16 +89,16 @@ pub fn exit_words(cause: i32, detail: Option<&str>) -> String {
 pub enum FleetMsg {
     Event(Box<InventoryEvent>),
     Connection(Connection),
-    /// This client's settle of the agent never left: its host could not be
+    /// This client's close of the agent never left: its host could not be
     /// reached. It is held, and goes when the host is back. `listing` is
-    /// [`FleetState::listings`] as the settle's call left: a listing finished
+    /// [`FleetState::listings`] as the close's call left: a listing finished
     /// since then is word that the host is back.
-    HoldSettle {
+    HoldClose {
         agent: AgentKey,
         listing: u64,
     },
-    /// The person cancelled a held settle, or it went.
-    DropSettle(AgentKey),
+    /// The person cancelled a held close, or it went.
+    DropClose(AgentKey),
 }
 
 /// Parent edges, derived from the agent rows.
@@ -124,13 +124,13 @@ pub struct FleetState {
     /// Rows re-listed since the stream reopened; the rest are dropped at the
     /// next CaughtUp.
     relisted: Option<(BTreeSet<HostId>, BTreeSet<AgentKey>)>,
-    /// Settles this client holds because the agent's host could not be
+    /// Closes this client holds because the agent's host could not be
     /// reached: each goes again once the host is next listed online.
-    held_settles: BTreeSet<AgentKey>,
+    held_closes: BTreeSet<AgentKey>,
     /// Listings finished: every CaughtUp, the first included.
     listings: u64,
-    /// Held settles whose host is back, for the driver to send again.
-    released_settles: Vec<AgentKey>,
+    /// Held closes whose host is back, for the driver to send again.
+    released_closes: Vec<AgentKey>,
 }
 
 impl FleetState {
@@ -173,13 +173,13 @@ impl FleetState {
         &self.families
     }
 
-    /// Whether this client holds a settle of the agent until its host is back.
-    pub fn settle_held(&self, agent: &AgentKey) -> bool {
-        self.held_settles.contains(agent)
+    /// Whether this client holds a close of the agent until its host is back.
+    pub fn close_held(&self, agent: &AgentKey) -> bool {
+        self.held_closes.contains(agent)
     }
 
     /// How many listings of the inventory have finished, the first
-    /// included; a settle's call notes it as it leaves.
+    /// included; a close's call notes it as it leaves.
     pub fn listings(&self) -> u64 {
         self.listings
     }
@@ -190,10 +190,10 @@ impl FleetState {
             .is_some_and(|host| host.online().is_some())
     }
 
-    /// The held settles whose host is back since this was last asked: each is
+    /// The held closes whose host is back since this was last asked: each is
     /// no longer held, and the driver sends it again.
-    pub fn take_released_settles(&mut self) -> Vec<AgentKey> {
-        std::mem::take(&mut self.released_settles)
+    pub fn take_released_closes(&mut self) -> Vec<AgentKey> {
+        std::mem::take(&mut self.released_closes)
     }
 
     /// The agent's parent, when the fleet holds it.
@@ -240,20 +240,20 @@ impl FleetState {
         out
     }
 
-    /// The agent's children as a fleet lists them. A settled child is done
-    /// with: its parent stopped it, or the person settled it. It is kept
+    /// The agent's children as a fleet lists them. A closed child is done
+    /// with: its parent stopped it, or the person closed it. It is kept
     /// only so its parent can start it again, until retention reclaims it,
     /// so no client lists it under its family or counts it there.
     pub fn listed_children(&self, parent: &AgentKey) -> impl DoubleEndedIterator<Item = &AgentKey> {
         self.families.children(parent).filter(|child| {
             self.agents
                 .get(*child)
-                .is_none_or(|child| child.filing() != wire::Filing::Settled)
+                .is_none_or(|child| child.filing() != wire::Filing::Closed)
         })
     }
 
     /// The agent and every descendant a fleet lists, depth first: its
-    /// family without the settled children, and what is under them.
+    /// family without the closed children, and what is under them.
     pub fn listed_family(&self, agent: &AgentKey) -> Vec<&Agent> {
         let mut out = Vec::new();
         let mut stack = vec![agent.clone()];
@@ -286,17 +286,17 @@ impl FleetState {
             // daemon restarting fails the call while the host still reads
             // online, and the reopened stream may only ever say online.
             // A listing finished since the call left already said it is
-            // back, and the settle goes at once.
-            FleetMsg::HoldSettle { agent, listing } => {
+            // back, and the close goes at once.
+            FleetMsg::HoldClose { agent, listing } => {
                 if listing != self.listings && self.caught_up && self.host_online(&agent.host) {
-                    self.released_settles.push(agent.clone());
+                    self.released_closes.push(agent.clone());
                 } else {
-                    self.held_settles.insert(agent.clone());
+                    self.held_closes.insert(agent.clone());
                 }
                 changed.insert(agent);
             }
-            FleetMsg::DropSettle(agent) => {
-                if self.held_settles.remove(&agent) {
+            FleetMsg::DropClose(agent) => {
+                if self.held_closes.remove(&agent) {
                     changed.insert(agent);
                 }
             }
@@ -327,7 +327,7 @@ impl FleetState {
                         let host_id = host.host_id().to_vec();
                         self.hosts.insert(host.host_id().to_vec(), host);
                         if online {
-                            self.release_settles(|agent| agent.host == host_id, &mut changed);
+                            self.release_closes(|agent| agent.host == host_id, &mut changed);
                         }
                     }
                     inventory_event::Of::HostRemoved(removed) => {
@@ -375,7 +375,7 @@ impl FleetState {
                                 self.put(at, None, &mut changed);
                             }
                         }
-                        // A settle held after this listing's host row went by
+                        // A close held after this listing's host row went by
                         // goes once the listing ends.
                         let online: BTreeSet<HostId> = self
                             .hosts
@@ -383,7 +383,7 @@ impl FleetState {
                             .filter(|host| self.host_online(host))
                             .cloned()
                             .collect();
-                        self.release_settles(|agent| online.contains(&agent.host), &mut changed);
+                        self.release_closes(|agent| online.contains(&agent.host), &mut changed);
                     }
                 }
             }
@@ -391,23 +391,23 @@ impl FleetState {
         changed.into_iter().collect()
     }
 
-    /// Hands the held settles `which` picks to the driver to send again, and
+    /// Hands the held closes `which` picks to the driver to send again, and
     /// marks each agent's row changed: it no longer reads held.
-    fn release_settles(
+    fn release_closes(
         &mut self,
         which: impl Fn(&AgentKey) -> bool,
         changed: &mut BTreeSet<AgentKey>,
     ) {
         let back: Vec<AgentKey> = self
-            .held_settles
+            .held_closes
             .iter()
             .filter(|agent| which(agent))
             .cloned()
             .collect();
         for agent in back {
-            self.held_settles.remove(&agent);
+            self.held_closes.remove(&agent);
             changed.insert(agent.clone());
-            self.released_settles.push(agent);
+            self.released_closes.push(agent);
         }
     }
 
@@ -425,13 +425,13 @@ impl FleetState {
             }
         }
         changed.insert(at.clone());
-        // A held settle of an agent already settled, or gone, has nothing
+        // A held close of an agent already closed, or gone, has nothing
         // left to do.
         if agent
             .as_ref()
-            .is_none_or(|agent| agent.filing() == wire::Filing::Settled)
+            .is_none_or(|agent| agent.filing() == wire::Filing::Closed)
         {
-            self.held_settles.remove(&at);
+            self.held_closes.remove(&at);
         }
         match agent {
             Some(agent) => {

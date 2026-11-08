@@ -114,7 +114,7 @@ fn exit_words(agent: &Agent) -> Option<String> {
 
 fn state(agent: &Agent) -> String {
     let exited = Lifecycle::try_from(agent.lifecycle) == Ok(Lifecycle::Exited);
-    if exited && agent.filing() == Filing::Settled {
+    if exited && agent.filing() == Filing::Closed {
         return "settled".to_owned();
     }
     if exited {
@@ -433,7 +433,7 @@ fn refusal_words(name: &str, refusal: Refusal) -> String {
              not the one on its screen"
         ),
         Refusal::TooLong => format!("the prompt is longer than {name} takes"),
-        Refusal::Settled => {
+        Refusal::AgentClosed => {
             format!("{name} is settled; start it again with `amux resume {name} <text>`")
         }
     }
@@ -445,7 +445,7 @@ pub async fn settle(client: &mut Client, reference: &str) -> Result<()> {
         .agents
         .file_agent(FileAgentRequest {
             agent_id: agent.agent_id.clone(),
-            filing: Filing::Settled as i32,
+            filing: Filing::Closed as i32,
         })
         .await
         .map_err(crate::plain)?;

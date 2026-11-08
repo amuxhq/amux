@@ -296,7 +296,7 @@ mod tests {
         let mut daemon = daemon();
         let request = PeerRequest::FileAgent(wire::FileAgentRequest {
             agent_id: THEIRS.to_vec(),
-            filing: wire::Filing::Settled as i32,
+            filing: wire::Filing::Closed as i32,
         });
         let out = step(
             &mut daemon,

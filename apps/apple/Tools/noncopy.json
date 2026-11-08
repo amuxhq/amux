@@ -478,7 +478,7 @@
       {"literal": "\"pin\"", "context": "Button { actions(.pin(row.id)) } label: { Label(\"Pin\", systemImage: \"pin\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"tray.and.arrow.up\"", "context": "Button { actions(.unfile(row.id)) } label: { Label(\"Un-settle\", systemImage: \"tray.and.arrow.up\") }", "reason": "SF Symbol name, not a displayed label.", "count": 1},
       {"literal": "\"arrow.uturn.backward\"", "context": "Label(\"Cancel Settle\", systemImage: \"arrow.uturn.backward\")", "reason": "SF Symbol name, not a displayed label.", "count": 1},
-      {"literal": "\"checkmark.circle\"", "context": "Button { settle(row) } label: { Label(\"Settle\", systemImage: \"checkmark.circle\") }", "reason": "SF Symbol name, not a displayed label.", "count": 1},
+      {"literal": "\"checkmark.circle\"", "context": "Button { close(row) } label: { Label(\"Settle\", systemImage: \"checkmark.circle\") }", "reason": "SF Symbol name, not a displayed label.", "count": 1},
       {"literal": "\"settled.empty\"", "context": ".identified(\"settled.empty\", label: \"Nothing settled\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"all\"", "context": "FleetScope(id: \"all\", title: String(localized: \"All\"), only: nil),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"needsYou\"", "context": "id: \"needsYou\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -488,7 +488,7 @@
       {"literal": "\"\\(section.families)\"", "context": ".identified(\"home.settled\", label: title, value: \"\\(section.families)\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"pin.fill\"", "context": "Image(systemName: \"pin.fill\")", "reason": "SF Symbol name, not a displayed label.", "count": 1},
       {"literal": "\"home.scope.\\(scope.id)\"", "context": ".identified(\"home.scope.\\(scope.id)\", label: scope.title)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"settle.\\(row.id)\"", "context": "case .settle(let row, _): \"settle.\\(row.id)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"settle.\\(row.id)\"", "context": "case .close(let row, _): \"settle.\\(row.id)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"delete.\\(row.id)\"", "context": "case .delete(let row): \"delete.\\(row.id)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"archivebox\"", "context": "Image(systemName: \"archivebox\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
       {"literal": "\"pair.\\(host.name)\"", "context": "id: \"pair.\\(host.name)\", glyph: offer.waiting ? \"laptopcomputer\" : \"plus.circle\",", "reason": "Stable element/record identifier, not a displayed label.", "count": 2},
@@ -732,7 +732,7 @@
       {"literal": "\"gearshape\"", "context": "case .you: \"gearshape\"", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
       {"literal": "\"pin\"", "context": "case .code: \"pin\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"pair-confirm\"", "context": "case .link: \"pair-confirm\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"settled\"", "context": "case .settled: \"settled\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"settled\"", "context": "case .closed: \"settled\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxShell/Sources/AmuxShell/Shell.swift": [
       {"literal": "\"shell\"", "context": ".reported(\"shell\", value: router.tab.rawValue)", "reason": "Protocol field, enum tag, resource path or stable driving identifier; preserve its exact spelling.", "count": 1},
@@ -1209,7 +1209,7 @@
       {"literal": "\"chat.exited\"", "context": "id: \"chat.exited\", family: .chat, canvas: CGSize(width: 390, height: 844),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"settings.signed-in\"", "context": "id: \"settings.signed-in\", family: .settings, canvas: CGSize(width: 390, height: 844),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"first-run-on-the-account-free\"", "context": "fleet(\"first-run-on-the-account-free\") { StoryFleet.firstRun(found: [StoryFleet.onTheAccount], pro: false) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"settled\"", "context": "fleet(\"settled\", scope: .settled) { StoryFleet.busy() },", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"settled\"", "context": "fleet(\"settled\", scope: .closed) { StoryFleet.busy() },", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"nightly-triage\"", "context": "row(10, \"nightly-triage\", on: desk, .idle, minutes: 95, filing: .pinned,", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"first-run-window-open\"", "context": "fleet(\"first-run-window-open\") { StoryFleet.firstRun(found: [StoryFleet.laptopOpen]) },", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"first-run-explain\"", "context": "fleet(\"first-run-explain\") { StoryFleet.firstRun(found: [], explained: false) },", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},

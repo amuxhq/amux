@@ -135,7 +135,7 @@ async fn a_dump_carries_this_hosts_records_and_our_logs_and_no_secret() {
         .await
         .unwrap();
     }
-    runtime.file(stopped, Filing::Settled).await.unwrap();
+    runtime.file(stopped, Filing::Closed).await.unwrap();
     assert_eq!(
         runtime.agent(stopped).await.unwrap().lifecycle,
         Lifecycle::Exited as i32

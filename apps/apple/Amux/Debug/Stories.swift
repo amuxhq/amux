@@ -21,7 +21,7 @@ extension ComponentCatalog {
     static let fleet: [ComponentExample] = [
         fleet("busy") { StoryFleet.busy(away: true) },
         fleet("notifications-offer", offerNotifications: true) { StoryFleet.busy(nearby: false) },
-        fleet("settled", scope: .settled) { StoryFleet.busy() },
+        fleet("settled", scope: .closed) { StoryFleet.busy() },
         fleet("no-agents") { StoryFleet.noAgents() },
         fleet("first-run") { StoryFleet.firstRun() },
         fleet("first-run-two-found") { StoryFleet.firstRun(found: [StoryFleet.laptop, StoryFleet.studioFound]) },
@@ -89,7 +89,7 @@ extension ComponentCatalog {
                 offerNotifications: offerNotifications, scope: scope
             ) { _ in }
             // In a navigation stack, as the app shows it, so the title and
-            // the buttons beside it are the system bar's. The Settled page
+            // the buttons beside it are the system bar's. The Closed page
             // too stands at the stack's root: a list pushed without the
             // push's animation draws its large title over its first row.
             NavigationStack { home }
@@ -99,7 +99,7 @@ extension ComponentCatalog {
 }
 
 /// An invented fleet: four machines, agents in every state, a family and a
-/// few the person settled.
+/// few the person closed.
 @MainActor
 enum StoryFleet {
     struct Stores {
@@ -153,15 +153,15 @@ enum StoryFleet {
         ]
         let stopped = [
             row(8, "spike-quic", on: studio, .exited, minutes: 180, reach: studioReach, exit: .finished,
-                filing: .settled, .exited(.finished)),
-            row(9, "bisect-hang", on: desk, .exited, minutes: 300, exit: .failed("Exited with status 1"), filing: .settled,
+                filing: .closed, .exited(.finished)),
+            row(9, "bisect-hang", on: desk, .exited, minutes: 300, exit: .failed("Exited with status 1"), filing: .closed,
                 .exited(.failed("Exited with status 1"))),
         ]
         let sections = [
             FleetSection(kind: .pinned, families: 1, foldedByDefault: false, rows: pinned),
             FleetSection(kind: .needsYou, families: 2, foldedByDefault: false, rows: needs),
             FleetSection(kind: .live, families: 5, foldedByDefault: false, rows: live),
-            FleetSection(kind: .settled, families: 2, foldedByDefault: true, rows: stopped),
+            FleetSection(kind: .closed, families: 2, foldedByDefault: true, rows: stopped),
         ]
         let view = FleetView(sections: sections, needYou: 2, working: 3)
         var studio = studio
@@ -246,14 +246,14 @@ enum StoryFleet {
     private static func row(
         _ index: UInt8, _ name: String, on host: HostView, _ attention: Attention, minutes: Double,
         kind: Kind = .claudeSdk, reach: Reach = .online(.direct), children: UInt32 = 0,
-        branch: String? = nil, exit: ExitCause? = nil, filing: Filing = .active, _ second: SecondLine
+        branch: String? = nil, exit: ExitCause? = nil, filing: Filing = .open, _ second: SecondLine
     ) -> FleetRow {
         FleetRow(
             card: FleetCard(
                 agent: key(index, on: host), name: name, handle: name, kind: kind, attention: attention,
                 cwd: "/Users/ada/src/\(name)", phaseSinceMs: ms(minutesAgo: minutes),
                 host: host.name, hostReach: reach, children: children, familyAttention: attention,
-                members: children + 1, descendants: children, backgroundJobs: 0, settleHeld: false, filing: filing, topLevel: true,
+                members: children + 1, descendants: children, backgroundJobs: 0, closeHeld: false, filing: filing, topLevel: true,
                 branch: branch, exitCause: exit),
             depth: 0, expanded: false, secondLine: second, loud: nil)
     }

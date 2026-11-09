@@ -32,6 +32,7 @@ macro_rules! goldens {
 goldens! {
     amuxs_own_tools_draw_a_message_or_nothing => "amux_tools",
     an_unnamed_session_is_asked_for_a_title => "session_title",
+    an_untitled_answer_leaves_the_next_prompt_to_ask => "untitled_greeting",
     lifecycle_events_write_boundaries_and_interrupt => "lifecycle",
     permission_asks_keep_scopes_reason_and_description => "asks",
     a_failed_sign_in_says_nothing_after_good_turns => "sign_in_failed_then_good_turns",

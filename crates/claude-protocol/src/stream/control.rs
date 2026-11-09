@@ -72,7 +72,9 @@ pub struct GenerateSessionTitleRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionTitleResult {
-    pub title: String,
+    /// Null when the description says too little to title, as a bare
+    /// greeting does.
+    pub title: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

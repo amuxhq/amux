@@ -1469,10 +1469,16 @@ impl State {
                     self.shared.set_jobs(jobs);
                 }
             }
-            Some(Request::Title) if ok => {
-                if let Some(Ok(titled)) = response.result::<SessionTitleResult>() {
-                    self.shared.provider_titled(&titled.title);
+            Some(Request::Title) => {
+                if ok
+                    && let Some(Ok(SessionTitleResult {
+                        title: Some(title), ..
+                    })) = response.result()
+                {
+                    self.shared.provider_titled(&title);
                 }
+                // An untitled answer leaves the next prompt to ask again.
+                self.title_asked = !self.shared.wants_title();
             }
             Some(Request::Effort(Some(effort))) if ok => self.effort = Some(effort),
             Some(Request::Effort(None)) if ok => self.ask_settings(emit),

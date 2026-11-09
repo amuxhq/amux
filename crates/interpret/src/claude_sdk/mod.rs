@@ -150,7 +150,8 @@ struct TaskState {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct State {
     shared: Shared<wire::Ask>,
-    /// This process has been asked for a title, once being enough.
+    /// A title request is out or has been answered with a title; a prompt
+    /// asks only while neither holds.
     title_asked: bool,
     incarnation: u32,
     session: Option<String>,

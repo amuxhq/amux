@@ -37,13 +37,6 @@ filter = "package(models)"
 threads-required = "num-cpus"
 slow-timeout = { period = "120s", terminate-after = 8 }
 
-[[profile.default.overrides]]
-# Three agents are still running when this daemon shuts down, and on Windows
-# their processes can take longer than the default to let go of the output.
-platform = "cfg(windows)"
-filter = "test(a_persons_pick_is_what_later_agents_start_with)"
-leak-timeout = { period = "10s", result = "fail" }
-
 [profile.ci]
 fail-fast = false
 

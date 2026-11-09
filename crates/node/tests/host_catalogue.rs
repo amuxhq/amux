@@ -669,5 +669,7 @@ async fn a_persons_pick_is_what_later_agents_start_with() {
         assert!(!args_of(&terminal).contains(&"--model".to_owned()));
     }
 
+    // A daemon that shuts down leaves its agents running.
+    kill_all(&runtime).await;
     daemon.shutdown().await.unwrap();
 }

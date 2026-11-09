@@ -153,6 +153,8 @@ pub struct Frame<'a> {
     /// the rest: the running turn's live end (your prompt on its way, the
     /// activity line).
     pub tail: &'a [Line<'static>],
+    /// This terminal draws images, so images leave room for thumbnails.
+    pub thumbnails: bool,
 }
 
 impl Frame<'_> {
@@ -311,6 +313,7 @@ impl Frame<'_> {
         let expanded = self.expanded.contains(&row.id);
         let mut facts = RowFacts {
             leader: self.leader,
+            thumbnails: self.thumbnails,
             ..RowFacts::default()
         };
         if expanded && matches!(row.kind, ui_view::RowKind::FileChange { .. }) {

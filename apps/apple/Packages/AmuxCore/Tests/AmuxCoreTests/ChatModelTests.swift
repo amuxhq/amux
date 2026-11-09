@@ -270,7 +270,14 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         return .success(BlobRef(hash: [9], name: name, mime: mime, size: UInt64(data.count)))
     }
 
-    func blob(_ hash: [UInt8]) -> Data? { nil }
+    /// Attachments' bytes, by hash, once they have landed.
+    var landed: [[UInt8]: Data] = [:]
+    var failedFetches: Set<[UInt8]> = []
+    var fetchedAgain: [[UInt8]] = []
+
+    func blob(_ hash: [UInt8]) -> Data? { landed[hash] }
+    func blobFailed(_ hash: [UInt8]) -> Bool { failedFetches.contains(hash) }
+    func fetchBlob(_ hash: [UInt8]) { fetchedAgain.append(hash) }
 
     func review(_ comparison: Comparison) async -> Result<FrozenReview, RuntimeFailure> {
         reviews += 1
@@ -700,6 +707,60 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(model.notice, "Not sent: its host is away")
         XCTAssertEqual(source.discarded, [[8]])
         XCTAssertEqual(model.frame?.refused, [], "taken back once")
+    }
+
+    private static let shot = BlobRef(hash: [5], name: "../shots/screen.png", mime: "image/png", size: 4)
+
+    /// A row's change, as the session reports an attachment landing.
+    private func landing(on model: ChatModel) {
+        model.apply(ChatDelta(
+            chat: 0, rows: [row("r1", 1, "words")], ask: nil, frame: nil, keys: nil, overview: nil,
+            settings: nil))
+    }
+
+    func testAnAttachmentHereOpensAsAFileUnderItsOwnName() throws {
+        let source = FakeChat(rows: [], frame: frame())
+        source.landed[Self.shot.hash] = Data("png!".utf8)
+        let model = ChatModel(source: source)
+        model.open(attachment: Self.shot)
+        let opened = try XCTUnwrap(model.opened)
+        XCTAssertEqual(opened.lastPathComponent, "screen.png")
+        XCTAssertEqual(try Data(contentsOf: opened), Data("png!".utf8))
+    }
+
+    func testAnAttachmentAskedForBeforeItLandsOpensWhenItDoes() {
+        let source = FakeChat(rows: [], frame: frame())
+        let model = ChatModel(source: source)
+        model.open(attachment: Self.shot)
+        XCTAssertNil(model.opened)
+        landing(on: model)
+        XCTAssertNil(model.opened, "still on its way")
+        source.landed[Self.shot.hash] = Data("png!".utf8)
+        landing(on: model)
+        XCTAssertNotNil(model.opened)
+    }
+
+    /// An attachment landing changes nothing in its row, and being handed the
+    /// same row again is how its picture gets drawn.
+    func testARowWithAnAttachmentIsReadAgainWhenHandedOverUnchanged() {
+        var held = row("r1", 1)
+        held.kind = .prose(text: [.attachment(.image(Self.shot))], streaming: false, workingNote: false)
+        let source = FakeChat(rows: [held], frame: frame())
+        let model = ChatModel(source: source)
+        let cell = model.cell(for: "r1")
+        let before = cell.attachmentRevision
+        model.apply(ChatDelta(
+            chat: 0, rows: [held], ask: nil, frame: nil, keys: nil, overview: nil, settings: nil))
+        XCTAssertGreaterThan(cell.attachmentRevision, before)
+    }
+
+    func testOpeningAnAttachmentThatFailedFetchesItAgain() {
+        let source = FakeChat(rows: [], frame: frame())
+        source.failedFetches = [Self.shot.hash]
+        let model = ChatModel(source: source)
+        model.open(attachment: Self.shot)
+        XCTAssertEqual(source.fetchedAgain, [Self.shot.hash])
+        XCTAssertNil(model.opened)
     }
 
     /// Prompts on their way split by where they land: the feed's end or

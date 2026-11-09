@@ -1,5 +1,6 @@
 import AmuxCore
 import AmuxDesign
+import QuickLook
 import SwiftUI
 
 /// Who a chat is with and where it runs, from the fleet: the header paints
@@ -220,6 +221,9 @@ public struct ChatScreen: View {
             screenHeight = $0.height
             screenWidth = $0.width
         }
+        .environment(\.attachmentAccess, AttachmentAccess(
+            bytes: model.bytes(of:), failed: model.fetchFailed(of:), open: model.open(attachment:)))
+        .quickLookPreview(Binding(get: { model.opened }, set: { model.opened = $0 }))
         // The system's own way back, chevron alone: its edge swipe moves the
         // page with the finger and can be changed mid-way, as every pushed
         // page's does.
@@ -828,8 +832,9 @@ struct RowCellView: View {
                 placement: RunPlacement.of(
                     row, open: row.run?.open ?? false,
                     counts: { row.run.flatMap(model.counts(of:)) }),
-                bytes: model.bytes(of:), toggle: { model.toggle(row.id) },
+                toggle: { model.toggle(row.id) },
                 toggleRun: { if let run = row.run { model.toggleRun(run) } })
+            .environment(\.attachmentRevision, cell.attachmentRevision)
         } else {
             Color.clear.frame(height: 0)
         }

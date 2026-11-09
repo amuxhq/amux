@@ -23,6 +23,7 @@ use crossterm::terminal::{
     BeginSynchronizedUpdate, EndSynchronizedUpdate, EnterAlternateScreen, LeaveAlternateScreen,
     disable_raw_mode, enable_raw_mode,
 };
+use ratatui_image::picker::{Picker, ProtocolType};
 
 use crate::theme::TerminalColors;
 
@@ -31,6 +32,11 @@ use crate::theme::TerminalColors;
 static CHROME_OWNS_TERMINAL: AtomicBool = AtomicBool::new(false);
 static PANIC_HOOK: Once = Once::new();
 
+/// How this terminal draws images, once it has been asked.
+pub(crate) fn image_picker() -> Option<Picker> {
+    IMAGE_PICKER.get().cloned().flatten()
+}
+
 /// Whether the terminal answered the kitty keyboard-enhancement probe —
 /// probed once per process (the terminal does not change under us), on
 /// the first chrome entry, inside the guard lifecycle. Tier gate for the
@@ -38,6 +44,11 @@ static PANIC_HOOK: Once = Once::new();
 /// overlay derive from it; dispatch itself trusts the events that
 /// actually arrive.
 static KITTY_SUPPORTED: OnceLock<bool> = OnceLock::new();
+
+/// How this terminal draws images, asked once like the keyboard probe; None
+/// when it cannot. Half blocks count as cannot: at thumbnail size they are a
+/// smear of colour, and the chip says more.
+static IMAGE_PICKER: OnceLock<Option<Picker>> = OnceLock::new();
 
 /// Whether enhancement flags are currently pushed (on the alternate
 /// screen's stack). Restore pops iff set — kitty keeps per-screen flag
@@ -206,6 +217,11 @@ impl TerminalGuard {
         {
             KITTY_PUSHED.store(true, Ordering::SeqCst);
         }
+        IMAGE_PICKER.get_or_init(|| {
+            Picker::from_query_stdio()
+                .ok()
+                .filter(|picker| picker.protocol_type() != ProtocolType::Halfblocks)
+        });
         Ok(Self { restored: false })
     }
 

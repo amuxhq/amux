@@ -92,6 +92,10 @@ pub async fn ready(events: &mut EventStream) -> Option<io::Result<crossterm::eve
 /// One stretch on the alternate screen, until a quit or an attach.
 async fn session(app: &mut App) -> Result<Leave> {
     let guard = TerminalGuard::enter()?;
+    // A new stretch on the alternate screen starts with no images in it.
+    if let Some(chat) = app.chat.as_mut() {
+        chat.view.thumbs.forget();
+    }
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
     // A fresh terminal's buffers are blank, so a blank screen matches them.
     // `Terminal::clear` would also ask the terminal where its cursor is and
@@ -116,6 +120,7 @@ async fn session(app: &mut App) -> Result<Leave> {
         }
         crate::terminal::write_begin_frame(terminal.backend_mut())?;
         terminal.draw(|frame| app.draw(frame))?;
+        app.fetch_thumbnails();
         crate::terminal::write_end_frame(terminal.backend_mut())?;
         let tick = app.next_tick();
         let flow = tokio::select! {

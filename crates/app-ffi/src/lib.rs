@@ -3124,6 +3124,42 @@ pub unsafe extern "C" fn amux_session_blob(
     })
 }
 
+/// Whether fetching an attachment's bytes failed, by its hash as a JSON byte
+/// array.
+///
+/// # Safety
+/// `chat` is from `amux_session_open`; `hash` is a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_session_blob_failed(
+    chat: *const AmuxChat,
+    hash: *const c_char,
+) -> bool {
+    // SAFETY: the caller's contract.
+    let hash: Vec<u8> = unsafe { parse(hash) }.unwrap_or_default();
+    guard(false, || {
+        // SAFETY: the caller's contract.
+        unsafe { held_chat(chat) }.is_some_and(|open| open.chat.blob_failed(&hash))
+    })
+}
+
+/// Fetches an attachment's bytes again, after a failure. The rows that show
+/// it change when it lands.
+///
+/// # Safety
+/// `chat` is from `amux_session_open`; `hash` is a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_session_fetch_blob(chat: *const AmuxChat, hash: *const c_char) {
+    // SAFETY: the caller's contract.
+    let hash: Vec<u8> = unsafe { parse(hash) }.unwrap_or_default();
+    guard((), || {
+        // SAFETY: the caller's contract.
+        if let Some(open) = unsafe { held_chat(chat) } {
+            let _entered = open.shared.handle().enter();
+            open.chat.fetch_blob(&hash);
+        }
+    })
+}
+
 // --- freeing ---------------------------------------------------------------
 
 /// # Safety

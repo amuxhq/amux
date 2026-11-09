@@ -2,7 +2,7 @@
 //! and ` · ` meta; rows that open show their detail below when the reader
 //! expands them. Wording lives here; the facts come from `ui_view::Row`.
 
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ui_view::{AttachmentView, CallPhase, ExploreVerb, LineKind, PatchHead, Row, RowKind, Segment};
 use wire::{BoundaryKind, EnvelopeKind, SendState};
@@ -12,7 +12,7 @@ use crate::text::{self, first_line, push};
 use crate::theme::Theme;
 
 /// Where body text starts.
-const INDENT: usize = 4;
+pub(crate) const INDENT: usize = 4;
 /// Lines of an opened body before it is cut with a count.
 pub const OPEN_LINES: usize = 40;
 
@@ -31,6 +31,8 @@ pub struct RowFacts {
     pub patch: Option<PatchHead>,
     /// The leader key, for the keys a row names.
     pub leader: char,
+    /// This terminal draws images, so an image leaves room for one.
+    pub thumbnails: bool,
 }
 
 impl Default for RowFacts {
@@ -38,6 +40,7 @@ impl Default for RowFacts {
         RowFacts {
             patch: None,
             leader: 'a',
+            thumbnails: false,
         }
     }
 }
@@ -223,6 +226,27 @@ pub(crate) struct RowShape {
     pub exact: bool,
     /// The links on it by column.
     pub links: Vec<Link>,
+    /// The chips on it that a click opens.
+    pub opening: OpeningChips,
+}
+
+/// The chips on one line that a click opens, by their columns.
+pub(crate) type OpeningChips = Vec<(usize, usize, wire::BlobRef)>;
+
+/// An attachment that can be opened: an image or a file.
+pub(crate) fn opens(view: &AttachmentView) -> Option<&wire::BlobRef> {
+    match view {
+        AttachmentView::Image(blob) | AttachmentView::File(blob) => Some(blob),
+        _ => None,
+    }
+}
+
+/// A chip's look: underlined like a link when a click opens it.
+pub(crate) fn chip_style(view: &AttachmentView, theme: Theme) -> Style {
+    match opens(view) {
+        Some(_) => theme.chip_raised().add_modifier(Modifier::UNDERLINED),
+        None => theme.chip_raised(),
+    }
 }
 
 /// Text with chips at their places, wrapped at `width` in `style`.
@@ -308,11 +332,15 @@ pub(crate) fn segment_rows(
                 {
                     last.spans.push(Span::styled(" ", style));
                 }
-                if let Some(last) = lines.last_mut() {
-                    last.spans.push(Span::styled(
-                        text::ellipsize(&chip, width),
-                        theme.chip_raised(),
-                    ));
+                if let (Some(last), Some(shape)) = (lines.last_mut(), shapes.last_mut()) {
+                    let from = text::line_width(last);
+                    let shown = text::ellipsize(&chip, width);
+                    let to = from + text::str_width(&shown);
+                    last.spans
+                        .push(Span::styled(shown, chip_style(view, theme)));
+                    if let Some(blob) = opens(view) {
+                        shape.opening.push((from, to, blob.clone()));
+                    }
                 }
             }
         }

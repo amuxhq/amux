@@ -16,6 +16,17 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     private var files: Changes?
     private var offered: SettingsView?
     private var images: [[UInt8]: Data]
+    /// Attachments whose fetch has failed, and those asked for again.
+    public var failedBlobs: Set<[UInt8]> {
+        get { lock.withLock { failed } }
+        set { lock.withLock { failed = newValue } }
+    }
+    public var retriedBlobs: [[UInt8]] {
+        get { lock.withLock { retried } }
+        set { lock.withLock { retried = newValue } }
+    }
+    private var failed: Set<[UInt8]> = []
+    private var retried: [[UInt8]] = []
     private var pending = Pending()
     /// What was sent, in order, for a test to read back.
     public private(set) var sent: [Draft] = []
@@ -421,6 +432,10 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     }
 
     public func blob(_ hash: [UInt8]) -> Data? { lock.withLock { images[hash] } }
+
+    public func blobFailed(_ hash: [UInt8]) -> Bool { lock.withLock { failed.contains(hash) } }
+
+    public func fetchBlob(_ hash: [UInt8]) { lock.withLock { retried.append(hash) } }
 
     public func review(_ comparison: Comparison) async -> Result<FrozenReview, RuntimeFailure> {
         guard let working = lock.withLock({ working }) else {

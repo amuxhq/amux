@@ -26,6 +26,7 @@ use crate::chat::layout::{CAP, PAGE};
 use crate::chat::{ChatEffect, ChatView};
 use crate::clipboard::read_clipboard;
 use crate::home::{FleetEffect, Home, Place};
+use crate::open;
 use crate::text::{self, push};
 use crate::theme::Theme;
 
@@ -217,6 +218,12 @@ pub enum AppEvent {
     Attached {
         agent_id: Vec<u8>,
         blob: wire::BlobRef,
+    },
+    /// An image was decoded for this agent's chat, or could not be.
+    Thumbnail {
+        agent_id: Vec<u8>,
+        hash: Vec<u8>,
+        image: Option<image::DynamicImage>,
     },
     /// A file could not be stored for the draft.
     AttachFailed {
@@ -562,6 +569,43 @@ impl App {
         self.notice = Some((words.into(), tone, Instant::now()));
     }
 
+    /// Starts the work the images just drawn asked for: fetching bytes that
+    /// are not here and decoding those that are, off the draw loop.
+    pub fn fetch_thumbnails(&mut self) {
+        let Some(chat) = self.chat.as_mut() else {
+            return;
+        };
+        let Some(pixels) = chat.view.thumbs.pixels() else {
+            return;
+        };
+        let agent_id = chat.view.agent_id.clone();
+        let mut decoding = Vec::new();
+        for hash in chat.view.thumbs.take_wanted() {
+            // Not here yet: this starts its fetch, and the row changes when
+            // it lands, which brings it round again.
+            if let Some(bytes) = chat.session.blob(&hash) {
+                chat.view.thumbs.decoding(hash.clone());
+                decoding.push((hash, bytes));
+            }
+        }
+        for (hash, bytes) in decoding {
+            let agent_id = agent_id.clone();
+            self.spawn(async move {
+                let image = tokio::task::spawn_blocking(move || {
+                    crate::chat::thumbs::decode(&bytes, pixels)
+                })
+                .await
+                .ok()
+                .flatten();
+                Some(AppEvent::Thumbnail {
+                    agent_id,
+                    hash,
+                    image,
+                })
+            });
+        }
+    }
+
     fn spawn<F>(&self, task: F)
     where
         F: Future<Output = Option<AppEvent>> + Send + 'static,
@@ -724,6 +768,19 @@ impl App {
                     .filter(|chat| chat.view.agent_id == agent_id)
                 {
                     chat.view.editor.restore(&text, attachments);
+                }
+            }
+            AppEvent::Thumbnail {
+                agent_id,
+                hash,
+                image,
+            } => {
+                if let Some(chat) = self
+                    .chat
+                    .as_mut()
+                    .filter(|chat| chat.view.agent_id == agent_id)
+                {
+                    chat.view.thumbs.decoded(hash, image);
                 }
             }
             AppEvent::Attached { agent_id, blob } => {
@@ -1088,7 +1145,13 @@ impl App {
             KeyCode::Char('k') => chat.view.move_focus(&state, true, theme),
             KeyCode::Char('j') => chat.view.move_focus(&state, false, theme),
             KeyCode::Char('o') if ctrl_held(&key) => chat.view.pane_toggle_key(),
-            KeyCode::Char('o') => chat.view.toggle_expanded(&state),
+            KeyCode::Char('o') => match chat.view.focused_attachment() {
+                Some(effect) => {
+                    drop(state);
+                    self.chat_effect(effect);
+                }
+                None => chat.view.toggle_expanded(&state),
+            },
             KeyCode::Char(PANE_CHORD) => chat.view.pane_toggle_key(),
             KeyCode::Char('y') => {
                 if let Some(text) = chat.view.copy_text() {
@@ -1511,6 +1574,27 @@ impl App {
                     self.notice(format!("could not open the link: {error}"), Tone::Warn);
                 }
             }
+            ChatEffect::OpenAttachment(blob) => {
+                self.notice(format!("opening {}…", blob.name), Tone::Info);
+                self.spawn(async move {
+                    let result = match session.attachment(&blob.hash).await {
+                        Ok(bytes) => {
+                            let name = blob.name.clone();
+                            tokio::task::spawn_blocking(move || open_attachment(&name, &bytes))
+                                .await
+                                .unwrap_or_else(|error| Err(std::io::Error::other(error)))
+                        }
+                        Err(error) => Err(std::io::Error::other(error.to_string())),
+                    };
+                    result.err().map(|error| {
+                        AppEvent::Notice(
+                            format!("could not open {}: {error}", blob.name),
+                            Tone::Warn,
+                        )
+                    })
+                });
+            }
+            ChatEffect::RetryBlob(hash) => session.fetch_blob(&hash),
             ChatEffect::Home => self.close_chat(),
             ChatEffect::Press(key) => {
                 // The leader clicked shows its panel at once: the click is
@@ -1838,6 +1922,7 @@ impl App {
                         .leader_since
                         .is_none_or(|since| since.elapsed() >= PANEL_AFTER);
                 chat.view.panel = panel_due.then(panel_entries);
+                chat.view.covered = self.report.is_some();
                 let page = {
                     let state = chat.session.state();
                     chat.view
@@ -2224,6 +2309,35 @@ fn open_url(url: &str) -> std::io::Result<()> {
             .map(|_| ());
     }
     system_open(url)
+}
+
+/// Saves an attachment and hands it to the system: straight to its app when
+/// it only shows its content, otherwise into view in its folder.
+fn open_attachment(name: &str, bytes: &[u8]) -> std::io::Result<()> {
+    let path = open::save(name, bytes)?;
+    match open::opening(name) {
+        open::Opening::Open => system_open(&path.to_string_lossy()),
+        open::Opening::Reveal => reveal(&path),
+    }
+}
+
+/// Shows a file in its folder.
+#[cfg(target_os = "macos")]
+fn reveal(path: &std::path::Path) -> std::io::Result<()> {
+    std::process::Command::new("open")
+        .arg("-R")
+        .arg(path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|_| ())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn reveal(path: &std::path::Path) -> std::io::Result<()> {
+    let folder = path.parent().unwrap_or(path);
+    system_open(&folder.to_string_lossy())
 }
 
 /// Hands the link to the shell's own URL handler. Never through `cmd`,

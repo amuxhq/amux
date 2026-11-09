@@ -62,6 +62,12 @@ impl AttachmentView {
     }
 }
 
+/// The largest image a client downloads by itself to draw its thumbnail. A
+/// chat full of big images should not spend someone's mobile data before
+/// they ask; a larger one stays a chip until it is opened. The phone keeps
+/// this number too, in `Thumbnail.sizeLimit`.
+pub const THUMBNAIL_SIZE_LIMIT: u64 = 16 * 1024 * 1024;
+
 /// Splits text at its placeholders. A placeholder with no attachment left
 /// is dropped; attachments with no placeholder follow the text.
 pub fn segments(text: &str, attachments: &[Attachment]) -> Vec<Segment> {

@@ -120,6 +120,13 @@ you move out of it if it's long. Click the count to open it again, or press
 Backspace just below it to remove the whole quote. Once sent, your message
 renders as markdown, like the agent's replies.
 
+Attachments in the chat are underlined: click one to open it, or focus its
+message with the leader and `j` or `k` and press the leader then `o`. Pictures,
+PDFs and plain text open in their usual app, and anything else is shown in its
+folder so you can decide what to do with it. In a terminal that can draw images,
+such as Ghostty, kitty or iTerm2, an image also shows a thumbnail, including
+inside tmux, where amux turns on `allow-passthrough` for its own pane.
+
 The agent's tool steps fold into one line between its replies, such as
 `▸ 3 commands · 2 edits · 4 reads`. Click it to see each step, and click a
 step to see its output or its diff.

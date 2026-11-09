@@ -782,3 +782,80 @@ fn a_secret_draft_is_cut_at_the_edge() {
     editor.set("ab cd ef gh ij", Vec::new());
     assert_eq!(draft_rows(&editor, 7), ["•••••", "•••••", "••••"]);
 }
+
+fn attached(size: u64) -> wire::BlobRef {
+    wire::BlobRef {
+        hash: vec![7],
+        name: "shot.png".to_owned(),
+        mime: "image/png".to_owned(),
+        size,
+    }
+}
+
+fn prose_with_image(size: u64, thumbnails: bool) -> crate::chat::feed::Drawn {
+    use crate::chat::feed::{Placement, row_lines};
+    let row = ui_view::Row {
+        kind: ui_view::RowKind::Prose {
+            text: vec![
+                Segment::Text("Here it is:".to_owned()),
+                Segment::Attachment(ui_view::AttachmentView::Image(attached(size))),
+            ],
+            streaming: false,
+            working_note: false,
+        },
+        ..call_row(ui_view::RowKind::Stopped)
+    };
+    let facts = crate::chat::rows::RowFacts {
+        thumbnails,
+        ..Default::default()
+    };
+    row_lines(&row, &Placement::Plain, false, &facts, 100, theme()).unwrap()
+}
+
+fn opens_at(drawn: &crate::chat::feed::Drawn) -> Vec<(usize, usize)> {
+    drawn
+        .hits
+        .iter()
+        .flatten()
+        .filter_map(|(span, hit)| match hit {
+            crate::chat::feed::FeedHit::Attachment(_) => *span,
+            _ => None,
+        })
+        .collect()
+}
+
+fn thumbnail_rows(drawn: &crate::chat::feed::Drawn) -> usize {
+    drawn
+        .hits
+        .iter()
+        .flatten()
+        .filter(|(_, hit)| matches!(hit, crate::chat::feed::FeedHit::Thumbnail { .. }))
+        .count()
+}
+
+/// An image in an agent's words can be clicked exactly where its chip is
+/// drawn, and a terminal that cannot draw images leaves no gap for one.
+#[test]
+fn an_agents_image_chip_opens_and_takes_no_room_without_image_support() {
+    let drawn = prose_with_image(2048, false);
+    let chip = crate::chat::rows::chip(&ui_view::AttachmentView::Image(attached(2048)));
+    assert_eq!(opens_at(&drawn), [(4, 4 + chip.chars().count())]);
+    assert_eq!(thumbnail_rows(&drawn), 0);
+}
+
+#[test]
+fn a_terminal_that_draws_images_leaves_a_fixed_box_under_the_chip() {
+    let drawn = prose_with_image(2048, true);
+    assert_eq!(opens_at(&drawn).len(), 1);
+    assert_eq!(
+        thumbnail_rows(&drawn),
+        usize::from(crate::chat::thumbs::ROWS)
+    );
+}
+
+#[test]
+fn an_image_too_big_to_fetch_unasked_stays_a_chip() {
+    let drawn = prose_with_image(ui_view::THUMBNAIL_SIZE_LIMIT + 1, true);
+    assert_eq!(opens_at(&drawn).len(), 1);
+    assert_eq!(thumbnail_rows(&drawn), 0);
+}

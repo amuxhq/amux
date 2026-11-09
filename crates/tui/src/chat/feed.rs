@@ -20,10 +20,11 @@ use ui_view::{
     AnswerView, AskRow, AttachmentView, CallPhase, ChildAction, DecisionView, FileChangeView,
     PlanVerdict, QuestionView, Resolution, Row, RowKind, Run, RunCounts, Segment,
 };
+use wire::BlobRef;
 
 use super::rows::{
-    RowFacts, RowShape, call_verb, chip, detail, explore_verb, markdown_copy, markdown_linked,
-    patch_gutter, patch_lines, segment_rows, state_meta,
+    self, RowFacts, RowShape, call_verb, chip, detail, explore_verb, markdown_copy,
+    markdown_linked, patch_gutter, patch_lines, segment_rows, state_meta,
 };
 use super::selection::{Join, LineText};
 use crate::text::{self, first_line, pad_to, push, push_right};
@@ -47,6 +48,10 @@ pub enum FeedHit {
     Step(Key),
     /// Open a link in the agent's text.
     Link(String),
+    /// Open an attachment in its own app.
+    Attachment(BlobRef),
+    /// One line of an image's thumbnail, `row` lines below its top.
+    Thumbnail { blob: BlobRef, row: u16 },
 }
 
 /// Clickable places on one feed line: column ranges, `None` for the whole
@@ -125,6 +130,41 @@ impl Drawn {
     fn blank(&mut self) {
         self.line(Line::default());
     }
+
+    /// The lines a thumbnail is drawn over, at `column`.
+    fn thumbnail(&mut self, blob: &BlobRef, column: usize) {
+        for (line, hits) in thumbnail_lines(blob, column) {
+            self.lines.push(line);
+            self.hits.push(hits);
+        }
+    }
+}
+
+/// Whether this image leaves room for a thumbnail. One too big to fetch
+/// unasked stays a chip.
+fn takes_thumbnail(blob: &BlobRef, thumbnails: bool) -> bool {
+    thumbnails && blob.size <= ui_view::THUMBNAIL_SIZE_LIMIT
+}
+
+fn thumbnail_lines(blob: &BlobRef, column: usize) -> Vec<(Line<'static>, LineHits)> {
+    (0..super::thumbs::ROWS)
+        .map(|row| {
+            let span = (column, column + usize::from(super::thumbs::COLUMNS));
+            let hit = FeedHit::Thumbnail {
+                blob: blob.clone(),
+                row,
+            };
+            (Line::default(), vec![(Some(span), hit)])
+        })
+        .collect()
+}
+
+/// A chip's clicks, by the columns a line's shape found.
+fn chip_hits(opening: rows::OpeningChips) -> LineHits {
+    opening
+        .into_iter()
+        .map(|(from, to, blob)| (Some((from, to)), FeedHit::Attachment(blob)))
+        .collect()
 }
 
 /// "1 line", "12 lines".
@@ -197,12 +237,12 @@ pub fn row_lines(
             }
         }
         Placement::Plain => match &row.kind {
-            RowKind::Prompt { text, steered } => {
-                prompt(&mut drawn, row, text, *steered, expanded, width, theme)
-            }
+            RowKind::Prompt { text, steered } => prompt(
+                &mut drawn, row, text, *steered, expanded, facts, width, theme,
+            ),
             RowKind::Prose {
                 text, streaming, ..
-            } => prose(&mut drawn, text, *streaming, width, theme),
+            } => prose(&mut drawn, text, *streaming, facts, width, theme),
             RowKind::Ask(AskRow::Plan {
                 title,
                 body,
@@ -382,12 +422,14 @@ pub fn is_step(row: &Row) -> bool {
 /// its words, the time at the right of its first line. The block runs from
 /// the outer margin to the outer margin; its words and time sit a margin
 /// inside it.
+#[allow(clippy::too_many_arguments)]
 fn prompt(
     drawn: &mut Drawn,
     row: &Row,
     words: &[Segment],
     steered: bool,
     open: bool,
+    facts: &RowFacts,
     width: usize,
     theme: Theme,
 ) {
@@ -396,7 +438,8 @@ fn prompt(
     } else {
         clock(row.at_ms)
     };
-    prompt_block(drawn, words, &when, Some((&row.id, open)), width, theme);
+    let toggle = Some((&row.id, open));
+    prompt_block(drawn, words, &when, toggle, facts.thumbnails, width, theme);
 }
 
 /// Lines of pasted text a sent message shows before cutting it.
@@ -410,6 +453,7 @@ fn prompt_block(
     words: &[Segment],
     when: &str,
     toggle: Option<(&Key, bool)>,
+    thumbnails: bool,
     width: usize,
     theme: Theme,
 ) {
@@ -418,7 +462,7 @@ fn prompt_block(
     let inner = width.saturating_sub(2 * EDGE);
     let inset = WORDS - EDGE;
     let room = inner.saturating_sub(2 * inset + text::str_width(when) + 2);
-    for (i, (words, hit, shape)) in message_lines(words, room, toggle, theme)
+    for (i, (words, hits, shape)) in message_lines(words, room, toggle, thumbnails, theme)
         .into_iter()
         .enumerate()
     {
@@ -440,20 +484,19 @@ fn prompt_block(
         if i == 0 {
             push_right(&mut line, when, theme.muted(), inner - inset);
         }
-        let line = tinted(line, surface, width);
-        match hit {
-            Some(hit) => drawn.hit_line(line, hit),
-            None => {
-                let margin = EDGE + inset;
-                let hits = shape
-                    .links
-                    .into_iter()
-                    .map(|(from, to, url)| (Some((margin + from, margin + to)), FeedHit::Link(url)))
-                    .collect();
-                drawn.lines.push(line);
-                drawn.hits.push(hits);
-            }
-        }
+        // The message's own columns start at the block's margin and inset.
+        let margin = EDGE + inset;
+        let links = shape
+            .links
+            .into_iter()
+            .map(|(from, to, url)| (Some((from, to)), FeedHit::Link(url)));
+        let hits = hits
+            .into_iter()
+            .chain(links)
+            .map(|(span, hit)| (span.map(|(from, to)| (margin + from, margin + to)), hit))
+            .collect();
+        drawn.lines.push(tinted(line, surface, width));
+        drawn.hits.push(hits);
     }
     drawn.line(tinted(Line::default(), surface, width));
     drawn.blank();
@@ -468,14 +511,14 @@ fn message_lines(
     words: &[Segment],
     room: usize,
     toggle: Option<(&Key, bool)>,
+    thumbnails: bool,
     theme: Theme,
-) -> Vec<(Line<'static>, Option<FeedHit>, RowShape)> {
+) -> Vec<(Line<'static>, LineHits, RowShape)> {
     let room = room.max(1);
-    let mut out: Vec<(Line<'static>, Option<FeedHit>, RowShape)> = Vec::new();
+    let mut out: Vec<(Line<'static>, LineHits, RowShape)> = Vec::new();
     let mut run: Vec<Segment> = Vec::new();
-    let plain = |line| (line, None, RowShape::default());
-    let flush = |run: &mut Vec<Segment>,
-                 out: &mut Vec<(Line<'static>, Option<FeedHit>, RowShape)>| {
+    let plain = |line| (line, LineHits::new(), RowShape::default());
+    let flush = |run: &mut Vec<Segment>, out: &mut Vec<(Line<'static>, LineHits, RowShape)>| {
         // The space a chip leaves after itself is not a line of its own.
         let blank = run.iter().all(|segment| match segment {
             Segment::Text(text) => text.trim().is_empty(),
@@ -508,22 +551,45 @@ fn message_lines(
                                 from: line.copy_from,
                                 exact: line.exact,
                                 links: line.links.clone(),
+                                opening: Vec::new(),
                             };
-                            (Line::from(line.spans.clone()), None, shape)
+                            (Line::from(line.spans.clone()), LineHits::new(), shape)
                         }),
                 ),
                 None => out.extend(
                     segment_rows(run, room, theme.text(), theme)
                         .into_iter()
-                        .map(|(line, shape)| (line, None, shape)),
+                        .map(|(line, shape)| (line, chip_hits(shape.opening.clone()), shape)),
                 ),
             }
         }
         run.clear();
     };
     let open = toggle.is_some_and(|(_, open)| open);
-    let hit = || toggle.map(|(key, _)| FeedHit::Step(key.clone()));
+    let hit = || -> LineHits {
+        toggle
+            .map(|(key, _)| (None, FeedHit::Step(key.clone())))
+            .into_iter()
+            .collect()
+    };
     for segment in words {
+        if let Segment::Attachment(AttachmentView::Image(blob)) = segment
+            && takes_thumbnail(blob, thumbnails)
+        {
+            flush(&mut run, &mut out);
+            let chip = std::slice::from_ref(segment);
+            out.extend(
+                segment_rows(chip, room, theme.text(), theme)
+                    .into_iter()
+                    .map(|(line, shape)| (line, chip_hits(shape.opening.clone()), shape)),
+            );
+            out.extend(
+                thumbnail_lines(blob, 0)
+                    .into_iter()
+                    .map(|(line, hits)| (line, hits, RowShape::default())),
+            );
+            continue;
+        }
         let Segment::Attachment(AttachmentView::Text { text: pasted, .. }) = segment else {
             run.push(segment.clone());
             continue;
@@ -659,7 +725,7 @@ pub fn pending_prompt(
     theme: Theme,
 ) -> Vec<Line<'static>> {
     let mut drawn = Drawn::default();
-    prompt_block(&mut drawn, words, when, None, width, theme);
+    prompt_block(&mut drawn, words, when, None, false, width, theme);
     drawn.lines
 }
 
@@ -721,23 +787,48 @@ fn tinted(line: Line<'static>, surface: Style, width: usize) -> Line<'static> {
 }
 
 /// The agent's text, in the reading ink.
-fn prose(drawn: &mut Drawn, words: &[Segment], streaming: bool, width: usize, theme: Theme) {
-    let source: String = words
-        .iter()
-        .map(|segment| match segment {
-            Segment::Text(text) => text.clone(),
-            Segment::Attachment(view) => chip(view),
-        })
-        .collect();
-    let source = if streaming {
-        crate::markdown::streaming_source(&source)
-    } else {
-        source.as_str()
-    };
-    let lines = markdown_linked(source, width.saturating_sub(2), theme);
-    if lines.is_empty() {
+///
+/// An image or file stands on its own line, where a click can find it,
+/// between the words around it.
+fn prose(
+    drawn: &mut Drawn,
+    words: &[Segment],
+    streaming: bool,
+    facts: &RowFacts,
+    width: usize,
+    theme: Theme,
+) {
+    let before = drawn.lines.len();
+    let mut source = String::new();
+    for segment in words {
+        match segment {
+            Segment::Text(text) => source.push_str(text),
+            Segment::Attachment(view) => match rows::opens(view) {
+                Some(blob) => {
+                    prose_words(drawn, &std::mem::take(&mut source), false, width, theme);
+                    attachment_line(drawn, view, blob, facts, width, theme);
+                }
+                None => source.push_str(&chip(view)),
+            },
+        }
+    }
+    prose_words(drawn, &source, streaming, width, theme);
+    if drawn.lines.len() > before {
+        drawn.blank();
+    }
+}
+
+/// A stretch of the agent's words, as markdown.
+fn prose_words(drawn: &mut Drawn, source: &str, streaming: bool, width: usize, theme: Theme) {
+    if source.trim().is_empty() {
         return;
     }
+    let source = if streaming {
+        crate::markdown::streaming_source(source)
+    } else {
+        source
+    };
+    let lines = markdown_linked(source, width.saturating_sub(2), theme);
     let copied = markdown_copy(source, width.saturating_sub(2), theme);
     for ((line, links), (from, join, exact)) in lines.into_iter().zip(copied) {
         drawn.copy.insert(
@@ -761,7 +852,32 @@ fn prose(drawn: &mut Drawn, words: &[Segment], streaming: bool, width: usize, th
                 .collect(),
         );
     }
-    drawn.blank();
+}
+
+/// An attachment in the agent's words: its chip and, for an image the
+/// terminal can draw, the room for its thumbnail.
+fn attachment_line(
+    drawn: &mut Drawn,
+    view: &AttachmentView,
+    blob: &BlobRef,
+    facts: &RowFacts,
+    width: usize,
+    theme: Theme,
+) {
+    let shown = text::ellipsize(&chip(view), width.saturating_sub(2 + rows::INDENT).max(1));
+    let to = rows::INDENT + text::str_width(&shown);
+    let line = Line::from(vec![
+        Span::raw(" ".repeat(rows::INDENT)),
+        Span::styled(shown, rows::chip_style(view, theme)),
+    ]);
+    drawn.lines.push(line);
+    drawn.hits.push(vec![(
+        Some((rows::INDENT, to)),
+        FeedHit::Attachment(blob.clone()),
+    )]);
+    if matches!(view, AttachmentView::Image(_)) && takes_thumbnail(blob, facts.thumbnails) {
+        drawn.thumbnail(blob, rows::INDENT);
+    }
 }
 
 /// A plan, as the feed reads it: the title and body the view lifted.
@@ -857,6 +973,7 @@ fn plan_lines(
             drawn,
             &[Segment::Text(plan.body.to_owned())],
             plan.writing,
+            &RowFacts::default(),
             width,
             theme,
         );
@@ -1379,9 +1496,20 @@ fn step(
     if !meta.is_empty() {
         push(&mut line, format!(" · {meta}"), theme.faint(), width);
     }
-    let hits = vec![(None, FeedHit::Step(row.id.clone()))];
+    let image = match &row.kind {
+        RowKind::Image { image, .. } => image.as_ref(),
+        _ => None,
+    };
+    // An image's line opens the image; it has no detail of its own to show.
+    let hits = match image {
+        Some(blob) => vec![(None, FeedHit::Attachment(blob.clone()))],
+        None => vec![(None, FeedHit::Step(row.id.clone()))],
+    };
     drawn.lines.push(line);
     drawn.hits.push(hits);
+    if let Some(blob) = image.filter(|blob| takes_thumbnail(blob, facts.thumbnails)) {
+        drawn.thumbnail(blob, DETAIL);
+    }
     // A refusal's note, what the person told the agent instead, under it.
     if let Some(note) = row
         .decision

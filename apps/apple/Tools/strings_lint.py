@@ -142,13 +142,18 @@ GENERATED = (
 )
 
 
+# The Mac app's screens. Its copy is not catalogued: the catalogues here are
+# the phone's, and `apps/apple/Mac/Sources` is outside this lint too.
+MAC_ONLY = Path("apps/apple/Packages/AmuxMacScreens")
+
+
 def swift_sources(root):
     roots = [root / "apps/apple/Amux/Sources", root / "apps/apple/Amux/Debug",
              *sorted((root / "apps/apple/Packages").glob("*/Sources"))]
-    generated = [root / path for path in GENERATED]
+    skipped = [root / path for path in GENERATED] + [root / MAC_ONLY]
     return sorted(
         path for directory in roots for path in directory.rglob("*.swift")
-        if not any(place == path or place in path.parents for place in generated))
+        if not any(place == path or place in path.parents for place in skipped))
 
 
 def debug_source(path):

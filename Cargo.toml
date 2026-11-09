@@ -158,7 +158,7 @@ syntect = { version = "5.3", default-features = false, features = ["default-synt
 shell-words = "1"
 bytes = "1"
 qrcode = { version = "0.14", default-features = false }
-rusqlite = { version = "0.40.2", default-features = false, features = ["hooks", "cache"] }
+rusqlite = { version = "0.41.1", default-features = false, features = ["hooks", "cache"] }
 if-addrs = "0.15"
 # A screen model of an attached agent's terminal, so leaving it for the
 # fleet and coming back repaints the same process where it was.

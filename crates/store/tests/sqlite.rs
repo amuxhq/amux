@@ -264,7 +264,7 @@ fn a_passive_checkpoint_that_cannot_take_the_checkpoint_lock_fails_as_busy() {
     // lock and then waits on it.
     let writer = Connection::open(&path).unwrap();
     writer.execute_batch("BEGIN IMMEDIATE").unwrap();
-    let checkpointer = Connection::open(&path).unwrap();
+    let mut checkpointer = Connection::open(&path).unwrap();
     checkpointer
         .busy_handler(Some(while_the_lock_is_held))
         .unwrap();

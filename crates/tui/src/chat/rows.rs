@@ -2,7 +2,7 @@
 //! and ` · ` meta; rows that open show their detail below when the reader
 //! expands them. Wording lives here; the facts come from `ui_view::Row`.
 
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ui_view::{AttachmentView, CallPhase, ExploreVerb, LineKind, PatchHead, Row, RowKind, Segment};
 use wire::{BoundaryKind, EnvelopeKind, SendState};
@@ -11,7 +11,7 @@ use crate::text::{self, first_line, push};
 use crate::theme::Theme;
 
 /// Where body text starts.
-const INDENT: usize = 4;
+pub(crate) const INDENT: usize = 4;
 /// Lines of an opened body before it is cut with a count.
 pub const OPEN_LINES: usize = 40;
 
@@ -30,6 +30,8 @@ pub struct RowFacts {
     pub patch: Option<PatchHead>,
     /// The leader key, for the keys a row names.
     pub leader: char,
+    /// This terminal draws images, so an image leaves room for one.
+    pub thumbnails: bool,
 }
 
 impl Default for RowFacts {
@@ -37,6 +39,7 @@ impl Default for RowFacts {
         RowFacts {
             patch: None,
             leader: 'a',
+            thumbnails: false,
         }
     }
 }
@@ -203,6 +206,25 @@ pub fn chip(view: &AttachmentView) -> String {
     }
 }
 
+/// The chips on one line that a click opens, by their columns.
+pub(crate) type OpeningChips = Vec<(usize, usize, wire::BlobRef)>;
+
+/// An attachment that can be opened: an image or a file.
+pub(crate) fn opens(view: &AttachmentView) -> Option<&wire::BlobRef> {
+    match view {
+        AttachmentView::Image(blob) | AttachmentView::File(blob) => Some(blob),
+        _ => None,
+    }
+}
+
+/// A chip's look: underlined like a link when a click opens it.
+pub(crate) fn chip_style(view: &AttachmentView, theme: Theme) -> Style {
+    match opens(view) {
+        Some(_) => theme.chip_raised().add_modifier(Modifier::UNDERLINED),
+        None => theme.chip_raised(),
+    }
+}
+
 /// Text with chips at their places, wrapped at `width` in `style`.
 pub fn segment_lines(
     segments: &[Segment],
@@ -210,7 +232,22 @@ pub fn segment_lines(
     style: Style,
     theme: Theme,
 ) -> Vec<Line<'static>> {
+    segment_lines_opening(segments, width, style, theme)
+        .into_iter()
+        .map(|(line, _)| line)
+        .collect()
+}
+
+/// [`segment_lines`], each line with the chips on it that a click opens, by
+/// column.
+pub(crate) fn segment_lines_opening(
+    segments: &[Segment],
+    width: usize,
+    style: Style,
+    theme: Theme,
+) -> Vec<(Line<'static>, OpeningChips)> {
     let mut lines: Vec<Line<'static>> = vec![Line::default()];
+    let mut opening: Vec<OpeningChips> = vec![Vec::new()];
     let width = width.max(1);
     for segment in segments {
         match segment {
@@ -218,6 +255,7 @@ pub fn segment_lines(
                 for (i, part) in text.split('\n').enumerate() {
                     if i > 0 {
                         lines.push(Line::default());
+                        opening.push(Vec::new());
                     }
                     // Words after a chip fill what is left of its line, then
                     // wrap at the message's whole width.
@@ -226,6 +264,7 @@ pub fn segment_lines(
                     for (j, piece) in wrapped.into_iter().enumerate() {
                         if j > 0 {
                             lines.push(Line::default());
+                            opening.push(Vec::new());
                         }
                         if let Some(last) = lines.last_mut() {
                             last.spans.push(Span::styled(piece, style));
@@ -238,21 +277,26 @@ pub fn segment_lines(
                 let used = lines.last().map_or(0, text::line_width);
                 if used > 0 && used + text::str_width(&chip) + 1 > width {
                     lines.push(Line::default());
+                    opening.push(Vec::new());
                 } else if used > 0
                     && let Some(last) = lines.last_mut()
                 {
                     last.spans.push(Span::styled(" ", style));
                 }
                 if let Some(last) = lines.last_mut() {
-                    last.spans.push(Span::styled(
-                        text::ellipsize(&chip, width),
-                        theme.chip_raised(),
-                    ));
+                    let from = text::line_width(last);
+                    let shown = text::ellipsize(&chip, width);
+                    let to = from + text::str_width(&shown);
+                    last.spans
+                        .push(Span::styled(shown, chip_style(view, theme)));
+                    if let (Some(blob), Some(hits)) = (opens(view), opening.last_mut()) {
+                        hits.push((from, to, blob.clone()));
+                    }
                 }
             }
         }
     }
-    lines
+    lines.into_iter().zip(opening).collect()
 }
 
 pub(crate) fn explore_verb(verb: ExploreVerb) -> &'static str {

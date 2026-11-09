@@ -567,6 +567,37 @@ async fn attachment_bytes_are_fetched_lazily_once_and_redraw_their_row() {
 }
 
 #[tokio::test]
+async fn opening_an_attachment_still_downloading_waits_for_that_download() {
+    let (client, mut calls) = runtime();
+    let open = tokio::spawn(Session::open(
+        client,
+        agent(KIND),
+        40,
+        CAP,
+        ManualClock::new(0),
+    ));
+    let (_, feed) = calls.subscribe_session().await;
+    feed.send(snapshot(KIND, 1, &[]));
+    feed.send(ev(image_item(KIND, 1, 1, b"hash-1")));
+    feed.send(caught_up(1));
+    let session = open.await.unwrap().unwrap();
+    session.take_changes();
+    calls.none().await;
+    assert_eq!(session.blob(b"hash-1"), None, "starts the download");
+    let (_, reply) = calls.get_blob().await;
+    let (bytes, ()) = tokio::join!(session.attachment(b"hash-1"), async {
+        calls.none().await;
+        reply
+            .send(Ok(GetBlobResponse {
+                bytes: b"png".to_vec(),
+            }))
+            .ok();
+    });
+    assert_eq!(&*bytes.unwrap(), b"png");
+    calls.none().await;
+}
+
+#[tokio::test]
 async fn the_trace_is_bounded_and_replays_from_its_starting_state() {
     let clock = ManualClock::new(0);
     let (session, _calls, feed) = open_caught_up(&clock, 1).await;

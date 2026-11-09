@@ -16,6 +16,7 @@ pub mod home;
 mod hosts;
 pub(crate) mod markdown;
 pub mod onboarding;
+mod open;
 pub(crate) mod panel;
 pub mod qr;
 pub mod report;

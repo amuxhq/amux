@@ -38,6 +38,8 @@ public protocol ChatSource: AnyObject, Sendable {
     func pageOlder(_ rows: UInt32) async -> PageOutcome?
     func putBlob(_ data: Data, name: String, mime: String) async -> Result<BlobRef, RuntimeFailure>
     func blob(_ hash: [UInt8]) -> Data?
+    func blobFailed(_ hash: [UInt8]) -> Bool
+    func fetchBlob(_ hash: [UInt8])
     func review(_ comparison: Comparison) async -> Result<FrozenReview, RuntimeFailure>
     /// Fetches the files changed for `comparison`; the overview lists them
     /// from then on.
@@ -63,6 +65,9 @@ extension ChatSource {
     /// A source that keeps no drafts opens with none and forgets what is
     /// typed.
     public func keptDraft() -> Draft? { nil }
+    /// A source whose attachments are all at hand never fails to fetch one.
+    public func blobFailed(_ hash: [UInt8]) -> Bool { false }
+    public func fetchBlob(_ hash: [UInt8]) {}
     public func keep(_ draft: Draft) {}
 }
 
@@ -70,6 +75,21 @@ extension ChatSource {
 public enum ChatAsk: Equatable, Sendable {
     case settings
     case rename
+}
+
+extension Row {
+    /// It shows an attachment whose bytes it may be waiting on.
+    fileprivate var holdsAttachment: Bool {
+        let isAttachment: (Segment) -> Bool = {
+            if case .attachment = $0 { true } else { false }
+        }
+        return switch kind {
+        case .image: true
+        case .prompt(let text, _): text.contains(where: isAttachment)
+        case .prose(let text, _, _): text.contains(where: isAttachment)
+        default: false
+        }
+    }
 }
 
 /// One row of the list, held by its key. A cell observes only its own row,
@@ -83,6 +103,9 @@ public final class RowCell: Identifiable {
     /// it with the revision it last laid out to find the rows to measure
     /// again, so a row read twice before the list looks is not missed.
     @ObservationIgnored public fileprivate(set) var revision: Int
+    /// Moves when an attachment this row shows lands or fails. Its own
+    /// value, because writing an equal row notifies no one.
+    public fileprivate(set) var attachmentRevision = 0
 
     init(id: String, row: Row?, revision: Int) {
         self.id = id
@@ -144,6 +167,10 @@ public final class ChatModel {
     /// redraws itself on its row, but the list decides its height and
     /// measures the rows stamped since it last laid out.
     public private(set) var revision = 0
+    /// The attachment showing in the system's preview, as a file.
+    public var opened: URL?
+    /// The attachment asked to open whose bytes have not landed.
+    @ObservationIgnored private var opening: BlobRef?
     /// Whether the chat holds no rows: what an empty chat's notices read,
     /// without watching the sequence.
     public private(set) var empty = true
@@ -242,6 +269,8 @@ public final class ChatModel {
         }
         fill(delta.rows)
         show(delta)
+        // A row changes when an attachment it shows lands or fails.
+        if !delta.rows.isEmpty { openIfLanded() }
     }
 
     /// The cell for a key, its row read now if it never was.
@@ -319,6 +348,49 @@ public final class ChatModel {
     /// fetch, and the row changes when they land.
     public func bytes(of blob: BlobRef) -> Data? {
         source.blob(blob.hash)
+    }
+
+    /// Fetching an attachment's bytes failed.
+    public func fetchFailed(of blob: BlobRef) -> Bool {
+        source.blobFailed(blob.hash)
+    }
+
+    /// Opens an attachment in the system's preview, as soon as its bytes are
+    /// here: after a failure this fetches it again.
+    public func open(attachment blob: BlobRef) {
+        if source.blobFailed(blob.hash) { source.fetchBlob(blob.hash) }
+        opening = blob
+        openIfLanded()
+    }
+
+    private func openIfLanded() {
+        guard let blob = opening else { return }
+        if let data = source.blob(blob.hash) {
+            opening = nil
+            opened = Self.saved(data, as: blob)
+        } else if source.blobFailed(blob.hash) {
+            opening = nil
+        }
+    }
+
+    /// The preview reads a file, and chooses how by its extension, so the
+    /// bytes are written under the attachment's own name, in a folder of
+    /// their own so that two files with one name do not meet.
+    private static func saved(_ data: Data, as blob: BlobRef) -> URL? {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("attachments", isDirectory: true)
+            .appendingPathComponent(
+                blob.hash.map { String(format: "%02x", $0) }.joined(), isDirectory: true)
+        let last = blob.name.split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init)
+        let name = (last ?? "").drop { $0 == "." }
+        let file = folder.appendingPathComponent(name.isEmpty ? "attachment" : String(name))
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try data.write(to: file, options: .atomic)
+            return file
+        } catch {
+            return nil
+        }
     }
 
     /// The window moved at its edges: keys new above the newest, a page
@@ -413,7 +485,12 @@ public final class ChatModel {
         for row in rows {
             guard places[row.id] != nil else { continue }
             guard let cell = cells[row.id] else { continue }
-            guard cell.row != row else { continue }
+            guard cell.row != row else {
+                // An attachment landing or failing changes nothing a row
+                // holds: being handed the same row again is how it is told.
+                if row.holdsAttachment { cell.attachmentRevision += 1 }
+                continue
+            }
             cell.row = row
             cell.revision = next
             moved = true

@@ -85,10 +85,10 @@ enum ComponentCatalog {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                     ChatRowView(
                         row: row, expanded: expanded,
-                        rail: RailJoin.of(row, next: index + 1 < rows.count ? rows[index + 1] : nil),
-                        bytes: CatalogFixtures.bytes)
+                        rail: RailJoin.of(row, next: index + 1 < rows.count ? rows[index + 1] : nil))
                 }
             }
+            .environment(\.attachmentAccess, CatalogFixtures.access)
         }
     }
 
@@ -102,7 +102,7 @@ enum ComponentCatalog {
         }
         return [
             row("prompt", r("p1", 1, .prompt(text: [.text("Collapse the pairing errors onto one string.")], steered: false))),
-            row("prompt-attachments", height: 190, r("p2", 2, .prompt(
+            row("prompt-attachments", height: 390, r("p2", 2, .prompt(
                 text: [.text("Here is the screen and the log."), .attachment(.image(F.photo)),
                        .attachment(.file(F.log)), .attachment(.text(name: "Pasted text", lines: 240, text: ""))],
                 steered: false))),
@@ -1066,6 +1066,13 @@ enum CatalogFixtures {
     static let images: [[UInt8]: Data] = [photo.hash: photoData, Array("screen.jpg".utf8): photoData]
 
     static func bytes(_ blob: BlobRef) -> Data? { images[blob.hash] }
+
+    /// The rows' attachments. Their pictures are made here, ahead of the
+    /// first drawing, so a snapshot never catches a row before its picture.
+    static let access: AttachmentAccess = {
+        for (hash, data) in images { _ = Thumbnail.prepare(data, hash: hash) }
+        return AttachmentAccess(bytes: bytes)
+    }()
 
     static let subject = ChatSubject(
         name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",

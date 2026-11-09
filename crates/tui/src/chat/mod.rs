@@ -14,6 +14,7 @@ pub mod layout;
 pub mod pane;
 pub mod review;
 pub mod rows;
+pub mod thumbs;
 
 use std::collections::{HashMap, HashSet};
 
@@ -122,6 +123,10 @@ pub enum ChatEffect {
     ReviewAt(String),
     /// Open a link from the agent's text in the person's browser.
     OpenUrl(String),
+    /// Open an attachment in the app the system picks for it.
+    OpenAttachment(wire::BlobRef),
+    /// Fetch an attachment again after a failure.
+    RetryBlob(Vec<u8>),
     /// Back to home: the header's [Home].
     Home,
     /// A key a click stands for: a hint, the composer's mode. The app
@@ -263,6 +268,10 @@ pub struct ChatView {
     /// How this machine reaches the agent's host, kept current by the app
     /// from the fleet.
     pub reach: Reach,
+    /// The feed's images, on terminals that can draw them.
+    pub thumbs: thumbs::Thumbs,
+    /// The app is drawing something of its own over the chat this frame.
+    pub covered: bool,
     /// The leader key, for the keys the chat names.
     pub leader: char,
     /// Runs of steps the reader opened, by their ids.
@@ -457,6 +466,8 @@ impl ChatView {
             picker: None,
             flyover: crate::setup::Flyover::default(),
             feed_origin: (0, 0),
+            thumbs: thumbs::Thumbs::new(crate::terminal::image_picker()),
+            covered: false,
             epoch: 0,
             opened_at_ms: now_ms,
             ask_drawn: None,
@@ -484,6 +495,7 @@ impl ChatView {
             tools: self.tools,
             asking: self.asking.as_ref(),
             tail: &self.feed_tail,
+            thumbnails: self.thumbs.enabled() && self.feed.0 >= thumbs::LEAST_FEED_WIDTH,
         }
     }
 
@@ -1675,6 +1687,13 @@ impl ChatView {
         }
         match hit {
             FeedHit::Link(url) => return vec![ChatEffect::OpenUrl(url)],
+            FeedHit::Attachment(blob) => return vec![ChatEffect::OpenAttachment(blob)],
+            FeedHit::Thumbnail { blob, .. } => {
+                return vec![match state.blob(&blob.hash) {
+                    ui_state::BlobStatus::Failed(_) => ChatEffect::RetryBlob(blob.hash),
+                    _ => ChatEffect::OpenAttachment(blob),
+                }];
+            }
             FeedHit::Run(member) => ui_view::toggle_run(state, &member, &mut self.open_runs),
             FeedHit::Step(key) => {
                 // A run opens from any member and closes as a whole.
@@ -1740,6 +1759,23 @@ impl ChatView {
             };
         }
         self.focus = Some(key);
+    }
+
+    /// The attachment `<leader> o` opens: the focused row's first, unless
+    /// that row has something of its own to unfold.
+    pub fn focused_attachment(&self) -> Option<ChatEffect> {
+        let focus = self.focus.as_ref()?;
+        let block = self.laid.blocks.iter().find(|block| &block.key == focus)?;
+        let hits = || block.hits.iter().flatten().map(|(_, hit)| hit);
+        if hits().any(|hit| matches!(hit, FeedHit::Step(_))) {
+            return None;
+        }
+        hits().find_map(|hit| match hit {
+            FeedHit::Attachment(blob) | FeedHit::Thumbnail { blob, .. } => {
+                Some(ChatEffect::OpenAttachment(blob.clone()))
+            }
+            _ => None,
+        })
     }
 
     /// `<leader> o`: a folded run opens, an open run's first step folds it
@@ -2468,6 +2504,9 @@ impl ChatView {
         self.feed_origin = (area.x, area.y + top.len() as u16);
         let feed_top = top.len();
         let mut lines = top;
+        // The feed lines a thumbnail may be drawn on: the pinned prompt and
+        // the jump control sit over the rest.
+        let mut thumb_lines = 0..feed_height;
         self.pin_spot = None;
         self.jump_spot = None;
         self.panel_spots.clear();
@@ -2513,6 +2552,7 @@ impl ChatView {
             text::drop_cut_padding(&mut feed);
             if let Some((pinned, key)) = pinned(state, &laid, feed_height, feed_width, theme) {
                 let rows = pinned.len();
+                thumb_lines.start = rows;
                 // The blank line under the block is not the pin's to click.
                 let block_rows = rows.saturating_sub(1);
                 for (at, line) in pinned.into_iter().enumerate() {
@@ -2566,6 +2606,7 @@ impl ChatView {
                 let (control, from) = jump_control(state, width, theme);
                 let control_width = text::line_width(&control);
                 feed[last] = text::overlay(&Line::default(), from, control, width);
+                thumb_lines.end = last;
                 text::drop_cut_padding(&mut feed[..last]);
                 self.jump_spot = Some((
                     area.y + (feed_top + last) as u16,
@@ -2642,6 +2683,25 @@ impl ChatView {
         }
         lines.extend(bottom);
         paint.render_widget(Paragraph::new(lines), area);
+        let feed_rect = Rect {
+            x: area.x,
+            y: area.y + feed_top as u16,
+            width: feed_width as u16,
+            height: feed_height as u16,
+        };
+        let covered = self.covered
+            || self.panel.is_some()
+            || self.picker.is_some()
+            || self.stop_ask.is_some();
+        self.thumbs.draw(
+            paint,
+            feed_rect,
+            &self.laid.hits,
+            thumb_lines,
+            |hash| state.blob(hash),
+            covered,
+            theme,
+        );
         if side {
             // Beside the chat from the feed's first line down to the line
             // above the keys; over the feed alone when it lies on top.

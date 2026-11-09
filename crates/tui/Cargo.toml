@@ -29,6 +29,9 @@ crossterm = { workspace = true, features = ["event-stream"] }
 futures-util = { workspace = true }
 png = { workspace = true }
 ratatui = { workspace = true }
+ratatui-image = { workspace = true }
+image = { workspace = true }
+tempfile = { workspace = true }
 prost = { workspace = true }
 pulldown-cmark = { workspace = true }
 qrcode = { workspace = true }
@@ -54,7 +57,6 @@ async-trait = { workspace = true }
 interpret = { workspace = true }
 prost = { workspace = true }
 provider-fakes = { workspace = true }
-tempfile = { workspace = true }
 testnet = { workspace = true }
 
 [[test]]

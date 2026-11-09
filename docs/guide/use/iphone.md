@@ -48,6 +48,7 @@ Tap an agent to open its chat.
   button that interrupts the turn. The agent stays ready for your next
   message.
 - **Attachments:** tap **+** beside the message box to add a photo or a file.
+  Images in the chat show a preview, and tapping an image or file opens it.
 - **Agent settings:** the model chip under the message box changes the
   agent's model, effort, permission or mode, wherever that agent allows it.
 - **The overview:** shows the agent's tasks, its background jobs and the

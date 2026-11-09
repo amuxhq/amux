@@ -1,52 +1,70 @@
 {
-  "about": "The storybook both clients are held to: every whole screen a person reaches, in each state that changes how the screen is put together. One piece in one variant (a row kind, an ask card, a message inside an otherwise identical screen) is a component example instead. A story either client lacks says why. The terminal's storybook is crates/shot/src/stories.rs; the phone's stories are examples of apps/apple/Amux/Debug/ComponentCatalog.swift, compared by its component snapshots. Each side's tests check its storybook against this list.",
+  "about": "The storybook the clients are held to: every whole screen a person reaches, in each state that changes how the screen is put together. One piece in one variant (a row kind, an ask card, a message inside an otherwise identical screen) is a component example instead. A story the terminal or the phone lacks says why; the Mac's screens are still being designed, so it lists only the stories it draws. The terminal's storybook is crates/shot/src/stories.rs; the phone's stories are examples of apps/apple/Amux/Debug/ComponentCatalog.swift, compared by its component snapshots; the Mac's are apps/apple/Packages/AmuxMacScreens/Sources/AmuxMacStories/Stories.swift. Each side's tests check its storybook against this list.",
   "stories": [
     {
+      "name": "app.installing",
+      "shows": "amux being installed on a Mac that has none.",
+      "clients": ["mac"],
+      "why": "Only the Mac app installs amux and attaches to it: the terminal is amux, and the phone carries its own."
+    },
+    {
+      "name": "app.connecting",
+      "shows": "Attaching to the amux daemon.",
+      "clients": ["mac"],
+      "why": "Only the Mac app installs amux and attaches to it: the terminal is amux, and the phone carries its own."
+    },
+    {
+      "name": "app.not-running",
+      "shows": "The daemon could not be reached: why, and Try again.",
+      "clients": ["mac"],
+      "why": "Only the Mac app installs amux and attaches to it: the terminal is amux, and the phone carries its own."
+    },
+    {
       "name": "onboarding.pair",
-      "shows": "The first screen of a first run: this machine's name, the QR code that pairs the phone scanning it beside the PIN to enter instead (on a usual 80 by 24 terminal, the code of the page that gets amux on the phone), and the analytics notice.",
-      "clients": ["terminal"],
+      "shows": "The first screen of a first run: this machine's name and the QR code that pairs the phone scanning it beside the PIN to enter instead. On a usual 80 by 24 terminal the code is the page that gets amux on the phone, and the terminal adds the analytics notice.",
+      "clients": ["terminal", "mac"],
       "why": "The phone's first run is its own: it pairs from the machine's screen and asks nothing of the machine."
     },
     {
       "name": "onboarding.pair-rename",
       "shows": "This machine's name being changed on the pairing screen.",
-      "clients": ["terminal"],
+      "clients": ["terminal", "mac"],
       "why": "The phone's first run is its own: it pairs from the machine's screen and asks nothing of the machine."
     },
     {
       "name": "onboarding.pairing",
       "shows": "The phone proved the PIN and is confirming the pairing.",
-      "clients": ["terminal"],
+      "clients": ["terminal", "mac"],
       "why": "The phone's first run is its own: it pairs from the machine's screen and asks nothing of the machine."
     },
     {
       "name": "onboarding.paired",
       "shows": "Paired: keeping the machine connected, starting at login and staying awake on power, both on.",
-      "clients": ["terminal"],
+      "clients": ["terminal", "mac"],
       "why": "The phone's first run is its own: it pairs from the machine's screen and asks nothing of the machine."
     },
     {
       "name": "onboarding.sign-in",
       "shows": "Signing in to reach the machine from anywhere, with the phone just paired ticked to be signed in too.",
-      "clients": ["terminal"],
+      "clients": ["terminal", "mac"],
       "why": "The phone's first run is its own: it pairs from the machine's screen and asks nothing of the machine."
     },
     {
       "name": "onboarding.sign-in-waiting",
-      "shows": "Waiting on the browser's approval page: the code to check, and the link, since the browser did not open.",
-      "clients": ["terminal"],
+      "shows": "Waiting on the browser's approval page. The terminal also gives the code to check and the link, since the browser did not open.",
+      "clients": ["terminal", "mac"],
       "why": "The phone's first run is its own: it pairs from the machine's screen and asks nothing of the machine."
     },
     {
       "name": "onboarding.sign-in-offer",
       "shows": "The phone signed in first and offers its account: sign in as its email.",
-      "clients": ["terminal"],
+      "clients": ["terminal", "mac"],
       "why": "The phone's first run is its own: it pairs from the machine's screen and asks nothing of the machine."
     },
     {
       "name": "onboarding.repositories",
       "shows": "The folders Claude Code and Codex ran in lately, offered as repositories, one unticked.",
-      "clients": ["terminal"],
+      "clients": ["terminal", "mac"],
       "why": "The phone's first run is its own: it pairs from the machine's screen and asks nothing of the machine."
     },
     {
@@ -58,13 +76,13 @@
     {
       "name": "onboarding.improve",
       "shows": "Usage counts and automatic reports, with what usage counts never carry.",
-      "clients": ["terminal"],
+      "clients": ["terminal", "mac"],
       "why": "The phone's first run is its own: it pairs from the machine's screen and asks nothing of the machine."
     },
     {
       "name": "onboarding.first-agent",
       "shows": "Waiting for an agent started from the phone.",
-      "clients": ["terminal"],
+      "clients": ["terminal", "mac"],
       "why": "The phone's first run is its own: it pairs from the machine's screen and asks nothing of the machine."
     },
     {
@@ -98,14 +116,14 @@
     },
     {
       "name": "fleet.no-agents",
-      "shows": "A phone paired with a machine that runs no agents yet.",
-      "clients": ["phone"],
+      "shows": "A client paired with a machine that runs no agents yet.",
+      "clients": ["phone", "mac"],
       "why": "The terminal's agent list reads the same with no agents whether or not machines are paired, as fleet.first-run shows."
     },
     {
       "name": "fleet.busy",
       "shows": "A day's agents on several machines, one of them away: agents that need you first, then working, idle, a family, and the exited ones.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "fleet.filter",
@@ -144,7 +162,7 @@
     {
       "name": "fleet.finish-setup",
       "shows": "The agent list after onboarding was skipped through: a quiet offer to finish setting up, with the steps left.",
-      "clients": ["terminal"],
+      "clients": ["terminal", "mac"],
       "why": "The phone has no setup steps left to finish once it is paired."
     },
     {
@@ -396,14 +414,14 @@
     },
     {
       "name": "settings.machine",
-      "shows": "The terminal's settings: this machine's name, starting at login, keeping awake, repositories, where chats open, usage counts and reports, and the account on a Pro trial.",
-      "clients": ["terminal"],
+      "shows": "A machine's settings: its name, starting at login, keeping awake, repositories, usage counts and reports, and the account signed in. The terminal also says where chats open, and that the account is on a Pro trial.",
+      "clients": ["terminal", "mac"],
       "why": "The phone does not change a machine's settings; it has settings of its own."
     },
     {
       "name": "settings.machine-signed-out",
-      "shows": "The terminal's settings with the account not signed in and the account row chosen.",
-      "clients": ["terminal"],
+      "shows": "A machine's settings with the account not signed in; on the terminal the account row is chosen.",
+      "clients": ["terminal", "mac"],
       "why": "The phone does not change a machine's settings; it has settings of its own."
     },
     {

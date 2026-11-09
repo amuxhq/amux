@@ -674,7 +674,7 @@ queued, with its host away, exited, signed out, with the overview open and with 
 review page; and reporting a problem. One piece in one variant, such as a row kind, an ask card or a message
 inside an otherwise identical screen, is a component golden instead (above).
 
-The list of stories is `tests/stories.json`, which the phone's storybook is held to as well: each entry names
+The list of stories is `tests/stories.json`, which the phone's and the Mac's storybooks are held to as well: each entry names
 a story, says what it shows and which clients draw it, and says why when a client has no such screen. The
 terminal's stories are drawn in `crates/shot/src/stories.rs` in the list's order and under its names, and take
 what they show from it; a test fails when the two differ, and another draws every story at every size in both

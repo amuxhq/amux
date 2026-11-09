@@ -9,33 +9,47 @@
 /* Begin PBXBuildFile section */
 		1366EDAC147C92755DDA7632 /* AmuxCore in Frameworks */ = {isa = PBXBuildFile; productRef = BB7D28F0961F4B8152ACC52E /* AmuxCore */; };
 		2AA29F182EE17F3BA30F28E8 /* AmuxValues in Frameworks */ = {isa = PBXBuildFile; productRef = EDF6099D303E94EA79ED9065 /* AmuxValues */; };
-		311D8227D16DB4243E5EFBD6 /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0AFB825A6F633269FB76C4 /* SetupView.swift */; };
+		3758B979E572D9ECE8CF5F67 /* AmuxMacStories in Frameworks */ = {isa = PBXBuildFile; productRef = 4A003AAF384DBE90FB7A3C95 /* AmuxMacStories */; };
 		3B91C043C0933A2A675FB555 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AD0F409077019ED26D1A62A /* AppModel.swift */; };
 		4392C923FBBB70AB383F7070 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35ACFC26A1D58966C680CFB4 /* MainWindow.swift */; };
-		5858A710D52B922B3FE11924 /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0AFB825A6F633269FB76C4 /* SetupView.swift */; };
+		4B2CDB27BE213B97988EF311 /* SettingsWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2562BD49C150F71B56CD979B /* SettingsWindow.swift */; };
+		4E6FFBCE4B0040245C2042FA /* AmuxMacStories in Frameworks */ = {isa = PBXBuildFile; productRef = 19F1801ED0469DAFC4255A3D /* AmuxMacStories */; };
+		748BF46B286856646B0449F8 /* SetupWalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7C00CABFF413D47B11818BC /* SetupWalk.swift */; };
 		882195E368B9D757F25FE602 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35ACFC26A1D58966C680CFB4 /* MainWindow.swift */; };
 		8B3E1B675CE87AB02FD5AD6A /* Setup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 010C7AFBB1A5638DA828D47A /* Setup.swift */; };
+		9086C8CAD17CB7FE5E2200DC /* StoryList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 823B6AB1C3DAE4F5B02FBFF6 /* StoryList.swift */; };
+		9BCEDAAAFE6DCB85B84B0794 /* SettingsWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2562BD49C150F71B56CD979B /* SettingsWindow.swift */; };
+		A43E21BEE71AB152FE3941A6 /* AmuxMacScreens in Frameworks */ = {isa = PBXBuildFile; productRef = 57207651FF3989CB1A0312B1 /* AmuxMacScreens */; };
+		AD169E3D4ECB90B24354606F /* AmuxMacScreens in Frameworks */ = {isa = PBXBuildFile; productRef = BFD9FAA1300DAA573A2CAFE4 /* AmuxMacScreens */; };
 		B1972D9315DD1F5BA784F8BE /* AmuxCore in Frameworks */ = {isa = PBXBuildFile; productRef = C9DF306C58F8962847633A1A /* AmuxCore */; };
-		C44A1BE95204F446473BE52D /* SetupShots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B380285C395244A71F1107C /* SetupShots.swift */; };
+		BA7D6919A2A4CCE6C23223C5 /* Capture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C543ED284151F1A2C46529A /* Capture.swift */; };
 		C4AB5E62EB42518BC1B00D88 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AD0F409077019ED26D1A62A /* AppModel.swift */; };
-		CC96F20CEE2F54865723BE6D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C0AE1DCA415C3CE5AEACB69 /* SettingsView.swift */; };
 		D5D889A5278B8F70810357FE /* AmuxMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA7C9EEC1ABEC000EEAB795C /* AmuxMacApp.swift */; };
 		D9262014405B10045DFEE1DD /* AmuxValues in Frameworks */ = {isa = PBXBuildFile; productRef = 1D93496E06294471E1E9ECB3 /* AmuxValues */; };
-		DCA2BBE468CA7EB190BD8683 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C0AE1DCA415C3CE5AEACB69 /* SettingsView.swift */; };
+		DB197E0899D97892ABF18131 /* AmuxMacScreens in Frameworks */ = {isa = PBXBuildFile; productRef = AD8C1C6BEEEE9B322B265EE1 /* AmuxMacScreens */; };
+		E3D4F2770E71A2FCF412C8EE /* Stage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AFF965464C9199F7E71954C /* Stage.swift */; };
 		E769F0244255E2ECDF2B38EF /* Setup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 010C7AFBB1A5638DA828D47A /* Setup.swift */; };
+		EBBCD348989A3A81D7F0B3FE /* Viewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F7900FD21808546122BEDB3 /* Viewer.swift */; };
+		F935F57DEBB222CF74FF20CA /* Storybook.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6361E231B9F50C6C65E2E69 /* Storybook.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		010C7AFBB1A5638DA828D47A /* Setup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Setup.swift; sourceTree = "<group>"; };
-		0B380285C395244A71F1107C /* SetupShots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupShots.swift; sourceTree = "<group>"; };
 		1AD0F409077019ED26D1A62A /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		1AFF965464C9199F7E71954C /* Stage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stage.swift; sourceTree = "<group>"; };
 		1F306E903C196FD15A1A3A51 /* AmuxCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AmuxCore; path = ../Packages/AmuxCore; sourceTree = SOURCE_ROOT; };
+		2562BD49C150F71B56CD979B /* SettingsWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindow.swift; sourceTree = "<group>"; };
 		35ACFC26A1D58966C680CFB4 /* MainWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindow.swift; sourceTree = "<group>"; };
+		54A561A0762D332F6D67E93C /* AmuxMacStorybook.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AmuxMacStorybook.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		823B6AB1C3DAE4F5B02FBFF6 /* StoryList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryList.swift; sourceTree = "<group>"; };
 		893B26D3C405516E646C7E1C /* AmuxMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AmuxMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		8C0AE1DCA415C3CE5AEACB69 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		8C543ED284151F1A2C46529A /* Capture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Capture.swift; sourceTree = "<group>"; };
 		91F9435B6CDA9708F5B833F5 /* AmuxMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AmuxMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		9A0AFB825A6F633269FB76C4 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
+		9F7900FD21808546122BEDB3 /* Viewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Viewer.swift; sourceTree = "<group>"; };
 		AA7C9EEC1ABEC000EEAB795C /* AmuxMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmuxMacApp.swift; sourceTree = "<group>"; };
+		C2B49A41F366B23EA3C5BE8A /* AmuxMacScreens */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AmuxMacScreens; path = ../Packages/AmuxMacScreens; sourceTree = SOURCE_ROOT; };
+		C6361E231B9F50C6C65E2E69 /* Storybook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Storybook.swift; sourceTree = "<group>"; };
+		D7C00CABFF413D47B11818BC /* SetupWalk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupWalk.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -45,6 +59,8 @@
 			files = (
 				1366EDAC147C92755DDA7632 /* AmuxCore in Frameworks */,
 				2AA29F182EE17F3BA30F28E8 /* AmuxValues in Frameworks */,
+				AD169E3D4ECB90B24354606F /* AmuxMacScreens in Frameworks */,
+				4E6FFBCE4B0040245C2042FA /* AmuxMacStories in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -54,6 +70,16 @@
 			files = (
 				B1972D9315DD1F5BA784F8BE /* AmuxCore in Frameworks */,
 				D9262014405B10045DFEE1DD /* AmuxValues in Frameworks */,
+				A43E21BEE71AB152FE3941A6 /* AmuxMacScreens in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C46B78DEED587859E9D52642 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DB197E0899D97892ABF18131 /* AmuxMacScreens in Frameworks */,
+				3758B979E572D9ECE8CF5F67 /* AmuxMacStories in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -66,9 +92,8 @@
 				AA7C9EEC1ABEC000EEAB795C /* AmuxMacApp.swift */,
 				1AD0F409077019ED26D1A62A /* AppModel.swift */,
 				35ACFC26A1D58966C680CFB4 /* MainWindow.swift */,
-				8C0AE1DCA415C3CE5AEACB69 /* SettingsView.swift */,
+				2562BD49C150F71B56CD979B /* SettingsWindow.swift */,
 				010C7AFBB1A5638DA828D47A /* Setup.swift */,
-				9A0AFB825A6F633269FB76C4 /* SetupView.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -76,7 +101,8 @@
 		213596547266C20AD51CA789 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
-				0B380285C395244A71F1107C /* SetupShots.swift */,
+				D7C00CABFF413D47B11818BC /* SetupWalk.swift */,
+				823B6AB1C3DAE4F5B02FBFF6 /* StoryList.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -85,6 +111,7 @@
 			isa = PBXGroup;
 			children = (
 				1F306E903C196FD15A1A3A51 /* AmuxCore */,
+				C2B49A41F366B23EA3C5BE8A /* AmuxMacScreens */,
 			);
 			name = Packages;
 			sourceTree = "<group>";
@@ -94,15 +121,28 @@
 			children = (
 				52CBD71C9434D89E046CD148 /* Packages */,
 				10C11CBF4B7E01F39448FDCD /* Sources */,
+				B7271C1878E810C3B83A5769 /* Storybook */,
 				213596547266C20AD51CA789 /* Tests */,
 				D48A2B106F23CC97DF747193 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		B7271C1878E810C3B83A5769 /* Storybook */ = {
+			isa = PBXGroup;
+			children = (
+				8C543ED284151F1A2C46529A /* Capture.swift */,
+				1AFF965464C9199F7E71954C /* Stage.swift */,
+				C6361E231B9F50C6C65E2E69 /* Storybook.swift */,
+				9F7900FD21808546122BEDB3 /* Viewer.swift */,
+			);
+			path = Storybook;
 			sourceTree = "<group>";
 		};
 		D48A2B106F23CC97DF747193 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				893B26D3C405516E646C7E1C /* AmuxMac.app */,
+				54A561A0762D332F6D67E93C /* AmuxMacStorybook.app */,
 				91F9435B6CDA9708F5B833F5 /* AmuxMacTests.xctest */,
 			);
 			name = Products;
@@ -126,10 +166,32 @@
 			packageProductDependencies = (
 				BB7D28F0961F4B8152ACC52E /* AmuxCore */,
 				EDF6099D303E94EA79ED9065 /* AmuxValues */,
+				BFD9FAA1300DAA573A2CAFE4 /* AmuxMacScreens */,
+				19F1801ED0469DAFC4255A3D /* AmuxMacStories */,
 			);
 			productName = AmuxMacTests;
 			productReference = 91F9435B6CDA9708F5B833F5 /* AmuxMacTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		38944413BEFFA80DBD290978 /* AmuxMacStorybook */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E5AACF7AF68A33E7A7B9E0CA /* Build configuration list for PBXNativeTarget "AmuxMacStorybook" */;
+			buildPhases = (
+				9C8B94D918890F0F41431161 /* Sources */,
+				C46B78DEED587859E9D52642 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AmuxMacStorybook;
+			packageProductDependencies = (
+				AD8C1C6BEEEE9B322B265EE1 /* AmuxMacScreens */,
+				4A003AAF384DBE90FB7A3C95 /* AmuxMacStories */,
+			);
+			productName = AmuxMacStorybook;
+			productReference = 54A561A0762D332F6D67E93C /* AmuxMacStorybook.app */;
+			productType = "com.apple.product-type.application";
 		};
 		C679D837F866E300ECA19762 /* AmuxMac */ = {
 			isa = PBXNativeTarget;
@@ -146,6 +208,7 @@
 			packageProductDependencies = (
 				C9DF306C58F8962847633A1A /* AmuxCore */,
 				1D93496E06294471E1E9ECB3 /* AmuxValues */,
+				57207651FF3989CB1A0312B1 /* AmuxMacScreens */,
 			);
 			productName = AmuxMac;
 			productReference = 893B26D3C405516E646C7E1C /* AmuxMac.app */;
@@ -161,6 +224,9 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					044F255A2A431CC43B18818B = {
+						ProvisioningStyle = Manual;
+					};
+					38944413BEFFA80DBD290978 = {
 						ProvisioningStyle = Manual;
 					};
 					C679D837F866E300ECA19762 = {
@@ -179,6 +245,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				2616DA6F742E98E0CD64643B /* XCLocalSwiftPackageReference "../Packages/AmuxCore" */,
+				8F7B094D644A531D9EBF135B /* XCLocalSwiftPackageReference "../Packages/AmuxMacScreens" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D48A2B106F23CC97DF747193 /* Products */;
@@ -186,6 +253,7 @@
 			projectRoot = "";
 			targets = (
 				C679D837F866E300ECA19762 /* AmuxMac */,
+				38944413BEFFA80DBD290978 /* AmuxMacStorybook */,
 				044F255A2A431CC43B18818B /* AmuxMacTests */,
 			);
 		};
@@ -198,10 +266,21 @@
 			files = (
 				C4AB5E62EB42518BC1B00D88 /* AppModel.swift in Sources */,
 				4392C923FBBB70AB383F7070 /* MainWindow.swift in Sources */,
-				DCA2BBE468CA7EB190BD8683 /* SettingsView.swift in Sources */,
+				9BCEDAAAFE6DCB85B84B0794 /* SettingsWindow.swift in Sources */,
 				E769F0244255E2ECDF2B38EF /* Setup.swift in Sources */,
-				C44A1BE95204F446473BE52D /* SetupShots.swift in Sources */,
-				311D8227D16DB4243E5EFBD6 /* SetupView.swift in Sources */,
+				748BF46B286856646B0449F8 /* SetupWalk.swift in Sources */,
+				9086C8CAD17CB7FE5E2200DC /* StoryList.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9C8B94D918890F0F41431161 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BA7D6919A2A4CCE6C23223C5 /* Capture.swift in Sources */,
+				E3D4F2770E71A2FCF412C8EE /* Stage.swift in Sources */,
+				F935F57DEBB222CF74FF20CA /* Storybook.swift in Sources */,
+				EBBCD348989A3A81D7F0B3FE /* Viewer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -212,9 +291,8 @@
 				D5D889A5278B8F70810357FE /* AmuxMacApp.swift in Sources */,
 				3B91C043C0933A2A675FB555 /* AppModel.swift in Sources */,
 				882195E368B9D757F25FE602 /* MainWindow.swift in Sources */,
-				CC96F20CEE2F54865723BE6D /* SettingsView.swift in Sources */,
+				4B2CDB27BE213B97988EF311 /* SettingsWindow.swift in Sources */,
 				8B3E1B675CE87AB02FD5AD6A /* Setup.swift in Sources */,
-				5858A710D52B922B3FE11924 /* SetupView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -242,6 +320,48 @@
 				PRODUCT_NAME = Amux;
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+			};
+			name = Debug;
+		};
+		5048672EB9FF44D27E6AC992 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = sh.amux.desktop.storybook;
+				PRODUCT_NAME = AmuxStorybook;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		545E4926C04D48221C8D9BC0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = sh.amux.desktop.storybook;
+				PRODUCT_NAME = AmuxStorybook;
+				SDKROOT = macosx;
 			};
 			name = Debug;
 		};
@@ -452,6 +572,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		E5AACF7AF68A33E7A7B9E0CA /* Build configuration list for PBXNativeTarget "AmuxMacStorybook" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				545E4926C04D48221C8D9BC0 /* Debug */,
+				5048672EB9FF44D27E6AC992 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		F59522E29502BE19D5505F7E /* Build configuration list for PBXNativeTarget "AmuxMac" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -468,16 +597,40 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/AmuxCore;
 		};
+		8F7B094D644A531D9EBF135B /* XCLocalSwiftPackageReference "../Packages/AmuxMacScreens" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/AmuxMacScreens;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		19F1801ED0469DAFC4255A3D /* AmuxMacStories */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AmuxMacStories;
+		};
 		1D93496E06294471E1E9ECB3 /* AmuxValues */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = AmuxValues;
 		};
+		4A003AAF384DBE90FB7A3C95 /* AmuxMacStories */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AmuxMacStories;
+		};
+		57207651FF3989CB1A0312B1 /* AmuxMacScreens */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AmuxMacScreens;
+		};
+		AD8C1C6BEEEE9B322B265EE1 /* AmuxMacScreens */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AmuxMacScreens;
+		};
 		BB7D28F0961F4B8152ACC52E /* AmuxCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = AmuxCore;
+		};
+		BFD9FAA1300DAA573A2CAFE4 /* AmuxMacScreens */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AmuxMacScreens;
 		};
 		C9DF306C58F8962847633A1A /* AmuxCore */ = {
 			isa = XCSwiftPackageProductDependency;

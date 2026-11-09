@@ -6,14 +6,14 @@ import SwiftUI
 import XCTest
 
 /// Setting up a Mac, walked through the app's own model against a daemon of
-/// its own, each screen drawn into `target/mac-onboarding/` to look at.
+/// its own. The storybook is where the screens are looked at.
 ///
 /// The screens are drawn into windows that are never put on screen, and the
 /// test runner may not become the active app, so a run shows nothing on the
 /// desktop and takes no input from it. The phone is the one thing not real:
 /// its pairing reaches the model as the statuses the daemon would report.
 @MainActor
-final class SetupShots: XCTestCase {
+final class SetupWalk: XCTestCase {
     private var daemon: ScratchDaemon?
 
     override func setUp() async throws {
@@ -48,45 +48,38 @@ final class SetupShots: XCTestCase {
         try await until("the pairing window") { setup.pairing.window != nil }
         let window = try XCTUnwrap(setup.pairing.window)
         XCTAssertEqual(window.pin.count, 6)
-        let pair = try await shoot("01-pair", stage)
+        let pair = try await drawn(stage)
         XCTAssertEqual(qr(in: pair), window.qrLink, "the code on screen is the daemon's link")
 
         setup.pairingMoved(PairingStatusView(active: true, joining: true, lockedOut: false, paired: nil))
-        try await shoot("01b-pairing-joining", stage)
         let phone = PairedDevice(hostId: Array(repeating: 7, count: 16), name: "Jordan’s iPhone")
         setup.pairingMoved(PairingStatusView(active: false, joining: false, lockedOut: false, paired: phone))
         XCTAssertEqual(setup.step, .keep_reachable, "pairing ends on keeping it connected")
-        XCTAssertTrue(setup.startAtLogin && setup.keepAwake, "both are on until the person answers")
-        try await shoot("02-keep-connected", stage)
+        XCTAssertTrue(setup.choices.startAtLogin && setup.choices.keepAwake, "both are on until the person answers")
 
         // Later on each, which keeps every setting as it is: nothing here
         // writes a login item.
         setup.later()
         XCTAssertEqual(setup.step, .sign_in)
         XCTAssertEqual(setup.also, phone, "the phone just paired, signed out, is offered the account")
-        try await shoot("03-sign-in", stage)
         setup.offersMoved([
             SignInOfferView(
                 hostId: phone.hostId, hostName: phone.name, email: "jordan@example.com",
                 accountName: "Jordan")
         ])
-        try await shoot("03b-sign-in-offered", stage)
         setup.offersMoved([])
 
         setup.later()
         XCTAssertEqual(setup.step, .repositories)
         try await until("the suggestions") { setup.repositoriesLoaded }
         XCTAssertEqual(
-            setup.repositories.map { URL(filePath: $0.path).lastPathComponent }, ["website", "amux"],
+            setup.choices.repositories.map { URL(filePath: $0.path).lastPathComponent }, ["website", "amux"],
             "where Claude Code and Codex ran, newest first")
-        try await shoot("04-repositories", stage)
 
         setup.later()
         XCTAssertEqual(setup.step, .improve)
-        try await shoot("05-improve", stage)
         setup.later()
         XCTAssertEqual(setup.step, .first_agent)
-        try await shoot("06-first-agent", stage)
         setup.later()
         XCTAssertNil(setup.step)
 
@@ -99,10 +92,6 @@ final class SetupShots: XCTestCase {
         XCTAssertEqual(
             setup.toFinish, 6,
             "\(setup.state?.steps.map { "\($0.step):\($0.state)" } ?? [])")
-        try await shoot("07-main-finish-setting-up", stage)
-        let settings = Stage(SettingsWindow(model: model), size: CGSize(width: 540, height: 760))
-        defer { settings.close() }
-        try await shoot("08-settings", settings)
         setup.finishSettingUp()
         XCTAssertEqual(setup.step, .pair_phone, "finishing starts at the first step skipped")
         setup.close()
@@ -113,25 +102,15 @@ final class SetupShots: XCTestCase {
 
     // MARK: - Drawing
 
-    /// Draws what `stage` shows in the light and dark appearances into
-    /// `target/mac-onboarding/<name>[-light].png`, answering the dark one.
-    @discardableResult
-    private func shoot(_ name: String, _ stage: Stage) async throws -> NSBitmapImageRep {
-        var dark: NSBitmapImageRep?
-        for (appearance, suffix) in [(NSAppearance.Name.darkAqua, ""), (.aqua, "-light")] {
-            stage.window.appearance = NSAppearance(named: appearance)
-            // What the view loads as it appears or changes (its pairing
-            // window, its settings) lands before it is drawn.
-            try await Task.sleep(for: .milliseconds(400))
-            let host = stage.host
-            host.layoutSubtreeIfNeeded()
-            let rep = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-            host.cacheDisplay(in: host.bounds, to: rep)
-            let png = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
-            try png.write(to: Self.shots.appending(path: "\(name)\(suffix).png"))
-            if dark == nil { dark = rep }
-        }
-        return try XCTUnwrap(dark)
+    /// What `stage` shows, once what the view loads as it appears has landed.
+    private func drawn(_ stage: Stage) async throws -> NSBitmapImageRep {
+        stage.window.appearance = NSAppearance(named: .darkAqua)
+        try await Task.sleep(for: .milliseconds(400))
+        let host = stage.host
+        host.layoutSubtreeIfNeeded()
+        let rep = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: rep)
+        return rep
     }
 
     private func qr(in rep: NSBitmapImageRep) -> String? {
@@ -141,12 +120,6 @@ final class SetupShots: XCTestCase {
             options: [CIDetectorAccuracy: CIDetectorAccuracyHigh])
         return detector?.features(in: CIImage(cgImage: image))
             .compactMap { ($0 as? CIQRCodeFeature)?.messageString }.first
-    }
-
-    private static var shots: URL {
-        let dir = ScratchDaemon.repository.appending(path: "target/mac-onboarding")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
     }
 
     private func until(_ what: String, _ check: () -> Bool) async throws {

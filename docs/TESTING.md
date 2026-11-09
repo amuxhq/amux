@@ -5,7 +5,7 @@
 This page is an index. The suites themselves are listed in `tests/catalog.toml`; `just --list` is the command
 surface. The multi-host harness has its own page,
 [TestNet](TESTNET.md), measured performance has [Performance](PERFORMANCE.md), the phone's snapshots
-and journeys are described in [the iPhone app](IOS.md), and adversarial testing by agents has
+and journeys are described in [the iPhone app](IOS.md), the Mac's storybook in [the Mac app](MAC.md), and adversarial testing by agents has
 [QA](QA.md).
 
 ## The rule

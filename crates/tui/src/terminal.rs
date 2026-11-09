@@ -45,10 +45,91 @@ pub(crate) fn image_picker() -> Option<Picker> {
 /// actually arrive.
 static KITTY_SUPPORTED: OnceLock<bool> = OnceLock::new();
 
-/// How this terminal draws images, asked once like the keyboard probe; None
-/// when it cannot. Half blocks count as cannot: at thumbnail size they are a
-/// smear of colour, and the chip says more.
+/// How this terminal draws images, worked out once like the keyboard probe;
+/// None when it cannot. Half blocks count as cannot: at thumbnail size they
+/// are a smear of colour, and the chip says more.
 static IMAGE_PICKER: OnceLock<Option<Picker>> = OnceLock::new();
+
+/// Works out how this terminal draws images without asking it anything.
+///
+/// `Picker::from_query_stdio` is the library's way, and it must not be used
+/// here: it reads the terminal's answers from stdin on its own thread, which
+/// races the event reader for what the person types, and a keypress it wins
+/// is lost. So the terminal is named from its environment instead, and the
+/// cell size comes from the window-size ioctl.
+fn detect_image_picker() -> Option<Picker> {
+    let tmux_client = std::env::var_os("TMUX").and_then(|_| tmux_client_terminal());
+    let protocol = image_protocol(|name| std::env::var(name).ok(), tmux_client.as_deref())?;
+    let size = crossterm::terminal::window_size().ok()?;
+    if size.columns == 0 || size.rows == 0 {
+        return None;
+    }
+    let (width, height) = (size.width / size.columns, size.height / size.rows);
+    // Without a real cell size a picture cannot be fitted to its box.
+    if width == 0 || height == 0 {
+        return None;
+    }
+    // Deprecated only in favour of the query above. It is also what turns on
+    // tmux's passthrough for images.
+    #[allow(deprecated)]
+    let mut picker = Picker::from_fontsize((width, height).into());
+    picker.set_protocol_type(protocol);
+    Some(picker)
+}
+
+/// The terminal tmux's client is running in. Inside tmux the environment
+/// names tmux, or whichever terminal first started the server.
+fn tmux_client_terminal() -> Option<String> {
+    let output = std::process::Command::new("tmux")
+        .args([
+            "display-message",
+            "-p",
+            "#{client_termname} #{client_termtype}",
+        ])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// The image protocol of the terminals known to draw images well. Any other
+/// terminal keeps the plain chip rather than a guess that may leave an empty
+/// box. WezTerm has kitty's graphics but not the placeholders that scrolling
+/// relies on, so it gets iTerm2's protocol, which it also speaks.
+fn image_protocol(
+    env: impl Fn(&str) -> Option<String>,
+    tmux_client: Option<&str>,
+) -> Option<ProtocolType> {
+    let named = |needles: &[&str], haystack: &str| {
+        let haystack = haystack.to_ascii_lowercase();
+        needles.iter().any(|needle| haystack.contains(needle))
+    };
+    let kitty = ["kitty", "ghostty"];
+    let iterm = ["iterm", "wezterm"];
+    if let Some(client) = tmux_client {
+        return if named(&kitty, client) {
+            Some(ProtocolType::Kitty)
+        } else if named(&iterm, client) {
+            Some(ProtocolType::Iterm2)
+        } else {
+            None
+        };
+    }
+    let names = ["TERM_PROGRAM", "TERM", "LC_TERMINAL"]
+        .map(|name| env(name).unwrap_or_default())
+        .join(" ");
+    if env("KITTY_WINDOW_ID").is_some() || named(&kitty, &names) {
+        Some(ProtocolType::Kitty)
+    } else if named(&iterm, &names) {
+        Some(ProtocolType::Iterm2)
+    } else {
+        None
+    }
+}
 
 /// Whether enhancement flags are currently pushed (on the alternate
 /// screen's stack). Restore pops iff set — kitty keeps per-screen flag
@@ -217,11 +298,7 @@ impl TerminalGuard {
         {
             KITTY_PUSHED.store(true, Ordering::SeqCst);
         }
-        IMAGE_PICKER.get_or_init(|| {
-            Picker::from_query_stdio()
-                .ok()
-                .filter(|picker| picker.protocol_type() != ProtocolType::Halfblocks)
-        });
+        IMAGE_PICKER.get_or_init(detect_image_picker);
         Ok(Self { restored: false })
     }
 
@@ -629,6 +706,57 @@ mod tests {
         crossterm::execute!(out, PopKeyboardEnhancementFlags).expect("write to vec");
         write_restore(&mut out).expect("write to vec");
         assert_eq!(out, RESTORE_BYTES);
+    }
+
+    fn protocol_in(vars: &[(&str, &str)], tmux_client: Option<&str>) -> Option<ProtocolType> {
+        image_protocol(
+            |name| {
+                vars.iter()
+                    .find(|(key, _)| *key == name)
+                    .map(|(_, value)| (*value).to_owned())
+            },
+            tmux_client,
+        )
+    }
+
+    #[test]
+    fn terminals_known_to_draw_images_are_named_from_the_environment() {
+        let kitty = Some(ProtocolType::Kitty);
+        let iterm = Some(ProtocolType::Iterm2);
+        assert_eq!(protocol_in(&[("TERM_PROGRAM", "ghostty")], None), kitty);
+        assert_eq!(protocol_in(&[("TERM", "xterm-kitty")], None), kitty);
+        assert_eq!(protocol_in(&[("KITTY_WINDOW_ID", "3")], None), kitty);
+        assert_eq!(protocol_in(&[("TERM_PROGRAM", "iTerm.app")], None), iterm);
+        assert_eq!(protocol_in(&[("LC_TERMINAL", "iTerm2")], None), iterm);
+        assert_eq!(protocol_in(&[("TERM_PROGRAM", "WezTerm")], None), iterm);
+    }
+
+    #[test]
+    fn any_other_terminal_keeps_the_chip() {
+        let vars = [
+            ("TERM_PROGRAM", "Apple_Terminal"),
+            ("TERM", "xterm-256color"),
+        ];
+        assert_eq!(protocol_in(&vars, None), None);
+    }
+
+    /// A long-lived tmux server hands every pane the environment of the
+    /// terminal that started it, so only the attached client counts.
+    #[test]
+    fn inside_tmux_the_attached_client_decides_not_the_stale_environment() {
+        let stale = [("KITTY_WINDOW_ID", "3"), ("TERM_PROGRAM", "tmux")];
+        assert_eq!(
+            protocol_in(&stale, Some("xterm-256color Apple_Terminal")),
+            None
+        );
+        assert_eq!(
+            protocol_in(&stale, Some("xterm-ghostty ghostty 1.2")),
+            Some(ProtocolType::Kitty)
+        );
+        assert_eq!(
+            protocol_in(&stale, Some("xterm-256color iTerm2 3.5")),
+            Some(ProtocolType::Iterm2)
+        );
     }
 
     #[test]

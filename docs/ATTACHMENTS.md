@@ -193,6 +193,11 @@ desktop the app the system picks, for the kinds that only show their content.
 Anything else is revealed in its folder, since an agent chooses the name and
 `open` would run a `.command`.
 
+The terminal client decides whether it can draw thumbnails from the environment
+and the window-size ioctl. It does not ask the terminal with escape-sequence
+queries through `ratatui-image`: that query reads stdin on its own thread and
+can take a keypress from the event reader.
+
 ## Lifetimes
 
 There is no expiry and there are no reference counts. A blob lives and dies

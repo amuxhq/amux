@@ -321,6 +321,7 @@ impl Setup {
             current,
             disabled: false,
             typed: false,
+            caution: false,
         };
         match item {
             Item::Kind => AGENTS
@@ -591,6 +592,7 @@ fn hosts(fleet: &FleetState, setup: &Setup, chosen_first: bool) -> Vec<Choice> {
                 current: host.host_id() == chosen,
                 disabled: away && host.host_id() != chosen,
                 typed: false,
+                caution: false,
             }
         })
         .collect()
@@ -625,6 +627,8 @@ pub struct Choice {
     pub disabled: bool,
     /// What is typed in the field, offered as a choice of its own.
     pub typed: bool,
+    /// The detail is a warning, not a description.
+    pub caution: bool,
 }
 
 /// A running or new agent's models as a flyover lists them, each with the
@@ -640,6 +644,7 @@ pub(crate) fn model_choices(view: &SettingsView) -> Vec<Choice> {
             current: model.current,
             disabled: false,
             typed: false,
+            caution: false,
         })
         .collect()
 }
@@ -655,6 +660,7 @@ pub(crate) fn effort_choices(view: &SettingsView) -> Vec<Choice> {
             current: effort.current,
             disabled: false,
             typed: false,
+            caution: false,
         })
         .collect()
 }
@@ -677,6 +683,7 @@ pub(crate) fn permission_choices(view: &SettingsView) -> Vec<Choice> {
             current: permission.current,
             disabled: !permission.settable,
             typed: false,
+            caution: permission.never_asks,
         })
         .collect()
 }
@@ -692,6 +699,7 @@ pub(crate) fn mode_choices(view: &SettingsView) -> Vec<Choice> {
             current: mode.current,
             disabled: !mode.settable,
             typed: false,
+            caution: false,
         })
         .collect()
 }
@@ -805,6 +813,7 @@ impl Picker {
                 current: false,
                 disabled: false,
                 typed: true,
+                caution: false,
             });
         }
         shown
@@ -977,7 +986,11 @@ impl Picker {
                 push(
                     &mut row,
                     format!(" · {}", choice.detail),
-                    theme.faint(),
+                    if choice.caution {
+                        theme.warning()
+                    } else {
+                        theme.faint()
+                    },
                     wide,
                 );
             }

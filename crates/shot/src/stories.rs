@@ -229,6 +229,9 @@ pub fn all() -> Vec<Story> {
         story("chat.conversation", || {
             chat(Kind::ClaudeSdk, "recorded_multi_turn", Pick::Last)
         }),
+        story("chat.formatted", || {
+            Scene::Chat(Box::new(tui::vocabulary::chat_formatted()))
+        }),
         story("chat.asking", || {
             chat(Kind::ClaudeSdk, "recorded_question_asked", Pick::Asking)
         }),
@@ -251,6 +254,9 @@ pub fn all() -> Vec<Story> {
         }),
         story("chat.settings", || {
             Scene::Chat(Box::new(tui::vocabulary::chat_settings()))
+        }),
+        story("chat.permissions", || {
+            Scene::Chat(Box::new(tui::vocabulary::chat_permissions()))
         }),
         // Review.
         story("review.page", || {

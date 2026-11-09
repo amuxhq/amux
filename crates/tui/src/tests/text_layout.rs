@@ -735,6 +735,54 @@ fn a_patch_card_on_a_short_screen_keeps_its_choices() {
     }
 }
 
+/// The draft's rows at `width`, without the prompt mark.
+fn draft_rows(editor: &crate::editor::Editor, width: usize) -> Vec<String> {
+    let (lines, _) = crate::chat::composer::editor_lines(editor, "", width, theme());
+    lines
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+                .chars()
+                .skip(2)
+                .collect()
+        })
+        .collect()
+}
+
+/// A word that no longer fits its row moves down whole, and the cursor and
+/// a click agree with where it went.
+#[test]
+fn a_draft_wraps_between_words() {
+    let mut editor = crate::editor::Editor::default();
+    editor.set("the word seen here", Vec::new());
+    assert_eq!(draft_rows(&editor, 12), ["the word ", "seen here"]);
+
+    editor.set_cursor_chars(11);
+    let (_, cursor) = crate::chat::composer::editor_lines(&editor, "", 12, theme());
+    assert_eq!(cursor, (1, 4), "two characters into \"seen\"");
+    assert_eq!(crate::chat::composer::cursor_at(&editor, 12, 1, 0), 9);
+}
+
+/// Only a word wider than the whole row is cut.
+#[test]
+fn a_draft_cuts_only_a_word_wider_than_its_row() {
+    let mut editor = crate::editor::Editor::default();
+    editor.set("abcdefghijklmnop", Vec::new());
+    assert_eq!(draft_rows(&editor, 12), ["abcdefghij", "klmnop"]);
+}
+
+/// A secret's rows give no sign of where its spaces are.
+#[test]
+fn a_secret_draft_is_cut_at_the_edge() {
+    let mut editor = crate::editor::Editor::default();
+    editor.secret = true;
+    editor.set("ab cd ef gh ij", Vec::new());
+    assert_eq!(draft_rows(&editor, 7), ["•••••", "•••••", "••••"]);
+}
+
 fn attached(size: u64) -> wire::BlobRef {
     wire::BlobRef {
         hash: vec![7],

@@ -32,6 +32,12 @@ SCHEME = "AmuxTests"
 APP_HOSTED = "AmuxAppTests"
 
 
+# The UI target also holds the accessibility audit, which needs the journey
+# that drives it, so only these of its tests are among the unit suites.
+UI_TARGET = "AmuxUITests"
+UI_SUITES = [f"{UI_TARGET}/ChatFingerTests"]
+
+
 def suites() -> list[str]:
     """Every unit test target: the app-hosted one, then each package's."""
     return [APP_HOSTED] + [
@@ -49,7 +55,7 @@ def selected(arguments: list[str]) -> list[str]:
         if not argument.startswith("-only-testing"):
             continue
         target = argument.split(":", 1)[1].split("/", 1)[0]
-        if target not in known:
+        if target not in known and target != UI_TARGET:
             raise SystemExit(
                 f"No suite owns the test target {target}; known targets: "
                 + ", ".join(sorted(known))
@@ -57,7 +63,7 @@ def selected(arguments: list[str]) -> list[str]:
         named = True
     if named:
         return arguments
-    return [*arguments, *(f"-only-testing:{suite}" for suite in known)]
+    return [*arguments, *(f"-only-testing:{suite}" for suite in [*known, *UI_SUITES])]
 
 
 def requested_updates() -> dict[str, str]:

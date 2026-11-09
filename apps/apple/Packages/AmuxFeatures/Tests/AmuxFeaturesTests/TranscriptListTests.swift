@@ -32,6 +32,29 @@ final class TranscriptListTests: XCTestCase {
         XCTAssertEqual(model.paging, .fetching, "the reader at the top was not given older history")
     }
 
+    func testAskingForRowsChangesNoHeight() throws {
+        // UIKit asks for rows at moments of its own, among them while a
+        // finger moves the list, ahead of the scroll callback that reads
+        // where the reader is. A height changing there meets that callback
+        // with the offset not yet answering it.
+        let chat = StubChat(
+            rows: (0..<200).map { row("m\($0)", UInt64($0), collapsed: $0 % 5 > 1) }, hasOlder: false)
+        let model = ChatModel(source: chat)
+        let list = FeedCoordinator(
+            model: model, environment: environment(), reported: ReportedElements())
+        list.view.frame = CGRect(x: 0, y: 0, width: 390, height: 600)
+        list.update(
+            items: model.ids.map { .row($0) }, notices: [], environment: environment(),
+            revision: model.revision, toNewest: model.toNewest, insets: EdgeInsets())
+        list.view.layoutIfNeeded()
+        let layout = try XCTUnwrap(list.view.collectionViewLayout as? FeedLayout)
+        let before = layout.collectionViewContentSize.height
+
+        _ = layout.layoutAttributesForElements(in: CGRect(x: 0, y: 0, width: 390, height: 600))
+
+        XCTAssertEqual(layout.collectionViewContentSize.height, before)
+    }
+
     func testATypeSizeChangeMeasuresTheRowsAgain() {
         // A hosted row takes the type size the screen carries in; when it
         // changes, in Settings or by the driving door, every cached height

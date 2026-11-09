@@ -93,6 +93,7 @@ async fn a_draft_left_in_a_chat_is_in_its_composer_when_the_chat_opens_again() {
         local_host: net.host("desk").unwrap().host_id.as_bytes().to_vec(),
         layout: None,
         chat_in: settings::ChatInSetting::Amux,
+        system_clipboard: false,
     };
     let mut app = tui::App::new(client, fleet, config);
     let mut changed = app.fleet.changed();
@@ -165,6 +166,7 @@ async fn desk_of(names: &[&str]) -> (Net, std::sync::Arc<dyn client::Client>, tu
         local_host: net.host("desk").unwrap().host_id.as_bytes().to_vec(),
         layout: None,
         chat_in: settings::ChatInSetting::Amux,
+        system_clipboard: false,
     };
     (net, client, config)
 }
@@ -624,6 +626,7 @@ async fn raw_attach_from_a_far_agents_chat_does_not_say_enter_opens_its_chat() {
         local_host: net.host("laptop").unwrap().host_id.as_bytes().to_vec(),
         layout: None,
         chat_in: settings::ChatInSetting::Amux,
+        system_clipboard: false,
     };
     let mut app = app_listing(client, config, &[far.as_bytes()]).await;
     open_chat(&mut app, far.as_bytes()).await;
@@ -685,6 +688,7 @@ async fn far_chat_via(
         local_host: net.host("desk").unwrap().host_id.as_bytes().to_vec(),
         layout: None,
         chat_in: settings::ChatInSetting::Amux,
+        system_clipboard: false,
     };
     let mut app = app_listing(client, config, &[id.as_bytes()]).await;
     open_chat(&mut app, id.as_bytes()).await;
@@ -820,6 +824,89 @@ async fn a_chat_on_an_agent_deleted_on_its_far_host_never_offers_to_resume_it() 
     {
         panic!("the deleted i1's chat offered to resume it:\n{screen}");
     }
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
+/// A file pasted into a new agent's first message waits with the draft, and
+/// reaches the agent with the words once the agent exists.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_pasted_into_a_new_agents_first_message_reaches_it() {
+    use crossterm::event::KeyCode;
+
+    let (net, client, config) = desk_of(&[]).await;
+    let host = config.local_host.clone();
+    let fleet = ui_runtime::Fleet::connect(client.clone(), client::SystemClock)
+        .await
+        .unwrap();
+    let mut app = tui::App::new(client.clone(), fleet, config);
+    tokio::time::timeout(PATIENCE, async {
+        while app.fleet.state().host(&host).is_none() {
+            next_app_event(&mut app).await;
+        }
+    })
+    .await
+    .expect("the fleet lists the host");
+
+    let mut terminal = Terminal::new(TestBackend::new(120, 30)).unwrap();
+    press(&mut app, KeyCode::Char('n'));
+    // The draft takes its settings from the defaults as it first shows.
+    terminal.draw(|frame| app.draw(frame)).unwrap();
+    let bytes = b"\x89PNG\r\n\x1a\nnot really an image".to_vec();
+    app.home
+        .paste_clipboard(tui::clipboard::ClipboardContent::Image {
+            mime: "image/png".to_owned(),
+            bytes: bytes.clone(),
+        })
+        .unwrap();
+    for c in "look at this".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+    press(&mut app, KeyCode::Enter);
+
+    let prompt = tokio::time::timeout(PATIENCE, async {
+        loop {
+            while let Ok(event) = app.receiver.try_recv() {
+                app.event(event);
+            }
+            app.housekeep();
+            let found = app.chat.as_ref().and_then(|chat| {
+                chat.session
+                    .state()
+                    .transcript()
+                    .iter()
+                    .find(|held| matches!(held.class, ui_state::ItemClass::Prompt))
+                    .map(|held| held.item.clone())
+            });
+            if let Some(found) = found {
+                return found;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the first message arrives");
+    let agent = app.chat.as_ref().unwrap().view.agent_id.clone();
+    assert!(prompt.text.contains("look at this"), "{prompt:?}");
+    let Some(wire::attachment::Of::Image(blob)) = prompt
+        .attachments
+        .first()
+        .and_then(|attachment| attachment.of.clone())
+    else {
+        panic!("the image is not on the message: {prompt:?}");
+    };
+    let stored = client
+        .get_blob(wire::GetBlobRequest {
+            agent_id: agent,
+            hash: blob.hash,
+        })
+        .await
+        .expect("the file is stored with the agent");
+    assert_eq!(stored.bytes, bytes);
+
     drop(app);
     tokio::time::timeout(Duration::from_secs(60), net.shutdown())
         .await

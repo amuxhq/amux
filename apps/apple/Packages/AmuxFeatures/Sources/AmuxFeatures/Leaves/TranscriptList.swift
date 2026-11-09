@@ -157,11 +157,6 @@ final class FeedView: UICollectionView {
     var hold: (() -> FeedCoordinator.Held?)?
     var restore: ((FeedCoordinator.Held) -> Void)?
     var laidOut: (() -> Void)?
-    /// The row held through a pass that measured rows or moved the list:
-    /// the cells on screen stand at their old frames until the next pass
-    /// places them, so that pass holds the same row at the same place
-    /// rather than reading them.
-    var carried: FeedCoordinator.Held?
 
     /// None, for the rows. The list runs under the status bar, the header
     /// and the home indicator, and a hosted cell passing under them took
@@ -170,37 +165,52 @@ final class FeedView: UICollectionView {
     /// content insets the screen hands down, never the window's.
     override var safeAreaInsets: UIEdgeInsets { .zero }
 
-    /// The bottom is set before the cells are placed, so the rows at the
-    /// top are never displayed on the way to the bottom and never taken
-    /// for the reader reaching them. A reader moving the list is not
-    /// pulled down meanwhile; the pass after they let go is.
+    /// Whether the list keeps the bottom itself: the reader follows and is
+    /// not moving it. A reader moving the list is not pulled down, and the
+    /// pass after they let go is.
+    var keepsBottom: Bool {
+        following() && !readerMoving
+    }
+
+    /// Heights change here and nowhere else, each change with the move that
+    /// answers it, before the cells are placed. Anything reading the list
+    /// between two layout passes (a scroll callback above all, deciding
+    /// where the reader is) finds the rows and the offset agreeing: a row
+    /// above the reader measured shorter than its estimate shrinks the list
+    /// and moves the offset by as much, and read apart they say the reader
+    /// has passed the bottom. The bottom is likewise set before the cells
+    /// are placed, so the rows at the top are never displayed on the way
+    /// to it.
     override func layoutSubviews() {
-        var held: FeedCoordinator.Held?
-        if following() {
-            carried = nil
-            if !readerMoving {
-                let bottom = bottomOffset
-                if abs(contentOffset.y - bottom) > 0.5 {
-                    pinning = true
-                    contentOffset.y = bottom
-                    pinning = false
-                }
-            }
-        } else {
-            held = carried ?? hold?()
-            carried = nil
-        }
+        let keepsBottom = self.keepsBottom
+        let held = keepsBottom ? nil : hold?()
+        settle(keepingBottom: keepsBottom, holding: held)
         super.layoutSubviews()
-        // Rows measured while being placed change the heights above or
-        // below the screen: placed again before anything is drawn.
-        let measured = (collectionViewLayout as? FeedLayout)?.takeMeasuredDuringPass() ?? false
-        if measured {
-            collectionViewLayout.invalidateLayout()
-            setNeedsLayout()
-            carried = held
-        }
-        if let held { restore?(held) }
         laidOut?()
+    }
+
+    /// Stacks the rows and keeps the place, as many times as measuring what
+    /// has come near brings more rows near; each round measures at least
+    /// one row, so it ends.
+    private func settle(keepingBottom: Bool, holding held: FeedCoordinator.Held?) {
+        guard let layout = collectionViewLayout as? FeedLayout else { return }
+        var changed = false
+        while true {
+            layout.stackIfStale()
+            if keepingBottom { keepBottom() }
+            if let held { restore?(held) }
+            guard layout.measureRows(around: bounds) else { break }
+            changed = true
+        }
+        if changed { layout.invalidateLayout() }
+    }
+
+    private func keepBottom() {
+        let bottom = bottomOffset
+        guard abs(contentOffset.y - bottom) > 0.5 else { return }
+        pinning = true
+        contentOffset.y = bottom
+        pinning = false
     }
 
     /// Where the newest row sits at the bottom; the top when the rows fit.
@@ -233,10 +243,10 @@ final class FeedView: UICollectionView {
 /// The rows stacked by their measured heights, one section, full width.
 ///
 /// A row is measured when it first comes within a screen of the visible
-/// rect, by the coordinator's measurer, and stands at an estimate until
-/// then; a page that lands above the reader is placed from estimates and
-/// measured as the reader scrolls up to it, the list holding their place
-/// through each correction. A height is forgotten when its row's content
+/// rect, by the coordinator's measurer, at the start of a layout pass, and
+/// stands at an estimate until then; a page that lands above the reader is
+/// placed from estimates and measured as the reader scrolls up to it, the
+/// list holding their place through each correction. A height is forgotten when its row's content
 /// changes, when its rail's join to the row below does, when the width
 /// changes, or when the environment does.
 final class FeedLayout: UICollectionViewLayout {
@@ -252,22 +262,90 @@ final class FeedLayout: UICollectionViewLayout {
     /// Stacked again as soon as they are set: a batch update asks for the
     /// new frames before any layout pass prepares them.
     var items: [ListItem] = [] {
-        didSet { stack() }
+        didSet {
+            places = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($1, $0) })
+            stack()
+        }
     }
+    private var places: [ListItem: Int] = [:]
     private var heights: [ListItem: CGFloat] = [:]
+    /// In row order, each starting where the last ended, so the rows around
+    /// a place are found by searching. A layout pass runs on every frame of
+    /// a scroll, and a chat in history holds as many rows as were paged in.
     private var frames: [CGRect] = []
     private var height: CGFloat = 0
-    private var measuredDuringPass = false
+    /// A height changed since the rows were stacked.
+    private var stale = false
+    private var stackedWidth: CGFloat = 0
 
-    func forget(_ item: ListItem) { heights[item] = nil }
-    func forgetAll() { heights = [:] }
+    func forget(_ item: ListItem) {
+        heights[item] = nil
+        stale = true
+    }
+
+    func forgetAll() {
+        heights = [:]
+        stale = true
+    }
     func measured(_ item: ListItem) -> Bool { heights[item] != nil }
 
-    /// Whether rows were measured since the last layout pass began: the
-    /// frames below them moved, and the pass is run again.
-    func takeMeasuredDuringPass() -> Bool {
-        defer { measuredDuringPass = false }
-        return measuredDuringPass
+    /// Where a row stands now, whatever has been drawn so far.
+    func frame(of item: ListItem) -> CGRect? {
+        places[item].map { frames[$0] }
+    }
+
+    /// The first row standing between two heights in the list; a row drawn
+    /// at no height is not one a reader can be looking at.
+    func firstRow(endingBelow top: CGFloat, startingAbove bottom: CGFloat) -> (ListItem, CGRect)? {
+        for index in firstIndex(endingAtOrBelow: top)..<frames.count {
+            let frame = frames[index]
+            guard frame.minY < bottom else { return nil }
+            if frame.height > 0, frame.maxY > top, case .row = items[index] {
+                return (items[index], frame)
+            }
+        }
+        return nil
+    }
+
+    /// Measures the rows near a rect that have no height yet, and says
+    /// whether there were any. The list's layout pass alone calls this:
+    /// UIKit asks for rows at other moments, among them while a finger
+    /// moves the list, and heights changing there would change under the
+    /// reader with nothing to answer them.
+    func measureRows(around rect: CGRect) -> Bool {
+        let near = rect.insetBy(dx: 0, dy: -Self.margin)
+        var measured = false
+        for index in indices(meeting: near) {
+            let item = items[index]
+            if heights[item] == nil, let h = measure(item) {
+                heights[item] = h
+                measured = true
+            }
+        }
+        if measured { stale = true }
+        return measured
+    }
+
+    /// The first row whose end is at or below a height.
+    private func firstIndex(endingAtOrBelow y: CGFloat) -> Int {
+        var low = 0
+        var high = frames.count
+        while low < high {
+            let middle = (low + high) / 2
+            if frames[middle].maxY >= y { high = middle } else { low = middle + 1 }
+        }
+        return low
+    }
+
+    /// The rows that meet a rect, in order.
+    private func indices(meeting rect: CGRect) -> [Int] {
+        var found: [Int] = []
+        var index = firstIndex(endingAtOrBelow: rect.minY)
+        while index < frames.count, frames[index].minY <= rect.maxY {
+            if frames[index].intersects(rect) { found.append(index) }
+            index += 1
+        }
+        return found
     }
 
     override var collectionViewContentSize: CGSize {
@@ -276,11 +354,19 @@ final class FeedLayout: UICollectionViewLayout {
 
     override func prepare() {
         super.prepare()
-        stack()
+        stackIfStale()
+    }
+
+    /// Stacks the rows if a height or the width changed; otherwise they
+    /// stand where they stood.
+    func stackIfStale() {
+        if stale || stackedWidth != (collectionView?.bounds.width ?? 0) { stack() }
     }
 
     private func stack() {
         let width = collectionView?.bounds.width ?? 0
+        stale = false
+        stackedWidth = width
         frames.removeAll(keepingCapacity: true)
         var y: CGFloat = 0
         for item in items {
@@ -293,7 +379,7 @@ final class FeedLayout: UICollectionViewLayout {
 
     override func shouldInvalidateLayout(forBoundsChange newBounds: CGRect) -> Bool {
         guard let collectionView, newBounds.width != collectionView.bounds.width else { return false }
-        heights = [:]
+        forgetAll()
         return true
     }
 
@@ -305,26 +391,7 @@ final class FeedLayout: UICollectionViewLayout {
     }
 
     override func layoutAttributesForElements(in rect: CGRect) -> [UICollectionViewLayoutAttributes]? {
-        // Rows near the rect are measured now, and the stack rebuilt, so
-        // what is placed in this pass already stands at its height; the
-        // rows after them have moved, which the pass after this corrects.
-        let near = rect.insetBy(dx: 0, dy: -Self.margin)
-        var measured = false
-        for (index, frame) in frames.enumerated() where frame.intersects(near) {
-            let item = items[index]
-            if heights[item] == nil, let h = measure(item) {
-                heights[item] = h
-                measured = true
-            }
-        }
-        if measured {
-            stack()
-            measuredDuringPass = true
-        }
-        return frames.enumerated().compactMap { index, frame in
-            guard frame.intersects(rect) else { return nil }
-            return attributes(at: index)
-        }
+        indices(meeting: rect).map(attributes(at:))
     }
 
     override func layoutAttributesForItem(at indexPath: IndexPath) -> UICollectionViewLayoutAttributes? {
@@ -491,7 +558,6 @@ final class FeedCoordinator: NSObject, UICollectionViewDelegate {
             // are lifted with the composer rather than covered by it; not
             // under a finger, which the rows stay with.
             if !model.following, grown != 0, !view.isTracking {
-                view.carried = nil
                 let top = -view.adjustedContentInset.top
                 view.contentOffset.y = max(top, min(view.contentOffset.y + grown, view.bottomOffset))
             }
@@ -569,7 +635,7 @@ final class FeedCoordinator: NSObject, UICollectionViewDelegate {
     /// Rows whose heights were forgotten are measured and placed again,
     /// the reader's place held through it.
     private func replace() {
-        let held = model.following ? nil : hold()
+        let held = view.keepsBottom ? nil : hold()
         layout.invalidateLayout()
         view.layoutIfNeeded()
         if let held {
@@ -584,7 +650,7 @@ final class FeedCoordinator: NSObject, UICollectionViewDelegate {
     /// rows that landed are measured as they are placed, which each layout
     /// pass holds the row through.
     private func apply(_ items: [ListItem]) {
-        let held = model.following ? nil : hold()
+        let held = view.keepsBottom ? nil : hold()
         self.items = items
         layout.items = items
         var snapshot = NSDiffableDataSourceSnapshot<Int, ListItem>()
@@ -600,35 +666,23 @@ final class FeedCoordinator: NSObject, UICollectionViewDelegate {
 
     /// The first row on screen (the one crossing the top of the view, or
     /// the first below it), and how far below the top of the list's bounds
-    /// it starts, read from the cell itself: where it is drawn, whatever
-    /// the layout has since been told. Never a notice: a notice stands
-    /// above the oldest row, and a page lands between the two.
+    /// it starts. Read from the layout, whose heights change only with the
+    /// move that answers them; a cell can still stand where the last pass
+    /// left it. Never a notice: a notice stands above the oldest row, and a
+    /// page lands between the two.
     private func hold() -> Held? {
         let top = view.contentOffset.y + view.adjustedContentInset.top
-        // Only cells drawn within the bounds: after a jump, the cells the
-        // list still holds stand where the reader was.
-        let drawn = view.indexPathsForVisibleItems.compactMap { path -> (ListItem, CGRect)? in
-            guard let item = dataSource.itemIdentifier(for: path), case .row = item,
-                  let frame = view.cellForItem(at: path)?.frame, frame.intersects(view.bounds)
-            else { return nil }
-            return (item, frame)
-        }
-        guard let (item, frame) = drawn.filter({ $0.1.maxY > top }).min(by: { $0.1.minY < $1.1.minY })
+        guard let (item, frame) = layout.firstRow(endingBelow: top, startingAbove: view.bounds.maxY)
         else { return nil }
         return Held(item: item, below: frame.minY - view.contentOffset.y)
     }
 
     /// Puts the held row back where it was on screen, if the rows moved it.
     private func restore(_ held: Held) {
-        guard let path = dataSource.indexPath(for: held.item),
-              let placed = view.layoutAttributesForItem(at: path)
-        else { return }
-        let target = placed.frame.minY - held.below
+        guard let placed = layout.frame(of: held.item) else { return }
+        let target = placed.minY - held.below
         guard abs(view.contentOffset.y - target) > 0.5 else { return }
         move(to: target)
-        // The cells stand at their old frames until the next pass places
-        // them: it holds this row, not what it reads from them.
-        view.carried = held
     }
 
     private func move(to y: CGFloat) {

@@ -32,6 +32,18 @@ struct AmuxApp: App {
     }
 
     @ViewBuilder private var hostedRoot: some View {
+        #if AMUX_DEBUG_TOOLS
+        if FingerStage.requested {
+            FingerStage.screen
+        } else {
+            ordinaryRoot
+        }
+        #else
+        ordinaryRoot
+        #endif
+    }
+
+    @ViewBuilder private var ordinaryRoot: some View {
         if Self.drawsItsOwnRoot {
             RootView().readingAssistiveSettings()
         } else {

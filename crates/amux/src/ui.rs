@@ -117,6 +117,8 @@ async fn open(
         local_host: attacher.local_host().to_vec(),
         layout: Some(config.root.join("tui").join("layout.json")),
         chat_in: config.ui.chat_in,
+        system_clipboard: std::env::var_os("SSH_TTY").is_none()
+            && std::env::var_os("SSH_CONNECTION").is_none(),
     };
     tui::run(Arc::new(client), tui_config, desk, attach_fn(attacher)).await
 }

@@ -38,8 +38,10 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     public var cap = Int.max
     /// What asking for older rows comes to.
     public var paged: PageOutcome = .arrived(0)
-    /// How long asking for older rows takes to answer.
-    public var pageTakes: Duration = .zero
+    /// Whether asking for older rows waits for `answerPage()`, for a test
+    /// that looks at the chat while its page is on the way.
+    public var holdsPage = false
+    private var heldPage: CheckedContinuation<Void, Never>?
     /// What asking for the working-tree diff comes to; nil answers that the
     /// machine could not be asked.
     public var working: FrozenReview?
@@ -401,9 +403,24 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     }
     public func resume(with draft: Draft) async -> ActOutcome? { .done }
     public func pageOlder(_ rows: UInt32) async -> PageOutcome? {
-        let takes = lock.withLock { pageTakes }
-        if takes > .zero { try? await Task.sleep(for: takes) }
+        await withCheckedContinuation { continuation in
+            let holds = lock.withLock {
+                if holdsPage { heldPage = continuation }
+                return holdsPage
+            }
+            if !holds { continuation.resume() }
+        }
         return lock.withLock { paged }
+    }
+
+    /// Answers a page `holdsPage` kept waiting, and any asked for after it.
+    public func answerPage() {
+        let held = lock.withLock {
+            holdsPage = false
+            defer { heldPage = nil }
+            return heldPage
+        }
+        held?.resume()
     }
 
     public func putBlob(

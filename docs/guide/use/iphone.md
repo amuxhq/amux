@@ -51,6 +51,8 @@ Tap an agent to open its chat.
   Images in the chat show a preview, and tapping an image or file opens it.
 - **Agent settings:** the model chip under the message box changes the
   agent's model, effort, permission or mode, wherever that agent allows it.
+- **Reading back:** scroll up and an arrow above the message box takes you back
+  to the newest message. It says **New activity** once something has arrived.
 - **The overview:** shows the agent's tasks, its background jobs and the
   files it changed.
 

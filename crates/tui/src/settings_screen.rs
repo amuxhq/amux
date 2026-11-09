@@ -23,6 +23,8 @@ pub enum SettingsEffect {
     SignIn,
     CancelSignIn,
     SignOut,
+    /// Whether dragging over text in a chat copies it.
+    CopyOnSelect(bool),
     /// Back to home.
     Close,
 }
@@ -36,6 +38,7 @@ enum Row {
     Repository(usize),
     AddRepository,
     ChatIn,
+    CopyOnSelect,
     Telemetry,
     AutoReports,
     Account,
@@ -45,6 +48,7 @@ enum Row {
 pub struct SettingsScreen {
     settings: wire::Settings,
     profile: Option<wire::Profile>,
+    copy_on_select: bool,
     /// "Mac" or "computer", as "Keep this Mac awake" names it.
     machine: String,
     focus: usize,
@@ -108,6 +112,7 @@ impl SettingsScreen {
         SettingsScreen {
             settings,
             profile,
+            copy_on_select: true,
             machine: machine.to_owned(),
             focus: 0,
             rename: None,
@@ -116,6 +121,13 @@ impl SettingsScreen {
             error: None,
             spots: Vec::new(),
         }
+    }
+
+    /// The person's choice for dragging over text, which this client keeps
+    /// itself rather than the host.
+    pub fn copying_on_select(mut self, on: bool) -> SettingsScreen {
+        self.copy_on_select = on;
+        self
     }
 
     fn rows(&self) -> Vec<Row> {
@@ -128,6 +140,7 @@ impl SettingsScreen {
         rows.extend([
             Row::AddRepository,
             Row::ChatIn,
+            Row::CopyOnSelect,
             Row::Telemetry,
             Row::AutoReports,
             Row::Account,
@@ -284,6 +297,10 @@ impl SettingsScreen {
                 return Vec::new();
             }
             Row::Repository(_) => return Vec::new(),
+            Row::CopyOnSelect => {
+                self.copy_on_select = !self.copy_on_select;
+                return vec![SettingsEffect::CopyOnSelect(self.copy_on_select)];
+            }
             Row::StartAtLogin => wire::UpdateSettingsRequest {
                 start_at_login: settings.start_at_login.map(|on| !on),
                 ..Default::default()
@@ -349,6 +366,7 @@ impl SettingsScreen {
             Row::Repository(at) => text::tilde(&self.settings.repositories[at]),
             Row::AddRepository => "+ Add a folder…".to_owned(),
             Row::ChatIn => "Chat with agents in".to_owned(),
+            Row::CopyOnSelect => "Copy text when you select it".to_owned(),
             Row::Telemetry => "Send usage counts".to_owned(),
             Row::AutoReports => "Send reports automatically".to_owned(),
             Row::Account => match &self.profile {
@@ -376,6 +394,7 @@ impl SettingsScreen {
                 _ => "amux's chat",
             }
             .to_owned(),
+            Row::CopyOnSelect => on_off(self.copy_on_select).to_owned(),
             Row::Telemetry => on_off(settings.telemetry).to_owned(),
             Row::AutoReports => on_off(settings.auto_reports).to_owned(),
             Row::Account => match &self.profile {
@@ -391,7 +410,7 @@ impl SettingsScreen {
         let section = |row: Row| match row {
             Row::Name | Row::StartAtLogin | Row::KeepAwake => "This machine",
             Row::Repository(_) | Row::AddRepository => "Repositories",
-            Row::ChatIn => "Chats",
+            Row::ChatIn | Row::CopyOnSelect => "Chats",
             Row::Telemetry | Row::AutoReports => "Help improve amux",
             Row::Account => "Account",
         };

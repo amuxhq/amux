@@ -45,8 +45,11 @@ is drawn only while its words are on screen, so a block scrolled half off leaves
 Ink goes by importance, in four steps mixed from the terminal's own text and ground: brightest for what the eye
 should land on (names, the key in a legend), normal for what you act on, grey for what you read, faint for what
 you look up (ages, folders, hosts, counts). Colour marks meaning only: the attention ink (the terminal's blue) for
-what needs you, red for failure, the terminal's cyan for code and paths inside the agent's text, and green and red
-for lines added and removed wherever you read a diff. Anything that looks like a control can be clicked, and every
+what needs you and for headings and links in the agent's text, red for failure, the terminal's cyan for code and
+paths inside the agent's text, green and red for lines added and removed wherever you read a diff or its counts,
+and the terminal's yellow for what is worth noticing, like a usage limit near. Your own messages sit on a surface
+washed with the terminal's blue. An agent that acts without asking has a heavy yellow composer box, heavy so that it
+shows in a scheme whose yellow is pale. Anything that looks like a control can be clicked, and every
 key in a key line too.
 
 ### Setting up
@@ -240,8 +243,8 @@ sent: its host is away`. One whose connection dropped before a reply waits in th
 queue as `may not have arrived`, to resend or discard, and nothing is resent by itself.
 
 Scrolled back, a control floats at the bottom centre of the feed, `↓ Jump to Bottom  ctrl+end`, or `↓ 3 new` when
-rows arrived meanwhile; clicking it or Ctrl+End returns to the newest. Because the client reads the mouse, the
-terminal's own text selection takes its modifier: Shift+drag, or Option+drag in iTerm2 and Ghostty. A mouse-wheel
+rows arrived meanwhile; clicking it or Ctrl+End returns to the newest. The terminal's own selection still works
+with its modifier, Shift+drag or Option+drag in iTerm2 and Ghostty; [Selecting text](#selecting-text) covers amux's. A mouse-wheel
 event scrolls one line, so a trackpad's stream of small events moves smoothly; events arriving close together in
 one direction step up to two and then three lines (`tui::wheel`, shared by the chat, the review page and home).
 
@@ -252,7 +255,36 @@ client asks for older rows by itself when fewer than a page (40 rows) is held ab
 cursor as a chip in the person's own words (`[screenshot.png · 240 KB]`); text is pasted. A paste of eight lines or
 more, or of 1000 characters or more, becomes a pasted-text chip (`[pasted-1 · 23 lines]`). A chip keeps a space
 after itself; one Backspace removes a chip with its attachment. [ATTACHMENTS.md](ATTACHMENTS.md) covers what happens
-to attachments after that.
+to attachments after that. In a new agent's first message the bytes wait with the draft, since a file is stored in
+its agent's directory: Enter creates the agent, stores the files and then sends the message, and a file that cannot be
+stored leaves the agent running with the message in its composer and says why.
+
+The composer draws what it can of a draft's markdown without hiding a character, so the cursor and wrapping never
+depend on it: a `>` line becomes a rail, on its wrapped rows too; `**bold**`, `*italic*` and `` `code` `` take their
+style with the marks kept and faint, by the chat's own parser, so `2 * 3 * 4` stays plain and an unclosed `**` waits.
+A quote of more than four rows folds to two and `… N more lines` while the cursor is outside it; a click on the count
+puts the cursor inside and opens it, and one Backspace from just below removes it. Long lines wrap between words, and
+only a word wider than the row is cut. A secret answer is neither styled nor folded, and is cut at the edge, so
+nothing shows where its spaces are. A sent message renders as markdown, as the agent's words do; one with inline
+attachment chips stays plain, with its `>` lines on the same rail, so the chips keep their places.
+
+### Selecting text
+
+A drag in the feed, the side pane or the review page highlights what it covers, and only the words: not margins,
+rails, a sent message's time or a diff's gutter. In the feed the selection belongs to its rows, so it stays on the
+words while the feed scrolls and streams, and a drag held past the feed's edge keeps scrolling; a change of width
+clears it. Elsewhere it is held by screen cells and scrolling clears it.
+
+Releasing copies, unless **Copy text when you select it** is off in Settings (kept with the client's layout), where
+the hint line offers `c copy`. Copied text is the words as drawn with wrapped lines rejoined, a code block line for
+line. A copy goes to the machine's clipboard directly unless the client is over ssh, and always through the terminal's
+OSC 52.
+
+While text is selected the hint line says so and offers `r reply` in the feed and `esc clear`. `r` quotes the
+selection as `> ` lines at the cursor, on lines of their own with a blank line after and the cursor there. Any other
+key lets the selection go and does what it does; paging keeps it. A click elsewhere lets it go. Whatever else has the
+keys, an ask or the overview's list, keeps them. A press on a link or a fold acts on the release, so a drag from one
+selects instead.
 
 ### Asks
 
@@ -457,7 +489,8 @@ stops the agent or answers an ask; clearing a field and stopping the agent are n
 | Ctrl+O | The overview |
 | Page Up, Page Down, mouse wheel | Scroll |
 | Ctrl+Home, Ctrl+End | The oldest held row; follow the newest |
-| Esc | Back out one level: a panel, a field, the overview's keys, focus |
+| Esc | Back out one level: a selection, a panel, a field, the overview's keys, focus |
+| Mouse drag | Select text; then `r` to quote it in the draft, `c` to copy where copying on select is off |
 
 The draft editor takes readline keys: Ctrl+B and Ctrl+F move by character, Ctrl+Left and Ctrl+Right by word,
 Ctrl+E and End to the line's end, Home to its start, Ctrl+P and Ctrl+N (or ↑ and ↓) between lines; Ctrl+W, Ctrl+U
@@ -520,7 +553,7 @@ clicked.
 | `<leader> a` | Attach to the agent's own terminal, when it is on this machine |
 | `<leader> k`, `<leader> j` | Focus an older or newer row |
 | `<leader> o` | Open or close the focused row or run |
-| `<leader> y` | Copy the focused row (through the terminal's OSC 52 clipboard) |
+| `<leader> y` | Copy the focused row |
 
 During raw attach the leader is read out of the bytes you type: `<leader> d` detaches to the shell, `<leader> s`
 returns home over the attached agent, and a leader followed by any other key goes to the agent exactly as typed.

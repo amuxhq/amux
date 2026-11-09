@@ -69,6 +69,8 @@ pub struct Tokens {
     pub emphasis: Token,
     pub attention: Token,
     pub user_surface: Token,
+    /// Behind text dragged over with the mouse.
+    pub selection: Token,
     pub panel: Token,
     /// Section rules: a line that separates without being read.
     pub hairline: Token,
@@ -243,7 +245,8 @@ impl Theme {
                 // The sixteen conventional blues are too dark to read on
                 // black, so in that face attention takes light cyan.
                 attention: Token::new((108, 160, 232), Color::LightCyan),
-                user_surface: Token::new((24, 32, 40), Color::Black),
+                user_surface: Token::new((24, 34, 46), Color::Black),
+                selection: Token::new((52, 68, 92), Color::Blue),
                 panel: Token::new((23, 27, 34), Color::Blue),
                 hairline: Token::new((44, 50, 58), Color::DarkGray),
                 focus: Token::new((156, 140, 214), Color::Magenta),
@@ -276,7 +279,8 @@ impl Theme {
                 faint: Token::new((134, 139, 150), Color::DarkGray),
                 emphasis: Token::new((21, 24, 31), Color::Black),
                 attention: Token::new((38, 94, 168), Color::Blue),
-                user_surface: Token::new((236, 241, 243), Color::Cyan),
+                user_surface: Token::new((232, 239, 246), Color::Cyan),
+                selection: Token::new((190, 210, 235), Color::Cyan),
                 panel: Token::new((240, 240, 238), Color::Gray),
                 hairline: Token::new((220, 223, 228), Color::Gray),
                 focus: Token::new((109, 78, 156), Color::Magenta),
@@ -348,6 +352,7 @@ impl Theme {
             // message is the one thing on the screen they do not need to
             // find, so its surface states where it is rather than shouting.
             user_surface: surface(0.10),
+            selection: surface(0.28),
             panel: surface(0.055),
             hairline: surface(0.2),
             // Both tints start as the same plain surface and are tinted by
@@ -389,6 +394,17 @@ impl Theme {
     /// Body text.
     pub(crate) fn text(self) -> Style {
         Style::default().fg(self.color(self.tokens.text))
+    }
+
+    /// Text dragged over with the mouse: one ink on one surface, whatever
+    /// it was drawn in.
+    pub(crate) fn selection(self) -> Style {
+        // A palette adopted from the terminal cannot paint an exact shade
+        // of its ground in sixteen colours, and a selection has to show.
+        if self.adopted && self.mode == ColorMode::Ansi {
+            return Style::default().add_modifier(Modifier::REVERSED);
+        }
+        self.text().bg(self.color(self.tokens.selection))
     }
 
     /// De-emphasis: markers, rules, continuations, and hints.
@@ -495,6 +511,21 @@ impl Theme {
         Style::default().fg(self.color(self.tokens.focus))
     }
 
+    /// A markdown heading: structure in an agent's prose.
+    pub(crate) fn heading(self) -> Style {
+        Style::default()
+            .fg(self.color(self.tokens.attention))
+            .add_modifier(Modifier::BOLD)
+    }
+
+    /// A link in an agent's prose, kept apart from the words around it by
+    /// more than the underline.
+    pub(crate) fn link(self, style: Style) -> Style {
+        style
+            .fg(self.color(self.tokens.attention))
+            .add_modifier(Modifier::UNDERLINED)
+    }
+
     /// Added diff content and its tint.
     pub(crate) fn diff_added(self) -> Style {
         Style::default()
@@ -553,6 +584,16 @@ impl Theme {
             && fg == Some(self.color(self.tokens.emphasis))
         {
             return 'e';
+        }
+        if style.add_modifier.contains(Modifier::BOLD)
+            && fg == Some(self.color(self.tokens.attention))
+        {
+            return 'H';
+        }
+        if style.add_modifier.contains(Modifier::UNDERLINED)
+            && fg == Some(self.color(self.tokens.attention))
+        {
+            return 'L';
         }
         if style.add_modifier.contains(Modifier::ITALIC) && fg == Some(self.color(self.tokens.text))
         {
@@ -614,6 +655,13 @@ fn make_readable(tokens: &mut Tokens, faces: &Faces) {
     // diff still reads as a diff in sixteen colours.
     tokens.diff_added_bg = tinted(tokens.diff_added_bg, tokens.ok, faces);
     tokens.diff_removed_bg = tinted(tokens.diff_removed_bg, tokens.error, faces);
+
+    // The person's own words wear a wash of the scheme's blue, so the largest
+    // block on the screen is one of its colours rather than one more grey.
+    // Only the shade moves: in sixteen colours there is no wash to draw, and
+    // the block's face is decided below as for any other shade of the ground.
+    const YOU_WASH: f64 = 0.07;
+    tokens.user_surface.rgb = mix(tokens.user_surface.rgb, tokens.attention.rgb, YOU_WASH);
 
     // A scheme's block surfaces are shades of its background, and rounding
     // each one to its own terminal face turns a barely-there shade into a
@@ -1073,6 +1121,8 @@ mod tests {
         assert_eq!(theme.classify(theme.text()), '.');
         assert_eq!(theme.classify(theme.muted()), 'm');
         assert_eq!(theme.classify(theme.emphasis()), 'e');
+        assert_eq!(theme.classify(theme.heading()), 'H');
+        assert_eq!(theme.classify(theme.link(theme.text())), 'L');
         let italic = Style::default()
             .fg(theme.color(theme.tokens.text))
             .add_modifier(Modifier::ITALIC);

@@ -9,6 +9,10 @@
       "shows": "A prompt carrying an image and a file, drawn as chips under its text."
     },
     {
+      "id": "row.prompt-quote",
+      "shows": "Your message quoting an agent: the quote on a rail, your reply and its markdown below."
+    },
+    {
       "id": "row.prompt-steered",
       "shows": "A prompt sent while the agent was working, marked as steering the running turn."
     },

@@ -21,9 +21,9 @@
                                                                           │   3. auto                                │
     Ready: I'll group the changed files by folder, root files first.      │ › 4. full access ✓ · acts without asking │
                                                                           ╰──────────────────────────────────────────╯
-  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-  │ › Message fixer                                                                                                  │
-  ╰────────────────────────────────────────────────────────────────────────── GPT-5.5 (medium) · full access · plan ─╯
+  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+  ┃ › Message fixer                                                                                                  ┃
+  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ GPT-5.5 (medium) · full access · plan ━┛
 
   enter pick   ↑↓ move   esc back
 --- styles
@@ -48,10 +48,10 @@
 ..UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU??aammm...................................??..
 ..UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU??aammm...................................??..
 ..........................................................................??aammm...................................??..
-..........................................................................??aammm?????????????????????????????????????..
+..........................................................................??aammm?????????????wwwwwwwwwwwwwwwwwwwwww??..
 ..........................................................................????????????????????????????????????????????..
-..mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..
-..mmmmmmmmmmmmmmmmm..................................................................................................m..
-..mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm???????????????????..................mmm..
+..wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww..
+..wwmmmmmmmmmmmmmmm..................................................................................................w..
+..wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww???????????????????wwwwwwwwwww.......www..
 ........................................................................................................................
 ..eeeee????????ee????????eee?????.......................................................................................

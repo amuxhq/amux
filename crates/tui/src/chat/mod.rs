@@ -14,6 +14,7 @@ pub mod layout;
 pub mod pane;
 pub mod review;
 pub mod rows;
+pub mod selection;
 pub mod thumbs;
 
 use std::collections::{HashMap, HashSet};
@@ -32,7 +33,7 @@ use ui_view::{
     AskBody, AskCard, CardState, Changeable, ClientCommand, ExitCause, FamilyHeader, Offline,
     Reach, RowKind, Slash, ToolRows, ask_card, chat_rows_for, composer, overview, queue_rows,
 };
-use wire::{Attachment, attachment};
+use wire::Attachment;
 
 use self::ask::{AskAction, AskUi};
 use self::composer::{COMPOSER_LINES, QueueEntry, edge_row, editor_lines};
@@ -40,7 +41,8 @@ use self::feed::FeedHit;
 pub use self::layout::ToolSteps;
 use self::layout::{Anchor, Frame, Laid, Toggle};
 use self::review::{ReviewAction, ReviewPage};
-use crate::clipboard::ClipboardContent;
+use self::selection::{FeedSelection, Point, ScreenCells, ScreenSelection};
+use crate::clipboard::{Clip, ClipboardContent};
 use crate::editor::Editor;
 use crate::text::{self, push};
 use crate::theme::Theme;
@@ -136,17 +138,52 @@ pub enum ChatEffect {
     Chord(char),
     /// Say this in the notice line.
     Notice(String),
+    /// Put this on the clipboard.
+    Copy(String),
     /// amux's rename of this chat's agent: `/rename <name>`.
     Rename(String),
 }
 
-/// Why a file was not attached: it is over the limit, said in the unit a
-/// person reads (the limit is 64 MiB of the file's own bytes).
-fn too_large_words(name: &str) -> String {
-    format!(
-        "{name} is too large to attach: files can be at most {} MB",
-        wire::ATTACHMENT_SIZE_LIMIT / (1024 * 1024)
-    )
+/// What the reader has dragged over.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Selection {
+    Feed(FeedSelection),
+    /// In the side pane or on the review page.
+    Screen(ScreenSelection),
+}
+
+/// What the mouse went down on.
+#[derive(Clone, Debug)]
+enum Pressed {
+    Feed {
+        anchor: Option<Point>,
+        hit: Option<FeedHit>,
+    },
+    /// The side pane, on this item if on one.
+    Pane(Option<pane::PaneItem>),
+    /// The review page's stream.
+    Stream(Rect),
+}
+
+/// The left button held down.
+#[derive(Clone, Debug)]
+struct Press {
+    at: (u16, u16),
+    pointer: (u16, u16),
+    dragged: bool,
+    pressed: Pressed,
+}
+
+impl Press {
+    fn new(event: MouseEvent, pressed: Pressed) -> Press {
+        let at = (event.column, event.row);
+        Press {
+            at,
+            pointer: at,
+            dragged: false,
+            pressed,
+        }
+    }
 }
 
 /// Why a slash command was not sent: the agent does not run it, and what it
@@ -293,6 +330,22 @@ pub struct ChatView {
     header_spots: Vec<(u16, (u16, u16), HeaderControl)>,
     /// The header control under the mouse.
     hover: Option<HeaderControl>,
+    /// What the reader has dragged over.
+    selection: Option<Selection>,
+    /// The mouse button held since it went down on something a drag selects
+    /// or a click acts on, which waits for the release to know which it was.
+    press: Option<Press>,
+    /// The selection is on the clipboard.
+    copied: bool,
+    /// Releasing a drag copies it. The app sets this from the person's
+    /// choice in Settings.
+    pub copy_on_select: bool,
+    /// A drag held past the feed's top (-1) or bottom (1) keeps scrolling.
+    edge: Option<isize>,
+    /// The side pane's list, where a drag selects text.
+    pane_body: Option<Rect>,
+    /// What the side pane's list or the review page last drew.
+    screen_cells: Option<ScreenCells>,
     /// The which-key panel's entries while it shows; the app sets them
     /// before each frame.
     pub panel: Option<Vec<PanelEntry>>,
@@ -428,6 +481,13 @@ impl ChatView {
             changes_asked: None,
             header_spots: Vec::new(),
             hover: None,
+            selection: None,
+            press: None,
+            copied: false,
+            copy_on_select: true,
+            edge: None,
+            pane_body: None,
+            screen_cells: None,
             panel: None,
             hint_spots: Vec::new(),
             panel_spots: Vec::new(),
@@ -681,6 +741,18 @@ impl ChatView {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         if let Some(ask) = self.stop_ask.take() {
             return self.stop_ask_key(ask, key);
+        }
+        if let Some(effects) = self.selection_key(state, key, theme) {
+            return effects;
+        }
+        if key.code == KeyCode::Backspace
+            && key.modifiers.is_empty()
+            && self.composer_has_keys(state)
+            && let Some(spot) = self.composer_spot
+            && let Some((from, to)) = composer::folded_quote_above(&self.editor, spot.wrap)
+        {
+            self.editor.remove_chars(from, to);
+            return vec![];
         }
         if self.review_open
             && let Some(page) = &mut self.review
@@ -1394,13 +1466,35 @@ impl ChatView {
         event: MouseEvent,
         theme: Theme,
     ) -> Vec<ChatEffect> {
+        match event.kind {
+            MouseEventKind::Drag(MouseButton::Left) => {
+                self.drag(event);
+                return vec![];
+            }
+            MouseEventKind::Up(MouseButton::Left) => return self.release(state, theme),
+            _ => {}
+        }
         if self.review_open
             && let Some(page) = &mut self.review
         {
             match event.kind {
-                MouseEventKind::ScrollUp => page.scroll_by(-wheel_lines(Direction::Up)),
-                MouseEventKind::ScrollDown => page.scroll_by(wheel_lines(Direction::Down)),
-                MouseEventKind::Down(MouseButton::Left) => page.click(event.column, event.row),
+                MouseEventKind::ScrollUp => {
+                    self.selection = None;
+                    page.scroll_by(-wheel_lines(Direction::Up));
+                }
+                MouseEventKind::ScrollDown => {
+                    self.selection = None;
+                    page.scroll_by(wheel_lines(Direction::Down));
+                }
+                MouseEventKind::Down(MouseButton::Left) => {
+                    self.selection = None;
+                    self.copied = false;
+                    page.click(event.column, event.row);
+                    let rect = page.stream_area();
+                    if rect.contains(Position::new(event.column, event.row)) {
+                        self.press = Some(Press::new(event, Pressed::Stream(rect)));
+                    }
+                }
                 _ => {}
             }
             return vec![];
@@ -1446,12 +1540,14 @@ impl ChatView {
             // The wheel scrolls what is under the pointer; over the pane it
             // leaves the keys where they are.
             MouseEventKind::ScrollUp if self.over_pane(event) => {
+                self.selection = None;
                 self.pane_scroll = self
                     .pane_scroll
                     .saturating_sub(crate::wheel::lines(Direction::Up));
                 self.pane_hover = None;
             }
             MouseEventKind::ScrollDown if self.over_pane(event) => {
+                self.selection = None;
                 self.pane_scroll += crate::wheel::lines(Direction::Down);
                 self.pane_hover = None;
             }
@@ -1466,6 +1562,14 @@ impl ChatView {
             MouseEventKind::ScrollUp => self.scroll(state, -wheel_lines(Direction::Up), theme),
             MouseEventKind::ScrollDown => self.scroll(state, wheel_lines(Direction::Down), theme),
             MouseEventKind::Down(MouseButton::Left) => {
+                // The hint line's keys act on the selection; anywhere else a
+                // click lets go of it.
+                if !self.hint_spots.iter().any(|(row, (from, to), _)| {
+                    *row == event.row && (*from..*to).contains(&event.column)
+                }) {
+                    self.selection = None;
+                    self.copied = false;
+                }
                 match control {
                     Some(HeaderControl::Diff) => return vec![ChatEffect::Review],
                     Some(HeaderControl::Home) => return vec![ChatEffect::Home],
@@ -1500,10 +1604,9 @@ impl ChatView {
                                 self.pane_scroll + page
                             };
                         }
+                        // Opens on the release, as a drag from here selects.
                         pane::PaneHit::Item(item) => {
-                            self.pane_keys = true;
-                            self.pane_focus = Some(item.clone());
-                            return self.open_item(state, item);
+                            self.press = Some(Press::new(event, Pressed::Pane(Some(item))));
                         }
                     }
                     return vec![];
@@ -1513,7 +1616,7 @@ impl ChatView {
                     .pane_rect
                     .is_some_and(|rect| rect.contains(Position::new(x, y)))
                 {
-                    self.focus_pane();
+                    self.press = Some(Press::new(event, Pressed::Pane(None)));
                     return vec![];
                 }
                 if self.row_spot.is_some_and(|(row, cols)| on(row, cols)) {
@@ -1582,13 +1685,271 @@ impl ChatView {
                     self.editor.set_cursor_chars(at);
                     return vec![];
                 }
-                if let Some(hit) = self.hit_at(event.column, event.row) {
-                    return self.feed_hit(state, hit);
+                // A link or fold acts on the release, as a drag from here
+                // selects.
+                let hit = self.hit_at(x, y);
+                let anchor = self.feed_point(x, y);
+                if hit.is_some() || anchor.is_some() {
+                    self.press = Some(Press::new(event, Pressed::Feed { anchor, hit }));
                 }
             }
             _ => {}
         }
         vec![]
+    }
+
+    /// The feed's place under a screen cell, when a row is drawn there.
+    fn feed_point(&self, x: u16, y: u16) -> Option<Point> {
+        let (origin_x, origin_y) = self.feed_origin;
+        let (width, height) = self.feed;
+        let row = usize::from(y.checked_sub(origin_y)?);
+        let col = usize::from(x.checked_sub(origin_x)?);
+        if col >= width {
+            return None;
+        }
+        let (block, line) = line_places(&self.laid, height)
+            .get(row)
+            .copied()
+            .flatten()?;
+        Some(Point {
+            order: self.laid.blocks.get(block)?.order,
+            line,
+            col,
+        })
+    }
+
+    /// Where a drag at a screen cell reaches: the feed's place there, or
+    /// off the rows drawn, the nearest end of them.
+    fn feed_head(&self, x: u16, y: u16) -> Option<Point> {
+        let (origin_x, origin_y) = self.feed_origin;
+        let height = self.feed.1;
+        let places = line_places(&self.laid, height);
+        let row = i64::from(y) - i64::from(origin_y);
+        let at = usize::try_from(row).ok().filter(|row| *row < height);
+        if let Some(place) = at.and_then(|row| places[row]) {
+            let block = self.laid.blocks.get(place.0)?;
+            return Some(Point {
+                order: block.order,
+                line: place.1,
+                col: usize::from(x.saturating_sub(origin_x)),
+            });
+        }
+        let first = places.iter().position(Option::is_some)?;
+        let last = places.iter().rposition(Option::is_some)?;
+        let (place, col) = if at.map_or(row < 0, |row| row < first) {
+            (places[first]?, 0)
+        } else {
+            (places[last]?, usize::MAX)
+        };
+        Some(Point {
+            order: self.laid.blocks.get(place.0)?.order,
+            line: place.1,
+            col,
+        })
+    }
+
+    fn drag(&mut self, event: MouseEvent) {
+        let (x, y) = (event.column, event.row);
+        let Some(press) = &mut self.press else {
+            return;
+        };
+        if !press.dragged && (x, y) == press.at {
+            return;
+        }
+        press.dragged = true;
+        press.pointer = (x, y);
+        let at = press.at;
+        match &press.pressed {
+            Pressed::Feed { anchor, .. } => {
+                let Some(anchor) = *anchor else {
+                    return;
+                };
+                let (top, bottom) = (self.feed_origin.1, self.feed_origin.1 + self.feed.1 as u16);
+                self.edge = (y < top).then_some(-1).or((y >= bottom).then_some(1));
+                if let Some(head) = self.feed_head(x, y) {
+                    self.selection = Some(Selection::Feed(FeedSelection { anchor, head }));
+                }
+            }
+            Pressed::Pane(_) | Pressed::Stream(_) => {
+                let rect = match &press.pressed {
+                    Pressed::Stream(rect) => Some(*rect),
+                    _ => self.pane_body,
+                };
+                let Some(rect) = rect.filter(|rect| rect.contains(Position::new(at.0, at.1)))
+                else {
+                    return;
+                };
+                let mut selection = match self.selection.take() {
+                    Some(Selection::Screen(selection)) => selection,
+                    _ => ScreenSelection::new(rect, at),
+                };
+                selection.drag_to(x, y);
+                self.selection = Some(Selection::Screen(selection));
+            }
+        }
+    }
+
+    /// The button came up: a press that never moved is a click, a drag has
+    /// selected, and goes to the clipboard if the person wants that.
+    fn release(&mut self, state: &SessionState, theme: Theme) -> Vec<ChatEffect> {
+        self.edge = None;
+        let Some(press) = self.press.take() else {
+            return vec![];
+        };
+        if !press.dragged {
+            return match press.pressed {
+                Pressed::Feed { hit: Some(hit), .. } => self.feed_hit(state, hit),
+                Pressed::Pane(Some(item)) => {
+                    self.pane_keys = true;
+                    self.pane_focus = Some(item.clone());
+                    self.open_item(state, item)
+                }
+                Pressed::Pane(None) => {
+                    self.focus_pane();
+                    vec![]
+                }
+                Pressed::Feed { .. } | Pressed::Stream(_) => vec![],
+            };
+        }
+        let words = self.selected_words(state, theme);
+        if words.is_empty() {
+            self.selection = None;
+            return vec![];
+        }
+        if self.copy_on_select {
+            self.copied = true;
+            return vec![ChatEffect::Copy(words)];
+        }
+        vec![]
+    }
+
+    /// Keeps what a surface just drew, and lights its selection. Laid out
+    /// anew in another place, the surface's selection and any press on it
+    /// no longer name what is there.
+    fn keep_screen(&mut self, paint: &mut Paint<'_>, cells: ScreenCells, theme: Theme) {
+        if matches!(&self.selection, Some(Selection::Screen(selection)) if selection.rect != cells.rect)
+        {
+            self.clear_selection();
+        }
+        if matches!(&self.press, Some(Press { pressed: Pressed::Stream(rect), .. }) if *rect != cells.rect)
+        {
+            self.press = None;
+        }
+        if let Some(Selection::Screen(selection)) = &self.selection {
+            selection.paint(paint.buffer_mut(), &cells, theme.selection());
+        }
+        self.screen_cells = Some(cells);
+    }
+
+    fn selected_words(&self, state: &SessionState, theme: Theme) -> String {
+        match &self.selection {
+            Some(Selection::Feed(selection)) => self.frame(theme).selected_text(state, selection),
+            Some(Selection::Screen(selection)) => self
+                .screen_cells
+                .as_ref()
+                .filter(|cells| cells.rect == selection.rect)
+                .map_or_else(String::new, |cells| selection.text(cells)),
+            None => String::new(),
+        }
+    }
+
+    /// A drag held past the feed's edge scrolls another line.
+    pub fn selecting_past_edge(&self) -> bool {
+        self.edge.is_some()
+    }
+
+    pub fn edge_tick(&mut self, state: &SessionState, theme: Theme) {
+        let Some(delta) = self.edge else {
+            return;
+        };
+        self.scroll(state, delta, theme);
+        self.laid = self.frame(theme).layout(state);
+        let Some(pointer) = self.press.as_ref().map(|press| press.pointer) else {
+            return;
+        };
+        let head = self.feed_head(pointer.0, pointer.1);
+        if let (Some(Selection::Feed(selection)), Some(head)) = (&mut self.selection, head) {
+            selection.head = head;
+        }
+    }
+
+    /// Whether keys typed now reach the composer.
+    fn composer_has_keys(&self, state: &SessionState) -> bool {
+        !self.review_open
+            && self.picker.is_none()
+            && !self.setting_prefix
+            && self.tray.is_none()
+            && !(self.pane_open && self.pane_keys)
+            && self.card_takes_keys(state).is_none()
+    }
+
+    /// A key while text is selected. None sends it on as usual: a key that
+    /// is not the selection's lets go of it first, except paging, which
+    /// reads on with the words still held. In the feed, whatever else has
+    /// the keys keeps them.
+    fn selection_key(
+        &mut self,
+        state: &SessionState,
+        key: KeyEvent,
+        theme: Theme,
+    ) -> Option<Vec<ChatEffect>> {
+        let in_feed = match self.selection.as_ref()? {
+            Selection::Feed(_) => true,
+            Selection::Screen(_) => false,
+        };
+        if in_feed && !self.composer_has_keys(state) {
+            return None;
+        }
+        let plain = key.modifiers.is_empty();
+        match key.code {
+            KeyCode::Esc => {
+                self.clear_selection();
+                Some(vec![])
+            }
+            KeyCode::Char('r') if plain && in_feed => {
+                let words = self.selected_words(state, theme);
+                self.editor.quote(&words);
+                self.focus = None;
+                self.clear_selection();
+                Some(vec![])
+            }
+            KeyCode::Char('c') if plain && !self.copy_on_select => {
+                self.copied = true;
+                Some(vec![ChatEffect::Copy(self.selected_words(state, theme))])
+            }
+            KeyCode::PageUp | KeyCode::PageDown if in_feed => None,
+            KeyCode::End if in_feed && key.modifiers.contains(KeyModifiers::CONTROL) => None,
+            _ => {
+                self.clear_selection();
+                None
+            }
+        }
+    }
+
+    fn clear_selection(&mut self) {
+        self.selection = None;
+        self.copied = false;
+    }
+
+    /// The hint line while text is selected.
+    fn selection_hint(&self, state: &SessionState) -> Option<Hint> {
+        let in_feed = matches!(self.selection.as_ref()?, Selection::Feed(_));
+        if in_feed && !self.composer_has_keys(state) {
+            return None;
+        }
+        let mut pairs = Vec::new();
+        if !self.copy_on_select && !self.copied {
+            pairs.push(("c", "copy"));
+        }
+        if in_feed {
+            pairs.push(("r", "reply"));
+        }
+        pairs.push(("esc", "clear"));
+        Some(if self.copied {
+            Hint::Noted("copied", keys(&pairs))
+        } else {
+            Hint::Keys(keys(&pairs))
+        })
     }
 
     /// The overview with the changed files fetched for the comparison
@@ -1876,44 +2237,16 @@ impl ChatView {
     /// What Ctrl+V found: text follows the paste rules, an image or a file
     /// is stored and attached.
     pub fn paste(&mut self, content: ClipboardContent) -> Result<Option<ChatEffect>, String> {
-        match content {
-            ClipboardContent::Image { mime, bytes } => {
-                let name = "clipboard.png".to_owned();
-                if bytes.len() > wire::ATTACHMENT_SIZE_LIMIT {
-                    return Err(too_large_words(&name));
-                }
+        match crate::clipboard::clip(content)? {
+            Clip::File { name, mime, bytes } => {
                 self.attaching.push(name.clone());
                 Ok(Some(ChatEffect::Attach { name, mime, bytes }))
             }
-            ClipboardContent::Path(path) => {
-                let name = path
-                    .file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| path.display().to_string());
-                // Refused before it is read or sent: the daemon would refuse
-                // it after the whole upload.
-                let size = std::fs::metadata(&path)
-                    .map_err(|error| format!("{name} could not be read: {error}"))?
-                    .len();
-                if size > wire::ATTACHMENT_SIZE_LIMIT as u64 {
-                    return Err(too_large_words(&name));
-                }
-                let bytes = std::fs::read(&path)
-                    .map_err(|error| format!("{name} could not be read: {error}"))?;
-                self.attaching.push(name.clone());
-                Ok(Some(ChatEffect::Attach {
-                    mime: attachments::native_image(&bytes)
-                        .unwrap_or_else(|| mime_of(&name))
-                        .to_owned(),
-                    name,
-                    bytes,
-                }))
-            }
-            ClipboardContent::Text(text) => {
+            Clip::Text(text) => {
                 self.editor.paste(&text);
                 Ok(None)
             }
-            ClipboardContent::Empty => Ok(None),
+            Clip::Nothing => Ok(None),
         }
     }
 
@@ -1922,12 +2255,7 @@ impl ChatView {
     /// for it and it was the last on its way, the draft is sent now.
     pub fn attach_blob(&mut self, state: &SessionState, blob: wire::BlobRef) -> Vec<ChatEffect> {
         self.landed(&blob.name);
-        let of = if blob.mime.starts_with("image/") {
-            attachment::Of::Image(blob)
-        } else {
-            attachment::Of::File(blob)
-        };
-        self.editor.attach(Attachment { of: Some(of) });
+        self.editor.attach(crate::clipboard::blob_attachment(blob));
         if self.attaching.is_empty() && std::mem::take(&mut self.send_when_attached) {
             return self.submit(state);
         }
@@ -2041,7 +2369,29 @@ impl ChatView {
                 cwd.clone()
             };
             page.set_owner(&name, &place);
+            let in_screen = matches!(self.selection, Some(Selection::Screen(_)));
+            let footer = footer.or_else(|| {
+                in_screen.then(|| {
+                    let mut pairs = Vec::new();
+                    if !self.copy_on_select && !self.copied {
+                        pairs.push(("c", "copy"));
+                    }
+                    pairs.push(("esc", "clear"));
+                    let hint = if self.copied {
+                        Hint::Noted("copied", keys(&pairs))
+                    } else {
+                        Hint::Keys(keys(&pairs))
+                    };
+                    hint_line(&hint, usize::from(area.width), theme).0
+                })
+            });
             page.draw(paint, area, footer, theme);
+            let cells = ScreenCells::capture(
+                paint.buffer_mut(),
+                page.stream_area(),
+                page.stream_gutters().to_vec(),
+            );
+            self.keep_screen(paint, cells, theme);
             return None;
         }
         let page = self.draw_turns(paint, area, state, family, footer, now_ms, theme);
@@ -2382,8 +2732,14 @@ impl ChatView {
                 let inner = width.saturating_sub(2 * MARGIN + 4).max(1);
                 self.ask.set_room(usize::from(area.height), self.attach);
                 let drawn = self.ask.box_lines(card, inner, theme);
-                let (lines, mode, _) =
-                    framed(drawn.lines, theme.attention(), &summary, width, theme);
+                let (lines, mode, _) = framed(
+                    drawn.lines,
+                    theme.attention(),
+                    &ROUNDED,
+                    &summary,
+                    width,
+                    theme,
+                );
                 let at = bottom.len();
                 if let Some((row, col)) = drawn.cursor {
                     cursor = Some((at + 1 + row, MARGIN + 2 + col));
@@ -2468,6 +2824,9 @@ impl ChatView {
                 Hint::Keys(keys(&pairs))
             };
         }
+        if let Some(selecting) = self.selection_hint(state) {
+            hint = selecting;
+        }
         // The plain composer's top edge says what stands in the way of
         // sending, most pressing first: the last prompt refused (error
         // ink), Claude's own view on another conversation (warning ink),
@@ -2486,7 +2845,12 @@ impl ChatView {
             if let Some((words, ink)) = words
                 && let Some(top) = bottom.get_mut(at)
             {
-                *top = marked_edge_in(&words, ink, width, theme);
+                let edge = if unguarded(&summary) {
+                    theme.warning()
+                } else {
+                    theme.muted()
+                };
+                *top = marked_edge_in(&words, ink, edge, box_glyphs(&summary), width);
             }
         }
         // A blank line lets the composer's box breathe above the keys.
@@ -2500,6 +2864,13 @@ impl ChatView {
 
         let height = usize::from(area.height);
         let feed_height = height.saturating_sub(top.len() + bottom.len());
+        // Wrapped again at another width, a selection's lines are other
+        // lines.
+        if self.feed.0 != feed_width {
+            self.clear_selection();
+            self.press = None;
+            self.edge = None;
+        }
         self.feed = (feed_width, feed_height);
         self.feed_origin = (area.x, area.y + top.len() as u16);
         let feed_top = top.len();
@@ -2550,6 +2921,18 @@ impl ChatView {
             }
             let mut feed: Vec<Line<'static>> = laid.lines.clone();
             text::drop_cut_padding(&mut feed);
+            if let Some(Selection::Feed(selection)) = &self.selection {
+                for (row, place) in line_places(&laid, feed.len()).into_iter().enumerate() {
+                    let Some((block, line)) = place else {
+                        continue;
+                    };
+                    let block = &laid.blocks[block];
+                    if let Some((from, to)) = selection.columns(block.order, line, block.text[line])
+                    {
+                        text::highlight(&mut feed[row], from, to, theme.selection());
+                    }
+                }
+            }
             if let Some((pinned, key)) = pinned(state, &laid, feed_height, feed_width, theme) {
                 let rows = pinned.len();
                 thumb_lines.start = rows;
@@ -2730,6 +3113,13 @@ impl ChatView {
             }
             self.pane_rect = Some(rect);
             self.draw_side_pane(paint, rect, &overview, lit.as_ref(), now_ms, theme);
+            let body = self.pane_body.unwrap_or_default();
+            let cells = ScreenCells::capture(paint.buffer_mut(), body, Vec::new());
+            self.keep_screen(paint, cells, theme);
+        }
+        // A pane that closed takes its selection with it.
+        if !side && matches!(self.selection, Some(Selection::Screen(_))) {
+            self.clear_selection();
         }
         // A model or effort being chosen: its flyover rises from the model's
         // words on the composer's edge, over the box (and the pane).
@@ -2857,6 +3247,12 @@ impl ChatView {
         // room from each edge when they move it.
         let height = usize::from(rect.height.saturating_sub(TITLE));
         self.pane_page = height;
+        self.pane_body = Some(Rect {
+            x: rect.x + LEFT,
+            y: rect.y + TITLE,
+            width: inner,
+            height: height as u16,
+        });
         let len = content.body.len();
         let max = len.saturating_sub(height);
         if self.pane_follow {
@@ -2999,20 +3395,32 @@ impl ChatView {
             };
             right.push(Span::styled(words, style));
         }
-        let diff = diff_words(state, self.comparison);
+        let diff_hovered = self.hover == Some(HeaderControl::Diff);
+        let home_hovered = self.hover == Some(HeaderControl::Home);
+        let home_style = if home_hovered {
+            theme.emphasis()
+        } else {
+            theme.muted()
+        };
         let mut controls = Vec::new();
-        for (words, control) in [
-            (diff, HeaderControl::Diff),
-            ("[Home]".to_owned(), HeaderControl::Home),
+        for (spans, control) in [
+            (
+                diff_spans(state, self.comparison, diff_hovered, theme),
+                HeaderControl::Diff,
+            ),
+            (
+                vec![Span::styled("[Home]", home_style)],
+                HeaderControl::Home,
+            ),
         ] {
             gap(&mut right);
-            let style = if self.hover == Some(control) {
-                theme.emphasis()
-            } else {
-                theme.muted()
-            };
-            controls.push((right.len(), text::str_width(&words), control));
-            right.push(Span::styled(words, style));
+            let columns = spans
+                .iter()
+                .map(|span| text::str_width(&span.content))
+                .sum();
+            // A control may be several spans; its columns start at the first.
+            controls.push((right.len(), columns, control));
+            right.extend(spans);
         }
         let right_width: usize = right
             .iter()
@@ -3078,8 +3486,14 @@ fn change_totals(state: &SessionState, comparison: Comparison) -> Option<wire::C
 /// The header's way to the review page, with the change totals of the
 /// comparison shown: "[Diff +42 −7]" for uncommitted changes, "[Diff vs
 /// main +120 −30]" for everything on the branch, a bare "[Diff]" with
-/// nothing to count.
-fn diff_words(state: &SessionState, comparison: Comparison) -> String {
+/// nothing to count. Each count wears what it counts, unless hovered, when
+/// the whole control lights as one.
+fn diff_spans(
+    state: &SessionState,
+    comparison: Comparison,
+    hovered: bool,
+    theme: Theme,
+) -> Vec<Span<'static>> {
     let against = match comparison {
         Comparison::Uncommitted => None,
         Comparison::OnBranch => state
@@ -3088,6 +3502,12 @@ fn diff_words(state: &SessionState, comparison: Comparison) -> String {
             .as_ref()
             .and_then(|git| git.base_branch.as_deref()),
     };
+    let control = if hovered {
+        theme.emphasis()
+    } else {
+        theme.muted()
+    };
+    let mut spans = Vec::new();
     let mut words = "[Diff".to_owned();
     if let Some(base) = against {
         words.push_str(&format!(" vs {base}"));
@@ -3095,10 +3515,32 @@ fn diff_words(state: &SessionState, comparison: Comparison) -> String {
     if let Some(totals) = change_totals(state, comparison)
         .filter(|totals| totals.added + totals.removed > 0 || totals.files > 0)
     {
-        words.push_str(&format!(" +{} −{}", totals.added, totals.removed));
+        let count = |words: String, changed: u64, ink: ratatui::style::Style| {
+            let ink = if hovered {
+                control
+            } else if changed > 0 {
+                ink
+            } else {
+                theme.faint()
+            };
+            Span::styled(words, ink)
+        };
+        spans.push(Span::styled(words, control));
+        spans.push(count(
+            format!(" +{}", totals.added),
+            totals.added.into(),
+            theme.ok(),
+        ));
+        spans.push(count(
+            format!(" −{}", totals.removed),
+            totals.removed.into(),
+            theme.error(),
+        ));
+        words = String::new();
     }
     words.push(']');
-    words
+    spans.push(Span::styled(words, control));
+    spans
 }
 
 /// Where the chat stands, only when that is a problem the person should
@@ -3217,7 +3659,7 @@ fn sign_in_box(
     const MARGIN: usize = 2;
     let inner = width.saturating_sub(2 * MARGIN + 4).max(1);
     let body = sign_in_lines(kind, host, sign_in, inner, theme);
-    let (lines, mode, _) = framed(body, theme.attention(), controls, width, theme);
+    let (lines, mode, _) = framed(body, theme.attention(), &ROUNDED, controls, width, theme);
     (lines, mode)
 }
 
@@ -3388,7 +3830,7 @@ pub(crate) fn composer_lines(
     if let Some((words, ink)) = edge_title(None, false, composer, host, reach, None, theme)
         && let Some(top) = lines.first_mut()
     {
-        *top = marked_edge_in(&words, ink, width, theme);
+        *top = marked_edge_in(&words, ink, theme.muted(), &ROUNDED, width);
     }
     lines
 }
@@ -3505,14 +3947,20 @@ fn boxed_composer(
     }
     let skip = (row + 1).saturating_sub(COMPOSER_LINES);
     // Holding the keys, the box's edge is grey; otherwise it recedes to a
-    // hairline. The words on its edge keep their own inks.
-    let edge = if focused {
+    // hairline. An agent that acts without asking keeps it in the warning ink
+    // either way: that is true of the chat, not of where the keys are. The
+    // words on its edge keep their own inks. Its line is heavy as well (see
+    // `box_glyphs`).
+    let edge = if unguarded(controls) {
+        theme.warning()
+    } else if focused {
         theme.muted()
     } else {
         theme.hairline()
     };
     let body = body.into_iter().skip(skip).take(COMPOSER_LINES).collect();
-    let (lines, mode, label) = framed(body, edge, controls, width, theme);
+    let glyphs = box_glyphs(controls);
+    let (lines, mode, label) = framed(body, edge, glyphs, controls, width, theme);
     Boxed {
         lines,
         cursor: (1 + row - skip, MARGIN + 2 + col),
@@ -3524,24 +3972,81 @@ fn boxed_composer(
     }
 }
 
+/// The characters of the composer's box.
+struct BoxGlyphs {
+    top_left: &'static str,
+    top_right: &'static str,
+    bottom_left: &'static str,
+    bottom_right: &'static str,
+    across: &'static str,
+    down: &'static str,
+}
+
+const ROUNDED: BoxGlyphs = BoxGlyphs {
+    top_left: "╭",
+    top_right: "╮",
+    bottom_left: "╰",
+    bottom_right: "╯",
+    across: "─",
+    down: "│",
+};
+
+const HEAVY: BoxGlyphs = BoxGlyphs {
+    top_left: "┏",
+    top_right: "┓",
+    bottom_left: "┗",
+    bottom_right: "┛",
+    across: "━",
+    down: "┃",
+};
+
+/// The box for this agent: heavy when it acts without asking, because the
+/// warning ink is the terminal's yellow and some schemes' yellow is pale
+/// enough to pass for the ordinary edge. The shape says it in any scheme.
+fn box_glyphs(controls: &ui_view::ControlsSummary) -> &'static BoxGlyphs {
+    if unguarded(controls) {
+        &HEAVY
+    } else {
+        &ROUNDED
+    }
+}
+
+/// Whether this agent acts without asking first.
+fn unguarded(controls: &ui_view::ControlsSummary) -> bool {
+    controls
+        .permission
+        .as_ref()
+        .is_some_and(|permission| permission.never_asks)
+}
+
 /// The composer box's top edge with `words` on it in `ink`, after a short
 /// run of the edge.
 fn marked_edge_in(
     words: &str,
     ink: ratatui::style::Style,
+    edge: ratatui::style::Style,
+    glyphs: &BoxGlyphs,
     width: usize,
-    theme: Theme,
 ) -> Line<'static> {
     const MARGIN: usize = 2;
-    let edge = theme.muted();
     let span = width.saturating_sub(2 * MARGIN + 2);
     let mut top = Line::from(Span::raw(" ".repeat(MARGIN)));
-    push(&mut top, "╭─ ", edge, width);
+    push(
+        &mut top,
+        format!("{}{} ", glyphs.top_left, glyphs.across),
+        edge,
+        width,
+    );
     push(&mut top, words, ink, width);
     push(&mut top, " ", edge, width);
     let used = text::line_width(&top) - MARGIN - 1;
-    push(&mut top, "─".repeat(span.saturating_sub(used)), edge, width);
-    push(&mut top, "╮", edge, width);
+    push(
+        &mut top,
+        glyphs.across.repeat(span.saturating_sub(used)),
+        edge,
+        width,
+    );
+    push(&mut top, glyphs.top_right, edge, width);
     top
 }
 
@@ -3552,6 +4057,7 @@ fn marked_edge_in(
 fn framed(
     body: Vec<Line<'static>>,
     edge: ratatui::style::Style,
+    glyphs: &BoxGlyphs,
     controls: &ui_view::ControlsSummary,
     width: usize,
     theme: Theme,
@@ -3560,16 +4066,16 @@ fn framed(
     let span = width.saturating_sub(2 * MARGIN + 2);
     let mut out = Vec::new();
     let mut top = Line::from(Span::raw(" ".repeat(MARGIN)));
-    push(&mut top, "╭", edge, width);
-    push(&mut top, "─".repeat(span), edge, width);
-    push(&mut top, "╮", edge, width);
+    push(&mut top, glyphs.top_left, edge, width);
+    push(&mut top, glyphs.across.repeat(span), edge, width);
+    push(&mut top, glyphs.top_right, edge, width);
     out.push(top);
     for line in body {
         let mut boxed = Line::from(Span::raw(" ".repeat(MARGIN)));
-        push(&mut boxed, "│ ", edge, width);
+        push(&mut boxed, format!("{} ", glyphs.down), edge, width);
         boxed.spans.extend(line.spans);
         text::pad_to(&mut boxed, width - MARGIN - 1);
-        push(&mut boxed, "│", edge, width);
+        push(&mut boxed, glyphs.down, edge, width);
         out.push(boxed);
     }
     // "Opus (high) · accept edits": the model faint by its name, its
@@ -3590,21 +4096,32 @@ fn framed(
         if !label.is_empty() {
             label.push(Span::styled(" · ", theme.faint()));
         }
-        label.push(Span::styled(mode.clone(), theme.text()));
+        // A permission under which the agent acts without asking is the one
+        // setting worth noticing at a glance.
+        let unguarded = unguarded(controls);
+        match mode.split_once(" · ").filter(|_| unguarded) {
+            // The permission leads; a mode after it is not the risk.
+            Some((permission, rest)) => {
+                label.push(Span::styled(permission.to_owned(), theme.warning()));
+                label.push(Span::styled(format!(" · {rest}"), theme.text()));
+            }
+            None if unguarded => label.push(Span::styled(mode.clone(), theme.warning())),
+            None => label.push(Span::styled(mode.clone(), theme.text())),
+        }
     }
     let label_width: usize = label
         .iter()
         .map(|part| text::str_width(&part.content))
         .sum();
     let mut bottom = Line::from(Span::raw(" ".repeat(MARGIN)));
-    push(&mut bottom, "╰", edge, width);
+    push(&mut bottom, glyphs.bottom_left, edge, width);
     let mut mode = None;
     let mut label_at = None;
     if label.is_empty() || label_width + 6 > span {
-        push(&mut bottom, "─".repeat(span), edge, width);
+        push(&mut bottom, glyphs.across.repeat(span), edge, width);
     } else {
         let rule = span.saturating_sub(label_width + 3).max(1);
-        push(&mut bottom, "─".repeat(rule), edge, width);
+        push(&mut bottom, glyphs.across.repeat(rule), edge, width);
         push(&mut bottom, " ", edge, width);
         label_at = Some(text::line_width(&bottom));
         bottom.spans.extend(label);
@@ -3612,10 +4129,10 @@ fn framed(
             let to = text::line_width(&bottom);
             mode = Some((to - text::str_width(words), to));
         }
-        push(&mut bottom, " ─", edge, width);
+        push(&mut bottom, format!(" {}", glyphs.across), edge, width);
     }
     text::pad_to(&mut bottom, width - MARGIN - 1);
-    push(&mut bottom, "╯", edge, width);
+    push(&mut bottom, glyphs.bottom_right, edge, width);
     out.push(bottom);
     (out, mode, label_at)
 }
@@ -3681,6 +4198,8 @@ pub(crate) fn keys(pairs: &[(&str, &str)]) -> Keys {
 /// not one.
 enum Hint {
     Keys(Keys),
+    /// A word on what just happened, then keys.
+    Noted(&'static str, Keys),
     Sentence(String),
 }
 
@@ -3697,13 +4216,18 @@ fn hint_line(hint: &Hint, width: usize, theme: Theme) -> (Line<'static>, KeySpot
             push(&mut line, words, theme.faint(), width);
             return (line, Vec::new());
         }
+        Hint::Noted(words, pairs) => {
+            push(&mut line, format!("{words}   "), theme.faint(), width);
+            pairs
+        }
         Hint::Keys(pairs) => pairs,
     };
     let borrowed: Vec<(&str, &str)> = pairs
         .iter()
         .map(|(key, action)| (key.as_str(), action.as_str()))
         .collect();
-    let spots = text::push_hints(&mut line, &borrowed, width.saturating_sub(2), theme)
+    let room = width.saturating_sub(text::line_width(&line));
+    let spots = text::push_hints(&mut line, &borrowed, room, theme)
         .into_iter()
         .filter_map(|(at, columns)| Some((columns, key_event(borrowed[at].0)?)))
         .collect();
@@ -3803,20 +4327,26 @@ fn pinned(
 /// Which drawn block each of the feed's `height` lines belongs to, top
 /// first; `None` for the blank lines that pad a short chat.
 fn line_owners(laid: &Laid, height: usize) -> Vec<Option<usize>> {
-    let mut owners: Vec<Option<usize>> = laid
-        .blocks
-        .iter()
-        .enumerate()
-        .flat_map(|(i, block)| std::iter::repeat_n(Some(i), block.lines.len()))
-        .skip(laid.top_offset)
-        .take(height)
-        .collect();
-    if owners.len() < height {
-        let mut padded = vec![None; height - owners.len()];
-        padded.append(&mut owners);
-        owners = padded;
-    }
-    owners
+    line_places(laid, height)
+        .into_iter()
+        .map(|place| place.map(|(block, _)| block))
+        .collect()
+}
+
+/// For each of the feed's `height` lines, the block drawn there and which
+/// of its lines; None over the padding above a short chat and the live end
+/// below the newest row.
+fn line_places(laid: &Laid, height: usize) -> Vec<Option<(usize, usize)>> {
+    let mut places = vec![None; laid.pad];
+    places.extend(
+        laid.blocks
+            .iter()
+            .enumerate()
+            .flat_map(|(i, block)| (0..block.lines.len()).map(move |line| Some((i, line))))
+            .skip(laid.top_offset),
+    );
+    places.resize(height, None);
+    places
 }
 
 /// The control that returns to the newest row while the reader is in
@@ -3904,15 +4434,6 @@ fn which_key_panel(
 }
 
 /// The type of a pasted file that is not a native image, from its name.
-fn mime_of(name: &str) -> &'static str {
-    let extension = name.rsplit('.').next().unwrap_or_default().to_lowercase();
-    match extension.as_str() {
-        "txt" | "md" | "log" => "text/plain",
-        "json" => "application/json",
-        _ => "application/octet-stream",
-    }
-}
-
 /// "↑ planner · 3 subagents · 1 needs you"
 fn family_line(family: &FamilyHeader, width: usize, theme: Theme) -> Line<'static> {
     let mut parts = Vec::new();

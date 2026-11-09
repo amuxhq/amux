@@ -96,10 +96,12 @@ final class ChatFeedTests: XCTestCase {
 
     /// The pixels of the rows between the header and the composer, as the
     /// screen shows them. The band starts below the soft edge under the
-    /// header, which blurs in whatever rows are scrolled past above it.
+    /// header, which blurs in whatever rows are scrolled past above it, and
+    /// ends above the glass way back to the newest row a reader in history
+    /// has standing over the rows, which is not the rows.
     private func rowsBand() throws -> Data {
         let window = try XCTUnwrap(self.window)
-        let band = CGRect(x: 0, y: 200, width: window.bounds.width, height: 500)
+        let band = CGRect(x: 0, y: 200, width: window.bounds.width, height: 420)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.preferredRange = .standard
@@ -149,21 +151,25 @@ final class ChatFeedTests: XCTestCase {
     func testAPageLandingAboveAReaderAtTheTopMovesNothingOnScreen() async throws {
         let source = ScriptedChat(rows: Self.messages(961...1_000), frame: ScriptedChat.frame(hasOlder: true))
         source.paged = .arrived(0)
-        // The page answers after the reader has come to rest at the top, so
-        // the loading notice is showing above the rows when they are
-        // photographed and goes as the page lands.
-        source.pageTakes = .seconds(0.6)
+        // The page answers only once the rows are photographed, so the loading
+        // notice is showing above them then and goes as the page lands, on a
+        // machine of any speed.
+        source.holdsPage = true
         let model = ChatModel(source: source)
         try show(model)
         await spin(1)
         let list = try list()
         await scrollUp(list, model, screens: 40)
+        let deadline = ContinuousClock.now + .seconds(10)
+        while model.paging != .fetching, ContinuousClock.now < deadline { await spin(0.05) }
         XCTAssertEqual(model.paging, .fetching)
+        await spin()
 
         let before = try onScreen()
         let photographed = try rowsBand()
         source.prepend(Self.messages(921...960))
         source.deliver(to: model)
+        source.answerPage()
         await spin(1)
         XCTAssertEqual(model.paging, .idle)
         try assertStill(before, "a page landing")

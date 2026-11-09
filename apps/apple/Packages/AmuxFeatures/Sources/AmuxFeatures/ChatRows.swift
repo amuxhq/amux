@@ -806,11 +806,9 @@ struct SegmentsView: View {
             ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                 switch segment {
                 case .text(let text):
-                    Text(text)
-                        .designFont(.body, design)
-                        .foregroundStyle(design.ink.color)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
+                    if !text.allSatisfy(\.isWhitespace) {
+                        Prose(markdown: text, inBubble: true)
+                    }
                 case .attachment(let view):
                     MessageAttachment(view: view)
                 }
@@ -958,6 +956,10 @@ struct Prose: View {
     /// A heading drawn above the document, for text whose title arrives
     /// apart from it, such as a plan's.
     var title: String?
+    /// In your message's bubble: only as wide as its words, and parsed on
+    /// the spot, so a message on its way never draws empty. A person's
+    /// words are short; a long paste is a chip, not markdown.
+    var inBubble = false
     @State private var document: MarkdownDocument?
     @State private var parsed: String?
 
@@ -969,10 +971,12 @@ struct Prose: View {
     /// parse returns.
     private var blocks: [MarkdownBlock] {
         if parsed == markdown, let document { return document.blocks }
-        if photographed { return ParsedMarkdown.parse(markdown).blocks }
+        if photographed || inBubble { return ParsedMarkdown.parse(markdown).blocks }
         if let recent = ParsedMarkdown.recent(markdown) { return recent.blocks }
         return document?.blocks ?? []
     }
+
+    private var drawnNow: Bool { parsed == markdown || photographed || inBubble }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -983,7 +987,7 @@ struct Prose: View {
                 MarkdownBlockView(block: block, muted: muted)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: inBubble ? nil : .infinity, alignment: .leading)
         .tint(design.accent.color)
         .task(id: markdown) {
             let source = markdown
@@ -997,7 +1001,7 @@ struct Prose: View {
             parsed = source
         }
         .reported(
-            "chat.prose.render", value: parsed == markdown || photographed ? "rendered" : "pending")
+            "chat.prose.render", value: drawnNow ? "rendered" : "pending")
     }
 }
 

@@ -49,6 +49,92 @@ pub fn read_clipboard() -> ClipboardContent {
     }
 }
 
+/// What a paste brings to a draft.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Clip {
+    Text(String),
+    File {
+        name: String,
+        mime: String,
+        bytes: Vec<u8>,
+    },
+    Nothing,
+}
+
+/// What the clipboard held, ready for a draft: a copied file read, and one
+/// over the limit refused here, before it is sent only for the daemon to
+/// refuse it after the whole upload.
+pub fn clip(content: ClipboardContent) -> Result<Clip, String> {
+    match content {
+        ClipboardContent::Image { mime, bytes } => {
+            let name = "clipboard.png".to_owned();
+            if bytes.len() > wire::ATTACHMENT_SIZE_LIMIT {
+                return Err(too_large_words(&name));
+            }
+            Ok(Clip::File { name, mime, bytes })
+        }
+        ClipboardContent::Path(path) => {
+            let name = path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string());
+            let size = std::fs::metadata(&path)
+                .map_err(|error| format!("{name} could not be read: {error}"))?
+                .len();
+            if size > wire::ATTACHMENT_SIZE_LIMIT as u64 {
+                return Err(too_large_words(&name));
+            }
+            let bytes = std::fs::read(&path)
+                .map_err(|error| format!("{name} could not be read: {error}"))?;
+            Ok(Clip::File {
+                mime: attachments::native_image(&bytes)
+                    .unwrap_or_else(|| mime_of(&name))
+                    .to_owned(),
+                name,
+                bytes,
+            })
+        }
+        ClipboardContent::Text(text) => Ok(Clip::Text(text)),
+        ClipboardContent::Empty => Ok(Clip::Nothing),
+    }
+}
+
+/// Why a file was not attached: it is over the limit, said in the unit a
+/// person reads (the limit is 64 MiB of the file's own bytes).
+fn too_large_words(name: &str) -> String {
+    format!(
+        "{name} is too large to attach: files can be at most {} MB",
+        wire::ATTACHMENT_SIZE_LIMIT / (1024 * 1024)
+    )
+}
+
+fn mime_of(name: &str) -> &'static str {
+    let extension = name.rsplit('.').next().unwrap_or_default().to_lowercase();
+    match extension.as_str() {
+        "txt" | "md" | "log" => "text/plain",
+        "json" => "application/json",
+        _ => "application/octet-stream",
+    }
+}
+
+/// A stored file as a draft's attachment: an image if it is one.
+pub fn blob_attachment(blob: wire::BlobRef) -> wire::Attachment {
+    let of = if blob.mime.starts_with("image/") {
+        wire::attachment::Of::Image(blob)
+    } else {
+        wire::attachment::Of::File(blob)
+    };
+    wire::Attachment { of: Some(of) }
+}
+
+/// Puts text on this machine's clipboard. No clipboard is a normal state on
+/// a headless host, where the terminal's own clipboard sequence still works.
+pub fn write_text(text: &str) {
+    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+        let _ = clipboard.set_text(text);
+    }
+}
+
 /// The file a copy names, when it names exactly one readable file. Several
 /// files, or a folder, are left to the clipboard's other forms.
 pub(crate) fn one_file(files: Vec<PathBuf>) -> Option<PathBuf> {

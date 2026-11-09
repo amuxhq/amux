@@ -394,11 +394,14 @@ impl App {
             self.notice("the settings have not arrived yet", Tone::Info);
             return;
         };
-        desk.page = Some(SettingsScreen::new(
-            settings,
-            Some(desk.config.profile.clone()),
-            &desk.config.machine,
-        ));
+        desk.page = Some(
+            SettingsScreen::new(
+                settings,
+                Some(desk.config.profile.clone()),
+                &desk.config.machine,
+            )
+            .copying_on_select(!self.layout.no_copy_on_select),
+        );
         let installation = desk.config.installation.clone();
         tokio::spawn(async move {
             if let Ok(settings) = installation.get_settings().await {
@@ -834,6 +837,10 @@ impl App {
                         };
                         let _ = events.send(said);
                     });
+                }
+                SettingsEffect::CopyOnSelect(on) => {
+                    self.layout.no_copy_on_select = !on;
+                    self.layout.save(self.config.layout.as_deref());
                 }
                 SettingsEffect::Close => {
                     if let Some(desk) = &mut self.desk {

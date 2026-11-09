@@ -23,6 +23,8 @@ settings:
 packages:
   AmuxCore:
     path: ../Packages/AmuxCore
+  AmuxMacScreens:
+    path: ../Packages/AmuxMacScreens
 
 schemes:
   AmuxMac:
@@ -33,6 +35,10 @@ schemes:
     test:
       targets:
         - AmuxMacTests
+  AmuxMacStorybook:
+    build:
+      targets:
+        AmuxMacStorybook: all
 
 targets:
   AmuxMac:
@@ -76,6 +82,32 @@ targets:
         product: AmuxCore
       - package: AmuxCore
         product: AmuxValues
+      - package: AmuxMacScreens
+        product: AmuxMacScreens
+
+  # The app's screens by name, drawn from values. It links the screens and
+  # the values and not the bridge, so it builds quickly and cannot reach
+  # anyone's amux (docs/MAC.md).
+  AmuxMacStorybook:
+    type: application
+    platform: macOS
+    sources:
+      - path: Storybook
+    settings:
+      base:
+        PRODUCT_NAME: AmuxStorybook
+        PRODUCT_BUNDLE_IDENTIFIER: sh.amux.desktop.storybook
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSPrincipalClass: NSApplication
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_HARDENED_RUNTIME: NO
+        ENABLE_APP_SANDBOX: NO
+    dependencies:
+      - package: AmuxMacScreens
+        product: AmuxMacScreens
+      - package: AmuxMacScreens
+        product: AmuxMacStories
 
   # The app's screens and model, compiled without its entry point into a test
   # bundle that runs in the test runner rather than in the app: the screens
@@ -101,3 +133,7 @@ targets:
         product: AmuxCore
       - package: AmuxCore
         product: AmuxValues
+      - package: AmuxMacScreens
+        product: AmuxMacScreens
+      - package: AmuxMacScreens
+        product: AmuxMacStories

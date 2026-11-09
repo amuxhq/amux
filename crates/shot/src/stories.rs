@@ -38,7 +38,7 @@ use tui::vocabulary::{ChatScene, HomeScene};
 use ui_state::{Connection, FleetMsg, FleetState, InputOutcome, Msg, PhaseView, SessionState};
 use wire::Kind;
 
-/// The storybook both clients are held to.
+/// The storybook the clients are held to.
 const LIST: &str = include_str!("../../../tests/stories.json");
 
 #[derive(Deserialize)]

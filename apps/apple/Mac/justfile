@@ -29,12 +29,19 @@ build: rust
         -configuration Debug -destination 'platform=macOS,arch=arm64' \
         -derivedDataPath {{derived}} -quiet build
 
+# Interactive, so only the builds and a capture are bounded, inside the script.
+# `just mac storybook capture --out DIR` draws every story to PNG files with
+# nothing on the desktop (docs/MAC.md).
+# Step through the Mac app's named screens, rebuilding on save.
+storybook *ARGS:
+    {{python}} -B apps/apple/Tools/mac-storybook.py "$@"
+
 # Walks setting up through the app's own model against a scratch daemon and
-# draws every screen and the Settings window into target/mac-onboarding/,
-# light and dark. The screens are drawn into windows never put on screen, in
-# the test runner rather than the app, so nothing shows on the desktop.
-# Draw the Mac app's setting-up screens offscreen.
-shots: rust
+# holds the screens to the storybook list. Windows are never put on screen,
+# and it runs in the test runner rather than the app, so nothing shows on
+# the desktop.
+# Run the Mac app's tests.
+test: rust
     {{bounded}} 900 cargo build --locked -p amux --bin amux
     {{bounded}} 300 sh -c 'cd apps/apple/Mac && xcodegen generate --spec project.yml --quiet'
     {{bounded}} 1200 xcodebuild -project apps/apple/Mac/AmuxMac.xcodeproj -scheme AmuxMac \

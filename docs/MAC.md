@@ -74,7 +74,9 @@ generated values (`AmuxValues`), which build for macOS as well as iOS:
   the Mac's.
 
 Screens, navigation and layout are the desktop's own; nothing from
-`AmuxFeatures` or `AmuxShell` is linked.
+`AmuxFeatures` or `AmuxShell` is linked. They live in the `AmuxMacScreens`
+package, drawn from values and reporting through actions; the app's models in
+`Mac/Sources` hold the state and fill those values in.
 
 ## Building and running
 
@@ -97,16 +99,13 @@ builds are signed ad hoc and carry the checkout's debug `amux`; release
 builds carry none ([Releases](#releases)).
 
 ```sh
-just mac shots   # draw every setting-up screen and Settings offscreen
+just mac test    # the app's tests, with no window on screen
 ```
 
-`just mac shots` runs the app's tests, which compile the app's sources
-without its entry point and never put a window on screen: one walks setting
-up against a scratch daemon of its own, drawing each screen in the dark and
-light appearances into `target/mac-onboarding/` (reading the pairing QR code
-back as the daemon's link), and one installs the app's `amux` into a scratch
-home and checks it runs without a login item. The sidebar's material does
-not draw offscreen, so the main window's sidebar is blank in its picture.
+`just mac test` compiles the app's sources without its entry point: one test
+walks setting up against a scratch daemon of its own (reading the pairing QR
+code back as the daemon's link) and checks it writes no login item, and one
+holds the storybook to its list.
 
 `AMUX_CONFIG` names the installation the app attaches to, as it does for every
 amux command, so in a worktree `just mac run` attaches to that tree's daemon.
@@ -119,6 +118,41 @@ it installed, attached and listed under the `sh.amux.desktop` subsystem:
 ```sh
 log show --predicate 'subsystem == "sh.amux.desktop"' --last 5m
 ```
+
+## Storybook
+
+The storybook is the app's whole screens by name, each drawn from values with
+inert actions. It links `AmuxMacScreens` and the generated values and not the
+Rust bridge, so a change builds in seconds and it cannot reach anyone's amux.
+
+```sh
+just mac storybook                         # the viewer, rebuilding on save
+just mac storybook --story fleet.busy      # open on one
+just mac storybook capture --out DIR [--only fleet.]
+```
+
+The viewer is two windows: the stage, styled as the app's own window so its
+title bar, toolbar and glass are the real ones, and a panel that picks the
+story, appearance and window size. ⌘[ and ⌘] step through the stories, ⌘T
+cycles the appearance and ⌘S the size; click another app to see a window that
+is not active. It opens where it was left. Saving a screen rebuilds it and
+reopens the same story behind whatever you are working in; a failed build
+leaves the last one up, says why on the panel and keeps its log in
+`target/mac/storybook/build.log`. Quitting either end stops the other.
+
+`capture` draws every story at each window size in dark and light as PNG
+files, with an `index.md`, without putting anything on the desktop, so an
+agent can look at a screen while somebody works at the Mac. Each story's
+window is real but sits past the edge of every display, and the window server
+photographs it. Drawing a view into a bitmap would not do: that leaves glass
+and sidebars blank. The window is never active, so its traffic lights are grey
+and its selection muted. A capture fails when a story's window comes out empty.
+
+The stories are `Packages/AmuxMacScreens/Sources/AmuxMacStories/Stories.swift`.
+The list of stories is `tests/stories.json`, shared with the terminal and the
+phone: a story drawn on the Mac names `mac` among its clients, and a test fails
+when the catalogue and the list differ. No picture is compared while the
+screens are still being designed.
 
 ## Updates
 

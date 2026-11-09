@@ -1,61 +1,203 @@
-import AmuxCore
 import AmuxValues
 import AppKit
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 
+/// The pairing window as the screen shows it.
+public struct PairingContent {
+    public var window: PairingWindowView?
+    /// Why no window opened.
+    public var failed: String?
+    public var joining: Bool
+    public var lockedOut: Bool
+
+    public init(
+        window: PairingWindowView? = nil, failed: String? = nil, joining: Bool = false,
+        lockedOut: Bool = false
+    ) {
+        self.window = window
+        self.failed = failed
+        self.joining = joining
+        self.lockedOut = lockedOut
+    }
+}
+
+/// A folder offered as a repository, ticked to keep.
+public struct SetupRepository: Identifiable, Equatable {
+    public let path: String
+    public var ticked: Bool
+    public var id: String { path }
+
+    public init(path: String, ticked: Bool) {
+        self.path = path
+        self.ticked = ticked
+    }
+}
+
+/// What the person has chosen so far on the setting-up screens.
+public struct SetupChoices {
+    public var startAtLogin: Bool
+    public var keepAwake: Bool
+    public var alsoTicked: Bool
+    public var repositories: [SetupRepository]
+    public var autoReports: Bool
+
+    public init(
+        startAtLogin: Bool = true, keepAwake: Bool = true, alsoTicked: Bool = false,
+        repositories: [SetupRepository] = [], autoReports: Bool = false
+    ) {
+        self.startAtLogin = startAtLogin
+        self.keepAwake = keepAwake
+        self.alsoTicked = alsoTicked
+        self.repositories = repositories
+        self.autoReports = autoReports
+    }
+}
+
+/// What a setting-up screen shows.
+public struct SetupContent {
+    public var step: SetupStep
+    /// This Mac's name; nil until the daemon has said.
+    public var machineName: String?
+    /// Whether this installation can start at login.
+    public var canStartAtLogin: Bool
+    public var error: String?
+    public var busy: Bool
+    public var signingIn: Bool
+    public var accepting: Bool
+    public var pairing: PairingContent
+    /// The phone this run paired.
+    public var paired: PairedDevice?
+    /// The phone just paired, still signed out, to offer the account too.
+    public var also: PairedDevice?
+    /// A paired machine's offer of its account.
+    public var offer: SignInOfferView?
+    public var repositoriesLoaded: Bool
+    /// The name being typed when the screen opens renaming this Mac.
+    public var renaming: String?
+
+    public init(
+        step: SetupStep, machineName: String? = nil, canStartAtLogin: Bool = true,
+        error: String? = nil, busy: Bool = false, signingIn: Bool = false, accepting: Bool = false,
+        pairing: PairingContent = PairingContent(), paired: PairedDevice? = nil,
+        also: PairedDevice? = nil, offer: SignInOfferView? = nil, repositoriesLoaded: Bool = true,
+        renaming: String? = nil
+    ) {
+        self.step = step
+        self.machineName = machineName
+        self.canStartAtLogin = canStartAtLogin
+        self.error = error
+        self.busy = busy
+        self.signingIn = signingIn
+        self.accepting = accepting
+        self.pairing = pairing
+        self.paired = paired
+        self.also = also
+        self.offer = offer
+        self.repositoriesLoaded = repositoriesLoaded
+        self.renaming = renaming
+    }
+}
+
+/// What the setting-up screens can ask for.
+public struct SetupActions {
+    public var later: @MainActor () -> Void
+    public var confirmReachable: @MainActor () -> Void
+    public var confirmRepositories: @MainActor () -> Void
+    public var confirmImprove: @MainActor () -> Void
+    public var signIn: @MainActor () -> Void
+    public var declineOffer: @MainActor () -> Void
+    public var newCode: @MainActor () -> Void
+    public var rename: @MainActor (String) -> Void
+    public var addFolders: @MainActor ([URL]) -> Void
+    public var pairingShown: @MainActor () -> Void
+    public var pairingHidden: @MainActor () -> Void
+
+    public init(
+        later: @escaping @MainActor () -> Void = {},
+        confirmReachable: @escaping @MainActor () -> Void = {},
+        confirmRepositories: @escaping @MainActor () -> Void = {},
+        confirmImprove: @escaping @MainActor () -> Void = {},
+        signIn: @escaping @MainActor () -> Void = {},
+        declineOffer: @escaping @MainActor () -> Void = {},
+        newCode: @escaping @MainActor () -> Void = {},
+        rename: @escaping @MainActor (String) -> Void = { _ in },
+        addFolders: @escaping @MainActor ([URL]) -> Void = { _ in },
+        pairingShown: @escaping @MainActor () -> Void = {},
+        pairingHidden: @escaping @MainActor () -> Void = {}
+    ) {
+        self.later = later
+        self.confirmReachable = confirmReachable
+        self.confirmRepositories = confirmRepositories
+        self.confirmImprove = confirmImprove
+        self.signIn = signIn
+        self.declineOffer = declineOffer
+        self.newCode = newCode
+        self.rename = rename
+        self.addFolders = addFolders
+        self.pairingShown = pairingShown
+        self.pairingHidden = pairingHidden
+    }
+}
+
 /// Setting up, one step a screen, in the window: a symbol, the step's title
 /// and what it is for, its choices, and Later beside the step's own action.
 /// Escape is Later and Return the step's action, as on the terminal.
-struct SetupScreen: View {
-    @Bindable var setup: Setup
-    let model: AppModel
+public struct SetupScreen: View {
+    let content: SetupContent
+    @Binding var choices: SetupChoices
+    let actions: SetupActions
 
-    var body: some View {
-        if let step = setup.step {
-            VStack(spacing: 0) {
-                VStack(spacing: 10) {
-                    Image(systemName: symbol(step))
-                        .font(.system(size: 46, weight: .light))
-                        .foregroundStyle(.tint)
-                        .symbolRenderingMode(.hierarchical)
-                        .frame(height: 56)
-                        .padding(.bottom, 6)
-                    Text(title(step))
-                        .font(.system(size: 26, weight: .bold))
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.top, 44)
-                content(step)
-                    .frame(maxWidth: 560)
-                    .padding(.horizontal, 40)
-                    .padding(.top, 22)
-                if let error = setup.error {
-                    Text(error)
-                        .foregroundStyle(.red)
-                        .font(.callout)
-                        .multilineTextAlignment(.center)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 40)
-                        .padding(.top, 12)
-                }
-                Spacer(minLength: 16)
-                Buttons(setup: setup, step: step)
+    public init(content: SetupContent, choices: Binding<SetupChoices>, actions: SetupActions = SetupActions()) {
+        self.content = content
+        _choices = choices
+        self.actions = actions
+    }
+
+    public var body: some View {
+        let step = content.step
+        VStack(spacing: 0) {
+            VStack(spacing: 10) {
+                Image(systemName: symbol(step))
+                    .font(.system(size: 46, weight: .light))
+                    .foregroundStyle(.tint)
+                    .symbolRenderingMode(.hierarchical)
+                    .frame(height: 56)
+                    .padding(.bottom, 6)
+                Text(title(step))
+                    .font(.system(size: 26, weight: .bold))
+                    .multilineTextAlignment(.center)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .id(step)
-            .transition(.opacity)
+            .padding(.top, 44)
+            stepContent(step)
+                .frame(maxWidth: 560)
+                .padding(.horizontal, 40)
+                .padding(.top, 22)
+            if let error = content.error {
+                Text(error)
+                    .foregroundStyle(.red)
+                    .font(.callout)
+                    .multilineTextAlignment(.center)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 40)
+                    .padding(.top, 12)
+            }
+            Spacer(minLength: 16)
+            Buttons(content: content, actions: actions)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .id(step)
+        .transition(.opacity)
     }
 
     @ViewBuilder
-    private func content(_ step: SetupStep) -> some View {
+    private func stepContent(_ step: SetupStep) -> some View {
         switch step {
-        case .pair_phone: PairPhone(setup: setup, model: model)
-        case .keep_reachable: KeepReachable(setup: setup, model: model)
-        case .sign_in: SignIn(setup: setup, model: model)
-        case .repositories: Repositories(setup: setup)
-        case .improve: Improve(setup: setup)
+        case .pair_phone: PairPhone(content: content, actions: actions)
+        case .keep_reachable: KeepReachable(content: content, choices: $choices)
+        case .sign_in: SignIn(content: content, choices: $choices)
+        case .repositories: Repositories(content: content, choices: $choices, actions: actions)
+        case .improve: Improve(choices: $choices)
         case .first_agent: FirstAgent()
         }
     }
@@ -70,32 +212,32 @@ struct SetupScreen: View {
         case .first_agent: "iphone"
         }
     }
-}
 
-/// What a step is called on its screen, in the terminal's words.
-func title(_ step: SetupStep) -> String {
-    switch step {
-    case .pair_phone: "Connect your iPhone"
-    case .keep_reachable: "Keep it connected"
-    case .sign_in: "Reach it from anywhere"
-    case .repositories: "Repositories"
-    case .improve: "Help improve amux"
-    case .first_agent: "Try starting an agent from your phone"
+    /// What a step is called on its screen, in the terminal's words.
+    private func title(_ step: SetupStep) -> String {
+        switch step {
+        case .pair_phone: "Connect your iPhone"
+        case .keep_reachable: "Keep it connected"
+        case .sign_in: "Reach it from anywhere"
+        case .repositories: "Repositories"
+        case .improve: "Help improve amux"
+        case .first_agent: "Try starting an agent from your phone"
+        }
     }
 }
 
 /// Later on the left, the step's own action on the right.
 private struct Buttons: View {
-    @Bindable var setup: Setup
-    let step: SetupStep
+    let content: SetupContent
+    let actions: SetupActions
 
     var body: some View {
         HStack(spacing: 12) {
-            Button("Later") { setup.later() }
+            Button("Later") { actions.later() }
                 .keyboardShortcut(.cancelAction)
-                .disabled(setup.busy)
+                .disabled(content.busy)
             Spacer()
-            if setup.busy || setup.signingIn || setup.accepting {
+            if content.busy || content.signingIn || content.accepting {
                 ProgressView().controlSize(.small)
             }
             primary
@@ -109,29 +251,29 @@ private struct Buttons: View {
 
     @ViewBuilder
     private var primary: some View {
-        switch step {
+        switch content.step {
         case .pair_phone, .first_agent:
             EmptyView()
         case .keep_reachable:
-            Button("Continue") { setup.confirmReachable() }
+            Button("Continue") { actions.confirmReachable() }
                 .keyboardShortcut(.defaultAction)
-                .disabled(setup.busy)
+                .disabled(content.busy)
         case .sign_in:
-            if !setup.offers.isEmpty {
-                Button("Not Now") { setup.declineOffer() }
-                    .disabled(setup.accepting)
+            if content.offer != nil {
+                Button("Not Now") { actions.declineOffer() }
+                    .disabled(content.accepting)
             }
-            Button(setup.offers.isEmpty ? "Sign In…" : "Sign In") { setup.signIn() }
+            Button(content.offer == nil ? "Sign In…" : "Sign In") { actions.signIn() }
                 .keyboardShortcut(.defaultAction)
-                .disabled(setup.signingIn || setup.accepting)
+                .disabled(content.signingIn || content.accepting)
         case .repositories:
-            Button("Continue") { setup.confirmRepositories() }
+            Button("Continue") { actions.confirmRepositories() }
                 .keyboardShortcut(.defaultAction)
-                .disabled(setup.busy || !setup.repositoriesLoaded)
+                .disabled(content.busy || !content.repositoriesLoaded)
         case .improve:
-            Button("Continue") { setup.confirmImprove() }
+            Button("Continue") { actions.confirmImprove() }
                 .keyboardShortcut(.defaultAction)
-                .disabled(setup.busy)
+                .disabled(content.busy)
         }
     }
 }
@@ -139,12 +281,12 @@ private struct Buttons: View {
 // MARK: - Connect your iPhone
 
 private struct PairPhone: View {
-    @Bindable var setup: Setup
-    let model: AppModel
+    let content: SetupContent
+    let actions: SetupActions
 
     var body: some View {
         VStack(spacing: 26) {
-            MachineName(setup: setup, model: model)
+            MachineName(content: content, actions: actions)
             HStack(alignment: .center, spacing: 36) {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("Scan with your iPhone's camera to pair.")
@@ -160,13 +302,13 @@ private struct PairPhone: View {
                 code
             }
         }
-        .onAppear { setup.pairingShown() }
-        .onDisappear { setup.pairingHidden() }
+        .onAppear { actions.pairingShown() }
+        .onDisappear { actions.pairingHidden() }
     }
 
     @ViewBuilder
     private var pinLine: some View {
-        if let pin = setup.pairing.window?.pin, !pin.isEmpty {
+        if let pin = content.pairing.window?.pin, !pin.isEmpty {
             Text("Or enter \(Text(spaced(pin)).monospacedDigit().fontWeight(.semibold)) in the amux app.")
                 .textSelection(.enabled)
                 .accessibilityLabel("Or enter \(pin) in the amux app.")
@@ -177,7 +319,7 @@ private struct PairPhone: View {
 
     @ViewBuilder
     private var status: some View {
-        let pairing = setup.pairing
+        let pairing = content.pairing
         if let why = pairing.failed {
             Label("Pairing could not open: \(why)", systemImage: "exclamationmark.triangle")
                 .foregroundStyle(.orange)
@@ -185,7 +327,7 @@ private struct PairPhone: View {
         } else if pairing.lockedOut {
             HStack(spacing: 10) {
                 Text("Closed after too many wrong codes.").foregroundStyle(.orange)
-                Button("New Code") { setup.newCode() }
+                Button("New Code") { actions.newCode() }
             }
             .font(.callout)
         } else if pairing.joining {
@@ -203,7 +345,7 @@ private struct PairPhone: View {
 
     @ViewBuilder
     private var code: some View {
-        if let link = setup.pairing.window?.qrLink, !link.isEmpty {
+        if let link = content.pairing.window?.qrLink, !link.isEmpty {
             QRCode(link: link)
                 .frame(width: 196, height: 196)
                 .accessibilityLabel("A code that opens amux on your iPhone, or the App Store")
@@ -224,10 +366,16 @@ private struct PairPhone: View {
 
 /// "This Mac is called …", with Rename: the name every paired device sees.
 private struct MachineName: View {
-    @Bindable var setup: Setup
-    let model: AppModel
+    let content: SetupContent
+    let actions: SetupActions
     @State private var editing: String?
     @FocusState private var focused: Bool
+
+    init(content: SetupContent, actions: SetupActions) {
+        self.content = content
+        self.actions = actions
+        _editing = State(initialValue: content.renaming)
+    }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -242,8 +390,8 @@ private struct MachineName: View {
                     .onAppear { focused = true }
                 Button("Save", action: save)
             } else {
-                Text(model.settings?.hostName ?? "this Mac").fontWeight(.semibold)
-                Button("Rename…") { editing = model.settings?.hostName ?? "" }
+                Text(content.machineName ?? "this Mac").fontWeight(.semibold)
+                Button("Rename…") { editing = content.machineName ?? "" }
                     .buttonStyle(.link)
                     .padding(.leading, 4)
             }
@@ -252,7 +400,7 @@ private struct MachineName: View {
     }
 
     private func save() {
-        if let name = editing { setup.rename(name) }
+        if let name = editing { actions.rename(name) }
         editing = nil
     }
 }
@@ -262,7 +410,7 @@ private struct MachineName: View {
 /// appearance, so a phone's camera reads it. Drawn a module to a pixel, a
 /// renderer that smooths anyway (as offscreen rendering does) blurs every
 /// edge; at eight the smoothing is a sliver.
-struct QRCode: View {
+private struct QRCode: View {
     let link: String
 
     var body: some View {
@@ -293,12 +441,12 @@ struct QRCode: View {
 // MARK: - Keep it connected
 
 private struct KeepReachable: View {
-    @Bindable var setup: Setup
-    let model: AppModel
+    let content: SetupContent
+    @Binding var choices: SetupChoices
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if let phone = setup.paired {
+            if let phone = content.paired {
                 Label {
                     Text("Paired with \(phone.name)")
                 } icon: {
@@ -308,15 +456,15 @@ private struct KeepReachable: View {
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 6)
             }
-            Text("So your phone reaches \(model.settings?.hostName ?? "this Mac") whenever you need it:")
+            Text("So your phone reaches \(content.machineName ?? "this Mac") whenever you need it:")
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 10) {
-                if model.settings?.startAtLogin != nil {
-                    Toggle("Start amux when you log in", isOn: $setup.startAtLogin)
+                if content.canStartAtLogin {
+                    Toggle("Start amux when you log in", isOn: $choices.startAtLogin)
                 }
-                Toggle("Keep this Mac awake while it’s plugged in", isOn: $setup.keepAwake)
+                Toggle("Keep this Mac awake while it’s plugged in", isOn: $choices.keepAwake)
             }
             .toggleStyle(.checkbox)
             .font(.title3)
@@ -332,31 +480,31 @@ private struct KeepReachable: View {
 // MARK: - Reach it from anywhere
 
 private struct SignIn: View {
-    @Bindable var setup: Setup
-    let model: AppModel
+    let content: SetupContent
+    @Binding var choices: SetupChoices
 
     var body: some View {
-        let name = model.settings?.hostName ?? "this Mac"
+        let name = content.machineName ?? "this Mac"
         VStack(alignment: .leading, spacing: 16) {
-            if let offer = setup.offers.first {
+            if let offer = content.offer {
                 Text("Sign in as \(offer.email.isEmpty ? offer.accountName : offer.email) (from \(offer.hostName))?")
                     .font(.title3.weight(.medium))
                 Text("\(offer.hostName) is signed in to this account. Signing in here too lets your phone reach \(name) from anywhere.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if setup.accepting {
+                if content.accepting {
                     Text("Signing in…").foregroundStyle(.secondary)
                 }
             } else {
                 Text("Sign in to reach \(name) from your phone when you are away from this network.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if let phone = setup.also {
-                    Toggle("Also sign in \(phone.name)", isOn: $setup.alsoTicked)
+                if let phone = content.also {
+                    Toggle("Also sign in \(phone.name)", isOn: $choices.alsoTicked)
                         .toggleStyle(.checkbox)
                         .padding(.leading, 4)
                 }
-                if setup.signingIn {
+                if content.signingIn {
                     Text("Waiting for you to sign in…").foregroundStyle(.secondary)
                 }
             }
@@ -369,7 +517,9 @@ private struct SignIn: View {
 // MARK: - Repositories
 
 private struct Repositories: View {
-    @Bindable var setup: Setup
+    let content: SetupContent
+    @Binding var choices: SetupChoices
+    let actions: SetupActions
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -377,7 +527,7 @@ private struct Repositories: View {
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if !setup.repositoriesLoaded {
+            if !content.repositoriesLoaded {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Looking for recent folders…").foregroundStyle(.secondary)
@@ -385,10 +535,10 @@ private struct Repositories: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
-                        if setup.repositories.isEmpty {
+                        if choices.repositories.isEmpty {
                             Text("No recent folders found.").foregroundStyle(.secondary)
                         }
-                        ForEach($setup.repositories) { $row in
+                        ForEach($choices.repositories) { $row in
                             Toggle(isOn: $row.ticked) {
                                 Text(tilde(row.path))
                                     .lineLimit(1)
@@ -418,25 +568,18 @@ private struct Repositories: View {
         panel.prompt = "Add"
         panel.message = "Choose the folders new agents can start in."
         guard panel.runModal() == .OK else { return }
-        for folder in panel.urls { setup.add(folder) }
+        actions.addFolders(panel.urls)
     }
-}
-
-/// A path under the home folder as `~/…`.
-func tilde(_ path: String) -> String {
-    let home = FileManager.default.homeDirectoryForCurrentUser.path
-    guard path == home || path.hasPrefix(home + "/") else { return path }
-    return "~" + path.dropFirst(home.count)
 }
 
 // MARK: - Help improve amux
 
 private struct Improve: View {
-    @Bindable var setup: Setup
+    @Binding var choices: SetupChoices
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
-            Toggle(isOn: $setup.autoReports) {
+            Toggle(isOn: $choices.autoReports) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Send a report automatically when something goes wrong")
                     Text("Never your chats, code, or file names.")

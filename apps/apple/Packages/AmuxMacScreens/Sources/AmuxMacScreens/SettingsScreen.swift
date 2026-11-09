@@ -1,39 +1,82 @@
-import AmuxCore
 import AmuxValues
 import AppKit
 import SwiftUI
 
-/// The Settings window: this Mac's everyday settings, in the words setting
-/// up used, and the account of the profile on screen. Every change is
-/// applied at once through the daemon, which keeps them in amux's config
-/// file, so `amux config` and this window always agree.
-struct SettingsWindow: View {
-    let model: AppModel
+/// What the Settings window shows.
+public enum SettingsState {
+    case connecting
+    case failed(String)
+    case ready(MachineSettings)
+}
 
-    var body: some View {
+/// The account row of the Settings window.
+public struct SettingsAccount {
+    /// The profile on screen; nil while none is open.
+    public var profile: ProfileView?
+    public var signingIn: Bool
+
+    public init(profile: ProfileView?, signingIn: Bool = false) {
+        self.profile = profile
+        self.signingIn = signingIn
+    }
+}
+
+/// What the Settings window can ask for.
+public struct SettingsActions {
+    /// Applies a change, answering why it did not take, or nil once it did.
+    public var apply: @MainActor (SettingsChange) async -> String?
+    public var signIn: @MainActor () -> Void
+    public var signOut: @MainActor () -> Void
+
+    public init(
+        apply: @escaping @MainActor (SettingsChange) async -> String? = { _ in nil },
+        signIn: @escaping @MainActor () -> Void = {},
+        signOut: @escaping @MainActor () -> Void = {}
+    ) {
+        self.apply = apply
+        self.signIn = signIn
+        self.signOut = signOut
+    }
+}
+
+/// The Settings window: this Mac's everyday settings, in the words setting
+/// up used, and the account of the profile on screen.
+public struct SettingsScreen: View {
+    let state: SettingsState
+    let account: SettingsAccount
+    let actions: SettingsActions
+
+    public init(
+        state: SettingsState, account: SettingsAccount, actions: SettingsActions = SettingsActions()
+    ) {
+        self.state = state
+        self.account = account
+        self.actions = actions
+    }
+
+    public var body: some View {
         Group {
-            if let settings = model.settings {
-                SettingsForm(model: model, settings: settings)
-            } else if case .failed(let reason) = model.phase {
+            switch state {
+            case .ready(let settings):
+                SettingsForm(settings: settings, account: account, actions: actions)
+            case .failed(let reason):
                 ContentUnavailableView(
                     "amux is not running", systemImage: "exclamationmark.triangle",
                     description: Text(reason))
-            } else {
+            case .connecting:
                 ProgressView("Connecting to amux")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(width: 540)
         .frame(minHeight: 680)
-        // Changed beside the app (`amux config`, the terminal's settings),
-        // so read again whenever the window is opened.
-        .task { await model.loadSettings() }
     }
 }
 
 private struct SettingsForm: View {
-    let model: AppModel
     let settings: MachineSettings
+    let account: SettingsAccount
+    let actions: SettingsActions
     @State private var name = ""
     @State private var problem: String?
     @FocusState private var naming: Bool
@@ -96,7 +139,7 @@ private struct SettingsForm: View {
             }
 
             Section("Account") {
-                Account(model: model)
+                Account(account: account, actions: actions)
             }
 
             if let problem {
@@ -115,7 +158,7 @@ private struct SettingsForm: View {
     }
 
     private func apply(_ change: SettingsChange) {
-        Task { problem = await model.apply(change) }
+        Task { problem = await actions.apply(change) }
     }
 
     private func rename() {
@@ -143,10 +186,11 @@ private struct SettingsForm: View {
 /// The profile on screen's account: who it is signed in as, and Sign In or
 /// Sign Out.
 private struct Account: View {
-    let model: AppModel
+    let account: SettingsAccount
+    let actions: SettingsActions
 
     var body: some View {
-        if let profile = model.current {
+        if let profile = account.profile {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     switch profile.account.binding {
@@ -166,14 +210,33 @@ private struct Account: View {
                 }
                 Spacer()
                 if profile.account.binding == .signedIn {
-                    Button("Sign Out") { Task { await model.signOut() } }
+                    Button("Sign Out") { actions.signOut() }
                 } else {
-                    Button("Sign In…") { Task { await model.signInFromMenu() } }
-                        .disabled(model.signingIn)
+                    Button("Sign In…") { actions.signIn() }
+                        .disabled(account.signingIn)
                 }
             }
         } else {
             Text("No profile open").foregroundStyle(.secondary)
         }
     }
+}
+
+extension SettingsChange {
+    /// A change to only the settings named.
+    public static func with(
+        hostName: String? = nil, startAtLogin: Bool? = nil, keepAwake: Bool? = nil,
+        repositories: [String]? = nil, telemetry: Bool? = nil, autoReports: Bool? = nil
+    ) -> SettingsChange {
+        SettingsChange(
+            autoReports: autoReports, hostName: hostName, keepAwake: keepAwake,
+            repositories: repositories, startAtLogin: startAtLogin, telemetry: telemetry)
+    }
+}
+
+/// A path under the home folder as `~/…`.
+func tilde(_ path: String) -> String {
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    guard path == home || path.hasPrefix(home + "/") else { return path }
+    return "~" + path.dropFirst(home.count)
 }

@@ -1,4 +1,5 @@
 import AmuxCore
+import AmuxMacScreens
 import AmuxValues
 import Foundation
 import Observation
@@ -44,13 +45,6 @@ final class Setup {
         var lockedOut: Bool { status.map { $0.lockedOut && !$0.active } ?? false }
     }
 
-    /// A folder offered as a repository, ticked to keep.
-    struct RepositoryRow: Identifiable, Equatable {
-        let path: String
-        var ticked: Bool
-        var id: String { path }
-    }
-
     @ObservationIgnored private unowned let app: AppModel
     let profile: Profile
 
@@ -64,12 +58,11 @@ final class Setup {
     /// The phone this run paired, for the screens after.
     private(set) var paired: PairedDevice?
 
-    var startAtLogin = true
-    var keepAwake = true
+    /// What the screens have chosen so far.
+    var choices = SetupChoices()
 
     /// The phone just paired, still signed out, to offer the account too.
     private(set) var also: PairedDevice?
-    var alsoTicked = false
     private(set) var signingIn = false
     /// A paired machine's offer of its account is being accepted.
     private(set) var accepting = false
@@ -77,10 +70,7 @@ final class Setup {
     private(set) var offers: [SignInOfferView] = []
     @ObservationIgnored private var offerCounted: [UInt8]?
 
-    var repositories: [RepositoryRow] = []
     private(set) var repositoriesLoaded = false
-
-    var autoReports = false
 
     /// The agents on this Mac when the last step opened: one that is not
     /// among them came from the phone.
@@ -111,6 +101,29 @@ final class Setup {
     var toFinish: UInt32 { step == nil ? state?.view.toFinish ?? 0 : 0 }
 
     private func open(_ step: SetupStep) -> Bool { state?.open.contains(step) ?? false }
+
+    // MARK: - What the screens draw
+
+    /// The screen on show; nil while setting up is not.
+    var content: SetupContent? {
+        guard let step else { return nil }
+        return SetupContent(
+            step: step, machineName: app.settings?.hostName,
+            canStartAtLogin: app.settings?.startAtLogin != nil, error: error, busy: busy,
+            signingIn: signingIn, accepting: accepting,
+            pairing: PairingContent(
+                window: pairing.window, failed: pairing.failed, joining: pairing.joining,
+                lockedOut: pairing.lockedOut),
+            paired: paired, also: also, offer: offers.first, repositoriesLoaded: repositoriesLoaded)
+    }
+
+    var actions: SetupActions {
+        SetupActions(
+            later: later, confirmReachable: confirmReachable, confirmRepositories: confirmRepositories,
+            confirmImprove: confirmImprove, signIn: signIn, declineOffer: declineOffer, newCode: newCode,
+            rename: rename, addFolders: { $0.forEach(self.add) }, pairingShown: pairingShown,
+            pairingHidden: pairingHidden)
+    }
 
     // MARK: - Opening and walking
 
@@ -166,19 +179,19 @@ final class Setup {
             // Both on until the person has answered; after that, what they
             // chose.
             let confirmed = !open(step)
-            startAtLogin = !confirmed || app.settings?.startAtLogin == true
-            keepAwake = !confirmed || app.settings?.keepAwake == true
+            choices.startAtLogin = !confirmed || app.settings?.startAtLogin == true
+            choices.keepAwake = !confirmed || app.settings?.keepAwake == true
         case .sign_in:
             also = paired.flatMap { phone in
                 let host = app.hosts.first { $0.hostId == phone.hostId }
                 return host?.signedIn == true ? nil : phone
             }
-            alsoTicked = also != nil
+            choices.alsoTicked = also != nil
             countOffer()
         case .repositories:
             if !repositoriesLoaded { suggest() }
         case .improve:
-            autoReports = app.settings?.autoReports ?? false
+            choices.autoReports = app.settings?.autoReports ?? false
         case .first_agent:
             agentsBefore = Set(app.localAgents)
         }
@@ -281,12 +294,12 @@ final class Setup {
     /// Continue on "Keep it connected".
     func confirmReachable() {
         let canStart = app.settings?.startAtLogin != nil
-        confirm(.with(startAtLogin: canStart ? startAtLogin : nil, keepAwake: keepAwake))
+        confirm(.with(startAtLogin: canStart ? choices.startAtLogin : nil, keepAwake: choices.keepAwake))
     }
 
     /// Continue on "Help improve amux".
     func confirmImprove() {
-        confirm(.with(autoReports: autoReports))
+        confirm(.with(autoReports: choices.autoReports))
     }
 
     // MARK: - Pairing
@@ -463,7 +476,7 @@ final class Setup {
     /// Signed in: the phone ticked is offered the account, the offer page
     /// opens in the browser, and the screen moves on.
     private func signedIn() {
-        if alsoTicked, let also, let host = HostId(bytes: also.hostId) {
+        if choices.alsoTicked, let also, let host = HostId(bytes: also.hostId) {
             let profile = profile
             Task {
                 if case .failure(let failed) = await profile.offerSignIn(to: host) {
@@ -518,18 +531,18 @@ final class Setup {
             repositoriesLoaded = true
             // Repositories already chosen stay; they are not asked about again.
             let chosen = Set(app.settings?.repositories ?? [])
-            repositories = suggested.filter { !chosen.contains($0.path) }
-                .map { RepositoryRow(path: $0.path, ticked: true) }
+            choices.repositories = suggested.filter { !chosen.contains($0.path) }
+                .map { SetupRepository(path: $0.path, ticked: true) }
         }
     }
 
     /// A folder the person picked, ticked.
     func add(_ folder: URL) {
         let path = folder.standardizedFileURL.path
-        if let at = repositories.firstIndex(where: { $0.path == path }) {
-            repositories[at].ticked = true
+        if let at = choices.repositories.firstIndex(where: { $0.path == path }) {
+            choices.repositories[at].ticked = true
         } else {
-            repositories.append(RepositoryRow(path: path, ticked: true))
+            choices.repositories.append(SetupRepository(path: path, ticked: true))
         }
     }
 
@@ -537,7 +550,7 @@ final class Setup {
     /// chosen.
     func confirmRepositories() {
         var paths = app.settings?.repositories ?? []
-        for row in repositories where row.ticked && !paths.contains(row.path) {
+        for row in choices.repositories where row.ticked && !paths.contains(row.path) {
             paths.append(row.path)
         }
         confirm(.with(repositories: paths))
@@ -552,17 +565,5 @@ final class Setup {
         if let new = app.localAgents.first(where: { !agentsBefore.contains($0) }) {
             home(new)
         }
-    }
-}
-
-extension SettingsChange {
-    /// A change to only the settings named.
-    static func with(
-        hostName: String? = nil, startAtLogin: Bool? = nil, keepAwake: Bool? = nil,
-        repositories: [String]? = nil, telemetry: Bool? = nil, autoReports: Bool? = nil
-    ) -> SettingsChange {
-        SettingsChange(
-            autoReports: autoReports, hostName: hostName, keepAwake: keepAwake,
-            repositories: repositories, startAtLogin: startAtLogin, telemetry: telemetry)
     }
 }

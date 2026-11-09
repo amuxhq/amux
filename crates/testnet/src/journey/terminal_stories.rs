@@ -13,8 +13,8 @@ use serde_json::{Value, json};
 use super::common::*;
 use super::terminal::{TerminalJourney, agent_row, at_home, at_rest, chat_of, working};
 use super::{
-    Proved, holds, items, negative_control, never_sent, phase, prompts, quoted, reflected_once,
-    root,
+    Proved, holds, items, negative_control, never_sent, phase, poll, prompts, quoted,
+    reflected_once, root,
 };
 use crate::ctl::phone::copy_dir;
 use crate::ctl::session::pin_in;
@@ -2217,7 +2217,15 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
     }
     journey.frame(&pane, "sign-in-waiting")?;
     let approval = format!("/device?user_code={code}");
-    if !opened_links().lines().any(|link| link.ends_with(&approval)) {
+    // The browser is spawned and not waited for, so the words can reach the
+    // screen before it has written anything down.
+    let opened_approval = poll(
+        std::time::Duration::from_secs(10),
+        std::time::Duration::from_millis(50),
+        || Ok(opened_links()),
+        |links: &String| links.lines().any(|link| link.ends_with(&approval)),
+    );
+    if opened_approval.is_err() {
         return Err(format!(
             "the browser was not opened at the approval page {approval}: {}",
             opened_links()

@@ -668,4 +668,6 @@ async fn a_persons_pick_is_what_later_agents_start_with() {
             .unwrap();
         assert!(!args_of(&terminal).contains(&"--model".to_owned()));
     }
+
+    daemon.shutdown().await.unwrap();
 }

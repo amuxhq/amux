@@ -155,8 +155,8 @@ impl Thumbs {
         for placed in placements(hits, visible.clone()) {
             let top = placed.top - visible.start as i16;
             // Cut at both ends only a feed shorter than the picture can do.
-            // `SlicedImage` keeps too many rows then, for iTerm2 and sixel,
-            // and would draw past the feed over the composer.
+            // `SlicedImage` keeps too many rows then, for iTerm2, and would
+            // draw past the feed over the composer.
             let cut_both_ends = top < 0 && top + ROWS as i16 > area.height as i16;
             match self.thumbs.get_mut(&placed.blob.hash) {
                 Some(Thumb::Ready { .. }) if cut_both_ends => {

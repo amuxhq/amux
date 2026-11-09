@@ -515,6 +515,19 @@ impl Chat {
     pub fn blob(&self, hash: &[u8]) -> Option<Arc<[u8]>> {
         self.session.blob(hash)
     }
+
+    /// Whether fetching an attachment's bytes failed.
+    pub fn blob_failed(&self, hash: &[u8]) -> bool {
+        matches!(
+            self.session.state().blob(hash),
+            ui_state::BlobStatus::Failed(_)
+        )
+    }
+
+    /// Fetches an attachment's bytes again, after a failure.
+    pub fn fetch_blob(&self, hash: &[u8]) {
+        self.session.fetch_blob(hash);
+    }
 }
 
 impl Drop for Chat {

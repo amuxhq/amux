@@ -1,6 +1,10 @@
 {
   "version": 1,
   "files": {
+    "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Attachments.swift": [
+      {"literal": "\"arrow.clockwise\"", "context": "Image(systemName: failed ? \"arrow.clockwise\" : \"photo\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"chat.attachment\"", "context": ".identified(\"chat.attachment\", label: ChatWords.chip(.image(blob)))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+    ],
     "apps/apple/Amux/Debug/FingerStage.swift": [
       {"literal": "\"AMUX_FINGER_STAGE\"", "context": "ProcessInfo.processInfo.environment[\"AMUX_FINGER_STAGE\"] == \"1\"", "reason": "Fixture for the real-finger chat test, not interface copy.", "count": 1},
       {"literal": "\"1\"", "context": "ProcessInfo.processInfo.environment[\"AMUX_FINGER_STAGE\"] == \"1\"", "reason": "Fixture for the real-finger chat test, not interface copy.", "count": 1},
@@ -1469,6 +1473,12 @@
       {"literal": "\"chat.settings.mode\"", "context": "fact(ChatWords.permission(current), id: \"chat.settings.mode\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift": [
+      {"literal": "\"attachment\"", "context": "let file = folder.appendingPathComponent(name.isEmpty ? \"attachment\" : String(name))", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\".\"", "context": "let name = (last ?? \"\").drop { $0 == \".\" }", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"\\\\\"", "context": "let last = blob.name.split(whereSeparator: { $0 == \"/\" || $0 == \"\\\\\" }).last.map(String.init)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"/\"", "context": "let last = blob.name.split(whereSeparator: { $0 == \"/\" || $0 == \"\\\\\" }).last.map(String.init)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"%02x\"", "context": "blob.hash.map { String(format: \"%02x\", $0) }.joined(), isDirectory: true)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"attachments\"", "context": ".appendingPathComponent(\"attachments\", isDirectory: true)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"/\"", "context": "draft.contains(where: { $0 == \"/\" || $0 == \"$\" }) else { return [] }", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"$\"", "context": "draft.contains(where: { $0 == \"/\" || $0 == \"$\" }) else { return [] }", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"\\u{FFFC}\"", "context": "if case .text(let words) = part { words } else { \"\\u{FFFC}\" }", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},

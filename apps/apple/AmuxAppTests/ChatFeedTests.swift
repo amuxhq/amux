@@ -151,21 +151,25 @@ final class ChatFeedTests: XCTestCase {
     func testAPageLandingAboveAReaderAtTheTopMovesNothingOnScreen() async throws {
         let source = ScriptedChat(rows: Self.messages(961...1_000), frame: ScriptedChat.frame(hasOlder: true))
         source.paged = .arrived(0)
-        // The page answers after the reader has come to rest at the top, so
-        // the loading notice is showing above the rows when they are
-        // photographed and goes as the page lands.
-        source.pageTakes = .seconds(0.6)
+        // The page answers only once the rows are photographed, so the loading
+        // notice is showing above them then and goes as the page lands, on a
+        // machine of any speed.
+        source.holdsPage = true
         let model = ChatModel(source: source)
         try show(model)
         await spin(1)
         let list = try list()
         await scrollUp(list, model, screens: 40)
+        let deadline = ContinuousClock.now + .seconds(10)
+        while model.paging != .fetching, ContinuousClock.now < deadline { await spin(0.05) }
         XCTAssertEqual(model.paging, .fetching)
+        await spin()
 
         let before = try onScreen()
         let photographed = try rowsBand()
         source.prepend(Self.messages(921...960))
         source.deliver(to: model)
+        source.answerPage()
         await spin(1)
         XCTAssertEqual(model.paging, .idle)
         try assertStill(before, "a page landing")

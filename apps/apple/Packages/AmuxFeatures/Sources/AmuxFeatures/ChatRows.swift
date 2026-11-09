@@ -19,20 +19,18 @@ public struct ChatRowView: View {
     let expanded: Bool
     let rail: RailJoin
     let placement: RunPlacement
-    let bytes: (BlobRef) -> Data?
     let toggle: () -> Void
     let toggleRun: () -> Void
 
     public init(
         row: Row, expanded: Bool, rail: RailJoin = .none, placement: RunPlacement = .own,
-        bytes: @escaping (BlobRef) -> Data? = { _ in nil }, toggle: @escaping () -> Void = {},
+        toggle: @escaping () -> Void = {},
         toggleRun: @escaping () -> Void = {}
     ) {
         self.row = row
         self.expanded = expanded
         self.rail = rail
         self.placement = placement
-        self.bytes = bytes
         self.toggle = toggle
         self.toggleRun = toggleRun
     }
@@ -80,7 +78,7 @@ public struct ChatRowView: View {
     private var kindView: some View {
         switch row.kind {
         case .prompt(let text, let steered):
-            PromptBubble(text: text, steered: steered, bytes: bytes).padding(.bottom, RowGrid.prose)
+            PromptBubble(text: text, steered: steered).padding(.bottom, RowGrid.prose)
         case .prose(let text, let streaming, let workingNote):
             ProseRow(text: text, streaming: streaming, workingNote: workingNote)
                 .padding(.bottom, RowGrid.prose)
@@ -170,11 +168,12 @@ public struct ChatRowView: View {
                 verb: generated ? String(localized: "Generated image") : String(localized: "Image"),
                 subject: path.isEmpty ? image?.name ?? "" : path,
                 meta: RowMeta(image.map { ChatWords.bytes($0.size) } ?? ""),
-                below: image.flatMap { Thumbnail.image(bytes($0)) }.map { picture in
-                    AnyView(picture.resizable().scaledToFit()
-                        .frame(maxWidth: 240, maxHeight: 240, alignment: .leading)
-                        .clipShape(RoundedRectangle(cornerRadius: design.metrics.controlRadius))
-                        .padding(.top, 4))
+                below: image.map { blob in
+                    // The row's words already name it, and one too big for a
+                    // picture is still opened from its chip.
+                    blob.size <= Thumbnail.sizeLimit
+                        ? AnyView(ImageCard(blob: blob, named: false).padding(.top, 4))
+                        : AnyView(MessageAttachment(view: .image(blob)).padding(.top, 4))
                 })
         case .slashOutput(let command, let args, let output):
             GridRow(
@@ -771,13 +770,12 @@ struct PromptBubble: View {
     @Environment(\.design) private var design
     let text: [Segment]
     var steered = false
-    var bytes: (BlobRef) -> Data? = { _ in nil }
 
     var body: some View {
         HStack {
             Spacer(minLength: 44)
             VStack(alignment: .trailing, spacing: 6) {
-                SegmentsView(segments: text, bytes: bytes)
+                SegmentsView(segments: text)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background {
@@ -802,7 +800,6 @@ struct PromptBubble: View {
 struct SegmentsView: View {
     @Environment(\.design) private var design
     let segments: [Segment]
-    var bytes: (BlobRef) -> Data? = { _ in nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -813,7 +810,7 @@ struct SegmentsView: View {
                         Prose(markdown: text, inBubble: true)
                     }
                 case .attachment(let view):
-                    AttachmentChip(view: view, bytes: bytes)
+                    MessageAttachment(view: view)
                 }
             }
         }
@@ -842,7 +839,7 @@ public struct AttachmentChip: View {
 
     public var body: some View {
         HStack(spacing: 7) {
-            if case .image(let blob) = view, let image = Thumbnail.image(bytes(blob)) {
+            if case .image(let blob) = view, let image = Thumbnail.image(blob, bytes: bytes) {
                 image.resizable().scaledToFill()
                     .frame(width: 28, height: 28)
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -925,20 +922,6 @@ extension AttachmentChip {
     }
 }
 
-/// Decodes an image without reaching for a platform image type.
-enum Thumbnail {
-    static func image(_ data: Data?) -> Image? {
-        guard let data, let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                  kCGImageSourceCreateThumbnailFromImageAlways: true,
-                  kCGImageSourceThumbnailMaxPixelSize: 900,
-                  kCGImageSourceCreateThumbnailWithTransform: true,
-              ] as CFDictionary)
-        else { return nil }
-        return Image(decorative: image, scale: 1)
-    }
-}
-
 /// What the agent said, as markdown, parsed away from the main thread.
 struct ProseRow: View {
     @Environment(\.design) private var design
@@ -953,7 +936,7 @@ struct ProseRow: View {
                 case .text(let markdown):
                     Prose(markdown: markdown, muted: workingNote)
                 case .attachment(let view):
-                    AttachmentChip(view: view)
+                    MessageAttachment(view: view)
                 }
             }
         }

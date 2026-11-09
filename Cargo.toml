@@ -147,6 +147,10 @@ tracing-subscriber = { version = "0.3", features = ["fmt"] }
 tempfile = "3"
 crossterm = "0.29"
 ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
+# Thumbnails in the terminal: the image protocols, and the decoders for the
+# image types agents can attach.
+ratatui-image = { version = "11.1", default-features = false, features = ["crossterm"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 pulldown-cmark = { version = "0.13", default-features = false }
 # Grammars only (no themes: the terminal's palette colours the tokens), with
 # the pure-Rust regex engine so no C library is linked.

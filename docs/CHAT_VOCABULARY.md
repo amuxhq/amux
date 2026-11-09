@@ -67,7 +67,7 @@ kind is the [`ui_view::RowKind`](../crates/ui-view/src/rows.rs) variant the view
 | Subagent started or stopped | `Child { action, name, host, kind, state, result }` | amux's own `spawn` and `stop` calls in their own words: "Started payment-tests on build · Codex", "Stopped copy-pass". The machine shows only when it is another one; a failure reads "Could not start …" and opens to why. amux's `agents` and `hosts` listings are the agent looking around, and hidden. | full | full | full |
 | Subagent | `Subagent { description, running, tool_count, last_tool, answer, duration_ms }` | Live while running ("12 tools · 48s · last: Read"), its answer once finished; its own steps are rows with a `parent`, collapsed under it. | partial | full | partial |
 | Background process | `Background { command, running }` | "Started in background npm run dev"; the running job is listed in the overview. | partial | partial | partial |
-| Image | `Image { image, path, generated }` | A thumbnail opening full size; Codex can report generated images. | partial | partial | full |
+| Image | `Image { image, path, generated }` | A thumbnail opening full size on the phone and on a terminal that can draw images; elsewhere a line that opens it. Codex can report generated images. | partial | partial | full |
 | Slash command output | `SlashOutput { command, args, output }` | The command, then its output block. | partial | partial | partial: a review's notices |
 
 A call's `state` is a `CallPhase`, decided once in the view for both clients: `Asking` while an open ask points

@@ -402,7 +402,7 @@ impl Inner {
         Sent { id, outcome }
     }
 
-    async fn fetch_blob(self: Arc<Self>, hash: Vec<u8>) {
+    async fn fetch_blob(self: Arc<Self>, hash: Vec<u8>) -> Result<Arc<[u8]>, RpcError> {
         self.note(DriverEvent::Blob);
         self.apply(Msg::Blob {
             hash: hash.clone(),
@@ -412,14 +412,20 @@ impl Inner {
             agent_id: self.agent_id.clone(),
             hash: hash.clone(),
         };
-        let status = match self.client.get_blob(request).await {
-            Ok(blob) => {
-                self.model().blobs.insert(hash.clone(), blob.bytes.into());
+        let fetched = self
+            .client
+            .get_blob(request)
+            .await
+            .map(|blob| Arc::<[u8]>::from(blob.bytes));
+        let status = match &fetched {
+            Ok(bytes) => {
+                self.model().blobs.insert(hash.clone(), bytes.clone());
                 BlobStatus::Ready
             }
             Err(error) => BlobStatus::Failed(error.to_string()),
         };
         self.apply(Msg::Blob { hash, status });
+        fetched
     }
 }
 
@@ -944,7 +950,38 @@ impl Session {
         if self.inner.closed.load(Ordering::Acquire) {
             return;
         }
-        tokio::spawn(self.inner.clone().fetch_blob(hash.to_vec()));
+        // Marked here, not in the task: whoever asks next, a chat opening
+        // the attachment among them, must not read the old failure.
+        self.inner.apply(Msg::Blob {
+            hash: hash.to_vec(),
+            status: BlobStatus::Fetching,
+        });
+        let (inner, hash) = (self.inner.clone(), hash.to_vec());
+        tokio::spawn(async move {
+            // A failure is recorded on the state, where the rows read it.
+            let _ = inner.fetch_blob(hash).await;
+        });
+    }
+
+    /// An attachment's bytes, fetched now if they are not here yet, for
+    /// someone who asked to open it.
+    ///
+    /// A fetch already under way is waited for, so a thumbnail still
+    /// downloading or a second click never downloads the bytes twice.
+    pub async fn attachment(&self, hash: &[u8]) -> Result<Arc<[u8]>, RpcError> {
+        let mut changed = self.changed();
+        loop {
+            let status = {
+                let model = self.inner.model();
+                if let Some(bytes) = model.blobs.get(hash) {
+                    return Ok(bytes.clone());
+                }
+                model.state.blob(hash)
+            };
+            if status != BlobStatus::Fetching || changed.changed().await.is_err() {
+                return self.inner.clone().fetch_blob(hash.to_vec()).await;
+            }
+        }
     }
 
     /// The files changed against `base`, without a patch, for an overview.

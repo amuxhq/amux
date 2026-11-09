@@ -184,6 +184,15 @@ the rows that show the attachment draw a placeholder from the reference and
 change when the fetch lands. Fetched bytes are held in memory for as long as
 the chat is open. The phone reads them through `amux_session_blob`.
 
+An image at or under `ui_view::THUMBNAIL_SIZE_LIMIT` is fetched when it is drawn
+and shown in a box of a fixed size, the same before and after it lands, because
+a reference does not carry an image's shape. A larger one, and any other file,
+is fetched only when it is opened. Opening saves the bytes under the attachment's
+name and hands the file to the platform: Quick Look on the phone, and on a
+desktop the app the system picks, for the kinds that only show their content.
+Anything else is revealed in its folder, since an agent chooses the name and
+`open` would run a `.command`.
+
 ## Lifetimes
 
 There is no expiry and there are no reference counts. A blob lives and dies

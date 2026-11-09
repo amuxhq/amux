@@ -214,6 +214,14 @@ public final class Chat: ChatSource, @unchecked Sendable {
         return Data(bytes: data, count: bytes.len)
     }
 
+    public func blobFailed(_ hash: [UInt8]) -> Bool {
+        call(false) { live in Bridge.json(hash).withCString { amux_session_blob_failed(live, $0) } }
+    }
+
+    public func fetchBlob(_ hash: [UInt8]) {
+        call(()) { live in Bridge.json(hash).withCString { amux_session_fetch_blob(live, $0) } }
+    }
+
     /// Starts an act on the core queue and waits for its `{"Ok": T}` or
     /// `{"Err": reason}`.
     private func act<T: Decodable & Sendable>(

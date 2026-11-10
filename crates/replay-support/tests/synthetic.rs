@@ -176,7 +176,11 @@ fn derived(difference: &str) -> bool {
 
 /// The fixtures whose title comes out of the words of a provider's answer.
 /// A record keeps no words, so its replay has no title to take.
-const TITLED_FROM_WORDS: &[&str] = &["claude_sdk/session_title.json", "codex/thread_title.json"];
+const TITLED_FROM_WORDS: &[&str] = &[
+    "claude_sdk/session_title.json",
+    "claude_sdk/untitled_greeting.json",
+    "codex/thread_title.json",
+];
 
 struct Outcome {
     fixtures: usize,

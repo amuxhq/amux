@@ -1,0 +1,27 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 2 fact {"channel":"stream","json":{"claude_code_version":"2.1.321","model":"claude-opus-5-5","permissionMode":"default","session_id":"s1","subtype":"init","type":"system","uuid":"init-s1"}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 4 fact {"channel":"stream","json":{"duration_ms":10,"is_error":false,"subtype":"success","total_cost_usd":0.1,"type":"result","uuid":"r1"}}
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 5 input {"id":"p2","prompt":{"text":"Please fix the flaky login retry test"}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 7 fact {"channel":"stream","json":{"duration_ms":10,"is_error":false,"subtype":"success","total_cost_usd":0.1,"type":"result","uuid":"r2"}}
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 8 input {"id":"p3","prompt":{"text":"Now run the whole suite"}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("hi")], steered: false }
+     3 turn:1 TurnEnd { duration_ms: Some(10), failed: false }
+     4 70320000-0000-4000-8000-000000000000 Prompt { text: [Text("Please fix the flaky login retry test")], steered: false }
+     5 turn:2 TurnEnd { duration_ms: Some(10), failed: false }
+     6 70330000-0000-4000-8000-000000000000 Prompt { text: [Text("Now run the whole suite")], steered: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context None sign-in None
+== settings
+  model* unlisted claude-opus-5-5 "Opus 5.5" efforts=[]
+  permission* unlisted "default" "default" unsettable
+  changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Opus 5.5") effort=None permission=None mode=None

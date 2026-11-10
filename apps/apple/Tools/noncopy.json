@@ -5,17 +5,6 @@
       {"literal": "\"arrow.clockwise\"", "context": "Image(systemName: failed ? \"arrow.clockwise\" : \"photo\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.attachment\"", "context": ".identified(\"chat.attachment\", label: ChatWords.chip(.image(blob)))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
-    "apps/apple/Amux/Debug/FingerStage.swift": [
-      {"literal": "\"AMUX_FINGER_STAGE\"", "context": "ProcessInfo.processInfo.environment[\"AMUX_FINGER_STAGE\"] == \"1\"", "reason": "Fixture for the real-finger chat test, not interface copy.", "count": 1},
-      {"literal": "\"1\"", "context": "ProcessInfo.processInfo.environment[\"AMUX_FINGER_STAGE\"] == \"1\"", "reason": "Fixture for the real-finger chat test, not interface copy.", "count": 1},
-      {"literal": "\"row-\\(index)\"", "context": "let id = \"row-\\(index)\"", "reason": "Fixture for the real-finger chat test, not interface copy.", "count": 1},
-      {"literal": "\"message \\(index): the agent reports progress on its task\"", "context": "let words = \"message \\(index): the agent reports progress on its task\"", "reason": "Fixture for the real-finger chat test, not interface copy.", "count": 1},
-      {"literal": "\" and then some more of it\"", "context": "+ String(repeating: \" and then some more of it\", count: (index % 7) * 4)", "reason": "Fixture for the real-finger chat test, not interface copy.", "count": 1},
-      {"literal": "\"short \\(index)\"", "context": "return ScriptedChat.row(id, order, prose(\"short \\(index)\"))", "reason": "Fixture for the real-finger chat test, not interface copy.", "count": 1},
-      {"literal": "\"folded \\(index)\"", "context": "return ScriptedChat.row(id, order, prose(\"folded \\(index)\"), collapsed: true)", "reason": "Fixture for the real-finger chat test, not interface copy.", "count": 1},
-      {"literal": "\"stage\"", "context": "subject: ChatSubject(name: \"stage\", host: \"desk\", directory: \"~/src\", reach: .online(.direct))", "reason": "Fixture for the real-finger chat test, not interface copy.", "count": 1},
-      {"literal": "\"~/src\"", "context": "subject: ChatSubject(name: \"stage\", host: \"desk\", directory: \"~/src\", reach: .online(.direct))", "reason": "Fixture for the real-finger chat test, not interface copy.", "count": 1}
-    ],
     "apps/apple/Amux/Debug/DoorHost.swift": [
       {"literal": "\"nothing scrolls there\"", "context": "guard let list = found else { return .error(\"nothing scrolls there\") }", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"up\"", "context": "case \"up\": y = max(top, list.contentOffset.y - page)", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},

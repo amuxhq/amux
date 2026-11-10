@@ -962,8 +962,10 @@ What the leaf owns, and what stays in `ChatModel`:
   scroll callback that judges where the reader is: a row above the reader
   measured shorter than its estimate there shrank the list with the offset
   not yet answering it, and the reader read as past the bottom. Rows under
-  a finger are held even while following. `ChatFingerTests` drags the list
-  with real touches; setting its offset never brings those moments about.
+  a finger are held even while following. No test holds this: only real
+  touches bring those moments about, setting the list's offset never does,
+  and a test that dragged the list with synthetic touches on the CI
+  simulator failed about one run in four with its first drag undelivered.
 - Where the reader is. Following is read from the scroll view at each
   move, never from the callbacks that end one, which UIKit skips whenever
   something else stops the movement. The reader moving the list away from

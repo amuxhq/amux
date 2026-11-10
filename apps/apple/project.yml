@@ -372,7 +372,6 @@ schemes:
       targets:
         Amux: all
         AmuxAppTests: [test]
-        AmuxUITests: [test]
         AmuxComponentSnapshotTests: [test]
     run:
       config: Debug
@@ -381,7 +380,6 @@ schemes:
       gatherCoverageData: false
       targets:
         - AmuxAppTests
-        - AmuxUITests
         - AmuxComponentSnapshotTests
         - package: AmuxCore/AmuxCoreTests
         - package: AmuxDesign/AmuxDesignTests

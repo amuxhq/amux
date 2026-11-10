@@ -255,6 +255,23 @@ journey or baseline that does not exist.
 
 [Testing](TESTING.md) defines the lanes and boundaries fully.
 
+## `just premerge`
+
+`just premerge` is what a change passes on the machine it was written on
+before it reaches main. It takes a few minutes on a warm tree, so that it is
+run every time: every check of `just ci` that takes seconds (formatting,
+generated code, the schema and store checks, dependency policy, advisories,
+the typed-provider check, the docs and catalogue checks, the scripts' own
+tests), Clippy, the phone's writing lint and script tests, and every terminal
+journey.
+
+It leaves out what is slow. The workspace's tests take a quarter of an hour;
+run the touched crates' with `just test-crate`. The phone's unit suites and
+snapshots need a simulator and half an hour (`just ios gate`). Windows, the
+sanitizers, the models and the release build run only in CI. A change to what
+the phone draws can therefore still reach main with a baseline left behind;
+the iOS gate catches it there.
+
 ## `just ci`
 
 `just ci` runs the check sequence the CI jobs are built from, in one process,

@@ -322,6 +322,18 @@ typed-provider-check:
 no-update-flags:
     scripts/no-update-flags.sh
 
+# The quick checks a change passes before it reaches main: the ones that
+# take seconds, Clippy, and the terminal journeys, whose goldens any change
+# to what the terminal client draws can leave behind. A few minutes on a
+# warm tree. The workspace's tests are not here: run the touched crates'
+# (`just test-crate`), and leave the whole suite, the phone's snapshots and
+# the other platforms to CI (docs/CI.md, "`just premerge`").
+# Run the quick checks a change passes before it reaches main.
+premerge: no-update-flags fmt-check codegen-check proto-compat store-check dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests lint
+    {{just_executable()}} ios lint
+    {{just_executable()}} ios script-tests
+    {{just_executable()}} journey terminal all
+
 # Run the same task sequence exercised across continuous-integration jobs.
 ci: no-update-flags lint fmt-check codegen-check proto-compat store-check dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test doctest release-check mobile-check
 

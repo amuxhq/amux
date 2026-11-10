@@ -81,7 +81,7 @@ paths to the `.md` files, so they work both here and on the site.
 ## Operations
 
 - [Build](BUILD.md) — toolchain, recipes, committed generated code and warm worktrees.
-- [CI](CI.md) — workflows, lanes, `just ci` and the Windows cross-check.
+- [CI](CI.md) — workflows, lanes, `just premerge`, `just ci` and the Windows cross-check.
 - [Release](RELEASE.md) — shipping the iPhone app and the daemon's release feed and channels.
 - [Licensing](LICENSING.md) — how the repository is licensed.
 - [Logo](BRAND.md) — the editable vector master, `just logo` exports and the visual review.

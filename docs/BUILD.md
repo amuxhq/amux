@@ -121,6 +121,7 @@ The recipes a build or change usually needs:
 | `just codegen-check` | Fails if the committed protobuf output is stale |
 | `just mobile-check` | Check the provider-free client graph for iOS |
 | `just warm` | `just build` and `just test-build` |
+| `just premerge` | The quick checks before a change reaches main; see [CI](CI.md) |
 | `just ci` | The whole check sequence; see [CI](CI.md) |
 
 [Testing](TESTING.md) covers the test recipes (`suite`, `test-tui`,

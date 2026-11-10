@@ -6,6 +6,8 @@ use std::fs::File;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -109,8 +111,12 @@ fn panic_message(panic: &Box<dyn std::any::Any + Send>) -> String {
 
 /// Every terminal story in the manifest, each in a process of its own under
 /// its own bound, a failure not stopping the rest. One line per story goes
-/// to the screen and to `target/journeys/summary.txt`, each story's whole
-/// output to `target/journeys/<story>.log`.
+/// to the screen as it ends and to `target/journeys/summary.txt` in the
+/// manifest's order, each story's whole output to
+/// `target/journeys/<story>.log`.
+///
+/// Half as many stories run at once as the machine has cores: a story is a
+/// net of daemons, agents and a terminal, and mostly waits on them.
 pub(crate) fn run_all() -> ExitCode {
     let names: Vec<String> = match super::manifest() {
         Ok(stories) => stories
@@ -129,23 +135,45 @@ pub(crate) fn run_all() -> ExitCode {
         return ExitCode::FAILURE;
     }
     let summary = output.join("summary.txt");
-    let mut lines = Vec::new();
-    let mut failed = 0;
-    for name in &names {
-        let (passed, line) = run_bounded(name, &output);
-        failed += usize::from(!passed);
-        println!("{line}");
-        lines.push(line);
-        let _ = std::fs::write(&summary, lines.join("\n") + "\n");
-    }
+    let at_once = std::thread::available_parallelism()
+        .map_or(1, |cores| cores.get() / 2)
+        .clamp(1, super::terminal::SLOTS);
+    let next = AtomicUsize::new(0);
+    let ended: Mutex<Vec<Option<(bool, String)>>> = Mutex::new(vec![None; names.len()]);
+    let written = |ended: &[Option<(bool, String)>]| {
+        let lines: Vec<&str> = ended
+            .iter()
+            .flatten()
+            .map(|(_, line)| line.as_str())
+            .collect();
+        lines.join("\n") + "\n"
+    };
+    std::thread::scope(|scope| {
+        for _ in 0..at_once {
+            scope.spawn(|| {
+                loop {
+                    let at = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(name) = names.get(at) else {
+                        break;
+                    };
+                    let result = run_bounded(name, &output);
+                    println!("{}", result.1);
+                    let mut ended = ended.lock().unwrap();
+                    ended[at] = Some(result);
+                    let _ = std::fs::write(&summary, written(&ended));
+                }
+            });
+        }
+    });
+    let ended = ended.into_inner().unwrap();
+    let failed = ended.iter().flatten().filter(|(passed, _)| !passed).count();
     let total = format!(
         "{} of {} terminal stories passed",
         names.len() - failed,
         names.len()
     );
     println!("{total}");
-    lines.push(total);
-    let _ = std::fs::write(&summary, lines.join("\n") + "\n");
+    let _ = std::fs::write(&summary, written(&ended) + &total + "\n");
     if failed == 0 {
         ExitCode::SUCCESS
     } else {
@@ -1663,8 +1691,11 @@ fn new_agent_terminal(journey: &mut TerminalJourney) -> Proved {
     journey.wait(
         &pane,
         |frame| {
+            // The chat is there before its first row and its model are.
             chat_of(frame).as_deref() == Some("desk-notes")
                 && frame.contains("its terminal is on another machine")
+                && frame.contains("started ─")
+                && frame.contains("Fake 1")
         },
         "desk-notes' chat",
     )?;

@@ -30,15 +30,17 @@ const DOOR: Duration = Duration::from_secs(90);
 /// without a name a random word pair, at least eight cells wide.
 const ASSIGNED: &str = "<name>";
 
-/// Where every terminal journey runs: one fixed folder, so nothing in a
-/// frame is random, under a prefix of one physical width on every
-/// platform. A program reading its own working directory prints the
-/// physical path, and on macOS /tmp is a link to /private/tmp; elsewhere
-/// the prefix is padded to the same width, so every screen is laid out
-/// alike. Frames spell the prefix one way. Journeys in other checkouts
-/// wait for it on the lock.
+/// Where a terminal journey runs: one of a few fixed folders, their names
+/// all one width, so nothing in a frame is random, under a prefix of one
+/// physical width on every platform. A program reading its own working
+/// directory prints the physical path, and on macOS /tmp is a link to
+/// /private/tmp; elsewhere the prefix is padded to the same width, so every
+/// screen is laid out alike. Frames spell the prefix one way and mask the
+/// folder's name. A journey holds its folder's lock while it runs, so as
+/// many run at once on this machine, in every checkout together, as there
+/// are folders.
 const SPELLED_PREFIX: &str = "/tmp/journey";
-const SCRATCH_LOCK: &str = "/tmp/amux-terminal-journey.lock";
+pub(crate) const SLOTS: usize = 8;
 
 fn prefix() -> String {
     let tmp = std::fs::canonicalize("/tmp")
@@ -50,8 +52,25 @@ fn prefix() -> String {
     }
 }
 
-fn scratch_root() -> PathBuf {
-    Path::new(&prefix()).join("aj-terminal")
+fn scratch_root(slot: usize) -> PathBuf {
+    Path::new(&prefix()).join(format!("aj-termin{slot:02}"))
+}
+
+/// A folder no other journey holds, with its lock: the first free one,
+/// waiting while every one is held.
+fn free_scratch() -> Result<(File, PathBuf), String> {
+    loop {
+        for slot in 0..SLOTS {
+            let lock = File::create(format!("/tmp/amux-terminal-journey-{slot}.lock"))
+                .map_err(|error| error.to_string())?;
+            match lock.try_lock() {
+                Ok(()) => return Ok((lock, scratch_root(slot))),
+                Err(std::fs::TryLockError::WouldBlock) => {}
+                Err(std::fs::TryLockError::Error(error)) => return Err(error.to_string()),
+            }
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
 }
 
 /// Home's title line: amux at the left, the fleet's facts at the right.
@@ -143,9 +162,7 @@ impl TerminalJourney {
         let output = root.join("target/journeys").join(&story.id);
         let _ = std::fs::remove_dir_all(&output);
         std::fs::create_dir_all(&output).map_err(|error| error.to_string())?;
-        let lock = File::create(SCRATCH_LOCK).map_err(|error| error.to_string())?;
-        lock.lock().map_err(|error| error.to_string())?;
-        let scratch = scratch_root();
+        let (lock, scratch) = free_scratch()?;
         let _ = std::fs::remove_dir_all(&scratch);
         std::fs::create_dir_all(&scratch).map_err(|error| error.to_string())?;
         let binaries = Binaries::for_driver()?;
@@ -649,7 +666,7 @@ impl TerminalJourney {
         let dump = self.tmux(&["capture-pane", "-p", "-e", "-t", pane])?;
         let (texts, styles) = parse_styled(dump.strip_suffix('\n').unwrap_or(&dump), COLS);
         let prefix = prefix();
-        let tail = scratch_root().display().to_string()[prefix.len()..].to_owned();
+        let tail = self.scratch.display().to_string()[prefix.len()..].to_owned();
         let mut texts: Vec<String> = texts
             .iter()
             .map(|text| spell_root(text, &prefix, SPELLED_PREFIX, &tail))

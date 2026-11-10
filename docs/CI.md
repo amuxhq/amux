@@ -258,12 +258,13 @@ journey or baseline that does not exist.
 ## `just premerge`
 
 `just premerge` is what a change passes on the machine it was written on
-before it reaches main. It takes a few minutes on a warm tree, so that it is
+before it reaches main. It takes about a minute on a warm tree, so that it is
 run every time: every check of `just ci` that takes seconds (formatting,
 generated code, the schema and store checks, dependency policy, advisories,
 the typed-provider check, the docs and catalogue checks, the scripts' own
 tests), Clippy, the phone's writing lint and script tests, and every terminal
-journey.
+journey. The journeys run several at once, each in a scratch folder of its
+own, and share those folders with every other checkout on the machine.
 
 It leaves out what is slow. The workspace's tests take a quarter of an hour;
 run the touched crates' with `just test-crate`. The phone's unit suites and

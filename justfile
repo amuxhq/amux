@@ -324,7 +324,7 @@ no-update-flags:
 
 # The quick checks a change passes before it reaches main: the ones that
 # take seconds, Clippy, and the terminal journeys, whose goldens any change
-# to what the terminal client draws can leave behind. A few minutes on a
+# to what the terminal client draws can leave behind. About a minute on a
 # warm tree. The workspace's tests are not here: run the touched crates'
 # (`just test-crate`), and leave the whole suite, the phone's snapshots and
 # the other platforms to CI (docs/CI.md, "`just premerge`").

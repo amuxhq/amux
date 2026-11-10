@@ -22,6 +22,7 @@ item m1 message open at=1000 text="Done."
 item m1 message final at=1000 text="Done."
 ## 8 fact {"channel":"stream","json":{"type":"turn_end"}}
 item turn:1 turn final at=1000 text="" #1 started=1000
+snapshot said "Done."
 snapshot IDLE queue=[] working_on="auditing the queue" at=1000 asks=[] model=?
 turn_end 1 last=m1
 ## 9 resume

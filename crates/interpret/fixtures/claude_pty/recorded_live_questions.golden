@@ -57,5 +57,6 @@ item stream:97ad8f8b-c28d-44ff-9b49-886ec72ce7e6 message final at=1793453374775 
 snapshot WORKING queue=[] working_on=- at=1793453374727 asks=[] session=bc16698b-f82b-4449-9025-51e504820b2f model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36609/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 ## 89 recorded 87: fact Transcript type=system subtype=turn_duration uuid=4dee9dc1-d043-4d5a-a5ba-0ada7b903659
 item turn:1 turn final at=1793453374823 text="" #1 TURN_OUTCOME_COMPLETED started=1793453369342
+snapshot said "done"
 snapshot IDLE queue=[] working_on=- at=1793453374728 asks=[] session=bc16698b-f82b-4449-9025-51e504820b2f model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36609/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 turn_end 1 last=stream:97ad8f8b-c28d-44ff-9b49-886ec72ce7e6

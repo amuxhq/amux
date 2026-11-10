@@ -5,7 +5,7 @@
 ## 46 recorded 44: fact Transcript type=system subtype=turn_duration uuid=f805d1a7-9ac7-47b8-8d7e-03daedf92a5a
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 c71096aa-f7ea-4834-957c-890fb9a82ffd Prompt { text: [Text("Reply with exactly LONG_OK and nothing else. Padding follows.\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu. alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec rom…
      3 stream:02565d45-37c7-4818-ad39-af91a18ead99 Prose { text: [Text("LONG_OK")], streaming: false, working_note: false }
      4 turn:1 TurnEnd { duration_ms: Some(884), failed: false }

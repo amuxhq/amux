@@ -5,7 +5,7 @@
 ## 143 recorded 142: fact Stream type=result subtype=success uuid=e20a5ada-67cc-4b8f-b3c5-56a944431a02
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 3ddeaf36-359b-49ca-9f0d-ec2c4b827104 Prompt { text: [Text("Track this work with your task or todo tool: create three tasks named Draft, Review and Publish. Then mark Draft in progress, then mark Draft completed. Do nothing else, then stop.")], steered: false }
      3 69b67ce0-4390-4b3c-af85-c14159f043a4 Hidden collapsed
      4 64321aaf-ca6f-48af-90c3-ccf24a8c1c02 Hidden collapsed

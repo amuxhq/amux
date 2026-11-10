@@ -173,6 +173,11 @@ message Agent {
   // person gave inside the provider's own interface. Not unique. Copied from
   // the snapshot envelope; renaming the agent clears it.
   optional string title = 20;
+  // The line a fleet row quotes from the newest reply the agent wrote to the
+  // person, its markdown read as words and clipped short. Copied from the
+  // snapshot envelope, so a row says it with no stream open: an agent that
+  // has stopped keeps no stream.
+  optional string last_said = 21;
 }
 
 enum Filing {

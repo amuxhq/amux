@@ -788,6 +788,7 @@ impl State {
         );
         if !thinking {
             self.shared.note_message(&key);
+            self.shared.reply_said(emit, &key);
         }
     }
 

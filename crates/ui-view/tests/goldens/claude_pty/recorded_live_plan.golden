@@ -57,7 +57,7 @@
 ## 139 recorded 137: fact Transcript type=system subtype=turn_duration uuid=fc9f1fc9-68e3-40f1-a032-875bbfb7e5d1
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 cdf94c4a-3c59-4bb3-a9ae-8d412e5a9fb1 Prompt { text: [Text("Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval with the ExitPlanMode tool.")], steered: false }
      3 toolu_015G41xQVYW4xCAMxU3FBmnW Explore { verb: Search, subject: "select:ExitPlanMode", state: Succeeded, result: "" } run[toolu_015G41xQVYW4xCAMxU3FBmnW..toolu_01BmCKJFrdskqSVdMrWA1wMd x2 recent=1] collapsed
      4 toolu_01BmCKJFrdskqSVdMrWA1wMd Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_015G41xQVYW4xCAMxU3FBmnW..toolu_01BmCKJFrdskqSVdMrWA1wMd x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 1, subagents: 0, other: 0 }]

@@ -9,7 +9,7 @@
 ## 59 recorded 58: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:9aa109de282c495a8802ee67ecb12f99 Prompt { text: [Text("Think carefully about which is larger, 17 * 23 or 19 * 21, then reply with only the larger product.")], steered: false }
      4 rs_029584f7bd91a598016ae5d6637dcc8191b671150f7eacc225 Thinking { text: "**Computing 391 × 399**", open: false, duration_ms: Some(3328) }

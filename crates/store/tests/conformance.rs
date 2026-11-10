@@ -268,6 +268,7 @@ fn snapshots_copy_their_envelope_onto_the_row() {
             git: Some(git.clone()),
             background_jobs: 2,
             title: Some("Fix the build".into()),
+            last_said: Some("The build is green.".into()),
             ..snapshot(Phase::Working, Some("fixing the build"), 777)
         }),
         ..Default::default()
@@ -285,6 +286,7 @@ fn snapshots_copy_their_envelope_onto_the_row() {
     assert_eq!(row.git, Some(git));
     assert_eq!(row.background_jobs, 2);
     assert_eq!(row.title.as_deref(), Some("Fix the build"));
+    assert_eq!(row.last_said.as_deref(), Some("The build is green."));
     assert_eq!(held_snapshot(&row), 2);
     assert_eq!(row.snapshot.as_ref(), Some(snap));
 }
@@ -323,6 +325,44 @@ fn live_descendants_walk_own_rows_and_take_a_replicas_own_count() {
     row.descendants = 0;
     store.put_agent(&row).unwrap();
     assert_eq!(store.agent(&lead).unwrap().unwrap().descendants, 5);
+}
+
+/// A replica takes the line its row quotes from its origin's inventory row,
+/// as it takes the rest of the envelope; an own row's comes only from its
+/// snapshots, so a registry write leaves it alone.
+#[test]
+fn a_replica_takes_its_last_words_from_its_inventory_row() {
+    let mut store = fresh();
+    let mut row = AgentRow::new(peer("helper"), wire::Kind::ClaudeSdk, "/src/amux");
+    row.last_said = Some("Merged.".into());
+    store.put_agent(&row).unwrap();
+    assert_eq!(
+        store
+            .agent(&peer("helper"))
+            .unwrap()
+            .unwrap()
+            .last_said
+            .as_deref(),
+        Some("Merged.")
+    );
+    row.last_said = Some("Merged, and tagged.".into());
+    store.put_agent(&row).unwrap();
+    assert_eq!(
+        store
+            .agent(&peer("helper"))
+            .unwrap()
+            .unwrap()
+            .last_said
+            .as_deref(),
+        Some("Merged, and tagged.")
+    );
+
+    let lead = own("lead");
+    store = with_agent(store, &lead);
+    let mut own_row = store.agent(&lead).unwrap().unwrap();
+    own_row.last_said = Some("not from a snapshot".into());
+    store.put_agent(&own_row).unwrap();
+    assert_eq!(store.agent(&lead).unwrap().unwrap().last_said, None);
 }
 
 /// Whether the incarnation still owes its parent its last report: from its

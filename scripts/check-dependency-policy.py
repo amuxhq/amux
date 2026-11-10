@@ -15,6 +15,9 @@ ALLOWED_LOCAL = {
     # daemon, the phone bridge and the CLI share one definition.
     "analytics": set(),
     "attachments": {"wire"},
+    # The line a fleet row quotes from a reply: the interpreter writes it
+    # onto the agent's record, and the views read it from a chat they hold.
+    "preview": {"attachments", "wire"},
     "journal": {"wire"},
     "store": {"wire"},
     "agent-dir": {"wire"},
@@ -27,7 +30,7 @@ ALLOWED_LOCAL = {
     # The pure per-kind step, and the per-kind body redactor beside it;
     # core-ring for the check type its every-step checks report as, and for
     # reading the facts ring an agent's record is built from.
-    "interpret": {"attachments", "claude-protocol", "codex-protocol", "core-ring", "redaction", "wire"},
+    "interpret": {"attachments", "claude-protocol", "codex-protocol", "core-ring", "preview", "redaction", "wire"},
     # The agent process: its lock, journal and sockets, the interpreter,
     # and the provider hosts, each in a module of its own (`claude`, `codex`).
     "agent": {
@@ -66,7 +69,7 @@ ALLOWED_LOCAL = {
     # phone bridge share, from which the Swift mirrors are generated. Those
     # hold the wire's own enums (a refusal reason) rather than copies.
     "ui-state": {"wire"},
-    "ui-view": {"attachments", "ui-state", "wire"},
+    "ui-view": {"attachments", "preview", "ui-state", "wire"},
     "ui-runtime": {"client", "ui-state", "ui-view", "wire"},
     # The phone's chats and fleet over the local runtime, with no node.
     "app-runtime": {"client", "ui-runtime", "ui-state", "ui-view", "wire"},

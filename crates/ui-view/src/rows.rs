@@ -662,7 +662,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             }),
             Claude::Turn(turn) => plain(turn_row(state, held, turn)),
             Claude::Status(_) => plain(RowKind::Hidden),
-            Claude::Boundary(b) => plain(boundary(b)),
+            Claude::Boundary(b) => plain(boundary(b, Provider::Claude)),
             Claude::AgentMessage(m) => plain(agent_message(held, m)),
             Claude::ApiError(e) => error(e),
             Claude::Slash(s) => plain(slash(held, s)),
@@ -700,7 +700,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             }
             Codex::Work(work) => codex_work(state, held, work),
             Codex::Turn(turn) => plain(turn_row(state, held, turn)),
-            Codex::Boundary(b) => plain(boundary(b)),
+            Codex::Boundary(b) => plain(boundary(b, Provider::Codex)),
             Codex::AgentMessage(m) => plain(agent_message(held, m)),
             Codex::Error(e) => error(e),
             Codex::Unrecognized(u) => plain(unrecognized(u)),
@@ -983,10 +983,39 @@ fn error(e: &wire::ApiError) -> (RowKind, Option<Decision>, bool) {
     )
 }
 
-fn boundary(b: &wire::Boundary) -> RowKind {
-    RowKind::Boundary {
-        kind: b.kind(),
-        cause: ui_state::exit_words(b.cause, b.cause_detail.as_deref()),
+/// Which provider wrote a boundary, for the one boundary they report
+/// differently.
+#[derive(Clone, Copy, PartialEq)]
+enum Provider {
+    Claude,
+    Codex,
+}
+
+/// A boundary is drawn only where the chat above it no longer holds: a clear,
+/// after which the agent remembers none of it, and a lost daemon. A start, a
+/// resume, a restart, a fork or an exit carries on the same conversation, and
+/// a rule across it for each said nothing the person acts on; how an exited
+/// agent ended is the composer's to say. Claude writes its compaction as a
+/// row of its own beside the boundary, with the counts; Codex writes only the
+/// boundary, so its compaction is drawn as that row without counts.
+fn boundary(b: &wire::Boundary, provider: Provider) -> RowKind {
+    match b.kind() {
+        BoundaryKind::Cleared | BoundaryKind::DaemonLost => RowKind::Boundary {
+            kind: b.kind(),
+            cause: ui_state::exit_words(b.cause, b.cause_detail.as_deref()),
+        },
+        BoundaryKind::Compacted if provider == Provider::Codex => RowKind::Compaction {
+            tokens_before: None,
+            tokens_after: None,
+            automatic: false,
+        },
+        BoundaryKind::Unspecified
+        | BoundaryKind::Started
+        | BoundaryKind::Compacted
+        | BoundaryKind::Resumed
+        | BoundaryKind::Forked
+        | BoundaryKind::Restarted
+        | BoundaryKind::Exited => RowKind::Hidden,
     }
 }
 

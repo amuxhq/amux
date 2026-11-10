@@ -136,6 +136,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
                     },
                 );
                 shared.note_message(&id);
+                shared.reply_said(emit, &id);
             }
             "tool" => {
                 let name = text_of(&value, "name");

@@ -31,6 +31,10 @@ enum RowState: Equatable {
     case unsupported
     /// The agent's process ended, and how.
     case exited(ExitCause)
+    /// The person settled it, and it did not fail: done with, and resumed
+    /// by a message. Settled says what they did; that its process is not
+    /// running follows from it.
+    case settled
     case idle
 
     /// Read once, in one order, so the order is a thing somebody can look at.
@@ -48,7 +52,11 @@ enum RowState: Equatable {
             return
         }
         if row.attention == .exited {
-            self = .exited(row.card.exitCause ?? .ended)
+            switch row.card.exitCause ?? .ended {
+            case .failed(let cause): self = .exited(.failed(cause))
+            case _ where row.closed: self = .settled
+            case let cause: self = .exited(cause)
+            }
             return
         }
         let machine = PlaceNames.host(row.hostName)
@@ -83,7 +91,8 @@ enum RowState: Equatable {
         case .hostAway(let machine): "\(machine) away"
         case .unsupported: "Unknown agent"
         case .exited(.finished): "Finished"
-        case .exited: "Exited"
+        case .exited: "Stopped"
+        case .settled: "Settled"
         case .idle: "Idle"
         }
     }
@@ -118,7 +127,10 @@ enum RowState: Equatable {
         case .hostAway(let machine): "\(machine) is away, not live"
         case .unsupported: "Unknown agent, update amux to open it"
         case .exited(.finished): "Finished"
-        case .exited: "Exited"
+        // The second line says it, with why.
+        case .exited(.failed): nil
+        case .exited: "Stopped"
+        case .settled: "Settled"
         case .idle: "Idle"
         }
     }
@@ -133,6 +145,7 @@ enum RowState: Equatable {
         case .hostAway: "host-away"
         case .unsupported: "unsupported"
         case .exited: "exited"
+        case .settled: "settled"
         case .idle: "idle"
         }
     }

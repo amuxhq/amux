@@ -21,7 +21,7 @@
 ## 128 recorded 127: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:8a3ec88a8bbe4cab8c21d0678a4d08d6 Prompt { text: [Text("Run the shell command `sleep 15; echo S1`, then the shell command `sleep 5; echo S2`, then reply exactly DONE plus any extra words the user asked for.")], steered: false }
      4 msg_0fe6f22fbb8eaa10016ae5dc2f35fc8191924991056c1af14f Prose { text: [Text("I’ll run the two commands in order.")], streaming: false, working_note: true }

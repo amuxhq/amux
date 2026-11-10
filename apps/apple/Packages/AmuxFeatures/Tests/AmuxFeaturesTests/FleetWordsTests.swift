@@ -84,7 +84,7 @@ final class FleetWordsTests: XCTestCase {
         XCTAssertNil(said(.blank))
         XCTAssertNil(said(.lastSaid("")))
         let failed = FleetWords.secondLine(.exited(.failed("code 1")), kind: .codex, now: now)
-        XCTAssertEqual(failed?.text, "code 1")
+        XCTAssertEqual(failed?.text, "Stopped · code 1")
         XCTAssertEqual(failed?.ink, .error)
         XCTAssertEqual(said(.lastSaid("Done: the tests pass.")), "Done: the tests pass.")
     }

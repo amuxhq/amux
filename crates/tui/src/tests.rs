@@ -1927,7 +1927,7 @@ fn an_exited_agent_on_an_away_host_names_why_it_is_away() {
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("exited · desk away · this machine is signed out"),
+        screen.contains("stopped · desk away · this machine is signed out"),
         "{screen}"
     );
     assert!(screen.contains("Enter resumes"), "{screen}");
@@ -1940,10 +1940,10 @@ fn an_exited_agent_on_an_away_host_names_why_it_is_away() {
     )));
     view.reach = ui_view::Reach::Online(wire::RouteKind::Direct);
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
-    // Stopped is an ordinary end: the header says exited, and no more.
+    // Stopped is an ordinary end: the header says stopped, and no more.
     let screen = text(&buffer);
-    assert!(screen.contains("exited"), "{screen}");
-    assert!(!screen.contains("exited · "), "{screen}");
+    assert!(screen.contains("stopped"), "{screen}");
+    assert!(!screen.contains("stopped · "), "{screen}");
 }
 
 #[test]
@@ -1958,10 +1958,10 @@ fn an_agent_that_exited_while_the_daemon_was_away_says_exited_once() {
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("exited · while the daemon was away"),
+        screen.contains("stopped · while the daemon was away"),
         "{screen}"
     );
-    assert!(!screen.contains("exited · exited"), "{screen}");
+    assert!(!screen.contains("stopped · exited"), "{screen}");
 
     let mut fleet = FleetState::new();
     inventory(&mut fleet, host(b"host", "desk", Reads::Online));
@@ -1982,7 +1982,30 @@ fn an_agent_that_exited_while_the_daemon_was_away_says_exited_once() {
         .collect::<Vec<_>>()
         .join("\n");
     assert!(rows.contains("while the daemon was away"), "{screen}");
-    assert!(!rows.contains("exited · exited"), "{screen}");
+    assert!(!rows.contains("stopped · exited"), "{screen}");
+}
+
+/// A settled agent's chat says settled, which is what the person did; one
+/// that failed still says why.
+#[test]
+fn a_settled_agents_chat_says_settled_unless_it_failed() {
+    let mut state = chat(replies(1, 3));
+    let mut settled = fixtures::agent(Kind::ClaudeSdk);
+    settled.lifecycle = wire::Lifecycle::Exited as i32;
+    settled.exit_cause = wire::ExitCause::Stopped as i32;
+    settled.filing = wire::Filing::Closed as i32;
+    state.update(Msg::Entry(settled.clone()));
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
+    let screen = text(&buffer);
+    assert!(screen.contains("settled"), "{screen}");
+    assert!(!screen.contains("stopped"), "{screen}");
+
+    settled.exit_cause = wire::ExitCause::CouldNotStart as i32;
+    state.update(Msg::Entry(settled));
+    let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
+    let screen = text(&buffer);
+    assert!(screen.contains("stopped · could not start"), "{screen}");
 }
 
 /// Thinking is never drawn, with or without a measured time.

@@ -370,6 +370,10 @@ pub struct Shared<A: OpenAsk> {
     working_on: Option<String>,
     /// What a person reads the agent as, when it is not the name.
     title: Option<String>,
+    /// The line a fleet row quotes from the newest reply the agent wrote
+    /// to the person ([`preview::said_line`]).
+    #[serde(default)]
+    said: Option<String>,
     /// Nobody chose the name, so the provider's title stands in for it.
     provider_titles: bool,
     /// The newest title a person gave in the provider's own interface.
@@ -442,6 +446,7 @@ impl<A: OpenAsk> Shared<A> {
             taken_messages: BTreeSet::new(),
             working_on: None,
             title: spec.title.clone(),
+            said: None,
             provider_titles: !spec.name_given,
             person_title: None,
             trouble: None,
@@ -630,6 +635,14 @@ impl<A: OpenAsk> Shared<A> {
             phase,
             working_on: self.working_on.clone(),
             title: self.title.clone(),
+            // Taken only while the agent is not working, so the replies a
+            // turn writes as it goes cost no snapshot beyond the turn's
+            // end, where the phase changes anyway. A working agent's row
+            // says its step, not what it last said.
+            last_said: match &self.last_snapshot {
+                Some(last) if phase == Phase::Working as i32 => last.last_said.clone(),
+                _ => self.said.clone(),
+            },
             at_ms: self.now_ms,
             phase_since_ms,
             git: self.git.clone(),
@@ -1232,6 +1245,18 @@ impl<A: OpenAsk> Shared<A> {
     /// A complete assistant text item: the turn's newest message so far.
     pub fn note_message(&mut self, key: &str) {
         self.turn.note_message(key);
+    }
+
+    /// A complete reply to the person, emitted in this step under `key`:
+    /// the line a fleet row quotes from it is the agent's newest. A reply
+    /// with no words and nothing attached leaves the last one standing.
+    pub fn reply_said(&mut self, emit: &Emit, key: &str) {
+        let Some(item) = emit.step.items.iter().find(|item| item.key == key) else {
+            return;
+        };
+        if let Some(said) = preview::said_line(&item.text, &item.attachments) {
+            self.said = Some(said);
+        }
     }
 
     pub fn turn(&self) -> Option<&OpenTurn> {

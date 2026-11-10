@@ -5,7 +5,7 @@
 ## 48 recorded 46: fact Transcript type=system subtype=turn_duration uuid=3b64e203-b688-40f0-92a9-7969510790f2
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 6d84b566-042a-4e01-b054-87a281321129 Prompt { text: [Text("Think it through briefly, then answer: what is the capital of France?")], steered: false }
      3 stream:95800d5e-d607-4d7b-a5d1-44c541f7bd8c Prose { text: [Text("The capital of France is Paris.")], streaming: false, working_note: false }
      4 908eb68e-7f60-4c15-8d2c-cd071201bbc7 Thinking { text: "The user is asking a straightforward factual question: what is the capital of France?\n\nThis is a simple geography question that doesn't require any tools or complex reasoning. The answer is Paris.\n\nI should give a direct, concise answer as per my instructions.", open: false, duration_ms: None }

@@ -2550,7 +2550,11 @@ impl ChatView {
         if let PhaseView::Exited { cause } = state.phase()
             && !ends_with_exit(state)
         {
-            tail.push(rows::rule(&exit_words(&cause), feed_width, theme));
+            tail.push(rows::rule(
+                &exit_words(&cause, settled(state)),
+                feed_width,
+                theme,
+            ));
             tail.push(Line::default());
         }
         self.feed_tail = tail;
@@ -3570,12 +3574,14 @@ fn problem_words(
         // the agent ended.
         (_, PhaseView::Exited { cause }) if !reach.online() => {
             let ended = match cause {
+                ExitCause::Failed(_) => "stopped",
+                _ if settled(state) => "settled",
                 ExitCause::Finished => "finished",
-                ExitCause::Ended | ExitCause::Failed(_) => "exited",
+                ExitCause::Ended => "stopped",
             };
             (format!("{ended} · {}", away_words()), theme.warning())
         }
-        (_, PhaseView::Exited { cause }) => (exit_words(&cause), theme.faint()),
+        (_, PhaseView::Exited { cause }) => (exit_words(&cause, settled(state)), theme.faint()),
         (Composer::Waiting(Waiting::Detached), _) => (away_words(), theme.warning()),
         (Composer::Waiting(Waiting::Reconnecting), _) => {
             ("reconnecting".to_owned(), theme.warning())
@@ -3613,14 +3619,21 @@ fn unchangeable_words(
     }
 }
 
-/// "finished", "exited", or "exited · its directory failed: it is gone":
-/// how an exited agent's feed ends.
-fn exit_words(cause: &ExitCause) -> String {
+/// "finished", "stopped", "settled", or "stopped · its directory failed:
+/// it is gone": how an exited agent's feed ends. An agent the person
+/// settled says so, since that is what they did; why one failed outranks
+/// it.
+fn exit_words(cause: &ExitCause, settled: bool) -> String {
     match cause {
+        ExitCause::Failed(cause) => format!("stopped · {cause}"),
+        _ if settled => "settled".to_owned(),
         ExitCause::Finished => "finished".to_owned(),
-        ExitCause::Ended => "exited".to_owned(),
-        ExitCause::Failed(cause) => format!("exited · {cause}"),
+        ExitCause::Ended => "stopped".to_owned(),
     }
+}
+
+fn settled(state: &SessionState) -> bool {
+    state.agent().filing() == wire::Filing::Closed
 }
 
 /// Whether the agent's newest row is its own exit boundary.

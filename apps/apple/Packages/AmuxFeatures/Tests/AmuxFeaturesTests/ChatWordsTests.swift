@@ -200,7 +200,20 @@ final class ChatWordsTests: XCTestCase {
             "Studio is out of reach · your draft is kept")
         XCTAssertEqual(
             ChatWords.placeholder(.resume, agent: "a", host: "Studio", reach: .online(.direct), working: false),
-            "a has exited · a message resumes it")
+            "a is stopped · a message resumes it")
+        XCTAssertEqual(
+            ChatWords.placeholder(
+                .resume, agent: "a", host: "Studio", reach: .online(.direct), settled: true, working: false),
+            "a is settled · a message resumes it")
+    }
+
+    /// A settled agent's head says what the person did, unless it failed.
+    func testASettledAgentsHeadSaysSettledUnlessItFailed() {
+        XCTAssertEqual(ChatWords.exited(.ended), "Stopped")
+        XCTAssertEqual(ChatWords.exited(.finished), "Finished")
+        XCTAssertEqual(ChatWords.exited(.ended, settled: true), "Settled")
+        XCTAssertEqual(ChatWords.exited(.finished, settled: true), "Settled")
+        XCTAssertEqual(ChatWords.exited(.failed("code 1"), settled: true), "Stopped · code 1")
     }
 
     func testAReachedLimitIsNamedWithItsResetInAComposerThatStillSends() {

@@ -35,6 +35,7 @@ snapshot WORKING queue=[] working_on="Fixing the parser" at=1800000001000 asks=[
 item e3 api_error final at=1800000001000 text="" server_error "API Error: 529 overloaded" retry=false 0/0
 ## 12 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"subtype":"success","total_cost_usd":0.25,"type":"result","uuid":"r1"}}
 item turn:2 turn final at=1800000001000 text="" #2 TURN_OUTCOME_COMPLETED started=1800000000000
+snapshot said "On it."
 snapshot IDLE queue=[] working_on="Fixing the parser" at=1800000001000 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 notice blocked failed "API Error: 529 overloaded"
 turn_end 2 last=m1:0

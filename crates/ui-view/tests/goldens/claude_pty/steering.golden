@@ -53,7 +53,7 @@
 ## 41 fact {"channel":"transcript","json":{"message":{"content":[{"text":"[Request interrupted by user]","type":"text"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.190Z","type":"user","uuid":"u6"}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 prompt:7030 Prompt { text: [Text("Plan it.")], steered: false }
      3 toolu_1 Command { command: "make build", state: Succeeded, exit_code: None, output_head: ["built"], more_lines: 0, output_trimmed: false, output_tail: ["built"], duration_ms: Some(20) } run[toolu_1..toolu_1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
      4 q1 Prompt { text: [Text("Use the staging config.")], steered: true }

@@ -9,7 +9,7 @@
 ## 29 recorded 28: fact Stream type=result subtype=error_during_execution uuid=47eb7df5-c7a8-4be7-9a9a-f2e036ce735d
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 a2aa07cb-349f-4b1b-8c05-60b020327e48 Prompt { text: [Text("Count from 1 to 1000, one number per line, in plain text.")], steered: false }
      3 d662e63d-b773-4b32-bbe9-3646a4f17497 Hidden collapsed
      4 msg_011CgZmkagb7rZ4MepkBHZSx:0 Thinking { text: "", open: false, duration_ms: Some(1089) }

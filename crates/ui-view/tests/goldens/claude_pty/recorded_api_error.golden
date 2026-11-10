@@ -5,7 +5,7 @@
 ## 39 recorded 37: fact Transcript type=system subtype=turn_duration uuid=80082483-1c13-47f9-8c33-98ff593edfab
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 579ddd93-36a3-4289-b48b-71a947a42ca4 Prompt { text: [Text("Reply with the single word pong and nothing else.")], steered: false }
      3 41b461e8-a92b-4168-ad3a-5e9a984a69bf Error { error_kind: "server_error", message: "API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)", attempts: 0, gave_up: true } attention
      4 turn:1 TurnEnd { duration_ms: Some(1812), failed: false }

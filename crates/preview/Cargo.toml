@@ -1,0 +1,12 @@
+[package]
+name = "preview"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The one line a fleet row quotes from what an agent said, as its host and every client read it"
+publish = false
+
+[dependencies]
+attachments = { workspace = true }
+pulldown-cmark = { workspace = true }
+wire = { workspace = true }

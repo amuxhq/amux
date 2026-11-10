@@ -3,7 +3,7 @@
 ## 2 input {"id":"p1","prompt":{"text":"Refactor the parser."}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 prompt:7031 Prompt { text: [Text("Refactor the parser.")], steered: false }
      3 sn1 AgentMessage { from: "", kind: Message, text: [Text("Please review the parser change.\nIt is on branch parser.")], to: "reviewer", sent: Sent, rejection: "" }
      4 sn2 AgentMessage { from: "", kind: Message, text: [Text("Are you there?")], to: "ghost", sent: Rejected, rejection: "no agent named ghost" }

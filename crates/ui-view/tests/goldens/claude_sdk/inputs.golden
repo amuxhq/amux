@@ -15,7 +15,7 @@
 ## 19 agent_message {"envelope":"env-1","from":"reviewer","text":"please look at the diff"}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("first")], steered: false }
      3 turn:1 Stopped
      4 63310000-0000-4000-8000-000000000000 Prompt { text: [Text("/clear")], steered: false }

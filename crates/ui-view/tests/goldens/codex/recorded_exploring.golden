@@ -17,7 +17,7 @@
 ## 81 recorded 80: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:13038aef24d24324b20ea3385966b63a Prompt { text: [Text("Run these three shell commands separately, one tool call each: `cat config.txt`, `ls`, and `grep -n VALUE config.txt`. Then reply DONE.")], steered: false }
      4 msg_055a36b02660a1c6016ae5d745b7388191a028d7cd220635a0 Prose { text: [Text("I’ll run the three commands separately.")], streaming: false, working_note: true }

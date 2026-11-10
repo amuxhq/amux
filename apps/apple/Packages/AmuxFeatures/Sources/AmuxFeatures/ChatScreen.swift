@@ -13,6 +13,10 @@ public struct ChatSubject: Equatable, Sendable {
     public let branch: String?
     /// How this phone reaches the agent's host.
     public let reach: Reach
+    /// The host is out of reach only because the app has just come forward
+    /// and is still dialling it: the chat reads as it last did, with only
+    /// the dashed ring saying it is not confirmed.
+    public let connecting: Bool
     /// Live agents below this one on every host its host knows of, as its
     /// fleet row counts them: children on hosts this phone is not paired
     /// with included.
@@ -29,7 +33,7 @@ public struct ChatSubject: Equatable, Sendable {
 
     public init(
         name: String, host: String, directory: String, branch: String? = nil, reach: Reach,
-        descendants: Int = 0, backgroundJobs: Int = 0, closeHeld: Bool = false,
+        connecting: Bool = false, descendants: Int = 0, backgroundJobs: Int = 0, closeHeld: Bool = false,
         filing: Filing = .open, topLevel: Bool = true
     ) {
         self.name = name
@@ -37,6 +41,7 @@ public struct ChatSubject: Equatable, Sendable {
         self.directory = directory
         self.branch = branch
         self.reach = reach
+        self.connecting = connecting
         self.descendants = descendants
         self.backgroundJobs = backgroundJobs
         self.closeHeld = closeHeld
@@ -48,6 +53,7 @@ public struct ChatSubject: Equatable, Sendable {
 
     /// "~/s/amux · Studio", or why the host cannot be reached.
     public var place: String {
+        if connecting { return PlaceNames.place(host: host.isEmpty ? nil : host, directory: directory) }
         switch reach {
         case .online:
             return PlaceNames.place(host: host.isEmpty ? nil : host, directory: directory)
@@ -267,15 +273,17 @@ public struct ChatScreen: View {
 
     private var placeLine: String {
         if detached, subject.reachable { return String(localized: "\(subject.host) · out of reach") }
-        if case .exited(let cause)? = model.frame?.phase { return ChatWords.exited(cause) }
+        if case .exited(let cause)? = model.frame?.phase {
+            return ChatWords.exited(cause, settled: subject.filing == .closed)
+        }
         return subject.place
     }
 
     /// The place line is a path unless it states why the chat cannot be reached; a path keeps
     /// its ends and a sentence keeps its opening words.
     private var placeIsPath: Bool {
-        if !subject.reachable { return false }
-        if detached { return false }
+        if detached, subject.reachable { return false }
+        if !subject.reachable && !subject.connecting { return false }
         if case .exited? = model.frame?.phase { return false }
         return true
     }
@@ -489,7 +497,7 @@ public struct ChatScreen: View {
             break
         }
         if model.empty, !(model.frame?.caughtUp ?? false) {
-            if !subject.reachable {
+            if !subject.reachable && !subject.connecting {
                 notices.append(FeedNotice(id: "chat.away", text: awayNotice, value: awayCause))
             } else if model.loadingHint {
                 notices.append(FeedNotice(
@@ -778,7 +786,8 @@ public struct ChatStanding: View {
         } else {
             ComposerBox(
                 model: model, placeholder: placeholder, activity: model.frame?.composer.activity,
-                activitySubject: activitySubject, host: subject.host, plusOpen: showing == .plus,
+                activitySubject: activitySubject, host: subject.host,
+                settled: subject.filing == .closed, plusOpen: showing == .plus,
                 togglePlus: {
                     focused = false
                     showing = showing == .plus ? nil : .plus
@@ -797,7 +806,8 @@ public struct ChatStanding: View {
         }
         return ChatWords.placeholder(
             model.frame?.composer.mode, agent: subject.name, host: subject.host,
-            reach: subject.reach, working: working, limit: limit)
+            reach: subject.reach, connecting: subject.connecting,
+            settled: subject.filing == .closed, working: working, limit: limit)
     }
 
     private var activitySubject: String? {

@@ -1691,10 +1691,9 @@ fn new_agent_terminal(journey: &mut TerminalJourney) -> Proved {
     journey.wait(
         &pane,
         |frame| {
-            // The chat is there before its first row and its model are.
+            // The chat is there before its model is.
             chat_of(frame).as_deref() == Some("desk-notes")
                 && frame.contains("its terminal is on another machine")
-                && frame.contains("started ─")
                 && frame.contains("Fake 1")
         },
         "desk-notes' chat",

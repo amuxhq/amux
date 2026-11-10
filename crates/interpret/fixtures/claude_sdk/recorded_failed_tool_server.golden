@@ -30,5 +30,6 @@ item msg_011CgZkRmeFVtjpk1vres7Nr:0 message final at=1793423902827 text="pong"
 snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423902839 asks=[] session=9d056977-f3a1-4b93-9c5e-3233855d44ae model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20555/? tasks=? active=[] usage=ok 5h:19%(ok) 7d:2%(?) servers=[broken:TOOL_SERVER_STATUS_FAILED,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 31 recorded 30: fact Stream type=result subtype=success uuid=f9545910-5b6c-4feb-9de0-c1100a8a67c5
 item turn:1 turn final at=1793423902858 text="" #1 TURN_OUTCOME_COMPLETED started=1793423901713
+snapshot said "pong"
 snapshot IDLE queue=[] working_on="Reply with the single word pong and nothing else." at=1793423902858 asks=[] session=9d056977-f3a1-4b93-9c5e-3233855d44ae model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20555/1000000 tasks=? active=[] usage=ok 5h:19%(ok) 7d:2%(?) servers=[broken:TOOL_SERVER_STATUS_FAILED,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CgZkRmeFVtjpk1vres7Nr:0

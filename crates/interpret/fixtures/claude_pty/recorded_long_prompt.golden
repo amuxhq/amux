@@ -22,5 +22,6 @@ item stream:02565d45-37c7-4818-ad39-af91a18ead99 message final at=1793453276387 
 snapshot WORKING queue=[] working_on=- at=1793453276309 asks=[] session=46af795f-1b20-400a-944d-df1533af2d54 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36709/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 ## 46 recorded 44: fact Transcript type=system subtype=turn_duration uuid=f805d1a7-9ac7-47b8-8d7e-03daedf92a5a
 item turn:1 turn final at=1793453276433 text="" #1 TURN_OUTCOME_COMPLETED started=1793453275549
+snapshot said "LONG_OK"
 snapshot IDLE queue=[] working_on=- at=1793453276321 asks=[] session=46af795f-1b20-400a-944d-df1533af2d54 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36709/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 turn_end 1 last=stream:02565d45-37c7-4818-ad39-af91a18ead99

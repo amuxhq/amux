@@ -9,7 +9,7 @@
 ## 104 recorded 103: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:caf6a4e0d0844c94a1ebf545c07549d5 Prompt { text: [Text("Run exactly this shell command once: ls does-not-exist. Then tell me whether it failed.")], steered: false }
      4 msg_087900320987af99016ae5d71f303481919fd0782c8432d185 Prose { text: [Text("I’ll run that command once and report whether it failed.")], streaming: false, working_note: true }

@@ -9,7 +9,7 @@
 ## 56 recorded 55: fact Stream type=result subtype=success uuid=af128eca-c406-424c-8a92-4c0bd626a179
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 b020901a-329a-4aeb-82fb-28c089afec4d Prompt { text: [Text("Reply with the single word one and nothing else.")], steered: false }
      3 9a00faa3-3dae-41de-8372-db22829c4afa Hidden collapsed
      4 msg_011CgZkjRHtPLdJ96PSnW8Ty:0 Prose { text: [Text("one")], streaming: false, working_note: false }

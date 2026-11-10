@@ -17,7 +17,7 @@
 ## 61 recorded 60: fact Stream type=result subtype=success uuid=66f7b381-8759-451d-962a-822eec0bd98f
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 b179bed0-8ba8-4918-856e-1378bec65f8f Prompt { text: [Text("Run exactly this shell command once, with your shell tool, and nothing else: touch decided.txt. Then reply with the single word done.")], steered: false }
      3 a1f7b629-c0a9-4483-b5e3-344b6b970d3c Hidden collapsed
      4 toolu_01AZBDo9L68r63wnDdnnMogS Command { command: "touch decided.txt", state: Succeeded, exit_code: None, output_head: ["(Bash completed with no output)"], more_lines: 0, output_trimmed: false, output_tail: ["(Bash completed with no output)"], duration_ms: Some(131) } run[toolu_01AZBDo9L68r63wnDdnnMogS..toolu_01AZBDo9L68r63wnDdnnMogS x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, se…

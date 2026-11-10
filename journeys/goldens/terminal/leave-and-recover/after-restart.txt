@@ -1,7 +1,7 @@
 
   keeper │ /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                                 1 │ [Diff] │ [Home]
 
-  started ──────────────────────────────────────────────────────────────────────────────────────────────────
+
 
 
     Remember this recovery turn.                                                                     hh:mm

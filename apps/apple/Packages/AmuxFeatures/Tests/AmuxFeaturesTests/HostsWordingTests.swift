@@ -17,10 +17,14 @@ final class HostsWordingTests: XCTestCase {
             platform: platform, signedIn: nil, through: nil, version: nil)
     }
 
-    private func tab(_ hosts: [HostView], clock: @escaping @MainActor () -> Date = { Date() })
-        -> (HostsTab, HostsStore)
-    {
+    /// The tab once every machine's first dial has ended, unless it is
+    /// `connecting`, as it is in the moments after the app comes forward.
+    private func tab(
+        _ hosts: [HostView], connecting: Bool = false,
+        clock: @escaping @MainActor () -> Date = { Date() }
+    ) -> (HostsTab, HostsStore) {
         let model = HostsStore(clock: clock)
+        if !connecting { model.stopWaiting() }
         model.show(hosts)
         return (HostsTab(model: model, actions: { _ in }), model)
     }
@@ -68,6 +72,19 @@ final class HostsWordingTests: XCTestCase {
             "macOS · offline, this phone is signed out")
         let gone = host(reach: .offline(.plain))
         XCTAssertEqual(tab([gone]).0.status(gone), "macOS · offline")
+    }
+
+    /// A machine not yet reached as the app comes forward is being dialled,
+    /// not offline; one whose dial already failed is offline at once.
+    func testAMachineStillBeingDialledIsConnecting() {
+        let dialling = host(reach: .offline(.plain))
+        XCTAssertEqual(tab([dialling], connecting: true).0.status(dialling), "macOS · connecting")
+        var failed = host(reach: .offline(.plain))
+        failed.lastDialError = "connection refused"
+        XCTAssertEqual(tab([failed], connecting: true).0.status(failed), "macOS · offline")
+        XCTAssertEqual(
+            ChatSubject(name: "a", host: "studio", directory: "~/src", reach: .offline(.plain), connecting: true).place,
+            ChatSubject(name: "a", host: "studio", directory: "~/src", reach: .online(.direct)).place)
     }
 
     /// Only a departure this phone watched has an age.

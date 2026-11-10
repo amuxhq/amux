@@ -22,6 +22,7 @@ item stream:294e35e1-d5a6-424d-830a-1ef02d07579a message final at=1793452888376 
 snapshot WORKING queue=[] working_on=- at=1793452888202 asks=[] session=31016e9f-552e-4825-98ea-40f92ed8bedd model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35581/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 ## 49 recorded 47: fact Transcript type=system subtype=turn_duration uuid=96632ceb-f477-4612-b39e-14eda7d03d41
 item turn:1 turn final at=1793452888422 text="" #1 TURN_OUTCOME_COMPLETED started=1793452887439
+snapshot said "pong"
 snapshot IDLE queue=[] working_on=- at=1793452888210 asks=[] session=31016e9f-552e-4825-98ea-40f92ed8bedd model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35581/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 turn_end 1 last=stream:294e35e1-d5a6-424d-830a-1ef02d07579a
 ## 59 recorded 57: fact Hook hook_event_name=SessionStart

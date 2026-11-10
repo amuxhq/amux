@@ -40,7 +40,7 @@
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 prompt:7031 Prompt { text: [Text("Plan the colour change.")], steered: false }
      3 turn-1-plan Ask(Plan { title: Some("Write the colour"), body: "\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n", verdict: Approved, mode: "", mode_name: "", note: None, writing: false })
      4 turn:1 TurnEnd { duration_ms: Some(0), failed: false }

@@ -64,6 +64,7 @@ append msg_011CgZmSbZQzKGtxpvz1PPnB:0 "ANANA"
 item msg_011CgZmSbZQzKGtxpvz1PPnB:0 message final at=1793424701034 text="DONE BANANA"
 ## 107 recorded 106: fact Stream type=result subtype=success uuid=e72c0401-d263-48d4-a195-53c58479373a
 item turn:1 turn final at=1793424701043 text="" #1 TURN_OUTCOME_COMPLETED started=1793424677687
+snapshot said "DONE BANANA"
 snapshot IDLE queue=[] working_on="Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly DONE plus any extra words the user asked for." at=1793424701043 asks=[] session=a7c0ac0b-abb3-4012-9fcb-2301c0db1c69 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20807/1000000 tasks=? active=[] usage=ok 5h:22%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CgZmSbZQzKGtxpvz1PPnB:0
 ## 109 recorded 108: input 0x307e9a0e17d046e8a689ed22e4efb9fa
@@ -83,5 +84,6 @@ append msg_011CgZmSfP6uwinEfc7dXBfD:0 "LATER"
 item msg_011CgZmSfP6uwinEfc7dXBfD:0 message final at=1793424702093 text="LATER"
 ## 129 recorded 128: fact Stream type=result subtype=success uuid=c754b714-056c-40d3-a195-b3e3fc419182
 item turn:2 turn final at=1793424702104 text="" #2 TURN_OUTCOME_COMPLETED started=1793424701049
+snapshot said "LATER"
 snapshot IDLE queue=[] working_on="Then reply with exactly LATER." at=1793424702104 asks=[] session=a7c0ac0b-abb3-4012-9fcb-2301c0db1c69 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20855/1000000 tasks=? active=[] usage=ok 5h:22%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 2 last=msg_011CgZmSfP6uwinEfc7dXBfD:0

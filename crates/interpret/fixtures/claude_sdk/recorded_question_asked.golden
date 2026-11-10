@@ -49,5 +49,6 @@ append msg_011CgZjnMFX3M14PTTTX454j:0 "Blue**."
 item msg_011CgZjnMFX3M14PTTTX454j:0 message final at=1793423394517 text="You answered: **Blue**."
 ## 74 recorded 73: fact Stream type=result subtype=success uuid=36788761-fed3-4e44-81ba-8184dbb2ceee
 item turn:1 turn final at=1793423394575 text="" #1 TURN_OUTCOME_COMPLETED started=1793423391823
+snapshot said "You answered: Blue."
 snapshot IDLE queue=[] working_on="Use AskUserQuestion to ask exactly one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue. Then repeat my answer." at=1793423394575 asks=[] session=1415b6fb-0762-40ad-9ac9-e21a35db7f06 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20601/1000000 tasks=? active=[] usage=ok 5h:18%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CgZjnMFX3M14PTTTX454j:0

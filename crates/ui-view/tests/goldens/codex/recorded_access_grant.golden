@@ -17,7 +17,7 @@
 ## 92 recorded 91: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "warning", message: "Under-development features enabled: request_permissions_tool. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in <MACHINE_PATH>", attempts: 0, gave_up: true } attention
      3 warning:3 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      4 prompt:9c1a6f29f82a4faf87bbbab79fd50c4e Prompt { text: [Text("Use your request_permissions tool to ask me for network access. Once granted, run `curl -sI https://example.com` and reply with its status line.")], steered: false }

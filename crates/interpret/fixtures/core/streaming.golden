@@ -26,5 +26,6 @@ append m1 "orld"
 item m1 message final at=1300 text="Hello world"
 ## 13 fact {"channel":"stream","json":{"type":"turn_end"}}
 item turn:1 turn final at=1500 text="" #1 started=1000
+snapshot said "Hello world"
 snapshot IDLE queue=[] working_on="say hello" at=1500 asks=[] model=opus
 turn_end 1 last=m1

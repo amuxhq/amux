@@ -25,7 +25,7 @@
 ## 87 recorded 86: fact Stream type=result subtype=success uuid=d2823d1a-dd2a-4bb2-b0c1-adeb2218d816
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 b742743f-0409-4471-a489-c5afda64769e Prompt { text: [Text("Call the mcp__external__ask_the_operator tool with word set to ALBATROSS, then reply with exactly what it returned.")], steered: false }
      3 d21effe9-696e-4625-9c50-0dc564aac513 Hidden collapsed
      4 msg_011CgZkQk9gNRy6sAGU1v6Kx:0 Thinking { text: "", open: false, duration_ms: Some(919) }

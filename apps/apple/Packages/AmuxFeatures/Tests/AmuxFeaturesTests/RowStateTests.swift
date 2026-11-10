@@ -16,14 +16,14 @@ final class RowStateTests: XCTestCase {
 
     private func row(
         _ attention: Attention, kind: Kind = .claudeSdk, reach: Reach = .online(.direct),
-        exitCause: ExitCause? = nil
+        exitCause: ExitCause? = nil, filing: Filing = .open
     ) -> FleetRow {
         FleetRow(
             card: FleetCard(
                 agent: AgentKey(host: machine, agent: UUID()), name: "refactor-auth", handle: "refactor-auth",
                 kind: kind, attention: attention, cwd: "~/src/amux", phaseSinceMs: 0,
                 host: "Studio.local", hostReach: reach, children: 0,
-                familyAttention: attention, members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: exitCause),
+                familyAttention: attention, members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: filing, topLevel: true, branch: nil, exitCause: exitCause),
             depth: 0, expanded: false, secondLine: .blank, loud: nil)
     }
 
@@ -34,8 +34,8 @@ final class RowStateTests: XCTestCase {
         XCTAssertEqual(RowState(row: row(.idle)).word, "Idle")
         XCTAssertEqual(RowState(row: row(.exited, exitCause: .finished)).word, "Finished")
         XCTAssertNil(RowState(row: row(.exited, exitCause: .finished)).elaboration)
-        XCTAssertEqual(RowState(row: row(.exited, exitCause: .ended)).word, "Exited")
-        XCTAssertEqual(RowState(row: row(.exited, exitCause: .failed("code 1"))).word, "Exited")
+        XCTAssertEqual(RowState(row: row(.exited, exitCause: .ended)).word, "Stopped")
+        XCTAssertEqual(RowState(row: row(.exited, exitCause: .failed("code 1"))).word, "Stopped")
         XCTAssertNil(
             RowState(row: row(.exited, exitCause: .failed("code 1"))).elaboration,
             "why it exited is the second line's to say")
@@ -80,6 +80,17 @@ final class RowStateTests: XCTestCase {
         XCTAssertEqual(state.spoken, "Studio is away, not live")
     }
 
+    /// Settled says what the person did; a failure still says it failed.
+    func testASettledAgentIsSettledUnlessItFailed() {
+        XCTAssertEqual(RowState(row: row(.exited, exitCause: .ended, filing: .closed)), .settled)
+        XCTAssertEqual(RowState(row: row(.exited, exitCause: .finished, filing: .closed)), .settled)
+        XCTAssertEqual(RowState(row: row(.exited, exitCause: .ended, filing: .closed)).spoken, "Settled")
+        let failed = RowState(row: row(.exited, exitCause: .failed("code 1"), filing: .closed))
+        XCTAssertEqual(failed, .exited(.failed("code 1")))
+        XCTAssertNil(failed.spoken, "the second line says it failed, and why")
+        XCTAssertEqual(RowState(row: row(.exited, exitCause: .ended)), .exited(.ended))
+    }
+
     func testAMachineReachedAnyWayLetsTheAgentSpeak() {
         XCTAssertEqual(RowState(row: row(.working, reach: .online(.direct))), .working)
         XCTAssertEqual(RowState(row: row(.working, reach: .online(.relay))), .working)
@@ -88,7 +99,7 @@ final class RowStateTests: XCTestCase {
     func testEveryStateHasADistinctName() {
         let names = [
             RowState.needsYou, .working, .starting, .hostOffline("a"), .hostAway("a"),
-            .unsupported, .exited(.ended), .idle,
+            .unsupported, .exited(.ended), .settled, .idle,
         ].map(\.name)
         XCTAssertEqual(Set(names).count, names.count)
     }

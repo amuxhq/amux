@@ -42,7 +42,7 @@ public enum FleetWords {
             return (PushWords.body(said, provider: provider(kind), now: now), ink)
         case .step(let step): return (self.step(step), .quiet)
         case .lastSaid(let said): return said.isEmpty ? nil : (said, .quiet)
-        case .exited(.failed(let cause)): return (cause, .error)
+        case .exited(.failed(let cause)): return (String(localized: "Stopped · \(cause)"), .error)
         case .hostRevoked:
             return (String(localized: "Its host no longer trusts this phone · pair again to reach it"), .warning)
         case .exited(.finished), .exited(.ended), .blank: return nil

@@ -9,13 +9,13 @@
 ## 70 recorded 69: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:806d3aa66cd540099f63c391f52d932d Prompt { text: [Text("Reply with exactly BEFORE_COMPACT and nothing else.")], steered: false }
      4 msg_097a236f309f4f96016ae5d76f0b8c8191882580a718cded14 Prose { text: [Text("BEFORE_COMPACT")], streaming: false, working_note: false }
      5 turn:1 TurnEnd { duration_ms: Some(5050), failed: false }
      6 prompt:737464696e2d39 Prompt { text: [Text("/compact")], steered: false }
-     7 boundary:3 Boundary { kind: Compacted, cause: "" }
+     7 boundary:3 Compaction { tokens_before: None, tokens_after: None, automatic: false }
      8 turn:2 TurnEnd { duration_ms: Some(5487), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 20080, window_tokens: Some(475000), percent: Some(4), near_full: false }) sign-in None

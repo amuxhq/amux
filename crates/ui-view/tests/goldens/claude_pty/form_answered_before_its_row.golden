@@ -13,7 +13,7 @@
   ask none
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("file the crash")], steered: false }
      3 ask:ask:1 Ask(Form { server: "github", message: "github needs your input", fields: ["repo"], resolution: Answered })
      4 t1 ToolCall { server: "github", tool: "create_issue", fact: "Crash on launch", state: Running, result: "" } run[t1..t1 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]

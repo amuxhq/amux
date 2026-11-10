@@ -13,11 +13,11 @@
 ## 96 recorded 94: fact Transcript type=system subtype=turn_duration uuid=025b0bf1-37db-42ae-9b12-549cb65d4424
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 03ec20dc-2545-421c-9348-34286b607a15 Prompt { text: [Text("Reply with the single word one and nothing else.")], steered: false }
      3 stream:d0242bf7-80b0-4140-8fdc-937a68139159 Prose { text: [Text("one")], streaming: false, working_note: false }
      4 turn:1 TurnEnd { duration_ms: Some(833), failed: false }
-     5 boundary:2 Boundary { kind: Resumed, cause: "" }
+     5 boundary:2 Hidden collapsed
      6 38a0048e-af32-4d25-b86f-f07d0dc215e7 Prose { text: [Text("one")], streaming: false, working_note: false }
      7 turn:2 TurnEnd { duration_ms: Some(833), failed: false }
      8 7d0e91fd-4d69-4af8-b7e7-34ddc08c2e81 Prompt { text: [Text("Reply with the single word two and nothing else.")], steered: false }

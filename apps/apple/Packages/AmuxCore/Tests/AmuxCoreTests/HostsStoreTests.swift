@@ -10,6 +10,42 @@ final class HostsStoreTests: XCTestCase {
     private let found = HostId(UUID(uuidString: "00000000-0000-0000-0000-000000000503")!)
     private let phone = HostId(UUID(uuidString: "00000000-0000-0000-0000-000000000504")!)
 
+    /// Coming forward, a machine is connecting until a listing says it is
+    /// linked or why it is not; one whose dial fails stays out of reach
+    /// while it is retried, and only coming forward again waits on it anew.
+    func testAMachineIsConnectingUntilItsFirstDialEnds() {
+        let hosts = HostsStore()
+        var failed = Cards.host(mini, name: "mini", reach: .offline(.plain))
+        failed.lastDialError = "connection refused"
+        hosts.show([
+            Cards.host(studio, name: "studio", reach: .offline(.plain)),
+            failed,
+            Cards.host(found, name: "nova", reach: .away),
+        ])
+        XCTAssertEqual(hosts.connecting, [studio], "a failed dial and a free plan are known already")
+
+        hosts.show([Cards.host(studio, name: "studio", reach: .online(.direct)), failed])
+        XCTAssertEqual(hosts.connecting, [])
+        hosts.show([Cards.host(studio, name: "studio", reach: .offline(.plain)), failed])
+        XCTAssertEqual(hosts.connecting, [], "a machine that answered and went is gone, not connecting")
+
+        hosts.cameForward()
+        hosts.show([Cards.host(studio, name: "studio", reach: .offline(.plain)), failed])
+        XCTAssertEqual(hosts.connecting, [studio])
+        XCTAssertTrue(hosts.isConnecting(studio))
+    }
+
+    /// A machine nothing dials at all is not connecting for ever.
+    func testWaitingStopsAfterItsPatience() {
+        let hosts = HostsStore()
+        hosts.show([Cards.host(studio, name: "studio", reach: .offline(.plain))])
+        XCTAssertEqual(hosts.connecting, [studio])
+        hosts.stopWaiting()
+        XCTAssertEqual(hosts.connecting, [])
+        hosts.show([Cards.host(studio, name: "studio", reach: .offline(.plain))])
+        XCTAssertEqual(hosts.connecting, [], "not again until the app comes forward")
+    }
+
     func testHostsAreSplitIntoThisPhoneTrustedAndFound() {
         let hosts = HostsStore()
         hosts.show([

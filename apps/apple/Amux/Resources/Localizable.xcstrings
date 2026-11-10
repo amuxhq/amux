@@ -145,6 +145,30 @@
         }
       }
     },
+    "%@ is settled · a message resumes it" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is settled · a message resumes it"
+          }
+        }
+      }
+    },
+    "%@ is stopped · a message resumes it" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is stopped · a message resumes it"
+          }
+        }
+      }
+    },
     "%@ KB" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
@@ -273,18 +297,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ files"
-          }
-        }
-      }
-    },
-    "%@ has exited · a message resumes it" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ has exited · a message resumes it"
           }
         }
       }
@@ -1257,6 +1269,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Can’t load. Tap to try again."
+          }
+        }
+      }
+    },
+    "connecting" : {
+      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "connecting"
+          }
+        }
+      }
+    },
+    "Connecting" : {
+      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecting"
           }
         }
       }
@@ -3021,18 +3057,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Exited"
-          }
-        }
-      }
-    },
-    "Exited · %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Exited · %@"
           }
         }
       }
@@ -5929,6 +5953,18 @@
         }
       }
     },
+    "stopped" : {
+      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "stopped"
+          }
+        }
+      }
+    },
     "Stopped unexpectedly" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
       "extractionState" : "manual",
@@ -5949,6 +5985,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stopped unexpectedly: %@"
+          }
+        }
+      }
+    },
+    "Stopped · %@" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped · %@"
+          }
+        }
+      }
+    },
+    "stopped · %@" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "stopped · %@"
           }
         }
       }
@@ -7857,18 +7917,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "exited"
-          }
-        }
-      }
-    },
-    "exited · %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "exited · %@"
           }
         }
       }
@@ -10689,6 +10737,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Settle held · sends when %@ is back"
+          }
+        }
+      }
+    },
+    "settled" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/RowState.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "settled"
           }
         }
       }

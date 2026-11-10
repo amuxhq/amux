@@ -329,6 +329,24 @@ cargo = [
 ]
 
 [[suite]]
+name = "reply-preview"
+contract = "The line a fleet row quotes from a reply is its first line of words: markdown read rather than shown, code fences skipped, the attachment placeholder dropped, an attachment named when there are no words, and a long line clipped on a character."
+paths = ["crates/preview/src"]
+recipe = "just suite reply-preview"
+boundary = "Interpreter"
+oracle = "Exact lines for authored replies."
+real = []
+substituted = []
+time = "none"
+capabilities = ["Rust toolchain"]
+lane = "fast"
+evidence = ""
+update = ""
+cargo = [
+  { package = "preview", kind = "lib", targets = ["preview"], features = [] },
+]
+
+[[suite]]
 name = "recording-manifests"
 contract = "A joined capture's manifest inventories every replay-relevant file by its digest, and a recording whose bytes differ from it or that holds a file it does not list is refused; sanitizing a capture redacts the recording machine's paths, secrets and identifiers wherever they nest and keeps package and version names."
 paths = ["crates/qualification/src/recording", "crates/qualification/tests/recording"]

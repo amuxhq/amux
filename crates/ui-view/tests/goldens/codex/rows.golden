@@ -21,7 +21,7 @@
 ## 42 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"error":{"additionalDetails":null,"codexErrorInfo":"other","message":"stream closed"},"id":"turn-2","status":"failed"}}}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 prompt:7031 Prompt { text: [Text("Refactor the parser.")], steered: false }
      3 warning:2 Error { error_kind: "warning", message: "This request was routed to gpt-5.6-mini. To use gpt-5.6-luna for this work, apply for trusted access.", attempts: 0, gave_up: true } attention
      4 rs-1 Thinking { text: "The parser has two entry points.", open: false, duration_ms: None }

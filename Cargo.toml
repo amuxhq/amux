@@ -10,6 +10,7 @@ members = [
     "crates/agent-dir",
     "crates/amux",
     "crates/attachments",
+    "crates/preview",
     "crates/claude-protocol",
     "crates/client",
     "crates/codex-protocol",
@@ -79,6 +80,7 @@ store = { path = "crates/store" }
 wire = { path = "crates/wire", default-features = false }
 settings = { path = "crates/settings" }
 attachments = { path = "crates/attachments" }
+preview = { path = "crates/preview" }
 git-facts = { path = "crates/git-facts" }
 ui-runtime = { path = "crates/ui-runtime" }
 ui-state = { path = "crates/ui-state" }

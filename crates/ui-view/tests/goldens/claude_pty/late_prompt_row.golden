@@ -15,7 +15,7 @@
   ask none
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("clean up")], steered: false }
      3 u2 Prompt { text: [Text("never mind")], steered: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

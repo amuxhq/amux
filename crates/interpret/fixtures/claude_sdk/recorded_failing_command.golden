@@ -52,5 +52,6 @@ append msg_011CgZkSP8gzB2mYPrFBDnMr:0 " directory`."
 item msg_011CgZkSP8gzB2mYPrFBDnMr:0 message final at=1793423911032 text="Yes, it failed. `ls does-not-exist` exited with code 1 and printed `ls: does-not-exist: No such file or directory`."
 ## 74 recorded 73: fact Stream type=result subtype=success uuid=e6f5b9a6-1eb3-4350-b217-4d8364bbe2bd
 item turn:1 turn final at=1793423911186 text="" #1 TURN_OUTCOME_COMPLETED started=1793423906467
+snapshot said "Yes, it failed. ls does-not-exist exited with code 1 and printed ls: does-not-exist: No such file or directory."
 snapshot IDLE queue=[] working_on="Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed." at=1793423911186 asks=[] session=22056a81-197b-4af7-a541-c766980f0268 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20525/1000000 tasks=? active=[] usage=ok 5h:19%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CgZkSP8gzB2mYPrFBDnMr:0

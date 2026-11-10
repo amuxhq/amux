@@ -71,7 +71,7 @@
 ## 35 fact {"channel":"transcript","json":{"durationMs":50,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.060Z","type":"system","uuid":"d1"}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("test it")], steered: false }
      3 t1 Command { command: "cargo test", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(2) } run[t1..t2 x2 recent=1] decision=Decision { outcome: Allowed, granted: Some(Claude { subjects: ["cargo test"], directories: [], mode: "", mode_name: "", destination: Project }), note: None, elsewhere: false } collapsed
      4 t2 Command { command: "rm -rf build", state: Denied, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed."], more_lines: 0, output_trimmed: false, output_tail: ["The user doesn't want to pro…

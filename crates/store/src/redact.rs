@@ -164,9 +164,11 @@ fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(),
         Option<Vec<u8>>,
         Option<Vec<u8>>,
         Option<String>,
+        Option<String>,
     );
     let mut read = tx.prepare(
-        "SELECT rowid, kind, name, cwd, exit_detail, working_on, git, snapshot, title FROM agents",
+        "SELECT rowid, kind, name, cwd, exit_detail, working_on, git, snapshot, title, last_said \
+         FROM agents",
     )?;
     let rows = read
         .query_map([], |row| {
@@ -180,10 +182,11 @@ fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(),
                 row.get(6)?,
                 row.get(7)?,
                 row.get(8)?,
+                row.get(9)?,
             ))
         })?
         .collect::<Result<Vec<Row>, _>>()?;
-    for (rowid, kind, name, cwd, exit_detail, working_on, git, snapshot, title) in rows {
+    for (rowid, kind, name, cwd, exit_detail, working_on, git, snapshot, title, last_said) in rows {
         let git = git
             .map(|bytes| wire::Git::decode(bytes.as_slice()))
             .transpose()
@@ -198,6 +201,7 @@ fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(),
                 working_on,
                 git,
                 title,
+                last_said,
                 ..Default::default()
             },
         );
@@ -208,7 +212,7 @@ fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(),
             .map(|snapshot| redacted(redactor, &snapshot).encode_to_vec());
         tx.execute(
             "UPDATE agents SET name = ?2, cwd = ?3, exit_detail = ?4, working_on = ?5, title = ?8, \
-             git = ?6, snapshot = ?7 WHERE rowid = ?1",
+             git = ?6, snapshot = ?7, last_said = ?9 WHERE rowid = ?1",
             params![
                 rowid,
                 agent.name,
@@ -218,6 +222,7 @@ fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(),
                 agent.git.map(|git| git.encode_to_vec()),
                 snapshot,
                 agent.title,
+                agent.last_said,
             ],
         )?;
     }

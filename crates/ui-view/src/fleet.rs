@@ -4,7 +4,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use attachments::PLACEHOLDER;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 pub use ui_state::ExitCause;
@@ -13,7 +12,7 @@ use ui_state::{
 };
 use wire::{Agent, Filing, HostEntry, Kind, Lifecycle, RouteKind, Said, Wants, trusted};
 
-use crate::text::{markdown_words, within, without_direction_controls};
+use crate::text::{within, without_direction_controls};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct FleetCard {
@@ -250,31 +249,7 @@ fn last_said(state: &SessionState) -> Option<String> {
                 ItemBody::Claude(Claude::Message(_)) | ItemBody::Codex(Codex::Message(_))
             )
         })
-        .find_map(|held| {
-            // An attachment's placeholder is not words: a reply that opens
-            // with one says its first line of prose, or failing that names
-            // what it attached.
-            held.item
-                .text
-                .lines()
-                .filter(|line| !line.trim_start().starts_with("```"))
-                .map(|line| {
-                    without_direction_controls(&markdown_words(&line.replace(PLACEHOLDER, "")))
-                })
-                .map(|line| line.trim().to_owned())
-                .find(|line| !line.is_empty())
-                .or_else(|| held.item.attachments.iter().find_map(attachment_name))
-        })
-}
-
-fn attachment_name(attachment: &wire::Attachment) -> Option<String> {
-    use wire::attachment::Of;
-    let name = match attachment.of.as_ref()? {
-        Of::Image(blob) | Of::File(blob) => &blob.name,
-        Of::Text(text) => &text.name,
-        Of::Review(review) => &review.diff.as_ref()?.patch.as_ref()?.name,
-    };
-    (!name.is_empty()).then(|| without_direction_controls(name))
+        .find_map(|held| preview::said_line(&held.item.text, &held.item.attachments))
 }
 
 /// The row's second line: the state comes from the inventory row, so it
@@ -293,23 +268,36 @@ fn second_line(
     line: Option<&SessionLine>,
 ) -> SecondLine {
     let attention = ui_state::attention(agent);
+    // A stopped agent keeps no stream, so its row says what its record
+    // last said: a failure first, then its last words, and how it ended
+    // only when it said nothing.
+    let recorded = || agent.last_said.clone().filter(|said| !said.is_empty());
     if attention == Attention::Exited {
-        return SecondLine::Exited(ui_state::exit_cause(agent));
+        return match ui_state::exit_cause(agent) {
+            cause @ ExitCause::Failed(_) => SecondLine::Exited(cause),
+            cause => recorded().map_or(SecondLine::Exited(cause), SecondLine::LastSaid),
+        };
     }
     if reach(fleet, local_host, &agent.host_id) == Reach::Offline(Offline::Revoked) {
         return SecondLine::HostRevoked;
     }
+    // An idle agent whose stream has not opened yet, as on a launch, says
+    // what its record holds rather than nothing until the stream comes.
     let Some(line) = line else {
-        return SecondLine::Blank;
+        return match attention {
+            Attention::Idle => recorded().map_or(SecondLine::Blank, SecondLine::LastSaid),
+            _ => SecondLine::Blank,
+        };
     };
     let said = match attention {
         Attention::NeedsYou => line.said.clone().map(SecondLine::Said),
         Attention::Working => line.step.clone().map(SecondLine::Step),
-        Attention::Idle => line
-            .said
-            .clone()
-            .map(SecondLine::Said)
-            .or_else(|| line.last_said.clone().map(SecondLine::LastSaid)),
+        Attention::Idle => line.said.clone().map(SecondLine::Said).or_else(|| {
+            line.last_said
+                .clone()
+                .or_else(recorded)
+                .map(SecondLine::LastSaid)
+        }),
         Attention::Starting | Attention::Exited => None,
     };
     said.unwrap_or(SecondLine::Blank)

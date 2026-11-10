@@ -24,7 +24,8 @@ ones that need you, then the rest, with **Settled** at the bottom for the ones
 you're done with. Each agent goes by the name you gave it or, if you left the
 optional Name field empty when you started it, the title Claude or Codex gives
 the conversation. The line under it says what the agent is doing or what it's
-waiting for. Pull down for search, by name, title, folder or host.
+waiting for. A settled agent keeps the last thing it said, unless it failed,
+when the line says why. Pull down for search, by name, title, folder or host.
 
 Swipe a row right to pin it, or left to settle it: it stops if it's running,
 and asks first if that would cut work short. A settled agent can be un-settled

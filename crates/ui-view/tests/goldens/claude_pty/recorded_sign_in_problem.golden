@@ -5,7 +5,7 @@
 ## 37 recorded 35: fact Transcript type=system subtype=turn_duration uuid=451e0229-99df-41ac-9f95-b1d3828256d6
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 f7b2c700-f151-42f9-83a3-b4956894f91d Prompt { text: [Text("Reply with the single word pong and nothing else.")], steered: false }
      3 0a03504d-2392-4617-b402-3201912adafc Error { error_kind: "authentication_failed", message: "Invalid API key · Fix external API key", attempts: 0, gave_up: true } attention
      4 turn:1 TurnEnd { duration_ms: Some(5403), failed: false }

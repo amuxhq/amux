@@ -7,7 +7,7 @@
 ## 9 fact {"channel":"transcript","json":{"message":{"content":"try again","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.300Z","type":"user","uuid":"u2"}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("carry on")], steered: false }
      3 a1 Error { error_kind: "rate_limit", message: "You've hit your 5-hour limit · resets 2:30am (Europe/Oslo)", attempts: 0, gave_up: true } attention
      4 turn:1 TurnEnd { duration_ms: Some(110), failed: false }

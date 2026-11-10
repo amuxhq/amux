@@ -17,7 +17,7 @@
 ## 106 recorded 105: fact Stream type=result subtype=success uuid=09cbf313-611d-42da-97b6-91fbd63aca32
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 36c77189-3182-40a4-b1d7-558bb7f40654 Prompt { text: [Text("Name the color of the attached image in one word. Then read square.png in the working directory with the Read tool and say whether it is the same image.")], steered: false }
      3 76266842-6d1f-400b-8c71-79141edb0ef4 Hidden collapsed
      4 msg_011CgZjjGWvVRiRUsxj7agbs:0 Thinking { text: "", open: false, duration_ms: Some(1041) }

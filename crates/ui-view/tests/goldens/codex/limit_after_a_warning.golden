@@ -5,7 +5,7 @@
 ## 8 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"error":{"additionalDetails":null,"codexErrorInfo":"usageLimitExceeded","message":"refused"},"id":"turn-1","status":"failed"}}}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 prompt:7031 Prompt { text: [Text("go 1")], steered: false }
      3 error:turn-1 Error { error_kind: "usageLimitExceeded", message: "refused", attempts: 0, gave_up: true } attention
      4 turn:1 TurnEnd { duration_ms: Some(0), failed: true }

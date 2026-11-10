@@ -25,13 +25,15 @@ in four sections:
 - **Needs you**: agents waiting on you, to approve a command, answer a
   question or decide on a plan.
 - **Live**: agents starting, working, or idle and ready for the next prompt,
-  and agents that have exited but you haven't settled yet.
+  and agents that have stopped but you haven't settled yet.
 - **Settled**: agents you're done with. This section starts folded.
 
 Each row shows the agent's name, its branch, which agent it is (Claude or
 Codex), its folder and, when it isn't this machine, its host. The line under
 the name says what's going on: the question it's asking, the step it's
-running, what it last said, or why it can't carry on. A filled `●` means it's
+running, what it last said, or why it can't carry on. A stopped or settled
+agent keeps the last thing it said there, unless it failed, when the line
+says why. A filled `●` means it's
 working, and a blue `●` means it needs you. Agents are ordered by when they
 last changed state, so a row doesn't jump around while its agent works.
 
@@ -246,7 +248,7 @@ Everything the app does is also a command. Name an agent by its name, by
 | `amux send <agent> <message>` | Send an agent a message |
 | `amux attach <agent>` | Open an agent's chat in this terminal |
 | `amux settle <agent>` | You're done with an agent: stops it if it's running, and settles its subagents. It can be resumed later. |
-| `amux resume <agent> [message]` | Start an exited or settled agent again |
+| `amux resume <agent> [message]` | Start a stopped or settled agent again |
 | `amux rename <agent> <name>` | Rename an agent |
 | `amux rm <agent>` | Delete an agent, its history and its subagents |
 | `amux pair [target]` | Pair with another machine, or open this one for pairing ([Add another computer](../get-started/add-another-computer.md)) |

@@ -21,7 +21,7 @@
 ## 32 fact {"channel":"transcript","json":{"durationMs":1000,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:09.100Z","type":"system","uuid":"d3"}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("write a short poem, then list the files")], steered: false }
      3 stream:d-a Prose { text: [Text("The river carries the sky,\nand the stones hum along.\nThe sea waits.")], streaming: false, working_note: false }
      4 a2 Prose { text: [Text("Listing them now.")], streaming: false, working_note: false }

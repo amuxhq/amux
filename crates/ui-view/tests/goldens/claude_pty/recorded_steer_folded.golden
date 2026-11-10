@@ -17,7 +17,7 @@
 ## 105 recorded 103: fact Transcript type=system subtype=turn_duration uuid=3db9c7e6-c688-41e7-939d-5b551857e4e2
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 724c96f8-7f43-4196-bb9a-ad73fbc675ec Prompt { text: [Text("Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly DONE plus any extra words the user asked for.")], steered: false }
      3 toolu_0114UaPgea2NVsciuNrx2WbU Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", state: Succeeded, exit_code: None, output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(15303) } run[toolu_0114UaPgea2NVsciuNrx2WbU..toolu_0114UaPgea2NVsciuNrx2WbU x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0,…
      4 0a18d26c-96b8-4a19-affb-bbe635d6b4f3 Prompt { text: [Text("Also append the word BANANA.")], steered: true }

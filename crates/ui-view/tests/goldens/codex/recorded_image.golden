@@ -9,7 +9,7 @@
 ## 90 recorded 89: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:8361bfcf11e048a1aa70a09c8df053fe Prompt { text: [Text("Name the color of the attached image in one word. Then look at square.png in the working directory with your image viewing tool and say whether it is the same image.\n<amux-attachment kind=\"image\" hash=\"sha256:0dbc894f85ee7d0c6a07eefd8d55e72b5422722685da75e512dbe94923d2d323\" name=\"square.png\" mime=\"image/png\" size=\"99\" pa…
      4 msg_02da1a5d807eaf4f016ae5d725475881919528b04fff3c8957 Prose { text: [Text("Red. I’ll view square.png to compare it.\n")], streaming: false, working_note: true }

@@ -435,6 +435,12 @@ pub struct Snapshot {
     /// row.
     #[prost(string, optional, tag = "13")]
     pub title: ::core::option::Option<::prost::alloc::string::String>,
+    /// The line a fleet row quotes from the newest reply the agent wrote to the
+    /// person, clipped short (Agent.last_said). Taken whenever the agent is not
+    /// working, so a turn's own replies cost no snapshot beyond its end. The
+    /// daemon copies it onto the inventory row.
+    #[prost(string, optional, tag = "14")]
+    pub last_said: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for Snapshot {
     const NAME: &'static str = "Snapshot";
@@ -4316,6 +4322,12 @@ pub struct Agent {
     /// the snapshot envelope; renaming the agent clears it.
     #[prost(string, optional, tag = "20")]
     pub title: ::core::option::Option<::prost::alloc::string::String>,
+    /// The line a fleet row quotes from the newest reply the agent wrote to the
+    /// person, its markdown read as words and clipped short. Copied from the
+    /// snapshot envelope, so a row says it with no stream open: an agent that
+    /// has stopped keeps no stream.
+    #[prost(string, optional, tag = "21")]
+    pub last_said: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for Agent {
     const NAME: &'static str = "Agent";

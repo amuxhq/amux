@@ -5,7 +5,7 @@
 ## 22 recorded 21: fact Stream type=result subtype=success uuid=ab971b97-03e0-4647-9179-33882319a95a
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 012a0341-f2c3-4d34-bd6a-4d0c512e77fe Prompt { text: [Text("Reply with the single word pong and nothing else.")], steered: false }
      3 1219ed92-ee5f-4aad-88dc-433143f544bd Hidden collapsed
      4 0a32f2aa-57e5-49e8-888e-ea0d7a312fb7 Error { error_kind: "authentication_failed", message: "Invalid API key · Fix external API key", attempts: 0, gave_up: true } attention

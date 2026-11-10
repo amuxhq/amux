@@ -5,7 +5,7 @@
 ## 45 recorded 44: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:d98b66cba80349fda2db2fe70921e474 Prompt { text: [Text("Reply with exactly UNREACHABLE.")], steered: false }
      4 warning:3 Error { error_kind: "warning", message: "Model metadata for `amux-live-no-such-model` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.", attempts: 0, gave_up: true } attention

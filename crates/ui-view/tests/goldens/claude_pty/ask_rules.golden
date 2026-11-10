@@ -55,7 +55,7 @@
 ## 24 fact {"channel":"transcript","json":{"durationMs":600690,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:10:00.700Z","type":"system","uuid":"d1"}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("clean up")], steered: false }
      3 t1 Command { command: "rm -rf build", state: Succeeded, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(40) } run[t1..t3 x3 recent=2] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true } collapsed
      4 t2 FileChange { files: [FileRow { path: "notes.md", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Denied } run[t1..t3 x3 recent=1] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: true } collapsed

@@ -24,5 +24,6 @@ snapshot WORKING queue=[] working_on=- at=1793452893543 asks=[] session=064097b9
 item stream:95800d5e-d607-4d7b-a5d1-44c541f7bd8c message final at=1793452893605 text="The capital of France is Paris."
 ## 48 recorded 46: fact Transcript type=system subtype=turn_duration uuid=3b64e203-b688-40f0-92a9-7969510790f2
 item turn:1 turn final at=1793452893653 text="" #1 TURN_OUTCOME_COMPLETED started=1793452891581
+snapshot said "The capital of France is Paris."
 snapshot IDLE queue=[] working_on=- at=1793452893562 asks=[] session=064097b9-86a9-4975-b2e9-d650c061f296 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=34924/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 turn_end 1 last=stream:95800d5e-d607-4d7b-a5d1-44c541f7bd8c

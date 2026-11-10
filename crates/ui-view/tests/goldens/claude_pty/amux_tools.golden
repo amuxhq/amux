@@ -3,7 +3,7 @@
 ## 3 fact {"channel":"transcript","json":{"message":{"content":"go","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.000Z","type":"user","uuid":"u1"}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("go")], steered: false }
      3 sn1 AgentMessage { from: "", kind: Message, text: [Text("Please review the parser change.\nIt is on branch parser.")], to: "reviewer", sent: Sent, rejection: "" }
      4 sn2 AgentMessage { from: "", kind: Message, text: [Text("Are you there?")], to: "ghost", sent: Rejected, rejection: "no agent named ghost" }

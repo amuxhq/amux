@@ -11,7 +11,7 @@
 ## 8 input {"id":"p3","prompt":{"text":"Now run the whole suite"}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("hi")], steered: false }
      3 turn:1 TurnEnd { duration_ms: Some(10), failed: false }
      4 70320000-0000-4000-8000-000000000000 Prompt { text: [Text("Please fix the flaky login retry test")], steered: false }

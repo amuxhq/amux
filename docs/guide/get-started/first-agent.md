@@ -48,11 +48,12 @@ amux new codex
 
 ## Find it
 
-The home screen lists your agents in three sections:
+The home screen lists your agents in sections:
 
+- **Pinned:** agents you pinned, kept at the top.
 - **Needs you:** agents waiting on an answer from you.
 - **Live:** agents starting, working, or idle and ready for more.
-- **Exited:** agents that have finished. It's folded until you open it.
+- **Settled:** agents you're done with. It's folded until you open it.
 
 Each row shows what the agent is called (the title of its conversation, or the name if you gave one) and its branch, which agent it is, its folder,
 the computer it's on when that isn't this one, and how long it's been that

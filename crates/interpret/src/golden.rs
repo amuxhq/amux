@@ -1605,6 +1605,7 @@ struct Carried<'a> {
     git: Option<&'a wire::Git>,
     catalogue: Option<&'a Vec<u8>>,
     title: Option<&'a str>,
+    last_said: Option<&'a str>,
 }
 
 fn render_frame<'a, I: Interpreter>(
@@ -1650,6 +1651,10 @@ fn render_frame<'a, I: Interpreter>(
         if snapshot.title.as_deref() != carried.title {
             carried.title = snapshot.title.as_deref();
             let _ = writeln!(out, "snapshot title {:?}", carried.title.unwrap_or("-"));
+        }
+        if snapshot.last_said.as_deref() != carried.last_said {
+            carried.last_said = snapshot.last_said.as_deref();
+            let _ = writeln!(out, "snapshot said {:?}", carried.last_said.unwrap_or("-"));
         }
         let _ = writeln!(
             out,

@@ -139,9 +139,13 @@ public struct HostsTab: View {
     /// not reachable, and calling it offline would claim it is not there.
     private var subtitle: String {
         guard !model.hosts.isEmpty else { return "" }
-        let reachable = model.hosts(.onThisNetwork).count + model.hosts(.throughTheRelay).count
+        // A machine still being dialled as the app comes forward counts as
+        // reachable, as it was when the app was put away, rather than
+        // dropping to offline for the moment the dial takes.
+        let connecting = model.hosts(.offline).filter { model.isConnecting($0.id) }.count
+        let reachable = model.hosts(.onThisNetwork).count + model.hosts(.throughTheRelay).count + connecting
         let away = model.hosts(.away).count
-        let lost = model.hosts(.offline).count
+        let lost = model.hosts(.offline).count - connecting
         var parts: [String] = []
         if reachable > 0 || (away == 0 && lost == 0) { parts.append(String(localized: "\(reachable) reachable")) }
         if away > 0 { parts.append(String(localized: "\(away) away")) }
@@ -173,11 +177,16 @@ public struct HostsTab: View {
     }
 
     /// Reachable first, nearest route first, then away, then offline; by
-    /// name within each.
+    /// name within each. A machine still being dialled sorts with the
+    /// reachable ones, so it does not move up the list once it answers.
     private var ordered: [HostView] {
         model.hosts.sorted {
-            (Self.rank($0.group), $0.name.lowercased()) < (Self.rank($1.group), $1.name.lowercased())
+            (rank($0), $0.name.lowercased()) < (rank($1), $1.name.lowercased())
         }
+    }
+
+    private func rank(_ host: HostView) -> Int {
+        model.isConnecting(host.id) ? Self.rank(.throughTheRelay) : Self.rank(host.group)
     }
 
     private static func rank(_ group: HostGroup) -> Int {
@@ -213,7 +222,7 @@ public struct HostsTab: View {
     }
 
     private func row(_ host: HostView) -> some View {
-        let reachable = host.online
+        let reachable = host.online || model.isConnecting(host.id)
         return Button {
             if let id = host.id { actions(.open(id)) }
         } label: {
@@ -274,7 +283,9 @@ public struct HostsTab: View {
         case .throughTheRelay: parts.append(String(localized: "via relay"))
         case .away: parts.append(String(localized: "away on the free plan"))
         case .offline:
-            if host.reach == .offline(.revoked) {
+            if model.isConnecting(host.id) {
+                parts.append(String(localized: "connecting"))
+            } else if host.reach == .offline(.revoked) {
                 parts.append(String(localized: "no longer trusts this phone"))
             } else if let id = host.id, model.foundButUnreachable.contains(id) {
                 parts.append(String(localized: "found, not answering"))
@@ -311,6 +322,8 @@ public struct HostsTab: View {
         case .away:
             parts.append(String(localized: "away"))
             parts.append(String(localized: "the free plan does not relay between hosts"))
+        case .offline where model.isConnecting(host.id):
+            parts.append(String(localized: "connecting"))
         case .offline:
             if host.reach == .offline(.revoked) {
                 parts.append(String(localized: "it no longer trusts this phone, pair again to reach it"))

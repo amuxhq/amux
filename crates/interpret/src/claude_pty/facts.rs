@@ -1747,6 +1747,7 @@ impl State {
                         },
                     );
                     self.shared.note_message(&key);
+                    self.shared.reply_said(emit, &key);
                 }
                 ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. } => {
                     self.shared.item(

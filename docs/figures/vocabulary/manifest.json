@@ -79,13 +79,13 @@
       "theme": "light",
       "viewport": [
         100,
-        16
+        4
       ],
       "pixels": [
         1000,
-        352
+        88
       ],
-      "sha256": "707f49c9d6b306a8e910bbf65253a0939370e6eed29e4db48193ae002d422ebe"
+      "sha256": "27d435a744c6cd160bcdd616dc3c18ad909367f8ab382459f254d8eb909fab12"
     },
     {
       "fixture": "row_agent_message",

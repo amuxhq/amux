@@ -22,7 +22,7 @@
 ## 13 fact {"channel":"stream","json":{"duration_ms":10,"errors":[],"is_error":true,"session_id":"s1","subtype":"error_during_execution","terminal_reason":"aborted_tools","type":"result","uuid":"r2"}}
   ask none
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("ask whether to ship")], steered: false }
      3 t1 [Dismissed:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Ship", question: "Ship it today?", multi_select: false, options: [OptionView { label: "Yes", description: "Ship it today", preview: "", recommended: false }, OptionView { label: "No", description: "Do not ship it today", preview: "", recommended: false }], allow_other: true, secret: false }], answers: [], skipped: …
      4 turn:1 Stopped

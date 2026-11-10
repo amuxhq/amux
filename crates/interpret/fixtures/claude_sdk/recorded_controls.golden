@@ -51,5 +51,6 @@ append msg_011CgZmyHAzNSHK6eeRFzWSX:0 "done"
 item msg_011CgZmyHAzNSHK6eeRFzWSX:0 message final at=1793425117206 text="done"
 ## 66 recorded 65: fact Stream type=result subtype=success uuid=fd00da2a-c286-4f8e-946f-73a01bbf5419
 item turn:1 turn final at=1793425117211 text="" #1 TURN_OUTCOME_COMPLETED started=1793425113702
+snapshot said "done"
 snapshot IDLE queue=[] working_on="Use your Write tool to create a file named notes.txt in the current directory containing the single word pong. Then reply with the single word done." at=1793425117211 asks=[] session=5cbfdf0e-8354-45fd-b255-fcb00f517384 model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=high mode=acceptEdits context=19711/1000000 tasks=? active=[] usage=ok 5h:23%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CgZmyHAzNSHK6eeRFzWSX:0

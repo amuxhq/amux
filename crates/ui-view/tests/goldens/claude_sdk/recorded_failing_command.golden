@@ -9,7 +9,7 @@
 ## 74 recorded 73: fact Stream type=result subtype=success uuid=e6f5b9a6-1eb3-4350-b217-4d8364bbe2bd
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 198c87a8-997e-4b96-b648-292fa6fb670d Prompt { text: [Text("Run exactly this Bash command once: ls does-not-exist. Then tell me whether it failed.")], steered: false }
      3 eae87e28-bb11-4262-9f37-da4523dc22f8 Hidden collapsed
      4 toolu_018f4THttdk9PUwCCSEpKacx Command { command: "ls does-not-exist", state: Failed, exit_code: None, output_head: ["Exit code 1", "ls: does-not-exist: No such file or directory"], more_lines: 0, output_trimmed: false, output_tail: ["Exit code 1", "ls: does-not-exist: No such file or directory"], duration_ms: Some(2835) } run[toolu_018f4THttdk9PUwCCSEpKacx..toolu_018f4THttdk9PUwCCSEpKacx x1 …

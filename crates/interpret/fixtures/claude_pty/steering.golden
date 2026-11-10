@@ -54,6 +54,7 @@ snapshot WORKING queue=[p2] working_on="Plan it." at=1800000000000 asks=[] sessi
 ## 20 fact {"channel":"transcript","json":{"durationMs":5,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.080Z","type":"system","uuid":"d1"}}
 effect terminal prompt "Then summarise."
 item turn:1 turn final at=1800000000080 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000075
+snapshot said "Built with the staging config."
 snapshot IDLE queue=[] working_on="Then summarise." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 1 last=a2
 ## 21 input {"id":"n4","send_now":{"target":"p2"}}
@@ -77,6 +78,7 @@ item a3 message final at=1800000000110 text="Summary."
 ## 28 fact {"channel":"transcript","json":{"operation":"dequeue","sessionId":"s1","timestamp":"2027-01-15T08:00:00.120Z","type":"queue-operation"}}
 ## 29 fact {"channel":"transcript","json":{"durationMs":5,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.130Z","type":"system","uuid":"d2"}}
 item turn:2 turn final at=1800000000130 text="" #2 TURN_OUTCOME_COMPLETED started=1800000000125
+snapshot said "Summary."
 snapshot IDLE queue=[p3(steered),p4] working_on="Then summarise." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 2 last=a3
 ## 30 fact {"channel":"transcript","json":{"message":{"content":"Also check the logs.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.140Z","type":"user","uuid":"u4"}}
@@ -87,6 +89,7 @@ item a4 message final at=1800000000150 text="Logs are clean."
 ## 32 fact {"channel":"transcript","json":{"durationMs":5,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.160Z","type":"system","uuid":"d3"}}
 effect terminal prompt "And the tests."
 item turn:3 turn final at=1800000000160 text="" #3 TURN_OUTCOME_COMPLETED started=1800000000155
+snapshot said "Logs are clean."
 snapshot IDLE queue=[] working_on="And the tests." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 turn_end 3 last=a4
 ## 33 fact {"channel":"transcript","json":{"message":{"content":"And the tests.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.170Z","type":"user","uuid":"u5"}}

@@ -19,7 +19,7 @@
 ## 69 recorded 67: fact Transcript type=system subtype=turn_duration uuid=e4cb2721-b1e3-41a3-9d12-6e5058a6fcc5
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 783a3894-ebef-482c-92f4-3d2ae92787fc Prompt { text: [Text("Use AskUserQuestion to ask exactly one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue. Then repeat my answer.")], steered: false }
      3 453bd2f8-4190-4543-8856-4b6558f6d246 Thinking { text: "", open: false, duration_ms: Some(1014) }
      4 toolu_01PGR6sKYR3e4MDPrZuNUHzM [Answered: Color = Blue skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Choose red.", preview: "", recommended: false }, OptionView { label: "Blue", description: "Choose blue.", preview: "", recommended: false }], allow_other: tr…

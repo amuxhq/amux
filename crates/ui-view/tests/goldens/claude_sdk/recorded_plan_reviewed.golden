@@ -63,7 +63,7 @@
 ## 623 recorded 622: fact Stream type=result subtype=success uuid=bebcf830-d6f7-489f-b3a4-99c5594d2791
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 d34bc8e5-8e53-4de6-b91e-10859b86b9cb Prompt { text: [Text("Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval with the ExitPlanMode tool.")], steered: false }
      3 fb06d5bf-8474-496e-9121-cd54167f441a Hidden collapsed
      4 msg_011CgZmNTVdRrfsTx8Vm6zmD:0 Thinking { text: "", open: false, duration_ms: Some(1110) }

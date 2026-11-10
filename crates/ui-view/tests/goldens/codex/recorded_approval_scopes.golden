@@ -33,7 +33,7 @@
 ## 113 recorded 112: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:be04eee1582449ecb0e1867aaadab4ee Prompt { text: [Text("Do these steps in order, one tool call each: run the shell command `touch first.txt`; then use apply_patch to create notes.txt containing the line one; then use apply_patch to change that line to two. The sandbox is read-only, so request escalated permissions where you need them; I will approve. Then reply DONE.")], steered: false …
      4 msg_0a336f7f3f82abca016ae5d7a8b994819191d9c4eb605a7eae Prose { text: [Text("I’ll run the three steps in order, requesting write approval where needed.")], streaming: false, working_note: true }

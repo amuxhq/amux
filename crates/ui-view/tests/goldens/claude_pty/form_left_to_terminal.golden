@@ -49,7 +49,7 @@
 ## 31 fact {"channel":"transcript","json":{"durationMs":50,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:40.200Z","type":"system","uuid":"d1"}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("file the crash")], steered: false }
      3 t1 ToolCall { server: "github", tool: "create_issue", fact: "Crash on launch", state: Succeeded, result: "{\"number\": 42}" } run[t1..t1 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
      4 ask:ask:1 Ask(Form { server: "github", message: "github needs your input", fields: [], resolution: Dismissed })

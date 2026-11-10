@@ -191,7 +191,7 @@ public struct AgentsHome: View {
                     accountMenu
                 }
             }
-            if scope == .fleet && canStartAnAgent {
+            if scope == .fleet && offersNewAgent {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { actions(.newAgent) } label: { Image(systemName: "plus").foregroundStyle(design.onAccent.color) }
                         .buttonStyle(.glassProminent)
@@ -269,10 +269,12 @@ public struct AgentsHome: View {
     /// In beside it is remembered, not signed in.
     private var signedIn: Bool { accounts.accounts.contains(where: \.signedIn) }
 
-    /// Whether any machine would actually run something started now.
-    private var canStartAnAgent: Bool {
-        model.machines.contains(where: \.online)
-    }
+    /// Whether New Agent is offered: once any machine is paired, whether or
+    /// not one is answering yet. A reopened app reads every machine unreached
+    /// until its links come up, and a button that appeared a moment after the
+    /// list did was the app saying it had not connected. New Agent greys the
+    /// machines out of reach and picks one as it comes back.
+    private var offersNewAgent: Bool { !model.machines.isEmpty }
 
     /// What the switcher asked for, in the words this screen speaks.
     ///
@@ -1076,8 +1078,8 @@ public struct AgentsHome: View {
     ///
     /// The phone has done the part that needed doing, so the screen says what
     /// comes next rather than offering to pair again. Starting an agent is the
-    /// one action, and only where a machine would run it; the callouts say
-    /// why not otherwise, as they do above a list.
+    /// one action; the callouts say why no machine would run it, as they do
+    /// above a list.
     private var noAgentsYet: some View {
         ScrollView {
             if !callouts.isEmpty {
@@ -1092,7 +1094,7 @@ public struct AgentsHome: View {
                     Explain("Start an agent on a host and it appears here.")
                         .identified("home.empty.noAgents")
                 }
-                if canStartAnAgent {
+                if offersNewAgent {
                     Button { actions(.newAgent) } label: {
                         ActionLabel("New Agent", kind: .primary, fill: true)
                     }
@@ -1207,12 +1209,15 @@ struct AgentRowView: View {
     }
 
     private var stopped: Bool {
-        if case .exited = state { return true }
-        return false
+        switch state {
+        case .exited, .settled: true
+        default: false
+        }
     }
 
     /// The agent's own words, or the state's where it has none: a stopped
-    /// agent says how it ended. A machine out of reach changes nothing here:
+    /// agent says how it ended. A settled one says nothing more, since its
+    /// heading has said it. A machine out of reach changes nothing here:
     /// the row keeps what this phone last held, and the dashed ring is what
     /// says the machine is not answering. Spelling it out too put the same
     /// "offline" on every row of that machine in place of what they said.
@@ -1332,7 +1337,7 @@ struct StateMark: View {
             case .hostAway, .hostOffline:
                 Circle().strokeBorder(
                     design.inkFaint.color, style: StrokeStyle(lineWidth: 1.5, dash: [2, 2.2]))
-            case .exited, .unsupported:
+            case .exited, .settled, .unsupported:
                 Circle().fill(design.hairline.color)
             }
         }

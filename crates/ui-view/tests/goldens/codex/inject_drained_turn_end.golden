@@ -9,7 +9,7 @@
 ## 16 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-2","status":"completed"}}}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 prompt:7031 Prompt { text: [Text("Count to three.")], steered: false }
      3 msg-1 Prose { text: [Text("1 2 3")], streaming: false, working_note: false }
      4 agent-message:6531 AgentMessage { from: "reviewer", kind: Message, text: [Text("Also say DONE.")], to: "", sent: Unspecified, rejection: "" }

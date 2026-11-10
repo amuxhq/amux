@@ -37,7 +37,7 @@
 ## 220 recorded 219: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:ebf50cf21cee419fa9c7cabd536c4edf Prompt { text: [Text("Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval.")], steered: false }
      4 msg_0b58a38fe8255793016ae5d6f7605c81919ffa3594a9b380bf Prose { text: [Text("I’ll check README.md and put the one-step plan forward for approval.")], streaming: false, working_note: true }

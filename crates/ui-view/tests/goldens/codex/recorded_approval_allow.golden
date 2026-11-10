@@ -17,7 +17,7 @@
 ## 65 recorded 64: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:8ed461e43ee6414099f0b8bb242c08ae Prompt { text: [Text("Run exactly this shell command once, with your shell tool, and nothing else: touch decided.txt. The sandbox is read-only, so request escalated permissions for it; I will approve. Then reply with the single word done.")], steered: false }
      4 exec-e8a96244-1e5d-45bf-b154-9414de3b3672 Command { command: "touch decided.txt", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-e8a96244-1e5d-45bf-b154-9414de3b3672..exec-e8a96244-1e5d-45bf-b154-9414de3b3672 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: …

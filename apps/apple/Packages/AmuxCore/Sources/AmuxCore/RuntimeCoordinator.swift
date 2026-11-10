@@ -450,6 +450,7 @@ public final class RuntimeCoordinator {
         listSources()
         if active {
             browse()
+            stores.hosts.cameForward()
             if let runtime { feed(runtime, .foreground) }
             start()
         } else {

@@ -9,7 +9,7 @@
 ## 90 recorded 89: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:93d1dfb3cab64daea690783b6044bdfb Prompt { text: [Text("Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: reply with exactly CHILD_DONE. Then wait for it to finish and reply with what it answered.")], steered: false }
      4 call_54cac0d815d747589d49f51c46ef389d Subagent { description: "", running: false, tool_count: 0, last_tool: "wait", answer: "", duration_ms: Some(1606) } run[call_54cac0d815d747589d49f51c46ef389d..call_54cac0d815d747589d49f51c46ef389d x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]

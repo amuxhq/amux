@@ -9,7 +9,7 @@
 ## 69 recorded 68: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:1a103d21cc9f4df28765b36283769981 Prompt { text: [Text("Use your web search tool to look up the capital city of Australia, then reply with the city name only.")], steered: false }
      4 msg_0376c45f89b1dbae016ae5d77a42708191b0509053b4ff55e2 Prose { text: [Text("I’ll look it up.")], streaming: false, working_note: true }

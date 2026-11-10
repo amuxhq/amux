@@ -33,7 +33,7 @@
 ## 89 recorded 87: fact Transcript type=system subtype=turn_duration uuid=4dee9dc1-d043-4d5a-a5ba-0ada7b903659
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 5663f5d4-13c7-4bc1-950c-741c618a678b Prompt { text: [Text("Use the AskUserQuestion tool once, asking me two questions in that one call: 'Which colour?' with the options Red and Blue, and 'Which size?' with the options Small and Large. After I answer, use it once more to ask me one question, 'Which shape?' with the options Circle and Square. Then reply with the single word done. Do nothing els…
      3 76914126-eca4-458d-80f1-5f5b783a8853 Thinking { text: "", open: false, duration_ms: Some(1042) }
      4 toolu_01MJHbwWhC1thFFyLe6QzELQ [Answered: Colour = (skipped); Size = Small skipped=1] Ask(Questions { questions: [QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secr…

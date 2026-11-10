@@ -53,5 +53,6 @@ snapshot WORKING queue=[] working_on=- at=1793447728382 asks=[] thread=01a191d0-
 snapshot WORKING queue=[] working_on=- at=1793447728382 asks=[] thread=01a191d0-89b3-7a82-8a23-9802729f1cde model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=17492/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 50 recorded 49: fact Rpc method=turn/completed
 item turn:1 turn final at=1793447728385 text="" #1 TURN_OUTCOME_COMPLETED started=1793447725864
+snapshot said "INJECTED_IDLE"
 snapshot IDLE queue=[] working_on=- at=1793447728385 asks=[] thread=01a191d0-89b3-7a82-8a23-9802729f1cde model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=17492/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
 turn_end 1 last=msg_0877a9e222db66c3016ae5d7304b988191b704b255b80682f6

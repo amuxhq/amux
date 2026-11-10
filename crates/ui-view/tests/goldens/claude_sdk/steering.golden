@@ -31,7 +31,7 @@
 ## 29 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"session_id":"s1","subtype":"success","total_cost_usd":0.01,"type":"result","uuid":"r4"}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 70300000-0000-4000-8000-000000000000 Prompt { text: [Text("Plan it.")], steered: false }
      3 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("Use the staging config.")], steered: true }
      4 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: [Text("Status?")], to: "", sent: Unspecified, rejection: "" }

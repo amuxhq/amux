@@ -13,7 +13,7 @@
 ## 76 recorded 74: fact Transcript type=system subtype=turn_duration uuid=1af997fc-195b-404a-b64c-f128d62a057a
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 588f81cd-6512-4226-a496-eb7a8b47f43c Prompt { text: [Text("Name the color of the attached image in one word. Then read square.png in the working directory with the Read tool and say whether it is the same image.")], steered: false }
      3 stream:6fbadf11-8fe2-4f84-8a18-dd542a3e2f0e Prose { text: [Text("I don't see an attached image in your message, so I'll read `square.png` first and check what's there.")], streaming: false, working_note: false }
      4 63f2eb4c-cd70-4f81-9238-cbfef8cd3e00 Thinking { text: "", open: false, duration_ms: None }

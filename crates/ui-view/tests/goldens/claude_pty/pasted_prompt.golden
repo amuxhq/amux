@@ -7,7 +7,7 @@
 ## 6 fact {"channel":"transcript","json":{"durationMs":20,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.030Z","type":"system","uuid":"d1"}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("Call the AskUserQuestion tool exactly once, now, with these four questions and nothing else first. Q1 header \"Database\", question \"Which database should the service use?\", single select, options: \"SQLite\" (description \"One file, no server\"), \"Postgres\" (description \"A server, more features\"). Q2 header \"Checks\", question \"Which checks should run before …
      3 a1 Prose { text: [Text("Asking now.")], streaming: false, working_note: false }
      4 turn:1 TurnEnd { duration_ms: Some(20), failed: false }

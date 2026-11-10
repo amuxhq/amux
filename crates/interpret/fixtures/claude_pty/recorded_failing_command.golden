@@ -31,5 +31,6 @@ item stream:716f02f4-ed7e-4483-a180-d10abc1d6e5b message final at=1793452967385 
 snapshot WORKING queue=[] working_on=- at=1793452967084 asks=[] session=ba2814c1-3eb9-4b1c-9dc4-ea1527ba314d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35749/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 ## 66 recorded 64: fact Transcript type=system subtype=turn_duration uuid=9b3f4837-3436-4ff2-ba88-57a62725cf19
 item turn:1 turn final at=1793452967444 text="" #1 TURN_OUTCOME_COMPLETED started=1793452965057
+snapshot said "Yes, it failed. ls does-not-exist exited with code 1 and printed ls: does-not-exist: No such file or directory, because there is no such path in the working directory."
 snapshot IDLE queue=[] working_on=- at=1793452967089 asks=[] session=ba2814c1-3eb9-4b1c-9dc4-ea1527ba314d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35749/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 turn_end 1 last=stream:716f02f4-ed7e-4483-a180-d10abc1d6e5b

@@ -37,5 +37,6 @@ item stream:3a6167af-f097-4826-9274-ae764043216e message final at=1793453284686 
 snapshot WORKING queue=[] working_on=- at=1793453284622 asks=[] session=af25d09b-e931-4926-b32e-b26fedaab9d1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35816/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 ## 68 recorded 66: fact Transcript type=system subtype=turn_duration uuid=2679ade6-08c8-4fb1-a1ab-94ff2a20d6ff
 item turn:1 turn final at=1793453284733 text="" #1 TURN_OUTCOME_COMPLETED started=1793453282600
+snapshot said "I ran the command. It wrote allow-scoped to allow-scoped.txt in the working directory and printed allow-scoped. to stdout. I didn't run anything else."
 snapshot IDLE queue=[] working_on=- at=1793453284623 asks=[] session=af25d09b-e931-4926-b32e-b26fedaab9d1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35816/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 turn_end 1 last=stream:3a6167af-f097-4826-9274-ae764043216e

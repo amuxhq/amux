@@ -151,17 +151,21 @@ enum StoryFleet {
             row(7, "sensor-logger", on: pi, .idle, minutes: 52, kind: .codex,
                 .lastSaid("Running under systemd now.")),
         ]
+        // A settled agent says what it last said, as it did on the list; one
+        // that failed says why.
         let stopped = [
             row(8, "spike-quic", on: studio, .exited, minutes: 180, reach: studioReach, exit: .finished,
-                filing: .closed, .exited(.finished)),
-            row(9, "bisect-hang", on: desk, .exited, minutes: 300, exit: .failed("Exited with status 1"), filing: .closed,
-                .exited(.failed("Exited with status 1"))),
+                filing: .closed, .lastSaid("QUIC holds up behind both NATs. The notes are in spike/quic.md.")),
+            row(11, "readme-pass", on: desk, .exited, minutes: 240, exit: .ended, filing: .closed,
+                .lastSaid("Added a Getting started section to the README.")),
+            row(9, "bisect-hang", on: desk, .exited, minutes: 300, exit: .failed("the provider exited: exit code 1"), filing: .closed,
+                .exited(.failed("the provider exited: exit code 1"))),
         ]
         let sections = [
             FleetSection(kind: .pinned, families: 1, foldedByDefault: false, rows: pinned),
             FleetSection(kind: .needsYou, families: 2, foldedByDefault: false, rows: needs),
             FleetSection(kind: .live, families: 5, foldedByDefault: false, rows: live),
-            FleetSection(kind: .closed, families: 2, foldedByDefault: true, rows: stopped),
+            FleetSection(kind: .closed, families: 3, foldedByDefault: true, rows: stopped),
         ]
         let view = FleetView(sections: sections, needYou: 2, working: 3)
         var studio = studio
@@ -309,6 +313,7 @@ struct StoryApp: View {
                 return chat
             })
         bundle.fleet.show(invented.view, hosts: invented.hostViews)
+        bundle.hosts.stopWaiting()
         bundle.hosts.show(invented.hostViews)
         if let roster = invented.hosts.roster { bundle.hosts.show(roster) }
         _app = State(initialValue: (invented.accounts, bundle))

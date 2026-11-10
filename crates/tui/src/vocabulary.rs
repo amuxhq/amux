@@ -174,7 +174,7 @@ pub fn components(theme: Theme) -> Vec<Component> {
     }
     out.push(Component {
         name: "home_rows",
-        shows: "Home with a row in every state, each with its name (word pairs where amux named the agent), its branch where it works in a repository, and its second line: a family placed under Needs you by its child's question, a command asked for with another ask behind it; under Live a step being run, what an idle agent last said, a signed-out and a usage-limited agent, a starting agent with nothing to say yet, and an agent on a host that is away; under Exited, unfolded, one that finished and one that failed with its cause.",
+        shows: "Home with a row in every state, each with its name (word pairs where amux named the agent), its branch where it works in a repository, and its second line: a family placed under Needs you by its child's question, a command asked for with another ask behind it; under Live a step being run, what an idle agent last said, a signed-out and a usage-limited agent, a starting agent with nothing to say yet, and an agent that failed with its cause, and an agent on a host that is away; under Settled, unfolded, one that finished and one that was stopped, whose heading says all there is to say.",
         buffer: home_rows(theme),
     });
     out.push(Component {
@@ -1521,17 +1521,8 @@ fn row_sets() -> Vec<RowSet> {
         ),
         (
             "row_boundary",
-            "Session boundaries: started, cleared, compacted, resumed, forked, restarted, exited with its cause and the daemon lost.",
-            [
-                (BoundaryKind::Started, ""),
-                (BoundaryKind::Cleared, ""),
-                (BoundaryKind::Compacted, ""),
-                (BoundaryKind::Resumed, ""),
-                (BoundaryKind::Forked, ""),
-                (BoundaryKind::Restarted, ""),
-                (BoundaryKind::Exited, "exit 1"),
-                (BoundaryKind::DaemonLost, ""),
-            ]
+            "Session boundaries: cleared and the daemon lost.",
+            [(BoundaryKind::Cleared, ""), (BoundaryKind::DaemonLost, "")]
             .into_iter()
             .map(|(kind, cause)| {
                 (

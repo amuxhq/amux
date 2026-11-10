@@ -9,7 +9,7 @@
 ## 94 recorded 93: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:84ff2c4862884296aa061efd32b6e7d4 Prompt { text: [Text("Run exactly this shell command once, with your shell tool, and nothing else: curl -sI https://example.com. The sandbox has no network, so request escalated permissions for it. Then reply with its status line.")], steered: false }
      4 msg_09ec161390ef28f8016ae5d79f541081919753f56400f462fc Prose { text: [Text("I’ll run the command once with escalated permissions and return its status line.\n")], streaming: false, working_note: true }

@@ -41,7 +41,7 @@
 ## 16 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"subtype":"success","total_cost_usd":0.01,"type":"result","uuid":"r1"}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("ask me")], steered: false }
      3 t1 [Answered: Color = "Teal"; Tools = Hammer, Drill note="keep the old strings for one release" skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "", preview: "", recommended: false }, OptionView { label: "Blue", description: "", preview: "", recommended: false }], allow_other…
      4 t2 Ask(Plan { title: None, body: "- edit", verdict: ApprovedSwitching, mode: "acceptEdits", mode_name: "", note: None, writing: false })

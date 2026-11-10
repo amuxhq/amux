@@ -11,7 +11,7 @@
 ## 44 recorded 43: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:6de81ad2ebab47c5a7a00144749caff1 Prompt { text: [Text("Reply with exactly UNREACHABLE.")], steered: false }
      4 error:01a191cd-818d-7383-bd80-522ef88b0add Error { error_kind: "httpConnectionFailed", message: "Connection failed: error sending request", attempts: 0, gave_up: true } attention

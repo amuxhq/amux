@@ -64,6 +64,7 @@ append msg_011CgZkUceLXT9mEkW4mUDRn:0 "ion notification arrives."
 item msg_011CgZkUceLXT9mEkW4mUDRn:0 message final at=1793423941582 text="The `counter` subagent is running in the background. I'll reply with its exact output once its completion notification arrives."
 ## 76 recorded 75: fact Stream type=result subtype=success uuid=f49078d5-ea51-40ff-addb-80446ac59a83
 item turn:1 turn final at=1793423941587 text="" #1 TURN_OUTCOME_COMPLETED started=1793423938914
+snapshot said "The counter subagent is running in the background. I'll reply with its exact output once its completion notification arrives."
 snapshot IDLE queue=[] working_on="Delegate to the `counter` subagent, then reply with exactly what it said." at=1793423941587 asks=[] session=79895c4f-d9bf-4336-8688-b5d2b2d1f834 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20917/1000000 tasks=? active=[] usage=ok 5h:19%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
 turn_end 1 last=msg_011CgZkUceLXT9mEkW4mUDRn:0
 ## 81 recorded 80: fact Stream type=system subtype=status uuid=fb9fbbeb-d13d-45ff-95ed-9115e474e348

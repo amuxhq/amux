@@ -5,7 +5,7 @@
 ## 60 recorded 59: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:415f4caf366b4137a2b96eb5513c3eda Prompt { text: [Text("Send two separate assistant messages in this turn: first exactly FIRST_NOTE in commentary, then exactly SECOND_ANSWER as the final answer.")], steered: false }
      4 msg_0f244491af0e524f016ae5d7430de08191bc71ba9bf938d88c Prose { text: [Text("FIRST_NOTE")], streaming: false, working_note: true }

@@ -13,7 +13,7 @@
 ## 74 recorded 73: fact Stream type=result subtype=success uuid=36788761-fed3-4e44-81ba-8184dbb2ceee
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 4aae419d-05ce-4de4-8a57-aa7bbc2c5e64 Prompt { text: [Text("Use AskUserQuestion to ask exactly one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue. Then repeat my answer.")], steered: false }
      3 3a275fd4-e7b6-4bac-a500-f3266c3edf63 Hidden collapsed
      4 toolu_019QH7C1i8pbeVtX3NLA6S2p [Answered: Color = Blue skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Choose red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Choose blue", preview: "", recommended: false }], allow_other: true…

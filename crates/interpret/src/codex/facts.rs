@@ -2013,6 +2013,7 @@ impl State {
                 );
                 if completed && kind == Streamed::Message {
                     self.shared.note_message(&id);
+                    self.shared.reply_said(emit, &id);
                 }
             }
             ThreadItem::Reasoning(reasoning) => {

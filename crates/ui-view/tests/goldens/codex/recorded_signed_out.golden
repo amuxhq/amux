@@ -15,7 +15,7 @@
 ## 54 recorded 53: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:98663ab4362d4fb3a7975e161738cab4 Prompt { text: [Text("Reply with exactly SIGNED_OUT.")], steered: false }
      4 error:01a191cd-8e4d-7052-bc16-685dc4f61d2e Error { error_kind: "httpConnectionFailed", message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a532741adb8e3355-CPH, request id: req_77f4bfa714e14d25b47cf205ad72e361", attempts: 0, gave_up: true } attention

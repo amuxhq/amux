@@ -30,6 +30,7 @@ item msg_011CgZkjRHtPLdJ96PSnW8Ty:0 message final at=1793424142284 text="one"
 snapshot WORKING queue=[] working_on="Reply with the single word one and nothing else." at=1793424142498 asks=[] session=1c7bb24b-9cb4-4b58-95ae-cd203ccae5a2 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20357/? tasks=? active=[] usage=ok 5h:20%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 31 recorded 30: fact Stream type=result subtype=success uuid=046783a5-bc05-4a8e-9941-8af2b616b81f
 item turn:1 turn final at=1793424142503 text="" #1 TURN_OUTCOME_COMPLETED started=1793424141451
+snapshot said "one"
 snapshot IDLE queue=[] working_on="Reply with the single word one and nothing else." at=1793424142503 asks=[] session=1c7bb24b-9cb4-4b58-95ae-cd203ccae5a2 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20357/1000000 tasks=? active=[] usage=ok 5h:20%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CgZkjRHtPLdJ96PSnW8Ty:0
 ## 34 recorded 33: fact Stream type=control_response
@@ -51,5 +52,6 @@ append msg_011CgZkjYoaqvP3Nw3Vt7K2D:0 "two"
 item msg_011CgZkjYoaqvP3Nw3Vt7K2D:0 message final at=1793424142677 text="two"
 ## 56 recorded 55: fact Stream type=result subtype=success uuid=af128eca-c406-424c-8a92-4c0bd626a179
 item turn:2 turn final at=1793424142692 text="" #2 TURN_OUTCOME_COMPLETED started=1793424141390
+snapshot said "two"
 snapshot IDLE queue=[] working_on="Reply with the single word two and nothing else." at=1793424142692 asks=[] session=1c7bb24b-9cb4-4b58-95ae-cd203ccae5a2 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20400/1000000 tasks=? active=[] usage=ok 5h:20%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 2 last=msg_011CgZkjYoaqvP3Nw3Vt7K2D:0

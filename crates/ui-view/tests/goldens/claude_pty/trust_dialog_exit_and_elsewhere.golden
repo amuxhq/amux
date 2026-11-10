@@ -14,9 +14,9 @@
   ask none
 == chat
      1 ask:ask:1 [Answered: Folder = Exit skipped=0] Ask(Questions { questions: [QuestionView { header: "Folder", question: "Do you trust the files in this folder?", multi_select: false, options: [OptionView { label: "Trust this folder", description: "Claude can read, edit and run files here", preview: "", recommended: false }, OptionView { label: "Exit", description: "Claude exits without starting"…
-     2 boundary:1 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
+     2 boundary:1 Hidden collapsed
      3 ask:ask:2 [Answered: Folder = Trust this folder skipped=0] Ask(Questions { questions: [QuestionView { header: "Folder", question: "Do you trust the files in this folder?", multi_select: false, options: [OptionView { label: "Trust this folder", description: "Claude can read, edit and run files here", preview: "", recommended: false }, OptionView { label: "Exit", description: "Claude exits with…
-     4 boundary:2 Boundary { kind: Restarted, cause: "" }
+     4 boundary:2 Hidden collapsed
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

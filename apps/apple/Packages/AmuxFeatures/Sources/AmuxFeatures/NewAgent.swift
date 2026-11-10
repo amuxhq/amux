@@ -162,7 +162,8 @@ public struct NewAgent: View {
     private func reach(_ host: HostView) -> String {
         switch host.group {
         case .away: return String(localized: "Away")
-        case .offline: return String(localized: "Offline")
+        case .offline:
+            return hosts.isConnecting(host.id) ? String(localized: "Connecting") : String(localized: "Offline")
         case .onThisNetwork, .throughTheRelay:
             let route = host.group == .onThisNetwork
                 ? String(localized: "direct") : String(localized: "via relay")

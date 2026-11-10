@@ -78,5 +78,6 @@ item a4 message final at=1800000040100 text="Filed #42."
 snapshot WORKING queue=[] working_on=- at=1800000040000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 ## 31 fact {"channel":"transcript","json":{"durationMs":50,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:40.200Z","type":"system","uuid":"d1"}}
 item turn:1 turn final at=1800000040200 text="" #1 TURN_OUTCOME_COMPLETED started=1800000040150
+snapshot said "Filed #42."
 snapshot IDLE queue=[] working_on=- at=1800000040000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 turn_end 1 last=a4

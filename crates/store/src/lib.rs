@@ -132,6 +132,9 @@ pub struct AgentRow {
     pub filed_at_ms: i64,
     /// Copied from the snapshot envelope at commit; a rename clears it.
     pub title: Option<String>,
+    /// The line a fleet row quotes from the agent's newest reply, copied
+    /// from the snapshot envelope; a replica takes its origin's.
+    pub last_said: Option<String>,
     /// A person or a parent chose the name, so the provider does not title
     /// the agent.
     pub name_given: bool,
@@ -182,6 +185,7 @@ impl AgentRow {
             filing: wire::Filing::Open as i32,
             filed_at_ms: 0,
             title: None,
+            last_said: None,
             name_given: false,
         }
     }

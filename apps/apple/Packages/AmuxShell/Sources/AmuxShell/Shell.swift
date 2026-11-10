@@ -207,14 +207,14 @@ public struct Shell: View {
                         offerNotifications: offerNotifications, signingIn: signIn.working,
                         actions: actions)
                         .barUnderSheet(coveredByASheet)
-                        .navigationDestination(for: Route.self) { page($0).toolbar(.hidden, for: .tabBar) }
+                        .navigationDestination(for: Route.self) { page($0).hidesTabBarWhenPushed() }
                 }
             }
             SwiftUI.Tab(Tab.hosts.title, systemImage: Tab.hosts.symbol, value: Tab.hosts) {
                 NavigationStack(path: $router.hostsPath) {
                     HostsTabRoot(router: self.router, stores: stores, actions: actions)
                         .barUnderSheet(coveredByASheet)
-                        .navigationDestination(for: Route.self) { page($0).toolbar(.hidden, for: .tabBar) }
+                        .navigationDestination(for: Route.self) { page($0).hidesTabBarWhenPushed() }
                 }
             }
         }
@@ -582,6 +582,7 @@ private struct ChatPage: View {
             directory: row?.workingDirectory ?? "",
             branch: row?.branch,
             reach: host?.reach ?? row?.hostReach ?? .offline(.plain),
+            connecting: stores.hosts.isConnecting(agent.hostId),
             descendants: Int(card?.descendants ?? 0),
             backgroundJobs: Int(card?.backgroundJobs ?? 0),
             closeHeld: card?.closeHeld ?? false,
@@ -810,6 +811,12 @@ private struct NewAgentPage: View {
         }
         .tint(design.accentColor)
         .onAppear { stores.startNewAgent(on: stores.hosts.online.first?.id) }
+        // Opened before any machine answered, as a reopened app can be: the
+        // first one to come back is chosen, as it would have been had it
+        // answered sooner.
+        .onChange(of: stores.hosts.online.first?.id) { _, first in
+            if stores.newAgent.machine == nil, let first { stores.point(at: first) }
+        }
         // The sheet goes and the conversation opens over the list: going
         // back from an agent that was just started belongs at the list it
         // joined, not at the form that made it.

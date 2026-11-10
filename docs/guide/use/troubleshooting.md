@@ -33,7 +33,7 @@ If it still doesn't start, the logs say why. They're in
 the small process that starts it and keeps it up to date.
 
 Your agents don't depend on amux running. If amux was away for long enough
-that an agent gave up waiting, the agent shows as **exited** with a note that
+that an agent gave up waiting, the agent shows as **stopped** with a note that
 amux was away. Send it a message, or run `amux resume <agent>`, and it picks
 up where it left off.
 

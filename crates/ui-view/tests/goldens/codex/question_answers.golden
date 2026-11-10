@@ -21,7 +21,7 @@
 ## 11 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"interrupted"}}}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 prompt:7031 Prompt { text: [Text("Deploy it.")], steered: false }
      3 ask:9 [Answered: Env = production note="after the freeze"; Window = (skipped); Tag = "v2.3" note="cut it from main" skipped=1] Ask(Questions { questions: [QuestionView { header: "Env", question: "Which environment?", multi_select: false, options: [OptionView { label: "staging", description: "Safe first.", preview: "", recommended: true }, OptionView { label: "production", description: "Live."…
      4 ask:10 [Replied: Env = staging; Window = (skipped); Tag = (skipped) skipped=2 reply="Hold the deploy until Monday."] Ask(Questions { questions: [QuestionView { header: "Env", question: "Which environment?", multi_select: false, options: [OptionView { label: "staging", description: "Safe first.", preview: "", recommended: true }, OptionView { label: "production", description: "Live.", preview:…

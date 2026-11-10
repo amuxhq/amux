@@ -5,7 +5,7 @@
 ## 15 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 prompt:7031 Prompt { text: [Text("Count to ten slowly.")], steered: false }
      3 agent-message:6531 AgentMessage { from: "reviewer", kind: Message, text: [Text("Also say DONE at the end.")], to: "", sent: Unspecified, rejection: "" }
      4 msg-1 Prose { text: [Text("1 2 3 4 5 6 7 8 9 10")], streaming: false, working_note: false }

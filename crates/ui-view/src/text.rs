@@ -1,6 +1,6 @@
 //! Text as a person reads it, whichever client draws it: paths named from
-//! the agent's folder, command output as a terminal shows it, names without
-//! direction controls, and a markdown line read as words.
+//! the agent's folder, command output as a terminal shows it, and names
+//! without direction controls.
 
 /// `path` relative to the agent's folder `cwd` when the file is inside it,
 /// else whole. A file the agent works on is nearly always in its own
@@ -18,22 +18,7 @@ pub(crate) fn within(cwd: &str, path: &str) -> String {
     }
 }
 
-/// Whether `c` changes the direction text is laid out in: the embeddings,
-/// overrides and isolates, and the marks that steer neutral characters.
-fn direction_control(c: char) -> bool {
-    matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{200E}' | '\u{200F}' | '\u{061C}')
-}
-
-/// `text` without direction controls. A right-to-left override in a file
-/// name makes `invoice\u{202E}fdp.exe` read `invoiceexe.pdf`; left in, each
-/// renderer lays it out its own way, so the name is drawn as its letters,
-/// in the order they were written.
-pub(crate) fn without_direction_controls(text: &str) -> String {
-    if !text.chars().any(direction_control) {
-        return text.to_owned();
-    }
-    text.chars().filter(|c| !direction_control(*c)).collect()
-}
+pub(crate) use preview::without_direction_controls;
 
 /// A line of command output as a terminal leaves it on screen: colour and
 /// other escape sequences are not text, and a carriage return moves back
@@ -105,23 +90,6 @@ pub(crate) fn terminal_text(text: &str) -> String {
         .join("\n")
 }
 
-/// One line of markdown as the words it reads, through the parser the
-/// chat draws replies with: a link is its text, an image its description,
-/// and code, emphasis and a heading's, quote's or bullet's marks drop. The
-/// line a row quotes from a reply reads as the chat draws that reply.
-pub(crate) fn markdown_words(line: &str) -> String {
-    use pulldown_cmark::{Event, Options, Parser};
-    let options =
-        Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS | Options::ENABLE_STRIKETHROUGH;
-    let mut out = String::new();
-    for event in Parser::new_ext(line, options) {
-        if let Event::Text(words) | Event::Code(words) = event {
-            out.push_str(&words);
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,30 +108,5 @@ mod tests {
             "link"
         );
         assert_eq!(terminal_line("plain"), "plain");
-    }
-
-    #[test]
-    fn a_markdown_line_reads_as_its_words() {
-        assert_eq!(
-            markdown_words("Updated [README.md](/w/README.md) so its only line is `UPDATED`."),
-            "Updated README.md so its only line is UPDATED."
-        );
-        assert_eq!(
-            markdown_words("## **Done**: all *three* fixed"),
-            "Done: all three fixed"
-        );
-        assert_eq!(
-            markdown_words("- see <https://x.test>"),
-            "see https://x.test"
-        );
-        assert_eq!(
-            markdown_words("renamed snake_case_name"),
-            "renamed snake_case_name"
-        );
-        assert_eq!(markdown_words("2 * 3 = 6 and ~5"), "2 * 3 = 6 and ~5");
-        assert_eq!(markdown_words("![chart](a.png) attached"), "chart attached");
-        assert_eq!(markdown_words("a [bracket] stays"), "a [bracket] stays");
-        assert_eq!(markdown_words("``a ` b`` code"), "a ` b code");
-        assert_eq!(markdown_words(r"\*not emphasis\*"), "*not emphasis*");
     }
 }

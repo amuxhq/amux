@@ -5,7 +5,7 @@
 ## 31 recorded 30: fact Stream type=result subtype=success uuid=f9545910-5b6c-4feb-9de0-c1100a8a67c5
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 ee1b6fb8-0cd3-4623-bc5e-a7c65d611880 Prompt { text: [Text("Reply with the single word pong and nothing else.")], steered: false }
      3 34e76463-2c1a-4e3d-ac04-c52bffcc14b5 Hidden collapsed
      4 msg_011CgZkRmeFVtjpk1vres7Nr:0 Prose { text: [Text("pong")], streaming: false, working_note: false }

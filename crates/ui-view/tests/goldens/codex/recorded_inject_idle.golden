@@ -5,7 +5,7 @@
 ## 50 recorded 49: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 agent-message:737464696e2d38 AgentMessage { from: "", kind: Message, text: [Text("Reply with exactly INJECTED_IDLE and nothing else.")], to: "", sent: Unspecified, rejection: "" }
      4 msg_0877a9e222db66c3016ae5d7304b988191b704b255b80682f6 Prose { text: [Text("INJECTED_IDLE")], streaming: false, working_note: false }

@@ -19,7 +19,7 @@
 ## 68 recorded 66: fact Transcript type=system subtype=turn_duration uuid=2679ade6-08c8-4fb1-a1ab-94ff2a20d6ff
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 a7f6352f-3a41-458c-9b7a-1fd1635940f9 Prompt { text: [Text("Use the Bash tool to run exactly: printf allow-scoped > allow-scoped.txt; printf allow-scoped. Then stop.")], steered: false }
      3 toolu_01L1XAt2Wm51YFSRWJdSQzVJ Command { command: "printf allow-scoped > allow-scoped.txt; printf allow-scoped.", state: Succeeded, exit_code: None, output_head: ["allow-scoped."], more_lines: 0, output_trimmed: false, output_tail: ["allow-scoped."], duration_ms: Some(346) } run[toolu_01L1XAt2Wm51YFSRWJdSQzVJ..toolu_01L1XAt2Wm51YFSRWJdSQzVJ x1 recent=0 RunCounts { commands: 1, edits: 0, reads…
      4 stream:3a6167af-f097-4826-9274-ae764043216e Prose { text: [Text("I ran the command. It wrote `allow-scoped` to `allow-scoped.txt` in the working directory and printed `allow-scoped.` to stdout. I didn't run anything else.")], streaming: false, working_note: false }

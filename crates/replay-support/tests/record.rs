@@ -387,6 +387,7 @@ fn marked_history() -> ClientSessionHistory {
         phase: wire::Phase::Working as i32,
         working_on: Some(marked()),
         title: None,
+        last_said: Some(marked()),
         at_ms: 5,
         phase_since_ms: 1,
         git: Some(wire::Git {

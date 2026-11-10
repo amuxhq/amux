@@ -205,6 +205,18 @@
         }
       }
     },
+    "Added a Getting started section to the README." : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added a Getting started section to the README."
+          }
+        }
+      }
+    },
     "All at once" : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState" : "manual",
@@ -685,14 +697,14 @@
         }
       }
     },
-    "Exited with status 1" : {
+    "the provider exited: exit code 1" : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Exited with status 1"
+            "value" : "the provider exited: exit code 1"
           }
         }
       }
@@ -1093,14 +1105,14 @@
         }
       }
     },
-    "Pick up where you left off and rerun the tests." : {
+    "Rerun the failing tests." : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pick up where you left off and rerun the tests."
+            "value" : "Rerun the failing tests."
           }
         }
       }
@@ -1201,6 +1213,18 @@
         }
       }
     },
+    "QUIC holds up behind both NATs. The notes are in spike/quic.md." : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QUIC holds up behind both NATs. The notes are in spike/quic.md."
+          }
+        }
+      }
+    },
     "Read the live checklist" : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState" : "manual",
@@ -1233,6 +1257,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Read wire/src/codes.rs"
+          }
+        }
+      }
+    },
+    "readme-pass" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "readme-pass"
           }
         }
       }
@@ -1909,18 +1945,6 @@
         }
       }
     },
-    "after an update" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "after an update"
-          }
-        }
-      }
-    },
     "agent-message" : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState" : "manual",
@@ -2253,18 +2277,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "bypassPermissions"
-          }
-        }
-      }
-    },
-    "c01" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "c01"
           }
         }
       }

@@ -391,9 +391,12 @@ public enum ChatWords {
     /// `limit` is a usage limit reached, said where the next message would
     /// be typed, which is the one place it changes anything.
     public static func placeholder(
-        _ composer: Composer?, agent: String, host: String, reach: Reach, working: Bool,
-        limit: String? = nil
+        _ composer: Composer?, agent: String, host: String, reach: Reach, connecting: Bool = false,
+        settled: Bool = false, working: Bool, limit: String? = nil
     ) -> String {
+        // A host still being dialled as the app comes forward is not news:
+        // the field reads as it will once it answers.
+        if connecting, case .waiting(.detached)? = composer { return String(localized: "Message \(agent)") }
         switch composer {
         case .send?, nil:
             if let limit { return limit }
@@ -401,7 +404,9 @@ public enum ChatWords {
                 ? String(localized: "Queue a message")
                 : String(localized: "Message \(agent)")
         case .resume?:
-            return String(localized: "\(agent) has exited · a message resumes it")
+            return settled
+                ? String(localized: "\(agent) is settled · a message resumes it")
+                : String(localized: "\(agent) is stopped · a message resumes it")
         // Not current: nothing sends until the chat is, and the draft stays.
         case .waiting(.catchingUp)?:
             return String(localized: "Catching up · your draft is kept")
@@ -556,8 +561,8 @@ public enum ChatWords {
         case .exited:
             switch card.exitCause ?? .ended {
             case .finished: return String(localized: "finished")
-            case .ended: return String(localized: "exited")
-            case .failed(let cause): return String(localized: "exited · \(cause)")
+            case .ended: return String(localized: "stopped")
+            case .failed(let cause): return String(localized: "stopped · \(cause)")
             }
         }
     }
@@ -610,12 +615,16 @@ public enum ChatWords {
         }
     }
 
-    /// The exited agent's head in the composer.
-    public static func exited(_ cause: ExitCause) -> String {
+    /// The exited agent's head in the composer. An agent the person
+    /// settled is said to be settled, which is what they did: that its
+    /// process is not running follows. Why it failed outranks both, since
+    /// that is the one thing the person could not have known.
+    public static func exited(_ cause: ExitCause, settled: Bool = false) -> String {
         switch cause {
+        case .failed(let cause): String(localized: "Stopped · \(cause)")
+        case _ where settled: String(localized: "Settled")
         case .finished: String(localized: "Finished")
-        case .ended: String(localized: "Exited")
-        case .failed(let cause): String(localized: "Exited · \(cause)")
+        case .ended: String(localized: "Stopped")
         }
     }
 

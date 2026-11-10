@@ -13,7 +13,7 @@
 ## 12 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"subtype":"success","total_cost_usd":0.25,"type":"result","uuid":"r1"}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("/cost")], steered: false }
      3 lc SlashOutput { command: "/cost", args: "", output: "Total cost: $0.12" }
      4 turn:1 TurnEnd { duration_ms: Some(1000), failed: false }

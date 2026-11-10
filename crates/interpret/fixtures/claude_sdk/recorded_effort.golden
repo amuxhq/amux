@@ -30,6 +30,7 @@ item msg_011CgZjixwkrEzUw4wCXFmE4:0 message final at=1793423349303 text="pong"
 snapshot WORKING queue=[] working_on="Reply with the single word pong and nothing else." at=1793423349315 asks=[] session=318f11ad-b5f3-4681-8bb2-b14fbc4c7708 model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=low mode=default context=19533/? tasks=? active=[] usage=ok 5h:18%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 30 recorded 29: fact Stream type=result subtype=success uuid=db478ecb-c5c4-4f29-8618-d160cd2cb72e
 item turn:1 turn final at=1793423349322 text="" #1 TURN_OUTCOME_COMPLETED started=1793423347806
+snapshot said "pong"
 snapshot IDLE queue=[] working_on="Reply with the single word pong and nothing else." at=1793423349322 asks=[] session=318f11ad-b5f3-4681-8bb2-b14fbc4c7708 model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=low mode=default context=19533/1000000 tasks=? active=[] usage=ok 5h:18%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CgZjixwkrEzUw4wCXFmE4:0
 ## 34 recorded 33: input stdin-4

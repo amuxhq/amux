@@ -5,7 +5,7 @@
 ## 51 recorded 50: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:e0b8589a0d71470ab6567509d0847f2a Prompt { text: [Text("Reply with the single word pong and nothing else. Do not plan anything.")], steered: false }
      4 msg_0b8ec0e134962224016ae5d71bed7c8191889daa8692cbd2f1 Prose { text: [Text("pong")], streaming: false, working_note: false }

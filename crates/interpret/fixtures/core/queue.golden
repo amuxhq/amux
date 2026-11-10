@@ -47,6 +47,7 @@ effect reply w3 rejected:NOT_QUEUED
 item u3 prompt final input=p2 at=3000 text="from the phone"
 ## 19 fact {"channel":"stream","json":{"type":"turn_end"}}
 item turn:3 turn final at=3000 text="" #3 started=3000
+snapshot said "done"
 snapshot IDLE queue=[] working_on="from the phone" at=3000 asks=[] model=?
 turn_end 3 last=-
 ## 20 input {"id":"x1","raw":{"hex":""}}

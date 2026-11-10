@@ -32,11 +32,73 @@ public final class HostsStore {
     /// the plan.
     public private(set) var heldAway: Set<HostId> = []
 
+    /// The machines still being dialled since the app came forward, none of
+    /// whose dials has failed yet: out of reach so far only because nothing
+    /// has had time to answer. A screen draws them as it last knew them,
+    /// marked unconfirmed, and words nothing about them being away: a launch
+    /// that said every machine was away and then took it back a moment
+    /// later was the app saying it had not connected yet.
+    public private(set) var connecting: Set<HostId> = []
+
+    /// What `connecting` is drawn from: the machines not yet linked, failed
+    /// or known for some other reason to be out of reach since the app came
+    /// forward. Nil until the first listing after it does, which fills it
+    /// with every trusted machine.
+    @ObservationIgnored private var unsettled: Set<HostId>?
+    @ObservationIgnored private var patience: Task<Void, Never>?
     @ObservationIgnored private var departures: [HostId: Date] = [:]
     @ObservationIgnored private let clock: @MainActor () -> Date
 
+    /// How long a machine can read as connecting with no dial ending: past
+    /// the daemon's ten-second deadline for one attempt, so a machine only
+    /// outlasts it when nothing was dialled at all.
+    public static let connectingPatience: Duration = .seconds(12)
+
     public init(clock: @escaping @MainActor () -> Date = { Date() }) {
         self.clock = clock
+        cameForward()
+    }
+
+    /// The app came forward: its links were dropped while it was away, so
+    /// every machine is dialled afresh. A machine whose last dial failed
+    /// before then still has that failure, and is out of reach at once.
+    public func cameForward() {
+        unsettled = nil
+        patience?.cancel()
+        patience = Task { [weak self] in
+            try? await Task.sleep(for: Self.connectingPatience)
+            guard !Task.isCancelled else { return }
+            self?.stopWaiting()
+        }
+    }
+
+    /// Nothing more is drawn as connecting until the app next comes forward.
+    public func stopWaiting() {
+        patience?.cancel()
+        unsettled = []
+        connecting = []
+    }
+
+    /// Whether `id` is out of reach only because it is still being dialled.
+    public func isConnecting(_ id: HostId?) -> Bool {
+        id.map(connecting.contains) ?? false
+    }
+
+    /// Settles every machine a listing says is linked or out of reach for a
+    /// known reason: a failed dial, a revoked trust, a signed-out phone or
+    /// a free plan. Settled stays settled until the app next comes forward,
+    /// so a machine whose dial failed reads away while it is retried.
+    private func settle(_ trusted: [HostView]) {
+        let ids = trusted.compactMap(\.id)
+        var unsettled = self.unsettled ?? Set(ids)
+        for host in trusted {
+            guard let id = host.id else { continue }
+            let waiting = host.reach == .offline(.plain) && host.lastDialError == nil
+            if !waiting { unsettled.remove(id) }
+        }
+        unsettled.formIntersection(ids)
+        self.unsettled = unsettled
+        if connecting != unsettled { connecting = unsettled }
     }
 
     public var now: Date { clock() }
@@ -57,6 +119,7 @@ public final class HostsStore {
                 departures[id] = clock()
             }
         }
+        settle(trusted)
         let listed = Set(trusted.compactMap(\.id))
         departures = departures.filter { listed.contains($0.key) }
         hosts = trusted.sorted {

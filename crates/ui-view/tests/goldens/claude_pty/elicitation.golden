@@ -74,7 +74,7 @@
 ## 40 provider_exit {"code":1}
   ask none
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("file the crash")], steered: false }
      3 t1 ToolCall { server: "github", tool: "create_issue", fact: "Crash on launch", state: Succeeded, result: "{\"number\": 42}" } run[t1..t1 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
      4 ask:ask:1 Ask(Form { server: "github", message: "github needs your input", fields: ["repo"], resolution: Answered })
@@ -89,7 +89,7 @@
     13 ask:ask:5 Ask(Form { server: "github", message: "github needs your input", fields: [], resolution: Dismissed })
     14 u3 Prompt { text: [Text("once more")], steered: false }
     15 ask:ask:6 Ask(Link { server: "github", message: "github needs your input", url: "https://github.example/sign-in", resolution: Dismissed })
-    16 boundary:2 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
+    16 boundary:2 Hidden collapsed
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

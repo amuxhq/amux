@@ -17,7 +17,7 @@
 ## 650 recorded 649: fact Stream type=result subtype=success uuid=0130ee9f-e063-4a0b-bcc5-d6f3347acbe1
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 349174b5-d800-4b94-88ed-04cb5ed4d339 Prompt { text: [Text("Write three short paragraphs about the history of rope-making.")], steered: false }
      3 5971eb15-18a0-4b81-afc5-38139a3a1aab Hidden collapsed
      4 msg_011CgZjgf1CH4nLTcUkP7ydn:0 Prose { text: [Text("Rope-making is one of the oldest crafts, with roots reaching back tens of thousands of years. Archaeologists have found twisted plant fibers at sites such as Lascaux, where cave paintings date to roughly 17,000 years ago, and impressions of cord on pottery and clay suggest that people were making string and rope well before the advent of agr…
@@ -29,7 +29,7 @@
     10 fad30551-c133-43d0-997e-3361cbcbde86 Prompt { text: [Text("/compact")], steered: false }
     11 0f824bf4-6639-415d-bacc-1515a418fa59 Hidden collapsed
     12 343f2fc0-3b5d-49e9-af38-8578cd8d5255 Compaction { tokens_before: Some(21378), tokens_after: Some(4266), automatic: false }
-    13 boundary:2 Boundary { kind: Compacted, cause: "" }
+    13 boundary:2 Hidden collapsed
     14 40a7f95c-c764-499e-845c-c1ab7bcf5f52 SlashOutput { command: "/compact", args: "", output: "Compacted" }
     15 turn:3 TurnEnd { duration_ms: Some(17494), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

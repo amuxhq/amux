@@ -29,7 +29,7 @@
 ## 106 recorded 104: fact Transcript type=system subtype=turn_duration uuid=0601d163-de5c-44fc-953a-890339729acc
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 a0d15ca2-c68a-438d-9be3-9e24dcb0dba2 Prompt { text: [Text("Use Bash with run_in_background set to true to run exactly: for i in 1 2 3; do echo tick $i; sleep 2; done. Then wait about eight seconds by running Bash: sleep 8. Then read the background shell's output with the tool for reading background output, and report the last line it printed.")], steered: false }
      3 23513ed8-9b89-4d12-86c7-5af7cb470ca7 Thinking { text: "", open: false, duration_ms: Some(1487) }
      4 toolu_01JsZ2Bh9D8SbomEag9zhm8Y Background { command: "for i in 1 2 3; do echo tick $i; sleep 2; done", running: false, duration_ms: Some(346) } run[toolu_01JsZ2Bh9D8SbomEag9zhm8Y..toolu_01HVfbu5heJCeRDtzGEWy4kf x3 recent=2] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true } collapsed

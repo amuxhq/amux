@@ -27,7 +27,7 @@
   ask none
   composer Send activity=Some(Running { key: "t2" }) queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("test it")], steered: false }
      3 t1 [Answered: Color = Blue; Tools = (skipped); Size = Small skipped=1] Ask(Questions { questions: [QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "", preview: "", recommended: false }, OptionView { label: "Blue", description: "", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionVie…
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

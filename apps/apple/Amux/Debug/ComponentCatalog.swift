@@ -190,7 +190,7 @@ enum ComponentCatalog {
                 errorKind: "Provider overloaded", message: "The API returned 529 ten times in a row.",
                 attempts: 10, gaveUp: true))),
             row("model-switch", r("z5", 29, .modelSwitch(to: "sonnet 4.6", reason: "Opus declined this request"))),
-            row("boundary", r("z6", 30, .boundary(kind: .resumed, cause: "after an update"))),
+            row("boundary", r("z6", 30, .boundary(kind: .cleared, cause: ""))),
             row("agent-message", height: 130, r("m1", 31, .agentMessage(
                 from: "worker-2", kind: .finished, text: [.text("3 specs updated, all green.")], to: "",
                 sent: .unspecified, rejection: ""))),
@@ -460,7 +460,7 @@ enum ComponentCatalog {
                     SentPrompt(inputId: [7], text: [.text("Then the Windows check.")], lands: .queue, underway: .sending(waiting: true)),
                 ])),
             composer("resume", height: 200, frame: ScriptedChat.frame(phase: .exited(cause: .failed("code 1")), mode: .resume),
-                     draft: "Pick up where you left off and rerun the tests.", settlesLate: true),
+                     draft: "Rerun the failing tests.", settlesLate: true),
             composer("detached", height: 180, frame: ScriptedChat.frame(mode: .waiting(.detached), caughtUp: false),
                      draft: "Also add a test for the new string."),
             composer("catching-up", height: 160, frame: ScriptedChat.frame(mode: .waiting(.catchingUp), caughtUp: false)),
@@ -585,8 +585,11 @@ enum ComponentCatalog {
         Task { @MainActor in
             var list: UIScrollView?
             for _ in 0..<100 {
+                // Taller than the screen with the header and composer the
+                // rows sit between, so the top is somewhere to scroll to.
                 if let window = DoorWindow.current, let found = VisibleTree.list(in: window),
-                   found.contentSize.height > found.bounds.height {
+                   found.contentSize.height + found.adjustedContentInset.top
+                    + found.adjustedContentInset.bottom > found.bounds.height {
                     list = found
                     break
                 }
@@ -1262,7 +1265,6 @@ enum CatalogFixtures {
             .fileChange(files: [FileRow(path: path, change: .edited, added: added, removed: removed, line: nil)], state: .succeeded)
         }
         return [
-            r("c01", 1, .boundary(kind: .started, cause: "")),
             r("c02", 2, .prompt(text: [.text("Collapse the pairing errors onto one string.")], steered: false)),
         ] + ScriptedChat.run([
             r("c03", 3, .thinking(text: "", open: false, durationMs: 8_000)),
@@ -1480,6 +1482,7 @@ extension CatalogFixtures {
         provider: NewAgentStore.Provider, signedIn: Bool
     ) -> (NewAgentStore, HostsStore) {
         let hosts = HostsStore()
+        hosts.stopWaiting()
         hosts.show([HostView(
             hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false,
             reach: .online(.direct), addrs: [], relayOnly: false, pairingOpen: false, current: true,
@@ -1969,6 +1972,9 @@ extension CatalogFixtures {
 
     static func hostsStore(_ hosts: [HostView]) -> HostsStore {
         let store = HostsStore(clock: { now })
+        // Drawn as a phone that has been open a while: every machine has
+        // answered or failed to, and none is still being dialled.
+        store.stopWaiting()
         store.show(hosts)
         store.show(Roster(
             identity: Identity(hostId: Array(repeating: 9, count: 16), name: "Ada’s iPhone", fingerprint: fingerprint(9)),

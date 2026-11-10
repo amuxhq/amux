@@ -202,6 +202,11 @@ message Snapshot {
   // The agent's title (Agent.title). The daemon copies it onto the inventory
   // row.
   optional string title = 13;
+  // The line a fleet row quotes from the newest reply the agent wrote to the
+  // person, clipped short (Agent.last_said). Taken whenever the agent is not
+  // working, so a turn's own replies cost no snapshot beyond its end. The
+  // daemon copies it onto the inventory row.
+  optional string last_said = 14;
 }
 
 // What a notification says, in data rather than sentences: each client words

@@ -99,6 +99,7 @@ item msg_0fe6f22fbb8eaa10016ae5dc464bc8819181f13012abdc926c message final at=179
 snapshot WORKING queue=[] working_on="Run the shell command `sleep 15; echo S1`, then the shell command `sleep 5; echo S2`, then reply exactly DONE plus any extra words the user asked for." at=1793449030419 asks=[] thread=01a191e4-0834-7ac3-bf56-b30f7f2d8f1f model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=15741/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 102 recorded 101: fact Rpc method=turn/completed
 item turn:1 turn final at=1793449030426 text="" #1 TURN_OUTCOME_COMPLETED started=1793449003794
+snapshot said "DONE BANANA"
 snapshot IDLE queue=[] working_on="Run the shell command `sleep 15; echo S1`, then the shell command `sleep 5; echo S2`, then reply exactly DONE plus any extra words the user asked for." at=1793449030426 asks=[] thread=01a191e4-0834-7ac3-bf56-b30f7f2d8f1f model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=15741/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
 turn_end 1 last=msg_0fe6f22fbb8eaa10016ae5dc464bc8819181f13012abdc926c
 ## 104 recorded 103: input 0x674c0af2204b4353bc571b69672d7249
@@ -118,5 +119,6 @@ item msg_0fe6f22fbb8eaa10016ae5dc493fb4819191dc2647aefa46f0 message final at=179
 snapshot WORKING queue=[] working_on="Then reply with exactly LATER." at=1793449033989 asks=[] thread=01a191e4-0834-7ac3-bf56-b30f7f2d8f1f model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=17940/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
 ## 128 recorded 127: fact Rpc method=turn/completed
 item turn:2 turn final at=1793449033993 text="" #2 TURN_OUTCOME_COMPLETED started=1793449030484
+snapshot said "LATER"
 snapshot IDLE queue=[] working_on="Then reply with exactly LATER." at=1793449033993 asks=[] thread=01a191e4-0834-7ac3-bf56-b30f7f2d8f1f model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=17940/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
 turn_end 2 last=msg_0fe6f22fbb8eaa10016ae5dc493fb4819191dc2647aefa46f0

@@ -17,7 +17,7 @@
 ## 99 recorded 98: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:d2edc92f5cb24cbab209977cba9726b3 Prompt { text: [Text("Use apply_patch to rename old.txt to moved.txt and change its one line from old to moved, in one Update File hunk with a Move to line. Do not use shell commands. Then reply DONE.")], steered: false }
      4 msg_01a63f92e9d504d1016ae5e58ab5308191aeb3ba23b1005948 Prose { text: [Text("I’ll use one `Update File` patch to move the file and change its line.")], streaming: false, working_note: true }

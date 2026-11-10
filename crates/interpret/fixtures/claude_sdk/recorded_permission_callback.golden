@@ -49,5 +49,6 @@ append msg_011CgZkjH3YhXHRKySDomwgB:0 "done"
 item msg_011CgZkjH3YhXHRKySDomwgB:0 message final at=1793424140295 text="done"
 ## 61 recorded 60: fact Stream type=result subtype=success uuid=66f7b381-8759-451d-962a-822eec0bd98f
 item turn:1 turn final at=1793424140305 text="" #1 TURN_OUTCOME_COMPLETED started=1793424138225
+snapshot said "done"
 snapshot IDLE queue=[] working_on="Run exactly this shell command once, with your shell tool, and nothing else: touch decided.txt. Then reply with the single word done." at=1793424140305 asks=[] session=3919fa1c-34fc-474b-bd44-eecfa8c9ef6d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20511/1000000 tasks=? active=[] usage=ok 5h:20%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CgZkjH3YhXHRKySDomwgB:0

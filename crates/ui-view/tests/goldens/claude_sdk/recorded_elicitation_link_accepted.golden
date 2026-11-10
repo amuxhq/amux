@@ -25,7 +25,7 @@
 ## 91 recorded 90: fact Stream type=result subtype=success uuid=d75ba858-3b45-4a7a-8121-49d91d2476b2
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 8941e734-6cd9-442b-932e-ce2b6db9f6ee Prompt { text: [Text("Call the mcp__external__ask_the_operator tool with word set to LINK, then reply with exactly what it returned.")], steered: false }
      3 9ffb89c8-595d-4a55-b8c3-ae4097134bfc Hidden collapsed
      4 msg_011CgZmQF9Hc13K2AkQz6Emm:0 Thinking { text: "", open: false, duration_ms: Some(1214) }

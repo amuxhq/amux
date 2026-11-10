@@ -2408,10 +2408,16 @@ fn second_words(
         SecondLine::Said(said) => (said_words(said, row.card.kind, now_ms), theme.warning()),
         SecondLine::Step(step) => (step_words(step), theme.muted()),
         SecondLine::LastSaid(said) => (said.clone(), theme.muted()),
+        // The Settled heading already says what a settled agent is.
+        SecondLine::Exited(ExitCause::Finished | ExitCause::Ended)
+            if row.card.filing == wire::Filing::Closed =>
+        {
+            return None;
+        }
         SecondLine::Exited(ExitCause::Finished) => ("finished".to_owned(), theme.faint()),
-        SecondLine::Exited(ExitCause::Ended) => ("exited".to_owned(), theme.faint()),
+        SecondLine::Exited(ExitCause::Ended) => ("stopped".to_owned(), theme.faint()),
         SecondLine::Exited(ExitCause::Failed(cause)) => {
-            (format!("exited · {cause}"), theme.error())
+            (format!("stopped · {cause}"), theme.error())
         }
         SecondLine::HostRevoked => {
             let host = match row.card.host.as_str() {

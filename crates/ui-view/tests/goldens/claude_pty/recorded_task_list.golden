@@ -5,7 +5,7 @@
 ## 92 recorded 90: fact Transcript type=system subtype=turn_duration uuid=a81f8bfa-dc5e-45d1-b27d-dd16bc13ce14
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 ed2cdc78-88db-4837-ad44-939c2fc828ad Prompt { text: [Text("Track this work with your task or todo tool: create three tasks named Draft, Review and Publish. Then mark Draft in progress, then mark Draft completed. Do nothing else, then stop.")], steered: false }
      3 stream:b386ced7-483d-47d1-a6a3-8efd8df1bb64 Prose { text: [Text("I created three tasks (Draft, Review, Publish), marked Draft in progress, then marked it completed. Review and Publish are still pending, and I've stopped there.")], streaming: false, working_note: false }
      4 turn:1 TurnEnd { duration_ms: Some(3842), failed: false }

@@ -33,7 +33,7 @@
 ## 22 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","permission_mode":"acceptEdits","session_id":"s1","tool_input":{"file_path":"/w/README.md","new_string":"the","old_string":"teh"},"tool_name":"Edit","tool_use_id":"e1"}}
   composer Send activity=Some(Running { key: "e1" }) queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("plan the README change")], steered: false }
      3 t1 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: Dismissed, mode: "", mode_name: "", note: None, writing: false })
      4 turn:1 TurnEnd { duration_ms: Some(12), failed: false }

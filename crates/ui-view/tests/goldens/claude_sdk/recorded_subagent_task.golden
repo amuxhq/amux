@@ -11,7 +11,7 @@
 ## 76 recorded 75: fact Stream type=result subtype=success uuid=f49078d5-ea51-40ff-addb-80446ac59a83
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 b6abf140-06d3-4c66-98d9-5f197546f4a5 Prompt { text: [Text("Delegate to the `counter` subagent, then reply with exactly what it said.")], steered: false }
      3 f4e68ade-2abb-4980-9ab6-fbedd3d795d3 Hidden collapsed
      4 toolu_012VXWzW2WdrKc71g3eWUc4e Subagent { description: "Run counter subagent", running: false, tool_count: 0, last_tool: "", answer: "ONE TWO THREE", duration_ms: Some(1608) } run[toolu_012VXWzW2WdrKc71g3eWUc4e..toolu_012VXWzW2WdrKc71g3eWUc4e x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]

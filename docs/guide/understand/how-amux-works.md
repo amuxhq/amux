@@ -54,7 +54,7 @@ never left.
 An agent waits for amux for a while, five minutes by default. If amux
 doesn't come back in that time, the agent finishes the turn it's on, saves
 it and exits. Nothing is lost. The fleet shows the agent as
-**exited · while the daemon was away**, and sending it a message starts it
+**stopped · while the daemon was away**, and sending it a message starts it
 again where it left off, with that message as its next prompt. An agent that
 was waiting on a question for you when amux disappeared asks the question
 again when you resume it.

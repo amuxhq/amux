@@ -9,7 +9,7 @@
 ## 6 fact {"channel":"stream","json":{"duration_ms":10,"is_error":false,"subtype":"success","total_cost_usd":0.1,"type":"result","uuid":"r2"}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("one")], steered: false }
      3 e1 Error { error_kind: "server_error", message: "API Error: 500", attempts: 0, gave_up: true } attention
      4 turn:1 TurnEnd { duration_ms: Some(10), failed: true }

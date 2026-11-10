@@ -17,7 +17,7 @@
 ## 64 recorded 63: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:26cb2c4131094ef9a76a189eeaa12a30 Prompt { text: [Text("Run exactly this shell command once, with your shell tool, and nothing else: touch denied.txt. The sandbox is read-only, so request escalated permissions for it. If it is refused, do not try anything else; reply with the single word refused.")], steered: false }
      4 exec-6f9ddf39-2ec3-4383-8742-5a3578dd04b5 Command { command: "touch denied.txt", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(37) } run[exec-6f9ddf39-2ec3-4383-8742-5a3578dd04b5..exec-6f9ddf39-2ec3-4383-8742-5a3578dd04b5 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] d…

@@ -85,5 +85,6 @@ item stream:2653de76-94b4-43ce-86ea-a8ff63e318f2 message final at=1793452847421 
 snapshot WORKING queue=[] working_on=- at=1793452847303 asks=[] session=e83fefc5-bfdd-4af6-9496-2ca10a6d66e7 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=39248/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 ## 139 recorded 137: fact Transcript type=system subtype=turn_duration uuid=fc9f1fc9-68e3-40f1-a032-875bbfb7e5d1
 item turn:1 turn final at=1793452847460 text="" #1 TURN_OUTCOME_COMPLETED started=1793452839628
+snapshot said "I changed the only line of README.md from CURRENT to UPDATED. A re-read confirms the file now contains UPDATED."
 snapshot IDLE queue=[] working_on=- at=1793452847304 asks=[] session=e83fefc5-bfdd-4af6-9496-2ca10a6d66e7 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=39248/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 turn_end 1 last=stream:2653de76-94b4-43ce-86ea-a8ff63e318f2

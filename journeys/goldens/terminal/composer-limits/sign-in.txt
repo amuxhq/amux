@@ -1,7 +1,7 @@
 
   expired │ /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                                1 │ [Diff] │ [Home]
 
-  started ──────────────────────────────────────────────────────────────────────────────────────────────────
+
 
 
     Tidy the pairing section.                                                                        hh:mm

@@ -2517,8 +2517,32 @@ fn each_row_says_what_its_state_calls_for() {
         exit_cause: 99,
         ..ended("newer-value", wire::ExitCause::Unspecified, None)
     }));
-    // A live agent whose session has not opened says nothing yet.
+    // A live agent whose session has not opened says nothing yet, unless
+    // it is idle and its record holds what it last said.
     fleet.update(listed(entry("unopened", Phase::Idle)));
+    let recorded = Some("Merged the fix.".to_owned());
+    fleet.update(listed(wire::Agent {
+        last_said: recorded.clone(),
+        ..entry("unopened-said", Phase::Idle)
+    }));
+    fleet.update(listed(wire::Agent {
+        last_said: recorded.clone(),
+        ..entry("unopened-working", Phase::Working)
+    }));
+    // A stopped agent keeps no stream: its record says what it last said,
+    // and a failure still comes first.
+    fleet.update(listed(wire::Agent {
+        last_said: recorded.clone(),
+        ..ended("settled", wire::ExitCause::Stopped, None)
+    }));
+    fleet.update(listed(wire::Agent {
+        last_said: recorded.clone(),
+        ..ended(
+            "crashed-said",
+            wire::ExitCause::ProviderExited,
+            Some("exit code 1"),
+        )
+    }));
     // An exited agent's row is history: how it ended, whatever its host.
     fleet.update(listed(wire::Agent {
         lifecycle: wire::Lifecycle::Exited as i32,
@@ -2566,6 +2590,19 @@ fn each_row_says_what_its_state_calls_for() {
     );
     assert_eq!(said["starting"], SecondLine::Blank);
     assert_eq!(said["unopened"], SecondLine::Blank);
+    assert_eq!(
+        said["unopened-said"],
+        SecondLine::LastSaid("Merged the fix.".into())
+    );
+    assert_eq!(said["unopened-working"], SecondLine::Blank);
+    assert_eq!(
+        said["settled"],
+        SecondLine::LastSaid("Merged the fix.".into())
+    );
+    assert_eq!(
+        said["crashed-said"],
+        SecondLine::Exited(ExitCause::Failed("the provider exited: exit code 1".into()))
+    );
     assert_eq!(said["finished"], SecondLine::Exited(ExitCause::Finished));
     assert_eq!(said["stopped"], SecondLine::Exited(ExitCause::Ended));
     assert_eq!(

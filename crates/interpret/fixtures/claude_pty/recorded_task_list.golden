@@ -38,5 +38,6 @@ item stream:b386ced7-483d-47d1-a6a3-8efd8df1bb64 message final at=1793452974036 
 snapshot WORKING queue=[] working_on=- at=1793452973867 asks=[] session=980bf433-d1ed-49b1-9f06-5bf7e5eecb24 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=9493/? tasks=[1:TASK_LIST_STATUS_COMPLETED:"Draft",2:TASK_LIST_STATUS_PENDING:"Review",3:TASK_LIST_STATUS_PENDING:"Publish"] active=[] usage=? servers=[] sign_in=? background=[]
 ## 92 recorded 90: fact Transcript type=system subtype=turn_duration uuid=a81f8bfa-dc5e-45d1-b27d-dd16bc13ce14
 item turn:1 turn final at=1793452974085 text="" #1 TURN_OUTCOME_COMPLETED started=1793452970243
+snapshot said "I created three tasks (Draft, Review, Publish), marked Draft in progress, then marked it completed. Review and Publish are still pending, and I've stopped there."
 snapshot IDLE queue=[] working_on=- at=1793452973867 asks=[] session=980bf433-d1ed-49b1-9f06-5bf7e5eecb24 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=9493/? tasks=[1:TASK_LIST_STATUS_COMPLETED:"Draft",2:TASK_LIST_STATUS_PENDING:"Review",3:TASK_LIST_STATUS_PENDING:"Publish"] active=[] usage=? servers=[] sign_in=? background=[]
 turn_end 1 last=stream:b386ced7-483d-47d1-a6a3-8efd8df1bb64

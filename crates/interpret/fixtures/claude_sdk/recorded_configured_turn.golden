@@ -72,5 +72,6 @@ item msg_011CgZmNJpyUdndWHoftW9Hr:1 message final at=1793424642951 text="The cap
 snapshot WORKING queue=[] working_on="Think it through briefly, then answer: what is the capital of France?" at=1793424642968 asks=[] session=9e0487ee-a75e-4fca-b03f-59f54ed80c67 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23815/? tasks=? active=[] usage=ok 5h:21%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 89 recorded 88: fact Stream type=result subtype=success uuid=93eb7fd4-822b-43f7-bdb6-5e51a27164b2
 item turn:1 turn final at=1793424642973 text="" #1 TURN_OUTCOME_COMPLETED started=1793424641556
+snapshot said "The capital of France is Paris."
 snapshot IDLE queue=[] working_on="Think it through briefly, then answer: what is the capital of France?" at=1793424642973 asks=[] session=9e0487ee-a75e-4fca-b03f-59f54ed80c67 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23815/200000 tasks=? active=[] usage=ok 5h:21%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 turn_end 1 last=msg_011CgZmNJpyUdndWHoftW9Hr:1

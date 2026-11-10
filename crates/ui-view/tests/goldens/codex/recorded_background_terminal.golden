@@ -9,7 +9,7 @@
 ## 93 recorded 92: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:7c326acd6d5a4d748120b107ffb07bbe Prompt { text: [Text("Start the shell command `read LINE; echo GOT $LINE` with a yield time of 1000 ms, so the call returns while it waits for input. Then write the text hello followed by a newline to that same running session, read its output, and reply DONE.")], steered: false }
      4 msg_07d8571370403e2a016ae5d67ec9c88191a31bc12b713f662e Prose { text: [Text("I’ll start the command, send `hello` to the running session, and read its output.")], streaming: false, working_note: true }

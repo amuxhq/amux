@@ -1712,6 +1712,7 @@ pub fn from_wire(agent: &Agent) -> AgentRow {
     row.filing = agent.filing;
     row.filed_at_ms = agent.filed_at_ms;
     row.title = agent.title.clone();
+    row.last_said = agent.last_said.clone();
     row
 }
 

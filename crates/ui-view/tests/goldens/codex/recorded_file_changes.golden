@@ -41,7 +41,7 @@
 ## 123 recorded 122: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:12f39456441e428aad50828972369aa5 Prompt { text: [Text("Use apply_patch for every change, one patch per step: first create notes.txt containing the line one; then change that line to two; then delete old.txt. Then reply DONE.")], steered: false }
      4 msg_076027208a1cfec3016ae5d74cee8c8191a5ae67f9d1898b35 Prose { text: [Text("I’ll make the three changes in order, using a separate patch for each step.")], streaming: false, working_note: true }

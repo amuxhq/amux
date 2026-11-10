@@ -102,7 +102,7 @@
 ## 33 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"interrupted"}}}}
   ask none
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 prompt:7031 Prompt { text: [Text("Deploy it.")], steered: false }
      3 cmd-1 Command { command: "curl -s https://api.example.com/status", state: Cancelled, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..fc-1 x2 recent=1] decision=Decision { outcome: Allowed, granted: Some(NetworkHosts { hosts: ["api.example.com"] }), note: None, elsewhere: false } collapsed
      4 fc-1 FileChange { files: [FileRow { path: "/work/a.txt", change: Edited, added: 1, removed: 1, line: None }], state: Denied } run[cmd-1..fc-1 x2 recent=0 RunCounts { commands: 1, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: false }

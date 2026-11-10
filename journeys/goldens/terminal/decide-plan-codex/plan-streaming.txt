@@ -9,7 +9,7 @@
 
 
 
-  started ──────────────────────────────────────────────────────────────────────────────────────────────────
+
 
 ▌ ✗ deprecationNotice
 ▌   Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then

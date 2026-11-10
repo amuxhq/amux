@@ -30,6 +30,7 @@ snapshot WORKING queue=[] working_on="Ask a subagent what this project is." at=1
 item a1 message final at=1800000000040 text="It is running in the background."
 ## 12 fact {"channel":"transcript","json":{"durationMs":5,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.050Z","type":"system","uuid":"d1"}}
 item turn:1 turn final at=1800000000050 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000045
+snapshot said "It is running in the background."
 snapshot IDLE queue=[] working_on="Ask a subagent what this project is." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[toolu_agent:"Look around"@1800000000020]
 turn_end 1 last=a1
 ## 13 input {"id":"p2","prompt":{"text":"Meanwhile, what time is it?"}}
@@ -43,6 +44,7 @@ snapshot WORKING queue=[] working_on="Meanwhile, what time is it?" at=1800000000
 item a2 message final at=1800000000070 text="The subagent says it is a command-line multiplexer for agents."
 ## 16 fact {"channel":"transcript","json":{"durationMs":5,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.080Z","type":"system","uuid":"d2"}}
 item turn:2 turn final at=1800000000080 text="" #2 TURN_OUTCOME_COMPLETED started=1800000000075
+snapshot said "The subagent says it is a command-line multiplexer for agents."
 snapshot IDLE queue=[] working_on="Meanwhile, what time is it?" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 turn_end 2 last=a2
 ## 17 fact {"channel":"transcript","json":{"message":{"content":"Meanwhile, what time is it?","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.090Z","type":"user","uuid":"u3"}}

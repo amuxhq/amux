@@ -5,7 +5,7 @@
 ## 47 recorded 45: fact Transcript type=system subtype=turn_duration uuid=906a33ea-efe2-4a73-8fde-08f4a81a4321
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 30f539f9-4484-4628-b077-edcb0c8ba864 Prompt { text: [Text("Reply with the single word pong and nothing else.")], steered: false }
      3 stream:140a7f9c-32dd-4fff-908e-bcac12337f58 Prose { text: [Text("pong")], streaming: false, working_note: false }
      4 turn:1 TurnEnd { duration_ms: Some(899), failed: false }

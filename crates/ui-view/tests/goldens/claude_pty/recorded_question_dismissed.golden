@@ -19,7 +19,7 @@
 ## 50 recorded 48: fact Transcript type=user uuid=40b6f012-2ff6-4452-8d9b-025a3df5febc
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 4b153d8e-69fd-465b-a740-dd43a61cd57e Prompt { text: [Text("Use AskUserQuestion to ask one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue.")], steered: false }
      3 toolu_01KrbfYZ1FTbcUg4s3H4R1T2 [Dismissed:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Select red as your preferred color.", preview: "", recommended: false }, OptionView { label: "Blue", description: "Select blue as your preferred color.", preview: "", r…
      4 turn:1 Stopped

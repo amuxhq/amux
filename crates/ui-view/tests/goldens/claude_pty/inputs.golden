@@ -19,11 +19,11 @@
 ## 21 fact {"channel":"transcript","json":{"durationMs":20,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.070Z","type":"system","uuid":"d5"}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 prompt:7031 Prompt { text: [Text("first")], steered: false }
      3 turn:1 Stopped
      4 u3 SlashOutput { command: "/compact", args: "", output: "Compacted" }
-     5 boundary:2 Boundary { kind: Compacted, cause: "" }
+     5 boundary:2 Hidden collapsed
      6 agent-message:6531 AgentMessage { from: "reviewer", kind: Message, text: [Text("please look at the diff")], to: "", sent: Unspecified, rejection: "" }
      7 a5 Prose { text: [Text("Looking.")], streaming: false, working_note: false }
      8 agent-message:6532 AgentMessage { from: "reviewer", kind: Message, text: [Text("and the tests")], to: "", sent: Unspecified, rejection: "" }

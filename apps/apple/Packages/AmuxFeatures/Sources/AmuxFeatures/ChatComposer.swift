@@ -28,6 +28,8 @@ struct ComposerBox: View {
     let activitySubject: String?
     /// Where the exited agent ran, for its head.
     let host: String
+    /// Whether the person settled the agent, which its head says.
+    let settled: Bool
     /// Whether the plus card stands open above the composer.
     let plusOpen: Bool
     let togglePlus: () -> Void
@@ -52,7 +54,6 @@ struct ComposerBox: View {
                 .lineLimit(1...8)
                 .designFont(.body, design)
                 .foregroundStyle(design.ink.color)
-                .autocorrectionDisabled()
                 .textInputAutocapitalization(.sentences)
                 .focused(focused)
                 // The field takes the row's whole width from its first
@@ -117,7 +118,7 @@ struct ComposerBox: View {
     /// The exited agent's state where the activity line stands while it
     /// works: that the process ended, why, and where.
     private func exitedHead(_ cause: ExitCause) -> some View {
-        let title = ChatWords.exited(cause)
+        let title = ChatWords.exited(cause, settled: settled)
         return HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: "stop.circle")
                 .font(.system(size: 14, weight: .medium))

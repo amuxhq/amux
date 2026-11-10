@@ -11,7 +11,7 @@
 ## 11 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"error":null,"id":"turn-2","status":"completed"}}}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 prompt:7031 Prompt { text: [Text("go 1")], steered: false }
      3 error:turn-1 Error { error_kind: "unauthorized", message: "refused", attempts: 0, gave_up: false }
      4 turn:1 TurnEnd { duration_ms: Some(0), failed: false }

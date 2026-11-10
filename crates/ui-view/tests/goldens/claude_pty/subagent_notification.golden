@@ -33,7 +33,7 @@
 ## 22 fact {"channel":"transcript","json":{"durationMs":5,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.120Z","type":"system","uuid":"d3"}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("Ask a subagent what this project is.")], steered: false }
      3 toolu_agent Subagent { description: "Look around", running: false, tool_count: 1, last_tool: "Bash", answer: "A command-line multiplexer for agents.", duration_ms: Some(40) } run[toolu_agent..toolu_agent x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
      4 a1 Prose { text: [Text("It is running in the background.")], streaming: false, working_note: false }

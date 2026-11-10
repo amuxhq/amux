@@ -22,6 +22,7 @@ item stream:d0242bf7-80b0-4140-8fdc-937a68139159 message final at=1793452834036 
 snapshot WORKING queue=[] working_on=- at=1793452834015 asks=[] session=a3084bda-d119-4383-ae59-39b823d3dda1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35576/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 ## 46 recorded 44: fact Transcript type=system subtype=turn_duration uuid=248eba56-4d3e-4a65-b6b7-29110a71ffbe
 item turn:1 turn final at=1793452834083 text="" #1 TURN_OUTCOME_COMPLETED started=1793452833250
+snapshot said "one"
 snapshot IDLE queue=[] working_on=- at=1793452834029 asks=[] session=a3084bda-d119-4383-ae59-39b823d3dda1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35576/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 turn_end 1 last=stream:d0242bf7-80b0-4140-8fdc-937a68139159
 ## 56 recorded 54: fact Hook hook_event_name=SessionStart
@@ -45,5 +46,6 @@ item stream:257b60ed-3de6-45be-842a-821295df892d message final at=1793452837486 
 snapshot WORKING queue=[] working_on=- at=1793452834477 asks=[] session=a3084bda-d119-4383-ae59-39b823d3dda1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35619/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 ## 96 recorded 94: fact Transcript type=system subtype=turn_duration uuid=025b0bf1-37db-42ae-9b12-549cb65d4424
 item turn:3 turn final at=1793452837539 text="" #3 TURN_OUTCOME_COMPLETED started=1793452836691
+snapshot said "two"
 snapshot IDLE queue=[] working_on=- at=1793452834477 asks=[] session=a3084bda-d119-4383-ae59-39b823d3dda1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35619/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 turn_end 3 last=stream:257b60ed-3de6-45be-842a-821295df892d

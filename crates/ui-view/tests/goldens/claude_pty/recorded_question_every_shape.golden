@@ -19,7 +19,7 @@
 ## 81 recorded 79: fact Transcript type=system subtype=turn_duration uuid=d1a90fcd-4dd9-4e8c-9468-894c17f80d6f
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 ac62fe61-ff1a-43c0-8cf5-1c5c76f3d567 Prompt { text: [Text("Use exactly one AskUserQuestion call containing exactly four questions, in this order. 1: header Color, question 'Which color do you prefer?', single-select, options Red and Blue. 2: header Tools, question 'Which tools do you need?', multiSelect true, options Hammer, Saw and Drill. 3: header Layout, question 'Which layout should the p…
      3 toolu_01X4nzvky1hpkkusgPE7BzMw [Dismissed:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secret: false }, Questi…
      4 e7161bf7-fc03-44c3-8c54-2fc2bd3db188 Thinking { text: "", open: false, duration_ms: Some(1089) }

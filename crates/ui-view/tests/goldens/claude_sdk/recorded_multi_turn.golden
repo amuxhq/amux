@@ -9,7 +9,7 @@
 ## 56 recorded 55: fact Stream type=result subtype=success uuid=e75d30cc-5885-4f95-9552-ed156b05b277
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 boundary:1 Boundary { kind: Started, cause: "" }
+     1 boundary:1 Hidden collapsed
      2 ae1326f8-4a06-40d5-b7ee-a1b1051b94cc Prompt { text: [Text("Remember the word ALBATROSS. Reply with exactly REMEMBERED.")], steered: false }
      3 a29dd72a-cc84-4911-9080-bb8cd877cc67 Hidden collapsed
      4 msg_011CgZjmtwyXKTe3vuhhfGkb:0 Prose { text: [Text("REMEMBERED")], streaming: false, working_note: false }

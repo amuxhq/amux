@@ -187,9 +187,13 @@ runtime and the iPhone 17 Pro device type are available, installs XcodeGen,
 the stable toolchain with both ARM iOS targets, and runs `just ios gate`: the
 half of the phone's verification that building the app can settle.
 
-`just ios gate` runs, in order and stopping at the first failure,
+`just ios gate` runs, in order,
 `just ios` `lint`, `script-tests`, `graph-check`, `rust`, `simulator golden`,
-`test-build`, `component-snapshots --skip-build` and `unit --skip-build`. The
+`test-build`, `component-snapshots --skip-build` and `unit --skip-build`. A
+failing `rust`, `simulator golden` or `test-build` ends it, since the stages
+after them run what they made; any other stage failing lets the rest run,
+and the gate fails at its end naming every stage that did, so one red run
+says everything a change left behind. The
 simulator boots while `test-build` compiles the app and every unit and
 component suite once, for any simulator, and the gate waits for both before the suites run what was built. `mobile-check` is left
 to the iOS target check, which runs it on every push. The only pictures it

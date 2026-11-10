@@ -778,7 +778,7 @@ prose are judged on their name only and listed in the record, which lands in
 | `just ios captures` | The store suite on the simulator, journeys and the accessibility audit. On demand in CI. |
 | `just ios shipping` | The shipping XCFramework and the Release scope audit. `just ios release` depends on both. |
 | `just ios measured` | The phone measured on this Mac: `just ios perf`, on an enrolled Mac only ([Performance](PERFORMANCE.md)). |
-| `just ios verify` | The workspace's format, lint, tests and specs, then all four of the above, stopping at the first failure. |
+| `just ios verify` | The workspace's format, lint, tests and specs, then all four of the above. A failing build stage ends it; any other failure lets the rest run and is named at the end ([CI](CI.md)). |
 
 ## Large text
 

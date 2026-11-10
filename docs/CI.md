@@ -258,7 +258,7 @@ journey or baseline that does not exist.
 ## `just premerge`
 
 `just premerge` is what a change passes on the machine it was written on
-before it reaches main. It takes about a minute on a warm tree, so that it is
+before it reaches main. It takes about a minute and a half on a warm tree, so that it is
 run every time: every check of `just ci` that takes seconds (formatting,
 generated code, the schema and store checks, dependency policy, advisories,
 the typed-provider check, the docs and catalogue checks, the scripts' own
@@ -266,8 +266,13 @@ tests), Clippy, the phone's writing lint and script tests, and every terminal
 journey. The journeys run several at once, each in a scratch folder of its
 own, and share those folders with every other checkout on the machine.
 
-It leaves out what is slow. The workspace's tests take a quarter of an hour;
-run the touched crates' with `just test-crate`. The phone's unit suites and
+It also runs the tests of four crates, `interpret`, `replay-support`, `tui`
+and `ui-view`, because they read fixtures and goldens that a change
+elsewhere moves: a provider fixture added in one crate needs its view golden
+in another.
+
+It leaves out what is slow. The whole workspace's tests take a quarter of an
+hour; run the touched crates' with `just test-crate`. The phone's unit suites and
 snapshots need a simulator and half an hour (`just ios gate`). Windows, the
 sanitizers, the models and the release build run only in CI. A change to what
 the phone draws can therefore still reach main with a baseline left behind;

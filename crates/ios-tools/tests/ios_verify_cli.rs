@@ -90,19 +90,23 @@ fn ios_verify_command(dir: &Path) -> Command {
     command
 }
 
+/// A failing check does not stop the stages after it, so one run names
+/// everything that failed; a failing stage that later ones run the product
+/// of does.
 #[test]
-fn ios_verify_cli_runs_full_checks_bare_and_stops_on_failure_or_skipped_journey() {
+fn ios_verify_cli_runs_full_checks_bare_and_fails_on_failure_or_skipped_journey() {
     let dir = ios_verify_fixture();
     for (fail, skip, success, last) in [
         ("", "", true, "ios perf"),
-        ("fmt-check", "", false, "fmt-check"),
-        ("mobile-check", "", false, "mobile-check"),
+        ("fmt-check", "", false, "ios perf"),
+        ("mobile-check", "", false, "ios perf"),
+        ("ios lint", "", false, "ios perf"),
         ("ios simulator golden", "", false, "ios test-build"),
-        ("ios accessibility", "", false, "ios accessibility"),
-        ("", "reach-host", false, "ios journey"),
-        ("", "leave-and-recover", false, "ios journey"),
-        ("", "composer-limits", false, "ios journey"),
-        ("", "keep-authority", false, "ios journey"),
+        ("ios accessibility", "", false, "ios perf"),
+        ("", "reach-host", false, "ios perf"),
+        ("", "leave-and-recover", false, "ios perf"),
+        ("", "composer-limits", false, "ios perf"),
+        ("", "keep-authority", false, "ios perf"),
     ] {
         std::fs::write(dir.path().join("calls"), "").unwrap();
         let output = ios_verify_command(dir.path())
@@ -153,6 +157,14 @@ fn ios_verify_cli_runs_full_checks_bare_and_stops_on_failure_or_skipped_journey(
             assert!(
                 String::from_utf8_lossy(&output.stderr)
                     .contains(&format!("{skip} did not report a full pass"))
+            );
+        }
+        if !fail.is_empty() {
+            assert!(
+                String::from_utf8_lossy(&output.stderr)
+                    .contains(&format!("iOS verification failed: just {fail}")),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
             );
         }
     }

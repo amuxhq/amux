@@ -187,9 +187,13 @@ runtime and the iPhone 17 Pro device type are available, installs XcodeGen,
 the stable toolchain with both ARM iOS targets, and runs `just ios gate`: the
 half of the phone's verification that building the app can settle.
 
-`just ios gate` runs, in order and stopping at the first failure,
+`just ios gate` runs, in order,
 `just ios` `lint`, `script-tests`, `graph-check`, `rust`, `simulator golden`,
-`test-build`, `component-snapshots --skip-build` and `unit --skip-build`. The
+`test-build`, `component-snapshots --skip-build` and `unit --skip-build`. A
+failing `rust`, `simulator golden` or `test-build` ends it, since the stages
+after them run what they made; any other stage failing lets the rest run,
+and the gate fails at its end naming every stage that did, so one red run
+says everything a change left behind. The
 simulator boots while `test-build` compiles the app and every unit and
 component suite once, for any simulator, and the gate waits for both before the suites run what was built. `mobile-check` is left
 to the iOS target check, which runs it on every push. The only pictures it
@@ -258,7 +262,7 @@ journey or baseline that does not exist.
 ## `just premerge`
 
 `just premerge` is what a change passes on the machine it was written on
-before it reaches main. It takes about a minute on a warm tree, so that it is
+before it reaches main. It takes about a minute and a half on a warm tree, so that it is
 run every time: every check of `just ci` that takes seconds (formatting,
 generated code, the schema and store checks, dependency policy, advisories,
 the typed-provider check, the docs and catalogue checks, the scripts' own
@@ -266,8 +270,13 @@ tests), Clippy, the phone's writing lint and script tests, and every terminal
 journey. The journeys run several at once, each in a scratch folder of its
 own, and share those folders with every other checkout on the machine.
 
-It leaves out what is slow. The workspace's tests take a quarter of an hour;
-run the touched crates' with `just test-crate`. The phone's unit suites and
+It also runs the tests of four crates, `interpret`, `replay-support`, `tui`
+and `ui-view`, because they read fixtures and goldens that a change
+elsewhere moves: a provider fixture added in one crate needs its view golden
+in another.
+
+It leaves out what is slow. The whole workspace's tests take a quarter of an
+hour; run the touched crates' with `just test-crate`. The phone's unit suites and
 snapshots need a simulator and half an hour (`just ios gate`). Windows, the
 sanitizers, the models and the release build run only in CI. A change to what
 the phone draws can therefore still reach main with a baseline left behind;

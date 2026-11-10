@@ -49,6 +49,19 @@ const GATE: &[&str] = &[
 /// printed whole once it finishes, so the two logs do not interleave.
 const ALONGSIDE: &[(&str, &str)] = &[("ios simulator golden", "ios test-build")];
 
+/// Stages that later ones run the product of: the bridge, the simulator and
+/// the built app and suites, and the bundle the audit reads. One of these
+/// failing ends the run. Any other stage failing does not: the rest still
+/// run and the run fails at its end naming every stage that did, so that one
+/// run says everything a change left behind. Stopping at a failing lint hid
+/// stale snapshots behind it, and main stayed red a push longer for each.
+const NEEDED: &[&str] = &[
+    "ios rust",
+    "ios simulator golden",
+    "ios test-build",
+    "ios package",
+];
+
 /// What the shipping bundle is held to: every slice built under the
 /// release profile, and the audit of what that bundle turned out to
 /// contain.
@@ -251,6 +264,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     }
     eprintln!("iOS verification: {}", selected.join(", "));
     let mut background: Option<Background> = None;
+    let mut failed: Vec<String> = Vec::new();
     for (index, recipe) in selected.iter().copied().enumerate() {
         if background.is_none()
             && ALONGSIDE
@@ -262,11 +276,25 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             continue;
         }
         let result = run_stage(recipe);
-        let joined = background.take().map_or(Ok(()), Background::finish);
-        result?;
-        joined?;
+        let alongside = background
+            .take()
+            .map(|stage| (stage.recipe, stage.finish()));
+        let mut ends = false;
+        for (stage, outcome) in alongside.into_iter().chain([(recipe, result)]) {
+            if let Err(error) = outcome {
+                eprintln!("{error}");
+                failed.push(stage.to_owned());
+                ends |= NEEDED.contains(&stage);
+            }
+        }
+        if ends {
+            break;
+        }
     }
-    Ok(())
+    if failed.is_empty() {
+        return Ok(());
+    }
+    Err(format!("iOS verification failed: just {}", failed.join(", just ")).into())
 }
 
 /// The bounded `just` invocation for one stage. Recipes own their individual
@@ -507,6 +535,36 @@ mod tests {
             .find(|line| line.starts_with("nightly_cargo :="))
             .unwrap();
         assert!(nightly_cargo.contains("cargo +nightly-"));
+    }
+
+    /// A stage that runs what an earlier one built names it by `--skip-build`,
+    /// and every stage from the bridge to that build ends the run when it
+    /// fails; a check nothing later needs does not.
+    #[test]
+    fn only_a_stage_later_ones_need_ends_the_run() {
+        let build = GATE
+            .iter()
+            .position(|stage| *stage == "ios test-build")
+            .unwrap();
+        for (at, stage) in GATE.iter().enumerate() {
+            if stage.ends_with("--skip-build") {
+                assert!(at > build, "{stage} runs before the build it skips");
+                assert!(!NEEDED.contains(stage), "nothing runs what {stage} made");
+            }
+        }
+        for stage in ["ios rust", "ios simulator golden", "ios test-build"] {
+            assert!(
+                NEEDED.contains(&stage),
+                "{stage} failing leaves nothing to run"
+            );
+        }
+        assert!(!NEEDED.contains(&"ios lint"));
+        for stage in NEEDED {
+            assert!(
+                GATE.contains(stage) || SHIPPING.contains(stage),
+                "{stage} is no stage"
+            );
+        }
     }
 
     /// The push gate includes small in-process component renders, but leaves

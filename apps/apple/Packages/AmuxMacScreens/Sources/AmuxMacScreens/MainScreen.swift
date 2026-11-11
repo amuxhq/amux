@@ -132,21 +132,38 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
     public var body: some View {
         GeometryReader { window in
             let bar = max(window.safeAreaInsets.top, 38)
+            let layout = ColumnLayout(
+                width: window.size.width, sidebar: place.sidebar ? Metrics.rail + sidebarWidth + 1 : 0,
+                inspector: inspecting ? inspectorWidth + 1 : 0)
             HStack(spacing: 0) {
-                if place.sidebar {
+                if layout.showsSidebar {
                     sidebar(bar: bar)
                         .frame(width: Metrics.rail + sidebarWidth)
                         .background(Palette.sidebar)
                     ColumnEdge(width: $sidebarWidth, range: Metrics.sidebarRange)
                 }
-                centre(bar: bar)
-                    .frame(minWidth: 380, maxWidth: .infinity)
+                centre(bar: bar, sidebarShown: layout.showsSidebar)
+                    .frame(minWidth: ColumnLayout.centre, maxWidth: .infinity)
                     .background(Palette.content)
-                if place.inspector != nil, place.surface == .agents, place.agent != nil {
+                if inspecting {
                     ColumnEdge(width: $inspectorWidth, range: Metrics.inspectorRange, trailing: true)
-                    inspector
-                        .frame(width: inspectorWidth)
-                        .background(Palette.content)
+                    VStack(spacing: 0) {
+                        TopBar(height: bar) {
+                            Picker("Show", selection: inspectorTab) {
+                                ForEach(InspectorTab.allCases) { tab in Text(tab.title).tag(tab) }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .fixedSize()
+                            Spacer()
+                            BarButton(symbol: "xmark", help: "Close") { place.inspector = nil }
+                        }
+                        inspector
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .clipped()
+                    }
+                    .frame(width: layout.inspector - 1)
+                    .background(Palette.content)
                 }
             }
             .ignoresSafeArea(.container, edges: .top)
@@ -154,6 +171,14 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
         .windowChrome()
         .animation(.snappy(duration: 0.2), value: place.sidebar)
         .animation(.snappy(duration: 0.2), value: place.inspector)
+    }
+
+    private var inspecting: Bool {
+        place.inspector != nil && place.surface == .agents && place.agent != nil
+    }
+
+    private var inspectorTab: Binding<InspectorTab> {
+        Binding(get: { place.inspector ?? .changes }, set: { place.inspector = $0 })
     }
 
     // MARK: - The sidebar
@@ -173,6 +198,7 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
                     .frame(width: Metrics.rail)
                 surfaceSidebar
                     .frame(maxWidth: .infinity)
+                    .clipped()
             }
         }
     }
@@ -188,11 +214,16 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
 
     // MARK: - The centre
 
-    private func centre(bar: CGFloat) -> some View {
+    private func centre(bar: CGFloat, sidebarShown: Bool) -> some View {
         VStack(spacing: 0) {
-            TopBar(height: bar, leading: place.sidebar ? 0 : Metrics.windowButtons) {
-                if !place.sidebar {
-                    BarButton(symbol: "sidebar.left", help: "Show Sidebar") { place.sidebar = true }
+            TopBar(height: bar, leading: sidebarShown ? 0 : Metrics.windowButtons) {
+                if !sidebarShown {
+                    BarButton(symbol: "sidebar.left", help: "Show Sidebar") {
+                        // A sidebar set aside for the inspector comes back
+                        // in its place.
+                        if place.sidebar { place.inspector = nil }
+                        place.sidebar = true
+                    }
                     if place.surface == .agents {
                         BarButton(symbol: "square.and.pencil", help: "New Agent") { actions.newAgent() }
                     }
@@ -218,6 +249,7 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
             notices
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
         }
     }
 
@@ -311,5 +343,28 @@ public struct EmptyCentre: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// How the columns share a window too narrow for all three at their
+/// widths: the inspector gives way to its narrowest first, then the
+/// sidebar steps aside while the inspector is open, so the chat never
+/// drops below a readable width.
+struct ColumnLayout {
+    static let centre: CGFloat = 380
+
+    let showsSidebar: Bool
+    let inspector: CGFloat
+
+    init(width: CGFloat, sidebar: CGFloat, inspector: CGFloat) {
+        guard inspector > 0 else {
+            showsSidebar = sidebar > 0
+            self.inspector = 0
+            return
+        }
+        let narrowest = Metrics.inspectorRange.lowerBound + 1
+        showsSidebar = sidebar > 0 && sidebar + Self.centre + narrowest <= width
+        let room = width - (showsSidebar ? sidebar : 0) - Self.centre
+        self.inspector = max(narrowest, min(inspector, room))
     }
 }

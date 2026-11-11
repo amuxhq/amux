@@ -278,7 +278,7 @@
     {
       "name": "chat.loading",
       "shows": "A chat opening with nothing of it held yet.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "chat.not-opened",
@@ -289,12 +289,12 @@
     {
       "name": "chat.working",
       "shows": "A turn at work: what it has said so far and the step it is on.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "chat.conversation",
       "shows": "A finished conversation of several turns: prompts, steps, replies and the composer.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "chat.formatted",
@@ -305,7 +305,7 @@
     {
       "name": "chat.asking",
       "shows": "A chat whose agent is asking: the ask stands in the composer's place.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "chat.plan",
@@ -335,7 +335,7 @@
     {
       "name": "chat.overview",
       "shows": "What runs around a chat: background jobs, the uncommitted changes by folder, and the usage windows.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "chat.overview-stop",

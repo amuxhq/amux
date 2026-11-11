@@ -1,6 +1,7 @@
 import AmuxCore
 import AmuxMacScreens
 import AmuxValues
+import AmuxWords
 import AppKit
 import Foundation
 import Observation
@@ -34,7 +35,11 @@ final class AppModel {
     private(set) var stores: StoreBundle?
     /// Where the main window is: its surface, the agent or host open, and
     /// which panes show.
-    var place = Place()
+    var place = Place() {
+        didSet { if place.agent != oldValue.agent { showChat(place.agent, leaving: oldValue.agent) } }
+    }
+    /// The open agent's chat, while one is open.
+    private(set) var chat: MacChat?
     /// The installation's settings, as the daemon last answered them.
     private(set) var settings: MachineSettings?
     /// Setting up the open profile.
@@ -95,6 +100,7 @@ final class AppModel {
             }.value
             runtime = attached
             phase = .attached
+            tickAges()
             // The first profile list reaches the main actor while attaching,
             // before there was a runtime to open its first profile from.
             open(selected)
@@ -102,6 +108,18 @@ final class AppModel {
             let reason = (error as? RuntimeFailure)?.description ?? String(describing: error)
             Self.log.error("attach failed: \(reason, privacy: .public)")
             phase = .failed(reason)
+        }
+    }
+
+    /// Moves the fleet's clock on every half minute, so a row's age counts
+    /// while the window shows it.
+    private func tickAges() {
+        Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                guard let self else { return }
+                self.stores?.fleet.refreshOrder(now: Date())
+            }
         }
     }
 
@@ -121,6 +139,7 @@ final class AppModel {
     private func open(_ id: String?) {
         setup?.close()
         setup = nil
+        chat = nil
         stores?.closeChats()
         stores?.attach(nil)
         stores = nil
@@ -195,6 +214,27 @@ final class AppModel {
         place.surface = .agents
         place.agent = agent
         self.note = note
+    }
+
+    /// Opens the agent's chat in the centre, leaving the one there: its
+    /// session stays open a while, so going back to it is instant.
+    private func showChat(_ agent: AgentKey?, leaving old: AgentKey?) {
+        if let old { stores?.leave(old) }
+        chat = nil
+        guard let agent, let stores else { return }
+        do {
+            let model = try stores.chat(agent)
+            let host = stores.fleet.row(agent).map { PlaceNames.host($0.hostName) } ?? "its host"
+            chat = MacChat(model: model, host: host)
+        } catch {
+            problem = error.description
+        }
+    }
+
+    /// The open agent's parent and children.
+    func family(_ agent: AgentKey) -> FamilyHeader? {
+        _ = stores?.applied
+        return profile?.family(agent)
     }
 
     /// Opens the sheet that starts an agent.

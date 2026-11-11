@@ -19,7 +19,22 @@ struct AppWindow: View {
                 SetupHost(setup: setup, content: content)
             } else {
                 MainScreen(content: main, place: $model.place, actions: actions) {
-                    EmptyCentre(surface: model.place.surface) { model.newAgent() }
+                    if model.place.surface == .agents, let chat = model.chat, let agent = model.place.agent {
+                        ChatPane(
+                            chat: chat, row: model.stores?.fleet.row(agent),
+                            inspectorOpen: model.place.inspector != nil,
+                            openInspector: { model.place.inspector = $0 })
+                        .id(agent)
+                    } else {
+                        EmptyCentre(surface: model.place.surface) { model.newAgent() }
+                    }
+                } inspector: {
+                    if let chat = model.chat, let agent = model.place.agent, let tab = model.place.inspector {
+                        InspectorPane(
+                            tab: tab, chat: chat, family: model.family(agent),
+                            now: model.stores?.fleet.orderedAt ?? Date(),
+                            openAgent: { model.place.agent = $0 })
+                    }
                 }
             }
         }

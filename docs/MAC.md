@@ -37,9 +37,38 @@ changes and family.
   name and toggles the right-hand pane (⌥⌘I); a hidden sidebar's buttons move
   into it.
 
+- **The chat** fills the centre down a reading width: the person's prompts
+  in bubbles on the right, the agent's markdown as blocks, and its work on
+  one grid of glyph, verb, subject and meta joined by a rail, with runs of
+  tool steps folded as the phone and terminal fold them. What the agent is
+  doing sits under the newest row; the queue, the head ask and the composer
+  sit under the feed. The ask card shows what is asked in full with the
+  provider's answers as buttons, a question's options to pick, and a note
+  for an answer that takes one. The composer grows with the draft; Return
+  sends, Shift-Return starts a line, ⌘. stops the turn, and a long paste
+  becomes an attachment as on the phone.
+- **The floating card** at the chat's top right, while the right-hand pane is
+  closed, names the host, folder and branch, and the changes and family,
+  each opening the pane on itself. It floats in the margin when the margin
+  holds it, moves the chat left to make room while the chat stays readable,
+  and otherwise folds to a pill of the change counts.
+- **The right-hand pane** shows the changes as the host freezes them, against
+  the last commit or the branch's base, a file at a time; a click picks a
+  line to comment on and Shift-click takes in more, and the written comments
+  go into the draft for the next message. Its other tab lists the agent's
+  parent and children, each opening its own chat. In a window too narrow for
+  all three columns the pane gives way to its narrowest, then the sidebar
+  steps aside while it is open.
+
 The window is one `Place`: the surface, the agent or host open, whether the
 sidebar shows the settled agents, and which panes are open. The storybook
 puts a story anywhere by handing one in.
+
+The screens read a chat through `ChatSurface` and a review through
+`ReviewSurface`, protocols the app's `MacChat` and `MacReview` answer by
+reading the shared `ChatModel` and `ReviewModel` directly, so a view that
+reads one row redraws when that row moves. The storybook answers them with
+chats that hold still.
 
 ## Setting up
 

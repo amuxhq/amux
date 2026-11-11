@@ -815,9 +815,10 @@ Nothing else carries a version integer either:
   client shows "amux *version* is running · restart to update" when they
   differ.
 - **`ctl.sock` and the journal** have no version integer at all.
-- **The store** only grows, so its stamp stays 1; a store with another stamp
-  is refused, by name, and left as it is (see
-  [the journal and store](JOURNAL_AND_STORE.md)).
+- **The store**'s stamp counts the migrations it has had, and refuses
+  nothing: a build runs the ones a store lacks and opens a store that has had
+  more as it is, because migrations only add (see
+  [the journal and store](JOURNAL_AND_STORE.md#schema-and-migrations)).
 
 ## Writing a client
 

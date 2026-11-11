@@ -179,6 +179,8 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
         .windowChrome()
         // A search narrows the agents; another surface starts it afresh, so
         // nothing there is listed through a filter no field shows.
+        // Another profile's fleet starts unfiltered, and so does the field.
+        .onChange(of: content.profile) { search = "" }
         .onChange(of: place.surface) { _, surface in
             if surface != .agents, !search.isEmpty {
                 search = ""

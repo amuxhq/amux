@@ -33,7 +33,7 @@ struct AmuxMacApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("New Agent") { model.newAgent() }
                     .keyboardShortcut("n")
-                    .disabled(model.stores == nil || model.setup?.content != nil)
+                    .disabled(model.stores == nil || model.setup?.content != nil || model.starting != nil)
             }
         }
         Settings {

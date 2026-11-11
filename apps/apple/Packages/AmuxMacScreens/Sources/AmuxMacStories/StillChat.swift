@@ -84,7 +84,10 @@ final class StillChat: ChatSurface {
     var review: ReviewState = .idle
     /// The review a story shows once the pane asks for it.
     var reviewing: StillReview?
-    func loadReview() { review = reviewing.map { .ready($0) } ?? .nothing }
+    func loadReview(keepingComments: Bool) {
+        if keepingComments, case .ready = review { return }
+        review = reviewing.map { .ready($0) } ?? .nothing
+    }
     func attachReview() {}
 }
 

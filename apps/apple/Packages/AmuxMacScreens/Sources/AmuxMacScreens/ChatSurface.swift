@@ -85,8 +85,10 @@ public protocol ChatSurface: AnyObject {
     func compare(_ comparison: Comparison)
     /// The review of the changes as the host froze them, being written.
     var review: ReviewState { get }
-    /// Asks the host for the changes as they stand now.
-    func loadReview()
+    /// Asks the host for the changes as they stand now. Keeping comments,
+    /// a review of the same comparison with comments written or under way
+    /// stays as it is, since reading again would replace it.
+    func loadReview(keepingComments: Bool)
     /// Puts the review's comments into the draft, for the next message.
     func attachReview()
 }

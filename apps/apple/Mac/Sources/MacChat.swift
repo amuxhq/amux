@@ -17,6 +17,8 @@ final class MacChat: ChatSurface {
     @ObservationIgnored let host: String
     private(set) var review: ReviewState = .idle
     @ObservationIgnored private var loading: Task<Void, Never>?
+    /// The comparison the review on show was read for.
+    @ObservationIgnored private var loadedFor: Comparison?
 
     init(model: ChatModel, host: String) {
         self.model = model
@@ -101,7 +103,15 @@ final class MacChat: ChatSurface {
 
     /// Freezes the changes as they stand on the host. A review already being
     /// written on the same patch is kept, comments and all.
-    func loadReview() {
+    func loadReview(keepingComments: Bool) {
+        // Held here rather than in the pane, so switching tabs or closing
+        // the pane does not forget there are comments to keep.
+        if keepingComments, loadedFor == model.comparison, case .ready(let open) = review,
+            open.count > 0 || open.selecting
+        {
+            return
+        }
+        loadedFor = model.comparison
         loading?.cancel()
         if case .ready = review {} else { review = .loading }
         loading = Task { [weak self] in

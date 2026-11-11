@@ -61,16 +61,13 @@ extension ComponentCatalog {
             return stores
         },
         ComponentExample(
-            id: "fleet.chat-open", family: .fleet, canvas: CGSize(width: 390, height: 844),
-            settlesLate: true
+            id: "fleet.chat-open", family: .fleet, canvas: CGSize(width: 390, height: 844)
         ) { StoryApp(chatOpen: true) },
         ComponentExample(
-            id: "chat.exited", family: .chat, canvas: CGSize(width: 390, height: 844),
-            settlesLate: true
+            id: "chat.exited", family: .chat, canvas: CGSize(width: 390, height: 844)
         ) { StoryApp(chatOpen: true, chatPhase: .exited(cause: .failed("while the daemon was away"))) },
         ComponentExample(
-            id: "settings.signed-in", family: .settings, canvas: CGSize(width: 390, height: 844),
-            settlesLate: true
+            id: "settings.signed-in", family: .settings, canvas: CGSize(width: 390, height: 844)
         ) { StoryApp(settingsOpen: true).settings },
     ]
 
@@ -80,8 +77,7 @@ extension ComponentCatalog {
     ) -> ComponentExample {
         ComponentExample(
             id: "fleet.\(id)", family: .fleet, canvas: CGSize(width: 390, height: 844),
-            // The system bar lays its title out a frame after the list.
-            dynamicTypeSize: size, settlesLate: true
+            dynamicTypeSize: size
         ) {
             let stores = stores()
             let home = AgentsHome(

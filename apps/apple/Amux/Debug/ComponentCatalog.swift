@@ -31,11 +31,6 @@ struct ComponentExample: Identifiable {
     let dynamicTypeSize: DynamicTypeSize
     let readinessIdentifier: String?
     let readinessValue: String?
-    /// Whether the example takes one more change after it reports ready
-    /// (an attachment chip replacing "Attaching", a focused field's caret
-    /// appearing), so its picture has to wait for the screen to stop
-    /// changing. Every other example is final once it reports ready.
-    let settlesLate: Bool
     let build: @MainActor () -> AnyView
 
     init(
@@ -45,7 +40,6 @@ struct ComponentExample: Identifiable {
         dynamicTypeSize: DynamicTypeSize = .large,
         readinessIdentifier: String? = nil,
         readinessValue: String? = nil,
-        settlesLate: Bool = false,
         @ViewBuilder build: @escaping @MainActor () -> some View
     ) {
         self.id = id
@@ -54,7 +48,6 @@ struct ComponentExample: Identifiable {
         self.dynamicTypeSize = dynamicTypeSize
         self.readinessIdentifier = readinessIdentifier
         self.readinessValue = readinessValue
-        self.settlesLate = settlesLate
         self.build = { AnyView(build()) }
     }
 }
@@ -388,13 +381,13 @@ enum ComponentCatalog {
         _ id: String, height: CGFloat = 260, rows: [Row] = [], frame: ChatFrame,
         strip: ScriptedChat.Surroundings = ScriptedChat.strip(model: "opus 4.6", effort: "high"), draft: String = "",
         settings: SettingsView? = nil, showing: ChatOverlay? = nil, children: [FleetCard] = [],
-        dockExpanded: Bool = false, refusedWords: [[UInt8]: String] = [:], settlesLate: Bool = false,
+        dockExpanded: Bool = false, refusedWords: [[UInt8]: String] = [:],
         subject: ChatSubject = CatalogFixtures.subject, size: DynamicTypeSize = .large,
         setUp: @escaping @MainActor (ChatModel) -> Void = { _ in }
     ) -> ComponentExample {
         ComponentExample(
             id: "composer.\(id)", family: .composer, canvas: CGSize(width: 390, height: height),
-            dynamicTypeSize: size, settlesLate: settlesLate
+            dynamicTypeSize: size
         ) {
             let source = ScriptedChat(
                 rows: rows, frame: frame, strip: strip, settings: settings, images: CatalogFixtures.images)
@@ -420,14 +413,14 @@ enum ComponentCatalog {
             composer("chip-large-text", height: 420, frame: ScriptedChat.frame(kind: .claudeSdk, phase: .idle),
                      strip: ScriptedChat.strip(model: "claude-fennel-v1", effort: "high"), size: .accessibility3),
             composer("draft", height: 220, frame: ScriptedChat.frame(phase: .idle),
-                     draft: "Please tighten the retry path and keep the error visible.", settlesLate: true) {
+                     draft: "Please tighten the retry path and keep the error visible.") {
                 $0.attach(F.photoData, name: "screen.jpg", mime: "image/jpeg", image: true)
             },
             // Each file's name wraps rather than losing its extension, its
             // size under it, each remove mark a thumb's target. One after the
             // other: two attached together land in whichever order they finish.
             composer("attachments-large-text", height: 760, frame: ScriptedChat.frame(phase: .idle),
-                     settlesLate: true, size: .accessibility3) { model in
+                     size: .accessibility3) { model in
                 Task {
                     await model.attach(
                         Data("# Pairing errors\n".utf8), name: "pairing-errors-before-and-after.md",
@@ -460,7 +453,7 @@ enum ComponentCatalog {
                     SentPrompt(inputId: [7], text: [.text("Then the Windows check.")], lands: .queue, underway: .sending(waiting: true)),
                 ])),
             composer("resume", height: 200, frame: ScriptedChat.frame(phase: .exited(cause: .failed("code 1")), mode: .resume),
-                     draft: "Rerun the failing tests.", settlesLate: true),
+                     draft: "Rerun the failing tests."),
             composer("detached", height: 180, frame: ScriptedChat.frame(mode: .waiting(.detached), caughtUp: false),
                      draft: "Also add a test for the new string."),
             composer("catching-up", height: 160, frame: ScriptedChat.frame(mode: .waiting(.catchingUp), caughtUp: false)),
@@ -518,7 +511,7 @@ enum ComponentCatalog {
                 model.heard("tighten the retry path")
             },
             composer("review-token", height: 200, frame: ScriptedChat.frame(phase: .idle),
-                     draft: "Please address these before the next run.", settlesLate: true) {
+                     draft: "Please address these before the next run.") {
                 $0.attach(F.writtenReview())
             },
             composer("strip-trouble", height: 220, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(
@@ -562,8 +555,7 @@ enum ComponentCatalog {
         ComponentExample(
             id: "chat.\(id)", family: .chat, canvas: CGSize(width: 390, height: height),
             dynamicTypeSize: size,
-            // The system bar lays its items out a frame after the chat.
-            readinessIdentifier: readiness?.0, readinessValue: readiness?.1, settlesLate: true
+            readinessIdentifier: readiness?.0, readinessValue: readiness?.1
         ) {
             let source = chat()
             // Pushed, as the app pushes it, so its bar and its back button
@@ -730,9 +722,7 @@ enum ComponentCatalog {
         _ id: String, family: ComponentExample.Family, _ showing: PagePlaceholder.Showing, identifier: String
     ) -> ComponentExample {
         ComponentExample(
-            id: id, family: family, canvas: CGSize(width: 390, height: 844),
-            // The system bar lays its items out a frame after the page.
-            settlesLate: true
+            id: id, family: family, canvas: CGSize(width: 390, height: 844)
         ) {
             Pushed { PagePlaceholder(showing, identifier: identifier) }
         }
@@ -747,21 +737,19 @@ extension ComponentCatalog {
     fileprivate static let overview: [ComponentExample] = {
         typealias F = CatalogFixtures
         return [
-            overview("overview", settlesLate: true) { F.surroundings },
-            overview("overview-stop", confirming: 0, settlesLate: true) { F.surroundings },
+            overview("overview") { F.surroundings },
+            overview("overview-stop", confirming: 0) { F.surroundings },
         ]
     }()
 
     /// `confirming` opens the stop question on that background job.
     private static func overview(
         _ id: String, comparison: Comparison = .uncommitted, confirming: Int? = nil,
-        settlesLate: Bool = false,
         strip: @escaping @MainActor () -> ScriptedChat.Surroundings
     ) -> ComponentExample {
         ComponentExample(
             id: "chat.\(id)", family: .chat, canvas: CGSize(width: 390, height: 844),
-            readinessIdentifier: "chat.overview.comparison", readinessValue: comparison.rawValue,
-            settlesLate: settlesLate
+            readinessIdentifier: "chat.overview.comparison", readinessValue: comparison.rawValue
         ) {
             CatalogChat(source: ScriptedChat(
                 rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .working),
@@ -786,9 +774,7 @@ extension ComponentCatalog {
         setUp: @escaping @MainActor (ReviewModel) -> Void = { _ in }
     ) -> ComponentExample {
         ComponentExample(
-            id: "review.\(id)", family: .review, canvas: CGSize(width: 390, height: height),
-            // The system bar lays its items out a frame after the page.
-            settlesLate: true
+            id: "review.\(id)", family: .review, canvas: CGSize(width: 390, height: height)
         ) {
             // In a navigation stack, as the app pushes it, so its bar is the
             // system's.
@@ -1456,9 +1442,7 @@ extension ComponentCatalog {
             id: "new-agent.\(id)", family: .chat, canvas: CGSize(width: 390, height: height),
             dynamicTypeSize: size,
             readinessIdentifier: browsing ? "new-agent.browse" : "new-agent.worktree",
-            readinessValue: browsing ? "" : "on",
-            // The system bar lays its items out a frame after the form.
-            settlesLate: true
+            readinessValue: browsing ? "" : "on"
         ) {
             let (store, hosts) = CatalogFixtures.newAgent(provider: provider, signedIn: signedIn)
             let _ = setUp(store)
@@ -1606,9 +1590,7 @@ extension ComponentCatalog {
 
     private static func hostPage(_ id: String, host: HostView) -> ComponentExample {
         ComponentExample(
-            id: "host.\(id)", family: .hosts, canvas: CGSize(width: 390, height: 844),
-            // The system bar lays its items out a frame after the page.
-            settlesLate: true
+            id: "host.\(id)", family: .hosts, canvas: CGSize(width: 390, height: 844)
         ) {
             hostPageView(host: host)
         }
@@ -1671,9 +1653,7 @@ extension ComponentCatalog {
             store.reached(.failure(RuntimeFailure("expired")), attempt: store.checking())
         },
         ComponentExample(
-            id: "pair.needs-account", family: .pairing, canvas: CGSize(width: 390, height: 844),
-            // The system bar lays its items out a frame after the page.
-            settlesLate: true
+            id: "pair.needs-account", family: .pairing, canvas: CGSize(width: 390, height: 844)
         ) {
             NavigationStack { PairNeedsAnAccount { _ in } }
         },
@@ -1690,9 +1670,7 @@ extension ComponentCatalog {
         _ id: String, _ prompt: SignInPrompt, working: Bool = false, failure: SignInOffers.Failure? = nil
     ) -> ComponentExample {
         ComponentExample(
-            id: "pair.sign-in-\(id)", family: .pairing, canvas: CGSize(width: 390, height: 844),
-            // The system bar lays its items out a frame after the page.
-            settlesLate: true
+            id: "pair.sign-in-\(id)", family: .pairing, canvas: CGSize(width: 390, height: 844)
         ) {
             NavigationStack { SignInOfferPanel(prompt: prompt, working: working, failure: failure) { _ in } }
         }
@@ -1706,7 +1684,7 @@ extension ComponentCatalog {
         setUp: @escaping @MainActor (PairingStore) -> Void
     ) -> ComponentExample {
         ComponentExample(
-            id: "pair.code-\(id)", family: .pairing, canvas: CGSize(width: 390, height: 844), settlesLate: true
+            id: "pair.code-\(id)", family: .pairing, canvas: CGSize(width: 390, height: 844)
         ) {
             let store = PairingStore(clock: { CatalogFixtures.now })
             store.open(machine: machine)
@@ -1721,9 +1699,7 @@ extension ComponentCatalog {
         setUp: @escaping @MainActor (PairingStore) -> Void
     ) -> ComponentExample {
         ComponentExample(
-            id: "pair.\(id)", family: .pairing, canvas: CGSize(width: 390, height: 844),
-            // The system bar lays its items out a frame after the page.
-            settlesLate: true
+            id: "pair.\(id)", family: .pairing, canvas: CGSize(width: 390, height: 844)
         ) {
             let store = PairingStore(clock: { CatalogFixtures.now })
             store.open(machine: machine)
@@ -1799,9 +1775,7 @@ extension ComponentCatalog {
         build: @escaping @MainActor () -> some View
     ) -> ComponentExample {
         ComponentExample(
-            id: "settings.\(id)", family: .settings, canvas: CGSize(width: 390, height: height), dynamicTypeSize: size,
-            // The system bar lays its items out a frame after the page.
-            settlesLate: true
+            id: "settings.\(id)", family: .settings, canvas: CGSize(width: 390, height: height), dynamicTypeSize: size
         ) {
             if pushed { Pushed { build() } } else { NavigationStack { build() } }
         }
@@ -1860,9 +1834,7 @@ extension ComponentCatalog {
         _ id: String, signedIn: Bool = true, store: @escaping @MainActor () -> ReportStore
     ) -> ComponentExample {
         ComponentExample(
-            id: "report.\(id)", family: .report, canvas: CGSize(width: 390, height: 844),
-            // The system bar lays its items out a frame after the page.
-            settlesLate: true
+            id: "report.\(id)", family: .report, canvas: CGSize(width: 390, height: 844)
         ) {
             ReportScreen(model: store(), signedIn: signedIn) { _ in }
         }

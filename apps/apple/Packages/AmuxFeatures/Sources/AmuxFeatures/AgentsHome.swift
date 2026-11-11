@@ -651,13 +651,19 @@ public struct AgentsHome: View {
         return scopes
     }
 
-    /// A hairline under a row, starting where its text does, as a system
-    /// list draws one.
-    private func rule(_ row: FleetRow) -> some View {
+    /// A hairline under a row, starting where its text does.
+    private func rule(_ row: FleetRow) -> some View { rule(indent: indent(row)) }
+
+    /// The list's hairline: from where a row's text starts to where its age
+    /// ends, and fainter than a card's edge. It only says where one row
+    /// stops, so it stays inside the text it divides, as a chat app's list
+    /// draws it, rather than running off the screen's edge.
+    private func rule(indent: CGFloat) -> some View {
         Rectangle()
-            .fill(design.hairline.color)
+            .fill(design.hairline.color.opacity(0.6))
             .frame(height: design.metrics.hairline)
-            .padding(.leading, Space.margin + AgentRowView.textInset + indent(row))
+            .padding(.leading, Space.margin + AgentRowView.textInset + indent)
+            .padding(.trailing, Space.margin)
             .accessibilityHidden(true)
     }
 
@@ -779,16 +785,17 @@ public struct AgentsHome: View {
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(design.inkMuted.color)
                         .frame(width: AgentRowView.markColumn)
+                    // A way to somewhere, not an agent: it reads quieter
+                    // than the names under it.
                     Text(Self.title(section.kind))
-                        .designFont(.identifier, design)
-                        .foregroundStyle(design.ink.color)
+                        .designFont(.body, design)
+                        .foregroundStyle(design.inkMuted.color)
                     Spacer(minLength: Space.xs)
+                    // The count alone, as a chat app's archive row has it:
+                    // a row at the head of a list already reads as a way in.
                     Text("\(section.families)")
                         .designFont(.caption, design)
                         .foregroundStyle(design.inkMuted.color)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(design.inkFaint.color)
                 }
                 .padding(.vertical, Space.m)
                 .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
@@ -799,11 +806,7 @@ public struct AgentsHome: View {
             .accessibilityLabel(title)
             .accessibilityAddTraits(.isButton)
             .identified("home.settled", label: title, value: "\(section.families)")
-            Rectangle()
-                .fill(design.hairline.color)
-                .frame(height: design.metrics.hairline)
-                .padding(.leading, Space.margin + AgentRowView.textInset)
-                .accessibilityHidden(true)
+            rule(indent: 0)
         }
     }
 

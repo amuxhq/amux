@@ -133,7 +133,14 @@ to 253 s):
 Linux is the slowest clean test run: 601 s × 1.5 is 902 s, so the run's
 bound is 1000 s. Those are whole runs; each platform now runs the tests as
 two jobs of half of them each, so a job is the compile and about half the
-run. Windows
+run. The compile is most of such a job, and both halves pay it: the test
+jobs compile through sccache, which keeps what rustc made of each of amux's
+crates by its inputs (cargo's own cache judges them by file times, which a
+fresh checkout renews). Run twice on one commit, the second run fetched all
+70 crates it could have compiled, and a job took 6 minutes on Linux where
+the first took 9, 8 on Windows where it took 12, and 5 to 11 on macOS where
+it took 13; a push that changes a crate compiles it and what is built from
+it. Linking the 83 test binaries is not kept. Windows
 compiles out most of the slow suites (the embedded client, the supervisor,
 the system journeys, terminal Claude), so its clean run is under half of
 Linux's and does not move the bound. A cold cache, after a `Cargo.lock`

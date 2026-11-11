@@ -185,6 +185,16 @@ jobs:
           shared-key: test
       - uses: ./.github/actions/setup-just
       - uses: ./.github/actions/setup-nextest
+      # The restored cache holds the dependencies; amux's own crates are
+      # compiled on every run, because cargo judges them by file times a
+      # fresh checkout renews. sccache keeps what rustc made of each by its
+      # inputs, so a crate nothing beneath changed is fetched, not compiled.
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - name: Compile through sccache
+        shell: bash
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
       # testnet's ctl test drives the terminal client in tmux; Linux runners
       # have it already.
       - name: Install tmux on macOS
@@ -200,6 +210,10 @@ jobs:
         # journey are ordinary test suites, compiled out on Windows. The
         # protocol models run in the models job instead, on Linux only.
         run: just test -- --profile ci --exclude models --partition count:${{ matrix.part }}/2
+      - name: Say what sccache fetched and compiled
+        if: always()
+        shell: bash
+        run: sccache --show-stats
       - name: Keep the test report
         # Every test's result and time, and a failing test's output, in
         # JUnit form: target/nextest/ci/junit.xml.

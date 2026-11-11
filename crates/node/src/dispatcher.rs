@@ -56,6 +56,8 @@ pub(crate) struct TunnelDispatcher {
     handshake_timeout: Duration,
     admission: std::sync::Arc<HandshakeAdmission>,
     link_ctx: Option<LinkCtx>,
+    /// The app is suspended: no connection is taken until it runs again.
+    suspended: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// What the dispatcher says, as a QUIC close reason, to a connection that
@@ -123,7 +125,22 @@ impl TunnelDispatcher {
             handshake_timeout,
             admission: std::sync::Arc::default(),
             link_ctx: None,
+            suspended: std::sync::Arc::default(),
         }
+    }
+
+    /// Takes no connection while `suspended` is true: one arriving then is
+    /// refused, and one whose handshake ends then is closed.
+    pub(crate) fn refusing_while(
+        mut self,
+        suspended: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> Self {
+        self.suspended = suspended;
+        self
+    }
+
+    fn suspended(&self) -> bool {
+        self.suspended.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     pub(crate) fn with_link_ctx(mut self, link_ctx: LinkCtx) -> Self {
@@ -156,6 +173,15 @@ impl TunnelDispatcher {
                     }
                 };
                 let Some(incoming) = incoming else { break };
+                // A suspended app is about to lose its sockets with the
+                // links it closed. A peer that redials it meanwhile, on a
+                // path of its own that still reaches it, would be given a
+                // link the app then sleeps holding: dead at the peer within
+                // its idle timeout, and no host the app dials as it returns.
+                if dispatcher.suspended() {
+                    incoming.refuse();
+                    continue;
+                }
                 // Admission counts by the sender's real address, not the
                 // stand-in the link socket shows quinn; a host dialled through
                 // a forwarder has none of its own here.
@@ -193,6 +219,12 @@ impl TunnelDispatcher {
                     let Some(arrival) = dispatcher.arrive(connecting, addr, permit).await else {
                         return;
                     };
+                    // One taken as the app was suspending, its handshake
+                    // ending after the app's links closed, is let go too:
+                    // dropped here, it closes.
+                    if dispatcher.suspended() {
+                        return;
+                    }
                     if let Err(error) = dispatcher
                         .dispatch_quic(
                             arrival,

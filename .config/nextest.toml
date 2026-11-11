@@ -40,9 +40,6 @@ slow-timeout = { period = "120s", terminate-after = 8 }
 [profile.ci]
 fail-fast = false
 
-[profile.ci.junit]
-path = "junit.xml"
-
 # `just sim --seeds N`: a story walks every seed inside its one test, so its
 # time grows with N and the default bound, sized for one walk, would end it.
 [profile.seeds]

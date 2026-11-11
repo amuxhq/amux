@@ -354,10 +354,12 @@ queue: Foreground on coming to the front, Background on going to the back,
 Suspending when the app is put away and the system is about to suspend it
 (and when a push that woke it in the background is done), and Woken when a
 push wakes it in the background. Suspending says goodbye on every link,
-closes them and the relay link, and stops dialling; then it makes every
-profile's store whole on the drive before it returns, under background time
-the app asks for, so a phone the system ends while suspended opens next time
-on what it last showed. Foreground and Woken bind the link socket afresh and
+closes them and the relay link, stops dialling and takes no connection
+until it runs again, so a host that redials the phone at once on a path of
+its own is refused rather than given a link the phone sleeps holding; then
+it makes every profile's store whole on the drive before it returns, under
+background time the app asks for, so a phone the system ends while suspended
+opens next time on what it last showed. Foreground and Woken bind the link socket afresh and
 dial the relay and every host at once, each first flight carrying its calls
 on a session ticket.
 

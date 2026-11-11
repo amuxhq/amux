@@ -16,7 +16,7 @@ recipes; [Testing](TESTING.md) describes the suites they run.
 | Weekly offline tests | [`offline.yml`](../.github/workflows/offline.yml) | Sundays 04:00 UTC (GitHub often starts it hours late), and by hand | The workspace tests with no external network |
 | iOS captures | [`ios-captures.yml`](../.github/workflows/ios-captures.yml) | By hand | The phone's store suite on the simulator, journeys and the accessibility audit |
 | Models at nightly bounds | [`models-nightly.yml`](../.github/workflows/models-nightly.yml) | Daily 02:00 UTC (GitHub often starts it hours late), and by hand | Every protocol model at its nightly bounds, one Linux job per model, and every simulated testnet story under 2000 seeds |
-| Nightly builds and sanitizers | [`nightly.yml`](../.github/workflows/nightly.yml) | Daily 01:00 UTC (GitHub often starts it hours late), and by hand | The shipping binary on macOS and Windows, and both sanitizers: what a push does not wait for |
+| Nightly builds and sanitizers | [`nightly.yml`](../.github/workflows/nightly.yml) | Daily 01:00 UTC (GitHub often starts it hours late), and by hand | The shipping binary on Linux, macOS and Windows, and both sanitizers: what a push does not wait for |
 | Release | [`release.yml`](../.github/workflows/release.yml) | A pushed `v*` tag | The `amux` release binaries; see [Release](RELEASE.md) |
 
 Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
@@ -61,28 +61,30 @@ test that reads a file under `docs/` is listed in the script, whose own tests
 fail on one that is not.
 
 What a push does not wait for runs in the nightly workflow: the shipping
-binary on macOS and Windows (14 and 19 minutes, the slowest jobs of every
-push while they ran there; a release builds all three platforms itself) and
-the sanitizers after a change to a crate beneath the ones they test.
+binary (8 minutes on Linux, 14 on macOS and 19 on Windows, the slowest jobs
+of every push while they ran there; a release builds all three platforms
+itself) and the sanitizers after a change to a crate beneath the ones they
+test.
+
+An organisation on GitHub's free plan runs 20 jobs at once and the rest
+wait, so the run has as few jobs as keep each under ten minutes: work that
+takes seconds shares a job, and the models run a few to a job.
 
 | Job | Runner | Runs |
 | --- | --- | --- |
-| Check and Clippy | `ubuntu-latest` | `just lint` |
-| Format | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30` |
+| Format, Check and Clippy | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30`, then `just lint` |
 | Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat`, `just store-check` |
 | Test | `ubuntu-latest`, `macos-latest`, `windows-latest`, two jobs each | `scripts/no-update-flags.sh`, `just test -- --profile ci --exclude models --partition count:N/2`: each job builds every test and runs every second one |
 | Simulated stories and doctests | `ubuntu-latest` | `just sim`, `just doctest`: what reads the same on every platform, run once |
-| Models | `ubuntu-latest`, one job per protocol model | `just test-crate models` filtered to one model's module of the integration test binary: one model at its CI bounds |
-| Build | `ubuntu-latest` | `just release-check` |
+| Models | `ubuntu-latest`, five jobs | `just test-crate models` filtered to one model's module of the integration test binary, for each of the job's two to four models in turn: each model at its CI bounds |
 | Terminal journeys | `ubuntu-latest`, `macos-latest` | Installs `tmux`, then `just journey terminal all`: every terminal story in the manifest |
 | Pointer checks over the C ABI | `ubuntu-latest` | `just miri`: the phone's C ABI tests under the pinned nightly's interpreter, which fails on any undefined behaviour in a pointer handed across the boundary, read or freed; the tests that start an installation or a tokio runtime are ignored there, each saying why |
 | Sanitizers | `ubuntu-latest`, one job for each of `address` and `thread` | `just sanitize <kind>`: the tests that reach unsafe code and C, built on the pinned nightly with the standard library under the sanitizer; `address` fails on an out-of-bounds access, a use after free or a double free, `thread` on a data race |
 | iOS target check | `macos-latest` | `just mobile-check` |
 
 The test job runs nextest's `ci` profile, which does not stop at the first
-failure, so a platform reports every failing test; it keeps the run's JUnit
-report (`target/nextest/ci/junit.xml`) as an artifact, every test's result
-and time and a failing test's output. Its matrix does not fail fast either: a
+failure, so a platform reports every failing test; the job's log holds each
+failing test's output. Its matrix does not fail fast either: a
 failure on one operating system does not cancel the others. The Windows
 runner compiles and runs every test binary; suites that need Unix processes,
 PTYs or sockets are compiled out there. Among them are the tests that host
@@ -163,12 +165,14 @@ them on cargo's lock.
 The protocol models ([`crates/models`](../crates/models/README.md)) explore
 every state of the real cores within their bounds, a minute or more of
 every core each, so they leave the three Test jobs (`--exclude models`;
-`just test` itself still runs them) for the Models job: one Linux job per
-protocol model (a module of the crate's integration test binary), side by
-side, each building the models crate and running one model at its CI bounds
-on the runner's four cores. `just tests-check` fails when a model is missing
-from the job's matrix. Linux minutes cost a public repository nothing, and each job
-stays far inside the run's wall time, which the iOS gate sets.
+`just test` itself still runs them) for the Models jobs: five Linux jobs,
+each building the models crate and running two to four protocol models (a
+module each of the crate's integration test binary) one after another at
+their CI bounds on the runner's four cores, every one of them whichever
+fails. The models are grouped so that each job takes about eight minutes; a
+job per model spent as long starting as checking and left the run's other
+jobs waiting for a runner. `just tests-check` fails when a model is missing
+from the jobs' matrix.
 
 A model's bounds are sized to that runner: a run that outgrows them is
 caught by the job guard, 25 minutes, and bounds that would not fit move to the

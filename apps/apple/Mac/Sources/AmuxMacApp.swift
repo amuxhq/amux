@@ -27,6 +27,15 @@ struct AmuxMacApp: App {
                 .frame(minWidth: 680, minHeight: 560)
         }
         .windowResizability(.contentMinSize)
+        .commands {
+            // One window holds the whole app, so ⌘N starts an agent, as in
+            // the tools it sits beside.
+            CommandGroup(replacing: .newItem) {
+                Button("New Agent") { model.newAgent() }
+                    .keyboardShortcut("n")
+                    .disabled(model.stores == nil || model.setup?.content != nil)
+            }
+        }
         Settings {
             SettingsWindow(model: model)
         }

@@ -31,6 +31,7 @@ struct AppWindow: View {
                             agents: model.stores?.fleet.rows.filter { $0.card.agent.host == id } ?? [],
                             now: model.stores?.fleet.orderedAt ?? Date(),
                             openAgent: { model.openChat($0) },
+                            toggleFamily: { model.stores?.toggleFamily($0) },
                             revoke: { model.revoke($0) })
                         .id(id)
                     } else {
@@ -91,7 +92,8 @@ struct AppWindow: View {
             newAgent: { model.newAgent() },
             search: { model.stores?.filterFleet(FleetFilter(words: $0, only: nil)) },
             toggleFamily: { model.stores?.toggleFamily($0) },
-            act: { act, agent in Task { await model.act(act, on: agent) } })
+            act: { act, agent in Task { await model.act(act, on: agent) } },
+            dismissProblem: { model.dismissProblem() })
     }
 }
 

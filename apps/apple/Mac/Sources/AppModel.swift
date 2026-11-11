@@ -254,6 +254,8 @@ final class AppModel {
         place.agent = agent
     }
 
+    func dismissProblem() { problem = nil }
+
     /// Stops trusting a paired host, leaving its page.
     func revoke(_ host: [UInt8]) {
         if let id = HostId(bytes: host) { stores?.revoke(id) }

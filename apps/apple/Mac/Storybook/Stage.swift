@@ -58,15 +58,20 @@ final class StageWindow: NSWindow {
         title = story.window == .settings ? "Settings" : "Amux"
         let host = NSHostingController(rootView: story.view())
         host.sceneBridgingOptions = [.toolbars, .title]
-        host.sizingOptions = []
+        // The main window's least size comes from its content, as the app's
+        // does (it sizes its window by `.contentMinSize`), so the smallest
+        // story is drawn at the size the app can really reach.
+        host.sizingOptions = story.window == .main ? [.minSize] : []
         contentViewController = host
+        host.view.layoutSubtreeIfNeeded()
         let content: CGSize =
             switch story.window {
             case .main: size.points
             case .settings: Self.settingsSize
             case .sheet: Self.sheetSize
             }
-        setContentSize(content)
+        setContentSize(
+            CGSize(width: max(content.width, contentMinSize.width), height: max(content.height, contentMinSize.height)))
         setFrameTopLeftPoint(NSPoint(x: left, y: top))
     }
 }

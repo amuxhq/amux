@@ -34,6 +34,8 @@ public struct InspectorPane: View {
 
 private struct ChangesView: View {
     let chat: any ChatSurface
+    /// The comparison the review on show was read for.
+    @State private var loaded: Comparison?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,7 +43,19 @@ private struct ChangesView: View {
             Rectangle().fill(Palette.line).frame(height: 1)
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .task(id: Reload(comparison: chat.comparison, changes: chat.changes)) { chat.loadReview() }
+        .task(id: Reload(comparison: chat.comparison, changes: chat.changes)) {
+            // Reading the same changes again replaces the review, so new
+            // totals wait while comments are being written; the reload
+            // button is there for when the person is ready. Picking another
+            // comparison always reads it.
+            if loaded == chat.comparison, case .ready(let review) = chat.review,
+                review.count > 0 || review.selecting
+            {
+                return
+            }
+            loaded = chat.comparison
+            chat.loadReview()
+        }
     }
 
     private struct Reload: Equatable {

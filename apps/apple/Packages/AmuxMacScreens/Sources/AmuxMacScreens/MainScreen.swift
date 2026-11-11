@@ -76,6 +76,8 @@ public struct MainActions {
     public var toggleFamily: @MainActor (AgentKey) -> Void
     /// Pins, settles, renames or deletes an agent.
     public var act: @MainActor (AgentAct, AgentKey) -> Void
+    /// Takes the line saying something went wrong away.
+    public var dismissProblem: @MainActor () -> Void
 
     public init(
         openProfile: @escaping @MainActor (String) -> Void = { _ in },
@@ -87,7 +89,8 @@ public struct MainActions {
         newAgent: @escaping @MainActor () -> Void = {},
         search: @escaping @MainActor (String) -> Void = { _ in },
         toggleFamily: @escaping @MainActor (AgentKey) -> Void = { _ in },
-        act: @escaping @MainActor (AgentAct, AgentKey) -> Void = { _, _ in }
+        act: @escaping @MainActor (AgentAct, AgentKey) -> Void = { _, _ in },
+        dismissProblem: @escaping @MainActor () -> Void = {}
     ) {
         self.openProfile = openProfile
         self.signIn = signIn
@@ -99,6 +102,7 @@ public struct MainActions {
         self.search = search
         self.toggleFamily = toggleFamily
         self.act = act
+        self.dismissProblem = dismissProblem
     }
 }
 
@@ -117,6 +121,10 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
 
     @State private var sidebarWidth = Metrics.sidebar
     @State private var inspectorWidth = Metrics.inspector
+    /// What the agents are searched for. Held here, not in the sidebar,
+    /// because the runtime keeps filtering the list while the sidebar is
+    /// hidden or another surface is showing.
+    @State private var search = ""
 
     public init(
         content: MainContent, place: Binding<Place>, actions: MainActions = MainActions(),
@@ -169,6 +177,14 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
             .ignoresSafeArea(.container, edges: .top)
         }
         .windowChrome()
+        // A search narrows the agents; another surface starts it afresh, so
+        // nothing there is listed through a filter no field shows.
+        .onChange(of: place.surface) { _, surface in
+            if surface != .agents, !search.isEmpty {
+                search = ""
+                actions.search("")
+            }
+        }
         .animation(.snappy(duration: 0.2), value: place.sidebar)
         .animation(.snappy(duration: 0.2), value: place.inspector)
     }
@@ -189,8 +205,7 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
                 BarButton(symbol: "sidebar.left", help: "Hide Sidebar") { place.sidebar = false }
                 Spacer()
                 if place.surface == .agents {
-                    BarButton(symbol: "square.and.pencil", help: "New Agent") { actions.newAgent() }
-                        .keyboardShortcut("n")
+                    BarButton(symbol: "square.and.pencil", help: "New Agent (⌘N)") { actions.newAgent() }
                 }
             }
             HStack(spacing: 0) {
@@ -206,7 +221,7 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
     @ViewBuilder private var surfaceSidebar: some View {
         switch place.surface {
         case .agents:
-            FleetSidebar(content: content, place: $place, actions: actions)
+            FleetSidebar(content: content, place: $place, search: $search, actions: actions)
         case .hosts:
             HostsSidebar(content: content, place: $place)
         }
@@ -273,7 +288,7 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
 
     @ViewBuilder private var notices: some View {
         if let problem = content.problem {
-            Notice(text: problem, symbol: "exclamationmark.triangle", tint: .red)
+            Notice(text: problem, symbol: "exclamationmark.triangle", tint: .red, dismiss: actions.dismissProblem)
         }
         if let note = content.note {
             Notice(text: note, symbol: "checkmark.circle", tint: .secondary)
@@ -295,12 +310,16 @@ private struct Notice: View {
     let text: String
     let symbol: String
     let tint: Color
+    var dismiss: (@MainActor () -> Void)?
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: symbol).foregroundStyle(tint)
-            Text(text).foregroundStyle(.secondary)
+            Text(text).foregroundStyle(.secondary).textSelection(.enabled)
             Spacer()
+            if let dismiss {
+                BarButton(symbol: "xmark", help: "Dismiss") { dismiss() }
+            }
         }
         .font(.callout)
         .padding(.horizontal, 16)

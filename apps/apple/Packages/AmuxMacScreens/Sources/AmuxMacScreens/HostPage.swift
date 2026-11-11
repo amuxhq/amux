@@ -11,18 +11,21 @@ public struct HostPage: View {
     let agents: [FleetRow]
     let now: Date
     let openAgent: @MainActor (AgentKey) -> Void
+    let toggleFamily: @MainActor (AgentKey) -> Void
     let revoke: @MainActor ([UInt8]) -> Void
     @State private var confirming = false
 
     public init(
         host: HostView, agents: [FleetRow], now: Date = Date(),
         openAgent: @escaping @MainActor (AgentKey) -> Void = { _ in },
+        toggleFamily: @escaping @MainActor (AgentKey) -> Void = { _ in },
         revoke: @escaping @MainActor ([UInt8]) -> Void = { _ in }
     ) {
         self.host = host
         self.agents = agents
         self.now = now
         self.openAgent = openAgent
+        self.toggleFamily = toggleFamily
         self.revoke = revoke
     }
 
@@ -49,7 +52,7 @@ public struct HostPage: View {
                     } else {
                         VStack(spacing: 1) {
                             ForEach(agents) { row in
-                                FleetRowView(row: row, now: now, selected: false, toggleFamily: {})
+                                FleetRowView(row: row, now: now, selected: false) { toggleFamily(row.card.agent) }
                                     .onTapGesture { openAgent(row.card.agent) }
                             }
                         }

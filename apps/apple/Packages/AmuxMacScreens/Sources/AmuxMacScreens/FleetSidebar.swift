@@ -7,9 +7,9 @@ import SwiftUI
 struct FleetSidebar: View {
     let content: MainContent
     @Binding var place: Place
+    @Binding var search: String
     let actions: MainActions
 
-    @State private var search = ""
     @State private var renaming: FleetRow?
     @State private var newName = ""
     @State private var deleting: FleetRow?
@@ -59,15 +59,13 @@ struct FleetSidebar: View {
         } else {
             ScrollViewReader { reader in
                 ScrollView {
+                    // One flat list, so a row keeps its identity when it
+                    // moves between sections and redraws in its new place.
                     LazyVStack(alignment: .leading, spacing: 1) {
-                        if place.settled {
-                            ForEach(rows) { row in item(row) }
-                        } else {
-                            ForEach(fleet.live, id: \.kind) { section in
-                                if let title = title(section) {
-                                    SectionTitle(text: title)
-                                }
-                                ForEach(section.rows) { row in item(row) }
+                        ForEach(entries) { entry in
+                            switch entry {
+                            case .title(_, let text): SectionTitle(text: text)
+                            case .row(let row): item(row)
                             }
                         }
                     }
@@ -84,12 +82,36 @@ struct FleetSidebar: View {
         }
     }
 
+    /// What the list draws: the section headings and their rows, in order.
+    private enum Entry: Identifiable {
+        case title(SectionKind, String)
+        case row(FleetRow)
+
+        enum ID: Hashable {
+            case title(SectionKind)
+            case row(AgentKey)
+        }
+
+        var id: ID {
+            switch self {
+            case .title(let kind, _): .title(kind)
+            case .row(let row): .row(row.card.agent)
+            }
+        }
+    }
+
+    private var entries: [Entry] {
+        if place.settled { return rows.map(Entry.row) }
+        return fleet.live.flatMap { section in
+            (title(section).map { [Entry.title(section.kind, $0)] } ?? []) + section.rows.map(Entry.row)
+        }
+    }
+
     private func item(_ row: FleetRow) -> some View {
         FleetRowView(
             row: row, now: fleet.now, selected: place.agent == row.card.agent,
             toggleFamily: { actions.toggleFamily(row.card.agent) }
         )
-        .id(row.card.agent)
         .onTapGesture {
             place.agent = row.card.agent
             listFocused = true
@@ -116,7 +138,7 @@ struct FleetSidebar: View {
         let at = place.agent.flatMap { keys.firstIndex(of: $0) }
         let next = at.map { min(max($0 + by, 0), keys.count - 1) } ?? (by > 0 ? 0 : keys.count - 1)
         place.agent = keys[next]
-        reader.scrollTo(keys[next])
+        reader.scrollTo(Entry.ID.row(keys[next]))
         return .handled
     }
 

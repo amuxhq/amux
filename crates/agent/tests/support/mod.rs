@@ -109,6 +109,8 @@ pub struct Agent {
     _root: tempfile::TempDir,
     pub dir: PathBuf,
     pub clock: ManualClock,
+    /// The size every incarnation cuts its journal's segments at.
+    segment_bytes: u64,
     release: PathBuf,
     task: Mutex<Option<JoinHandle<Result<ExitCause, AgentError>>>>,
     reader: Mutex<(journal::Reader, Log)>,
@@ -279,7 +281,6 @@ impl Agent {
                 grace_ms: GRACE as u32,
                 drain_ms: DRAIN as u32,
                 facts_ring_bytes: setup.ring_bytes,
-                journal_segment_bytes: setup.journal_bytes,
                 // What the harness runs for hooks and the tool server.
                 install_path: install_path(),
                 ..Default::default()
@@ -301,13 +302,22 @@ impl Agent {
         std::fs::write(dir.join("spec.1"), spec.encode_to_vec()).unwrap();
 
         let clock = ManualClock::new(T0);
-        let task = tokio::spawn(agent::run(dir.clone(), clock.clone()));
+        let segment_bytes = match setup.journal_bytes {
+            0 => agent::JOURNAL_SEGMENT_BYTES,
+            bytes => bytes,
+        };
+        let task = tokio::spawn(agent::run_cutting_segments_at(
+            dir.clone(),
+            clock.clone(),
+            segment_bytes,
+        ));
         let reader = journal::Reader::new(dir.join(agent::JOURNAL), 0);
         Self {
             kind: setup.kind,
             _root: root,
             dir,
             clock,
+            segment_bytes,
             release,
             task: Mutex::new(Some(task)),
             reader: Mutex::new((reader, Log::default())),
@@ -332,7 +342,11 @@ impl Agent {
             spec.encode_to_vec(),
         )
         .unwrap();
-        let task = tokio::spawn(run_when_unlocked(self.dir.clone(), self.clock.clone()));
+        let task = tokio::spawn(run_when_unlocked(
+            self.dir.clone(),
+            self.clock.clone(),
+            self.segment_bytes,
+        ));
         *self.task.lock().unwrap() = Some(task);
     }
 
@@ -496,10 +510,14 @@ impl Agent {
 /// daemon waits for a dying process's lock. Every agent in a test shares
 /// this process's descriptors, so a sibling test forking a provider can
 /// hold a copy of the lock for the moment before its child execs.
-async fn run_when_unlocked(dir: PathBuf, clock: ManualClock) -> Result<ExitCause, AgentError> {
+async fn run_when_unlocked(
+    dir: PathBuf,
+    clock: ManualClock,
+    segment_bytes: u64,
+) -> Result<ExitCause, AgentError> {
     let started = std::time::Instant::now();
     loop {
-        match agent::run(dir.clone(), clock.clone()).await {
+        match agent::run_cutting_segments_at(dir.clone(), clock.clone(), segment_bytes).await {
             Err(AgentError::Locked(_)) if started.elapsed() < PATIENCE => {
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }

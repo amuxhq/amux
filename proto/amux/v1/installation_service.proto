@@ -220,6 +220,8 @@ message Profile {
 }
 
 // What an account may do. `pro` is the whole gate; the rest explains it.
+// What the relay carries for a host this moment is RelayConnected.tier, a
+// copy of `pro` as old as the host's relay credential.
 message Access {
   bool pro = 1;
   // When access ends, or ended, in milliseconds since the epoch; absent
@@ -273,6 +275,12 @@ message RelayLink {
 }
 
 message RelayConnected {
+  // The plan the relay admitted this link on, from the credential the host
+  // connected with: whether the relay carries streams to and from this host
+  // now. It follows Profile.access.pro when the credential is next issued,
+  // so the two differ for a while after a purchase or a lapse. A client
+  // reads this for what the relay will do and `access` for what the account
+  // has.
   Tier tier = 1;
 }
 

@@ -57,9 +57,8 @@ Nothing else needs to record which files are complete.
 ![Segment naming makes a reader's state a single integer and makes "is this file final?" answerable by the existence of the next file. The writer closes a segment before it creates the next, so once 0002097152 exists, 0001048576 never changes again. The same scheme is used for pty/.](figures/journal-segments.svg)
 
 The writer rotates when a frame would take a non-empty segment past the
-segment size; frames never span segments. The size comes from the agent's spec
-(`EffectiveConfig.journal_segment_bytes`) and defaults to 1 MiB
-(`DEFAULT_SEGMENT_BYTES` in [`crates/agent/src/host.rs`](../crates/agent/src/host.rs)).
+segment size; frames never span segments. The size is 1 MiB
+(`JOURNAL_SEGMENT_BYTES` in [`crates/agent/src/lib.rs`](../crates/agent/src/lib.rs)).
 The `pty/` log and the facts ring under `private/facts/` use the same naming
 and the same `journal::segments` listing.
 

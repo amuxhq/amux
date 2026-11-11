@@ -4459,7 +4459,7 @@ pub enum Filing {
     Pinned = 2,
     /// Done with: stopped when it was live, out of other agents' listing, and
     /// the only kind retention deletes. A message from the person or its own
-    /// parent resumes it, filed active again.
+    /// parent resumes it, filed open again.
     Closed = 3,
 }
 impl Filing {
@@ -9311,6 +9311,8 @@ impl ::prost::Name for Profile {
     }
 }
 /// What an account may do. `pro` is the whole gate; the rest explains it.
+/// What the relay carries for a host this moment is RelayConnected.tier, a
+/// copy of `pro` as old as the host's relay credential.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Access {
     #[prost(bool, tag = "1")]
@@ -9433,6 +9435,12 @@ impl ::prost::Name for RelayLink {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RelayConnected {
+    /// The plan the relay admitted this link on, from the credential the host
+    /// connected with: whether the relay carries streams to and from this host
+    /// now. It follows Profile.access.pro when the credential is next issued,
+    /// so the two differ for a while after a purchase or a lapse. A client
+    /// reads this for what the relay will do and `access` for what the account
+    /// has.
     #[prost(enumeration = "Tier", tag = "1")]
     pub tier: i32,
 }
@@ -14247,25 +14255,23 @@ pub struct EffectiveConfig {
     pub drain_ms: u32,
     #[prost(uint64, tag = "3")]
     pub facts_ring_bytes: u64,
-    #[prost(uint64, tag = "4")]
-    pub journal_segment_bytes: u64,
     /// The model, permission, mode and effort this incarnation starts with, as
     /// its catalogue names them: the creation's for the first, and for a
     /// resumed one the ones the agent last ran with.
-    #[prost(string, optional, tag = "5")]
+    #[prost(string, optional, tag = "4")]
     pub model: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "6")]
+    #[prost(string, optional, tag = "5")]
     pub permission: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "7")]
+    #[prost(string, optional, tag = "6")]
     pub mode: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "8")]
+    #[prost(string, optional, tag = "7")]
     pub effort: ::core::option::Option<::prost::alloc::string::String>,
     /// The canonical install path the hook binary and tool server run from.
-    #[prost(string, tag = "9")]
+    #[prost(string, tag = "8")]
     pub install_path: ::prost::alloc::string::String,
     /// How long one step of the agent's core may take before it asks for a
     /// dump; 0 is the agent's own budget.
-    #[prost(uint64, tag = "10")]
+    #[prost(uint64, tag = "9")]
     pub step_budget_micros: u64,
 }
 impl ::prost::Name for EffectiveConfig {

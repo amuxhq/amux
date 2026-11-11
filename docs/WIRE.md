@@ -778,6 +778,22 @@ A change that cannot be made this way, or a sweeping clean-up, is the next
 protocol: a new ALPN, `amux/2`, served beside `amux/1`, which TLS settles
 before any amux message.
 
+To add to the protocol:
+
+1. Add the field, arm, value, message or call to its `.proto`, with the next
+   unused number, and say in its comment what an absent or zero value means:
+   it must be what builds without the field did.
+2. Run `just protobuf` and commit the regenerated Rust with the schema.
+3. Decide what each side does when the other is older. A reader treats the
+   field's absence as the old behaviour. A writer cannot assume an older
+   reader saw the field, and a daemon in between rebuilds envelopes, so a
+   new envelope field is lost there; meaning that must survive goes in the
+   per-kind body.
+4. Run `just proto-compat`. To take something away, delete it and leave its
+   number `reserved`; the name is never reused either.
+5. Update this page and, when a client would notice,
+   [build a client](guide/build/build-a-client.md).
+
 Strings builds agree on outside any schema, such as the ALPN and the pairing
 labels, are pinned by a test in `crates/wire/src/pinned.rs`.
 
@@ -815,9 +831,9 @@ Nothing else carries a version integer either:
   client shows "amux *version* is running · restart to update" when they
   differ.
 - **`ctl.sock` and the journal** have no version integer at all.
-- **The store**'s stamp counts the migrations it has had, and refuses
-  nothing: a build runs the ones a store lacks and opens a store that has had
-  more as it is, because migrations only add (see
+- **The store**'s stamp counts the migrations it has had, and no build
+  refuses a store for it: a build runs the ones a store lacks and opens a
+  store that has had more as it is, because migrations only add (see
   [the journal and store](JOURNAL_AND_STORE.md#schema-and-migrations)).
 
 ## Writing a client

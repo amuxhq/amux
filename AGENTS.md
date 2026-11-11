@@ -1,14 +1,25 @@
 # Operating Rules
 
-amux is unreleased and in active development. Never preserve backwards
-compatibility — old local protocols, config keys, and public APIs may be
-broken freely. Simplify decisions accordingly. Before 0.9.0 nothing is
-versioned up: every version number (store schema, wire protocol, file and
-report formats) stays 1, an incompatible change keeps it, and stale state is
-cleaned up by hand. The protobuf schemas are the
-exception: `amux.v1` is frozen from 0.9.0 and changes only as
-`proto/amux/v1/README.md` allows (add; reserve a retired number,
-never renumber), which `just proto-compat` checks. `amux.dump` is exempt.
+amux is released. From 0.9.0 on, builds of different versions meet, and a
+build reads what an earlier one left on disk. Three things are promises, and
+a change keeps them:
+
+- **The protocol.** `amux.v1` only adds, as `proto/amux/v1/README.md` says
+  (reserve a retired number; never renumber, retype or rename), which
+  `just proto-compat` checks. `docs/WIRE.md` has the steps for a new field.
+  `amux.dump` is exempt.
+- **The store.** It changes by appending a migration that only adds; a
+  released migration is never edited. `just store-check` checks both, and
+  `docs/JOURNAL_AND_STORE.md` has the steps.
+- **A profile on disk.** What a release wrote, a later build opens: the
+  `account` and `profile` files, and each agent's spec, journal and facts.
+  A new field is one an older file can lack. The upgrade test
+  (`crates/node/tests/upgrade.rs`) opens a profile every release left.
+
+Nothing else is promised. Crate APIs, internals and test formats change
+freely, and nothing gets a shim for a shape no release shipped. A change that
+cannot keep a promise is not made by breaking it: it is the next protocol
+(`amux/2`, beside `amux/1`) or a new column or table.
 
 - Build, test and lint through `just` (`just --list`); `wt` is for worktrees,
   sessions and this tree's daemon. Recipes carry timeouts; a firing timeout is

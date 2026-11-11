@@ -50,9 +50,10 @@ There are two ways to build one:
   the five; a client on the Rust crates reads it for what the calls mean.
 
 The protocol is stable from 0.9.0: fields are added and never renumbered
-([README](../../../proto/amux/v1/README.md)). Before 0.9.0 it changes from
-release to release, so a client built against one release talks to that
-release's daemon; `GetInstallation` says which one is running.
+([README](../../../proto/amux/v1/README.md)), so a client built against one
+release talks to later ones. A daemon older than 0.9.0 speaks a protocol
+that changed from release to release; `GetInstallation` says which version
+is running.
 
 ## Building on amux's Rust crates
 
@@ -81,7 +82,7 @@ ui-view = { git = "https://github.com/amuxhq/amux", tag = "vX.Y.Z" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-Unlike the protocol, the crates promise nothing, before 0.9.0 or after:
+Unlike the protocol, the crates promise nothing:
 their APIs change whenever amux's own clients need them to, so moving to a
 newer tag can mean changing code. They are under the same licence as the
 rest of amux ([LICENSING](../../LICENSING.md)).

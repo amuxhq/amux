@@ -166,6 +166,12 @@
       "why": "The phone has no setup steps left to finish once it is paired."
     },
     {
+      "name": "fleet.settled",
+      "shows": "The settled agents listed in the sidebar in place of the rest, with the way back.",
+      "clients": ["mac"],
+      "why": "Only the Mac draws its settled list as a story so far; the phone's settled page and the terminal's settled agents are not in their catalogues."
+    },
+    {
       "name": "fleet.large-text",
       "shows": "The busy list at the largest accessibility text size.",
       "clients": ["phone"],
@@ -174,12 +180,12 @@
     {
       "name": "hosts.list",
       "shows": "Every paired machine, each saying how it is reached, one away, with one found nearby and not paired.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "hosts.empty",
       "shows": "Hosts with no other machine paired or found.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "hosts.network-refused",

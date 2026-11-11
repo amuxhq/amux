@@ -1,10 +1,40 @@
 import AmuxValues
 import SwiftUI
 
-/// What the main window shows: the profiles and the open one's agents.
+/// The fleet as the sidebar lists it.
+public struct FleetContent: Sendable {
+    /// The runtime's sections, in its order, settled agents among them.
+    public var sections: [FleetSection]
+    /// Whether the runtime has said what it lists: until then an empty list
+    /// is not yet read.
+    public var loaded: Bool
+    /// The clock ages are read against.
+    public var now: Date
+
+    public init(sections: [FleetSection] = [], loaded: Bool = true, now: Date = Date()) {
+        self.sections = sections
+        self.loaded = loaded
+        self.now = now
+    }
+
+    /// Every section but the settled agents'.
+    var live: [FleetSection] { sections.filter { $0.kind != .closed } }
+    var settled: FleetSection? { sections.first { $0.kind == .closed } }
+    var rows: [FleetRow] { sections.flatMap(\.rows) }
+
+    func row(_ agent: AgentKey) -> FleetRow? { rows.first { $0.card.agent == agent } }
+}
+
+/// What the main window shows around the open surface.
 public struct MainContent {
     public var profiles: [ProfileView]
-    public var agents: [FleetCard]
+    /// The profile on screen.
+    public var profile: String?
+    public var fleet: FleetContent
+    /// The machines the profile trusts, this Mac apart.
+    public var hosts: [HostView]
+    /// This Mac, as the profile knows it.
+    public var thisMac: HostView?
     /// How many setting-up steps the window offers to finish.
     public var toFinish: UInt32
     public var problem: String?
@@ -13,181 +43,273 @@ public struct MainContent {
     public var updateReady: Bool
 
     public init(
-        profiles: [ProfileView], agents: [FleetCard], toFinish: UInt32 = 0, problem: String? = nil,
+        profiles: [ProfileView], profile: String? = nil, fleet: FleetContent = FleetContent(),
+        hosts: [HostView] = [], thisMac: HostView? = nil, toFinish: UInt32 = 0, problem: String? = nil,
         note: String? = nil, signingIn: Bool = false, updateReady: Bool = false
     ) {
         self.profiles = profiles
-        self.agents = agents
+        self.profile = profile ?? profiles.first?.id
+        self.fleet = fleet
+        self.hosts = hosts
+        self.thisMac = thisMac
         self.toFinish = toFinish
         self.problem = problem
         self.note = note
         self.signingIn = signingIn
         self.updateReady = updateReady
     }
+
+    var current: ProfileView? { profiles.first { $0.id == profile } }
 }
 
 /// What the main window can ask for.
 public struct MainActions {
+    public var openProfile: @MainActor (String) -> Void
     public var signIn: @MainActor () -> Void
     public var signOut: @MainActor () -> Void
     public var finishSettingUp: @MainActor () -> Void
     public var dismissFinishing: @MainActor () -> Void
     public var restartToUpdate: @MainActor () -> Void
+    public var newAgent: @MainActor () -> Void
+    /// Narrows the fleet to the rows that say these words.
+    public var search: @MainActor (String) -> Void
+    public var toggleFamily: @MainActor (AgentKey) -> Void
+    /// Pins, settles, renames or deletes an agent.
+    public var act: @MainActor (AgentAct, AgentKey) -> Void
 
     public init(
+        openProfile: @escaping @MainActor (String) -> Void = { _ in },
         signIn: @escaping @MainActor () -> Void = {},
         signOut: @escaping @MainActor () -> Void = {},
         finishSettingUp: @escaping @MainActor () -> Void = {},
         dismissFinishing: @escaping @MainActor () -> Void = {},
-        restartToUpdate: @escaping @MainActor () -> Void = {}
+        restartToUpdate: @escaping @MainActor () -> Void = {},
+        newAgent: @escaping @MainActor () -> Void = {},
+        search: @escaping @MainActor (String) -> Void = { _ in },
+        toggleFamily: @escaping @MainActor (AgentKey) -> Void = { _ in },
+        act: @escaping @MainActor (AgentAct, AgentKey) -> Void = { _, _ in }
     ) {
+        self.openProfile = openProfile
         self.signIn = signIn
         self.signOut = signOut
         self.finishSettingUp = finishSettingUp
         self.dismissFinishing = dismissFinishing
         self.restartToUpdate = restartToUpdate
+        self.newAgent = newAgent
+        self.search = search
+        self.toggleFamily = toggleFamily
+        self.act = act
     }
 }
 
-/// The profiles beside the open profile's agents.
-public struct MainScreen: View {
+/// The main window: the rail, the open surface's sidebar, its centre and,
+/// for an agent, the pane on the right.
+///
+/// The sidebar is flush and full height, and the window's buttons sit on
+/// it, as in the developer tools this window sits beside. The centre and
+/// the inspector are the app's to fill: an agent's chat and its changes.
+public struct MainScreen<Detail: View, Inspector: View>: View {
     let content: MainContent
-    @Binding var selected: String?
-    @Binding var selectedAgent: AgentKey?
+    @Binding var place: Place
     let actions: MainActions
+    let detail: Detail
+    let inspector: Inspector
+
+    @State private var sidebarWidth = Metrics.sidebar
+    @State private var inspectorWidth = Metrics.inspector
 
     public init(
-        content: MainContent, selected: Binding<String?>, selectedAgent: Binding<AgentKey?>,
-        actions: MainActions = MainActions()
+        content: MainContent, place: Binding<Place>, actions: MainActions = MainActions(),
+        @ViewBuilder detail: () -> Detail, @ViewBuilder inspector: () -> Inspector
     ) {
         self.content = content
-        _selected = selected
-        _selectedAgent = selectedAgent
+        _place = place
         self.actions = actions
+        self.detail = detail()
+        self.inspector = inspector()
     }
 
-    private var current: ProfileView? { content.profiles.first { $0.id == selected } }
-
     public var body: some View {
-        NavigationSplitView {
-            List(content.profiles, id: \.id, selection: $selected) { profile in
-                ProfileRow(profile: profile)
-            }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 240)
-            .toolbar {
-                if current?.account.binding != .signedIn {
-                    Button("Sign In") { actions.signIn() }
-                        .disabled(content.signingIn)
+        GeometryReader { window in
+            let bar = max(window.safeAreaInsets.top, 38)
+            HStack(spacing: 0) {
+                if place.sidebar {
+                    sidebar(bar: bar)
+                        .frame(width: Metrics.rail + sidebarWidth)
+                        .background(Palette.sidebar)
+                    ColumnEdge(width: $sidebarWidth, range: Metrics.sidebarRange)
+                }
+                centre(bar: bar)
+                    .frame(minWidth: 380, maxWidth: .infinity)
+                    .background(Palette.content)
+                if place.inspector != nil, place.surface == .agents, place.agent != nil {
+                    ColumnEdge(width: $inspectorWidth, range: Metrics.inspectorRange, trailing: true)
+                    inspector
+                        .frame(width: inspectorWidth)
+                        .background(Palette.content)
                 }
             }
-        } detail: {
-            agents
-                .toolbar {
-                    if content.updateReady {
-                        Button("Restart to Complete Update") { actions.restartToUpdate() }
-                            .buttonStyle(.borderless)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
+            .ignoresSafeArea(.container, edges: .top)
+        }
+        .windowChrome()
+        .animation(.snappy(duration: 0.2), value: place.sidebar)
+        .animation(.snappy(duration: 0.2), value: place.inspector)
+    }
+
+    // MARK: - The sidebar
+
+    private func sidebar(bar: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            TopBar(height: bar, leading: Metrics.windowButtons) {
+                BarButton(symbol: "sidebar.left", help: "Hide Sidebar") { place.sidebar = false }
+                Spacer()
+                if place.surface == .agents {
+                    BarButton(symbol: "square.and.pencil", help: "New Agent") { actions.newAgent() }
+                        .keyboardShortcut("n")
                 }
+            }
+            HStack(spacing: 0) {
+                Rail(content: content, surface: $place.surface, actions: actions)
+                    .frame(width: Metrics.rail)
+                surfaceSidebar
+                    .frame(maxWidth: .infinity)
+            }
         }
     }
 
-    private var agents: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if content.toFinish > 0 {
-                FinishSettingUp(count: content.toFinish, actions: actions)
-            }
-            if let problem = content.problem {
-                Text(problem).foregroundStyle(.red).padding()
-            }
-            if let note = content.note {
-                Text(note).foregroundStyle(.secondary).padding([.horizontal, .top])
-            }
-            if let profile = current {
-                HStack {
-                    Text(profile.account.binding == .signedIn ? "Signed in" : "Not signed in")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    if profile.account.binding == .signedIn {
-                        Button("Sign Out") { actions.signOut() }
+    @ViewBuilder private var surfaceSidebar: some View {
+        switch place.surface {
+        case .agents:
+            FleetSidebar(content: content, place: $place, actions: actions)
+        case .hosts:
+            HostsSidebar(content: content, place: $place)
+        }
+    }
+
+    // MARK: - The centre
+
+    private func centre(bar: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            TopBar(height: bar, leading: place.sidebar ? 0 : Metrics.windowButtons) {
+                if !place.sidebar {
+                    BarButton(symbol: "sidebar.left", help: "Show Sidebar") { place.sidebar = true }
+                    if place.surface == .agents {
+                        BarButton(symbol: "square.and.pencil", help: "New Agent") { actions.newAgent() }
                     }
                 }
-                .padding()
-            }
-            List(content.agents, id: \.agent, selection: $selectedAgent) { card in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(card.name.isEmpty ? "agent" : card.name)
-                    Text(card.host).font(.caption).foregroundStyle(.secondary)
+                title
+                Spacer(minLength: 8)
+                if content.updateReady {
+                    Button("Restart to Update") { actions.restartToUpdate() }
+                        .buttonStyle(.borderless)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                if place.surface == .agents, place.agent != nil {
+                    BarButton(
+                        symbol: "sidebar.right", help: place.inspector == nil ? "Show Inspector" : "Hide Inspector",
+                        active: place.inspector != nil
+                    ) {
+                        place.inspector = place.inspector == nil ? .changes : nil
+                    }
+                    .keyboardShortcut("i", modifiers: [.command, .option])
                 }
             }
-            .overlay {
-                if content.agents.isEmpty { Text("No agents").foregroundStyle(.secondary) }
+            notices
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// The open agent's place and name, as a path: where it runs, then what
+    /// it is called.
+    @ViewBuilder private var title: some View {
+        if place.surface == .agents, let agent = place.agent, let row = content.fleet.row(agent) {
+            HStack(spacing: 6) {
+                Text(PlacesWords.place(row))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text("/").foregroundStyle(.tertiary)
+                Text(row.name)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
             }
+            .font(.system(size: 13))
+            .help("\(row.hostName) · \(row.workingDirectory)")
+        }
+    }
+
+    @ViewBuilder private var notices: some View {
+        if let problem = content.problem {
+            Notice(text: problem, symbol: "exclamationmark.triangle", tint: .red)
+        }
+        if let note = content.note {
+            Notice(text: note, symbol: "checkmark.circle", tint: .secondary)
         }
     }
 }
 
-private struct ProfileRow: View {
-    let profile: ProfileView
+extension MainScreen where Inspector == EmptyView {
+    public init(
+        content: MainContent, place: Binding<Place>, actions: MainActions = MainActions(),
+        @ViewBuilder detail: () -> Detail
+    ) {
+        self.init(content: content, place: place, actions: actions, detail: detail, inspector: { EmptyView() })
+    }
+}
+
+/// One line across the top of the centre, about something that happened.
+private struct Notice: View {
+    let text: String
+    let symbol: String
+    let tint: Color
 
     var body: some View {
         HStack(spacing: 8) {
-            Picture(url: URL(string: profile.account.picture), name: name)
-            VStack(alignment: .leading) {
-                Text(name)
-                if !profile.account.email.isEmpty {
-                    Text(profile.account.email).font(.caption).foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    private var name: String {
-        if !profile.account.name.isEmpty { return profile.account.name }
-        return profile.label
-    }
-}
-
-/// The account's picture, or its initial while there is none.
-private struct Picture: View {
-    let url: URL?
-    let name: String
-
-    var body: some View {
-        AsyncImage(url: url) { image in
-            image.resizable().scaledToFill()
-        } placeholder: {
-            Text(name.prefix(1).uppercased())
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.quaternary)
-        }
-        .frame(width: 28, height: 28)
-        .clipShape(Circle())
-    }
-}
-
-/// "Finish Setting Up (n)", until those steps are done or it is dismissed.
-private struct FinishSettingUp: View {
-    let count: UInt32
-    let actions: MainActions
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "checklist").foregroundStyle(.tint)
-            Button("Finish Setting Up (\(count))") { actions.finishSettingUp() }
-                .buttonStyle(.link)
+            Image(systemName: symbol).foregroundStyle(tint)
+            Text(text).foregroundStyle(.secondary)
             Spacer()
-            Button {
-                actions.dismissFinishing()
-            } label: {
-                Image(systemName: "xmark")
-            }
-            .buttonStyle(.borderless)
-            .help("Dismiss")
         }
+        .font(.callout)
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.quaternary.opacity(0.5))
+        .padding(.vertical, 8)
+        .background(Palette.hover)
+    }
+}
+
+/// How a row's place is written in one short line.
+enum PlacesWords {
+    /// The folder's own name, which is how a person knows a repository;
+    /// the host's when there is no folder.
+    static func place(_ row: FleetRow) -> String {
+        let folder = (row.workingDirectory as NSString).lastPathComponent
+        return folder.isEmpty ? row.hostName : folder
+    }
+}
+
+/// The centre with nothing open in it.
+public struct EmptyCentre: View {
+    let surface: Surface
+    let newAgent: @MainActor () -> Void
+
+    public init(surface: Surface, newAgent: @escaping @MainActor () -> Void = {}) {
+        self.surface = surface
+        self.newAgent = newAgent
+    }
+
+    public var body: some View {
+        VStack(spacing: 12) {
+            switch surface {
+            case .agents:
+                Text("Pick an agent, or start one.")
+                    .foregroundStyle(.secondary)
+                Button("New Agent", action: newAgent)
+                    .controlSize(.large)
+            case .hosts:
+                Text("Pick a host to see how this Mac reaches it.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

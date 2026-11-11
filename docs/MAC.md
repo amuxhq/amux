@@ -10,9 +10,36 @@ profile, sign-in and agent it shows is the daemon's. Quitting it, or deleting
 it, leaves amux running.
 
 The window shows the path every desktop client takes: install, attach, set
-the Mac up, sign in, switch profiles, list a profile's agents. Apart from
-setting up and Settings, its screens are a placeholder until the desktop gets
-a design of its own.
+the Mac up, sign in, switch profiles, then the profile's agents and hosts.
+
+## The main window
+
+The main window is laid out like the developer tools it sits beside (Codex,
+Claude, T3 Code): a flush, full-height sidebar with the window's buttons on
+it, the open thing in the centre, and a pane on the right for an agent's
+changes and family.
+
+- **The rail** down the left edge switches between surfaces: Agents and
+  Hosts today, with room for more. Its foot holds Settings and the open
+  profile's picture, whose menu signs in or out and switches profiles. A dot
+  on Agents says something needs the person.
+- **The agents sidebar** lists every agent in the runtime's sections and
+  order (pinned, needing the person, the rest), each row its name and age
+  over the second line every client says. Families fold and list with a
+  chevron; a row's menu pins, settles, renames and deletes. The settled
+  agents sit behind one row anchored at the foot, which swaps the sidebar to
+  them and back. Search narrows the list through the runtime's filter, and
+  the arrow keys move the selection.
+- **The hosts sidebar** lists this Mac, then the machines the profile trusts,
+  each saying how this Mac reaches it.
+- **The top bars** are the title bar's height, so the window's buttons centre
+  in the sidebar's. The centre's bar names the open agent by its folder and
+  name and toggles the right-hand pane (⌥⌘I); a hidden sidebar's buttons move
+  into it.
+
+The window is one `Place`: the surface, the agent or host open, whether the
+sidebar shows the settled agents, and which panes are open. The storybook
+puts a story anywhere by handing one in.
 
 ## Setting up
 
@@ -74,7 +101,10 @@ generated values (`AmuxValues`), which build for macOS as well as iOS:
   the Mac's.
 
 Screens, navigation and layout are the desktop's own; nothing from
-`AmuxFeatures` or `AmuxShell` is linked. They live in the `AmuxMacScreens`
+`AmuxFeatures` or `AmuxShell` is linked. The words are shared: rows and chats
+say what the phone says through `AmuxWords`, and the app's model draws from
+the same `StoreBundle` (fleet, hosts, chats, the new-agent sheet) the phone
+does. They live in the `AmuxMacScreens`
 package, drawn from values and reporting through actions; the app's models in
 `Mac/Sources` hold the state and fill those values in.
 

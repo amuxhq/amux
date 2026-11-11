@@ -13,11 +13,15 @@ let package = Package(
     ],
     targets: [
         // The Mac app's screens, drawn from values and reporting through
-        // actions. Only the values: nothing here may reach `AmuxCore`, whose
-        // Rust bridge would make every storybook build link it.
+        // actions. Only the values and their words: nothing here may reach
+        // `AmuxCore`, whose Rust bridge would make every storybook build
+        // link it.
         .target(
             name: "AmuxMacScreens",
-            dependencies: [.product(name: "AmuxValues", package: "AmuxCore")]),
+            dependencies: [
+                .product(name: "AmuxValues", package: "AmuxCore"),
+                .product(name: "AmuxWords", package: "AmuxCore"),
+            ]),
         // The named screens the storybook draws. The app does not link this.
         .target(
             name: "AmuxMacStories",

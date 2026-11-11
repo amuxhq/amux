@@ -1,4 +1,5 @@
 import AmuxCore
+import AmuxMacScreens
 import AmuxValues
 import AppKit
 import Foundation
@@ -28,12 +29,12 @@ final class AppModel {
     var selected: String? {
         didSet { if selected != oldValue { open(selected) } }
     }
-    /// The open profile's agents, in the order its fleet lists them.
-    private(set) var agents: [FleetCard] = []
-    /// Every machine the open profile knows, this Mac among them.
-    private(set) var hosts: [HostView] = []
-    /// The agent selected in the list.
-    var selectedAgent: AgentKey?
+    /// What the open profile's screens draw: its fleet, hosts, chats and
+    /// the new-agent sheet, in the stores the phone draws from too.
+    private(set) var stores: StoreBundle?
+    /// Where the main window is: its surface, the agent or host open, and
+    /// which panes show.
+    var place = Place()
     /// The installation's settings, as the daemon last answered them.
     private(set) var settings: MachineSettings?
     /// Setting up the open profile.
@@ -108,6 +109,9 @@ final class AppModel {
     private func show(_ listed: [ProfileView]) {
         profiles = listed
         Self.log.notice("profiles: \(listed.count, privacy: .public)")
+        if let stores, let account = listed.first(where: { $0.id == selected })?.account {
+            stores.show(account: account)
+        }
         if selected.map({ id in !listed.contains { $0.id == id } }) ?? true {
             selected = listed.first?.id
         }
@@ -117,12 +121,23 @@ final class AppModel {
     private func open(_ id: String?) {
         setup?.close()
         setup = nil
+        stores?.closeChats()
+        stores?.attach(nil)
+        stores = nil
         profile?.close()
         profile = nil
-        agents = []
-        hosts = []
-        selectedAgent = nil
+        place.agent = nil
+        place.host = nil
+        place.settled = false
         guard let id, let runtime else { return }
+        let stores = StoreBundle(account: AccountId(id))
+        if let account = profiles.first(where: { $0.id == id })?.account {
+            stores.show(account: account)
+        }
+        // Told each time the fleet lands, which can be a moment after it
+        // moved while the window's first frame goes up.
+        stores.saw = { [weak self] _, _ in self?.setup?.fleetMoved() }
+        self.stores = stores
         Task {
             let opened = await Task.detached { () -> Result<Profile, RuntimeFailure> in
                 Result { () throws(RuntimeFailure) in
@@ -134,7 +149,8 @@ final class AppModel {
                 // Another profile was picked while this one opened.
                 guard selected == id else { opened.close(); return }
                 profile = opened
-                list(opened.fleetOpening())
+                stores.attach(opened)
+                Self.log.notice("agents: \(stores.fleet.rows.count, privacy: .public)")
                 setup = Setup(app: self, profile: opened)
                 // The steps arrive with a later step; the screens they open
                 // name this Mac by its settings.
@@ -150,28 +166,24 @@ final class AppModel {
     private func moved(_ moved: Moved, in id: String) {
         guard selected == id else { return }
         switch moved {
-        case .fleet(let delta): list(delta)
-        case .chat: break
-        case .signInOffers(let offers): setup?.offersMoved(offers)
+        case .fleet, .chat: stores?.moved(moved)
+        case .signInOffers(let offers):
+            stores?.moved(moved)
+            setup?.offersMoved(offers)
         case .onboarding(let state): setup?.stepsMoved(state)
         case .pairing(let status): setup?.pairingMoved(status)
         }
     }
 
-    private func list(_ delta: FleetDelta) {
-        if let hosts = delta.hosts { self.hosts = hosts }
-        guard let view = delta.view else {
-            if delta.hosts == nil { Self.log.notice("fleet: no view yet") }
-            return
-        }
-        agents = view.sections.flatMap(\.rows).map(\.card)
-        Self.log.notice("agents: \(self.agents.count, privacy: .public)")
-        setup?.fleetMoved()
-    }
+    /// The open profile's agents, in the order its fleet lists them.
+    var agents: [FleetCard] { stores?.fleet.rows.map(\.card) ?? [] }
+
+    /// The machines the open profile trusts, this Mac apart.
+    var hosts: [HostView] { stores?.hosts.hosts ?? [] }
 
     /// The agents on this Mac.
     var localAgents: [AgentKey] {
-        guard let local = hosts.first(where: \.local)?.hostId else { return [] }
+        guard let local = stores?.hosts.local?.hostId else { return [] }
         return agents.map(\.agent).filter { $0.host == local }
     }
 
@@ -180,8 +192,34 @@ final class AppModel {
 
     /// Selects an agent in the list, saying why.
     func show(_ agent: AgentKey, saying note: String?) {
-        selectedAgent = agent
+        place.surface = .agents
+        place.agent = agent
         self.note = note
+    }
+
+    /// Opens the sheet that starts an agent.
+    func newAgent() {
+        // The sheet comes with the new-agent step.
+    }
+
+    /// Pins, settles, renames or deletes an agent; a refusal is said on the
+    /// window.
+    func act(_ act: AgentAct, on agent: AgentKey) async {
+        guard let stores else { return }
+        let outcome: Result<Nothing, RuntimeFailure> =
+            switch act {
+            case .rename(let name): await stores.rename(name, of: agent)
+            case .close: await stores.close(agent)
+            case .cancelClose: await stores.cancelClose(agent)
+            case .pin: await stores.pin(agent)
+            case .unfile: await stores.unfile(agent)
+            case .delete: await stores.delete(agent)
+            }
+        switch outcome {
+        case .success:
+            if act == .delete, place.agent == agent { place.agent = nil }
+        case .failure(let error): problem = error.description
+        }
     }
 
     // MARK: - Settings

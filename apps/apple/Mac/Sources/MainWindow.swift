@@ -18,9 +18,9 @@ struct AppWindow: View {
             if let setup = model.setup, let content = setup.content {
                 SetupHost(setup: setup, content: content)
             } else {
-                MainScreen(
-                    content: main, selected: $model.selected, selectedAgent: $model.selectedAgent,
-                    actions: actions)
+                MainScreen(content: main, place: $model.place, actions: actions) {
+                    EmptyCentre(surface: model.place.surface) { model.newAgent() }
+                }
             }
         }
     }
@@ -32,19 +32,29 @@ struct AppWindow: View {
     }
 
     private var main: MainContent {
-        MainContent(
-            profiles: model.profiles, agents: model.agents, toFinish: model.setup?.toFinish ?? 0,
-            problem: model.problem, note: model.note, signingIn: model.signingIn,
-            updateReady: model.update != nil)
+        let stores = model.stores
+        return MainContent(
+            profiles: model.profiles, profile: model.selected,
+            fleet: FleetContent(
+                sections: stores?.fleet.sections ?? [], loaded: stores?.fleet.loaded ?? false,
+                now: stores?.fleet.orderedAt ?? Date()),
+            hosts: stores?.hosts.hosts ?? [], thisMac: stores?.hosts.local,
+            toFinish: model.setup?.toFinish ?? 0, problem: model.problem, note: model.note,
+            signingIn: model.signingIn, updateReady: model.update != nil)
     }
 
     private var actions: MainActions {
         MainActions(
+            openProfile: { model.selected = $0 },
             signIn: { Task { await model.signInFromMenu() } },
             signOut: { Task { await model.signOut() } },
             finishSettingUp: { model.setup?.finishSettingUp() },
             dismissFinishing: { model.setup?.dismissFinishing() },
-            restartToUpdate: model.restartToUpdate)
+            restartToUpdate: model.restartToUpdate,
+            newAgent: { model.newAgent() },
+            search: { model.stores?.filterFleet(FleetFilter(words: $0, only: nil)) },
+            toggleFamily: { model.stores?.toggleFamily($0) },
+            act: { act, agent in Task { await model.act(act, on: agent) } })
     }
 }
 

@@ -9290,14 +9290,10 @@ pub struct Profile {
     /// The account's picture, an https URL; empty when it has none.
     #[prost(string, tag = "7")]
     pub picture_url: ::prost::alloc::string::String,
-    /// What the account may do, as amux.sh last said; absent until the
-    /// daemon has read it, and for a profile never signed in.
-    #[prost(message, optional, tag = "8")]
-    pub access: ::core::option::Option<Access>,
     /// The account's identifier at its service, kept after a sign-out: what
     /// makes two profiles' accounts the same. Empty for a profile never signed
     /// in.
-    #[prost(string, tag = "9")]
+    #[prost(string, tag = "8")]
     pub account_subject: ::prost::alloc::string::String,
 }
 impl ::prost::Name for Profile {
@@ -9308,64 +9304,6 @@ impl ::prost::Name for Profile {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Profile".into()
-    }
-}
-/// What an account may do. `pro` is the whole gate; the rest explains it.
-/// What the relay carries for a host this moment is RelayConnected.tier, a
-/// copy of `pro` as old as the host's relay credential.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Access {
-    #[prost(bool, tag = "1")]
-    pub pro: bool,
-    /// When access ends, or ended, in milliseconds since the epoch; absent
-    /// when nothing ends.
-    #[prost(int64, optional, tag = "2")]
-    pub until_ms: ::core::option::Option<i64>,
-    /// Why the account has it; absent when nothing was ever bought or given.
-    #[prost(oneof = "access::Grant", tags = "3, 4")]
-    pub grant: ::core::option::Option<access::Grant>,
-}
-/// Nested message and enum types in `Access`.
-pub mod access {
-    /// Why the account has it; absent when nothing was ever bought or given.
-    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Grant {
-        /// Given without a purchase: complimentary, a trial, a beta.
-        #[prost(message, tag = "3")]
-        Granted(super::Empty),
-        #[prost(message, tag = "4")]
-        Purchased(super::Purchase),
-    }
-}
-impl ::prost::Name for Access {
-    const NAME: &'static str = "Access";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Access".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Access".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Purchase {
-    #[prost(enumeration = "PurchaseStore", tag = "1")]
-    pub store: i32,
-    /// Whether it charges again; a cancelled subscription runs to its end.
-    #[prost(bool, tag = "2")]
-    pub will_renew: bool,
-    /// When it charges again, in milliseconds since the epoch.
-    #[prost(int64, optional, tag = "3")]
-    pub renews_at_ms: ::core::option::Option<i64>,
-}
-impl ::prost::Name for Purchase {
-    const NAME: &'static str = "Purchase";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Purchase".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Purchase".into()
     }
 }
 /// A profile's standing with its cloud account: what the person asked for
@@ -9436,11 +9374,10 @@ impl ::prost::Name for RelayLink {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RelayConnected {
     /// The plan the relay admitted this link on, from the credential the host
-    /// connected with: whether the relay carries streams to and from this host
-    /// now. It follows Profile.access.pro when the credential is next issued,
-    /// so the two differ for a while after a purchase or a lapse. A client
-    /// reads this for what the relay will do and `access` for what the account
-    /// has.
+    /// connected with: whether the relay carries streams to and from this host.
+    /// It is the only statement of the plan here, and the one the relay
+    /// enforces. What the account bought, where, and when it renews are the
+    /// account service's to say, and a client that shows them asks it.
     #[prost(enumeration = "Tier", tag = "1")]
     pub tier: i32,
 }
@@ -9915,35 +9852,6 @@ impl OfferRole {
             "OFFER_ROLE_UNSPECIFIED" => Some(Self::Unspecified),
             "OFFER_ROLE_OFFERER" => Some(Self::Offerer),
             "OFFER_ROLE_RECEIVER" => Some(Self::Receiver),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum PurchaseStore {
-    Unspecified = 0,
-    AppStore = 1,
-    Web = 2,
-}
-impl PurchaseStore {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "PURCHASE_STORE_UNSPECIFIED",
-            Self::AppStore => "PURCHASE_STORE_APP_STORE",
-            Self::Web => "PURCHASE_STORE_WEB",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "PURCHASE_STORE_UNSPECIFIED" => Some(Self::Unspecified),
-            "PURCHASE_STORE_APP_STORE" => Some(Self::AppStore),
-            "PURCHASE_STORE_WEB" => Some(Self::Web),
             _ => None,
         }
     }

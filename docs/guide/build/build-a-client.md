@@ -335,11 +335,12 @@ them, and an installation always keeps at least one.
 | `label` | The profile's name. |
 | `email`, `account_name`, `picture_url` | The account's. `picture_url` is an https URL, empty for none. |
 | `cloud` | Whether it is signed in (below). |
-| `access` | Whether the account is on the paid plan. |
 | `socket_path` | The profile's own socket ([step 5](#5-agents)). |
 
 A profile is signed in when `cloud` holds `signed_in`, whatever its relay
-link is doing. A link in `sign_in_again` means the account service refused
+link is doing. While the link is `connected`, its `tier` is the account's
+plan as the relay applies it: `TIER_PRO` carries connections between the
+account's machines, and `TIER_FREE` only lists them. A link in `sign_in_again` means the account service refused
 the profile's credentials, and the person signs in again. `signed_out` is a
 profile tied to an account and signed out of it; `unbound` was never signed
 in.

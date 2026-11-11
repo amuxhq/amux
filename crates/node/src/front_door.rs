@@ -59,36 +59,12 @@ pub fn info(state: ProfileState) -> wire::Profile {
         account_name: account.name.unwrap_or_default(),
         picture_url: account.picture.unwrap_or_default(),
         account_subject: account.subject,
-        access: state.access.map(access),
         cloud: Some(wire::CloudStanding {
             standing: Some(standing),
         }),
         id: state.id.as_bytes().to_vec(),
         label: state.label,
         socket_path: state.socket.to_string_lossy().into_owned(),
-    }
-}
-
-fn access(access: crate::AccountAccess) -> wire::Access {
-    use wire::access::Grant;
-    wire::Access {
-        pro: access.pro,
-        until_ms: access.until_ms,
-        grant: access.grant.map(|grant| match grant {
-            crate::Grant::Granted => Grant::Granted(Empty {}),
-            crate::Grant::Purchased {
-                store,
-                will_renew,
-                renews_at_ms,
-            } => Grant::Purchased(wire::Purchase {
-                store: match store {
-                    crate::PurchaseStore::AppStore => wire::PurchaseStore::AppStore,
-                    crate::PurchaseStore::Web => wire::PurchaseStore::Web,
-                } as i32,
-                will_renew,
-                renews_at_ms,
-            }),
-        }),
     }
 }
 

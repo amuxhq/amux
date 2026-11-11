@@ -79,10 +79,9 @@ pub use dump::{
 #[cfg(not(target_os = "ios"))]
 pub use edge::mdns_discovery;
 pub use edge::{
-    AccountAccess, Cloud, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge,
-    EdgeOptions, Grant, JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET, LanOptions,
-    LoopbackLink, PurchaseStore, Relay, RelayCarrier, RelayIdentity, RelayQuic, RelayServing,
-    UDP_BLOCKED_MEMORY, test_interfaces,
+    Cloud, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge, EdgeOptions,
+    JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET, LanOptions, LoopbackLink, Relay,
+    RelayCarrier, RelayIdentity, RelayQuic, RelayServing, UDP_BLOCKED_MEMORY, test_interfaces,
 };
 pub use forward::Owner;
 pub use generation::{Generation, boot_id};

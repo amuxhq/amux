@@ -51,8 +51,12 @@ every other job but the policy job runs only if the change can reach it:
 | A crate | Those, the build, the journeys and the simulated stories; the models when the models crate is built from that crate; the pointer checks and the iOS target check when the bridge is; the sanitizers when it is one of the crates whose tests they run |
 | Anything else: a manifest, a script, a workflow, a journey, a schema | Every job |
 
-Which crates a crate is built from is read from the manifests. A run started
-by hand, and a push whose earlier commit cannot be fetched, runs every job. A
+Which crates a crate is built from is read from the manifests. A newer push
+to a branch stops the run of the push before it, in CI and in the iOS gate,
+so a burst of pushes does not queue for runners. A push is therefore compared
+with the last push whose run finished, passing or failing, rather than the
+one before it, whose changes may never have been judged. A run started by
+hand, and a push with no such commit to compare with, runs every job. A
 test that reads a file under `docs/` is listed in the script, whose own tests
 fail on one that is not.
 

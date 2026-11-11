@@ -10,6 +10,12 @@ on:
 permissions:
   contents: read
 
+# A newer push to a branch stops the run of the one before it, which would
+# otherwise hold the runners the newer one waits for.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
@@ -23,6 +29,9 @@ jobs:
     name: What this change affects
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       tests: ${{ steps.affected.outputs.tests }}
       product: ${{ steps.affected.outputs.product }}
@@ -36,15 +45,22 @@ jobs:
         shell: bash
         env:
           EVENT: ${{ github.event_name }}
-          BEFORE: ${{ github.event.before }}
           PULL_BASE: ${{ github.event.pull_request.base.sha }}
-        # A run started by hand names no earlier commit, so every job runs.
+          GH_TOKEN: ${{ github.token }}
+        # A push is compared with the last push whose run finished, passing
+        # or failing, and not with the push before it: that one's run may
+        # have been stopped by this one, its changes never judged. With no
+        # such run, or for a run started by hand, every job runs.
         run: |
           case "$EVENT" in
-            push) base=$BEFORE ;;
+            push)
+              base=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=$GITHUB_REF_NAME&event=push&status=completed&per_page=50" \
+                --jq '[.workflow_runs[] | select(.conclusion == "success" or .conclusion == "failure")][0].head_sha // ""' || true)
+              ;;
             pull_request) base=$PULL_BASE ;;
             *) base= ;;
           esac
+          echo "compared with ${base:-nothing}"
           python3 scripts/ci-affected.py --base "$base" --head "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
 
   check-and-clippy:

@@ -35,6 +35,13 @@ on:
 permissions:
   contents: read
 
+# A newer push to a branch stops the run of the one before it. The gate
+# judges the whole phone, so the newer run covers what the stopped one would
+# have.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"

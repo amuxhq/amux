@@ -3,6 +3,7 @@ import AmuxMacScreens
 import AmuxValues
 import Foundation
 import Observation
+import UniformTypeIdentifiers
 
 /// The shared chat model as the Mac's screens read it.
 ///
@@ -130,6 +131,23 @@ final class MacChat: ChatSurface {
         guard case .ready(let surface) = review, let open = surface as? MacReview else { return }
         model.attach(open.model)
     }
+
+    // MARK: Attaching and settings
+
+    /// Each file is read here and stored on the agent's host; one that
+    /// cannot be read is said in the chat's notice by the model.
+    func attach(files: [URL]) {
+        for url in files {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let type = UTType(filenameExtension: url.pathExtension)
+            model.attach(
+                data, name: url.lastPathComponent, mime: type?.preferredMIMEType ?? "application/octet-stream",
+                image: type?.conforms(to: .image) ?? false)
+        }
+    }
+
+    var settings: SettingsView? { model.settings }
+    func change(_ setting: SettingChange) { model.change(setting) }
 }
 
 /// The shared review model as the Mac's screens read it.

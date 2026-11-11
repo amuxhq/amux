@@ -42,7 +42,7 @@ struct ChatRow: View {
 
     private func runLine(_ words: String, open: Bool, rail: RailJoin) -> some View {
         GridLine(
-            glyph: open ? "chevron.down" : "chevron.right", rail: rail, verb: words, quiet: true, opens: true,
+            glyph: open ? "chevron-down" : "chevron-right", rail: rail, verb: words, quiet: true, opens: true,
             open: open, chevron: false, toggle: toggleRun)
     }
 
@@ -56,12 +56,12 @@ struct ChatRow: View {
                 .padding(.bottom, 14)
         case .thinking(let text, let open, let durationMs):
             GridLine(
-                glyph: "ellipsis", rail: rail, verb: ChatWords.thinking(open: open, durationMs: durationMs),
+                glyph: "brain", rail: rail, verb: ChatWords.thinking(open: open, durationMs: durationMs),
                 quiet: true, detail: expanded && !text.isEmpty ? text : nil, prose: true, opens: !text.isEmpty,
                 open: expanded, toggle: toggle)
         case .toolCall(let server, let tool, let fact, let state, let result):
             GridLine(
-                glyph: glyph(state, "wrench.adjustable"), accented: accented(state), failed: state == .failed,
+                glyph: glyph(state, "wrench"), accented: accented(state), failed: state == .failed,
                 rail: rail,
                 verb: ChatWords.verb(state, row, wants: "Wants to use", doing: "Using", done: "Used"),
                 subject: server.isEmpty ? tool : "\(server) · \(tool)",
@@ -80,7 +80,7 @@ struct ChatRow: View {
                 }
             let who = name.isEmpty ? "a subagent" : name
             GridLine(
-                glyph: glyph(state, action == .start ? "person.badge.plus" : "person.badge.minus"),
+                glyph: glyph(state, action == .start ? "user-plus" : "user-minus"),
                 accented: accented(state), failed: state == .failed, rail: rail, verb: verb,
                 subject: host.isEmpty ? who : "\(who) on \(host)",
                 meta: ChatWords.meta([kind], row, verbPhase: state, note: false), quote: denial,
@@ -90,7 +90,7 @@ struct ChatRow: View {
             fileChange(files, state)
         case .command(let command, let state, let head, let more, let trimmed, _, let durationMs, let exitCode):
             GridLine(
-                glyph: glyph(state, "chevron.left.forwardslash.chevron.right"), accented: accented(state),
+                glyph: glyph(state, "terminal"), accented: accented(state),
                 failed: state == .failed, rail: rail,
                 verb: ChatWords.verb(state, row, wants: "Wants to run", doing: "Running", done: "Ran"),
                 subject: ChatWords.firstLine(command),
@@ -98,14 +98,14 @@ struct ChatRow: View {
                 quote: denial, output: head, trimmed: trimmed, more: more)
         case .explore(let verb, let subject, let state, let result):
             GridLine(
-                glyph: glyph(state, "magnifyingglass"), accented: accented(state), failed: state == .failed,
+                glyph: glyph(state, "search"), accented: accented(state), failed: state == .failed,
                 rail: rail, verb: ChatWords.explore(verb), subject: subject,
                 meta: ChatWords.meta([ChatWords.state(state, decided: row.decision != nil) ?? ""], row, note: false),
                 headTruncation: true, quote: denial, detail: expanded && !result.isEmpty ? result : nil,
                 opens: !result.isEmpty, open: expanded, toggle: toggle)
         case .subagent(let description, let running, let toolCount, let lastTool, let answer, let durationMs):
             GridLine(
-                glyph: "arrow.triangle.branch", rail: rail, verb: "Agent",
+                glyph: "bot", rail: rail, verb: "Agent",
                 subject: ChatWords.firstLine(description),
                 meta: ChatWords.subagent(toolCount: toolCount, durationMs: durationMs),
                 note: running && !lastTool.isEmpty ? "└ \(lastTool)" : nil,
@@ -118,7 +118,7 @@ struct ChatRow: View {
         case .image(let path, let generated, let image):
             VStack(alignment: .leading, spacing: 6) {
                 GridLine(
-                    glyph: "photo", rail: rail, verb: generated ? "Generated image" : "Image",
+                    glyph: "image", rail: rail, verb: generated ? "Generated image" : "Image",
                     subject: path.isEmpty ? image?.name ?? "" : path,
                     meta: image.map { ChatWords.bytes($0.size) } ?? "")
                 if let image, let data = bytes(image), let picture = NSImage(data: data) {
@@ -133,7 +133,7 @@ struct ChatRow: View {
             }
         case .slashOutput(let command, let args, let output):
             GridLine(
-                glyph: "slash.circle", rail: rail, verb: command, subject: args,
+                glyph: "slash", rail: rail, verb: command, subject: args,
                 detail: output.isEmpty ? nil : output, detailLines: expanded ? nil : 6, opens: !output.isEmpty,
                 open: expanded, toggle: toggle)
         case .ask(let ask):
@@ -144,38 +144,38 @@ struct ChatRow: View {
                 .foregroundStyle(failed ? AnyShapeStyle(.red) : AnyShapeStyle(.tertiary))
                 .padding(.bottom, 18)
         case .stopped:
-            GridLine(glyph: "stop", rail: rail, verb: "You stopped it", quiet: true)
+            GridLine(glyph: "circle-stop", rail: rail, verb: "You stopped it", quiet: true)
         case .compaction(let automatic, let after, let before):
             Rule(label: ChatWords.compaction(before: before, after: after, automatic: automatic))
         case .error(let errorKind, let message, let attempts, let gaveUp):
             let detailed = !errorKind.isEmpty && !message.isEmpty
             GridLine(
-                glyph: "exclamationmark.triangle", failed: true, rail: rail,
+                glyph: "triangle-alert", failed: true, rail: rail,
                 verb: errorKind.isEmpty ? ChatWords.firstLine(message) : errorKind,
                 meta: attempts <= 1 ? "" : gaveUp ? "gave up after \(attempts) tries" : "\(attempts) tries",
                 detail: detailed ? message : nil, detailLines: expanded ? nil : 3, opens: detailed, open: expanded,
                 toggle: toggle)
         case .modelSwitch(let to, let reason):
             GridLine(
-                glyph: "arrow.left.arrow.right", rail: rail, verb: "Switched to", subject: to,
+                glyph: "arrow-left-right", rail: rail, verb: "Switched to", subject: to,
                 note: reason.isEmpty ? nil : reason)
         case .boundary(let kind, let cause):
             Rule(label: ChatWords.boundary(kind, cause: cause))
         case .agentMessage(let from, let kind, let text, let to, let sent, let rejection):
             GridLine(
-                glyph: to.isEmpty ? "arrow.turn.down.left" : "arrow.turn.up.right", failed: sent == .rejected,
+                glyph: to.isEmpty ? "corner-down-left" : "corner-up-right", failed: sent == .rejected,
                 rail: rail, verb: to.isEmpty ? "From" : "To", subject: to.isEmpty ? from : to,
                 meta: messageMeta(kind, sent, rejection),
                 detail: ChatWords.text(of: text).trimmingCharacters(in: .whitespacesAndNewlines), prose: true,
                 detailLines: expanded ? nil : 1, opens: true, open: expanded, toggle: toggle)
         case .autoReview(let status, let statusWord, let risk, let rationale, _):
             GridLine(
-                glyph: "checkmark.shield", rail: rail, verb: ChatWords.autoReview(status, statusWord),
+                glyph: "shield-check", rail: rail, verb: ChatWords.autoReview(status, statusWord),
                 meta: risk.isEmpty ? "" : "\(risk) risk", detail: expanded && !rationale.isEmpty ? rationale : nil,
                 prose: true, opens: !rationale.isEmpty, open: expanded, toggle: toggle)
         case .unrecognized(let what, let summary):
             GridLine(
-                glyph: "questionmark.square.dashed", rail: rail, verb: "Unreadable", subject: what,
+                glyph: "file-question", rail: rail, verb: "Unreadable", subject: what,
                 note: summary.isEmpty ? nil : ChatWords.firstLine(summary))
         case .hidden:
             EmptyView()
@@ -186,7 +186,7 @@ struct ChatRow: View {
         let tail = ChatWords.meta([ChatWords.state(state, decided: row.decision != nil) ?? ""], row, note: false)
         if files.isEmpty {
             GridLine(
-                glyph: glyph(state, "plusminus"), accented: accented(state), failed: state == .failed, rail: rail,
+                glyph: glyph(state, "file-pen"), accented: accented(state), failed: state == .failed, rail: rail,
                 verb: "Editing", meta: tail, quote: denial)
         } else {
             VStack(alignment: .leading, spacing: 0) {
@@ -204,11 +204,11 @@ struct ChatRow: View {
 
     private static func words(_ file: FileRow) -> (glyph: String, verb: String, change: (UInt32, UInt32)?) {
         switch file.change {
-        case .edited: ("plusminus", "", (file.added, file.removed))
-        case .created(let lines): ("square.and.pencil", "Created", (lines, 0))
-        case .deleted: ("trash", "Deleted", nil)
-        case .moved(let to): ("arrow.right", "Moved to \(to)", nil)
-        case .writing(let lines): ("square.and.pencil", "Writing", (lines, 0))
+        case .edited: ("file-pen", "", (file.added, file.removed))
+        case .created(let lines): ("file-plus", "Created", (lines, 0))
+        case .deleted: ("file-x", "Deleted", nil)
+        case .moved(let to): ("file-symlink", "Moved to \(to)", nil)
+        case .writing(let lines): ("file-plus", "Writing", (lines, 0))
         }
     }
 
@@ -217,7 +217,7 @@ struct ChatRow: View {
         case .plan(let body, let verdict, _, _, let writing, let note, let title):
             VStack(alignment: .leading, spacing: 8) {
                 GridLine(
-                    glyph: "list.bullet.clipboard", accented: verdict == .open, rail: rail,
+                    glyph: "list-checks", accented: verdict == .open, rail: rail,
                     verb: Self.planVerb(verdict), subject: title ?? "", meta: writing ? "writing" : "",
                     note: note)
                 ProseView(source: body, streaming: writing, quiet: false)
@@ -231,7 +231,7 @@ struct ChatRow: View {
                 ForEach(Array(questions.enumerated()), id: \.offset) { index, question in
                     let answered = index < answers.count ? ChatWords.answer(answers[index]) : ""
                     GridLine(
-                        glyph: resolution == .open ? "hand.raised" : "questionmark.bubble",
+                        glyph: resolution == .open ? "hand" : "circle-help",
                         accented: resolution == .open,
                         rail: index == questions.count - 1 && reply == nil
                             ? rail : RailJoin(continues: true, nested: rail.nested),
@@ -239,12 +239,12 @@ struct ChatRow: View {
                         meta: ChatWords.resolution(resolution, answered: answered), prose: true)
                 }
                 if let reply {
-                    GridLine(glyph: "text.bubble", rail: rail, verb: "You replied", note: reply)
+                    GridLine(glyph: "message-square-text", rail: rail, verb: "You replied", note: reply)
                 }
             }
         case .form(let server, let message, let fields, let resolution):
             GridLine(
-                glyph: "list.bullet.rectangle", accented: resolution == .open, rail: rail, verb: server,
+                glyph: "list-checks", accented: resolution == .open, rail: rail, verb: server,
                 subject: message,
                 meta: ChatWords.resolution(resolution, answered: "Sent \(fields.count) fields"))
         case .link(let server, let message, let url, let resolution):
@@ -253,11 +253,11 @@ struct ChatRow: View {
                 meta: ChatWords.resolution(resolution, answered: "Opened"), note: url)
         case .grant(let reason, _, _, _, _, let resolution, _):
             GridLine(
-                glyph: "lock.open", accented: resolution == .open, rail: rail, verb: "Asked for access",
+                glyph: "lock-open", accented: resolution == .open, rail: rail, verb: "Asked for access",
                 subject: reason, meta: ChatWords.resolution(resolution, answered: "Granted"))
         case .unanswerable(let reason, let resolution):
             GridLine(
-                glyph: "questionmark.square.dashed", accented: resolution == .open, rail: rail,
+                glyph: "file-question", accented: resolution == .open, rail: rail,
                 verb: "Asked in its terminal", subject: reason,
                 meta: ChatWords.resolution(resolution, answered: "Answered"))
         }
@@ -274,8 +274,8 @@ struct ChatRow: View {
 
     private func glyph(_ phase: CallPhase, _ done: String) -> String {
         switch phase {
-        case .denied, .asking: "hand.raised"
-        case .cancelled: "nosign"
+        case .denied, .asking: "hand"
+        case .cancelled: "ban"
         case .pending, .running, .succeeded, .failed: done
         }
     }
@@ -372,8 +372,7 @@ struct GridLine: View {
 
     /// The glyph, with the rail running down from it to the next row.
     private var mark: some View {
-        Image(systemName: glyph)
-            .font(.system(size: 11, weight: .medium))
+        Icon(glyph, size: 13)
             .foregroundStyle(ink)
             .frame(width: Self.cell, height: 18)
             .frame(maxHeight: .infinity, alignment: .top)
@@ -410,8 +409,7 @@ struct GridLine: View {
                 Text(meta).foregroundStyle(.tertiary).lineLimit(1)
             }
             if opens, chevron {
-                Image(systemName: open ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 8, weight: .semibold))
+                Icon(open ? "chevron-down" : "chevron-right", size: 11)
                     .foregroundStyle(hovering ? .secondary : .tertiary)
             }
         }

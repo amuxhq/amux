@@ -55,6 +55,11 @@ public protocol ChatSurface: AnyObject {
     /// What goes with the draft: pastes, files and a review's comments.
     var attachments: [DraftAttachment] { get }
     func removeAttachment(at index: Int)
+    /// Adds files to the draft, each stored on the agent's host first.
+    func attach(files: [URL])
+    /// What the agent offers to change, the current values marked.
+    var settings: SettingsView? { get }
+    func change(_ setting: SettingChange)
     var canSend: Bool { get }
     var canResume: Bool { get }
     var sending: Bool { get }

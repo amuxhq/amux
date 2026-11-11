@@ -281,7 +281,7 @@ public enum Stories {
 
     // MARK: - Starting an agent
 
-    @MainActor private static func starting() -> StillNewAgent {
+    @MainActor static func starting() -> StillNewAgent {
         StillNewAgent(
             hosts: [thisMac, buildBox] + paired.dropFirst(), machine: thisMac.hostId,
             repositories: [
@@ -296,8 +296,13 @@ public enum Stories {
             directory: home("/src/amux"))
     }
 
+    /// What a Claude agent offers to change, as a chat's settings hold it.
+    @MainActor static var claude: SettingsView { starting().settings! }
+
     private static let newAgent = [
-        Story("new-agent.claude", window: .sheet) { NewAgentSheet(surface: starting()) },
+        Story("new-agent.claude") {
+            MainStory(MainContent(profiles: [signedIn], fleet: busy, hosts: paired, thisMac: thisMac))
+        },
         Story("new-agent.browsing", window: .sheet) {
             DirectoryChooser(surface: starting())
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -457,12 +462,12 @@ public enum Stories {
     private static let chat = [
         chatStory("chat.loading", notes) { StillChat(rows: [], frame: nil, loading: true) },
         chatStory("chat.working", notes) {
-            StillChat(rows: workingRows, frame: frame(notes.card, .working, activity: .running(key: "r5")))
+            StillChat(rows: workingRows, frame: frame(notes.card, .working, activity: .running(key: "r5")), settings: claude)
         },
         chatStory("chat.conversation", flaky) {
             StillChat(
                 rows: conversationRows, frame: frame(flaky.card, .idle),
-                changes: ChangeTotals(files: 1, added: 6, removed: 3))
+                changes: ChangeTotals(files: 1, added: 6, removed: 3), settings: claude)
         },
         chatStory("chat.asking", flaky) {
             StillChat(
@@ -480,16 +485,16 @@ public enum Stories {
                     ],
                     questionNote: true, questionSkip: true, questionReply: true, stopsTurn: true, defaultToNo: false,
                     state: .open),
-                changes: ChangeTotals(files: 1, added: 6, removed: 3))
+                changes: ChangeTotals(files: 1, added: 6, removed: 3), settings: claude)
         },
         Story("chat.overview") {
             MainStory(
                 MainContent(profiles: [signedIn], fleet: busy, hosts: paired, thisMac: thisMac),
-                place: Place(agent: flaky.card.agent, inspector: .changes),
+                place: Place(agent: flaky.card.agent, changes: true),
                 chat: {
                     let chat = StillChat(
                         rows: conversationRows, frame: frame(flaky.card, .idle),
-                        changes: ChangeTotals(files: 1, added: 6, removed: 3))
+                        changes: ChangeTotals(files: 1, added: 6, removed: 3), settings: claude)
                     chat.reviewing = StillReview(doc: review, selected: ReviewSpot(file: 0, hunk: 0, line: 6))
                     return chat
                 }())
@@ -532,6 +537,7 @@ private struct MainStory: View {
     let content: MainContent
     let chat: StillChat?
     @State private var place: Place
+    @State private var starting = Stories.starting()
 
     init(_ content: MainContent, place: Place = Place(), chat: StillChat? = nil) {
         self.content = content
@@ -541,10 +547,13 @@ private struct MainStory: View {
 
     var body: some View {
         MainScreen(content: content, place: $place) {
-            if let chat, let agent = place.agent {
+            if place.surface == .agents, let chat, let agent = place.agent {
                 ChatPane(
                     chat: chat, row: content.fleet.sections.flatMap(\.rows).first { $0.card.agent == agent },
-                    inspectorOpen: place.inspector != nil, openInspector: { place.inspector = $0 })
+                    changesOpen: place.changes,
+                    actions: AgentActions(openChanges: { place.changes = true }, reveal: {}, openEditor: {}))
+            } else if place.surface == .agents, place.agent == nil {
+                NewAgentPage(surface: starting)
             } else if place.surface == .hosts, let id = place.host,
                 let host = ([content.thisMac].compactMap { $0 } + content.hosts).first(where: { $0.hostId == id })
             {
@@ -556,8 +565,8 @@ private struct MainStory: View {
                 EmptyCentre(surface: place.surface)
             }
         } inspector: {
-            if let chat, let tab = place.inspector {
-                InspectorPane(tab: tab, chat: chat, family: nil)
+            if let chat, place.changes {
+                ChangesPane(chat: chat) { place.changes = false }
             }
         }
     }

@@ -34,8 +34,7 @@ public struct HostPage: View {
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 10) {
-                        Image(systemName: HostWords.symbol(host))
-                            .font(.system(size: 22))
+                        Icon(HostWords.symbol(host), size: 26)
                             .foregroundStyle(.secondary)
                         Text(PlaceNames.host(host.name)).font(.system(size: 22, weight: .semibold))
                     }

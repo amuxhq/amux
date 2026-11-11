@@ -17,64 +17,93 @@ the Mac up, sign in, switch profiles, then the profile's agents and hosts.
 The main window is laid out like the developer tools it sits beside (Codex,
 Claude, T3 Code): a flush, full-height sidebar with the window's buttons on
 it, the open thing in the centre, and a pane on the right for an agent's
-changes and family.
+changes. It is designed as a desktop app — menus, shortcuts, hover, drag and
+drop, the person's own Terminal, Finder and editor — not as the phone's
+screens made larger.
 
 - **The rail** down the left edge switches between surfaces: Agents and
   Hosts today, with room for more. Its foot holds Settings and the open
   profile's picture, whose menu signs in or out and switches profiles. A dot
   on Agents says something needs the person.
-- **The agents sidebar** lists every agent in the runtime's sections and
-  order (pinned, needing the person, the rest), each row its name and age
-  over the second line every client says. Families fold and list with a
-  chevron; a row's menu pins, settles, renames and deletes. The settled
-  agents sit behind one row anchored at the foot, which swaps the sidebar to
-  them and back. Search narrows the list through the runtime's filter, and
-  the arrow keys move the selection.
+- **The agents sidebar** opens with New Agent (⌘N) and Search (⌘F) as plain
+  rows, then every agent in the runtime's sections and order (pinned,
+  needing the person, the rest). A row is one line, its name and, at its
+  end, what it is doing: a spinner while it works, an accent dot when it
+  needs the person, a red mark when it failed, a cloud when its host cannot
+  be reached, otherwise its age. Only a row that needs the person or failed
+  takes a second line, saying what is asked or what went wrong. Hovering a
+  row swaps its end for pin and settle buttons; its menu pins, settles,
+  renames and deletes. Families fold under a chevron. The settled agents sit
+  behind one row anchored at the foot, which swaps the sidebar to them and
+  back. Search narrows the list through the runtime's filter, and the arrow
+  keys move the selection.
 - **The hosts sidebar** lists this Mac, then the machines the profile trusts,
   each saying how this Mac reaches it. Picking one opens its page in the
   centre: its platform, version, which providers are signed in, its
   addresses, what being away or offline means for its agents, and the
   agents on it, each opening its chat. A paired machine's page ends with
   Stop Trusting, which revokes it after a confirmation.
-- **New Agent** (the sidebar's compose button, or the empty centre's) is a
-  sheet with everything on it at once, as on the phone: the host, this Mac
-  to begin with, where an unreachable one is listed and cannot be picked;
-  the directory, with the host's recent folders and repositories as chips
-  and the rest in a popover that searches as typed and takes a path; the
-  agent, with the model, effort, permission and mode its host offers; a new
-  worktree; and the name. The button names the host it starts on. The agent
-  that starts opens in the centre and the sheet closes; a refusal is said
-  above the button in the host's words.
+- **New Agent** is the empty centre, not a sheet: a heading naming the
+  folder, a composer for the first message, and chips under it for the
+  host (this Mac to begin with; an unreachable one cannot be picked), the
+  folder (the host's recent folders and repositories, and a popover that
+  searches as typed and takes a path), the agent with the model, effort and
+  mode its host offers and a new worktree, and the permission. Return
+  starts the agent on the host the placeholder names, opens its chat, and
+  sends the message as its first prompt once the chat is ready for it. A
+  refusal is said under the composer in the host's words.
 - **The top bars** are the title bar's height, so the window's buttons centre
-  in the sidebar's. The centre's bar names the open agent by its folder and
-  name and toggles the right-hand pane (⌥⌘I); a hidden sidebar's buttons move
+  in the sidebar's. The sidebar's bar holds the sidebar toggle and back and
+  forward through the agents opened (⌘[ and ⌘]). The centre's names the open
+  agent by its folder and name, with a menu to open it in Terminal, pin and
+  settle it; then Open in Terminal (⇧⌘T), which runs
+  `amux attach <agent> --in native` in Terminal for the agent's own
+  interface; then the changes toggle (⌥⌘I). A hidden sidebar's buttons move
   into it.
-
-- **The chat** fills the centre down a reading width: the person's prompts
-  in bubbles on the right, the agent's markdown as blocks, and its work on
-  one grid of glyph, verb, subject and meta joined by a rail, with runs of
-  tool steps folded as the phone and terminal fold them. What the agent is
-  doing sits under the newest row; the queue, the head ask and the composer
-  sit under the feed. The ask card shows what is asked in full with the
-  provider's answers as buttons, a question's options to pick, and a note
-  for an answer that takes one. The composer grows with the draft; Return
-  sends, Shift-Return starts a line, ⌘. stops the turn, and a long paste
-  becomes an attachment as on the phone.
-- **The floating card** at the chat's top right, while the right-hand pane is
-  closed, names the host, folder and branch, and the changes and family,
-  each opening the pane on itself. It floats in the margin when the margin
-  holds it, moves the chat left to make room while the chat stays readable,
-  and otherwise folds to a pill of the change counts.
-- **The right-hand pane** shows the changes as the host freezes them, against
-  the last commit or the branch's base, a file at a time; a click picks a
+- **The chat** fills the centre down a reading width. A finished turn reads
+  answer first: the prompt, a "Worked for …" line summarising the steps,
+  then the agent's final words, with the steps folded under the line; an
+  error stays in view. Under the answer sit copy and, when the turn changed
+  files, their count, which opens the changes. The turn still running shows
+  its steps as they happen, on one grid of glyph, verb, subject and meta.
+  Code blocks name their language and copy on hover. The queue, the head ask
+  and the composer sit under the feed. The ask card shows what is asked in
+  full with the provider's answers as buttons, the expected one drawn solid
+  and on Return; a question's options to pick; and a note for an answer that
+  takes one.
+- **The composer** grows with the draft; Return sends, Shift-Return starts a
+  line, ⌘. stops the turn, and a long paste becomes an attachment. Under it:
+  + attaches files (dropping them on it does too), the permission the agent
+  works under as a menu (orange when it never asks), and the model and
+  effort as a menu of what the agent offers, each changing the agent as
+  picked.
+- **The floating card** at the chat's top right, while the changes pane is
+  closed, names the host, folder (its full path on hover) and branch; the
+  changes, opening the pane; the agent's parent and children as Lineage,
+  each opening its chat; and Open in Terminal, and for an agent on this Mac,
+  Show in Finder and Open in the first editor installed (VS Code, Cursor,
+  Zed, Sublime Text, Xcode). It floats in the margin when the margin holds
+  it, moves the chat left to make room while the chat stays readable, and
+  otherwise folds to a pill of the change counts.
+- **The changes pane** on the right shows the changes as the host freezes
+  them, against the last commit or the branch's base (a menu in its bar),
+  a file at a time, with their counts, reload and close. A click picks a
   line to comment on and Shift-click takes in more, and the written comments
-  go into the draft for the next message. Its other tab lists the agent's
-  parent and children, each opening its own chat. In a window too narrow for
-  all three columns the pane gives way to its narrowest, then the sidebar
-  steps aside while it is open.
+  go into the draft for the next message. In a window too narrow for all
+  three columns the pane gives way to its narrowest, then the sidebar steps
+  aside while it is open.
+- **The menu bar** carries what the window does: New Agent (⌘N); Show or
+  Hide Sidebar (⌃⌘S) and Changes (⌥⌘I), Agents (⌘1) and Hosts (⌘2) in View;
+  Back and Forward in Go; Open in Terminal in Agent.
+
+The icons are [Lucide](https://lucide.dev)'s, under the ISC licence, bundled
+as SVG in `AmuxMacScreens/Icons` with that licence beside them and drawn as
+template images, so they take the text colour. Add one by copying its SVG
+there with the stroke set to `#000` and its width to 1.75.
 
 The window is one `Place`: the surface, the agent or host open, whether the
-sidebar shows the settled agents, and which panes are open. The storybook
+sidebar shows the settled agents, whether the changes pane is open, and the
+agents opened before and after the one in view. The storybook
 puts a story anywhere by handing one in.
 
 The screens read a chat through `ChatSurface` and a review through
@@ -148,7 +177,7 @@ generated values (`AmuxValues`), which build for macOS as well as iOS:
 Screens, navigation and layout are the desktop's own; nothing from
 `AmuxFeatures` or `AmuxShell` is linked. The words are shared: rows and chats
 say what the phone says through `AmuxWords`, and the app's model draws from
-the same `StoreBundle` (fleet, hosts, chats, the new-agent sheet) the phone
+the same `StoreBundle` (fleet, hosts, chats, starting an agent) the phone
 does. They live in the `AmuxMacScreens`
 package, drawn from values and reporting through actions; the app's models in
 `Mac/Sources` hold the state and fill those values in.

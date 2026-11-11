@@ -83,6 +83,9 @@ final class MacNewAgent: NewAgentSurface {
         set { model.choose(name: newValue) }
     }
 
+    /// The first message, sent to the agent once its chat opens.
+    var prompt = ""
+
     var starting: Bool { model.starting }
     var failure: String? { model.failure }
     var ready: Bool { model.ready }

@@ -14,6 +14,7 @@ struct FleetSidebar: View {
     @State private var newName = ""
     @State private var deleting: FleetRow?
     @FocusState private var listFocused: Bool
+    @FocusState private var searching: Bool
 
     private var fleet: FleetContent { content.fleet }
 
@@ -22,10 +23,15 @@ struct FleetSidebar: View {
             if place.settled {
                 settledHeader
             } else {
-                SearchField(text: $search)
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 6)
-                    .onChange(of: search) { _, words in actions.search(words) }
+                VStack(spacing: 1) {
+                    SidebarAction(symbol: "square-pen", title: "New Agent", shortcut: "⌘N") {
+                        actions.newAgent()
+                    }
+                    SearchField(text: $search, focused: $searching)
+                        .onChange(of: search) { _, words in actions.search(words) }
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 4)
                 if content.toFinish > 0 {
                     FinishSettingUp(count: content.toFinish, actions: actions)
                 }
@@ -34,6 +40,14 @@ struct FleetSidebar: View {
             if !place.settled, let settled = fleet.settled {
                 SettledFoot(count: Int(settled.families)) { place.settled = true }
             }
+        }
+        .background {
+            // ⌘F reaches the search from anywhere in the window.
+            Button("Search") { searching = true }
+                .keyboardShortcut("f")
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
         }
         .alert("Rename Agent", isPresented: isRenaming, presenting: renaming) { row in
             TextField("Name", text: $newName)
@@ -110,7 +124,7 @@ struct FleetSidebar: View {
     private func item(_ row: FleetRow) -> some View {
         FleetRowView(
             row: row, now: fleet.now, selected: place.agent == row.card.agent,
-            toggleFamily: { actions.toggleFamily(row.card.agent) }
+            toggleFamily: { actions.toggleFamily(row.card.agent) }, quick: quick(row)
         )
         .onTapGesture {
             place.agent = row.card.agent
@@ -140,6 +154,24 @@ struct FleetSidebar: View {
         place.agent = keys[next]
         reader.scrollTo(Entry.ID.row(keys[next]))
         return .handled
+    }
+
+    /// What a row offers under the pointer: pinning and settling, the two
+    /// things done to many rows in a row.
+    private func quick(_ row: FleetRow) -> [QuickAction] {
+        let agent = row.card.agent
+        var quick: [QuickAction] = []
+        if row.pinned {
+            quick.append(QuickAction(symbol: "pin-off", help: "Unpin") { actions.act(.unfile, agent) })
+        } else if row.pinnable {
+            quick.append(QuickAction(symbol: "pin", help: "Pin") { actions.act(.pin, agent) })
+        }
+        if row.closed {
+            quick.append(QuickAction(symbol: "archive-restore", help: "Unsettle") { actions.act(.unfile, agent) })
+        } else if !row.card.closeHeld {
+            quick.append(QuickAction(symbol: "circle-check", help: "Settle") { actions.act(.close, agent) })
+        }
+        return quick
     }
 
     @ViewBuilder private func menu(_ row: FleetRow) -> some View {
@@ -176,19 +208,20 @@ struct FleetSidebar: View {
         Button {
             place.settled = false
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
+            HStack(spacing: 8) {
+                Icon("chevron-left", size: 14)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18)
                 Text("Settled").font(.system(size: 13, weight: .semibold))
                 Spacer()
             }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 8)
             .frame(height: 28)
             .contentShape(Rectangle())
         }
         .buttonStyle(HoverButtonStyle())
         .padding(.horizontal, 8)
-        .padding(.bottom, 6)
+        .padding(.bottom, 4)
         .keyboardShortcut(.escape, modifiers: [])
     }
 
@@ -202,59 +235,109 @@ struct FleetSidebar: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
         } else {
-            VStack(spacing: 10) {
-                Text("No agents yet").foregroundStyle(.secondary)
-                Button("New Agent") { actions.newAgent() }
-            }
+            Text("No agents yet").foregroundStyle(.tertiary)
         }
     }
 }
 
-/// One agent: its name and age, then what it is doing or wants.
+/// Something a row offers under the pointer.
+struct QuickAction {
+    let symbol: String
+    let help: String
+    let action: () -> Void
+}
+
+/// One agent on one line: its name, and at the end what state it is in or
+/// how long ago it last moved. A row waiting on the person, or one that
+/// failed, says why on a second line: those are the rows to act on.
 struct FleetRowView: View {
     let row: FleetRow
     let now: Date
     let selected: Bool
     let toggleFamily: () -> Void
+    var quick: [QuickAction] = []
 
     @State private var hovering = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 4) {
-            disclosure
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(row.name)
-                        .font(.system(size: 13, weight: needsYou ? .semibold : .regular))
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    if needsYou {
-                        Circle().fill(Color.accentColor).frame(width: 7, height: 7)
-                    }
-                    Text(row.age(at: now))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                        .monospacedDigit()
-                }
-                Text(second.text)
-                    .font(.system(size: 12))
-                    .foregroundStyle(second.color)
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 6) {
+                disclosure
+                Text(row.name)
+                    .font(.system(size: 13))
+                    .foregroundStyle(dimmed ? .secondary : .primary)
                     .lineLimit(1)
+                Spacer(minLength: 4)
+                trailing
+            }
+            .frame(height: 20)
+            if let line = actionable {
+                Text(line.text)
+                    .font(.system(size: 12))
+                    .foregroundStyle(line.color)
+                    .lineLimit(1)
+                    .padding(.leading, 18)
             }
         }
-        .padding(.leading, 6 + CGFloat(row.depth) * 14)
-        .padding(.trailing, 10)
-        .padding(.vertical, 6)
+        .padding(.leading, 4 + CGFloat(row.depth) * 16)
+        .padding(.trailing, 8)
+        .padding(.vertical, 4)
         .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(selected ? Palette.selection : (hovering ? Palette.hover : .clear)))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+        .help(described)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
     }
 
-    private var needsYou: Bool { row.card.familyAttention == .needsYou }
+    private var state: RowState { RowState(row: row) }
+
+    /// Settled and finished agents read quieter than the ones at work.
+    private var dimmed: Bool {
+        switch state {
+        case .settled, .exited(.ended), .exited(.finished): true
+        default: false
+        }
+    }
+
+    /// Under the pointer, the row's own actions; else its state, else its
+    /// age.
+    @ViewBuilder private var trailing: some View {
+        if hovering, !quick.isEmpty {
+            HStack(spacing: 0) {
+                ForEach(Array(quick.enumerated()), id: \.offset) { _, action in
+                    Button(action: action.action) {
+                        Icon(action.symbol, size: 13)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 22, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(HoverButtonStyle())
+                    .help(action.help)
+                }
+            }
+        } else {
+            switch state {
+            case .needsYou:
+                Circle().fill(Color.accentColor).frame(width: 7, height: 7).frame(width: 14)
+            case .working, .starting:
+                Working()
+            case .exited(.failed):
+                Icon("circle-alert", size: 13)
+                    .foregroundStyle(.red)
+            case .hostOffline, .hostAway:
+                Icon("cloud-off", size: 13)
+                    .foregroundStyle(.tertiary)
+            default:
+                Text(row.age(at: now))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+            }
+        }
+    }
 
     /// A chevron for a family's members, folded or listed; the same room
     /// left blank on a row without any, so names line up.
@@ -262,37 +345,55 @@ struct FleetRowView: View {
         Group {
             if row.children > 0 {
                 Button(action: toggleFamily) {
-                    Image(systemName: row.expanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
+                    Icon(row.expanded ? "chevron-down" : "chevron-right", size: 11)
                         .foregroundStyle(.tertiary)
-                        .frame(width: 12, height: 17)
+                        .frame(width: 12, height: 18)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help(row.expanded ? "Fold the family" : "List the family")
             } else {
-                Color.clear.frame(width: 12, height: 17)
+                Color.clear.frame(width: 12, height: 18)
             }
         }
     }
 
-    /// The second line: what the agent asks or is doing, as every client
-    /// words it, else its state and host.
-    private var second: (text: String, color: Color) {
-        let state = RowState(row: row)
-        if let loud = row.loud,
-            let said = FleetWords.secondLine(loud.secondLine, kind: row.card.kind, now: now)
-        {
-            return ("\(loud.name): \(said.text)", color(said.ink))
+    /// The second line, only where there is something to act on: what the
+    /// agent asks, or why it stopped.
+    private var actionable: (text: String, color: Color)? {
+        switch state {
+        case .needsYou, .exited(.failed): return said
+        default:
+            if let loud = row.loud, let line = FleetWords.secondLine(loud.secondLine, kind: row.card.kind, now: now),
+                line.ink == .ask
+            {
+                return ("\(loud.name): \(line.text)", .accentColor)
+            }
+            return nil
         }
-        if let said = FleetWords.secondLine(
+    }
+
+    /// What the row would say on its second line, as every client words it.
+    private var said: (text: String, color: Color) {
+        if let loud = row.loud,
+            let line = FleetWords.secondLine(loud.secondLine, kind: row.card.kind, now: now)
+        {
+            return ("\(loud.name): \(line.text)", color(line.ink))
+        }
+        if let line = FleetWords.secondLine(
             row.secondLine, kind: row.card.kind, now: now, backgroundJobs: row.card.backgroundJobs)
         {
-            return (said.text, color(said.ink))
+            return (line.text, color(line.ink))
         }
         let word = state.word ?? ""
         let host = PlaceNames.host(row.hostName)
         return (state.namesTheHost ? word : "\(word) · \(host)", .secondary)
+    }
+
+    /// The row in full, for the tooltip: its state, host and folder.
+    private var described: String {
+        [said.text, "\(PlaceNames.host(row.hostName)) · \(PlaceNames.path(row.workingDirectory))"]
+            .filter { !$0.isEmpty }.joined(separator: "\n")
     }
 
     private func color(_ ink: FleetWords.Ink) -> Color {
@@ -302,19 +403,6 @@ struct FleetRowView: View {
         case .warning: .orange
         case .error: .red
         }
-    }
-}
-
-struct SectionTitle: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.tertiary)
-            .padding(.leading, 10)
-            .padding(.top, 12)
-            .padding(.bottom, 4)
     }
 }
 
@@ -331,13 +419,12 @@ private struct SettledFoot: View {
                     Text("Settled")
                     Spacer()
                     Text("\(count)").foregroundStyle(.tertiary).monospacedDigit()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
+                    Icon("chevron-right", size: 12)
                         .foregroundStyle(.tertiary)
                 }
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 8)
                 .frame(height: 30)
                 .contentShape(Rectangle())
             }
@@ -348,32 +435,53 @@ private struct SettledFoot: View {
     }
 }
 
+/// Search as a plain row, the field showing only once it is used, as the
+/// references' is.
 struct SearchField: View {
     @Binding var text: String
     var prompt = "Search"
+    var focused: FocusState<Bool>.Binding?
+    @FocusState private var own: Bool
+    @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 12))
-                .foregroundStyle(.tertiary)
-            TextField(prompt, text: $text)
+        HStack(spacing: 8) {
+            Icon("search", size: 15)
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            field
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
+                .onExitCommand { text = "" }
             if !text.isEmpty {
                 Button {
                     text = ""
                 } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                    Icon("x", size: 12).foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
                 .help("Clear")
+            } else if !isFocused {
+                Text("⌘F").font(.system(size: 11.5)).foregroundStyle(.tertiary)
             }
         }
         .padding(.horizontal, 8)
         .frame(height: 28)
-        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Palette.hover))
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isFocused || !text.isEmpty ? Palette.selection : (hovering ? Palette.hover : .clear)))
+        .onHover { hovering = $0 }
     }
+
+    @ViewBuilder private var field: some View {
+        if let focused {
+            TextField(prompt, text: $text).focused(focused)
+        } else {
+            TextField(prompt, text: $text).focused($own)
+        }
+    }
+
+    private var isFocused: Bool { focused?.wrappedValue ?? own }
 }
 
 /// "Finish Setting Up (n)", until those steps are done or it is dismissed.
@@ -383,14 +491,14 @@ private struct FinishSettingUp: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "checklist").foregroundStyle(.tint)
+            Icon("list-checks", size: 14).foregroundStyle(.tint)
             Button("Finish Setting Up (\(count))") { actions.finishSettingUp() }
                 .buttonStyle(.link)
             Spacer()
             Button {
                 actions.dismissFinishing()
             } label: {
-                Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
+                Icon("x", size: 12)
             }
             .buttonStyle(.borderless)
             .help("Dismiss")

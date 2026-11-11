@@ -2,42 +2,30 @@ import AmuxValues
 import AmuxWords
 import SwiftUI
 
-/// The right-hand pane about the open agent: its changes, to read and
-/// comment on line by line, or its family.
-public struct InspectorPane: View {
-    let tab: InspectorTab
+/// The right-hand pane: the open agent's changes, to read and comment on
+/// line by line, with what is compared and its counts in the pane's own
+/// title bar.
+public struct ChangesPane: View {
     let chat: any ChatSurface
-    let family: FamilyHeader?
-    let now: Date
-    let openAgent: @MainActor (AgentKey) -> Void
+    let close: @MainActor () -> Void
+    @Environment(\.barHeight) private var bar
 
-    public init(
-        tab: InspectorTab, chat: any ChatSurface, family: FamilyHeader?, now: Date = Date(),
-        openAgent: @escaping @MainActor (AgentKey) -> Void = { _ in }
-    ) {
-        self.tab = tab
+    public init(chat: any ChatSurface, close: @escaping @MainActor () -> Void = {}) {
         self.chat = chat
-        self.family = family
-        self.now = now
-        self.openAgent = openAgent
+        self.close = close
     }
 
     public var body: some View {
-        switch tab {
-        case .changes: ChangesView(chat: chat)
-        case .family: FamilyView(family: family, now: now, open: openAgent)
-        }
-    }
-}
-
-// MARK: - Changes
-
-private struct ChangesView: View {
-    let chat: any ChatSurface
-
-    var body: some View {
         VStack(spacing: 0) {
-            header
+            TopBar(height: bar) {
+                comparison
+                Spacer(minLength: 6)
+                ChangeCounts(changes: chat.changes).font(.system(size: 12))
+                BarButton(symbol: "refresh-cw", help: "Read the changes again", size: 12) {
+                    chat.loadReview(keepingComments: false)
+                }
+                BarButton(symbol: "x", help: "Close (⌥⌘I)", size: 13, action: close)
+            }
             Rectangle().fill(Palette.line).frame(height: 1)
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -53,33 +41,37 @@ private struct ChangesView: View {
         let changes: ChangeTotals?
     }
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            if chat.comparisons.count > 1 {
-                Picker("Compare", selection: Binding(get: { chat.comparison }, set: { chat.compare($0) })) {
-                    ForEach(chat.comparisons, id: \.self) { comparison in
-                        Text(ChatWords.comparison(comparison, base: chat.base)).tag(comparison)
+    /// "main → working tree", a menu where there is more than one way to
+    /// compare.
+    @ViewBuilder private var comparison: some View {
+        let label = HStack(spacing: 5) {
+            Icon("git-branch", size: 13).foregroundStyle(.secondary)
+            Text(ChatWords.comparison(chat.comparison, base: chat.base))
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(1)
+        }
+        if chat.comparisons.count > 1 {
+            Menu {
+                ForEach(chat.comparisons, id: \.self) { comparison in
+                    Button {
+                        chat.compare(comparison)
+                    } label: {
+                        if comparison == chat.comparison {
+                            Label(ChatWords.comparison(comparison, base: chat.base), systemImage: "checkmark")
+                        } else {
+                            Text(ChatWords.comparison(comparison, base: chat.base))
+                        }
                     }
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .fixedSize()
-            } else {
-                Text(ChatWords.comparison(chat.comparison, base: chat.base)).foregroundStyle(.secondary)
-            }
-            Spacer()
-            ChangeCounts(changes: chat.changes)
-            Button {
-                chat.loadReview(keepingComments: false)
             } label: {
-                Image(systemName: "arrow.clockwise")
+                label
             }
-            .buttonStyle(.borderless)
-            .help("Read the changes again")
+            .menuStyle(.button)
+            .buttonStyle(HoverButtonStyle())
+            .fixedSize()
+        } else {
+            label
         }
-        .font(.system(size: 12))
-        .padding(.horizontal, 12)
-        .frame(height: 36)
     }
 
     @ViewBuilder private var content: some View {
@@ -87,13 +79,21 @@ private struct ChangesView: View {
         case .idle, .loading:
             ProgressView().controlSize(.small)
         case .nothing:
-            Text("No changes to show").foregroundStyle(.secondary)
+            VStack(spacing: 8) {
+                Icon("diff", size: 22).foregroundStyle(.tertiary)
+                Text("No changes").foregroundStyle(.secondary)
+            }
         case .failed(let why):
             Text(why).foregroundStyle(.secondary).multilineTextAlignment(.center).padding()
         case .ready(let review):
             ReviewView(review: review, attach: chat.attachReview)
         }
     }
+}
+
+extension EnvironmentValues {
+    /// The window's title bar height, which every column's top bar takes.
+    @Entry var barHeight: CGFloat = 38
 }
 
 /// The diff, a file at a time, with comments where they were written.
@@ -185,10 +185,9 @@ private struct FileHeader: View {
     var body: some View {
         Button(action: toggle) {
             HStack(spacing: 6) {
-                Image(systemName: folded ? "chevron.right" : "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                Icon(folded ? "chevron-right" : "chevron-down", size: 12)
                     .foregroundStyle(.tertiary)
-                    .frame(width: 10)
+                    .frame(width: 12)
                 Text(file.oldPath.map { "\($0) → \(file.path)" } ?? file.path)
                     .font(.system(size: 12, design: .monospaced))
                     .lineLimit(1)
@@ -240,7 +239,7 @@ private struct Comment: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "text.bubble").foregroundStyle(Color.accentColor)
+            Icon("message-square-text", size: 14).foregroundStyle(Color.accentColor)
             Text(text).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -285,54 +284,3 @@ private struct Writer: View {
     }
 }
 
-// MARK: - Family
-
-/// The agent's parent and children, each opening its own chat.
-private struct FamilyView: View {
-    let family: FamilyHeader?
-    let now: Date
-    let open: @MainActor (AgentKey) -> Void
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 1) {
-                if let parent = family?.parent {
-                    SectionTitle(text: "Started by")
-                    member(parent)
-                }
-                if let children = family?.children, !children.isEmpty {
-                    SectionTitle(text: "Started")
-                    ForEach(children, id: \.agent) { child in member(child) }
-                }
-            }
-            .padding(.horizontal, 8)
-        }
-        .overlay {
-            if family?.parent == nil, family?.children.isEmpty ?? true {
-                Text("It has started no agents").foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func member(_ card: FleetCard) -> some View {
-        Button {
-            open(card.agent)
-        } label: {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(card.name.isEmpty ? "agent" : card.name).font(.system(size: 13)).lineLimit(1)
-                    Text(ChatWords.childState(card)).font(.system(size: 12)).foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer()
-                if card.attention == .needsYou {
-                    Circle().fill(Color.accentColor).frame(width: 7, height: 7)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(HoverButtonStyle())
-    }
-}

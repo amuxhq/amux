@@ -15,8 +15,7 @@ struct Rail: View {
             }
             Spacer()
             SettingsLink {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 15))
+                Icon("settings", size: 17)
                     .foregroundStyle(.secondary)
                     .frame(width: 34, height: 32)
                     .contentShape(Rectangle())
@@ -45,8 +44,7 @@ private struct RailButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: surface.symbol)
-                .font(.system(size: 15))
+            Icon(surface.symbol, size: 18)
                 .foregroundStyle(selected ? .primary : .secondary)
                 .frame(width: 34, height: 32)
                 .contentShape(Rectangle())

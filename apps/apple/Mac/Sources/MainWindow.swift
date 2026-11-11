@@ -19,42 +19,71 @@ struct AppWindow: View {
                 SetupHost(setup: setup, content: content)
             } else {
                 MainScreen(content: main, place: $model.place, actions: actions) {
-                    if model.place.surface == .agents, let chat = model.chat, let agent = model.place.agent {
-                        ChatPane(
-                            chat: chat, row: model.stores?.fleet.row(agent),
-                            inspectorOpen: model.place.inspector != nil,
-                            openInspector: { model.place.inspector = $0 })
-                        .id(agent)
-                    } else if model.place.surface == .hosts, let id = model.place.host, let host = host(id) {
-                        HostPage(
-                            host: host,
-                            agents: model.stores?.fleet.rows.filter { $0.card.agent.host == id } ?? [],
-                            now: model.stores?.fleet.orderedAt ?? Date(),
-                            openAgent: { model.openChat($0) },
-                            toggleFamily: { model.stores?.toggleFamily($0) },
-                            revoke: { model.revoke($0) })
-                        .id(id)
-                    } else {
-                        EmptyCentre(surface: model.place.surface) { model.newAgent() }
-                    }
+                    detail
                 } inspector: {
-                    if let chat = model.chat, let agent = model.place.agent, let tab = model.place.inspector {
-                        InspectorPane(
-                            tab: tab, chat: chat, family: model.family(agent),
-                            now: model.stores?.fleet.orderedAt ?? Date(),
-                            openAgent: { model.place.agent = $0 })
-                    }
-                }
-                .sheet(isPresented: Binding(get: { model.starting != nil }, set: { if !$0 { model.starting = nil } })) {
-                    if let starting = model.starting {
-                        NewAgentSheet(surface: starting) { model.starting = nil }
-                    }
+                    changes
                 }
                 .onChange(of: model.stores?.newAgent.created) { _, created in
-                    if let created, model.starting != nil { model.openChat(created) }
+                    if let created, model.starting != nil { model.started(created) }
                 }
             }
         }
+    }
+
+    /// The centre: the open agent's chat, the new-agent page, or a host.
+    @ViewBuilder private var detail: some View {
+        if model.place.surface == .agents, let chat = model.chat, let agent = model.place.agent {
+            ChatPane(
+                chat: chat, row: model.stores?.fleet.row(agent), family: model.family(agent),
+                changesOpen: model.place.changes, actions: agentActions(agent)
+            )
+            .id(agent)
+        } else if model.place.surface == .agents, model.place.agent == nil {
+            newAgentPage
+        } else if model.place.surface == .hosts, let id = model.place.host, let host = host(id) {
+            hostPage(host, id: id)
+        } else {
+            EmptyCentre(surface: model.place.surface) { model.newAgent() }
+        }
+    }
+
+    @ViewBuilder private var newAgentPage: some View {
+        if let starting = model.starting {
+            NewAgentPage(surface: starting)
+        } else {
+            Color.clear.onAppear { model.prepareNewAgent() }
+        }
+    }
+
+    private func hostPage(_ host: HostView, id: [UInt8]) -> some View {
+        HostPage(
+            host: host,
+            agents: model.stores?.fleet.rows.filter { $0.card.agent.host == id } ?? [],
+            now: model.stores?.fleet.orderedAt ?? Date(),
+            openAgent: { model.openChat($0) },
+            toggleFamily: { model.stores?.toggleFamily($0) },
+            revoke: { model.revoke($0) }
+        )
+        .id(id)
+    }
+
+    @ViewBuilder private var changes: some View {
+        if let chat = model.chat, model.place.changes {
+            ChangesPane(chat: chat) { model.place.changes = false }
+        }
+    }
+
+    /// What the card and the chat can do about the open agent.
+    private func agentActions(_ agent: AgentKey) -> AgentActions {
+        let model = model
+        var actions = AgentActions(
+            openChanges: { model.place.changes = true }, openAgent: { model.openChat($0) },
+            openTerminal: { model.openTerminal(agent) }, editor: AppModel.editor?.name ?? "Editor")
+        if let folder = model.local(agent) {
+            actions.reveal = { model.reveal(folder) }
+            actions.openEditor = { model.openInEditor(folder) }
+        }
+        return actions
     }
 
     /// A host on the hosts surface, this Mac among them.
@@ -93,7 +122,8 @@ struct AppWindow: View {
             search: { model.stores?.filterFleet(FleetFilter(words: $0, only: nil)) },
             toggleFamily: { model.stores?.toggleFamily($0) },
             act: { act, agent in Task { await model.act(act, on: agent) } },
-            dismissProblem: { model.dismissProblem() })
+            dismissProblem: { model.dismissProblem() },
+            openTerminal: { model.openTerminal($0) })
     }
 }
 

@@ -20,6 +20,7 @@ final class StillNewAgent: NewAgentSurface {
     private var choices: [String: String] = [:]
     var newWorktree = false
     var name = ""
+    var prompt = ""
     let failure: String? = nil
 
     init(
@@ -58,10 +59,10 @@ final class StillNewAgent: NewAgentSurface {
         return SettingsView(
             models: [
                 ModelChoice(
-                    value: "opus", displayName: "Opus", description: "", efforts: ["low", "medium", "high"],
+                    value: "opus", displayName: "Opus 5.5", description: "", efforts: ["low", "medium", "high"],
                     current: model == "opus", unlisted: false, defaultEffort: "high"),
                 ModelChoice(
-                    value: "sonnet", displayName: "Sonnet", description: "", efforts: ["low", "medium", "high"],
+                    value: "sonnet", displayName: "Sonnet 5.5", description: "", efforts: ["low", "medium", "high"],
                     current: model == "sonnet", unlisted: false, defaultEffort: "medium"),
             ],
             efforts: ["low", "medium", "high"].map {

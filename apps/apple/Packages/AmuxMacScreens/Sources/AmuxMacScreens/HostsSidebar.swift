@@ -43,8 +43,7 @@ struct HostRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: HostWords.symbol(host))
-                .font(.system(size: 14))
+            Icon(HostWords.symbol(host), size: 16)
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
@@ -94,11 +93,14 @@ enum HostWords {
         }
     }
 
-    static func symbol(_ host: HostView) -> String {
+    static func symbol(_ host: HostView) -> String { lucide(host) }
+
+    /// The host's kind as one of the app's icons.
+    static func lucide(_ host: HostView) -> String {
         switch host.platform {
-        case .ios: "iphone"
-        case .linux, .windows: "server.rack"
-        case .macos, .unspecified, nil: "desktopcomputer"
+        case .ios: "smartphone"
+        case .linux, .windows: "server"
+        case .macos, .unspecified, nil: "laptop"
         }
     }
 }

@@ -21,7 +21,10 @@ let package = Package(
             dependencies: [
                 .product(name: "AmuxValues", package: "AmuxCore"),
                 .product(name: "AmuxWords", package: "AmuxCore"),
-            ]),
+            ],
+            // Lucide's line icons (ISC, licence alongside), the set the
+            // developer tools this app sits beside are drawn in.
+            resources: [.copy("Icons")]),
         // The named screens the storybook draws. The app does not link this.
         .target(
             name: "AmuxMacStories",

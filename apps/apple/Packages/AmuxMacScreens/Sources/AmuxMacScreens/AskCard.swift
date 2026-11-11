@@ -16,7 +16,7 @@ struct AskCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Image(systemName: "hand.raised.fill").foregroundStyle(Color.accentColor)
+                Icon("hand", size: 15).foregroundStyle(Color.accentColor)
                 Text(ChatWords.headline(card)).fontWeight(.semibold)
                 Spacer()
                 if let position = ChatWords.position(card) {
@@ -140,21 +140,20 @@ struct AskCardView: View {
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { send(index) }
                 Button("Cancel") { noting = nil }
+                    .buttonStyle(AnswerButtonStyle())
                 Button(ChatWords.button(card.choices[index]).replacingOccurrences(of: "…", with: "")) { send(index) }
+                    .buttonStyle(AnswerButtonStyle(prominent: true))
                     .keyboardShortcut(.defaultAction)
             }
         } else {
             FlowButtons {
                 ForEach(Array(card.choices.enumerated()), id: \.offset) { index, choice in
-                    let button = Button(ChatWords.button(choice)) {
+                    let prominent = choice.primary && !card.defaultToNo
+                    Button(ChatWords.button(choice)) {
                         if choice.takesNote { noting = index } else { chat.answer(choice: index, note: nil) }
                     }
+                    .buttonStyle(AnswerButtonStyle(prominent: prominent))
                     .disabled(card.state == .sending)
-                    if choice.primary && !card.defaultToNo {
-                        button.buttonStyle(.borderedProminent)
-                    } else {
-                        button.buttonStyle(.bordered)
-                    }
                 }
             }
         }
@@ -173,6 +172,7 @@ struct AskCardView: View {
                 Button("Skip") {
                     chat.answer(responses: questions.map { _ in QuestionResponse(note: nil, other: nil, picked: nil) })
                 }
+                .buttonStyle(AnswerButtonStyle())
             }
             Button("Answer") {
                 chat.answer(
@@ -182,7 +182,7 @@ struct AskCardView: View {
                         return QuestionResponse(note: nil, other: other, picked: picked.isEmpty ? nil : picked)
                     })
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(AnswerButtonStyle(prominent: true))
             .keyboardShortcut(.defaultAction)
             .disabled(card.state == .sending)
         }
@@ -208,7 +208,7 @@ private struct Question: View {
                     }
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Image(systemName: mark(number))
+                        Icon(mark(number), size: 14)
                             .foregroundStyle(picked.contains(number) ? Color.accentColor : .secondary)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(option.label)
@@ -231,8 +231,8 @@ private struct Question: View {
 
     private func mark(_ number: UInt32) -> String {
         let on = picked.contains(number)
-        if question.multiSelect { return on ? "checkmark.square.fill" : "square" }
-        return on ? "largecircle.fill.circle" : "circle"
+        if question.multiSelect { return on ? "square-check" : "square" }
+        return on ? "circle-dot" : "circle"
     }
 }
 
@@ -360,5 +360,29 @@ struct FlowLayout: Layout {
             x += size.width + spacing
             line = max(line, size.height)
         }
+    }
+}
+
+/// An answer to the agent: the one it expects drawn solid in the text
+/// colour, as the send button is, whether or not the window is in front;
+/// the others quiet fills.
+private struct AnswerButtonStyle: ButtonStyle {
+    var prominent = false
+    @Environment(\.isEnabled) private var enabled
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: prominent ? .medium : .regular))
+            .lineLimit(1)
+            .foregroundStyle(prominent ? Color(nsColor: .textBackgroundColor) : Color.primary)
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(prominent ? Color.primary : Color.primary.opacity(hovering ? 0.1 : 0.065)))
+            .opacity(configuration.isPressed ? 0.75 : (enabled ? 1 : 0.45))
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .onHover { hovering = $0 }
     }
 }

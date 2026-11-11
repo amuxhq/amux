@@ -1,4 +1,5 @@
 import AmuxValues
+import AmuxWords
 import SwiftUI
 
 /// The fleet as the sidebar lists it.
@@ -78,6 +79,8 @@ public struct MainActions {
     public var act: @MainActor (AgentAct, AgentKey) -> Void
     /// Takes the line saying something went wrong away.
     public var dismissProblem: @MainActor () -> Void
+    /// The agent's own interface in Terminal.
+    public var openTerminal: @MainActor (AgentKey) -> Void
 
     public init(
         openProfile: @escaping @MainActor (String) -> Void = { _ in },
@@ -90,7 +93,8 @@ public struct MainActions {
         search: @escaping @MainActor (String) -> Void = { _ in },
         toggleFamily: @escaping @MainActor (AgentKey) -> Void = { _ in },
         act: @escaping @MainActor (AgentAct, AgentKey) -> Void = { _, _ in },
-        dismissProblem: @escaping @MainActor () -> Void = {}
+        dismissProblem: @escaping @MainActor () -> Void = {},
+        openTerminal: @escaping @MainActor (AgentKey) -> Void = { _ in }
     ) {
         self.openProfile = openProfile
         self.signIn = signIn
@@ -103,6 +107,7 @@ public struct MainActions {
         self.toggleFamily = toggleFamily
         self.act = act
         self.dismissProblem = dismissProblem
+        self.openTerminal = openTerminal
     }
 }
 
@@ -155,25 +160,14 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
                     .background(Palette.content)
                 if inspecting {
                     ColumnEdge(width: $inspectorWidth, range: Metrics.inspectorRange, trailing: true)
-                    VStack(spacing: 0) {
-                        TopBar(height: bar) {
-                            Picker("Show", selection: inspectorTab) {
-                                ForEach(InspectorTab.allCases) { tab in Text(tab.title).tag(tab) }
-                            }
-                            .pickerStyle(.segmented)
-                            .labelsHidden()
-                            .fixedSize()
-                            Spacer()
-                            BarButton(symbol: "xmark", help: "Close") { place.inspector = nil }
-                        }
-                        inspector
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipped()
-                    }
-                    .frame(width: layout.inspector - 1)
-                    .background(Palette.content)
+                    inspector
+                        .frame(width: layout.inspector - 1)
+                        .frame(maxHeight: .infinity)
+                        .clipped()
+                        .background(Palette.content)
                 }
             }
+            .environment(\.barHeight, bar)
             .ignoresSafeArea(.container, edges: .top)
         }
         .windowChrome()
@@ -188,27 +182,23 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
             }
         }
         .animation(.snappy(duration: 0.2), value: place.sidebar)
-        .animation(.snappy(duration: 0.2), value: place.inspector)
+        .animation(.snappy(duration: 0.2), value: place.changes)
     }
 
     private var inspecting: Bool {
-        place.inspector != nil && place.surface == .agents && place.agent != nil
+        place.changes && place.surface == .agents && place.agent != nil
     }
 
-    private var inspectorTab: Binding<InspectorTab> {
-        Binding(get: { place.inspector ?? .changes }, set: { place.inspector = $0 })
-    }
+    private func exists(_ agent: AgentKey) -> Bool { content.fleet.row(agent) != nil }
 
     // MARK: - The sidebar
 
     private func sidebar(bar: CGFloat) -> some View {
         VStack(spacing: 0) {
             TopBar(height: bar, leading: Metrics.windowButtons) {
-                BarButton(symbol: "sidebar.left", help: "Hide Sidebar") { place.sidebar = false }
+                BarButton(symbol: "panel-left", help: "Hide Sidebar (⌃⌘S)") { place.sidebar = false }
                 Spacer()
-                if place.surface == .agents {
-                    BarButton(symbol: "square.and.pencil", help: "New Agent (⌘N)") { actions.newAgent() }
-                }
+                history
             }
             HStack(spacing: 0) {
                 Rail(content: content, surface: $place.surface, actions: actions)
@@ -235,32 +225,27 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
         VStack(spacing: 0) {
             TopBar(height: bar, leading: sidebarShown ? 0 : Metrics.windowButtons) {
                 if !sidebarShown {
-                    BarButton(symbol: "sidebar.left", help: "Show Sidebar") {
-                        // A sidebar set aside for the inspector comes back
-                        // in its place.
-                        if place.sidebar { place.inspector = nil }
+                    BarButton(symbol: "panel-left", help: "Show Sidebar (⌃⌘S)") {
+                        // A sidebar set aside for the changes comes back in
+                        // their place.
+                        if place.sidebar { place.changes = false }
                         place.sidebar = true
                     }
-                    if place.surface == .agents {
-                        BarButton(symbol: "square.and.pencil", help: "New Agent") { actions.newAgent() }
-                    }
+                    history
                 }
                 title
                 Spacer(minLength: 8)
                 if content.updateReady {
                     Button("Restart to Update") { actions.restartToUpdate() }
                         .buttonStyle(.borderless)
-                        .font(.callout)
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
-                if place.surface == .agents, place.agent != nil {
-                    BarButton(
-                        symbol: "sidebar.right", help: place.inspector == nil ? "Show Inspector" : "Hide Inspector",
-                        active: place.inspector != nil
-                    ) {
-                        place.inspector = place.inspector == nil ? .changes : nil
+                if place.surface == .agents, let agent = place.agent {
+                    BarButton(symbol: "square-terminal", help: "Open in Terminal") { actions.openTerminal(agent) }
+                    if !place.changes {
+                        BarButton(symbol: "panel-right", help: "Show Changes (⌥⌘I)") { place.changes = true }
                     }
-                    .keyboardShortcut("i", modifiers: [.command, .option])
                 }
             }
             notices
@@ -270,8 +255,20 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
         }
     }
 
-    /// The open agent's place and name, as a path: where it runs, then what
-    /// it is called.
+    /// Back and forward through the agents opened.
+    private var history: some View {
+        HStack(spacing: 0) {
+            BarButton(symbol: "arrow-left", help: "Back (⌘[)", size: 13, disabled: !place.canGoBack) {
+                place.goBack(where: exists)
+            }
+            BarButton(symbol: "arrow-right", help: "Forward (⌘])", size: 13, disabled: !place.canGoForward) {
+                place.goForward(where: exists)
+            }
+        }
+    }
+
+    /// The open agent's place and name, as a path, the name a menu of what
+    /// can be done to it.
     @ViewBuilder private var title: some View {
         if place.surface == .agents, let agent = place.agent, let row = content.fleet.row(agent) {
             HStack(spacing: 6) {
@@ -279,21 +276,35 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Text("/").foregroundStyle(.tertiary)
-                Text(row.name)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
+                Menu {
+                    AgentMenu(row: row, actions: actions)
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(row.name).fontWeight(.medium).lineLimit(1)
+                        Icon("chevron-down", size: 11).foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 6)
+                    .frame(height: 24)
+                    .contentShape(Rectangle())
+                }
+                .menuStyle(.button)
+                .buttonStyle(HoverButtonStyle())
+                .menuIndicator(.hidden)
+                .fixedSize()
             }
             .font(.system(size: 13))
-            .help("\(row.hostName) · \(row.workingDirectory)")
+            .help("\(PlaceNames.host(row.hostName)) · \(PlaceNames.path(row.workingDirectory))")
+        } else if place.surface == .agents, place.agent == nil {
+            Text("New Agent").font(.system(size: 13, weight: .medium))
         }
     }
 
     @ViewBuilder private var notices: some View {
         if let problem = content.problem {
-            Notice(text: problem, symbol: "exclamationmark.triangle", tint: .red, dismiss: actions.dismissProblem)
+            Notice(text: problem, symbol: "triangle-alert", tint: .red, dismiss: actions.dismissProblem)
         }
         if let note = content.note {
-            Notice(text: note, symbol: "checkmark.circle", tint: .secondary)
+            Notice(text: note, symbol: "circle-check", tint: .secondary)
         }
     }
 }
@@ -316,11 +327,11 @@ private struct Notice: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: symbol).foregroundStyle(tint)
+            Icon(symbol, size: 14).foregroundStyle(tint)
             Text(text).foregroundStyle(.secondary).textSelection(.enabled)
             Spacer()
             if let dismiss {
-                BarButton(symbol: "xmark", help: "Dismiss") { dismiss() }
+                BarButton(symbol: "x", help: "Dismiss", size: 12) { dismiss() }
             }
         }
         .font(.callout)
@@ -386,5 +397,29 @@ struct ColumnLayout {
         showsSidebar = sidebar > 0 && Self.narrowestSidebar + Self.centre + least <= width
         self.sidebar = showsSidebar ? max(Self.narrowestSidebar, min(sidebar, width - Self.centre - least)) : 0
         self.inspector = inspector > 0 ? max(least, min(inspector, width - self.sidebar - Self.centre)) : 0
+    }
+}
+
+/// What can be done to an agent, for its title's menu and its row's.
+struct AgentMenu: View {
+    let row: FleetRow
+    let actions: MainActions
+
+    var body: some View {
+        let agent = row.card.agent
+        Button("Open in Terminal") { actions.openTerminal(agent) }
+        Divider()
+        if row.pinned {
+            Button("Unpin") { actions.act(.unfile, agent) }
+        } else if row.pinnable {
+            Button("Pin") { actions.act(.pin, agent) }
+        }
+        if row.closed {
+            Button("Unsettle") { actions.act(.unfile, agent) }
+        } else if row.card.closeHeld {
+            Button("Don’t Settle") { actions.act(.cancelClose, agent) }
+        } else {
+            Button("Settle") { actions.act(.close, agent) }
+        }
     }
 }

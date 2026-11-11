@@ -1,10 +1,13 @@
 import AmuxValues
 import AmuxWords
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Where the person writes to the agent: a field that grows with what is
-/// typed, Return to send and Shift-Return for a new line, with the agent's
-/// model and the send or stop button under it.
+/// typed, Return to send and Shift-Return for a new line. Under it, as in
+/// the references: attaching files, the permission the agent works under
+/// and the model it thinks with, each a menu that changes the agent, then
+/// stop or send. Files dropped on it are attached.
 struct Composer: View {
     let chat: any ChatSurface
     let name: String
@@ -12,6 +15,7 @@ struct Composer: View {
     let reach: Reach?
 
     @FocusState private var focused: Bool
+    @State private var dropping = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -29,12 +33,12 @@ struct Composer: View {
             }
             TextField(placeholder, text: draft, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13.5))
+                .font(.system(size: 14))
                 .lineLimit(1...12)
                 .focused($focused)
-                .padding(.horizontal, 14)
-                .padding(.top, 12)
-                .padding(.bottom, 6)
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 8)
                 .onKeyPress(.return, phases: .down) { press in
                     if press.modifiers.contains(.shift) || press.modifiers.contains(.option) {
                         chat.draft += "\n"
@@ -43,50 +47,146 @@ struct Composer: View {
                     submit()
                     return .handled
                 }
-            HStack(spacing: 10) {
-                if let chip = ChatWords.chip(chat.frame?.controls ?? empty, context: chat.frame?.context) {
-                    HStack(spacing: 4) {
-                        Text(chip.model).foregroundStyle(.secondary)
-                        if !chip.detail.isEmpty { Text(chip.detail).foregroundStyle(.tertiary) }
-                        ForEach(chip.unusual, id: \.self) { word in
-                            Text("· \(word)").foregroundStyle(.orange)
-                        }
-                    }
-                    .font(.system(size: 12))
-                    .lineLimit(1)
-                }
-                Spacer()
-                if working {
-                    Button {
-                        chat.interrupt()
-                    } label: {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 10))
-                            .frame(width: 26, height: 26)
-                            .background(Circle().fill(Color.primary.opacity(0.12)))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Stop")
-                    .keyboardShortcut(".", modifiers: .command)
-                }
-                Button(action: submit) {
-                    Image(systemName: chat.canResume ? "play.fill" : "arrow.up")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(ready ? Color(nsColor: .textBackgroundColor) : .secondary)
-                        .frame(width: 26, height: 26)
-                        .background(Circle().fill(ready ? Color.primary : Color.primary.opacity(0.12)))
-                }
-                .buttonStyle(.plain)
-                .disabled(!ready)
-                .help(chat.canResume ? "Resume" : "Send")
-            }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 10)
+            controls
         }
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.raised))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Palette.line))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(dropping ? Color.accentColor : (focused ? Color.primary.opacity(0.16) : Palette.line)))
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
         .onTapGesture { focused = true }
         .onAppear { focused = true }
+        .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
+            Self.urls(from: providers) { chat.attach(files: $0) }
+            return true
+        }
+    }
+
+    // MARK: - Under the field
+
+    private var controls: some View {
+        HStack(spacing: 4) {
+            Button(action: pickFiles) {
+                Icon("plus", size: 16)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(HoverButtonStyle())
+            .help("Attach files")
+            permission
+            Spacer(minLength: 8)
+            model
+            if working {
+                Button {
+                    chat.interrupt()
+                } label: {
+                    RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                        .fill(Color.primary)
+                        .frame(width: 9, height: 9)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(Color.primary.opacity(0.1)))
+                }
+                .buttonStyle(.plain)
+                .help("Stop (⌘.)")
+                .keyboardShortcut(".", modifiers: .command)
+            }
+            Button(action: submit) {
+                Icon(chat.canResume ? "play" : "arrow-up", size: 15)
+                    .foregroundStyle(ready ? Color(nsColor: .textBackgroundColor) : Color.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(ready ? Color.primary : Color.primary.opacity(0.1)))
+            }
+            .buttonStyle(.plain)
+            .disabled(!ready)
+            .help(chat.canResume ? "Resume" : "Send (Return)")
+        }
+        .padding(.horizontal, 8)
+        .padding(.bottom, 8)
+    }
+
+    /// The permission the agent works under: a menu where it can be picked
+    /// from here, orange where it acts without asking.
+    @ViewBuilder private var permission: some View {
+        if let settings = chat.settings, let current = settings.permissions.first(where: \.current) {
+            let label = ChipLabel(
+                icon: current.neverAsks ? "circle-alert" : "hand", text: ChatWords.permission(current),
+                tint: current.neverAsks ? .orange : .secondary, menu: settings.changeable.permission == .pick)
+            if settings.changeable.permission == .pick {
+                Menu {
+                    ForEach(settings.permissions.filter(\.settable), id: \.value) { choice in
+                        Toggle(
+                            isOn: Binding(get: { choice.current }, set: { _ in chat.change(.permission(choice.value)) })
+                        ) {
+                            Text(ChatWords.permission(choice))
+                            if !ChatWords.permissionDetail(choice).isEmpty {
+                                Text(ChatWords.permissionDetail(choice))
+                            }
+                        }
+                    }
+                } label: {
+                    label
+                }
+                .menuStyle(.button)
+                .buttonStyle(HoverButtonStyle())
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Permission")
+            } else {
+                label.help("Permission")
+            }
+        }
+    }
+
+    /// The model and effort: "Opus 5.5 High ⌄", a menu of what the agent
+    /// offers.
+    @ViewBuilder private var model: some View {
+        if let chip = ChatWords.chip(chat.frame?.controls ?? empty, context: chat.frame?.context) {
+            let text = [chip.model, chip.detail].filter { !$0.isEmpty }.joined(separator: " ")
+            let settings = chat.settings
+            let picks = settings.map { $0.changeable.model == .pick || $0.changeable.effort == .pick } ?? false
+            let label = ChipLabel(icon: nil, text: text, tint: .secondary, menu: picks)
+            if let settings, picks {
+                Menu {
+                    if settings.changeable.model == .pick {
+                        Section("Model") {
+                            ForEach(settings.models, id: \.value) { choice in
+                                Toggle(
+                                    choice.displayName,
+                                    isOn: Binding(get: { choice.current }, set: { _ in chat.change(.model(choice.value)) }))
+                            }
+                        }
+                    }
+                    if settings.changeable.effort == .pick, !settings.efforts.isEmpty {
+                        Section("Effort") {
+                            ForEach(settings.efforts, id: \.value) { choice in
+                                Toggle(
+                                    choice.value.capitalized,
+                                    isOn: Binding(get: { choice.current }, set: { _ in chat.change(.effort(choice.value)) }))
+                            }
+                        }
+                    }
+                    if settings.changeable.mode == .pick, !settings.modes.isEmpty {
+                        Section("Mode") {
+                            ForEach(settings.modes, id: \.value) { choice in
+                                Toggle(
+                                    ChatWords.mode(choice),
+                                    isOn: Binding(get: { choice.current }, set: { _ in chat.change(.mode(choice.value)) }))
+                            }
+                        }
+                    }
+                } label: {
+                    label
+                }
+                .menuStyle(.button)
+                .buttonStyle(HoverButtonStyle())
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Model and effort")
+            } else {
+                label
+            }
+        }
     }
 
     private var empty: ControlsSummary { ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil) }
@@ -118,6 +218,35 @@ struct Composer: View {
         }
     }
 
+    private func pickFiles() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.message = "Attach files for \(name)"
+        if panel.runModal() == .OK { chat.attach(files: panel.urls) }
+    }
+
+    /// The file URLs dropped, read off the main thread and handed back on it.
+    static func urls(from providers: [NSItemProvider], _ done: @escaping @MainActor ([URL]) -> Void) {
+        let group = DispatchGroup()
+        let found = Found()
+        for provider in providers where provider.canLoadObject(ofClass: URL.self) {
+            group.enter()
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                if let url, url.isFileURL { found.add(url) }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) { MainActor.assumeIsolated { done(found.urls) } }
+    }
+
+    private final class Found: @unchecked Sendable {
+        private let lock = NSLock()
+        private var list: [URL] = []
+        func add(_ url: URL) { lock.withLock { list.append(url) } }
+        var urls: [URL] { lock.withLock { list } }
+    }
+
     static func chip(_ attachment: DraftAttachment) -> String {
         switch attachment {
         case .image(let blob), .file(let blob): blob.name
@@ -139,14 +268,37 @@ struct Composer: View {
                             .lineLimit(1)
                         Spacer()
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 5)
+                    .padding(.horizontal, 10)
+                    .frame(height: 26)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(HoverButtonStyle())
             }
         }
+        .padding(.horizontal, 6)
         .padding(.top, 6)
+    }
+}
+
+/// A control under the composer: words, perhaps an icon, and a chevron
+/// where it opens a menu.
+private struct ChipLabel: View {
+    let icon: String?
+    let text: String
+    let tint: Color
+    let menu: Bool
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if let icon { Icon(icon, size: 13) }
+            Text(text).lineLimit(1)
+            if menu { Icon("chevron-down", size: 11).opacity(0.7) }
+        }
+        .font(.system(size: 12.5))
+        .foregroundStyle(tint)
+        .padding(.horizontal, 8)
+        .frame(height: 28)
+        .contentShape(Rectangle())
     }
 }
 
@@ -156,11 +308,11 @@ private struct Chip: View {
     let remove: () -> Void
 
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "paperclip").font(.system(size: 10)).foregroundStyle(.secondary)
+        HStack(spacing: 5) {
+            Icon("paperclip", size: 12).foregroundStyle(.secondary)
             Text(text).lineLimit(1)
             Button(action: remove) {
-                Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary)
+                Icon("x", size: 11).foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .help("Remove")
@@ -168,6 +320,6 @@ private struct Chip: View {
         .font(.system(size: 12))
         .padding(.horizontal, 8)
         .frame(height: 24)
-        .background(Capsule().fill(Palette.hover))
+        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Palette.well))
     }
 }

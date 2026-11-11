@@ -16,13 +16,18 @@ final class StillChat: ChatSurface {
     var draft = ""
     var attachments: [DraftAttachment] = []
     func removeAttachment(at index: Int) { attachments.remove(at: index) }
+    func attach(files: [URL]) {}
+    var settings: SettingsView?
+    func change(_ setting: SettingChange) {}
     var loadingHint = false
     var landing: [SentPrompt] = []
     var changes: ChangeTotals?
 
     init(
-        rows: [Row], frame: ChatFrame?, ask: AskCard? = nil, changes: ChangeTotals? = nil, loading: Bool = false
+        rows: [Row], frame: ChatFrame?, ask: AskCard? = nil, changes: ChangeTotals? = nil, loading: Bool = false,
+        settings: SettingsView? = nil
     ) {
+        self.settings = settings
         self.rows = rows
         self.frame = frame
         self.ask = ask

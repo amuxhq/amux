@@ -9,45 +9,50 @@ public struct ChatPane: View {
     let chat: any ChatSurface
     /// The agent's row in the fleet: its name, host and place.
     let row: FleetRow?
-    let inspectorOpen: Bool
-    let openInspector: @MainActor (InspectorTab) -> Void
+    let family: FamilyHeader?
+    let changesOpen: Bool
+    let actions: AgentActions
 
     public init(
-        chat: any ChatSurface, row: FleetRow?, inspectorOpen: Bool,
-        openInspector: @escaping @MainActor (InspectorTab) -> Void = { _ in }
+        chat: any ChatSurface, row: FleetRow?, family: FamilyHeader? = nil, changesOpen: Bool,
+        actions: AgentActions = AgentActions()
     ) {
         self.chat = chat
         self.row = row
-        self.inspectorOpen = inspectorOpen
-        self.openInspector = openInspector
+        self.family = family
+        self.changesOpen = changesOpen
+        self.actions = actions
     }
 
     public var body: some View {
         GeometryReader { pane in
-            let placing = CardPlacement(width: pane.size.width, shown: !inspectorOpen && row != nil)
+            let placing = CardPlacement(width: pane.size.width, shown: !changesOpen && row != nil)
             let beside = placing != .pill
             VStack(spacing: 0) {
-                Feed(chat: chat, host: host, roomAbove: placing == .pill, trailing: placing.trailing)
-                    .overlay(alignment: .topTrailing) {
-                        if !inspectorOpen, let row {
-                            Group {
-                                if beside {
-                                    FloatingCard(
-                                        row: row, branch: chat.frame?.git?.branch ?? row.branch,
-                                        changes: chat.changes, open: openInspector)
-                                } else {
-                                    FloatingPill(changes: chat.changes, open: openInspector)
-                                }
+                Feed(
+                    chat: chat, host: host, roomAbove: placing == .pill, trailing: placing.trailing,
+                    openChanges: actions.openChanges
+                )
+                .overlay(alignment: .topTrailing) {
+                    if !changesOpen, let row {
+                        Group {
+                            if beside {
+                                FloatingCard(
+                                    row: row, branch: chat.frame?.git?.branch ?? row.branch,
+                                    changes: chat.changes, family: family, actions: actions)
+                            } else {
+                                FloatingPill(changes: chat.changes, open: actions.openChanges)
                             }
-                            .padding(.top, 8)
-                            .padding(.trailing, 14)
-                            .transition(.opacity.combined(with: .move(edge: .trailing)))
                         }
+                        .padding(.top, 10)
+                        .padding(.trailing, 14)
+                        .transition(.opacity.combined(with: .move(edge: .trailing)))
                     }
+                }
                 Footer(chat: chat, row: row, host: host, trailing: placing.trailing)
             }
         }
-        .animation(.snappy(duration: 0.18), value: inspectorOpen)
+        .animation(.snappy(duration: 0.18), value: changesOpen)
     }
 
     private var host: String { row.map { PlaceNames.host($0.hostName) } ?? "its host" }
@@ -90,7 +95,11 @@ private struct Feed: View {
     let roomAbove: Bool
     /// Kept clear on the right for the card.
     let trailing: CGFloat
+    let openChanges: @MainActor () -> Void
     @State private var position = ScrollPosition(edge: .bottom)
+    /// Finished turns whose work the reader opened.
+    @State private var opened: Set<String> = []
+    @State private var kinds = TurnFold.Kinds()
 
     var body: some View {
         ScrollView {
@@ -103,8 +112,18 @@ private struct Feed: View {
                 if chat.empty {
                     emptyNotice
                 }
-                ForEach(chat.ids, id: \.self) { id in
-                    RowCell(chat: chat, id: id)
+                let fold = TurnFold(ids: chat.ids, opened: opened, kinds: kinds, chat: chat)
+                ForEach(fold.items) { item in
+                    switch item {
+                    case .row(let id):
+                        RowCell(chat: chat, id: id)
+                    case .worked(let turn):
+                        WorkedLine(turn: turn, open: opened.contains(turn.end)) {
+                            if opened.contains(turn.end) { opened.remove(turn.end) } else { opened.insert(turn.end) }
+                        }
+                    case .answered(let turn):
+                        AnswerFoot(turn: turn, chat: chat, latest: turn.end == fold.latest, openChanges: openChanges)
+                    }
                 }
                 ForEach(Array(chat.landing.enumerated()), id: \.offset) { _, prompt in
                     VStack(alignment: .trailing, spacing: 2) {
@@ -118,8 +137,8 @@ private struct Feed: View {
                 ActivityLine(chat: chat)
             }
             .frame(maxWidth: Metrics.reading)
-            .padding(.horizontal, 28)
-            .padding(.top, roomAbove ? 48 : 16)
+            .padding(.horizontal, 32)
+            .padding(.top, roomAbove ? 52 : 24)
             .padding(.bottom, 12)
             .frame(maxWidth: .infinity)
             .padding(.trailing, trailing)
@@ -144,7 +163,10 @@ private struct Feed: View {
                 Button {
                     chat.jumpToNewest()
                 } label: {
-                    Label(chat.frame?.arrivalsHeld == true ? "New activity" : "Latest", systemImage: "arrow.down")
+                    HStack(spacing: 5) {
+                        Icon("arrow-down", size: 12)
+                        Text(chat.frame?.arrivalsHeld == true ? "New activity" : "Latest")
+                    }
                         .font(.system(size: 12, weight: .medium))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -249,8 +271,8 @@ private struct Footer: View {
             }
         }
         .frame(maxWidth: Metrics.reading)
-        .padding(.horizontal, 28)
-        .padding(.bottom, 16)
+        .padding(.horizontal, 32)
+        .padding(.bottom, 18)
         .frame(maxWidth: .infinity)
         .padding(.trailing, trailing)
     }
@@ -265,7 +287,7 @@ private struct QueueList: View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(Array(queue.enumerated()), id: \.offset) { _, queued in
                 HStack(spacing: 8) {
-                    Image(systemName: "clock").font(.system(size: 11)).foregroundStyle(.tertiary)
+                    Icon("clock", size: 12).foregroundStyle(.tertiary)
                     Text(ChatWords.text(of: queued.text)).lineLimit(1)
                     Text(ChatWords.queued(queued)).foregroundStyle(.tertiary)
                     Spacer()
@@ -282,5 +304,242 @@ private struct QueueList: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.hover))
+    }
+}
+
+// MARK: - Answer-first turns
+
+/// A chat's rows with each finished turn read answer first, as the
+/// references read: the prompt, "Worked 3m 14s ›", then what the agent
+/// said last. The work between folds under that line and opens on a
+/// click; errors stay in sight; the turn underway shows its work as it
+/// happens.
+struct TurnFold {
+    /// What a finished turn did, for its line and its foot.
+    struct Turn: Equatable {
+        /// The turn's last row, which names it.
+        let end: String
+        let durationMs: Int64?
+        let failed: Bool
+        /// Its final words, for copying.
+        let answer: [String]
+        /// The rows that changed files, for the foot's summary.
+        let edits: [String]
+    }
+
+    enum Item: Identifiable {
+        case row(String)
+        case worked(Turn)
+        case answered(Turn)
+
+        var id: String {
+            switch self {
+            case .row(let id): id
+            case .worked(let turn): "worked." + turn.end
+            case .answered(let turn): "answered." + turn.end
+            }
+        }
+    }
+
+    /// How a row takes part in a turn.
+    enum Part {
+        case prompt
+        case answer
+        /// Said whatever the turn's fold: an error, a stop, a boundary.
+        case kept
+        case work
+        case edit
+        case end(failed: Bool, durationMs: Int64?)
+        case none
+    }
+
+    /// Each row's part, read once: a row keeps its kind, so the fold is
+    /// worked out without reading every row again as one streams.
+    final class Kinds {
+        var parts: [String: Part] = [:]
+    }
+
+    let items: [Item]
+    /// The newest finished turn.
+    let latest: String?
+
+    @MainActor
+    init(ids: [String], opened: Set<String>, kinds: Kinds, chat: any ChatSurface) {
+        func part(_ id: String) -> Part {
+            if let known = kinds.parts[id] { return known }
+            guard let row = chat.row(id) else { return .none }
+            let part = Self.part(row)
+            kinds.parts[id] = part
+            return part
+        }
+        var items: [Item] = []
+        var latest: String?
+        var start = 0
+        for (index, id) in ids.enumerated() {
+            switch part(id) {
+            case .prompt:
+                start = index + 1
+            case .end(let failed, let durationMs):
+                let turn = Array(ids[start..<index])
+                // The answer is the turn's last stretch of prose, wherever
+                // it falls; the rest is the work, folded, in its order.
+                var answerEnd = turn.count
+                while answerEnd > 0, !Self.isAnswer(part(turn[answerEnd - 1])) { answerEnd -= 1 }
+                var answerStart = answerEnd
+                while answerStart > 0, Self.isAnswer(part(turn[answerStart - 1])) || Self.isNone(part(turn[answerStart - 1])) {
+                    answerStart -= 1
+                }
+                let answerRange = answerStart..<answerEnd
+                let work = turn.indices.filter { !answerRange.contains($0) }.map { turn[$0] }
+                let answer = turn[answerRange].filter { Self.isAnswer(part($0)) }
+                let edits = work.filter { if case .edit = part($0) { true } else { false } }
+                let summary = Turn(end: id, durationMs: durationMs, failed: failed, answer: answer, edits: edits)
+                // Replace the turn's rows, already listed, with its fold.
+                items.removeLast(turn.count)
+                if work.contains(where: { !Self.isNone(part($0)) }) {
+                    items.append(.worked(summary))
+                    if opened.contains(id) {
+                        items += work.map(Item.row)
+                    } else {
+                        items += work.filter { if case .kept = part($0) { true } else { false } }.map(Item.row)
+                    }
+                }
+                items += turn[answerRange].map(Item.row)
+                if !answer.isEmpty || !edits.isEmpty { items.append(.answered(summary)) }
+                latest = id
+                start = index + 1
+                continue
+            default:
+                break
+            }
+            items.append(.row(id))
+        }
+        self.items = items
+        self.latest = latest
+    }
+
+    private static func isAnswer(_ part: Part) -> Bool {
+        if case .answer = part { return true }
+        return false
+    }
+
+    private static func isNone(_ part: Part) -> Bool {
+        if case .none = part { return true }
+        return false
+    }
+
+    private static func part(_ row: Row) -> Part {
+        switch row.kind {
+        case .prompt: .prompt
+        case .prose(_, _, let workingNote): workingNote ? .work : .answer
+        case .turnEnd(let failed, let durationMs): .end(failed: failed, durationMs: durationMs)
+        case .error, .stopped, .boundary, .compaction: .kept
+        case .fileChange: .edit
+        case .hidden: .none
+        default: .work
+        }
+    }
+}
+
+/// "Worked 3m 14s ›" over a finished turn's answer, opening its work.
+private struct WorkedLine: View {
+    let turn: TurnFold.Turn
+    let open: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: toggle) {
+                HStack(spacing: 4) {
+                    Text(ChatWords.turnEnd(durationMs: turn.durationMs, failed: turn.failed))
+                        .foregroundStyle(turn.failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                    Icon(open ? "chevron-down" : "chevron-right", size: 12)
+                        .foregroundStyle(.tertiary)
+                }
+                .font(.system(size: 13))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(open ? "Hide the work" : "Show the work")
+            Rectangle().fill(Palette.line).frame(height: 1)
+        }
+        .padding(.bottom, 14)
+    }
+}
+
+/// Under a finished turn's answer: the files it changed, opening the
+/// changes, and for the newest, copying what it said.
+private struct AnswerFoot: View {
+    let turn: TurnFold.Turn
+    let chat: any ChatSurface
+    let latest: Bool
+    let openChanges: @MainActor () -> Void
+    @State private var copied = false
+
+    var body: some View {
+        let files = edited
+        if !files.isEmpty || latest {
+            HStack(spacing: 6) {
+                if latest, !turn.answer.isEmpty {
+                    Button {
+                        let parts: [String] = turn.answer.compactMap { chat.row($0)?.proseText }
+                        let text = parts.joined(separator: "\n\n")
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(text, forType: .string)
+                        copied = true
+                    } label: {
+                        Icon(copied ? "check" : "copy", size: 13)
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 24, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(HoverButtonStyle())
+                    .help(copied ? "Copied" : "Copy")
+                }
+                if !files.isEmpty {
+                    Button(action: openChanges) {
+                        HStack(spacing: 6) {
+                            Icon("diff", size: 13).foregroundStyle(.secondary)
+                            Text(files.count == 1 ? "Changed \(files[0].path.split(separator: "/").last ?? "")"
+                                : "Changed \(files.count) files")
+                            Text("+\(files.reduce(0) { $0 + $1.added })").foregroundStyle(.green)
+                            Text("−\(files.reduce(0) { $0 + $1.removed })").foregroundStyle(.red)
+                        }
+                        .font(.system(size: 12))
+                        .monospacedDigit()
+                        .padding(.horizontal, 8)
+                        .frame(height: 24)
+                        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Palette.well))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Show the changes")
+                }
+            }
+            .padding(.top, -6)
+            .padding(.bottom, 18)
+        }
+    }
+
+    /// Each file the turn changed, once, with its last counts.
+    private var edited: [FileRow] {
+        var files: [String: FileRow] = [:]
+        var order: [String] = []
+        for id in turn.edits {
+            guard let row = chat.row(id), case .fileChange(let changed, _) = row.kind else { continue }
+            for file in changed {
+                if files[file.path] == nil { order.append(file.path) }
+                files[file.path] = file
+            }
+        }
+        return order.compactMap { files[$0] }
+    }
+}
+
+extension Row {
+    /// The words of a prose row.
+    var proseText: String? {
+        if case .prose(let text, _, _) = kind { return ChatWords.text(of: text) }
+        return nil
     }
 }

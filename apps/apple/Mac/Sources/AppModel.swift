@@ -36,12 +36,18 @@ final class AppModel {
     /// Where the main window is: its surface, the agent or host open, and
     /// which panes show.
     var place = Place() {
-        didSet { if place.agent != oldValue.agent { showChat(place.agent, leaving: oldValue.agent) } }
+        didSet {
+            guard place.agent != oldValue.agent else { return }
+            showChat(place.agent, leaving: oldValue.agent)
+            // Leaving the new-agent page leaves what was typed there.
+            if place.agent != nil { starting = nil }
+        }
     }
     /// The open agent's chat, while one is open.
     private(set) var chat: MacChat?
-    /// The New Agent sheet, while it is up.
+    /// The new-agent page's store, while the page is open.
     var starting: MacNewAgent?
+    @ObservationIgnored private var firstMessage: Task<Void, Never>?
     /// The installation's settings, as the daemon last answered them.
     private(set) var settings: MachineSettings?
     /// Setting up the open profile.
@@ -239,19 +245,100 @@ final class AppModel {
         return profile?.family(agent)
     }
 
-    /// Opens the sheet that starts an agent, on this Mac to begin with.
+    /// Opens the new-agent page, on this Mac to begin with.
     func newAgent() {
-        guard let stores else { return }
+        place.surface = .agents
+        place.agent = nil
+        prepareNewAgent()
+    }
+
+    /// Readies the new-agent page's store, once per visit: its host's
+    /// folders and offers are asked for as it opens.
+    func prepareNewAgent() {
+        guard starting == nil, let stores else { return }
         stores.startNewAgent(on: stores.hosts.local?.id)
         starting = MacNewAgent(stores: stores)
     }
 
-    /// Opens an agent's chat from elsewhere — the host page, or the New
-    /// Agent sheet once its agent started, which closes.
+    /// Opens an agent's chat from elsewhere: the host page, a relative on
+    /// the card, or the new-agent page once its agent started.
     func openChat(_ agent: AgentKey) {
-        starting = nil
         place.surface = .agents
         place.agent = agent
+    }
+
+    /// The new-agent page's agent started: its chat opens and the first
+    /// message goes to it as soon as the chat can take it.
+    func started(_ agent: AgentKey) {
+        let prompt = starting?.prompt.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        starting = nil
+        openChat(agent)
+        guard !prompt.isEmpty else { return }
+        firstMessage = Task { [weak self] in
+            for _ in 0..<300 {
+                guard let self, !Task.isCancelled, place.agent == agent else { return }
+                if let chat, chat.model.frame?.caughtUp == true, chat.model.frame?.composer.mode == .send {
+                    chat.draft = prompt
+                    chat.send()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+    }
+
+    // MARK: - Opening an agent elsewhere
+
+    /// The agent's own interface in Terminal: a script that runs
+    /// `amux attach` there, opened as Terminal opens any `.command` file.
+    func openTerminal(_ agent: AgentKey) {
+        guard let row = stores?.fleet.row(agent) else { return }
+        var script = "#!/bin/zsh -l\n"
+        if let config = Self.config { script += "export AMUX_CONFIG=\(Self.quoted(config))\n" }
+        script += "exec amux attach \(Self.quoted(row.card.handle)) --in native\n"
+        let url = FileManager.default.temporaryDirectory.appending(path: "amux-attach-\(row.card.handle).command")
+        do {
+            try script.write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+            NSWorkspace.shared.open(url)
+        } catch {
+            problem = "Terminal could not be opened: \(error.localizedDescription)"
+        }
+    }
+
+    private static func quoted(_ text: String) -> String {
+        "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// The editor a developer most likely uses, among those installed.
+    static let editor: (name: String, url: URL)? = {
+        let known = [
+            ("VS Code", "com.microsoft.VSCode"), ("Cursor", "com.todesktop.230313mzl4w4u92"), ("Zed", "dev.zed.Zed"),
+            ("Sublime Text", "com.sublimetext.4"), ("Xcode", "com.apple.dt.Xcode"),
+        ]
+        for (name, id) in known {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) { return (name, url) }
+        }
+        return nil
+    }()
+
+    /// What the card offers for an agent on this Mac: its folder in Finder
+    /// and in the editor. An agent elsewhere has neither here.
+    func local(_ agent: AgentKey) -> String? {
+        guard let local = stores?.hosts.local?.hostId, agent.host == local,
+            let row = stores?.fleet.row(agent), !row.workingDirectory.isEmpty
+        else { return nil }
+        return row.workingDirectory
+    }
+
+    func reveal(_ path: String) {
+        NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)])
+    }
+
+    func openInEditor(_ path: String) {
+        guard let editor = Self.editor else { return reveal(path) }
+        NSWorkspace.shared.open(
+            [URL(filePath: path)], withApplicationAt: editor.url, configuration: NSWorkspace.OpenConfiguration())
     }
 
     func dismissProblem() { problem = nil }

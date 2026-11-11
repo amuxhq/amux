@@ -58,6 +58,17 @@ class BridgeEnvironmentTests(unittest.TestCase):
             (root / "crates/a/src/lib.rs").write_text("fn a() { let _ = 1; }")
             self.assertNotEqual(bridge.source_fingerprint(root), before)
 
+    def test_source_fingerprint_is_the_same_in_another_checkout_of_the_same_sources(self):
+        prints = []
+        for _ in range(2):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "crates/a/src").mkdir(parents=True)
+                (root / "crates/a/src/lib.rs").write_text("fn a() {}")
+                (root / "Cargo.toml").write_text("[workspace]")
+                prints.append(bridge.source_fingerprint(root))
+        self.assertEqual(prints[0], prints[1])
+
     def test_framework_is_repackaged_only_when_its_inputs_change(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

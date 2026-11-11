@@ -70,6 +70,23 @@ jobs:
       - uses: ./.github/actions/setup-just
       - name: Install build tools
         run: brew install xcodegen
+      # The bridge is five minutes of the gate and most pushes that reach it
+      # change no Rust. Its own recipe skips cargo when the fingerprint of its
+      # inputs matches what it last built, so a bridge restored under that
+      # fingerprint is used as it is.
+      - name: Fingerprint the bridge's inputs
+        id: bridge
+        run: echo "fingerprint=$(scripts/py -B apps/apple/Tools/ios-rust.py --fingerprint)" >> "$GITHUB_OUTPUT"
+      - name: Restore the bridge built from these sources
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            target/ios/AmuxAppDebugTools.xcframework
+            target/ios/AmuxApp.xcframework
+            target/ios/AmuxApp.xcframework.stand-in
+            target/ios/rust-stamp.json
+            target/ios/framework.sha256
+          key: ios-bridge-xcode-26.6-${{ hashFiles('.github/workflows/ios.yml') }}-${{ steps.bridge.outputs.fingerprint }}
       - name: Run the iOS gate
         run: just ios gate
       - name: Upload the shipped-scope audit

@@ -195,9 +195,12 @@ def package_if_changed(framework: Path, slices: list[Path], stamp: Path) -> bool
 def source_fingerprint(root: Path = Path(".")) -> str:
     """A cheap answer to "could cargo have anything to do?".
 
-    Walks every path cargo reads and records name, size and modification time,
-    so a build recipe can skip invoking cargo at all when no Rust input moved.
-    Cargo remains the authority whenever anything did.
+    Walks every path cargo reads and records each file's name and contents,
+    so a build recipe can skip invoking cargo at all when no Rust input
+    changed. Contents, not modification times: a fresh checkout gives every
+    file a new time, and continuous integration restores a bridge built from
+    the same sources by this fingerprint (`ios-rust.py --fingerprint`). Cargo
+    remains the authority whenever anything did change.
     """
     summary = hashlib.sha256()
     for name in SOURCE_ENVIRONMENT:
@@ -208,8 +211,8 @@ def source_fingerprint(root: Path = Path(".")) -> str:
         for entry in entries:
             if not entry.is_file() or "target" in entry.relative_to(root).parts[:2]:
                 continue
-            info = entry.stat()
-            summary.update(f"{entry}\0{info.st_size}\0{info.st_mtime_ns}\n".encode())
+            summary.update(f"{entry.relative_to(root)}\0".encode())
+            summary.update(hashlib.sha256(entry.read_bytes()).digest())
     return summary.hexdigest()
 
 

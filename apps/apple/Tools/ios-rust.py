@@ -14,10 +14,13 @@ driving library never carries it. The shipping library is `ios-package.py`'s.
 
 When no Rust input has changed since the last run, cargo is not invoked and the
 framework is left untouched, so a Swift-only edit costs no Rust work at all.
+`--fingerprint` prints what that is judged by and builds nothing: the key
+continuous integration keeps a built bridge under.
 """
 
 from pathlib import Path
 import argparse
+import hashlib
 import sys
 
 try:
@@ -139,5 +142,11 @@ if __name__ == "__main__":
                         help="also build the slice a driven build for a phone links")
     parser.add_argument("--mac", action="store_true",
                         help="also put the Mac slice in the framework the Swift packages link")
+    parser.add_argument("--fingerprint", action="store_true",
+                        help="print the fingerprint of the bridge's inputs and build nothing")
     arguments = parser.parse_args()
-    main(device=arguments.device, mac=arguments.mac)
+    if arguments.fingerprint:
+        summary = build_fingerprint(arguments.device, arguments.mac)
+        print(hashlib.sha256(summary.encode()).hexdigest())
+    else:
+        main(device=arguments.device, mac=arguments.mac)

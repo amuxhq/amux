@@ -197,7 +197,11 @@ says everything a change left behind. The
 simulator boots while `test-build` compiles the app and every unit suite
 once, for any simulator, and the gate waits for both before the suites run
 what was built. `mobile-check` is left to the iOS target check, which runs it
-on every push. The gate compares no picture
+on every push. The bridge is restored from the Actions cache when one was
+built from the same Rust sources: `ios-rust.py --fingerprint` hashes every
+file cargo would read, the cache is keyed by it, and `just ios rust` skips
+cargo when the fingerprint matches what it last built, which is five minutes
+of the gate on a push that changed no Rust. The gate compares no picture
 ([the iPhone app](IOS.md#no-picture-is-compared) says why). The job uploads
 the shipped-scope audit directory to the run, whether it passed or not.
 

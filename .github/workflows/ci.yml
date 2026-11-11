@@ -15,8 +15,42 @@ env:
   CARGO_INCREMENTAL: "0"
 
 jobs:
+  # Which jobs this change can affect (scripts/ci-affected.py): a change to
+  # documentation alone runs only the policy job, the phone app alone leaves
+  # the product's jobs to the iOS gate, and the models, the sanitizers and the
+  # bridge's checks run when a crate they are built from changed.
+  changes:
+    name: What this change affects
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tests: ${{ steps.affected.outputs.tests }}
+      product: ${{ steps.affected.outputs.product }}
+      models: ${{ steps.affected.outputs.models }}
+      sanitizers: ${{ steps.affected.outputs.sanitizers }}
+      bridge: ${{ steps.affected.outputs.bridge }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Read what changed
+        id: affected
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          PULL_BASE: ${{ github.event.pull_request.base.sha }}
+        # A run started by hand names no earlier commit, so every job runs.
+        run: |
+          case "$EVENT" in
+            push) base=$BEFORE ;;
+            pull_request) base=$PULL_BASE ;;
+            *) base= ;;
+          esac
+          python3 scripts/ci-affected.py --base "$base" --head "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
+
   check-and-clippy:
     name: Check and Clippy
+    needs: changes
+    if: needs.changes.outputs.tests == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -31,6 +65,8 @@ jobs:
 
   fmt:
     name: Format
+    needs: changes
+    if: needs.changes.outputs.tests == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -46,6 +82,8 @@ jobs:
 
   miri:
     name: Pointer checks over the C ABI
+    needs: changes
+    if: needs.changes.outputs.bridge == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -61,6 +99,8 @@ jobs:
 
   sanitizers:
     name: Sanitizers (${{ matrix.kind }})
+    needs: changes
+    if: needs.changes.outputs.sanitizers == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     strategy:
@@ -120,13 +160,19 @@ jobs:
         run: just docs-check
 
   test:
-    name: Test (${{ matrix.os }})
+    name: Test (${{ matrix.os }}, ${{ matrix.part }} of 2)
+    needs: changes
+    if: needs.changes.outputs.tests == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        # Most of this job is running the tests, on a few cores: each
+        # platform runs them as two halves side by side, nextest dealing
+        # every second test to each.
+        part: [1, 2]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Refuse fixture update flags
@@ -153,19 +199,21 @@ jobs:
         # suites, node's supervisor suite and the survive-daemon system
         # journey are ordinary test suites, compiled out on Windows. The
         # protocol models run in the models job instead, on Linux only.
-        run: just test -- --profile ci --exclude models
+        run: just test -- --profile ci --exclude models --partition count:${{ matrix.part }}/2
       - name: Keep the test report
         # Every test's result and time, and a failing test's output, in
         # JUnit form: target/nextest/ci/junit.xml.
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: test-report-${{ matrix.os }}
+          name: test-report-${{ matrix.os }}-${{ matrix.part }}
           path: target/nextest/ci/junit.xml
           if-no-files-found: ignore
 
   platform-free:
     name: Simulated stories and doctests
+    needs: changes
+    if: needs.changes.outputs.product == 'true'
     # What reads the same on every platform runs once, on Linux, rather than
     # in each test job, as the models do.
     runs-on: ubuntu-latest
@@ -188,6 +236,8 @@ jobs:
 
   models:
     name: Models (${{ matrix.model }})
+    needs: changes
+    if: needs.changes.outputs.models == 'true'
     # The protocol models explore every state of the real code at their CI
     # bounds, minutes of every core each; one job per model keeps
     # each model's run beside the others rather than after them, and none
@@ -213,12 +263,14 @@ jobs:
         run: just test-crate models -- -E 'binary_id(models::integration) & test(/^${{ matrix.model }}::/)'
 
   build:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: Build (ubuntu-latest)
+    needs: changes
+    if: needs.changes.outputs.product == 'true'
+    # The shipping binary on Linux only. On macOS and Windows it took 14 and
+    # 19 minutes of every push and set how long CI takes; nightly.yml builds
+    # those, and release.yml builds all three for a release.
+    runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
@@ -229,6 +281,8 @@ jobs:
 
   terminal-journeys:
     name: Terminal journeys (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.product == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -261,6 +315,8 @@ jobs:
 
   ios:
     name: iOS target check
+    needs: changes
+    if: needs.changes.outputs.bridge == 'true'
     runs-on: macos-latest
     timeout-minutes: 20
     steps:

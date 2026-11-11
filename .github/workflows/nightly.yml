@@ -1,0 +1,56 @@
+# What a push does not wait for: the shipping binary on macOS and Windows,
+# which CI builds on Linux only, and the sanitizers, which CI runs only when
+# a crate whose tests they run changed. Both run here every night on main.
+name: Nightly builds and sanitizers
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 1 * * *"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: ./.github/actions/setup-just
+      - name: Build product release
+        run: just release-check
+
+  sanitizers:
+    name: Sanitizers (${{ matrix.kind }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [address, thread]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 2026-10-16
+        with:
+          toolchain: nightly-2026-08-30
+          components: rust-src
+      # The CI job's cache: this job builds the same tests.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: sanitize-${{ matrix.kind }}
+          save-if: false
+      - uses: ./.github/actions/setup-just
+      - name: Run the unsafe code's tests under the sanitizer
+        run: just sanitize ${{ matrix.kind }}

@@ -11,11 +11,12 @@ recipes; [Testing](TESTING.md) describes the suites they run.
 
 | Workflow | File | When | What |
 | --- | --- | --- | --- |
-| CI | [`ci.yml`](../.github/workflows/ci.yml) | Pushes to `main`; pull requests into `main` | Every check a change is held to, on Linux, macOS and Windows |
+| CI | [`ci.yml`](../.github/workflows/ci.yml) | Pushes to `main`; pull requests into `main` | Every check a change is held to, on Linux, macOS and Windows; only the jobs the change can affect run |
 | iOS gate | [`ios.yml`](../.github/workflows/ios.yml) | Pushes to `main` and pull requests into `main` that touch the phone's paths, and by hand | `just ios gate` on Xcode 26.6 |
 | Weekly offline tests | [`offline.yml`](../.github/workflows/offline.yml) | Sundays 04:00 UTC (GitHub often starts it hours late), and by hand | The workspace tests with no external network |
 | iOS captures | [`ios-captures.yml`](../.github/workflows/ios-captures.yml) | By hand | The phone's store suite on the simulator, journeys and the accessibility audit |
 | Models at nightly bounds | [`models-nightly.yml`](../.github/workflows/models-nightly.yml) | Daily 02:00 UTC (GitHub often starts it hours late), and by hand | Every protocol model at its nightly bounds, one Linux job per model, and every simulated testnet story under 2000 seeds |
+| Nightly builds and sanitizers | [`nightly.yml`](../.github/workflows/nightly.yml) | Daily 01:00 UTC (GitHub often starts it hours late), and by hand | The shipping binary on macOS and Windows, and both sanitizers: what a push does not wait for |
 | Release | [`release.yml`](../.github/workflows/release.yml) | A pushed `v*` tag | The `amux` release binaries; see [Release](RELEASE.md) |
 
 Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
@@ -39,15 +40,36 @@ reach a shipped binary.
 
 ### CI jobs
 
+A first job, What this change affects, reads the files the push or pull
+request changed ([`scripts/ci-affected.py`](../scripts/ci-affected.py)) and
+every other job but the policy job runs only if the change can reach it:
+
+| Change | Runs |
+| --- | --- |
+| Documentation only (`docs/`, `images/`, `marketing/`, a top-level `*.md`) | The policy job, which holds the documentation check: about a minute |
+| The phone app only (`apps/apple/`) | Clippy, formatting and the tests, some of which read the app's files; the iOS gate judges the rest |
+| A crate | Those, the build, the journeys and the simulated stories; the models when the models crate is built from that crate; the pointer checks and the iOS target check when the bridge is; the sanitizers when it is one of the crates whose tests they run |
+| Anything else: a manifest, a script, a workflow, a journey, a schema | Every job |
+
+Which crates a crate is built from is read from the manifests. A run started
+by hand, and a push whose earlier commit cannot be fetched, runs every job. A
+test that reads a file under `docs/` is listed in the script, whose own tests
+fail on one that is not.
+
+What a push does not wait for runs in the nightly workflow: the shipping
+binary on macOS and Windows (14 and 19 minutes, the slowest jobs of every
+push while they ran there; a release builds all three platforms itself) and
+the sanitizers after a change to a crate beneath the ones they test.
+
 | Job | Runner | Runs |
 | --- | --- | --- |
 | Check and Clippy | `ubuntu-latest` | `just lint` |
 | Format | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30` |
 | Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat`, `just store-check` |
-| Test | `ubuntu-latest`, `macos-latest`, `windows-latest` | `scripts/no-update-flags.sh`, `just test -- --profile ci --exclude models` |
+| Test | `ubuntu-latest`, `macos-latest`, `windows-latest`, two jobs each | `scripts/no-update-flags.sh`, `just test -- --profile ci --exclude models --partition count:N/2`: each job builds every test and runs every second one |
 | Simulated stories and doctests | `ubuntu-latest` | `just sim`, `just doctest`: what reads the same on every platform, run once |
 | Models | `ubuntu-latest`, one job per protocol model | `just test-crate models` filtered to one model's module of the integration test binary: one model at its CI bounds |
-| Build | `ubuntu-latest`, `macos-latest`, `windows-latest` | `just release-check` |
+| Build | `ubuntu-latest` | `just release-check` |
 | Terminal journeys | `ubuntu-latest`, `macos-latest` | Installs `tmux`, then `just journey terminal all`: every terminal story in the manifest |
 | Pointer checks over the C ABI | `ubuntu-latest` | `just miri`: the phone's C ABI tests under the pinned nightly's interpreter, which fails on any undefined behaviour in a pointer handed across the boundary, read or freed; the tests that start an installation or a tokio runtime are ignored there, each saying why |
 | Sanitizers | `ubuntu-latest`, one job for each of `address` and `thread` | `just sanitize <kind>`: the tests that reach unsafe code and C, built on the pinned nightly with the standard library under the sanitizer; `address` fails on an out-of-bounds access, a use after free or a double free, `thread` on a data race |
@@ -109,8 +131,9 @@ to 253 s):
 | `windows-latest` | 239 s | 286 s | 11 min 41 s |
 
 Linux is the slowest clean test run: 601 s × 1.5 is 902 s, so the run's
-bound is 1000 s. Every job ends near 13 minutes, well inside the 30-minute
-guard. Windows
+bound is 1000 s. Those are whole runs; each platform now runs the tests as
+two jobs of half of them each, so a job is the compile and about half the
+run. Windows
 compiles out most of the slow suites (the embedded client, the supervisor,
 the system journeys, terminal Claude), so its clean run is under half of
 Linux's and does not move the bound. A cold cache, after a `Cargo.lock`

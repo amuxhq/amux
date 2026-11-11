@@ -3510,6 +3510,47 @@ async fn a_suspended_host_lets_go_of_its_links_and_dials_them_at_once_as_it_resu
     net.shutdown().await.unwrap();
 }
 
+/// A suspended host takes no link. A desk that starts afresh while the
+/// laptop sleeps dials every host it trusts at once, at the address the
+/// laptop still holds, and is refused; the laptop is linked by its own dial
+/// as it resumes. A link taken while suspended would be one the host sleeps
+/// holding: dead at its peer within the peer's idle timeout, and a host the
+/// laptop does not dial as it returns, because it reads as linked.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_suspended_host_takes_no_link_until_it_resumes() {
+    let topology = Topology::new()
+        .host_decl(lan_host("desk", "home"))
+        .host_decl(lan_host("laptop", "home"));
+    let mut net = Net::start(topology).await.unwrap();
+    net.trust("desk", "laptop").await.unwrap();
+    net.trust("laptop", "desk").await.unwrap();
+    until_link(&net, "desk", "laptop", true, Duration::from_secs(10)).await;
+    let (desk, laptop) = (host_id(&net, "desk"), edge(&net, "laptop"));
+
+    laptop.suspend().await;
+    let mark = net.link_log("laptop").unwrap().len();
+    net.kill_daemon("desk").await.unwrap();
+    net.restart_daemon("desk").await.unwrap();
+    holds_for(
+        "the suspended laptop to take no link",
+        Duration::from_secs(3),
+        || async {
+            net.link_log("laptop")
+                .unwrap()
+                .iter()
+                .skip(mark)
+                .all(|line| line.event != node::link_log::LinkTransition::Up)
+                && laptop.via(desk).await == LiveRoute::Offline
+        },
+    )
+    .await
+    .unwrap();
+
+    laptop.resume().await;
+    until_link(&net, "desk", "laptop", true, Duration::from_secs(10)).await;
+    net.shutdown().await.unwrap();
+}
+
 /// The daemon runs the device sign-in a client asks for: it hands out the
 /// code and page, asks before adopting a profile that holds an agent, and
 /// binds it once the person approves. The profile stream follows: the

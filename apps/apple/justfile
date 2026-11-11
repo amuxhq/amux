@@ -86,10 +86,9 @@ simulator *NAMES:
 build: rust
     {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-build.py
 
-# The app and every suite `unit` and `component-snapshots` run, built once for
-# any simulator, so both can then run with `--skip-build`. The gate builds
-# this way rather than letting each recipe compile the app again.
-# Build the app and every unit and component suite once.
+# The app and every suite `unit` runs, built once for any simulator, so it
+# can then run with `--skip-build`.
+# Build the app and every unit suite once.
 test-build: rust
     {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-build.py --tests
 
@@ -99,21 +98,6 @@ test-build: rust
 # Run the package and app-hosted unit suites on the golden simulator.
 unit *ARGS: rust
     if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-unit.py "$@"
-
-# Build once, then render the shared SwiftUI component catalog in-process,
-# every frosted surface drawn flat. A list of component IDs selects a subset;
-# --record is the only baseline-writing path, --skip-build checks an existing
-# bundle without compiling edits, and --review DIR writes the frosted examples
-# with their glass on to DIR for a person to look at, comparing nothing.
-# Compare stable components with their native image baselines.
-component-snapshots *ARGS: rust
-    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 2100 {{python}} -B apps/apple/Tools/ios-component-snapshots.py "$@"
-
-# Verify the selected baseline first, then draw an unmistakable strip over the
-# component and require SnapshotTesting to report an image mismatch.
-# Prove component snapshots detect a deliberate visual change.
-component-snapshots-perturb *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; just ios component-snapshots --skip-build --negative-control "$@"
 
 # The app driven the way a person drives it, against a real relay and real
 # daemons started from a committed topology. No arguments runs every journey

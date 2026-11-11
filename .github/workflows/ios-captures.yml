@@ -1,12 +1,9 @@
-# Component snapshots also run on pull requests. This workflow runs them again
-# nightly with every example waiting to stop changing, and the real
-# interaction journeys and accessibility sweep when dispatched by hand.
+# The real interaction journeys and the accessibility sweep, dispatched by
+# hand.
 name: iOS captures
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 3 * * *"
 
 permissions:
   contents: read
@@ -47,14 +44,9 @@ jobs:
       # Every suite here drives the golden device; the small one is not used.
       - name: Boot the golden simulator
         run: just ios simulator golden
-      - name: Compare native component snapshots
-        # Every example waits to stop changing here, which is what proves the
-        # ones the gate photographs at once never change after they are ready.
-        run: just ios component-snapshots --settle-all
       - name: Run the capture suites
-        if: github.event_name != 'schedule'
         run: just ios captures
-      - name: Upload journeys, the audit and component snapshots
+      - name: Upload journeys and the audit
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -62,6 +54,5 @@ jobs:
           path: |
             target/journeys/phone
             target/ios/accessibility
-            target/ios/component-snapshots
           if-no-files-found: warn
           retention-days: 7

@@ -43,9 +43,6 @@ settings:
     ARCHS: arm64
 
 packages:
-  SnapshotTesting:
-    url: https://github.com/pointfreeco/swift-snapshot-testing
-    exactVersion: 1.19.0
   AmuxCore:
     path: Packages/AmuxCore
   AmuxDesign:
@@ -286,43 +283,6 @@ targets:
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
 
-  # Small SwiftUI surfaces render in-process against fixed canvases. Keep this
-  # separate from the ordinary unit suite so an app test does not pay for the
-  # image dependency or launch dozens of renderers. SnapshotTesting is the one
-  # package product this bundle links; the app's local package products still
-  # come from the host, which avoids putting a second Rust bridge in the test
-  # process.
-  AmuxComponentSnapshotTests:
-    type: bundle.unit-test
-    platform: iOS
-    sources:
-      - AmuxComponentSnapshotTests
-      # The storybook list says what each story shows and the golden
-      # manifest every other component this bundle renders; the suite checks
-      # the two together name the same pictures.
-      - path: Goldens/manifest.json
-        buildPhase: resources
-      # Grouped here by name: the list lives outside apps/apple, and left to
-      # itself XcodeGen names the group above it after the checkout's folder,
-      # so each worktree would write a different project file.
-      - path: ../../tests/stories.json
-        buildPhase: resources
-        group: AmuxComponentSnapshotTests
-    dependencies:
-      - target: Amux
-      - package: SnapshotTesting
-        product: SnapshotTesting
-    settings:
-      base:
-        GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: sh.amux.AmuxComponentSnapshotTests
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Amux.app/Amux"
-        BUNDLE_LOADER: "$(TEST_HOST)"
-        TARGETED_DEVICE_FAMILY: "1"
-        SUPPORTS_MACCATALYST: NO
-        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
-        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
-
   AmuxUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -359,20 +319,14 @@ schemes:
         - AmuxUITests
         - AmuxAppTests
 
-  # Every suite `just ios unit` and `just ios component-snapshots` run: the
-  # app-hosted tests, the component pictures and each package's tests. One
-  # scheme so one build-for-testing serves them all; each recipe picks its
-  # suites with `-only-testing`. Run separately, every package scheme built
-  # the packages beneath it again, and the app was built once per recipe.
-  # The component pictures still run in their own test process, apart from
-  # the ordinary unit suites, and do not join `Amux`, whose default test
-  # action remains the ordinary unit and UI suites.
+  # Every suite `just ios unit` runs: the app-hosted tests and each
+  # package's tests. One scheme so one build-for-testing serves them all.
+  # Run separately, every package scheme built the packages beneath it again.
   AmuxTests:
     build:
       targets:
         Amux: all
         AmuxAppTests: [test]
-        AmuxComponentSnapshotTests: [test]
     run:
       config: Debug
     test:
@@ -380,7 +334,6 @@ schemes:
       gatherCoverageData: false
       targets:
         - AmuxAppTests
-        - AmuxComponentSnapshotTests
         - package: AmuxCore/AmuxCoreTests
         - package: AmuxDesign/AmuxDesignTests
         - package: AmuxFeatures/AmuxFeaturesTests

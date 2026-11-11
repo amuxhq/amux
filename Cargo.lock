@@ -2043,7 +2043,6 @@ version = "0.1.0"
 dependencies = [
  "app-runtime",
  "schemars",
- "serde",
  "serde_json",
  "tempfile",
  "ui-state",

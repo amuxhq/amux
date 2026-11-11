@@ -16,13 +16,12 @@ specification.loader.exec_module(recipe)
 
 
 class UnitRecipeTests(unittest.TestCase):
-    def test_default_includes_the_app_hosted_and_package_tests_but_not_the_pictures(self):
+    def test_default_includes_the_app_hosted_and_package_tests(self):
         with patch.object(recipe, "suites", return_value=["AmuxAppTests", "CoreTests"]):
             self.assertEqual(
                 recipe.selected(["-quiet"]),
                 ["-quiet", "-only-testing:AmuxAppTests", "-only-testing:CoreTests"],
             )
-        self.assertNotIn("AmuxComponentSnapshotTests", recipe.suites())
 
     def test_a_named_selection_is_kept_as_given(self):
         named = ["-only-testing:AmuxAppTests/CloudSessionStoreTests",

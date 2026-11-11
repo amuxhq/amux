@@ -14,7 +14,7 @@
 
 set -eu
 
-roots=${AMUX_TEST_ROOTS:-"apps/apple/Packages apps/apple/AmuxAppTests apps/apple/AmuxComponentSnapshotTests apps/apple/AmuxUITests"}
+roots=${AMUX_TEST_ROOTS:-"apps/apple/Packages apps/apple/AmuxAppTests apps/apple/AmuxUITests"}
 
 counted() {
     grep -rnE --include='*.swift' 'for[[:space:]]+_[[:space:]]+in[^{]*\{[[:space:]]*await[[:space:]]+Task\.yield\(\)' "$@" || true

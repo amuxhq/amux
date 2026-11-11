@@ -63,7 +63,7 @@ jobs:
         with:
           components: clippy
           targets: aarch64-apple-ios,aarch64-apple-ios-sim
-      # Named, because the nightly iOS captures job restores it.
+      # Named, because the iOS captures job restores it.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: ios-gate
@@ -72,14 +72,6 @@ jobs:
         run: brew install xcodegen
       - name: Run the iOS gate
         run: just ios gate
-      - name: Upload component snapshot comparisons and timings
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: ios-component-snapshots
-          path: target/ios/component-snapshots
-          if-no-files-found: warn
-          retention-days: 7
       - name: Upload the shipped-scope audit
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

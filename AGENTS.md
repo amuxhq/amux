@@ -14,8 +14,8 @@ never renumber), which `just proto-compat` checks. `amux.dump` is exempt.
   sessions and this tree's daemon. Recipes carry timeouts; a firing timeout is
   a hang to diagnose.
 - Before a change reaches main, run `just premerge` and the tests of the
-  crates it touched. A failing golden or snapshot is re-recorded in the same
-  change, after reading what moved.
+  crates it touched. A failing golden is re-recorded in the same change,
+  after reading what moved.
 - The why of a change and its test evidence go in the commit message; search
   past decisions with `git log --grep`. A rejected alternative that should
   constrain future work goes in that component's page in `docs/`.

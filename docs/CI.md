@@ -14,7 +14,7 @@ recipes; [Testing](TESTING.md) describes the suites they run.
 | CI | [`ci.yml`](../.github/workflows/ci.yml) | Pushes to `main`; pull requests into `main` | Every check a change is held to, on Linux, macOS and Windows |
 | iOS gate | [`ios.yml`](../.github/workflows/ios.yml) | Pushes to `main` and pull requests into `main` that touch the phone's paths, and by hand | `just ios gate` on Xcode 26.6 |
 | Weekly offline tests | [`offline.yml`](../.github/workflows/offline.yml) | Sundays 04:00 UTC (GitHub often starts it hours late), and by hand | The workspace tests with no external network |
-| iOS captures | [`ios-captures.yml`](../.github/workflows/ios-captures.yml) | Nightly 03:00 UTC (GitHub often starts it hours late), and by hand | The phone's component snapshots nightly; journeys and the accessibility audit by hand |
+| iOS captures | [`ios-captures.yml`](../.github/workflows/ios-captures.yml) | By hand | The phone's store suite on the simulator, journeys and the accessibility audit |
 | Models at nightly bounds | [`models-nightly.yml`](../.github/workflows/models-nightly.yml) | Daily 02:00 UTC (GitHub often starts it hours late), and by hand | Every protocol model at its nightly bounds, one Linux job per model, and every simulated testnet story under 2000 seeds |
 | Release | [`release.yml`](../.github/workflows/release.yml) | A pushed `v*` tag | The `amux` release binaries; see [Release](RELEASE.md) |
 
@@ -189,22 +189,17 @@ half of the phone's verification that building the app can settle.
 
 `just ios gate` runs, in order,
 `just ios` `lint`, `script-tests`, `graph-check`, `rust`, `simulator golden`,
-`test-build`, `component-snapshots --skip-build` and `unit --skip-build`. A
+`test-build` and `unit --skip-build`. A
 failing `rust`, `simulator golden` or `test-build` ends it, since the stages
 after them run what they made; any other stage failing lets the rest run,
 and the gate fails at its end naming every stage that did, so one red run
 says everything a change left behind. The
-simulator boots while `test-build` compiles the app and every unit and
-component suite once, for any simulator, and the gate waits for both before the suites run what was built. `mobile-check` is left
-to the iOS target check, which runs it on every push. The only pictures it
-compares are the component snapshots, drawn in-process and flat, so it
-answers the same on any machine. The component snapshot batch runs under its own bound, sized by the rule above
-from the slowest clean CI run: 466 s with only the examples marked to settle
-late waiting (371 to 429 s is usual), so 700 s, and 629 s in the nightly
-captures run, where every picture waits a quiet second (`--settle-all`, also
-used by every recording), so 1000 s. The job uploads the component snapshot
-comparisons and the shipped-scope audit directory to the run, whether it
-passed or not.
+simulator boots while `test-build` compiles the app and every unit suite
+once, for any simulator, and the gate waits for both before the suites run
+what was built. `mobile-check` is left to the iOS target check, which runs it
+on every push. The gate compares no picture
+([the iPhone app](IOS.md#no-picture-is-compared) says why). The job uploads
+the shipped-scope audit directory to the run, whether it passed or not.
 
 `just ios verify` is the whole sequence a developer runs before pushing a
 phone change: the workspace's `fmt-check`, `lint` and `test` (which runs the spec suites), then the
@@ -216,16 +211,12 @@ and `just ios shipping` run those halves alone.
 
 ### iOS captures
 
-The nightly workflow boots the golden simulator on `macos-26` and compares the
-native component snapshots with every example waiting to stop changing
-(`--settle-all`). Nothing it runs uses the small simulator, which took seven minutes to boot. It
-restores the iOS gate's Rust cache and never saves its own: a cache keyed to
-the nightly job was saved only after a green run and evicted before the next
-one, so every night built the Rust bridge and tools from nothing. Run by
-hand, it also runs `just ios captures`: the store suite on the simulator,
-journeys and the accessibility sweep. It uploads the journey evidence, the
-audit's record and the component snapshot comparisons. [The iPhone app](IOS.md) explains what those
-compare.
+Run by hand, the workflow boots the golden simulator on `macos-26` and runs
+`just ios captures`: the store suite on the simulator, journeys and the
+accessibility sweep. Nothing it runs uses the small simulator, which took
+seven minutes to boot. It restores the iOS gate's Rust cache and never saves
+its own. It uploads the journey evidence and the audit's record.
+[The iPhone app](IOS.md) explains what those compare.
 
 ### Waiting
 
@@ -276,11 +267,9 @@ elsewhere moves: a provider fixture added in one crate needs its view golden
 in another.
 
 It leaves out what is slow. The whole workspace's tests take a quarter of an
-hour; run the touched crates' with `just test-crate`. The phone's unit suites and
-snapshots need a simulator and half an hour (`just ios gate`). Windows, the
-sanitizers, the models and the release build run only in CI. A change to what
-the phone draws can therefore still reach main with a baseline left behind;
-the iOS gate catches it there.
+hour; run the touched crates' with `just test-crate`. The phone's unit suites
+need a simulator and a build of the app (`just ios gate`). Windows, the
+sanitizers, the models and the release build run only in CI.
 
 ## `just ci`
 

@@ -40,15 +40,14 @@ struct AmuxApp: App {
     }
 
     /// Whether this launch is the app, rather than a host for something that
-    /// renders roots of its own. An app-hosted unit test still launches the
-    /// application's scene, and so does an Xcode preview; constructing the
-    /// real composition for either would open stores and start the runtime
-    /// only to leave them behind an invisible window.
+    /// renders roots of its own. An Xcode preview still launches the
+    /// application's scene; constructing the real composition for it would
+    /// open stores and start the runtime only to leave them behind an
+    /// invisible window.
     static var drawsItsOwnRoot: Bool {
         #if AMUX_DEBUG_TOOLS
         let environment = ProcessInfo.processInfo.environment
-        return environment["AMUX_COMPONENT_SNAPSHOTS"] != "1"
-            && environment["XCODE_RUNNING_FOR_PREVIEWS"] != "1"
+        return environment["XCODE_RUNNING_FOR_PREVIEWS"] != "1"
         #else
         return true
         #endif

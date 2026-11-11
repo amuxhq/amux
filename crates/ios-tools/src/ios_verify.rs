@@ -25,8 +25,7 @@ const WORKSPACE: &[&str] = &["fmt-check", "lint", "test", "mobile-check"];
 /// These answer from code and from one simulator: what the device and
 /// simulator graphs are allowed to contain, whether the bridge and the app
 /// build, whether the packaged framework links and loads, and what the unit
-/// suites say. Component images render in-process against a pinned native
-/// environment; the suites that drive the running app run separately.
+/// suites say. The suites that drive the running app run separately.
 ///
 /// The app and every suite are built once, by `ios test-build`, and the
 /// suites then run what it built: built by each recipe in turn, the app was
@@ -38,7 +37,6 @@ const GATE: &[&str] = &[
     "ios rust",
     "ios simulator golden",
     "ios test-build",
-    "ios component-snapshots --skip-build",
     "ios unit --skip-build",
 ];
 
@@ -567,10 +565,10 @@ mod tests {
         }
     }
 
-    /// The push gate includes small in-process component renders, but leaves
-    /// the long interaction suites off that path.
+    /// The push gate runs the unit suites, but leaves the long interaction
+    /// suites off that path.
     #[test]
-    fn the_gate_compares_components_but_drives_no_running_app() {
+    fn the_gate_runs_units_but_drives_no_running_app() {
         let gate = recipes(Phases::Gate, ROOT_JUSTFILE, IOS_JUSTFILE).unwrap();
         for driven in ["ios journey", "ios accessibility"] {
             assert!(
@@ -580,7 +578,6 @@ mod tests {
         }
         let runs = |name: &str| gate.iter().any(|stage| recipe_name(stage) == name);
         assert!(runs("unit"), "the gate stopped running units");
-        assert!(runs("component-snapshots"));
         for shipping in SHIPPING {
             assert!(
                 !gate.contains(shipping),

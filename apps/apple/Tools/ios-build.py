@@ -3,8 +3,8 @@
 
 `--configuration Measured` builds the optimised app the performance suite
 drives; the default is the Debug app every other recipe drives. `--tests`
-builds the Debug app together with every suite `ios unit` and
-`ios component-snapshots` run, so both can run with `--skip-build`.
+builds the Debug app together with every suite `ios unit` runs, so it can
+run with `--skip-build`.
 `--device` builds for the phone plugged into this Mac instead, signed under
 the local signing file's Team ID; the bridge's phone slice comes from
 `ios-rust.py --device`.

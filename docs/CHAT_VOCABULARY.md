@@ -340,7 +340,7 @@ each card's choices build. These goldens are the content oracle for both clients
 ([`crates/tui/src/vocabulary.rs`](../crates/tui/src/vocabulary.rs)), in light and dark, into the text goldens
 under `crates/tui/tests/golden/` (`just test-tui`; rewrite with `UPDATE_GOLDENS=1 just test-tui`). Because
 ui-view's goldens already prove the projection per kind, one drawing of each component is the whole terminal
-claim. The phone's component snapshots are described in [IOS.md](IOS.md).
+claim.
 
 ## Regenerating these images
 

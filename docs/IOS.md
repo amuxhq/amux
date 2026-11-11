@@ -570,7 +570,6 @@ Use the cheapest test that can see the regression:
 | Layer | What it holds | Recipe |
 | --- | --- | --- |
 | Unit suites | Model state, decisions and projections, without rendering | `just ios unit` |
-| Component snapshots | One production view from typed inputs: its text, size and both appearances | `just ios component-snapshots` |
 | Journeys | Real taps and typing, routing, persistence, where each element of a screen is drawn, and the machines on the other side | `just ios journey` |
 | Accessibility audit | Every control on every drawn state has a VoiceOver name and a 44 pt target | `just ios accessibility` |
 
@@ -579,85 +578,31 @@ actions that produce it. How the phone's suites fit the rest of the testing
 is on [the testing page](TESTING.md), and the served networks they run
 against are on [the testnet page](TESTNET.md).
 
-### Compared pictures are drawn flat
+### No picture is compared
 
-The pictures a check compares are the component snapshots, drawn in-process
-with the system's Reduce Transparency setting switched on, as a person
-switches it on in Settings. The system then draws its own glass flat — the
-bars' capsules and its buttons — and each of the app's frosted surfaces
-takes the flat branch of `Frosted` in `AmuxDesign/Glass.swift`: a raised
-fill with a hairline rim. Both are exactly what that person sees. The app
-itself is unchanged and still draws Liquid Glass and material on a phone.
+No check compares a picture of the phone. The app once compared 446
+photographs of its components, exactly, on every push. A photograph of a live
+screen is finished by the simulator's render server on its own schedule, so
+the comparison kept failing with nothing wrong: a screen still changing when
+it was photographed, or a baseline an intended change had left behind. It
+caught no bug in the weeks before it was removed, took a third of the gate's
+time, and nobody reviewed pictures a nightly run made. A change to colour,
+spacing or type is therefore seen only by someone looking at the screen.
 
-Glass is not something an exact comparison can hold. The render server
-finishes it after SwiftUI has drawn, out of the app's sight and on its own
-schedule: small glass eases its shadow and filters toward the brightness
-behind it after reports that arrive a third of a second later on one machine
-and more than half a second on another, and larger glass completes in a
-second pass the app cannot observe. A photograph taken at any fixed moment
-shows one stage or another of that work. Drawn flat, the same views repeat
-pixel for pixel.
+The phone journeys draw the app's own frosted surfaces flat, as a person who
+turned Reduce Transparency on sees them (`Frosted` in
+`AmuxDesign/Glass.swift`): the journey driver turns the app's flag on at
+every launch, including the reopens a story makes, so the picture each screen
+leaves for review shows the screen finished. The system's bars keep their
+glass there; a journey compares element geometry, never those pictures.
 
-No photograph of the simulator's display is compared anywhere. The system
-draws its own glass over the app, such as the tab bar's selected pill and the
-fade under a large title, and one Mac draws it differently from another, so a
-display photographed on one machine does not match the same display
-photographed on another.
-
-Glass is looked at by eye instead, in review captures nothing compares:
-
-```sh
-just ios component-snapshots -- --review DIR
-just ios component-snapshots -- --review DIR composer.strip ask.plan
-```
-
-The snapshot run draws with the flag off every selected example that wears a
-frosted surface: one whose window, once it is ready, holds a Liquid Glass
-layer or a backdrop layer SwiftUI draws itself (the material under a panel;
-a list's scroll edge effect is UIKit's and does not count). It waits 2.5 s,
-longer than the render server has been seen to take to finish glass, and
-writes `DIR/<id>.<appearance>.png`. It neither reads nor writes a baseline,
-cannot fail on a picture, and runs in no check.
-
-The phone journeys draw the app's own surfaces flat too: the journey driver
-turns the app's flag on at every launch, including the reopens a story
-makes, so the picture each compared screen leaves for review shows the
-screen finished. The system's bars keep their glass there; a journey
-compares element geometry, never those pictures.
-
-### What a compared picture may differ by
-
-The component snapshots are held to one allowance:
-
-- any pixel may move by up to three 8-bit levels per channel, which is the
-  rasteriser's rounding and the system's own bars drawn on one Mac or
-  another (on CI the review page's bar came out with 283 pixels two or
-  three levels from the picture taken on a desk);
-- at most 64 pixels of a picture may move further, and none of them by more
-  than 8 levels in any channel.
-
-Drawn flat, a picture repeats to rounding nearly every time. Now and then
-the rasteriser draws the anti-aliased edge of a rounded border a few levels
-differently, in a picture that has stopped changing: eight pixels on a
-card's four corners, off by up to four levels, failed a CI run. Noise like
-that is small in area and in distance at once, and a change somebody made
-is not: a mark gone missing moves its pixels far (the needs-you dot alone
-is some 450 pixels), and a colour token that drifted moves thousands. Both
-numbers are deliberately tight, since slack of 12 levels over 600 pixels
-once hid a misplaced mask, and neither is a percentage, which would grow
-with the picture.
-
-The numbers live in `RoundingImageDiff.swift`. A match that spent some of
-the allowance says so in the run's output (`AMUX_SNAPSHOT_STRAYS`), so the
-numbers can be judged from what runs actually see.
-
-### Component snapshots
+### The component catalogue
 
 The debug-only `ComponentCatalog` in `Amux/Debug/` supplies named examples to
-both Xcode's previews and the snapshot suite. Each builds production views
-from typed values and a scripted chat with inert actions, on a fixed canvas,
-traits, locale and time zone, and is drawn in one app-hosted test process
-without navigating or photographing the simulator.
+Xcode's previews. Each builds production views from typed values and a
+scripted chat with inert actions, on a fixed canvas, traits, locale and time
+zone. In Xcode's canvas (`Previews.swift` beside the catalogue) each family's
+gallery preview scrolls through every example of that family.
 
 Some examples are whole screens: the phone's storybook. A story is a screen a
 person reaches in one state that changes how that screen is put together
@@ -665,55 +610,8 @@ person reaches in one state that changes how that screen is put together
 text); one piece in one variant is an ordinary example. The stories are the
 ones `tests/stories.json` gives the phone. That list is shared with the
 terminal's storybook, so the two clients show the same screens by the same
-names, and a story only one client has says why. It also says what each story
-shows; the golden manifest (`Goldens/manifest.json`) says it for every other
-example. The suite fails when an example is described in neither or both, or
-when the list names a story the catalogue does not draw. In Xcode's canvas
-(`Previews.swift` beside the catalogue) each family's gallery preview scrolls
-through every example of that family.
-
-```sh
-just ios component-snapshots
-just ios component-snapshots composer.draft ask.plan
-just ios component-snapshots --skip-build composer.draft
-just ios component-snapshots --record composer.draft
-just ios component-snapshots-perturb row.prose
-```
-
-The ordinary run builds current sources; `--skip-build` checks the last build
-and never verifies a source edit. `--record` is the only way a baseline is
-written: inspect both appearances before committing it, then run an ordinary
-comparison. The perturbation recipe verifies the unchanged baseline, draws a
-stripe over the component and requires a mismatch.
-
-Comparisons use Point-Free's SnapshotTesting under the allowance above
-(`RoundingImageDiff`; see
-[What a compared picture may differ by](#what-a-compared-picture-may-differ-by)).
-Each example is drawn flat (see above) in a
-window of its own, on screen, and photographed once it reports ready and two
-photographs a display frame apart agree. A few take one more change after
-they report ready (an attachment chip replacing "Attaching", a focused
-field's caret appearing), which has come up to 2.8 s later on a CI runner;
-those are marked `settlesLate` in the catalogue and photographed only once
-their photographs have stayed unchanged for a second. `--settle-all` waits
-like that for every example and fails one that changed without the mark; the
-nightly captures run and every `--record` use it, so a new example that
-changes late is caught when its baseline is written. An
-example whose window still holds glass or material when it is photographed
-fails by name, so a surface that reaches glass without the flag is a plain
-failure, never a flaky one. These in-process images say nothing about system
-chrome, keyboards, scrolling or layering between screens; those belong to the
-journeys.
-
-Examples whose ids end in `large-text` are drawn at an accessibility text
-size (accessibility3, accessibility5 for the question card). For these the
-suite also reads the window's accessibility tree, which a SwiftUI screen
-builds only while something reads it, so the suite turns on the automation
-reading that UI test drivers use. It fails when one piece of text is drawn
-over another, or when a control reaches more than a thumb target's slack
-past the canvas. The tree combines a row's words into one element, so this
-check finds text overprinting text and controls cut off. It does not find
-words clipped inside a single element. The pictures cover that case.
+names, and a story only one client has says why. Nothing checks that the
+catalogue draws every story the list gives the phone.
 
 ### Journeys
 
@@ -774,7 +672,7 @@ prose are judged on their name only and listed in the record, which lands in
 
 | Recipe | Runs |
 | --- | --- |
-| `just ios gate` | Lint, script tests, bridge graph check, bridge, simulator, one build of the app and every unit and component suite, then component snapshots and unit suites. What CI runs on every push that touches the phone's paths ([CI](CI.md)). |
+| `just ios gate` | Lint, script tests, bridge graph check, bridge, simulator, one build of the app and every unit suite, then the unit suites. What CI runs on every push that touches the phone's paths ([CI](CI.md)). |
 | `just ios captures` | The store suite on the simulator, journeys and the accessibility audit. On demand in CI. |
 | `just ios shipping` | The shipping XCFramework and the Release scope audit. `just ios release` depends on both. |
 | `just ios measured` | The phone measured on this Mac: `just ios perf`, on an enrolled Mac only ([Performance](PERFORMANCE.md)). |
@@ -809,8 +707,7 @@ At accessibility text sizes the phone reflows rather than cuts:
 [The copy standard](IOS_COPY.md) sets wording, case, terms and punctuation.
 `just ios lint` checks every Swift literal in the app and its packages
 against the English catalogue or an exact non-copy exemption. A copy change
-includes its affected component snapshot baselines, light and dark, and the
-journey geometry that names the words.
+includes the journey geometry that names the words.
 
 ## The app icon
 

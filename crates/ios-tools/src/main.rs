@@ -1,8 +1,3 @@
-/// The component manifest's check against the snapshot baselines, which
-/// only the tests run.
-#[cfg(test)]
-mod golden;
-
 use ios_tools::{ios_verify, swift_types};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

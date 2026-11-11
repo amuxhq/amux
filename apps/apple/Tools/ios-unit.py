@@ -4,8 +4,7 @@
 Every suite runs from the AmuxTests scheme, which holds each package's tests
 beside the app-hosted ones, so one build serves them all. A `-only-testing:`
 selector picks suites and the other arguments are handed to xcodebuild
-unchanged; with none, every package suite and AmuxAppTests run. The component
-pictures share the scheme but are `just ios component-snapshots`'s to run.
+unchanged; with none, every package suite and AmuxAppTests run.
 Tests that need the running application's UIKit, such as the report's frozen
 frame, run in AmuxAppTests, hosted by the app rather than the package test
 runner.

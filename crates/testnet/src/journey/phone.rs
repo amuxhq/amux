@@ -158,7 +158,7 @@ fn launch_arguments(
         "127.0.0.1:0".to_owned(),
         // The fleet's offer of notifications, put away as a person who
         // answered it once would have: the screens the journeys read are
-        // the list's, and the offer has a component snapshot of its own.
+        // the list's.
         "-notificationsOfferDeclined".to_owned(),
         "YES".to_owned(),
     ]);

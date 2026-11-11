@@ -4,8 +4,8 @@
 
 This page is an index. The suites themselves are listed in `tests/catalog.toml`; `just --list` is the command
 surface. The multi-host harness has its own page,
-[TestNet](TESTNET.md), measured performance has [Performance](PERFORMANCE.md), the phone's snapshots
-and journeys are described in [the iPhone app](IOS.md), the Mac's storybook in [the Mac app](MAC.md), and adversarial testing by agents has
+[TestNet](TESTNET.md), measured performance has [Performance](PERFORMANCE.md), the phone's
+journeys are described in [the iPhone app](IOS.md), the Mac's storybook in [the Mac app](MAC.md), and adversarial testing by agents has
 [QA](QA.md).
 
 ## The rule
@@ -38,7 +38,7 @@ Each catalogued suite names one boundary.
 | Client model | `update(state, msg)` gives the same state under any arrival order; inputs reach a settled, rejected or uncertain state. | `crates/ui-state/tests/spec` |
 | Store, effects, bridge | Runtimes and the embedded owner reach the right service; Swift decodes and applies the Rust view and command contract. | `crates/ui-runtime`, `crates/app-runtime`, `crates/app-embedded`, `crates/client`, Swift unit suites |
 | Views | Each view is a pure function of session state; row ids are item keys and never move. | `crates/ui-view/tests` |
-| Native presentation | The terminal and the phone draw a view correctly and interaction sends the right command. The phone's compared pictures are drawn with reduce transparency on, so they hold no glass the render server finishes on its own schedule. | `crates/tui/tests`, `apps/apple` snapshot suites |
+| Native presentation | The terminal and the phone draw a view correctly and interaction sends the right command. No picture of the phone is compared ([the iPhone app](IOS.md#no-picture-is-compared)). | `crates/tui/tests`, `apps/apple` unit suites |
 | System composition | Built binaries launch, survive, stop and clean up as promised: agents outlive a killed daemon, the supervisor updates and rolls back. | `crates/amux/tests`, `crates/agent/tests/lifecycle.rs`, `crates/node/tests/supervisor.rs` |
 | Journeys | A person completes a declared task through a real client and the production path. | `journeys/`, `crates/testnet/src/journey`, `crates/amux/tests/system_journeys.rs` |
 | Model | A protocol promise, written as a sentence, holds in every state a checker reaches by exploring the real code on small instances. | `crates/models` |
@@ -268,15 +268,11 @@ production code, and small authored scenarios. Ordinary runs compare and never r
 | Terminal component goldens (text plus style map) | `crates/tui/tests/golden` | `UPDATE_GOLDENS=1 just test-tui` |
 | Fake-provider scripts and served topologies | `journeys/scripts`, `journeys/topologies` | by hand |
 | Journey screen goldens: terminal frames and styles, phone element geometry | `journeys/goldens/terminal/<story>`, `journeys/goldens/phone/<story>` | `UPDATE_JOURNEY_GOLDENS=1` |
-| Phone component snapshots | `apps/apple/AmuxComponentSnapshotTests/__Snapshots__` | `just ios component-snapshots -- --record` |
 | Performance baselines | `perf/baselines` | `just perf --baseline` and `just ios perf --baseline`; see [Performance](PERFORMANCE.md) |
 
 The recordings and live captures are read by the protocol crates' strict decode tests (every message decodes to a
 known type), the fakes' conformance run and the interpreters' `recorded_*` goldens, so a capture from a newer
-provider shows at once what changed. Every update is reviewed as a diff before it is committed. The phone's pictures with their glass on are review
-captures written wherever they are asked for (`just ios component-snapshots -- --review DIR`) and are never compared
-or committed; [the iPhone app](IOS.md#compared-pictures-are-drawn-flat) says
-why.
+provider shows at once what changed. Every update is reviewed as a diff before it is committed.
 
 ## Journeys
 
@@ -324,7 +320,6 @@ above. [QA](QA.md) describes running it and turning findings into tests.
 | --- | --- |
 | Terminal journey | `target/journeys/<story>`: frames, `observations.json`, `result.txt`, `testnet.log` |
 | Phone journey | `target/journeys/phone/<story>`: each compared screen's picture and element geometry under `actual/`, `observations.json`, `result.txt`, `testnet.log` |
-| Phone component snapshots | `target/ios/component-snapshots` |
 | Phone accessibility audit | `target/ios/accessibility` |
 | Desktop performance | printed report; `--baseline` writes `perf/baselines/desktop/<model>.json` |
 | Phone performance | `target/ios/perf/report.md`; `--baseline` writes `perf/baselines/phone/<machine>.json` |

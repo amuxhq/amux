@@ -123,10 +123,12 @@ public struct NewAgentPage: View {
                 return .handled
             }
             HStack(spacing: 2) {
-                hostMenu
-                folderButton
-                agentMenu
-                permissionMenu
+                // In a narrow window the agent chip drops its provider and the
+                // permission its words, before any chip is cut short.
+                ViewThatFits(in: .horizontal) {
+                    picks(compact: false)
+                    picks(compact: true)
+                }
                 Spacer(minLength: 8)
                 Button {
                     surface.start()
@@ -167,6 +169,15 @@ public struct NewAgentPage: View {
         chosenHost.map { $0.local ? "this Mac" : PlaceNames.host($0.name) } ?? "a host"
     }
 
+    private func picks(compact: Bool) -> some View {
+        HStack(spacing: 2) {
+            hostMenu
+            folderButton
+            agentMenu(compact: compact)
+            permissionMenu(compact: compact)
+        }
+    }
+
     private var hostMenu: some View {
         Menu {
             ForEach(surface.hosts, id: \.hostId) { host in
@@ -196,6 +207,7 @@ public struct NewAgentPage: View {
             Pick(icon: "folder", text: folder)
         }
         .buttonStyle(HoverButtonStyle())
+        .fixedSize()
         .disabled(surface.machine == nil)
         .help(surface.directory.isEmpty ? "Choose its folder" : PlaceNames.path(surface.directory))
         .popover(isPresented: $browsing, arrowEdge: .bottom) {
@@ -215,7 +227,7 @@ public struct NewAgentPage: View {
     }
 
     /// The agent, and the model and effort it starts with.
-    private var agentMenu: some View {
+    private func agentMenu(compact: Bool) -> some View {
         Menu {
             Section("Agent") {
                 ForEach([Provider.claude, .codex], id: \.self) { provider in
@@ -256,7 +268,7 @@ public struct NewAgentPage: View {
             Divider()
             Toggle("New Worktree", isOn: Binding(get: { surface.newWorktree }, set: { surface.newWorktree = $0 }))
         } label: {
-            Pick(icon: nil, text: agentWords)
+            Pick(icon: nil, text: agentWords(compact: compact))
         }
         .menuStyle(.button)
         .buttonStyle(HoverButtonStyle())
@@ -266,20 +278,23 @@ public struct NewAgentPage: View {
     }
 
     /// "Claude · Opus High", and "· worktree" when it gets one.
-    private var agentWords: String {
+    private func agentWords(compact: Bool) -> String {
         var words = [Self.title(surface.provider)]
         if let settings = surface.settings, surface.offer == .offered {
             let model = settings.models.first(where: \.current)?.displayName
             let effort = settings.changeable.effort == .pick
                 ? settings.efforts.first(where: \.current)?.value.capitalized : nil
             let detail = [model, effort].compactMap { $0 }.joined(separator: " ")
-            if !detail.isEmpty { words.append(detail) }
+            if !detail.isEmpty {
+                if compact { words = [] }
+                words.append(detail)
+            }
         }
         if surface.newWorktree { words.append("worktree") }
         return words.joined(separator: " · ")
     }
 
-    @ViewBuilder private var permissionMenu: some View {
+    @ViewBuilder private func permissionMenu(compact: Bool) -> some View {
         if let settings = surface.settings, surface.offer == .offered, settings.changeable.permission == .pick,
             let current = settings.permissions.first(where: \.current)
         {
@@ -292,14 +307,14 @@ public struct NewAgentPage: View {
                 }
             } label: {
                 Pick(
-                    icon: current.neverAsks ? "circle-alert" : "hand", text: ChatWords.permission(current),
+                    icon: current.neverAsks ? "circle-alert" : "hand", text: compact ? nil : ChatWords.permission(current),
                     tint: current.neverAsks ? .orange : .secondary)
             }
             .menuStyle(.button)
             .buttonStyle(HoverButtonStyle())
             .menuIndicator(.hidden)
             .fixedSize()
-            .help("Permission")
+            .help("Permission: \(ChatWords.permission(current))")
         }
     }
 
@@ -356,13 +371,13 @@ extension String {
 /// A chip under the new-agent field: what it is set to, opening its menu.
 private struct Pick: View {
     let icon: String?
-    let text: String
+    let text: String?
     var tint: Color = .secondary
 
     var body: some View {
         HStack(spacing: 5) {
             if let icon { Icon(icon, size: 13) }
-            Text(text).lineLimit(1)
+            if let text { Text(text).lineLimit(1) }
             Icon("chevron-down", size: 11).opacity(0.7)
         }
         .font(.system(size: 12.5))

@@ -223,15 +223,6 @@ jobs:
         if: always()
         shell: bash
         run: sccache --show-stats
-      - name: Keep the test report
-        # Every test's result and time, and a failing test's output, in
-        # JUnit form: target/nextest/ci/junit.xml.
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-report-${{ matrix.os }}-${{ matrix.part }}
-          path: target/nextest/ci/junit.xml
-          if-no-files-found: ignore
 
   platform-free:
     name: Simulated stories and doctests
@@ -328,6 +319,9 @@ jobs:
         run: just journey terminal all
       - name: Upload the terminal journeys' results
         if: always()
+        # The upload has waited on a failing artifact service for twenty
+        # minutes after the journeys were done.
+        timeout-minutes: 5
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: terminal-journeys-${{ matrix.os }}

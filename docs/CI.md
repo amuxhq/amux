@@ -83,9 +83,8 @@ takes seconds shares a job, and the models run a few to a job.
 | iOS target check | `macos-latest` | `just mobile-check` |
 
 The test job runs nextest's `ci` profile, which does not stop at the first
-failure, so a platform reports every failing test; it keeps the run's JUnit
-report (`target/nextest/ci/junit.xml`) as an artifact, every test's result
-and time and a failing test's output. Its matrix does not fail fast either: a
+failure, so a platform reports every failing test; the job's log holds each
+failing test's output. Its matrix does not fail fast either: a
 failure on one operating system does not cancel the others. The Windows
 runner compiles and runs every test binary; suites that need Unix processes,
 PTYs or sockets are compiled out there. Among them are the tests that host

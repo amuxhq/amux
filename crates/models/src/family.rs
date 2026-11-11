@@ -83,11 +83,14 @@ pub struct FamilyDeliveries {
 }
 
 impl FamilyDeliveries {
-    /// The bounds `just test` explores exhaustively. Both processes' unasked
-    /// exits are left to the nightly bounds: the child's alone nearly tripled
-    /// the states, and the parent's nearly doubled them, putting the run past
-    /// half its budget on CI's runner. Both still exit when asked to, and the
-    /// child's turn end still writes a report.
+    /// The bounds `just test` explores exhaustively, sized to a few minutes
+    /// on CI's runner. Three things are left to the nightly bounds. Both
+    /// processes' unasked exits: the child's alone nearly tripled the
+    /// states, and the parent's nearly doubled them. And a timer firing (the
+    /// outbox's retry, the follower's backoff, a message's patience), which
+    /// tripled them again. Both processes still exit when asked to, the
+    /// child's turn end still writes a report, and a link going down and a
+    /// daemon crashing are still explored.
     pub const fn ci() -> Self {
         Self {
             turn_ends: 1,
@@ -95,7 +98,7 @@ impl FamilyDeliveries {
             child_exits: 0,
             downs: 1,
             crashes: 1,
-            waits: 1,
+            waits: 0,
         }
     }
 

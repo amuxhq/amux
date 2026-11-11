@@ -12,6 +12,7 @@ the local signing file's Team ID; the bridge's phone slice comes from
 
 from pathlib import Path
 import argparse
+import os
 import subprocess
 import sys
 
@@ -20,6 +21,19 @@ import ios_phone
 import ios_project
 
 DERIVED_DATA = Path("target/ios/DerivedData")
+# Where Xcode keeps what it compiled, by content, when AMUX_XCODE_CACHE asks
+# for it: continuous integration restores this folder, so a file that did not
+# change is not compiled again on a fresh checkout.
+COMPILATION_CACHE = Path("target/ios/xcode-cache")
+
+
+def compilation_cache() -> list[str]:
+    if os.environ.get("AMUX_XCODE_CACHE") != "1":
+        return []
+    return [
+        "COMPILATION_CACHE_ENABLE_CACHING=YES",
+        f"COMPILATION_CACHE_CAS_PATH={COMPILATION_CACHE.resolve()}",
+    ]
 
 
 def build(configuration: str, tests: bool = False, phone: ios_phone.Phone | None = None) -> None:
@@ -38,6 +52,7 @@ def build(configuration: str, tests: bool = False, phone: ios_phone.Phone | None
         "-configuration", configuration,
         *destination,
         "-derivedDataPath", str(DERIVED_DATA),
+        *compilation_cache(),
         "-quiet",
     ], check=True, timeout=2400 if phone else 1500)
 

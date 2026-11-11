@@ -224,7 +224,12 @@ on every push. The bridge is restored from the Actions cache when one was
 built from the same Rust sources: `ios-rust.py --fingerprint` hashes every
 file cargo would read, the cache is keyed by it, and `just ios rust` skips
 cargo when the fingerprint matches what it last built, which is five minutes
-of the gate on a push that changed no Rust. The gate compares no picture
+of the gate on a push that changed no Rust. What Xcode compiled is kept the
+same way, by content (its compilation cache, which `ios-build.py` turns on
+when `AMUX_XCODE_CACHE` is set): the build of the app and suites took 9 min
+46 s with the cache empty and 6 min 42 s with it full. That cache is saved
+once a week, since each copy is some 400 MB of the repository's cache
+allowance, and a week-old copy still holds most files. The gate compares no picture
 ([the iPhone app](IOS.md#no-picture-is-compared) says why). The job uploads
 the shipped-scope audit directory to the run, whether it passed or not.
 

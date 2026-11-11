@@ -87,7 +87,22 @@ jobs:
             target/ios/rust-stamp.json
             target/ios/framework.sha256
           key: ios-bridge-xcode-26.6-${{ hashFiles('.github/workflows/ios.yml') }}-${{ steps.bridge.outputs.fingerprint }}
+      # What Xcode compiled, by content, so a file that did not change is not
+      # compiled again. Saved once a week, since each copy is hundreds of
+      # megabytes of the repository's cache; a week-old copy still holds most
+      # files.
+      - name: Name this week's compilation cache
+        id: week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - name: Restore what Xcode compiled before
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: target/ios/xcode-cache
+          key: ios-xcode-cache-26.6-${{ steps.week.outputs.week }}
+          restore-keys: ios-xcode-cache-26.6-
       - name: Run the iOS gate
+        env:
+          AMUX_XCODE_CACHE: "1"
         run: just ios gate
       - name: Upload the shipped-scope audit
         if: always()

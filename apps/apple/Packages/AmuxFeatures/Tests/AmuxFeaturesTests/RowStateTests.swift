@@ -1,4 +1,5 @@
 import AmuxCore
+import AmuxWords
 import Foundation
 import XCTest
 @testable import AmuxFeatures

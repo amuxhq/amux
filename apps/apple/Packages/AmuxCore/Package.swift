@@ -9,6 +9,10 @@ let package = Package(
         // The values the Rust bridge hands over, generated from their Rust
         // definitions by `cargo run -p ios-tools -- swift-types`.
         .library(name: "AmuxValues", targets: ["AmuxValues"]),
+        // How every Apple client words those values, so the phone and the
+        // Mac say the same things. Like the values, it never links the
+        // bridge, so the Mac's storybook can draw with it.
+        .library(name: "AmuxWords", targets: ["AmuxWords"]),
     ],
     dependencies: [
         .package(path: "../AmuxPush"),
@@ -22,9 +26,12 @@ let package = Package(
         .target(name: "LaunchClock"),
         .target(name: "AmuxValues", dependencies: [.product(name: "AmuxPush", package: "AmuxPush")]),
         .target(
+            name: "AmuxWords",
+            dependencies: ["AmuxValues", .product(name: "AmuxPush", package: "AmuxPush")]),
+        .target(
             name: "AmuxCore",
             dependencies: [
-                "AmuxApp", "AmuxValues", "LaunchClock",
+                "AmuxApp", "AmuxValues", "AmuxWords", "LaunchClock",
                 .product(name: "AmuxPush", package: "AmuxPush"),
             ]),
         .testTarget(name: "AmuxCoreTests", dependencies: ["AmuxCore"]),

@@ -1,5 +1,6 @@
 import AmuxCore
 import AmuxDesign
+import AmuxWords
 import SwiftUI
 
 /// What the review page asks of whoever showed it.

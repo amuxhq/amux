@@ -1,6 +1,4 @@
-import AmuxCore
-import AmuxDesign
-import SwiftUI
+import AmuxValues
 
 /// Everything a fleet row can say about itself, in one closed set.
 ///
@@ -17,7 +15,7 @@ import SwiftUI
 /// words on the third line, where `Idle` and `Finished · 4 files · +118 −40`
 /// already were.
 /// A word is more precise than a glyph and needs no vocabulary learnt first.
-enum RowState: Equatable {
+public enum RowState: Equatable, Sendable {
     /// Stopped and cannot continue without you. The only case with a mark.
     case needsYou
     case working
@@ -46,7 +44,7 @@ enum RowState: Equatable {
     /// agent is history, whatever its machine is doing now. A dark machine
     /// comes next, and above `needsYou` deliberately: what an agent last
     /// asked for on a machine nobody can reach cannot be answered.
-    init(row: FleetRow) {
+    public init(row: FleetRow) {
         if !row.readable {
             self = .unsupported
             return
@@ -82,7 +80,7 @@ enum RowState: Equatable {
     /// the accent: the inventory carries the phase, not what the ask is
     /// about. A one-shot agent that ended after its turn finished rather
     /// than exited.
-    var word: String? {
+    public var word: String? {
         switch self {
         case .needsYou: "Needs you"
         case .working: "Working"
@@ -99,7 +97,7 @@ enum RowState: Equatable {
 
     /// What follows the word, where it says more than the place. Why an
     /// agent exited is the row's second line, not this.
-    var elaboration: String? {
+    public var elaboration: String? {
         switch self {
         case .unsupported: "update amux to open it"
         case .hostAway: "not live"
@@ -108,17 +106,17 @@ enum RowState: Equatable {
     }
 
     /// Whether the word already names the machine.
-    var namesTheHost: Bool {
+    public var namesTheHost: Bool {
         switch self {
         case .hostOffline, .hostAway: true
         default: false
         }
     }
 
-    var needsYou: Bool { self == .needsYou }
+    public var needsYou: Bool { self == .needsYou }
 
     /// The same, as VoiceOver says it.
-    var spoken: String? {
+    public var spoken: String? {
         switch self {
         case .needsYou: "Needs you"
         case .working: "Working"
@@ -136,7 +134,7 @@ enum RowState: Equatable {
     }
 
     /// What a driver reads the row's state as.
-    var name: String {
+    public var name: String {
         switch self {
         case .needsYou: "needs-you"
         case .working: "working"

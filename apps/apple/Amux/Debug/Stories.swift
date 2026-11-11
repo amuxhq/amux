@@ -2,6 +2,7 @@ import AmuxCore
 import AmuxDesign
 import AmuxFeatures
 import AmuxShell
+import AmuxWords
 import SwiftUI
 
 /// Whole screens in named states, drawn from invented values with no

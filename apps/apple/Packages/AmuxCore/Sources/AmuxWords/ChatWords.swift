@@ -1,5 +1,5 @@
-import AmuxCore
 import AmuxPush
+import AmuxValues
 import Foundation
 
 /// How the phone words the chat's typed facts. The rows, the card and the
@@ -65,7 +65,7 @@ public enum ChatWords {
         }
     }
 
-    static func plural(_ count: UInt32, _ one: String, _ many: String) -> String {
+    public static func plural(_ count: UInt32, _ one: String, _ many: String) -> String {
         count == 1 ? one : many
     }
 
@@ -835,7 +835,7 @@ public enum ChatWords {
         }
     }
 
-    static func scope(_ scope: Scope) -> String {
+    public static func scope(_ scope: Scope) -> String {
         switch scope {
         case .session: String(localized: "this session")
         case .project: String(localized: "in this project")
@@ -928,7 +928,7 @@ public enum ChatWords {
     }
 
     /// How far a scope reaches, under its row.
-    static func reach(_ scope: Scope) -> String {
+    public static func reach(_ scope: Scope) -> String {
         switch scope {
         case .session: String(localized: "For this session")
         case .project: String(localized: "In this project, from now on")

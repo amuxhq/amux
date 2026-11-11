@@ -1,4 +1,3 @@
-import AmuxCore
 import AmuxPush
 import AmuxValues
 import Foundation
@@ -59,7 +58,7 @@ public enum FleetWords {
     }
 
     /// The provider a sign-in belongs to.
-    static func provider(_ kind: Kind) -> String {
+    public static func provider(_ kind: Kind) -> String {
         switch kind {
         case .claudeSdk, .claudePty: "Claude"
         case .codex: "Codex"

@@ -13,7 +13,12 @@ let package = Package(
         .package(path: "../AmuxPush"),
     ],
     targets: [
-        .target(name: "AmuxFeatures", dependencies: ["AmuxCore", "AmuxDesign"]),
+        .target(
+            name: "AmuxFeatures",
+            dependencies: [
+                "AmuxDesign", .product(name: "AmuxCore", package: "AmuxCore"),
+                .product(name: "AmuxWords", package: "AmuxCore"),
+            ]),
         .testTarget(
             name: "AmuxFeaturesTests",
             dependencies: ["AmuxFeatures", .product(name: "AmuxPush", package: "AmuxPush")]),

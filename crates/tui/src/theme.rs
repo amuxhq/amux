@@ -75,7 +75,10 @@ pub struct Tokens {
     /// Section rules: a line that separates without being read.
     pub hairline: Token,
     pub focus: Token,
+    /// Code and paths in prose, commands, and code blocks no grammar colours.
     pub code: Token,
+    /// Type names in a highlighted code block.
+    pub syntax_type: Token,
     pub ok: Token,
     pub warning: Token,
     pub error: Token,
@@ -110,7 +113,7 @@ enum Semantic {
     Warning,
     Error,
     Attention,
-    Code,
+    SyntaxType,
     Focus,
 }
 
@@ -123,7 +126,7 @@ impl Semantic {
             Self::Warning => (3, 11),
             Self::Attention => (4, 12),
             Self::Focus => (5, 13),
-            Self::Code => (6, 14),
+            Self::SyntaxType => (6, 14),
         }
     }
 }
@@ -211,6 +214,33 @@ fn computed(rgb: (u8, u8, u8)) -> Token {
     Token::new(rgb, nearest_ansi(rgb))
 }
 
+/// The ink for code: a soft violet mixed from the scheme's own blue and
+/// magenta, eased toward its text.
+///
+/// The scheme's cyan was the first choice and did not sit well: it is the
+/// loudest slot in most schemes, and code and paths are among the most
+/// repeated things in an agent's prose. A mix of two of the scheme's hues
+/// stays inside the person's palette and reads as calmer than either slot.
+/// Schemes whose blue and magenta are far apart mix to a grey, and those take
+/// their magenta.
+///
+/// Sixteen colours cannot paint a mix, so there code keeps the cyan slot,
+/// the one no other meaning on the screen uses.
+fn code_ink(terminal: &TerminalColors) -> Token {
+    const TOWARD_MAGENTA: f64 = 0.6;
+    const EASED: f64 = 0.15;
+    let blue = terminal.hue(Semantic::Attention).rgb;
+    let magenta = terminal.hue(Semantic::Focus).rgb;
+    let eased = |rgb| mix(rgb, terminal.foreground, EASED);
+    let mixed = eased(mix(blue, magenta, TOWARD_MAGENTA));
+    let rgb = if chromatic(mixed) {
+        mixed
+    } else {
+        eased(magenta)
+    };
+    Token::new(rgb, terminal.hue(Semantic::SyntaxType).ansi)
+}
+
 /// A complete palette resolved in one terminal colour mode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Theme {
@@ -231,7 +261,8 @@ impl Theme {
     /// amux's own dark palette: a cool near-black that is not quite
     /// black, one clearly lighter surface for the person's own words, and
     /// soft accents so nothing in the feed shouts. As in a terminal's own
-    /// palette, the attention ink ("needs you") is a blue and code a cyan.
+    /// palette, the attention ink ("needs you") is a blue; code is a soft
+    /// violet, for the reason [`code_ink`] gives.
     /// Tuned by eye at 120x40 against the working Claude and Codex
     /// screens; every hex is amux's, borrowed from no published scheme.
     pub const fn dark(mode: ColorMode) -> Self {
@@ -250,7 +281,8 @@ impl Theme {
                 panel: Token::new((23, 27, 34), Color::Blue),
                 hairline: Token::new((44, 50, 58), Color::DarkGray),
                 focus: Token::new((156, 140, 214), Color::Magenta),
-                code: Token::new((86, 182, 194), Color::Cyan),
+                code: Token::new((166, 158, 232), Color::Cyan),
+                syntax_type: Token::new((86, 182, 194), Color::Cyan),
                 ok: Token::new((134, 184, 122), Color::Green),
                 warning: Token::new((210, 162, 76), Color::Yellow),
                 error: Token::new((222, 123, 132), Color::LightRed),
@@ -267,9 +299,9 @@ impl Theme {
     }
 
     /// amux's own light palette: a warm off-white that is easier to sit
-    /// in front of than pure white, the same blue attention and cyan code
-    /// darkened until they hold their own on paper, and diff tints kept pale enough that a
-    /// hunk still reads as text.
+    /// in front of than pure white, the same blue attention and violet code
+    /// darkened until they hold their own on paper, and diff tints kept pale
+    /// enough that a hunk still reads as text.
     pub const fn light(mode: ColorMode) -> Self {
         Self {
             tokens: Tokens {
@@ -286,7 +318,8 @@ impl Theme {
                 focus: Token::new((109, 78, 156), Color::Magenta),
                 // Conventional cyan does not read on paper; in the sixteen
                 // faces code shares attention's blue, in a different context.
-                code: Token::new((14, 112, 122), Color::Blue),
+                code: Token::new((96, 82, 170), Color::Blue),
+                syntax_type: Token::new((14, 112, 122), Color::Blue),
                 ok: Token::new((47, 122, 68), Color::Green),
                 warning: Token::new((138, 91, 16), Color::Yellow),
                 error: Token::new((168, 50, 68), Color::Red),
@@ -367,7 +400,8 @@ impl Theme {
             error: hue(Semantic::Error),
             diff_removed_fg: hue(Semantic::Error),
             attention: hue(Semantic::Attention),
-            code: hue(Semantic::Code),
+            code: code_ink(&terminal),
+            syntax_type: hue(Semantic::SyntaxType),
             focus: hue(Semantic::Focus),
         };
 
@@ -446,7 +480,7 @@ impl Theme {
             TokenKind::Keyword => self.tokens.focus,
             TokenKind::String | TokenKind::Inserted => self.tokens.ok,
             TokenKind::Number => self.tokens.warning,
-            TokenKind::Type => self.tokens.code,
+            TokenKind::Type => self.tokens.syntax_type,
             TokenKind::Function => self.tokens.attention,
             TokenKind::Comment => self.tokens.faint,
             TokenKind::Deleted => self.tokens.error,
@@ -511,21 +545,6 @@ impl Theme {
         Style::default().fg(self.color(self.tokens.focus))
     }
 
-    /// A markdown heading: structure in an agent's prose.
-    pub(crate) fn heading(self) -> Style {
-        Style::default()
-            .fg(self.color(self.tokens.attention))
-            .add_modifier(Modifier::BOLD)
-    }
-
-    /// A link in an agent's prose, kept apart from the words around it by
-    /// more than the underline.
-    pub(crate) fn link(self, style: Style) -> Style {
-        style
-            .fg(self.color(self.tokens.attention))
-            .add_modifier(Modifier::UNDERLINED)
-    }
-
     /// Added diff content and its tint.
     pub(crate) fn diff_added(self) -> Style {
         Style::default()
@@ -585,16 +604,6 @@ impl Theme {
         {
             return 'e';
         }
-        if style.add_modifier.contains(Modifier::BOLD)
-            && fg == Some(self.color(self.tokens.attention))
-        {
-            return 'H';
-        }
-        if style.add_modifier.contains(Modifier::UNDERLINED)
-            && fg == Some(self.color(self.tokens.attention))
-        {
-            return 'L';
-        }
         if style.add_modifier.contains(Modifier::ITALIC) && fg == Some(self.color(self.tokens.text))
         {
             return 'i';
@@ -603,6 +612,7 @@ impl Theme {
         for (token, class) in [
             (self.tokens.muted, 'm'),
             (self.tokens.code, 'c'),
+            (self.tokens.syntax_type, 't'),
             (self.tokens.attention, 'a'),
             (self.tokens.ok, 'o'),
             (self.tokens.warning, 'w'),
@@ -700,7 +710,12 @@ fn make_readable(tokens: &mut Tokens, faces: &Faces) {
     lift(&mut tokens.faint, &surfaces, READABLE_TRIM, true);
     lift(&mut tokens.attention, &surfaces, READABLE_LABEL, true);
     lift(&mut tokens.focus, &surfaces, READABLE_LABEL, true);
+    // Code is a mix rather than a slot, so repair would round it to the
+    // face its hue is nearest; keep the slot `code_ink` gave it instead.
+    let code_face = tokens.code.ansi;
     lift(&mut tokens.code, &surfaces, READABLE_LABEL, true);
+    tokens.code.ansi = code_face;
+    lift(&mut tokens.syntax_type, &surfaces, READABLE_LABEL, true);
     lift(&mut tokens.ok, &surfaces, READABLE_LABEL, true);
     lift(&mut tokens.warning, &surfaces, READABLE_LABEL, true);
     lift(&mut tokens.error, &surfaces, READABLE_LABEL, true);
@@ -1121,8 +1136,6 @@ mod tests {
         assert_eq!(theme.classify(theme.text()), '.');
         assert_eq!(theme.classify(theme.muted()), 'm');
         assert_eq!(theme.classify(theme.emphasis()), 'e');
-        assert_eq!(theme.classify(theme.heading()), 'H');
-        assert_eq!(theme.classify(theme.link(theme.text())), 'L');
         let italic = Style::default()
             .fg(theme.color(theme.tokens.text))
             .add_modifier(Modifier::ITALIC);
@@ -1360,6 +1373,32 @@ mod tests {
         }
     }
 
+    /// Code in a derived palette is a colour of the terminal's own blue and
+    /// magenta rather than its cyan, and in sixteen colours, where a mix
+    /// cannot be painted, it names the cyan slot.
+    #[test]
+    fn a_terminal_palette_mixes_code_from_its_blue_and_magenta() {
+        for (name, terminal) in terminal_schemes() {
+            let code = Theme::from_terminal(terminal, ColorMode::TrueColor)
+                .tokens
+                .code;
+            assert!(chromatic(code.rgb), "{name}: code is a grey");
+            let away = |slot: usize| {
+                let delta = (to_hsl(code.rgb).0 - to_hsl(terminal.ansi[slot]).0).abs();
+                delta.min(360.0 - delta)
+            };
+            assert!(
+                away(6) > 20.0 && away(14) > 20.0,
+                "{name}: code is still the terminal's cyan"
+            );
+            assert_eq!(
+                Theme::from_terminal(terminal, ColorMode::Ansi).code().fg,
+                Some(terminal.hue(Semantic::SyntaxType).ansi),
+                "{name}: code in sixteen colours is not the cyan slot"
+            );
+        }
+    }
+
     /// In sixteen colours a derived palette can only name the terminal's
     /// slots, so an accent keeps the slot it came from and every derived
     /// face is measured against what the terminal said that slot paints as,
@@ -1453,6 +1492,7 @@ mod tests {
                 (tokens.attention, "attention"),
                 (tokens.focus, "focus"),
                 (tokens.code, "code"),
+                (tokens.syntax_type, "type names"),
                 (tokens.ok, "ok"),
                 (tokens.warning, "warning"),
                 (tokens.error, "error"),
@@ -1580,6 +1620,7 @@ mod tests {
                 theme.tokens.panel,
                 theme.tokens.focus,
                 theme.tokens.code,
+                theme.tokens.syntax_type,
                 theme.tokens.ok,
                 theme.tokens.warning,
                 theme.tokens.error,

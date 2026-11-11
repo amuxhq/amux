@@ -256,12 +256,12 @@
     {
       "name": "new-agent.claude",
       "shows": "Starting a Claude agent: the host, the folder, the name, the model, effort and permission.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "new-agent.browsing",
       "shows": "Choosing the folder a new agent starts in: recent ones, and a typed path.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "new-agent.terminal",

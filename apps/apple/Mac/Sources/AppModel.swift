@@ -40,6 +40,8 @@ final class AppModel {
     }
     /// The open agent's chat, while one is open.
     private(set) var chat: MacChat?
+    /// The New Agent sheet, while it is up.
+    var starting: MacNewAgent?
     /// The installation's settings, as the daemon last answered them.
     private(set) var settings: MachineSettings?
     /// Setting up the open profile.
@@ -237,9 +239,25 @@ final class AppModel {
         return profile?.family(agent)
     }
 
-    /// Opens the sheet that starts an agent.
+    /// Opens the sheet that starts an agent, on this Mac to begin with.
     func newAgent() {
-        // The sheet comes with the new-agent step.
+        guard let stores else { return }
+        stores.startNewAgent(on: stores.hosts.local?.id)
+        starting = MacNewAgent(stores: stores)
+    }
+
+    /// Opens an agent's chat from elsewhere — the host page, or the New
+    /// Agent sheet once its agent started, which closes.
+    func openChat(_ agent: AgentKey) {
+        starting = nil
+        place.surface = .agents
+        place.agent = agent
+    }
+
+    /// Stops trusting a paired host, leaving its page.
+    func revoke(_ host: [UInt8]) {
+        if let id = HostId(bytes: host) { stores?.revoke(id) }
+        if place.host == host { place.host = nil }
     }
 
     /// Pins, settles, renames or deletes an agent; a refusal is said on the

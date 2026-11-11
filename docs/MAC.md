@@ -31,7 +31,20 @@ changes and family.
   them and back. Search narrows the list through the runtime's filter, and
   the arrow keys move the selection.
 - **The hosts sidebar** lists this Mac, then the machines the profile trusts,
-  each saying how this Mac reaches it.
+  each saying how this Mac reaches it. Picking one opens its page in the
+  centre: its platform, version, which providers are signed in, its
+  addresses, what being away or offline means for its agents, and the
+  agents on it, each opening its chat. A paired machine's page ends with
+  Stop Trusting, which revokes it after a confirmation.
+- **New Agent** (the sidebar's compose button, or the empty centre's) is a
+  sheet with everything on it at once, as on the phone: the host, this Mac
+  to begin with, where an unreachable one is listed and cannot be picked;
+  the directory, with the host's recent folders and repositories as chips
+  and the rest in a popover that searches as typed and takes a path; the
+  agent, with the model, effort, permission and mode its host offers; a new
+  worktree; and the name. The button names the host it starts on. The agent
+  that starts opens in the centre and the sheet closes; a refusal is said
+  above the button in the host's words.
 - **The top bars** are the title bar's height, so the window's buttons centre
   in the sidebar's. The centre's bar names the open agent by its folder and
   name and toggles the right-hand pane (⌥⌘I); a hidden sidebar's buttons move
@@ -67,8 +80,11 @@ puts a story anywhere by handing one in.
 The screens read a chat through `ChatSurface` and a review through
 `ReviewSurface`, protocols the app's `MacChat` and `MacReview` answer by
 reading the shared `ChatModel` and `ReviewModel` directly, so a view that
-reads one row redraws when that row moves. The storybook answers them with
-chats that hold still.
+reads one row redraws when that row moves. New Agent reads the shared
+`NewAgentStore` through `NewAgentSurface` in the same way, with what leaves
+the Mac — listing a host's directories, asking what it offers, starting the
+agent — sent through the `StoreBundle`. The storybook answers each of them
+with one that holds still.
 
 ## Setting up
 
@@ -204,7 +220,8 @@ files, with an `index.md`, without putting anything on the desktop, so an
 agent can look at a screen while somebody works at the Mac. Each story's
 window is real but sits past the edge of every display, and the window server
 photographs it. Drawing a view into a bitmap would not do: that leaves glass
-and sidebars blank. The window is never active, so its traffic lights are grey
+and sidebars blank. A sheet's story is drawn alone, without a window around
+it, at one size. The window is never active, so its traffic lights are grey
 and its selection muted. A capture fails when a story's window comes out empty.
 
 The stories are `Packages/AmuxMacScreens/Sources/AmuxMacStories/Stories.swift`.
@@ -276,5 +293,6 @@ staged rollout for the Mac app.
 
 ## Not yet
 
-- The app's real screens beyond setting up and Settings, and its copy in the
-  string catalogue.
+- Pairing another phone or host after setting up, and a host's fingerprint
+  on its page.
+- The app's copy in the string catalogue.

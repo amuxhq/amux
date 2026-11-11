@@ -328,13 +328,14 @@ private struct SettledFoot: View {
 
 struct SearchField: View {
     @Binding var text: String
+    var prompt = "Search"
 
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 12))
                 .foregroundStyle(.tertiary)
-            TextField("Search", text: $text)
+            TextField(prompt, text: $text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
             if !text.isEmpty {

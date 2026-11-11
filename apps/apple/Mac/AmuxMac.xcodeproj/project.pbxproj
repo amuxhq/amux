@@ -13,7 +13,9 @@
 		2AA29F182EE17F3BA30F28E8 /* AmuxValues in Frameworks */ = {isa = PBXBuildFile; productRef = EDF6099D303E94EA79ED9065 /* AmuxValues */; };
 		3758B979E572D9ECE8CF5F67 /* AmuxMacStories in Frameworks */ = {isa = PBXBuildFile; productRef = 4A003AAF384DBE90FB7A3C95 /* AmuxMacStories */; };
 		3B91C043C0933A2A675FB555 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AD0F409077019ED26D1A62A /* AppModel.swift */; };
+		434061D586640136A2C0D615 /* MacNewAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDF30FE89C87A5A6106AFD47 /* MacNewAgent.swift */; };
 		4392C923FBBB70AB383F7070 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35ACFC26A1D58966C680CFB4 /* MainWindow.swift */; };
+		4579F28F51468255CED4809A /* MacNewAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDF30FE89C87A5A6106AFD47 /* MacNewAgent.swift */; };
 		4B2CDB27BE213B97988EF311 /* SettingsWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2562BD49C150F71B56CD979B /* SettingsWindow.swift */; };
 		4E6FFBCE4B0040245C2042FA /* AmuxMacScreens in Frameworks */ = {isa = PBXBuildFile; productRef = BFD9FAA1300DAA573A2CAFE4 /* AmuxMacScreens */; };
 		748BF46B286856646B0449F8 /* SetupWalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7C00CABFF413D47B11818BC /* SetupWalk.swift */; };
@@ -55,6 +57,7 @@
 		C6361E231B9F50C6C65E2E69 /* Storybook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Storybook.swift; sourceTree = "<group>"; };
 		D7C00CABFF413D47B11818BC /* SetupWalk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupWalk.swift; sourceTree = "<group>"; };
 		E1D266B60D21AF474C2CDE0A /* MacChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacChat.swift; sourceTree = "<group>"; };
+		EDF30FE89C87A5A6106AFD47 /* MacNewAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacNewAgent.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -99,6 +102,7 @@
 				AA7C9EEC1ABEC000EEAB795C /* AmuxMacApp.swift */,
 				1AD0F409077019ED26D1A62A /* AppModel.swift */,
 				E1D266B60D21AF474C2CDE0A /* MacChat.swift */,
+				EDF30FE89C87A5A6106AFD47 /* MacNewAgent.swift */,
 				35ACFC26A1D58966C680CFB4 /* MainWindow.swift */,
 				2562BD49C150F71B56CD979B /* SettingsWindow.swift */,
 				010C7AFBB1A5638DA828D47A /* Setup.swift */,
@@ -276,6 +280,7 @@
 			files = (
 				C4AB5E62EB42518BC1B00D88 /* AppModel.swift in Sources */,
 				B01344530777C58DF863E29D /* MacChat.swift in Sources */,
+				4579F28F51468255CED4809A /* MacNewAgent.swift in Sources */,
 				4392C923FBBB70AB383F7070 /* MainWindow.swift in Sources */,
 				9BCEDAAAFE6DCB85B84B0794 /* SettingsWindow.swift in Sources */,
 				E769F0244255E2ECDF2B38EF /* Setup.swift in Sources */,
@@ -302,6 +307,7 @@
 				D5D889A5278B8F70810357FE /* AmuxMacApp.swift in Sources */,
 				3B91C043C0933A2A675FB555 /* AppModel.swift in Sources */,
 				0FF81B02E36F12E1E02B7166 /* MacChat.swift in Sources */,
+				434061D586640136A2C0D615 /* MacNewAgent.swift in Sources */,
 				882195E368B9D757F25FE602 /* MainWindow.swift in Sources */,
 				4B2CDB27BE213B97988EF311 /* SettingsWindow.swift in Sources */,
 				8B3E1B675CE87AB02FD5AD6A /* Setup.swift in Sources */,

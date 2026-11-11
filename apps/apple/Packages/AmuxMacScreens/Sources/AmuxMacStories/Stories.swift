@@ -10,6 +10,8 @@ public struct Story: Identifiable, Sendable {
     public enum Window: Sendable {
         case main
         case settings
+        /// A sheet, drawn alone at its own size.
+        case sheet
     }
 
     public let name: String
@@ -29,7 +31,7 @@ public struct Story: Identifiable, Sendable {
         self.build = {
             switch window {
             case .main: AnyView(build().frame(minWidth: 680, minHeight: 560))
-            case .settings: AnyView(build())
+            case .settings, .sheet: AnyView(build())
             }
         }
     }
@@ -44,7 +46,7 @@ public struct ListedStory: Decodable, Sendable {
 
 public enum Stories {
     /// Every story, in the list's order.
-    public static let all: [Story] = launch + setup + fleet + hosts + chat + settings
+    public static let all: [Story] = launch + setup + fleet + hosts + newAgent + chat + settings
 
     /// The list's Mac stories, in its order.
     public static func listed(in list: Data) throws -> [ListedStory] {
@@ -256,14 +258,50 @@ public enum Stories {
         host(4, "studio.local", .offline(.plain)),
     ]
 
+    /// build-box, with what it says of itself.
+    private static var buildBox: HostView {
+        var box = paired[0]
+        box.providers = [
+            ProviderSignIn(provider: .claude, signedIn: true), ProviderSignIn(provider: .codex, signedIn: false),
+        ]
+        box.addrs = ["192.168.1.24:47821", "[fe80::1c2b:3a]:47821"]
+        return box
+    }
+
     private static let hosts = [
         Story("hosts.list") {
             MainStory(
-                MainContent(profiles: [signedIn], fleet: busy, hosts: paired, thisMac: thisMac),
-                place: Place(surface: .hosts))
+                MainContent(profiles: [signedIn], fleet: busy, hosts: [buildBox] + paired.dropFirst(), thisMac: thisMac),
+                place: Place(surface: .hosts, host: buildBox.hostId))
         },
         Story("hosts.empty") {
             MainStory(MainContent(profiles: [work], thisMac: thisMac), place: Place(surface: .hosts))
+        },
+    ]
+
+    // MARK: - Starting an agent
+
+    @MainActor private static func starting() -> StillNewAgent {
+        StillNewAgent(
+            hosts: [thisMac, buildBox] + paired.dropFirst(), machine: thisMac.hostId,
+            repositories: [
+                Directory(path: home("/src/amux"), name: "amux"),
+                Directory(path: home("/src/website"), name: "website"),
+                Directory(path: home("/src/skills"), name: "skills"),
+            ],
+            recent: [
+                Directory(path: home("/src/amux-a2a"), name: "amux-a2a"),
+                Directory(path: home("/Desktop/notes"), name: "notes"),
+            ],
+            directory: home("/src/amux"))
+    }
+
+    private static let newAgent = [
+        Story("new-agent.claude", window: .sheet) { NewAgentSheet(surface: starting()) },
+        Story("new-agent.browsing", window: .sheet) {
+            DirectoryChooser(surface: starting())
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(nsColor: .windowBackgroundColor))
         },
     ]
 
@@ -507,6 +545,13 @@ private struct MainStory: View {
                 ChatPane(
                     chat: chat, row: content.fleet.sections.flatMap(\.rows).first { $0.card.agent == agent },
                     inspectorOpen: place.inspector != nil, openInspector: { place.inspector = $0 })
+            } else if place.surface == .hosts, let id = place.host,
+                let host = ([content.thisMac].compactMap { $0 } + content.hosts).first(where: { $0.hostId == id })
+            {
+                HostPage(
+                    host: host,
+                    agents: content.fleet.sections.flatMap(\.rows).filter { $0.card.agent.host == id },
+                    now: content.fleet.now)
             } else {
                 EmptyCentre(surface: place.surface)
             }

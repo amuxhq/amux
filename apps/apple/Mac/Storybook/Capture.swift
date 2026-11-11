@@ -43,10 +43,10 @@ enum Capture {
         for story in stories {
             let shows = listed.first { $0.name == story.name }?.shows ?? ""
             index += "## \(story.name)\n\n\(shows)\n\n"
-            let sizes: [StorySize] = story.window == .settings ? [.regular] : StorySize.allCases
+            let sizes: [StorySize] = story.window != .main ? [.regular] : StorySize.allCases
             for size in sizes {
                 for (name, appearance) in appearances {
-                    let file = story.window == .settings
+                    let file = story.window != .main
                         ? "\(story.name).\(name).png" : "\(story.name).\(size.rawValue).\(name).png"
                     let key = "\(story.window)-\(size)-\(name)"
                     if empty[key] == nil {

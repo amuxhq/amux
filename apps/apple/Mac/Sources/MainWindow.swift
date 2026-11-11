@@ -25,6 +25,14 @@ struct AppWindow: View {
                             inspectorOpen: model.place.inspector != nil,
                             openInspector: { model.place.inspector = $0 })
                         .id(agent)
+                    } else if model.place.surface == .hosts, let id = model.place.host, let host = host(id) {
+                        HostPage(
+                            host: host,
+                            agents: model.stores?.fleet.rows.filter { $0.card.agent.host == id } ?? [],
+                            now: model.stores?.fleet.orderedAt ?? Date(),
+                            openAgent: { model.openChat($0) },
+                            revoke: { model.revoke($0) })
+                        .id(id)
                     } else {
                         EmptyCentre(surface: model.place.surface) { model.newAgent() }
                     }
@@ -36,8 +44,22 @@ struct AppWindow: View {
                             openAgent: { model.place.agent = $0 })
                     }
                 }
+                .sheet(isPresented: Binding(get: { model.starting != nil }, set: { if !$0 { model.starting = nil } })) {
+                    if let starting = model.starting {
+                        NewAgentSheet(surface: starting) { model.starting = nil }
+                    }
+                }
+                .onChange(of: model.stores?.newAgent.created) { _, created in
+                    if let created, model.starting != nil { model.openChat(created) }
+                }
             }
         }
+    }
+
+    /// A host on the hosts surface, this Mac among them.
+    private func host(_ id: [UInt8]) -> HostView? {
+        guard let hosts = model.stores?.hosts else { return nil }
+        return ([hosts.local].compactMap { $0 } + hosts.hosts).first { $0.hostId == id }
     }
 
     private func launch(_ state: LaunchState) -> some View {

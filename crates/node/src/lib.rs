@@ -134,6 +134,18 @@ pub mod harness {
         relay_quic_client_config_with_roots, relay_quic_server_config_from_der,
     };
 
+    /// Writes the account file of a profile that signed in at `service` as
+    /// `subject` and has signed out since, as this build writes one: a
+    /// profile tied to an account, with no service to sign in at.
+    pub fn write_signed_out_account(
+        profile_dir: &std::path::Path,
+        service: &str,
+        subject: &str,
+        email: &str,
+    ) -> std::io::Result<()> {
+        crate::edge::account::write_signed_out(profile_dir, service, subject, email)
+    }
+
     /// A discovery factory whose instances share one scripted bus.
     pub fn scripted_discovery(bus: &ScriptedDiscovery) -> crate::edge::DiscoveryFactory {
         let bus = bus.clone();

@@ -43,6 +43,29 @@ pub(crate) struct AccountRecord {
     pub(crate) client_id: String,
 }
 
+/// Writes the account file of a profile that signed in at `service` as
+/// `subject` and has signed out since, as this build writes one. For test
+/// infrastructure that needs a profile tied to an account with no service
+/// to sign in at; a signed-out profile dials nothing.
+pub(crate) fn write_signed_out(
+    profile_dir: &Path,
+    service: &str,
+    subject: &str,
+    email: &str,
+) -> io::Result<()> {
+    let record = AccountRecord {
+        service: CloudServiceId::canonicalize(service).map_err(io::Error::other)?,
+        subject: subject.to_owned(),
+        name: None,
+        email: Some(email.to_owned()),
+        picture: None,
+        bound_at_ms: 1,
+        refresh_token: None,
+        client_id: cli_client(),
+    };
+    Account::open(profile_dir)?.write(record)
+}
+
 /// Where a profile stands with its account.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Binding {

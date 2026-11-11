@@ -138,7 +138,7 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
             HStack(spacing: 0) {
                 if layout.showsSidebar {
                     sidebar(bar: bar)
-                        .frame(width: Metrics.rail + sidebarWidth)
+                        .frame(width: layout.sidebar - 1)
                         .background(Palette.sidebar)
                     ColumnEdge(width: $sidebarWidth, range: Metrics.sidebarRange)
                 }
@@ -348,23 +348,22 @@ public struct EmptyCentre: View {
 
 /// How the columns share a window too narrow for all three at their
 /// widths: the inspector gives way to its narrowest first, then the
-/// sidebar steps aside while the inspector is open, so the chat never
-/// drops below a readable width.
+/// sidebar to its own, then the sidebar steps aside, so the chat never
+/// drops below a readable width. Widths include the rail and each column's
+/// edge.
 struct ColumnLayout {
     static let centre: CGFloat = 380
+    static let narrowestSidebar = Metrics.rail + Metrics.sidebarRange.lowerBound + 1
+    static let narrowestInspector = Metrics.inspectorRange.lowerBound + 1
 
     let showsSidebar: Bool
+    let sidebar: CGFloat
     let inspector: CGFloat
 
     init(width: CGFloat, sidebar: CGFloat, inspector: CGFloat) {
-        guard inspector > 0 else {
-            showsSidebar = sidebar > 0
-            self.inspector = 0
-            return
-        }
-        let narrowest = Metrics.inspectorRange.lowerBound + 1
-        showsSidebar = sidebar > 0 && sidebar + Self.centre + narrowest <= width
-        let room = width - (showsSidebar ? sidebar : 0) - Self.centre
-        self.inspector = max(narrowest, min(inspector, room))
+        let least = inspector > 0 ? Self.narrowestInspector : 0
+        showsSidebar = sidebar > 0 && Self.narrowestSidebar + Self.centre + least <= width
+        self.sidebar = showsSidebar ? max(Self.narrowestSidebar, min(sidebar, width - Self.centre - least)) : 0
+        self.inspector = inspector > 0 ? max(least, min(inspector, width - self.sidebar - Self.centre)) : 0
     }
 }

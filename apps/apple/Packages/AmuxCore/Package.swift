@@ -34,7 +34,7 @@ let package = Package(
                 "AmuxApp", "AmuxValues", "AmuxWords", "LaunchClock",
                 .product(name: "AmuxPush", package: "AmuxPush"),
             ]),
-        .testTarget(name: "AmuxCoreTests", dependencies: ["AmuxCore"]),
+        .testTarget(name: "AmuxCoreTests", dependencies: ["AmuxCore", "AmuxWords"]),
     ],
     swiftLanguageModes: [.v6]
 )

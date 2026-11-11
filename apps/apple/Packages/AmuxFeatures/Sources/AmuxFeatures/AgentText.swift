@@ -1,5 +1,6 @@
 import AmuxCore
 import AmuxDesign
+import AmuxWords
 import SwiftUI
 
 /// Words an agent wrote into something amux draws in its own place, such as

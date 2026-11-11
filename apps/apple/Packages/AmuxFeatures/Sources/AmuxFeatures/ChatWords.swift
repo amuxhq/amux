@@ -392,7 +392,7 @@ public enum ChatWords {
     /// be typed, which is the one place it changes anything.
     public static func placeholder(
         _ composer: Composer?, agent: String, host: String, reach: Reach, connecting: Bool = false,
-        settled: Bool = false, working: Bool, limit: String? = nil
+        working: Bool, limit: String? = nil
     ) -> String {
         // A host still being dialled as the app comes forward is not news:
         // the field reads as it will once it answers.
@@ -403,10 +403,10 @@ public enum ChatWords {
             return working
                 ? String(localized: "Queue a message")
                 : String(localized: "Message \(agent)")
+        // The head above says it is stopped and the button says Resume:
+        // the field saying so again was a third time.
         case .resume?:
-            return settled
-                ? String(localized: "\(agent) is settled · a message resumes it")
-                : String(localized: "\(agent) is stopped · a message resumes it")
+            return String(localized: "Message \(agent)")
         // Not current: nothing sends until the chat is, and the draft stays.
         case .waiting(.catchingUp)?:
             return String(localized: "Catching up · your draft is kept")

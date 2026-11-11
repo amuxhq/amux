@@ -207,14 +207,14 @@ public struct Shell: View {
                         offerNotifications: offerNotifications, signingIn: signIn.working,
                         actions: actions)
                         .barUnderSheet(coveredByASheet)
-                        .navigationDestination(for: Route.self) { page($0).hidesTabBarWhenPushed() }
+                        .navigationDestination(for: Route.self) { page($0).toolbar(.hidden, for: .tabBar) }
                 }
             }
             SwiftUI.Tab(Tab.hosts.title, systemImage: Tab.hosts.symbol, value: Tab.hosts) {
                 NavigationStack(path: $router.hostsPath) {
                     HostsTabRoot(router: self.router, stores: stores, actions: actions)
                         .barUnderSheet(coveredByASheet)
-                        .navigationDestination(for: Route.self) { page($0).hidesTabBarWhenPushed() }
+                        .navigationDestination(for: Route.self) { page($0).toolbar(.hidden, for: .tabBar) }
                 }
             }
         }

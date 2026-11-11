@@ -434,19 +434,19 @@ public struct AgentsHome: View {
                 }
                 if filtering && model.rows.isEmpty { noMatches }
                 if scope == .closed && listed.isEmpty { nothingClosed }
+                // At the head of the list, as a chat app keeps its archived
+                // chats: there whenever it is wanted, and never under the
+                // agents that are.
+                if scope == .fleet, !filtering, let closed = model.closed { closedLink(closed) }
                 ForEach(Array(listed.enumerated()), id: \.element.id) { index, row in
                     swipeable(row, last: index == listed.count - 1)
                 }
-                if scope == .fleet, let closed = model.closed {
-                    if filtering {
-                        // Found by the search, under the rest, as a chat app
-                        // finds archived chats.
-                        heading(Self.title(.closed))
-                        ForEach(Array(closed.rows.enumerated()), id: \.element.id) { index, row in
-                            swipeable(row, last: index == closed.rows.count - 1)
-                        }
-                    } else {
-                        closedLink(closed)
+                if scope == .fleet, filtering, let closed = model.closed {
+                    // Found by the search, under the rest, as a chat app
+                    // finds archived chats.
+                    heading(Self.title(.closed))
+                    ForEach(Array(closed.rows.enumerated()), id: \.element.id) { index, row in
+                        swipeable(row, last: index == closed.rows.count - 1)
                     }
                 }
                 Color.clear.frame(height: 120)
@@ -764,19 +764,15 @@ public struct AgentsHome: View {
         }
     }
 
-    /// The closed agents, behind one row at the foot of the list, as a chat
+    /// The closed agents, behind one row at the head of the list, as a chat
     /// app keeps its archive: drawn as a row, so it reads as a place to go
-    /// rather than a section that unfolds, and at the foot rather than the
-    /// top, which belongs to the agents that need the person. Not revealed
-    /// by pulling down: that already brings the search and a refresh.
+    /// rather than a section that unfolds. At the foot it was out of reach
+    /// below a long list, and the row it costs the agents under it is a
+    /// short one. Not revealed by pulling down: that already brings the
+    /// search and a refresh.
     private func closedLink(_ section: FleetSection) -> some View {
         let title = "\(Self.title(section.kind)) · \(section.families)"
         return VStack(spacing: 0) {
-            Rectangle()
-                .fill(design.hairline.color)
-                .frame(height: design.metrics.hairline)
-                .padding(.leading, Space.margin + AgentRowView.textInset)
-                .accessibilityHidden(true)
             Button { actions(.showClosed) } label: {
                 HStack(alignment: .center, spacing: Space.m) {
                     Image(systemName: "archivebox")
@@ -803,6 +799,11 @@ public struct AgentsHome: View {
             .accessibilityLabel(title)
             .accessibilityAddTraits(.isButton)
             .identified("home.settled", label: title, value: "\(section.families)")
+            Rectangle()
+                .fill(design.hairline.color)
+                .frame(height: design.metrics.hairline)
+                .padding(.leading, Space.margin + AgentRowView.textInset)
+                .accessibilityHidden(true)
         }
     }
 

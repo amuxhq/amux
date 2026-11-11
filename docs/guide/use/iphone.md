@@ -20,7 +20,7 @@ To pair it with a computer, see
 ## Agents
 
 The Agents tab lists your agents: the ones you pinned, then the
-ones that need you, then the rest, with **Settled** at the bottom for the ones
+ones that need you, then the rest. **Settled**, at the top, holds the ones
 you're done with. Each agent goes by the name you gave it or, if you left the
 optional Name field empty when you started it, the title Claude or Codex gives
 the conversation. The line under it says what the agent is doing or what it's

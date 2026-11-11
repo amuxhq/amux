@@ -806,8 +806,7 @@ public struct ChatStanding: View {
         }
         return ChatWords.placeholder(
             model.frame?.composer.mode, agent: subject.name, host: subject.host,
-            reach: subject.reach, connecting: subject.connecting,
-            settled: subject.filing == .closed, working: working, limit: limit)
+            reach: subject.reach, connecting: subject.connecting, working: working, limit: limit)
     }
 
     private var activitySubject: String? {

@@ -200,11 +200,7 @@ final class ChatWordsTests: XCTestCase {
             "Studio is out of reach · your draft is kept")
         XCTAssertEqual(
             ChatWords.placeholder(.resume, agent: "a", host: "Studio", reach: .online(.direct), working: false),
-            "a is stopped · a message resumes it")
-        XCTAssertEqual(
-            ChatWords.placeholder(
-                .resume, agent: "a", host: "Studio", reach: .online(.direct), settled: true, working: false),
-            "a is settled · a message resumes it")
+            "Message a")
     }
 
     /// A settled agent's head says what the person did, unless it failed.

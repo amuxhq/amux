@@ -1,7 +1,7 @@
 # Operating Rules
 
 amux is released. From 0.9.0 on, builds of different versions meet, and a
-build reads what an earlier one left on disk. Three things are promises, and
+build reads what an earlier one left on disk. Five things are promises, and
 a change keeps them:
 
 - **The protocol.** `amux.v1` only adds, as `proto/amux/v1/README.md` says
@@ -15,6 +15,17 @@ a change keeps them:
   `account` and `profile` files, and each agent's spec, journal and facts.
   A new field is one an older file can lack. The upgrade test
   (`crates/node/tests/upgrade.rs`) opens a profile every release left.
+- **The config file.** A key a release read keeps being read; a rename
+  keeps the old name working. A key no build knows is ignored with a
+  warning, so a config a release accepted never stops amux starting.
+- **Commands amux runs on itself.** `amux supervise`, `amux daemon`,
+  `amux relay`, the `--config` option, and `amux internal mcp`, `hook`,
+  `ssh-pair` and `ssh-link` keep their names and arguments. A login item or
+  service unit, a supervisor handing over to the release it installed, a
+  running agent's provider and a paired host at another version call them
+  long after the build that wrote the call. The command-line test in
+  `crates/amux/src/main.rs` parses each one. Commands a person types change
+  freely.
 
 Nothing else is promised. Crate APIs, internals and test formats change
 freely, and nothing gets a shim for a shape no release shipped. A change that

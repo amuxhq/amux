@@ -951,6 +951,14 @@ mod tests {
         });
         let (mut send, mut recv) = linked.client.open_bi().await.unwrap();
         echoed(&mut send, &mut recv, b"lan1").await;
+        // The link settles on the LAN before the LAN goes. A link that began
+        // on the relay, whose first probe may be answered first, would still
+        // count the LAN as working when the relay refuses it.
+        linked
+            .carried(Path::Direct(linked.lan), |path| {
+                matches!(path, Path::Direct(_))
+            })
+            .await;
         linked.cut(true);
         linked
             .carried(Path::Forwarded(RELAY), |path| {

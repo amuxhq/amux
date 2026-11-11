@@ -39,6 +39,23 @@ class StoreCheckTest(unittest.TestCase):
             ["CREATE TABLE a (x);", "ALTER TABLE a ADD COLUMN y;\n"],
         )
 
+    def test_an_entry_the_check_cannot_read_is_refused_not_skipped(self):
+        for entry in (
+            '"ALTER TABLE a DROP COLUMN x;"',
+            'r"ALTER TABLE a DROP COLUMN x;"',
+            'r##"ALTER TABLE a DROP COLUMN x;"##',
+            "SECOND",
+        ):
+            source = (
+                "pub(crate) const MIGRATIONS: &[&str] = &[\n"
+                '    // 1: the first.\n    r#"CREATE TABLE a (x);"#,\n'
+                f"    {entry},\n"
+                "];\n"
+            )
+            with self.assertRaises(SystemExit, msg=entry) as refused:
+                check.migrations(source)
+            self.assertIn("must be a raw string", str(refused.exception))
+
     def test_appending_a_migration_is_allowed(self):
         new = [OLD, "ALTER TABLE agents ADD COLUMN note TEXT;"]
         self.assertEqual(check.edits([OLD], new), [])

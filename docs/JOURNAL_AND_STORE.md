@@ -468,8 +468,10 @@ Two rules keep every build able to open every store:
 
 To change the schema:
 
-1. Append an entry to `MIGRATIONS`, with a comment saying what it is for.
-   Never edit an entry a release shipped.
+1. Append an entry to `MIGRATIONS`, written as the others are, a raw string
+   `r#"..."#`, with a comment saying what it is for. `just store-check`
+   refuses a list holding anything else, since it could not read it. Never
+   edit an entry a release shipped.
 2. Read and write the new column or table in
    [`rows.rs`](../crates/store/src/rows.rs). Take a new column's default, or
    NULL, to mean what builds before the migration did: a row an older build

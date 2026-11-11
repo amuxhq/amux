@@ -27,11 +27,25 @@ FROZEN_SINCE = (0, 9, 0)
 
 
 def migrations(source):
-    """The SQL text of each entry of the `MIGRATIONS` list in schema.rs."""
+    """The SQL text of each entry of the `MIGRATIONS` list in schema.rs.
+
+    Every entry is a raw string, r#"..."#. Anything else in the list is
+    refused rather than skipped: an entry this check cannot read is one it
+    would pass without having looked at.
+    """
     found = re.search(r"MIGRATIONS: &\[&str\] = &\[(.*?)\n\];", source, re.S)
     if found is None:
         raise SystemExit(f"{SCHEMA_FILE} holds no MIGRATIONS list")
-    return re.findall(r'r#"(.*?)"#', found.group(1), re.S)
+    body = found.group(1)
+    entry = re.compile(r'(?<![\w#])r#"(.*?)"#(?!#)', re.S)
+    rest = re.sub(r"//[^\n]*", "", entry.sub("", body))
+    rest = rest.replace(",", "").strip()
+    if rest:
+        raise SystemExit(
+            f'{SCHEMA_FILE}: every MIGRATIONS entry must be a raw string, r#"..."#; '
+            f"this check cannot read {rest.splitlines()[0].strip()[:60]!r}"
+        )
+    return entry.findall(body)
 
 
 def edits(old, new):

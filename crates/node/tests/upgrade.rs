@@ -193,6 +193,9 @@ fn the_store_holds_what_the_release_left(install: &Install) {
         other => panic!("the notice is an ask, not {other:?}"),
     }
 
+    let recent = store.recent_directories().unwrap();
+    assert_eq!(recent.len(), 1, "where the release's agent was started");
+
     let draft = store
         .draft(&keeper.agent.agent)
         .unwrap()

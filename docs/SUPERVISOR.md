@@ -178,9 +178,10 @@ three things:
 
 A daemon with no pipe has no supervisor and goes straight on. Before `go`,
 nothing the daemon has done needs undoing if the supervisor puts the previous
-binary back: the only writes are the generation file and creating a profile
-store that did not exist. That is what makes activation the
-rollback checkpoint. The
+binary back: the only writes are the generation file and opening each
+profile's store, which creates it or runs the migrations it lacks, and
+migrations only add, so the previous binary still reads it. That is what
+makes activation the rollback checkpoint. The
 daemon's startup order is described in [Architecture](ARCHITECTURE.md).
 
 ## Restarts

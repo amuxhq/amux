@@ -1904,6 +1904,7 @@ impl Net {
                 .unwrap_or_else(|| self.topology.scope.clone()),
             dial: decl.lan,
             link_socket: true,
+            substrate: None,
             cloud: node::CloudOptions::default(),
             // An in-process host is reached on loopback alone, which it
             // never lists, and has no interfaces of its own to list after
@@ -1926,6 +1927,23 @@ impl Net {
         if let Some(hook) = &self.edge_hook {
             hook(name, &mut edge);
         }
+        // A host behind a router starts behind it, as a real one does. Put
+        // there once it ran, its first packets would leave from a socket of
+        // its own, and a handshake begun on that one is answered where the
+        // host no longer listens: its dial to the relay then waits out its
+        // timeout and the pause before the next.
+        let behind = match host.decl.router {
+            Some(kind) => {
+                let router = match &host.router {
+                    Some(router) if router.kind() == kind => router.clone(),
+                    _ => Router::new(kind, ROUTER_IDLE)?,
+                };
+                let attached = crate::router::Attached::new(router.clone());
+                edge.substrate = Some(attached.clone());
+                Some((router, attached))
+            }
+            None => None,
+        };
         let handed = edge.lan.as_ref().is_some_and(|lan| lan.socket.is_some());
         let options = node::StartOptions {
             // The host's config file, as on a real install: what a journey
@@ -1975,12 +1993,11 @@ impl Net {
         host.runtime = Arc::downgrade(&runtime);
         host.daemon = Some(std::sync::Mutex::new(daemon));
         host.lan_handed = handed;
-        if let Some(kind) = host.decl.router {
-            let router = match &host.router {
-                Some(router) if router.kind() == kind => router.clone(),
-                _ => Router::new(kind, ROUTER_IDLE)?,
-            };
-            self.put_behind(name, router)?;
+        if let Some((router, attached)) = behind {
+            if let Some(earlier) = host.attached.replace(attached) {
+                earlier.cut();
+            }
+            host.router = Some(router);
         }
         Ok(())
     }

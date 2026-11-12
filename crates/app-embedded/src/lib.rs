@@ -195,6 +195,7 @@ impl EmbeddedRuntime {
             discovery_scope: config.discovery_scope.clone(),
             dial: config.lan,
             link_socket: false,
+            substrate: None,
             cloud: overrides.cloud,
             interfaces: None,
             liveness: Default::default(),

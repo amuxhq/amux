@@ -102,6 +102,13 @@ pub struct EdgeOptions {
     pub dial: bool,
     /// Serve the local socket SSH relays hand a peer's link to.
     pub link_socket: bool,
+    /// What the profile's one socket sends and receives on, when something
+    /// stands in for the network under it (a test's imitation of a router);
+    /// unset, a UDP socket is bound. A host handed one starts on it, so
+    /// nothing it sends as it starts leaves from anywhere else, and lists
+    /// the LAN address it would have bound. Every profile's edge would
+    /// share it: give it to one profile only.
+    pub substrate: Option<Arc<dyn Datagrams>>,
     /// Where the cloud link dials, when a test stands in for the cloud.
     pub cloud: CloudOptions,
     /// The machine's interface addresses, when a test stands in for them;
@@ -171,6 +178,7 @@ impl Default for EdgeOptions {
             discovery_scope: String::new(),
             dial: false,
             link_socket: false,
+            substrate: None,
             cloud: CloudOptions::default(),
             interfaces: None,
             liveness: Default::default(),
@@ -409,14 +417,15 @@ impl Edge {
         let quic_server = Some(identity.quic_server_config(trust.clone(), &tickets)?);
         let (quic_endpoint, lan_addr) = match &options.lan {
             Some(lan) => {
-                let endpoint = LinkEndpoint::new(
-                    bind_lan(dir, lan).map_err(EdgeError::Lan)?,
-                    identity.host_id,
-                    quic_server,
-                )
-                .map_err(EdgeError::Lan)?
-                .keeping(dir);
-                let addr = endpoint.local_addr().map_err(EdgeError::Lan)?;
+                // A profile handed its substrate still takes its LAN port
+                // for a moment: the address it lists and remembers is its
+                // own, whatever stands between it and the network.
+                let own = bind_lan(dir, lan).map_err(EdgeError::Lan)?;
+                let addr = own.local_addr().map_err(EdgeError::Lan)?;
+                let substrate = options.substrate.clone().unwrap_or(own);
+                let endpoint = LinkEndpoint::new(substrate, identity.host_id, quic_server)
+                    .map_err(EdgeError::Lan)?
+                    .keeping(dir);
                 let _ = crate::install::write_cache(
                     &dir.join(LAN_PORT_FILE),
                     addr.port().to_string().as_bytes(),
@@ -427,7 +436,10 @@ impl Edge {
             // Listening on no known port, the profile still dials and is
             // reached through forwarders from one socket of both families.
             None => (
-                LinkSocket::bind_dual_stack(DUAL_STACK_ANY, None)
+                options
+                    .substrate
+                    .clone()
+                    .map_or_else(|| LinkSocket::bind_dual_stack(DUAL_STACK_ANY, None), Ok)
                     .and_then(|substrate| {
                         LinkEndpoint::new(substrate, identity.host_id, quic_server)
                     })

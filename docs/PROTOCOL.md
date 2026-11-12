@@ -709,6 +709,9 @@ through it, and both ends are told. Packets from a host whose own link to
 the relay is not admitted yet, as a launch's first flight is, are held for up
 to a second (at most 32 packets or 64 KB per sender, 64 MB in all) and
 released the moment it is; nothing is forwarded for a sender before then. A
+packet that arrives while its sender's link gives way to a later one from the
+same address, as a host killed and started again brings, goes on the later
+link once that is admitted, rather than being dropped with the earlier. A
 link may send at most 56,000 packets and 64 MiB a second through a
 forwarder; past that its packets are dropped, as a congested router would.
 The forwarder reads no packet beyond its header.

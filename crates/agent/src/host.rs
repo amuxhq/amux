@@ -37,8 +37,6 @@ use crate::local_socket::{LocalListener, LocalStream};
 use crate::provider::{Provider, ProviderEvent};
 use crate::{AgentError, ExitCause, attach, ctl};
 
-/// Journal segment size, when the spec leaves it unset.
-const DEFAULT_SEGMENT_BYTES: u64 = 1024 * 1024;
 /// The facts ring's size across its two segments, when the spec leaves it
 /// unset.
 const DEFAULT_RING_BYTES: u64 = 4 * 1024 * 1024;
@@ -172,6 +170,7 @@ pub(crate) async fn run<I: Interpreter>(
     dir: PathBuf,
     spec: AgentSpec,
     clock: Arc<dyn Clock>,
+    segment_bytes: u64,
 ) -> Result<ExitCause, AgentError> {
     let config = spec.config.clone().unwrap_or_default();
     let terminal = spec.kind() == wire::Kind::ClaudePty;
@@ -214,10 +213,6 @@ pub(crate) async fn run<I: Interpreter>(
         )));
     }
 
-    let segment_bytes = match config.journal_segment_bytes {
-        0 => DEFAULT_SEGMENT_BYTES,
-        bytes => bytes,
-    };
     let journal = journal::Writer::open(dir.join(dir::JOURNAL), segment_bytes)
         .map_err(AgentError::Journal)?;
     let pty_log = if terminal {

@@ -256,8 +256,9 @@ impl Drop for Hosted {
 }
 
 impl Installation {
-    /// Opens a profile's store and its runtime. Writes nothing but a
-    /// store that did not exist.
+    /// Opens a profile's store and its runtime. Writes nothing but the
+    /// store: a new one, or the migrations an existing one lacks, which
+    /// only add, so the previous binary still reads it after a rollback.
     fn open(&self, profile: ProfileId) -> Result<Arc<ProfileRuntime>, StartError> {
         let dir = profiles::profile_dir(&self.data_dir, profile);
         // The profile's id is its host id, the one its peers know it by.

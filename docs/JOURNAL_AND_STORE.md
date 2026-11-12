@@ -57,9 +57,8 @@ Nothing else needs to record which files are complete.
 ![Segment naming makes a reader's state a single integer and makes "is this file final?" answerable by the existence of the next file. The writer closes a segment before it creates the next, so once 0002097152 exists, 0001048576 never changes again. The same scheme is used for pty/.](figures/journal-segments.svg)
 
 The writer rotates when a frame would take a non-empty segment past the
-segment size; frames never span segments. The size comes from the agent's spec
-(`EffectiveConfig.journal_segment_bytes`) and defaults to 1 MiB
-(`DEFAULT_SEGMENT_BYTES` in [`crates/agent/src/host.rs`](../crates/agent/src/host.rs)).
+segment size; frames never span segments. The size is 1 MiB
+(`JOURNAL_SEGMENT_BYTES` in [`crates/agent/src/lib.rs`](../crates/agent/src/lib.rs)).
 The `pty/` log and the facts ring under `private/facts/` use the same naming
 and the same `journal::segments` listing.
 
@@ -437,22 +436,54 @@ notification row that falls due to the account service. The phone runtime
 installs `NoopSender`, so its rows fall due and are deleted without a push
 being sent.
 
-### Schema version
+### Schema and migrations
 
-The schema is one text and it only grows, so there are no migrations. Every
-table is `STRICT`, so a value of the wrong type is refused rather than stored.
-Opening a fresh file takes the write lock and creates the whole schema in one
-transaction, stamping the file's `application_id` (an amux store) and
-`user_version` (`SCHEMA_VERSION`). Any other SQLite file is refused as foreign,
-and a store stamped with another version fails with `OpenError::OtherSchema`:
-the error names the file and says to run the build that wrote it, the daemon
+The schema is an ordered list of SQL texts, `MIGRATIONS` in
+[`crates/store/src/schema.rs`](../crates/store/src/schema.rs). Opening a store
+runs the entries the file has not had and stamps its `user_version` with how
+many it now holds, all in one transaction that takes the write lock first. A
+fresh file has had none, so it is given them all, and its `application_id` is
+set to mark it an amux store; any other SQLite file is refused as foreign.
+The daemon opens every profile's store when it starts, so a change to the
+schema reaches every store the next time amux starts. Every table is
+`STRICT`, so a value of the wrong type is refused rather than stored.
+
+A migration that fails is undone with the rest of its transaction: the error
+names the file and the migration's number (`OpenError::Migration`), the daemon
 does not start, and the file is left exactly as it was.
 
-From 0.9.0 a build may add a table, or a column that is nullable or has a
-default, and adds whichever of those a file lacks when it opens it. Nothing is
-dropped, renamed or retyped, so an older build can still read a newer build's
-file. `SCHEMA_VERSION` stays 1 through all of this. `just store-check` fails if
-a table or column the last release had is gone or changed type.
+Two rules keep every build able to open every store:
+
+- **A migration only adds.** A table, an index, or a column that is nullable
+  or has a default; it may fill what it added. Nothing is dropped, renamed or
+  retyped. A build from before the migration names its own columns in every
+  statement, so it still reads and writes the file. That is what a rollback
+  does: a store stamped higher than a build knows is opened as it is, with no
+  migration run and the stamp left alone.
+- **A released migration never changes.** A store that ran it is never given
+  it again, so an edit would reach fresh stores only.
+
+`just store-check`, which CI runs, holds both against the latest release from
+0.9.0 on.
+
+To change the schema:
+
+1. Append an entry to `MIGRATIONS`, written as the others are, a raw string
+   `r#"..."#`, with a comment saying what it is for. `just store-check`
+   refuses a list holding anything else, since it could not read it. Never
+   edit an entry a release shipped.
+2. Read and write the new column or table in
+   [`rows.rs`](../crates/store/src/rows.rs). Take a new column's default, or
+   NULL, to mean what builds before the migration did: a row an older build
+   wrote after a rollback holds nothing else, even when the migration filled
+   the column for the rows it found.
+3. Run `just store-check` and the store's tests (`just test -- -p store`).
+   The upgrade test (`crates/node/tests/upgrade.rs`) opens a profile each
+   release wrote, so the migration also runs there against a real store.
+
+A change that cannot be made by adding, such as a column whose meaning must
+change, gets a new column or table that the code fills as it goes, and the old
+one is left in place unread.
 
 ### Own rows and replica rows
 
@@ -575,14 +606,14 @@ loss and unclean reboots:
 
 Each is written in full in the models' `src/single_daemon.rs` and
 `src/replication.rs`. What the models do not reach, the files themselves (a
-torn tail, a frame cut at a byte, a store of another schema, the SQLite file
+torn tail, a frame cut at a byte, a store a newer build added to, the SQLite file
 on another platform), is held by named tests. The main ones:
 
 | Where | What it holds |
 | --- | --- |
 | [`crates/journal/tests/journal.rs`](../crates/journal/tests/journal.rs) | Segment naming, rotation, torn tails, reclaim below a cursor |
 | [`crates/store/tests/conformance.rs`](../crates/store/tests/conformance.rs) | Commit, absorb, pages, cuts, lookups and deletes |
-| [`crates/store/tests/sqlite.rs`](../crates/store/tests/sqlite.rs) | Refusing a store of another schema, one transaction per commit, reopening |
+| [`crates/store/tests/sqlite.rs`](../crates/store/tests/sqlite.rs) | Opening a store a newer build added to, one transaction per commit, reopening |
 | [`crates/store/tests/retention.rs`](../crates/store/tests/retention.rs) | Own and replica sweeps |
 | [`crates/node/tests/single_daemon.rs`](../crates/node/tests/single_daemon.rs) | Ingest, re-derivation, power loss and the generation bump |
 

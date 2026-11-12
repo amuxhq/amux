@@ -50,9 +50,10 @@ There are two ways to build one:
   the five; a client on the Rust crates reads it for what the calls mean.
 
 The protocol is stable from 0.9.0: fields are added and never renumbered
-([README](../../../proto/amux/v1/README.md)). Before 0.9.0 it changes from
-release to release, so a client built against one release talks to that
-release's daemon; `GetInstallation` says which one is running.
+([README](../../../proto/amux/v1/README.md)), so a client built against one
+release talks to later ones. A daemon older than 0.9.0 speaks a protocol
+that changed from release to release; `GetInstallation` says which version
+is running.
 
 ## Building on amux's Rust crates
 
@@ -81,7 +82,7 @@ ui-view = { git = "https://github.com/amuxhq/amux", tag = "vX.Y.Z" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-Unlike the protocol, the crates promise nothing, before 0.9.0 or after:
+Unlike the protocol, the crates promise nothing:
 their APIs change whenever amux's own clients need them to, so moving to a
 newer tag can mean changing code. They are under the same licence as the
 rest of amux ([LICENSING](../../LICENSING.md)).
@@ -334,11 +335,12 @@ them, and an installation always keeps at least one.
 | `label` | The profile's name. |
 | `email`, `account_name`, `picture_url` | The account's. `picture_url` is an https URL, empty for none. |
 | `cloud` | Whether it is signed in (below). |
-| `access` | Whether the account is on the paid plan. |
 | `socket_path` | The profile's own socket ([step 5](#5-agents)). |
 
 A profile is signed in when `cloud` holds `signed_in`, whatever its relay
-link is doing. A link in `sign_in_again` means the account service refused
+link is doing. While the link is `connected`, its `tier` is the account's
+plan as the relay applies it: `TIER_PRO` carries connections between the
+account's machines, and `TIER_FREE` only lists them. A link in `sign_in_again` means the account service refused
 the profile's credentials, and the person signs in again. `signed_out` is a
 profile tied to an account and signed out of it; `unbound` was never signed
 in.

@@ -13,7 +13,7 @@ use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
-use super::binding::{AccountAccess, CloudServiceId};
+use super::binding::CloudServiceId;
 use crate::auth::oauth::{self, OAuthError};
 use crate::auth::{AccessToken, AuthError, CredentialProvider};
 use crate::identity::atomic_replace_private;
@@ -43,6 +43,29 @@ pub(crate) struct AccountRecord {
     pub(crate) client_id: String,
 }
 
+/// Writes the account file of a profile that signed in at `service` as
+/// `subject` and has signed out since, as this build writes one. For test
+/// infrastructure that needs a profile tied to an account with no service
+/// to sign in at; a signed-out profile dials nothing.
+pub(crate) fn write_signed_out(
+    profile_dir: &Path,
+    service: &str,
+    subject: &str,
+    email: &str,
+) -> io::Result<()> {
+    let record = AccountRecord {
+        service: CloudServiceId::canonicalize(service).map_err(io::Error::other)?,
+        subject: subject.to_owned(),
+        name: None,
+        email: Some(email.to_owned()),
+        picture: None,
+        bound_at_ms: 1,
+        refresh_token: None,
+        client_id: cli_client(),
+    };
+    Account::open(profile_dir)?.write(record)
+}
+
 /// Where a profile stands with its account.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Binding {
@@ -70,10 +93,7 @@ pub(crate) struct Account {
     /// Called after each change to the record: this host's own entry says
     /// whether it is signed in.
     changed: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
-    /// What the account may do, as the service last said; read whenever
-    /// the account's token is refreshed, never stored.
-    access_read: Mutex<Option<AccountAccess>>,
-    /// Counts every change a client sees: the record, and the access read.
+    /// Counts every change to the record a client sees.
     revision: tokio::sync::watch::Sender<u64>,
 }
 
@@ -94,7 +114,6 @@ impl Account {
             access: Mutex::new(None),
             changes: tokio::sync::Mutex::new(()),
             changed: std::sync::OnceLock::new(),
-            access_read: Mutex::new(None),
             revision: tokio::sync::watch::Sender::new(0),
         }))
     }
@@ -103,12 +122,7 @@ impl Account {
         self.record.lock().unwrap().clone()
     }
 
-    /// What the account may do, once the service has said.
-    pub(crate) fn access(&self) -> Option<AccountAccess> {
-        self.access_read.lock().unwrap().clone()
-    }
-
-    /// Rings on every change a client sees: the record and the access read.
+    /// Rings on every change to the record a client sees.
     pub(crate) fn subscribe(&self) -> tokio::sync::watch::Receiver<u64> {
         self.revision.subscribe()
     }
@@ -158,7 +172,6 @@ impl Account {
     pub(crate) async fn bind(&self, record: AccountRecord, access: AccessToken) -> io::Result<()> {
         let _change = self.changes.lock().await;
         self.forget_relay_token()?;
-        *self.access_read.lock().unwrap() = None;
         self.write(record)?;
         *self.access.lock().unwrap() = Some(access);
         Ok(())
@@ -190,52 +203,36 @@ impl Account {
             })?;
         }
         *self.access.lock().unwrap() = None;
-        *self.access_read.lock().unwrap() = None;
         self.moved();
         Ok(())
     }
 
-    /// Reads who the account is and what it may do with `token`, and keeps
-    /// what changed: the name, email and picture onto the record (only the
-    /// binding the token was minted for), the access read in memory.
+    /// Reads who the account is with `token`, and keeps what changed: the
+    /// name, email and picture onto the record (only the binding the token
+    /// was minted for). What the account has bought is not read here: the
+    /// relay credential says what the relay carries, and a client that
+    /// shows a subscription asks the account service itself.
     async fn read_account(&self, token: &AccessToken) -> Result<(), String> {
         let service = self.service().ok_or("the profile is not bound")?;
         let http = reqwest::Client::new();
         let info = super::binding::fetch_userinfo(&http, service.as_str(), token)
             .await
             .map_err(|error| error.to_string())?;
-        // An account service without the access read still names the
-        // account.
-        let access = super::binding::fetch_access(&http, service.as_str(), token)
-            .await
-            .ok()
-            .flatten();
         let _change = self.changes.lock().await;
         if let Some(record) = self.record().filter(|record| {
             record.service == service
                 && record.subject == info.sub
                 && record.refresh_token.is_some()
-        }) {
-            if (&record.name, &record.email, &record.picture)
-                != (&info.name, &info.email, &info.picture)
-            {
-                self.write(AccountRecord {
-                    name: info.name,
-                    email: info.email,
-                    picture: info.picture,
-                    ..record
-                })
-                .map_err(|error| error.to_string())?;
-            }
-            let changed = {
-                let mut held = self.access_read.lock().unwrap();
-                let changed = *held != access;
-                *held = access;
-                changed
-            };
-            if changed {
-                self.moved();
-            }
+        }) && (&record.name, &record.email, &record.picture)
+            != (&info.name, &info.email, &info.picture)
+        {
+            self.write(AccountRecord {
+                name: info.name,
+                email: info.email,
+                picture: info.picture,
+                ..record
+            })
+            .map_err(|error| error.to_string())?;
         }
         Ok(())
     }
@@ -310,8 +307,8 @@ impl CredentialProvider for AccountCredentials {
     /// connects, cannot cancel between the two and lose a rotated token.
     ///
     /// A token just refreshed is also when the account is read again, so
-    /// its name, picture and access follow the service within the token's
-    /// lifetime; the read runs on its own and never holds the caller up.
+    /// its name and picture follow the service within the token's lifetime;
+    /// the read runs on its own and never holds the caller up.
     async fn access_token(&self) -> Result<AccessToken, AuthError> {
         let account = self.0.clone();
         let (token, refreshed) = tokio::spawn(async move { account.access_token().await })

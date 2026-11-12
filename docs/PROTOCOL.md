@@ -826,7 +826,7 @@ their 16 bytes; the CLI reads and prints their text form. It also answers `GetIn
 
 `SubscribeProfiles` sends the whole list at once and again whenever any
 profile changes: one created or deleted, a sign-in or sign-out, its relay
-link, its account's name, picture or access. A client draws its profiles from
+link, its account's name or picture. A client draws its profiles from
 this stream alone.
 
 Two ways sign a profile in. `BindProfile` takes a refresh token a client got

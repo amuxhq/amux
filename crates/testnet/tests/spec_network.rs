@@ -3579,7 +3579,6 @@ async fn a_sign_in_the_daemon_runs_hands_out_its_code_and_the_profile_stream_fol
     assert_eq!(first.profiles.len(), 1);
     assert_eq!(first.profiles[0].id, main);
     assert!(first.profiles[0].account_name.is_empty());
-    assert!(first.profiles[0].access.is_none());
 
     let mut events = door
         .sign_in(wire::SignInRequest {
@@ -3650,9 +3649,20 @@ async fn a_sign_in_the_daemon_runs_hands_out_its_code_and_the_profile_stream_fol
     assert_eq!(signed.picture_url, "https://pictures.test/ada-1.png");
     assert!(events.message().await.unwrap().is_none(), "the stream ends");
 
-    let read = streamed(&mut profiles, "the account's access", |profile| {
-        profile.access.as_ref().is_some_and(|access| access.pro)
-    })
+    let read = streamed(
+        &mut profiles,
+        "the plan the relay carries it on",
+        |profile| {
+            use wire::cloud_standing::Standing;
+            use wire::relay_link::State;
+            matches!(
+                profile.cloud.as_ref().and_then(|cloud| cloud.standing.as_ref()),
+                Some(Standing::SignedIn(wire::RelayLink {
+                    state: Some(State::Connected(connected)),
+                })) if connected.tier() == wire::Tier::Pro
+            )
+        },
+    )
     .await;
     assert_eq!(read.account_name, "ada");
 }

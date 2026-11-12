@@ -10,7 +10,7 @@ use rusqlite::{Connection, TransactionBehavior};
 
 use crate::retention::{self, Sweep};
 use crate::rows::{self, ABSORBED, COMMITTED, Rows};
-use crate::schema::{SCHEMA, SCHEMA_VERSION};
+use crate::schema::MIGRATIONS;
 use crate::{
     Absorb, Absorbed, AgentKey, AgentRow, Append, CommitClock, Committed, Cut, Delivery, Item,
     Marker, Notification, Page, PageEnd, Record, Snapshot, Step, StoreError, TrustedHost,
@@ -25,15 +25,15 @@ pub enum OpenError {
     Sqlite(#[from] rusqlite::Error),
     #[error("{0} is not an amux profile store")]
     Foreign(String),
-    /// The store carries another stamp than this build's. The schema only
-    /// grows, so the stamp never moves and only a build outside that rule
-    /// can have written this. The file is left exactly as it is: the data
-    /// in it is the person's, and the build that wrote it can still read it.
-    #[error(
-        "{path} holds store schema {version}, not this build's {SCHEMA_VERSION}; \
-         amux leaves it untouched: run the amux build that wrote it"
-    )]
-    OtherSchema { path: String, version: u32 },
+    /// One of the migrations the file lacked did not run. They run in one
+    /// transaction, so the file is left exactly as it was.
+    #[error("{path}: store migration {migration} failed, and the store is left as it was: {error}")]
+    Migration {
+        path: String,
+        /// The migration's place in the list, counting from 1.
+        migration: u32,
+        error: rusqlite::Error,
+    },
 }
 
 /// How far a write must reach before it returns. Commits are otherwise not
@@ -72,8 +72,7 @@ const FLUSH_PATIENCE: std::time::Duration = std::time::Duration::from_secs(2);
 
 impl Sqlite {
     /// Opens or creates the profile store at `path` for the host whose own
-    /// rows it holds. A store of another schema version is refused and left
-    /// untouched.
+    /// rows it holds, running the migrations the file has not had.
     pub fn open(path: &Path, own_host: impl Into<Vec<u8>>) -> Result<Self, OpenError> {
         let conn = Connection::open(path)?;
         Self::with_connection(conn, &path.display().to_string(), own_host.into())
@@ -96,7 +95,7 @@ impl Sqlite {
         // Every statement the rows run is one of a few dozen fixed texts;
         // kept prepared, a commit skips parsing them again for each frame.
         conn.set_prepared_statement_cache_capacity(64);
-        create_or_check(&mut conn, name)?;
+        migrate(&mut conn, name, MIGRATIONS)?;
         Ok(Self {
             conn,
             own_host,
@@ -200,29 +199,38 @@ impl Sqlite {
     }
 }
 
-/// Gives a fresh file the schema, or checks that the file is a store of
-/// this build's schema version. One transaction that takes the write lock
-/// first, so two openers of a fresh file do not both create it.
-fn create_or_check(conn: &mut Connection, name: &str) -> Result<(), OpenError> {
+/// Brings the file up to this build's schema: runs each migration it has
+/// not had and stamps it with how many it now holds. A fresh file has had
+/// none, so it is given them all. One transaction that takes the write lock
+/// first, so two openers do not both run a migration, and a migration that
+/// fails leaves the file as it was.
+///
+/// A file stamped higher than this build knows is one a newer build brought
+/// up to date. It is opened as it is: migrations only add, so everything
+/// this build reads and writes is still there.
+fn migrate(conn: &mut Connection, name: &str, migrations: &[&str]) -> Result<(), OpenError> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let version: u32 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    let had: u32 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
     let application_id: i32 = tx.pragma_query_value(None, "application_id", |row| row.get(0))?;
-    if version == 0 && application_id == 0 {
-        tx.execute_batch(SCHEMA)?;
+    if had == 0 && application_id == 0 {
         tx.pragma_update(None, "application_id", APPLICATION_ID)?;
-        tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-        tx.commit()?;
-        return Ok(());
-    }
-    if application_id != APPLICATION_ID {
+    } else if application_id != APPLICATION_ID {
         return Err(OpenError::Foreign(name.into()));
     }
-    if version != SCHEMA_VERSION {
-        return Err(OpenError::OtherSchema {
-            path: name.into(),
-            version,
-        });
+    let known = migrations.len() as u32;
+    if had >= known {
+        return Ok(());
     }
+    for (index, migration) in migrations.iter().enumerate().skip(had as usize) {
+        tx.execute_batch(migration)
+            .map_err(|error| OpenError::Migration {
+                path: name.into(),
+                migration: index as u32 + 1,
+                error,
+            })?;
+    }
+    tx.pragma_update(None, "user_version", known)?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -943,4 +951,118 @@ fn absorb(rows: &Rows<'_>, agent: &AgentKey, what: Absorb) -> Result<Absorbed, S
     }
     rows.upsert_agent(&row, &rows::update_of(ABSORBED))?;
     Ok(absorbed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FIRST: &str = "CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL) STRICT;
+                         INSERT INTO notes (body) VALUES ('made by the first');";
+    const SECOND: &str = "ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+                          CREATE TABLE tags (name TEXT PRIMARY KEY) STRICT;
+                          UPDATE notes SET pinned = 1;";
+
+    fn stamp(conn: &Connection) -> u32 {
+        conn.pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap()
+    }
+
+    fn notes(conn: &Connection) -> i64 {
+        conn.query_row("SELECT count(*) FROM notes", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    /// The case every schema change after a release is: a store an earlier
+    /// build made is opened by a build that knows one migration more.
+    #[test]
+    fn a_store_an_earlier_build_made_is_given_the_migrations_it_lacks() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn, "store", &[FIRST]).unwrap();
+        assert_eq!(stamp(&conn), 1);
+        conn.execute("INSERT INTO notes (body) VALUES ('the person''s')", [])
+            .unwrap();
+
+        migrate(&mut conn, "store", &[FIRST, SECOND]).unwrap();
+
+        assert_eq!(stamp(&conn), 2);
+        assert_eq!(notes(&conn), 2, "the first migration did not run again");
+        let pinned: i64 = conn
+            .query_row("SELECT sum(pinned) FROM notes", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(pinned, 2, "the migration filled the column it added");
+        conn.execute("INSERT INTO tags (name) VALUES ('new')", [])
+            .unwrap();
+    }
+
+    #[test]
+    fn a_fresh_store_is_given_every_migration() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn, "store", &[FIRST, SECOND]).unwrap();
+        assert_eq!(stamp(&conn), 2);
+        assert_eq!(notes(&conn), 1);
+        conn.execute("INSERT INTO tags (name) VALUES ('new')", [])
+            .unwrap();
+    }
+
+    #[test]
+    fn a_store_that_is_up_to_date_is_left_alone() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn, "store", &[FIRST, SECOND]).unwrap();
+        migrate(&mut conn, "store", &[FIRST, SECOND]).unwrap();
+        assert_eq!(stamp(&conn), 2);
+        assert_eq!(notes(&conn), 1);
+    }
+
+    /// A rollback: the previous release opens a store the release after it
+    /// migrated. It runs nothing and leaves the stamp, so the newer build
+    /// does not run its migration a second time when it returns.
+    #[test]
+    fn a_store_a_later_build_migrated_is_opened_as_it_is() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn, "store", &[FIRST, SECOND]).unwrap();
+
+        migrate(&mut conn, "store", &[FIRST]).unwrap();
+        assert_eq!(stamp(&conn), 2, "the stamp is the newer build's");
+        // What the earlier build writes: it names its own columns.
+        conn.execute("INSERT INTO notes (body) VALUES ('after the rollback')", [])
+            .unwrap();
+
+        migrate(&mut conn, "store", &[FIRST, SECOND]).unwrap();
+        assert_eq!(notes(&conn), 2);
+        let unpinned: i64 = conn
+            .query_row("SELECT count(*) FROM notes WHERE pinned = 0", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(
+            unpinned, 1,
+            "a row written during the rollback holds the column's default"
+        );
+    }
+
+    #[test]
+    fn a_migration_that_fails_is_named_and_leaves_the_store_as_it_was() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn, "store", &[FIRST]).unwrap();
+        let broken = "CREATE TABLE tags (name TEXT PRIMARY KEY) STRICT;
+                      ALTER TABLE missing ADD COLUMN x TEXT;";
+
+        let error = migrate(&mut conn, "the/store", &[FIRST, SECOND, broken]).unwrap_err();
+
+        assert!(
+            matches!(error, OpenError::Migration { migration: 3, .. }),
+            "{error:?}"
+        );
+        assert!(error.to_string().contains("the/store"), "{error}");
+        assert_eq!(stamp(&conn), 1, "the second migration was undone with it");
+        let tables: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name = 'tags'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tables, 0);
+    }
 }

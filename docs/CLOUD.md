@@ -51,7 +51,7 @@ any client that calls `InstallationService.SignIn`.
 | `/connect/token` | POST | app, profile runtime | The app redeems its code here. A profile refreshes here as the client the token was issued to. Refresh tokens rotate: the one that comes back replaces the one spent. A profile accepting a paired device's offer of its account redeems the ticket here (`grant_type=urn:amux:sign-in-ticket`, `ticket`, `host_id`, its own `client_id`, `cli` on a computer and `mobile` on the phone, and the sign-in scopes) for tokens of its own; a used, expired or other host's ticket is `invalid_grant`. |
 | `/connect/revocation` | POST | profile runtime | A sign-out revokes the profile's refresh token here first (`token`, `token_type_hint=refresh_token`, the client it was issued to), so a copy taken earlier stops working. A failure is logged and the sign-out goes ahead. |
 | `/connect/userinfo` | GET | app, profile runtime | Who signed in: `sub`, `email`, `name`, `picture`. `sub` is the account identifier everything else is keyed by. The runtime reads it at sign-in and again at every token refresh, so a renamed account or a new picture reaches clients within the hour. |
-| `/api/graphql` | POST | app, profile runtime | The access read, below. The runtime makes it at sign-in, and at every token refresh, and publishes the answer on the profile. |
+| `/api/graphql` | POST | app | The access read, below: what the account has bought, for the screens that show it. A daemon does not make it. |
 | `/api/connect` | GET | profile runtime | A relay credential, below. |
 | `/api/purchases` | POST | app | A purchase the App Store signed, below. |
 | `/api/account` | DELETE | app | Deletes the account. `409` while a subscription is still set to renew. |
@@ -85,10 +85,16 @@ expires, and after that borrows a bearer for its own calls from the profile
 (`amux_runtime_access_token`).
 
 A desktop client never holds a token. The daemon reads who the account is
-and what it may do, and publishes both on the profile
-(`Profile.account_name`, `email`, `picture_url` and `access`), which
-`InstallationService.SubscribeProfiles` streams to every client as it
-changes.
+and publishes it on the profile (`Profile.account_name`, `email` and
+`picture_url`), which `InstallationService.SubscribeProfiles` streams to
+every client as it changes.
+
+The daemon says one thing about the plan: the `tier` of its relay credential,
+published as the relay link's `RelayConnected.tier` while the link is up. That
+is what the relay enforces, so it is what a client reads to say whether the
+relay carries this machine's connections. The daemon does not read what the
+account bought, where, or when it renews: that is the access read, which the
+client that shows a subscription makes itself.
 
 ## The access read
 

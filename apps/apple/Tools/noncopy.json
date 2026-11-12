@@ -1400,6 +1400,7 @@
       {"literal": "\"chat.settle.card\"", "context": ".identified(\"chat.settle.card\", label: cuts)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift": [
+      {"literal": "\"\\(verb) \\(count)\\(plus) \\(noun)\"", "context": "return \"\\(verb) \\(count)\\(plus) \\(noun)\"", "reason": "Joins a catalogued verb, a count and a catalogued noun; it has no words of its own.", "count": 1},
       {"literal": "\"\\(count)\"", "context": "case ..<1_000: \"\\(count)\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"%.1fM\"", "context": "default: String(format: \"%.1fM\", Double(count) / 1_000_000)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"+\"", "context": "let plus = run.openBelow ? \"+\" : \"\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
@@ -1407,8 +1408,6 @@
       {"literal": "\"doc.plaintext\"", "context": "case .text: \"doc.plaintext\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"text.bubble\"", "context": "case .review: \"text.bubble\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"[\\(chip(view))]\"", "context": "case .attachment(let view): \"[\\(chip(view))]\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"\\(count)\\(plus) \"", "context": "count > 0 ? \"\\(count)\\(plus) \" + plural(count, one, many) : nil", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"\\(run.steps)\\(plus) \"", "context": "return \"\\(run.steps)\\(plus) \" + plural(run.steps, \"step\", \"steps\")", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"+\\(added)\"", "context": "[added > 0 ? \"+\\(added)\" : nil, removed > 0 ? \"\\u{2212}\\(removed)\" : nil]", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"\\u{2212}\\(removed)\"", "context": "[added > 0 ? \"+\\(added)\" : nil, removed > 0 ? \"\\u{2212}\\(removed)\" : nil]", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"—\"", "context": "guard let used = window.usedPercent else { return \"—\" }", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1}
@@ -1483,8 +1482,8 @@
       {"literal": "\"person.badge.plus\"", "context": "kind: \"child\", glyph: glyph(state, action == .start ? \"person.badge.plus\" : \"person.badge.minus\"),", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"person.badge.minus\"", "context": "kind: \"child\", glyph: glyph(state, action == .start ? \"person.badge.plus\" : \"person.badge.minus\"),", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"wrench.adjustable\"", "context": "kind: \"tool\", glyph: glyph(state, \"wrench.adjustable\"), accented: accented(state), failed: state == .failed,", "reason": "SF Symbol name, not interface copy.", "count": 1},
-      {"literal": "\"command\"", "context": "kind: \"command\", glyph: glyph(state, \"chevron.left.forwardslash.chevron.right\"),", "reason": "SF Symbol name, not interface copy.", "count": 1},
-      {"literal": "\"chevron.left.forwardslash.chevron.right\"", "context": "kind: \"command\", glyph: glyph(state, \"chevron.left.forwardslash.chevron.right\"),", "reason": "SF Symbol name, not interface copy.", "count": 1},
+      {"literal": "\"command\"", "context": "kind: \"command\", glyph: glyph(state, \"chevron.left.forwardslash.chevron.right\"),", "reason": "SF Symbol name, not interface copy.", "count": 2},
+      {"literal": "\"chevron.left.forwardslash.chevron.right\"", "context": "kind: \"command\", glyph: glyph(state, \"chevron.left.forwardslash.chevron.right\"),", "reason": "SF Symbol name, not interface copy.", "count": 2},
       {"literal": "\"explore\"", "context": "kind: \"explore\", glyph: glyph(state, \"magnifyingglass\"), accented: accented(state), failed: state == .failed,", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"magnifyingglass\"", "context": "kind: \"explore\", glyph: glyph(state, \"magnifyingglass\"), accented: accented(state), failed: state == .failed,", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"subagent\"", "context": "kind: \"subagent\", glyph: \"arrow.triangle.branch\", rail: rail,", "reason": "SF Symbol name, not interface copy.", "count": 1},

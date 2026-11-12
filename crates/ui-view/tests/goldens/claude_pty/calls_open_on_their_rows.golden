@@ -30,9 +30,9 @@
      1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("run the tests")], steered: false }
      3 a1 Prose { text: [Text("Running the tests.")], streaming: false, working_note: false }
-     4 t1 Command { command: "cargo test", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(2001) } run[t1..t3 x3 recent=2] collapsed
+     4 t1 Command { command: "cargo test", description: "", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(2001) } run[t1..t3 x3] collapsed
      5 t2 Explore { verb: Read, subject: "src/lib.rs", state: Succeeded, result: "" } run[t1..t3 x3 recent=1] collapsed
-     6 t3 FileChange { files: [FileRow { path: "notes.md", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[t1..t3 x3 recent=0 RunCounts { commands: 1, edits: 1, reads: 1, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true }
+     6 t3 FileChange { files: [FileRow { path: "notes.md", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[t1..t3 x3 recent=0 RunCounts { commands: 1, edits: 1, reads: 1, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true }
      7 a5 Prose { text: [Text("Done.")], streaming: false, working_note: false }
      8 turn:1 TurnEnd { duration_ms: Some(7290), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

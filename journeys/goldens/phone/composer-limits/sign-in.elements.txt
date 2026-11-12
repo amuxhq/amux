@@ -1,12 +1,13 @@
 shell |  | agents | 0,62,402,778
 chat |  | expired | 0,116,402,724
-chat.row.boundary | Started |  | 16,124,370,34
-chat.row.prompt | Tidy the pairing section. |  | 16,158,370,40
-chat.row.prose | Tidied. | final | 16,210,370,20
-chat.prose.render |  | rendered | 16,210,370,20
+chat.row.prompt | Tidy the pairing section. |  | 16,124,370,40
+chat.prose.render |  | rendered | 197,134,175,20
+chat.row.prose | Tidied. | final | 16,176,370,20
+chat.prose.render |  | rendered | 16,176,370,20
 chat.row.turn-end | <volatile>
-chat.row.prompt | Check the links. |  | 16,267,370,40
-chat.row.error | authentication_failed | folded | 16,307,370,98
+chat.row.prompt | Check the links. |  | 16,233,370,40
+chat.prose.render |  | rendered | 256,243,116,20
+chat.row.error | authentication_failed | folded | 16,273,370,98
 chat.row.turn-end | <volatile>
 chat.foot.sign-in | Claude needs you to sign in | Sign-in failed · fake@example.com
 Failed to authenticate. API Error: 401 OAuth token has expired. Please obtain a new token or refresh your existing token.
@@ -19,13 +20,12 @@ chat.title | expired | expired | 76,66,165,36
  | Sign-in failed · fake@example.com
 Failed to authenticate. API Error: 401 OAuth token has expired. Please obtain a new token or refresh your existing token.
 Run claude and sign in with /login on desk. |  | 58,722,306,92
- | Started |  | 16,124,370,34
- | Tidy the pairing section. |  | 16,158,370,40
- | Tidied. |  | 16,210,370,20
- | Worked <t> |  | 16,237,62,16
- | Check the links. |  | 16,267,370,40
- | authentication_failed, Failed to authenticate. API Error: 401 OAuth token has expired. Please obtain a new token or refresh your existing token. |  | 16,307,370,98
- | Worked <t> · failed |  | 16,403,101,16
+ | Tidy the pairing section. |  | 16,124,370,40
+ | Tidied. |  | 16,176,370,20
+ | Worked <t> |  | 16,203,62,16
+ | Check the links. |  | 16,233,370,40
+ | authentication_failed, Failed to authenticate. API Error: 401 OAuth token has expired. Please obtain a new token or refresh your existing token. |  | 16,273,370,98
+ | Worked <t> · failed |  | 16,369,101,16
 BackButton | Agents |  | 16,62,44,44
  | expired, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36

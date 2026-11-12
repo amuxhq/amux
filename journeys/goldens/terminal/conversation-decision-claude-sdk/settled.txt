@@ -21,7 +21,7 @@
     Check the deployment once.                                                                       hh:mm
 
 
-  ▸ 1 command
+  ▸ Ran 1 command
 
     The deploy check passed.
 

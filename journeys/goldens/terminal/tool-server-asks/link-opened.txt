@@ -18,7 +18,7 @@
     Check the relay's error rate.                                                                    hh:mm
 
 
-  ▸ 1 call
+  ▸ Used 1 tool
 
   │ Opened grafana's link
   │ Grafana needs you to sign in before I can read its dashboards.

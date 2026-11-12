@@ -50,8 +50,8 @@ pub enum ToolRows<'a> {
     Hide,
     /// Each run folds to its newest step, where its one line goes, keeping
     /// a failure its turn left unresolved; under way it shows its newest
-    /// few steps. A run `open` holds a step of shows every step (see
-    /// [`crate::run_is_open`]).
+    /// step and any still running. A run `open` holds a step of shows every
+    /// step (see [`crate::run_is_open`]).
     Collapse {
         open: &'a HashSet<Key>,
     },
@@ -98,6 +98,9 @@ pub enum RowKind {
     },
     Command {
         command: String,
+        /// What the agent said the command is for, as it wrote it; empty
+        /// when it said nothing, as Codex never does.
+        description: String,
         state: CallPhase,
         exit_code: Option<i32>,
         output_head: Vec<String>,
@@ -130,6 +133,9 @@ pub enum RowKind {
     },
     Background {
         command: String,
+        /// What the agent said the command is for; empty when it said
+        /// nothing.
+        description: String,
         running: bool,
         /// How long it ran, once it ended.
         duration_ms: Option<i64>,
@@ -469,7 +475,7 @@ fn row(state: &SessionState, held: &Held, tools: ToolRows) -> Row {
             ToolRows::Hide => step && !kept,
             ToolRows::Collapse { .. } => run.as_ref().is_some_and(|run| {
                 let shown = if run.live {
-                    run.shows_live()
+                    run.live_shown
                 } else {
                     run.is_last() || kept
                 };
@@ -1156,16 +1162,18 @@ fn claude_tool(
         }
     } else {
         match of {
-            Some(tool_input::Of::Shell(_)) if tool.background => RowKind::Background {
+            Some(tool_input::Of::Shell(shell)) if tool.background => RowKind::Background {
                 command: named.to_owned(),
+                description: shell.description.clone(),
                 running: view.in_flight(),
                 duration_ms,
             },
-            Some(tool_input::Of::Shell(_)) => {
+            Some(tool_input::Of::Shell(shell)) => {
                 let output = terminal_text(&tool.outcome_text);
                 let (output_head, more_lines) = output_head(&output);
                 RowKind::Command {
                     command: named.to_owned(),
+                    description: shell.description.clone(),
                     state: view,
                     exit_code: tool.exit_code,
                     output_head,
@@ -1371,6 +1379,7 @@ fn codex_work(
         (of, _) => match of {
             Some(Of::Command(command)) if command.background => RowKind::Background {
                 command: command.command.clone(),
+                description: String::new(),
                 running: view.in_flight(),
                 duration_ms,
             },
@@ -1379,6 +1388,7 @@ fn codex_work(
                 let (output_head, more_lines) = output_head(&output);
                 RowKind::Command {
                     command: command.command.clone(),
+                    description: String::new(),
                     state: view,
                     exit_code: command.exit_code,
                     output_head,

@@ -27,15 +27,24 @@ final class ChatWordsTests: XCTestCase {
 
     func testARunSaysWhatItDidAndThatItContinuesBelow() {
         let run = Run(
-            first: "a", last: "b", steps: 6, live: false, openBelow: false,
-            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, subagents: 0, other: 0),
+            first: "a", last: "b", steps: 6, live: false, openBelow: false, liveShown: false,
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil,
             recent: nil)
-        XCTAssertEqual(ChatWords.run(run, counts: run.counts), "4 reads · 2 searches")
+        XCTAssertEqual(ChatWords.run(run, counts: run.counts), "Read 4 files, searched 2 times")
         let open = Run(
-            first: "a", last: "b", steps: 41, live: false, openBelow: true,
-            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, subagents: 0, other: 1),
+            first: "a", last: "b", steps: 41, live: false, openBelow: true, liveShown: false,
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 1), hidden: nil,
             recent: nil)
-        XCTAssertEqual(ChatWords.run(open, counts: open.counts), "40+ reads · 1+ call")
+        XCTAssertEqual(ChatWords.run(open, counts: open.counts), "Read 40+ files, used 1+ tools")
+    }
+
+    func testADescribedCommandReadsAsTheAgentsWordsOverTheCommand() {
+        XCTAssertEqual(ChatWords.described("Run the quick checks\nand more"), "Run the quick checks")
+        XCTAssertNil(ChatWords.described("  "), "Codex says nothing of the kind")
+        XCTAssertEqual(ChatWords.commandLine("just premerge\n| tail"), "$ just premerge")
+        XCTAssertEqual(ChatWords.describedState(.running, decided: false), "running")
+        XCTAssertNil(ChatWords.describedState(.failed, decided: false), "the exit code says it")
+        XCTAssertNil(ChatWords.describedState(.succeeded, decided: false))
     }
 
     func testACallsVerbSaysWhetherItAsksRunsWasRefusedOrRan() {
@@ -68,7 +77,7 @@ final class ChatWordsTests: XCTestCase {
     }
 
     func testTheRailRunsBetweenGridRowsAndBreaksAtProse() {
-        let tool = row(.background(command: "npm run dev", running: true, durationMs: nil))
+        let tool = row(.background(command: "npm run dev", description: "", running: true, durationMs: nil))
         let prose = row(.prose(text: [.text("Done.")], streaming: false, workingNote: false))
         XCTAssertEqual(RailJoin.of(tool, next: tool), RailJoin(continues: true))
         XCTAssertEqual(RailJoin.of(tool, next: prose), RailJoin(continues: false))

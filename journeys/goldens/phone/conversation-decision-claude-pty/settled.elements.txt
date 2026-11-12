@@ -1,10 +1,10 @@
 shell |  | agents | 0,62,402,778
 chat |  | decision-pty | 0,116,402,724
-chat.row.boundary | Started |  | 16,124,370,34
-chat.row.prompt | Check the deployment once. |  | 16,158,370,40
-chat.row.run | 1 command | folded | 16,198,370,44
-chat.row.prose | The deploy check passed. | final | 16,244,370,20
-chat.prose.render |  | rendered | 16,244,370,20
+chat.row.prompt | Check the deployment once. |  | 16,124,370,40
+chat.prose.render |  | rendered | 161,134,211,20
+chat.row.run | Ran 1 command | folded | 16,164,370,44
+chat.row.prose | The deploy check passed. | final | 16,210,370,20
+chat.prose.render |  | rendered | 16,210,370,20
 chat.row.turn-end | <volatile>
 chat.field | Message decision-pty |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
@@ -18,11 +18,10 @@ chat.title | decision-pty | decision-pty | 76,66,165,36
  | Fake 1 |  | 71,779,129,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
- | Started |  | 16,124,370,34
- | Check the deployment once. |  | 16,158,370,40
- | 1 command |  | 16,198,370,44
- | The deploy check passed. |  | 16,244,370,20
- | Worked <t> |  | 16,271,64,16
+ | Check the deployment once. |  | 16,124,370,40
+ | Ran 1 command |  | 16,164,370,44
+ | The deploy check passed. |  | 16,210,370,20
+ | Worked <t> |  | 16,237,64,16
 BackButton | Agents |  | 16,62,44,44
  | decision-pty, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36

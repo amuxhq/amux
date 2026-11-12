@@ -17,7 +17,7 @@
 
     Starting the long run.
 
-  ▸ 1 command
+  ▸ Ran 1 command
 
 
     Also log the peak.                                                                     steered · hh:mm

@@ -5,14 +5,15 @@
 //! Rows come from ui-view one item at a time, each carrying its place in
 //! its run of tool steps and, from the chat's tool-step choice, whether it
 //! shows at all. Of the steps that show, layout picks the drawing: open,
-//! every step under a header; under way, its newest few; folded, one line
+//! every step under a header; under way, its newest step and any still
+//! running, under a line of what the rest did; folded, one line
 //! on its newest step and any failure its turn left unresolved.
 
 use std::collections::HashSet;
 
 use ratatui::text::Line;
 use ui_state::{Fold, ItemClass, Key, SessionState};
-use ui_view::{LIVE_STEPS, Row, RunCounts, ToolRows, chat_rows_for};
+use ui_view::{Row, RunCounts, ToolRows, chat_rows_for};
 
 use super::feed::{self, Header, LineHits, Placement};
 use super::rows::{RowFacts, RowState, row_lines};
@@ -25,7 +26,7 @@ use crate::theme::Theme;
 #[serde(rename_all = "snake_case")]
 pub enum ToolSteps {
     /// Each run folds to one line on its newest step; under way, its
-    /// newest few steps show.
+    /// newest step and any still running show.
     #[default]
     Collapse,
     /// Every step on its own line.
@@ -241,17 +242,16 @@ impl Frame<'_> {
                 // one the composer's box is asking about.
                 let last =
                     run.is_last() || (run.recent == Some(1) && self.asking == Some(&run.last));
-                let running =
-                    matches!(&held.class, ItemClass::Tool(tool) if tool.in_flight) && run.is_last();
+                let running = matches!(&held.class, ItemClass::Tool(tool) if tool.in_flight);
                 let opened = self.tools == ToolSteps::Collapse
                     && ui_view::run_is_open(state, order, self.open_runs);
                 if opened || self.tools == ToolSteps::ShowAll {
                     // Opened, a run lists every step on its own line, under
                     // the line that folds it again.
                     let header = (opened && row.id == run.first).then(|| Header {
-                        counts: Some(self.counts(state, &run.last)),
+                        counts: self.counts(state, &run.last),
                         run: run.clone(),
-                        earlier: 0,
+                        open: true,
                     });
                     let placement = Placement::Step {
                         header,
@@ -266,15 +266,13 @@ impl Frame<'_> {
                     let toggle = Toggle::Step(row.id.clone());
                     (Placement::Failed { blank: true }, row, toggle)
                 } else if run.live {
-                    // Under way: the newest few steps, the newest bright
-                    // while it runs.
-                    let earlier = run.steps.saturating_sub(LIVE_STEPS);
-                    let first = run.recent == Some(run.steps.min(LIVE_STEPS) - 1);
+                    // Under way: the newest step and any still running,
+                    // bright while they run, under what the rest did.
                     let placement = Placement::Step {
-                        header: (first && earlier > 0).then(|| Header {
+                        header: run.hidden.clone().map(|counts| Header {
                             run: run.clone(),
-                            counts: None,
-                            earlier,
+                            counts,
+                            open: false,
                         }),
                         joined: !last,
                         current: running,

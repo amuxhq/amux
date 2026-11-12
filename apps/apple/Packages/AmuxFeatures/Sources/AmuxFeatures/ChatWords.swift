@@ -71,25 +71,53 @@ public enum ChatWords {
 
     // MARK: - Rows
 
-    /// "3 commands · 2 edits · 4 reads", in the terminal's order, with "+"
-    /// when the run continues below what this phone holds.
+    /// "Read 3 files, edited 2 files, ran 4 commands": what a run's steps
+    /// did, in the terminal's words and order, with "+" on each count when
+    /// the run continues below what this phone holds.
     public static func run(_ run: Run, counts: RunCounts?) -> String {
         let plus = run.openBelow ? "+" : ""
-        let counts = counts ?? RunCounts(commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0)
-        let parts: [String] = [
-            (counts.commands, "command", "commands"), (counts.edits, "edit", "edits"),
-            (counts.reads, "read", "reads"), (counts.searches, "search", "searches"),
-            (counts.subagents, "subagent", "subagents"), (counts.other, "call", "calls"),
-        ].compactMap { count, one, many in
-            count > 0 ? "\(count)\(plus) " + plural(count, one, many) : nil
+        let counts = counts ?? RunCounts(
+            commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0)
+        // "1+ files": a count that is a floor may be more than one.
+        func part(_ count: UInt32, _ verb: String, _ one: String, _ many: String) -> String? {
+            guard count > 0 else { return nil }
+            let noun = count == 1 && !run.openBelow ? one : many
+            return "\(verb) \(count)\(plus) \(noun)"
         }
-        guard parts.isEmpty else { return parts.joined(separator: " · ") }
-        return "\(run.steps)\(plus) " + plural(run.steps, "step", "steps")
+        let searches = counts.searches == 1 && !run.openBelow
+            ? "searched once" : part(counts.searches, "searched", "time", "times")
+        let parts: [String] = [
+            part(counts.reads, "read", "file", "files"),
+            part(counts.edits, "edited", "file", "files"),
+            part(counts.commands, "ran", "command", "commands"),
+            searches,
+            part(counts.lists, "listed", "folder", "folders"),
+            part(counts.fetches, "fetched", "page", "pages"),
+            part(counts.other, "used", "tool", "tools"),
+            part(counts.subagents, "started", "subagent", "subagents"),
+        ].compactMap { $0 }
+        let words = parts.isEmpty
+            ? part(run.steps, "took", "step", "steps") ?? ""
+            : parts.joined(separator: ", ")
+        return words.prefix(1).uppercased() + words.dropFirst()
     }
 
-    /// "5 earlier steps": what a live run keeps folded above its newest.
-    public static func earlier(_ steps: UInt32) -> String {
-        "\(steps) earlier " + plural(steps, "step", "steps")
+    /// What the agent said a command is for, as it wrote it; nil when it
+    /// said nothing, as Codex never does.
+    public static func described(_ description: String) -> String? {
+        let said = firstLine(description).trimmingCharacters(in: .whitespaces)
+        return said.isEmpty ? nil : said
+    }
+
+    /// "$ cargo test -p store": a command under the words that describe it.
+    public static func commandLine(_ command: String) -> String {
+        "$ " + firstLine(command)
+    }
+
+    /// Where a described command stands, which no verb says: the agent's
+    /// words lead its row. A failure says itself in the meta already.
+    public static func describedState(_ phase: CallPhase, decided: Bool) -> String? {
+        phase == .failed ? nil : state(phase, decided: decided)
     }
 
     public static func explore(_ verb: ExploreVerb) -> String {
@@ -374,7 +402,8 @@ public enum ChatWords {
     /// What a row names when the activity line points at it.
     public static func subject(of row: Row) -> String? {
         switch row.kind {
-        case .command(let command, _, _, _, _, _, _, _): firstLine(command)
+        case .command(let command, let description, _, _, _, _, _, _, _):
+            described(description) ?? firstLine(command)
         case .explore(_, let subject, _, _): subject
         case .toolCall(let server, let tool, _, _, _): server.isEmpty ? tool : "\(server) · \(tool)"
         case .child(_, let name, _, _, _, _): name.isEmpty ? nil : name

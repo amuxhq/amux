@@ -12,7 +12,7 @@
 == chat
      1 boundary:1 Hidden collapsed
      2 prompt:7031 Prompt { text: [Text("Deploy it.")], steered: false }
-     3 cmd-1 Command { command: "curl -s https://api.example.com/status", state: Cancelled, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+     3 cmd-1 Command { command: "curl -s https://api.example.com/status", description: "", state: Cancelled, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }]
      4 boundary:2 Boundary { kind: DaemonLost, cause: "" }
      5 boundary:3 Hidden collapsed
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

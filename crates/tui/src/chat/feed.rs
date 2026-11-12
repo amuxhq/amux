@@ -2,9 +2,10 @@
 //! agent's text in the reading ink, and each run of its tool steps folded
 //! to one faint line between them, keeping in view a failure its turn left
 //! unresolved. A run opens to its steps, one line each, and a step opens to
-//! its detail. A run still under way shows its newest steps as they happen,
-//! so the person sees the agent working, and folds once the agent speaks
-//! again.
+//! its detail. A run still under way shows its newest step and any still
+//! running, under a line of what the rest did, so the person sees what the
+//! agent is doing now, and folds once the agent speaks again. A command the
+//! agent described reads as its description, the command faint under it.
 //!
 //! Two columns carry everything, as on home: markers and the rail that joins
 //! a run's steps sit on the left edge, words on the column after it.
@@ -85,11 +86,11 @@ pub enum Placement {
 #[derive(Clone, Debug)]
 pub struct Header {
     pub run: Run,
-    /// Open: what the run's steps did, from its newest step, and the line
-    /// folds the run again. Otherwise the run is under way and `earlier` of
-    /// its steps are not drawn.
-    pub counts: Option<RunCounts>,
-    pub earlier: u32,
+    /// Open: what all the run's steps did, and the line folds the run
+    /// again. Otherwise the run is under way and these are what the steps
+    /// not drawn did, and the line opens it.
+    pub counts: RunCounts,
+    pub open: bool,
 }
 
 /// One row's lines and, for each line, what clicking along it does.
@@ -175,28 +176,47 @@ pub(crate) fn lines_words(lines: u32) -> String {
     }
 }
 
-/// "3 commands · 2 edits · 4 reads".
+/// "Read 3 files, edited 2 files, ran 4 commands": what a run's steps did,
+/// always in this order, with "+" on each count when the run continues
+/// below what the window holds.
 pub fn counts_words(counts: &RunCounts, steps: u32, open_below: bool) -> String {
     let plus = if open_below { "+" } else { "" };
-    let mut parts = Vec::new();
-    let mut part = |n: u32, one: &str, many: &str| {
-        if n > 0 {
-            parts.push(format!("{n}{plus} {}", if n == 1 { one } else { many }));
-        }
+    let part = |n: u32, verb: &str, one: &str, many: &str| {
+        // "1+ files": a count that is a floor may be more than one.
+        (n > 0).then(|| {
+            let noun = if n == 1 && !open_below { one } else { many };
+            format!("{verb} {n}{plus} {noun}")
+        })
     };
-    part(counts.commands, "command", "commands");
-    part(counts.edits, "edit", "edits");
-    part(counts.reads, "read", "reads");
-    part(counts.searches, "search", "searches");
-    part(counts.subagents, "subagent", "subagents");
-    part(counts.other, "call", "calls");
+    let searches = if counts.searches == 1 && !open_below {
+        Some("searched once".to_owned())
+    } else {
+        part(counts.searches, "searched", "time", "times")
+    };
+    let mut parts: Vec<String> = [
+        part(counts.reads, "read", "file", "files"),
+        part(counts.edits, "edited", "file", "files"),
+        part(counts.commands, "ran", "command", "commands"),
+        searches,
+        part(counts.lists, "listed", "folder", "folders"),
+        part(counts.fetches, "fetched", "page", "pages"),
+        part(counts.other, "used", "tool", "tools"),
+        part(counts.subagents, "started", "subagent", "subagents"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
     if parts.is_empty() {
         parts.push(format!(
-            "{steps}{plus} {}",
+            "took {steps}{plus} {}",
             if steps == 1 { "step" } else { "steps" }
         ));
     }
-    parts.join(" · ")
+    let words = parts.join(", ");
+    let mut chars = words.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
 }
 
 /// A row's lines in the feed. `expanded` opens a step's detail.
@@ -1154,35 +1174,90 @@ fn failure(drawn: &mut Drawn, row: &Row, width: usize, theme: Theme) {
         push(&mut line, format!(" · {meta}"), theme.faint(), width);
     }
     drawn.hit_line(line, FeedHit::Step(row.id.clone()));
+    if let Some(command) = described_command(row) {
+        command_line(drawn, row, command, false, width, theme);
+    }
+}
+
+/// The command under a step titled by what the agent said it is for; none
+/// for a step that is not such a command.
+fn described_command(row: &Row) -> Option<&str> {
+    match &row.kind {
+        RowKind::Command {
+            command,
+            description,
+            ..
+        }
+        | RowKind::Background {
+            command,
+            description,
+            ..
+        } if !description.trim().is_empty() => Some(command),
+        _ => None,
+    }
+}
+
+/// "$ cargo test -p store", faint under its description, on the rail when
+/// the step has one; it copies as the command alone.
+fn command_line(
+    drawn: &mut Drawn,
+    row: &Row,
+    command: &str,
+    rail: bool,
+    width: usize,
+    theme: Theme,
+) {
+    let mut line = Line::default();
+    pad_to(&mut line, EDGE);
+    if rail {
+        push(&mut line, "│", theme.hairline(), width);
+    }
+    pad_to(&mut line, DETAIL);
+    push(
+        &mut line,
+        format!("$ {}", first_line(command)),
+        theme.faint(),
+        width.saturating_sub(2),
+    );
+    let to = LineText::of(&line).to;
+    drawn.copy.insert(
+        drawn.lines.len(),
+        LineText {
+            from: DETAIL + 2,
+            to,
+            ..LineText::default()
+        },
+    );
+    drawn.hit_line(line, FeedHit::Step(row.id.clone()));
+}
+
+/// A described command's phase where no verb says it: what a title of the
+/// agent's own words cannot.
+fn described_phase(state: CallPhase) -> Option<&'static str> {
+    match state {
+        CallPhase::Denied => Some("denied"),
+        CallPhase::Cancelled => Some("cancelled"),
+        _ => None,
+    }
 }
 
 /// The line above an open or live run's steps.
 fn header_line(drawn: &mut Drawn, header: &Header, width: usize, theme: Theme) {
     let mut line = Line::default();
     pad_to(&mut line, EDGE);
-    if let Some(counts) = &header.counts {
-        push(&mut line, "▾", theme.faint(), width);
-        pad_to(&mut line, WORDS);
-        push(
-            &mut line,
-            counts_words(counts, header.run.steps, header.run.open_below),
-            theme.faint(),
-            width,
-        );
-    } else {
-        push(&mut line, "▸", theme.faint(), width);
-        pad_to(&mut line, WORDS);
-        push(
-            &mut line,
-            format!(
-                "{} earlier step{}",
-                header.earlier,
-                if header.earlier == 1 { "" } else { "s" }
-            ),
-            theme.faint(),
-            width,
-        );
-    }
+    push(
+        &mut line,
+        if header.open { "▾" } else { "▸" },
+        theme.faint(),
+        width,
+    );
+    pad_to(&mut line, WORDS);
+    push(
+        &mut line,
+        counts_words(&header.counts, header.run.steps, header.run.open_below),
+        theme.faint(),
+        width,
+    );
     drawn.hit_line(line, FeedHit::Run(header.run.last.clone()));
 }
 
@@ -1191,12 +1266,12 @@ fn step_words(row: &Row) -> (String, String, String) {
     match &row.kind {
         RowKind::Command {
             command,
+            description,
             state,
             exit_code,
             duration_ms,
             ..
         } => {
-            let verb = call_verb(*state, ["Wants to run", "Running", "Ran"]);
             let mut meta = Vec::new();
             match (exit_code, state) {
                 (Some(code), _) if *code != 0 => meta.push(format!("exit {code}")),
@@ -1207,6 +1282,14 @@ fn step_words(row: &Row) -> (String, String, String) {
             if let Some(ms) = duration_ms.filter(|_| *state != CallPhase::Denied) {
                 meta.push(text::duration(ms));
             }
+            if described_command(row).is_some() {
+                // The agent's words title it, the command under them; the
+                // marker and the time say where it stands.
+                meta.extend(described_phase(*state).map(str::to_owned));
+                let meta = decided(meta, row, true);
+                return (String::new(), first_line(description).to_owned(), meta);
+            }
+            let verb = call_verb(*state, ["Wants to run", "Running", "Ran"]);
             let meta = decided(meta, row, *state == CallPhase::Denied);
             (verb.to_owned(), first_line(command).to_owned(), meta)
         }
@@ -1339,12 +1422,20 @@ fn step_words(row: &Row) -> (String, String, String) {
         // A command like any other, where it runs said after it.
         RowKind::Background {
             command,
+            description,
             running,
             duration_ms,
         } => {
             let mut meta = vec!["in background".to_owned()];
             if !*running && let Some(ms) = duration_ms {
                 meta.push(text::duration(*ms));
+            }
+            if described_command(row).is_some() {
+                return (
+                    String::new(),
+                    first_line(description).to_owned(),
+                    meta.join(" · "),
+                );
             }
             (
                 if *running { "Running" } else { "Ran" }.to_owned(),
@@ -1475,7 +1566,9 @@ fn step(
             push(&mut line, " ", words, room);
         }
         let left = room.saturating_sub(text::line_width(&line));
-        let shown = if text::str_width(&subject) > left && left > 8 {
+        // A path or command keeps its end; the agent's own words, cut
+        // from their end as words are, by the push.
+        let shown = if text::str_width(&subject) > left && left > 8 && !verb.is_empty() {
             text::tail(&subject, left)
         } else {
             subject
@@ -1507,6 +1600,11 @@ fn step(
     };
     drawn.lines.push(line);
     drawn.hits.push(hits);
+    let command_at = described_command(row).map(|command| {
+        let at = drawn.lines.len();
+        command_line(drawn, row, command, true, width, theme);
+        (at, drawn.copy.remove(&at))
+    });
     if let Some(blob) = image.filter(|blob| takes_thumbnail(blob, facts.thumbnails)) {
         drawn.thumbnail(blob, DETAIL);
     }
@@ -1562,6 +1660,10 @@ fn step(
                 ..LineText::default()
             },
         );
+    }
+    // The command under a description copies as the command alone.
+    if let Some((at, Some(copied))) = command_at {
+        drawn.copy.insert(at, copied);
     }
     if expanded {
         let patch = facts

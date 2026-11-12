@@ -14,7 +14,7 @@
      1 boundary:1 Hidden collapsed
      2 b6abf140-06d3-4c66-98d9-5f197546f4a5 Prompt { text: [Text("Delegate to the `counter` subagent, then reply with exactly what it said.")], steered: false }
      3 f4e68ade-2abb-4980-9ab6-fbedd3d795d3 Hidden collapsed
-     4 toolu_012VXWzW2WdrKc71g3eWUc4e Subagent { description: "Run counter subagent", running: false, tool_count: 0, last_tool: "", answer: "ONE TWO THREE", duration_ms: Some(1608) } run[toolu_012VXWzW2WdrKc71g3eWUc4e..toolu_012VXWzW2WdrKc71g3eWUc4e x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
+     4 toolu_012VXWzW2WdrKc71g3eWUc4e Subagent { description: "Run counter subagent", running: false, tool_count: 0, last_tool: "", answer: "ONE TWO THREE", duration_ms: Some(1608) } run[toolu_012VXWzW2WdrKc71g3eWUc4e..toolu_012VXWzW2WdrKc71g3eWUc4e x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0 }]
      5 3c5a4d7c-f60e-4ad9-9a48-398e78f342c8 Hidden collapsed
      6 msg_011CgZkUceLXT9mEkW4mUDRn:0 Prose { text: [Text("The `counter` subagent is running in the background. I'll reply with its exact output once its completion notification arrives.")], streaming: false, working_note: false }
      7 turn:1 TurnEnd { duration_ms: Some(2673), failed: false }

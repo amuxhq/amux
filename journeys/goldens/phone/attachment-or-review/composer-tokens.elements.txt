@@ -1,6 +1,5 @@
 shell |  | agents | 0,62,402,778
 chat |  | reviewer | 0,116,402,724
-chat.row.boundary | Ended · stopped |  | 16,124,370,34
 chat.attachment | Pasted text · 12 lines |  | 28,682,172,26
 chat.attachment.remove | Remove |  | 164,673,44,44
 chat.attachment | Review · 1 comment |  | 28,714,173,26
@@ -24,7 +23,6 @@ chat.title | reviewer | reviewer | 76,66,159,36
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44
- | Ended · stopped |  | 16,124,370,34
 BackButton | Agents |  | 16,62,44,44
  | reviewer, /p/t/a/n/d/work · desk |  | 76,66,159,36
  | 1 file, 2 added, 1 removed |  | 277,66,51,36

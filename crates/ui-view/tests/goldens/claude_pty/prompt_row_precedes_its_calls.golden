@@ -42,7 +42,7 @@
 == chat
      1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("Check the deployment once.")], steered: false }
-     3 t1 Command { command: "deploy --check", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(800) } run[t1..t1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+     3 t1 Command { command: "deploy --check", description: "", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(800) } run[t1..t1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }]
      4 turn:1 TurnEnd { duration_ms: Some(2090), failed: false }
      5 ask:ask:1 Ask(Form { server: "tracker", message: "tracker needs your input", fields: [], resolution: Cancelled })
      6 u2 Prompt { text: [Text("Sign in to the tracker.")], steered: false }

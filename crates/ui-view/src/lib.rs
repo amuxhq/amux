@@ -54,7 +54,7 @@ pub use rows::{
     FileChangeView, FileRow, Granted, OUTPUT_HEAD_LINES, PatchHead, PatchLine, PermissionGrant,
     PlanVerdict, Resolution, Row, RowKind, ToolRows, chat_rows_for, patch_head,
 };
-pub use run::{LIVE_STEPS, Run, RunCounts, keep_open_runs, run_is_open, toggle_run};
+pub use run::{Run, RunCounts, keep_open_runs, run_is_open, toggle_run};
 pub use segments::{AttachmentView, Segment, THUMBNAIL_SIZE_LIMIT, segments};
 pub use settings::{
     Changeability, Changeable, ClientCommand, CommandView, ControlsSummary, EffortChoice,

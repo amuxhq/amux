@@ -175,14 +175,14 @@ fn an_open_collapsed_run_at_the_top_asks_for_a_larger_page() {
     let epoch = state.epoch();
     state.update(Msg::Page {
         items: (101..=400)
-            .map(|order| item(order, Some("src/lib.rs")))
+            .map(|order| item(order, Some(&format!("src/file{order}.rs"))))
             .collect(),
         exhausted: false,
         epoch,
     });
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     let (screen, page) = feed(&mut view, &state);
-    assert!(screen.contains("300+ reads"), "{screen}");
+    assert!(screen.contains("Read 300+ files"), "{screen}");
     assert_eq!(page, Some(300), "the run's count, under the cap");
 }
 
@@ -1824,6 +1824,7 @@ fn a_trimmed_commands_output_says_its_start_was_dropped() {
     let command = |output_trimmed| {
         call_row(RowKind::Command {
             command: "cargo test".into(),
+            description: String::new(),
             state: CallPhase::Running,
             exit_code: None,
             output_head: vec!["test b ... ok".into()],
@@ -1845,6 +1846,7 @@ fn a_call_row_leads_with_what_happened_to_it() {
     let command = |state| {
         call_row(RowKind::Command {
             command: "rm -rf target".into(),
+            description: String::new(),
             state,
             exit_code: None,
             output_head: vec![],
@@ -3194,23 +3196,23 @@ fn a_run_folds_to_its_counts_and_opens_to_its_steps() {
     let state = chat(items);
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     let (screen, _) = feed(&mut view, &state);
-    assert!(screen.contains("▸ 3 reads"), "{screen}");
+    assert!(screen.contains("▸ Read 3 files"), "{screen}");
     assert!(!screen.contains("src/file2.rs"), "{screen}");
 
-    // Opened, every step has its own line: no merged "Read 3 files",
-    // which would only repeat the folded line.
-    assert!(click(&mut view, &state, &screen, "3 reads").is_empty());
+    // Opened, every step has its own line under the line that folds it:
+    // no merged line, which would only repeat that one.
+    assert!(click(&mut view, &state, &screen, "Read 3 files").is_empty());
     let (screen, _) = feed(&mut view, &state);
-    assert!(screen.contains("▾ 3 reads"), "{screen}");
-    assert!(!screen.contains("Read 3 files"), "{screen}");
+    assert!(screen.contains("▾ Read 3 files"), "{screen}");
+    assert_eq!(screen.matches("Read 3 files").count(), 1, "{screen}");
     for order in 2..=4 {
         assert!(screen.contains(&format!("src/file{order}.rs")), "{screen}");
     }
 
     // And the run folds again from its line.
-    click(&mut view, &state, &screen, "3 reads");
+    click(&mut view, &state, &screen, "Read 3 files");
     let (screen, _) = feed(&mut view, &state);
-    assert!(screen.contains("▸ 3 reads"), "{screen}");
+    assert!(screen.contains("▸ Read 3 files"), "{screen}");
 }
 
 /// An opened run longer than the window stays open as the reader scrolls
@@ -3225,7 +3227,7 @@ fn an_opened_run_stays_open_as_its_older_steps_page_in() {
     assert!(state.transcript().has_older());
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     let (screen, _) = feed(&mut view, &state);
-    click(&mut view, &state, &screen, "20+ reads");
+    click(&mut view, &state, &screen, "Read 20+ files");
     let (screen, _) = feed(&mut view, &state);
     assert!(screen.contains("src/file59.rs"), "{screen}");
 
@@ -3244,13 +3246,13 @@ fn an_opened_run_stays_open_as_its_older_steps_page_in() {
     // run's line.
     let mut screen = screen;
     for _ in 0..10 {
-        if screen.contains("40+ reads") {
+        if screen.contains("Read 40+ files") {
             break;
         }
         view.key(&state, key(KeyCode::PageUp), theme());
         screen = feed(&mut view, &state).0;
     }
-    assert!(screen.contains("▾ 40+ reads"), "{screen}");
+    assert!(screen.contains("▾ Read 40+ files"), "{screen}");
     for order in 21..=25 {
         assert!(screen.contains(&format!("src/file{order}.rs")), "{screen}");
     }
@@ -3299,7 +3301,7 @@ fn a_folded_run_keeps_a_failure_its_turn_left_unresolved() {
     let mut state = chat(items);
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     let (screen, _) = feed(&mut view, &state);
-    assert!(screen.contains("▸ 3 commands · 1 read"), "{screen}");
+    assert!(screen.contains("▸ Read 1 file, ran 3 commands"), "{screen}");
     assert!(
         !screen.contains("just docs-check"),
         "until the turn ends the agent may fix it\n{screen}"
@@ -3365,20 +3367,21 @@ fn tool_steps_switch_between_collapse_show_all_and_hide() {
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     assert_eq!(view.tools, ToolSteps::Collapse);
     let (screen, _) = feed(&mut view, &state);
-    assert!(screen.contains("▸ 3 commands · 1 read"), "{screen}");
+    assert!(screen.contains("▸ Read 1 file, ran 3 commands"), "{screen}");
     assert!(
         screen.contains("✗ Ran just docs-check · exit 1"),
         "{screen}"
     );
     assert!(!screen.contains("just lint"), "{screen}");
-    assert!(screen.contains("2 earlier steps"), "{screen}");
-    assert!(!screen.contains("src/file10.rs"), "{screen}");
+    // Under way, only its newest step shows, under what the rest did.
+    assert!(screen.contains("▸ Read 4 files"), "{screen}");
+    assert!(!screen.contains("src/file12.rs"), "{screen}");
     assert!(screen.contains("src/file13.rs"), "{screen}");
 
     assert_eq!(view.switch_tools(), ToolSteps::ShowAll);
     let (screen, _) = feed(&mut view, &state);
-    assert!(!screen.contains("3 commands"), "{screen}");
-    assert!(!screen.contains("earlier step"), "{screen}");
+    assert!(!screen.contains("ran 3 commands"), "{screen}");
+    assert!(!screen.contains("Read 4 files"), "{screen}");
     for words in ["just lint", "just docs-check", "docs/a.md"] {
         assert!(screen.contains(words), "{words}:\n{screen}");
     }
@@ -3395,8 +3398,8 @@ fn tool_steps_switch_between_collapse_show_all_and_hide() {
     for words in [
         "just lint",
         "docs/a.md",
-        "3 commands",
-        "earlier step",
+        "ran 3 commands",
+        "Read 4 files",
         "src/file",
     ] {
         assert!(!screen.contains(words), "{words}:\n{screen}");
@@ -3410,7 +3413,80 @@ fn tool_steps_switch_between_collapse_show_all_and_hide() {
 
     assert_eq!(view.switch_tools(), ToolSteps::Collapse);
     let (screen, _) = feed(&mut view, &state);
-    assert!(screen.contains("▸ 3 commands · 1 read"), "{screen}");
+    assert!(screen.contains("▸ Read 1 file, ran 3 commands"), "{screen}");
+}
+
+/// A command Claude described reads as its description, the command faint
+/// under it; under way, its run shows only it below what the rest did, and
+/// a failure the turn left keeps both lines when the run folds.
+#[test]
+fn a_described_command_reads_as_its_description_over_the_command() {
+    use wire::claude_item::Kind as K;
+    let described = |order: u64, line: &str, said: &str, state: ToolState, exit| {
+        let mut item = item(order, Some("unused"));
+        item.body = wire::ClaudeItem {
+            kind: Some(K::Tool(wire::ToolCall {
+                name: "Bash".into(),
+                state: state as i32,
+                class: ToolClass::Consequential as i32,
+                input: Some(interpret::tool_input(
+                    "Bash",
+                    "",
+                    &serde_json::json!({ "command": line, "description": said }),
+                    "",
+                )),
+                exit_code: exit,
+                ..Default::default()
+            })),
+        }
+        .encode_to_vec();
+        item
+    };
+    let mut items = replies(1, 1);
+    items.push(item(2, Some("src/a.rs")));
+    items.push(item(3, Some("src/b.rs")));
+    items.push(described(
+        4,
+        "timeout 900 just premerge",
+        "Run the quick checks",
+        ToolState::Running,
+        None,
+    ));
+    let state = chat(items.clone());
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    let (screen, _) = feed(&mut view, &state);
+    assert!(screen.contains("▸ Read 2 files"), "{screen}");
+    assert!(!screen.contains("src/b.rs"), "{screen}");
+    assert!(screen.contains("● Run the quick checks"), "{screen}");
+    assert!(screen.contains("$ timeout 900 just premerge"), "{screen}");
+    assert!(!screen.contains("Running"), "{screen}");
+
+    // It failed and the turn ended there: the run folds and keeps it.
+    items.pop();
+    items.push(described(
+        4,
+        "timeout 900 just premerge",
+        "Run the quick checks",
+        ToolState::Succeeded,
+        Some(1),
+    ));
+    items.extend(replies(5, 5));
+    let mut turn_end = item(6, None);
+    turn_end.text = String::new();
+    turn_end.body = wire::ClaudeItem {
+        kind: Some(K::Turn(wire::Turn::default())),
+    }
+    .encode_to_vec();
+    items.push(turn_end);
+    let state = chat(items);
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    let (screen, _) = feed(&mut view, &state);
+    assert!(screen.contains("▸ Read 2 files, ran 1 command"), "{screen}");
+    assert!(
+        screen.contains("✗ Run the quick checks · exit 1"),
+        "{screen}"
+    );
+    assert!(screen.contains("$ timeout 900 just premerge"), "{screen}");
 }
 
 /// How a chat draws its tool steps is kept for that chat between runs;

@@ -44,8 +44,8 @@
      3 u-2 Prompt { text: [Text("Only the parser tests.")], steered: true }
      4 u-3 Prompt { text: [Text("And run them twice.")], steered: true }
      5 steer:7031 Prompt { text: [Text("Keep the old fixtures.")], steered: true }
-     6 cmd-1 Command { command: "cargo test -p parser", state: Succeeded, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[cmd-1..cmd-2 x2 recent=1] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true } collapsed
-     7 cmd-2 Command { command: "rm -rf fixtures", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[cmd-1..cmd-2 x2 recent=0 RunCounts { commands: 2, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: true }
+     6 cmd-1 Command { command: "cargo test -p parser", description: "", state: Succeeded, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[cmd-1..cmd-2 x2 recent=1] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true } collapsed
+     7 cmd-2 Command { command: "rm -rf fixtures", description: "", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[cmd-1..cmd-2 x2 recent=0 RunCounts { commands: 2, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Denied, granted: None, note: None, elsewher…
      8 turn:1 Stopped
      9 prompt:7032 Prompt { text: [Text("Now commit.")], steered: false }
     10 turn:2 TurnEnd { duration_ms: Some(0), failed: false }

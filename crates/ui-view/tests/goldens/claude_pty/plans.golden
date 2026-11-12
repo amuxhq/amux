@@ -39,7 +39,7 @@
      4 turn:1 TurnEnd { duration_ms: Some(12), failed: false }
      5 u2 Prompt { text: [Text("never mind, just fix the typo")], steered: false }
      6 t2 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: ApprovedSwitching, mode: "acceptEdits", mode_name: "Accept edits", note: None, writing: false })
-     7 e1 FileChange { files: [FileRow { path: "/w/README.md", change: Edited, added: 1, removed: 1, line: None }], state: Running } run[e1..e1 x1 recent=0 live RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }]
+     7 e1 FileChange { files: [FileRow { path: "/w/README.md", change: Edited, added: 1, removed: 1, line: None }], state: Running } run[e1..e1 x1 recent=0 live shown RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }]
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

@@ -130,41 +130,41 @@ enum ComponentCatalog {
                 FileRow(path: "crates/amux-ui/src/unused.rs", change: .deleted, added: 0, removed: 12, line: nil),
             ], state: .succeeded))),
             row("command", height: 150, r("x1", 11, .command(
-                command: "cargo test -p amux-ui", state: .succeeded,
+                command: "cargo test -p amux-ui", description: "", state: .succeeded,
                 outputHead: ["running 42 tests", "test pairing::copy ok", "test result: ok. 42 passed"],
                 moreLines: 118, outputTrimmed: false, outputTail: [], durationMs: 4_200, exitCode: 0))),
             row("command-failed", height: 150, r("x2", 12, .command(
-                command: "cargo check -p amux-ui", state: .failed,
+                command: "cargo check -p amux-ui", description: "", state: .failed,
                 outputHead: ["error[E0308]: mismatched types"], moreLines: 214, outputTrimmed: false, outputTail: [], durationMs: 4_200,
                 exitCode: 101))),
             row("command-denied", r("x3", 13, .command(
-                command: "rm -rf target", state: .denied, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: nil,
+                command: "rm -rf target", description: "", state: .denied, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: nil,
                 exitCode: nil),
                 decision: Decision(outcome: .denied, elsewhere: false, granted: nil, note: "Use cargo clean instead"))),
             row("command-allowed", r("x4", 14, .command(
-                command: "cargo test -p amux-ui", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
+                command: "cargo test -p amux-ui", description: "", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
                 durationMs: 12_000, exitCode: 0),
                 decision: Decision(outcome: .allowed, elsewhere: false, granted: .session, note: nil))),
             row("command-allowed-always", r("x8", 14, .command(
-                command: "cargo test -p amux-ui", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
+                command: "cargo test -p amux-ui", description: "", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
                 durationMs: 12_000, exitCode: 0),
                 decision: Decision(outcome: .allowed, elsewhere: false, granted: .claude(
                     subjects: ["cargo test"], directories: [], mode: "", modeName: "", destination: .project), note: nil))),
             row("command-allowed-prefix", r("x9", 14, .command(
-                command: "curl -s localhost:8080/health", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
+                command: "curl -s localhost:8080/health", description: "", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
                 durationMs: 300, exitCode: 0),
                 decision: Decision(outcome: .allowed, elsewhere: false, granted: .commandPrefix(words: ["curl", "-s"]), note: nil))),
             row("command-elsewhere", r("x5", 15, .toolCall(
                 server: "github", tool: "create_issue", fact: "", state: .succeeded, result: ""),
                 decision: Decision(outcome: .allowed, elsewhere: true, granted: nil, note: nil))),
             row("command-asking", r("x6", 16, .command(
-                command: "cargo test -p amux-ui", state: .asking, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
+                command: "cargo test -p amux-ui", description: "", state: .asking, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
                 durationMs: nil, exitCode: nil), attention: true)),
             row("explore", r("e1", 17, .explore(verb: .read, subject: "crates/wire/src/codes.rs", state: .succeeded, result: ""))),
             row("run", r("e2", 18, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: ""),
-                run: Run(first: "e0", last: "e2", steps: 6, live: false, openBelow: false, unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, subagents: 0, other: 0), recent: nil))),
+                run: Run(first: "e0", last: "e2", steps: 6, live: false, openBelow: false, liveShown: false, unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil, recent: nil))),
             row("run-open-below", r("e3", 19, .explore(verb: .read, subject: "src/lib.rs", state: .succeeded, result: ""),
-                run: Run(first: "e0", last: "e3", steps: 40, live: false, openBelow: true, unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, subagents: 0, other: 0), recent: nil))),
+                run: Run(first: "e0", last: "e3", steps: 40, live: false, openBelow: true, liveShown: false, unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil, recent: nil))),
             row("subagent-running", r("a1", 20, .subagent(
                 description: "Find every INVALID_PIN reader", running: true, toolCount: 12,
                 lastTool: "Read wire/src/codes.rs", answer: "", durationMs: 48_000))),
@@ -172,7 +172,7 @@ enum ComponentCatalog {
                 description: "Find every INVALID_PIN reader", running: false, toolCount: 12, lastTool: "",
                 answer: "Three readers: pairing.rs, codes.rs and the pairing spec. All read the same string.",
                 durationMs: 51_000))),
-            row("background", r("b1", 22, .background(command: "npm run dev", running: true, durationMs: nil))),
+            row("background", r("b1", 22, .background(command: "npm run dev", description: "", running: true, durationMs: nil))),
             row("image", height: 230, r("i1", 23, .image(path: "host-list-mock.png", generated: true, image: F.photo))),
             row("slash-output", height: 150, r("o1", 24, .slashOutput(
                 command: "/cost", args: "", output: "Total cost: $0.42\nTotal duration: 18m 3s"))),
@@ -1227,11 +1227,11 @@ enum CatalogFixtures {
     }
 
     static let runningCommand = ScriptedChat.row("rc", 50, .command(
-        command: "cargo test -p amux-ui", state: .running, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
+        command: "cargo test -p amux-ui", description: "", state: .running, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
         durationMs: nil, exitCode: nil))
 
     static let askedCommand = ScriptedChat.row("x6", 60, .command(
-        command: "cargo test -p amux-ui", state: .asking, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
+        command: "cargo test -p amux-ui", description: "", state: .asking, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
         durationMs: nil, exitCode: nil), attention: true)
 
     /// A finished turn: the prompt, one run of steps the agent took (a
@@ -1245,7 +1245,7 @@ enum CatalogFixtures {
             ScriptedChat.row(id, order, kind, attention: attention, decision: decision)
         }
         func command(_ command: String, _ state: CallPhase, exit: Int32? = 0, ms: Int64? = nil, output: [String] = [], more: UInt = 0) -> RowKind {
-            .command(command: command, state: state, outputHead: output, moreLines: more, outputTrimmed: false, outputTail: [], durationMs: ms, exitCode: exit)
+            .command(command: command, description: "", state: state, outputHead: output, moreLines: more, outputTrimmed: false, outputTail: [], durationMs: ms, exitCode: exit)
         }
         func edit(_ path: String, _ added: UInt32, _ removed: UInt32) -> RowKind {
             .fileChange(files: [FileRow(path: path, change: .edited, added: added, removed: removed, line: nil)], state: .succeeded)
@@ -1284,9 +1284,9 @@ enum CatalogFixtures {
         ] + ScriptedChat.run([
             r("w02", 21, .explore(verb: .read, subject: "crates/amux-ui/src/pairing.rs", state: .succeeded, result: "")),
             r("w03", 22, .fileChange(files: [FileRow(path: "crates/amux-ui/src/pairing.rs", change: .edited, added: 0, removed: 1, line: nil)], state: .succeeded)),
-            r("w04", 23, .command(command: "cargo clippy -p amux-ui", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: 5_800, exitCode: 0)),
+            r("w04", 23, .command(command: "cargo clippy -p amux-ui", description: "", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: 5_800, exitCode: 0)),
             r("w05", 24, .explore(verb: .search, subject: "pairing_copy", state: .succeeded, result: "")),
-            r("w06", 25, .command(command: "cargo test --workspace", state: .running, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: nil, exitCode: nil)),
+            r("w06", 25, .command(command: "cargo test --workspace", description: "Run the whole suite", state: .running, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: nil, exitCode: nil)),
         ], live: true)
     }()
 

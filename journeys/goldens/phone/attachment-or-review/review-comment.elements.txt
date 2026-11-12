@@ -1,6 +1,5 @@
 shell |  | agents | 0,62,402,778
 chat |  | reviewer | 0,116,402,724
-chat.row.boundary | Ended · stopped |  | -105,124,370,34
 chat.attachment | Pasted text · 12 lines |  | 28,714,172,26
 chat.attachment.remove | Remove |  | 164,705,44,44
 chat.field | Message reviewer | Please check against | 28,750,346,24

@@ -20,7 +20,7 @@
      1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 01a191cd-4ac4-77e2-958d-0112a7af705d Prompt { text: [Text("Run exactly this shell command once, with your shell tool, and nothing else: touch attached.txt. The sandbox is read-only, so request escalated permissions for it; I will approve. Then reply with the single word done.")], steered: false }
-     4 exec-5788e0c2-60be-4442-a34d-bc1463f128c2 Command { command: "touch attached.txt", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-5788e0c2-60be-4442-a34d-bc1463f128c2..exec-5788e0c2-60be-4442-a34d-bc1463f128c2 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other:…
+     4 exec-5788e0c2-60be-4442-a34d-bc1463f128c2 Command { command: "touch attached.txt", description: "", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-5788e0c2-60be-4442-a34d-bc1463f128c2..exec-5788e0c2-60be-4442-a34d-bc1463f128c2 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lis…
      5 msg_098f0eb5c12a77bf016ae5d65d369c81918ab3ef97e1911e9b Prose { text: [Text("done")], streaming: false, working_note: false }
      6 turn:1 TurnEnd { duration_ms: Some(4765), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

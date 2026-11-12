@@ -76,10 +76,10 @@
 == chat
      1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("file the crash")], steered: false }
-     3 t1 ToolCall { server: "github", tool: "create_issue", fact: "Crash on launch", state: Succeeded, result: "{\"number\": 42}" } run[t1..t1 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
+     3 t1 ToolCall { server: "github", tool: "create_issue", fact: "Crash on launch", state: Succeeded, result: "{\"number\": 42}" } run[t1..t1 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 1 }]
      4 ask:ask:1 Ask(Form { server: "github", message: "github needs your input", fields: ["repo"], resolution: Answered })
      5 a1b Prose { text: [Text("Filing it now.")], streaming: false, working_note: false }
-     6 t2 ToolCall { server: "docs", tool: "sign_in", fact: "work", state: Failed, result: "The user cancelled the sign-in." } run[t2..t2 x1 recent=0 unresolved RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
+     6 t2 ToolCall { server: "docs", tool: "sign_in", fact: "work", state: Failed, result: "The user cancelled the sign-in." } run[t2..t2 x1 recent=0 unresolved RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 1 }] attention
      7 ask:ask:2 Ask(Link { server: "docs", message: "docs needs your input", url: "https://docs.example/sign-in", resolution: Cancelled })
      8 ask:ask:3 Ask(Form { server: "docs", message: "docs needs your input", fields: [], resolution: Dismissed })
      9 a3 Prose { text: [Text("Signed out, filed #42.")], streaming: false, working_note: false }

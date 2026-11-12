@@ -319,7 +319,8 @@ fn a_folded_run_draws_at_its_newest_step_and_opens_by_any_step() {
         let run = last.run.as_ref().unwrap();
         assert!(run.is_last() && !last.collapsed);
         assert_eq!((run.first.as_str(), run.steps), ("k4", 5));
-        assert_eq!(run.counts.as_ref().unwrap().reads, 5);
+        // Every step reads the same file, which counts once.
+        assert_eq!(run.counts.as_ref().unwrap().reads, 1);
         assert!(rows[3..7].iter().all(|row| row.collapsed));
         // Opened by one of its steps.
         let open: HashSet<Key> = ["k6".to_owned()].into();

@@ -126,18 +126,31 @@ public struct ChatRowView: View {
         case .fileChange(let files, let state):
             fileChange(files, state)
         case .command(
-            let command, let state, let outputHead, let moreLines, let outputTrimmed, _, let durationMs, let exitCode):
-            let verb = ChatWords.verb(
-                state, row, wants: String(localized: "Wants to run"),
-                doing: String(localized: "Running"), done: String(localized: "Ran"))
-            GridRow(
-                kind: "command", glyph: glyph(state, "chevron.left.forwardslash.chevron.right"),
-                accented: accented(state), failed: state == .failed, rail: rail, verb: verb,
-                subject: ChatWords.firstLine(command),
-                meta: RowMeta(ChatWords.meta(
-                    commandMeta(state, exitCode: exitCode, durationMs: durationMs), row,
-                    verbPhase: state, note: false)),
-                quote: denialNote, output: outputHead, trimmed: outputTrimmed, more: moreLines)
+            let command, let description, let state, let outputHead, let moreLines, let outputTrimmed, _,
+            let durationMs, let exitCode):
+            let meta = commandMeta(state, exitCode: exitCode, durationMs: durationMs)
+            if let said = ChatWords.described(description) {
+                // The agent said what it is for: its words lead, the command
+                // faint under them, and the meta says where it stands.
+                GridRow(
+                    kind: "command", glyph: glyph(state, "chevron.left.forwardslash.chevron.right"),
+                    accented: accented(state), failed: state == .failed, rail: rail, verb: said,
+                    meta: RowMeta(ChatWords.meta(
+                        meta + [ChatWords.describedState(state, decided: row.decision != nil) ?? ""], row,
+                        note: false)),
+                    note: ChatWords.commandLine(command), spokenNote: ChatWords.firstLine(command),
+                    quote: denialNote, output: outputHead, trimmed: outputTrimmed, more: moreLines)
+            } else {
+                let verb = ChatWords.verb(
+                    state, row, wants: String(localized: "Wants to run"),
+                    doing: String(localized: "Running"), done: String(localized: "Ran"))
+                GridRow(
+                    kind: "command", glyph: glyph(state, "chevron.left.forwardslash.chevron.right"),
+                    accented: accented(state), failed: state == .failed, rail: rail, verb: verb,
+                    subject: ChatWords.firstLine(command),
+                    meta: RowMeta(ChatWords.meta(meta, row, verbPhase: state, note: false)),
+                    quote: denialNote, output: outputHead, trimmed: outputTrimmed, more: moreLines)
+            }
         case .explore(let verb, let subject, let state, let result):
             // It opens what it found, which is kept even when the step failed.
             GridRow(
@@ -157,11 +170,19 @@ public struct ChatRowView: View {
                 note: running && !lastTool.isEmpty ? "└ \(lastTool)" : nil,
                 detail: !running && !answer.isEmpty ? answer : nil, detailFace: .text,
                 detailLines: expanded ? nil : 2, opens: true, open: expanded, toggle: toggle)
-        case .background(let command, let running, _):
+        case .background(let command, let description, let running, _):
+            let said = ChatWords.described(description)
             GridRow(
                 kind: "background", glyph: "play", rail: rail,
-                verb: String(localized: "In background"), subject: ChatWords.firstLine(command),
-                meta: RowMeta(running ? String(localized: "running") : String(localized: "finished")))
+                verb: said ?? String(localized: "In background"),
+                subject: said == nil ? ChatWords.firstLine(command) : "",
+                meta: RowMeta(
+                    said == nil
+                        ? (running ? String(localized: "running") : String(localized: "finished"))
+                        : (running ? String(localized: "in background · running")
+                            : String(localized: "in background · finished"))),
+                note: said == nil ? nil : ChatWords.commandLine(command),
+                spokenNote: said == nil ? nil : ChatWords.firstLine(command))
         case .image(let path, let generated, let image):
             GridRow(
                 kind: "image", glyph: "photo", rail: rail,
@@ -457,6 +478,9 @@ struct GridRow: View {
     /// command its start.
     var truncation: Text.TruncationMode = .tail
     var note: String?
+    /// How the note reads aloud, when it should: a command under the words
+    /// that describe it is said without its prompt sign.
+    var spokenNote: String?
     var quote: String?
     var output: [String] = []
     /// The output's start was dropped to keep it bounded.
@@ -489,7 +513,7 @@ struct GridRow: View {
         .accessibilityElement(children: .combine)
         .identified(
             "chat.row.\(kind)",
-            label: [verb, subject, meta.string, quote ?? ""].filter { !$0.isEmpty }
+            label: [verb, subject, spokenNote ?? "", meta.string, quote ?? ""].filter { !$0.isEmpty }
                 .joined(separator: ", "),
             value: opens ? (open ? "open" : "folded") : nil)
         .reclaimingThumbTarget(y: opens ? GridRow.reach : 0)
@@ -1453,19 +1477,14 @@ public enum RunPlacement: Equatable {
             return .step(header: Header(words: ChatWords.run(run, counts: counts()), open: true))
         }
         if run.live {
-            // Under way: the newest few steps, with how many came before.
-            let shown = min(run.steps, liveSteps)
-            let earlier = run.steps - shown
-            guard earlier > 0, run.recent == shown - 1 else { return .own }
-            return .step(header: Header(words: ChatWords.earlier(earlier), open: false))
+            // Under way: the newest step and any still running, under what
+            // the steps it no longer shows did.
+            guard let hidden = run.hidden else { return .own }
+            return .step(header: Header(words: ChatWords.run(run, counts: hidden), open: false))
         }
         if run.recent == 0 { return .folded(words: ChatWords.run(run, counts: counts())) }
         return .failed
     }
-
-    /// While a run is under way, how many of its newest steps show: the
-    /// shared fold's own number.
-    static let liveSteps: UInt32 = 3
 }
 
 extension EnvironmentValues {

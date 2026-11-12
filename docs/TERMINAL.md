@@ -196,13 +196,17 @@ Enter on a row opens its chat. From top to bottom:
     code ink, a violet mixed from the terminal's blue and magenta, and code blocks are highlighted in its palette. A single line break in its text stays a line
     break, as Claude's and Codex's own interfaces draw it; a blank line parts paragraphs. Thinking is never drawn;
   - each run of tool steps between two pieces of its text folds to one faint line of what the steps did
-    (`▸ 3 commands · 2 edits · 4 reads`). Clicking it, or the leader then `o`, opens it to one line per step,
-    verb first (`Ran just lint · exit 1 · 22s`, `Edited session.rs · +0 −1`); clicking a step opens its detail: a
-    command's last lines of output, an edit's patch, a call's result;
+    (`▸ Read 4 files, edited 2 files, ran 3 commands`), a file read or changed twice counted once. Clicking it, or
+    the leader then `o`, opens it to one line per step, verb first (`Ran just lint · exit 1 · 22s`, `Edited
+    session.rs · +0 −1`); a command Claude said what it is for reads as those words with the command faint under
+    them (`Run the quick checks · 22s` over `$ just premerge`), its words as Claude wrote them, never re-tensed;
+    Codex says nothing of the kind, so its commands keep the verb. Clicking a step opens its detail: a command's
+    last lines of output, an edit's patch, a call's result;
   - a failure the turn ended without fixing stays in view in red where it ran, above its folded run's line; one
     fixed later in the turn folds away with the rest;
-  - while the agent is at a run, its newest three steps show as they happen, the current one bright, and the
-    running turn ends in `Working · 33s`, which becomes a faint `Worked 6m` when the turn ends;
+  - while the agent is at a run, its newest step shows, bright while it runs, with any other step still running
+    beside it, under a faint line of what the rest did so far; when the agent speaks again the run folds to its
+    line. The running turn ends in `Working · 33s`, which becomes a faint `Worked 6m` when the turn ends;
   - a plan is drawn as the agent's text under a landmark that folds like a run (`▾ Plan · Move the
     journal`), and once decided folds to `▸ Plan · Move the journal · approved` or `· sent back` with the note
     under it;

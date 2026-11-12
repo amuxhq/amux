@@ -794,6 +794,7 @@ fn row_sets() -> Vec<RowSet> {
     let command = |state, exit_code, output: &[&str], more| {
         row(RowKind::Command {
             command: "cargo test -p store".into(),
+            description: String::new(),
             state,
             exit_code,
             output_head: output.iter().map(|s| (*s).into()).collect(),
@@ -1238,6 +1239,7 @@ fn row_sets() -> Vec<RowSet> {
                 (
                     row(RowKind::Background {
                         command: "npm run dev".into(),
+                        description: String::new(),
                         running: true,
                         duration_ms: None,
                     }),
@@ -1246,6 +1248,7 @@ fn row_sets() -> Vec<RowSet> {
                 (
                     row(RowKind::Background {
                         command: "cargo watch".into(),
+                        description: String::new(),
                         running: false,
                         duration_ms: Some(240_000),
                     }),

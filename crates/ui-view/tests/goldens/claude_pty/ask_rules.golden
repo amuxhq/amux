@@ -57,9 +57,9 @@
 == chat
      1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("clean up")], steered: false }
-     3 t1 Command { command: "rm -rf build", state: Succeeded, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(40) } run[t1..t3 x3 recent=2] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true } collapsed
+     3 t1 Command { command: "rm -rf build", description: "", state: Succeeded, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(40) } run[t1..t3 x3] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true } collapsed
      4 t2 FileChange { files: [FileRow { path: "notes.md", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Denied } run[t1..t3 x3 recent=1] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: true } collapsed
-     5 t3 FileChange { files: [FileRow { path: "a.rs", change: Edited, added: 1, removed: 1, line: None }], state: Running } run[t1..t3 x3 recent=0 RunCounts { commands: 1, edits: 2, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Dismissed, granted: None, note: None, elsewhere: false }
+     5 t3 FileChange { files: [FileRow { path: "a.rs", change: Edited, added: 1, removed: 1, line: None }], state: Running } run[t1..t3 x3 recent=0 RunCounts { commands: 1, edits: 2, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Dismissed, granted: None, note: None, elsewhere: false }
      6 a4 Prose { text: [Text("Moving on.")], streaming: false, working_note: false }
      7 u2 Prompt { text: [Text("never mind")], steered: false }
      8 turn:1 TurnEnd { duration_ms: Some(600690), failed: false }

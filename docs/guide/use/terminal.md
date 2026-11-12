@@ -130,8 +130,11 @@ such as Ghostty, kitty or iTerm2, an image also shows a thumbnail, including
 inside tmux, where amux turns on `allow-passthrough` for its own pane.
 
 The agent's tool steps fold into one line between its replies, such as
-`▸ 3 commands · 2 edits · 4 reads`. Click it to see each step, and click a
-step to see its output or its diff.
+`▸ Read 4 files, edited 2 files, ran 3 commands`. Click it to see each step,
+and click a step to see its output or its diff. While the agent works, you see
+the step it's on now under a line of what it has done so far. When Claude says
+what a command is for, the step reads as Claude's words, with the command
+itself faint underneath.
 
 Your unsent message belongs to the chat, not to the terminal. Close the
 terminal, or pick the chat up on your phone, and it's still there.

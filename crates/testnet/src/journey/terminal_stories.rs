@@ -1381,7 +1381,7 @@ fn queue_and_steer(journey: &mut TerminalJourney) -> Proved {
     journey.keys(&pane, &["Enter"])?;
     journey.wait_terms(
         &pane,
-        &["Running scripts/soak --for 1h", "ctrl+x interrupt"],
+        &["Soak", "$ scripts/soak --for 1h", "ctrl+x interrupt"],
     )?;
     // While it works, prompts queue under the feed.
     journey.type_text(&pane, STEER)?;

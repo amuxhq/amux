@@ -397,12 +397,15 @@ the agent or the person put in the transcript. Thinking, retry notices, a subage
 nothing pass through a run; an ask, the agent's text, a prompt or a turn's end ends it. The session's run index
 keeps membership current on every message (and marks every member changed when its run moves), and `Run` on each
 member row says it: the run's `first` held step (where an opened run draws its header), its `last` step,
-`steps`, `live` (nothing has ended it yet), `open_below`, `recent` (for one of its newest few steps, how many
-follow), `unresolved_failure` (this step failed, its turn has ended and nothing later in the turn with the same
-subject succeeded) and, on the newest step's row only, `counts` of what its steps did. `ChatOptions { tools }`
+`steps`, `live` (nothing has ended it yet), `open_below`, `recent` (for one of its two newest steps, how many
+follow), `live_shown` (live, and this step is its newest or still running), `hidden` (on the oldest step a live
+run shows, what the steps it does not show did, for the line above it), `unresolved_failure` (this step failed,
+its turn has ended and nothing later in the turn with the same subject succeeded) and, on the newest step's row
+only, `counts` of what its steps did, each file read or changed counted once. `ChatOptions { tools }`
 chooses `ShowAll`, `Hide` (every step hidden but an unresolved failure) or `Collapse { open }`: a run folds to its
 newest step, where a client draws its one line, keeping an unresolved failure; while live it shows its newest
-`LIVE_STEPS` steps; a run `open` holds any step of shows every step. When a page merges older steps into a run, the
+step and any step still running, so calls made side by side all show; a run `open` holds any step of shows every
+step. When a page merges older steps into a run, the
 newest step the reader is looking at keeps its id and the run grows its count; when a live step extends a run, the
 newest step moves to it, where nothing is anchored.
 

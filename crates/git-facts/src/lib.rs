@@ -301,10 +301,11 @@ pub fn remote_identity(url: &str) -> String {
         return joined(authority, path);
     }
     // scp-like `user@host:owner/name`: a ':' before any '/'.
-    if let Some((authority, path)) = url.split_once(':') {
-        if !authority.contains('/') && !authority.is_empty() {
-            return joined(authority, path);
-        }
+    if let Some((authority, path)) = url.split_once(':')
+        && !authority.contains('/')
+        && !authority.is_empty()
+    {
+        return joined(authority, path);
     }
     trimmed(url)
 }

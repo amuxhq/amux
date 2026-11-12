@@ -7,8 +7,7 @@ GitHub reads as a job's outputs:
 
   tests       Clippy, formatting and the workspace tests. Everything but a
               change to documentation alone.
-  product     The release build, the terminal journeys, the simulated stories
-              and doctests. Not documentation, and not the phone app alone,
+  product     The terminal journeys, the simulated stories and doctests. Not documentation, and not the phone app alone,
               which the iOS gate judges.
   models      The protocol models: a crate the models crate is built from.
   sanitizers  The sanitizers: a crate whose tests they run. Not the crates

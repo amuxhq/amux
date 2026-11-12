@@ -1,6 +1,7 @@
-# What a push does not wait for: the shipping binary on macOS and Windows,
-# which CI builds on Linux only, and the sanitizers, which CI runs only when
-# a crate whose tests they run changed. Both run here every night on main.
+# What a push does not wait for: the shipping binary, which takes eight
+# minutes on Linux and longer on macOS and Windows, and the sanitizers, which
+# CI runs only when a crate whose tests they run changed. Both run here every
+# night on main.
 name: Nightly builds and sanitizers
 
 on:
@@ -23,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0

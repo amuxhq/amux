@@ -440,11 +440,12 @@ time:
    their Hello.
 4. **Activate.** Under a supervisor this is one exchange on the pipe it
    handed down: write `prepared`, wait for `go`. Without a supervisor, go
-   at once. Everything before this point is read-only apart from creating
-   a store that did not exist and the generation file, which is what makes
-   rolling back to the previous binary safe. A store of another schema
-   version is not opened: its file is named in the error, left as it is,
-   and the daemon does not start.
+   at once. Everything before this point is read-only apart from the
+   generation file and opening the store, which creates it or runs the
+   migrations it lacks. Migrations only add, so the previous binary still
+   reads the store, which is what makes rolling back to it safe. A
+   migration that fails is undone: the error names the file, which is left
+   as it was, and the daemon does not start.
 5. Finish the sweep: resume ingest from each stored cursor, and mark
    exited, with the cause "while the daemon was away", every agent whose
    process is gone.

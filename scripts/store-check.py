@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
-"""Holds the store to its one rule: it only grows.
+"""Holds the store's migrations to their two rules.
 
-Every build opens every store, so nothing a released store has may go or
-change: a table or column the newest release had must still be there with
-the same type, and a column added since must be one an existing file can
-take, nullable or with a default. The baseline is the newest release tag
-behind HEAD, or a ref named on the command line. Releases before 0.9.0
-predate the rule and are not checked against.
+Every build opens every store, and a store is changed only by the ordered
+migrations in schema.rs, so:
+
+- A migration the newest release shipped is still there, unchanged, in the
+  same place. A store that ran it is never given it again, so an edit would
+  reach fresh stores only.
+- The migrations added since only add. A table or column the release had
+  is still there with the same type, and a new column is one an existing
+  file can take, nullable or with a default. A build from before them, which
+  a rollback starts, then still reads and writes the file.
+
+The baseline is the newest release tag behind HEAD, or a ref named on the
+command line. Releases before 0.9.0 predate the rules and are not checked
+against.
 """
 
 import re
@@ -18,18 +26,51 @@ SCHEMA_FILE = "crates/store/src/schema.rs"
 FROZEN_SINCE = (0, 9, 0)
 
 
-def schema_sql(source):
-    """The SQL text of the `SCHEMA` constant in schema.rs."""
-    found = re.search(r'SCHEMA: &str = r#"(.*?)"#', source, re.S)
+def migrations(source):
+    """The SQL text of each entry of the `MIGRATIONS` list in schema.rs.
+
+    Every entry is a raw string, r#"..."#. Anything else in the list is
+    refused rather than skipped: an entry this check cannot read is one it
+    would pass without having looked at.
+    """
+    found = re.search(r"MIGRATIONS: &\[&str\] = &\[(.*?)\n\];", source, re.S)
     if found is None:
-        raise SystemExit(f"{SCHEMA_FILE} holds no SCHEMA constant")
-    return found.group(1)
+        raise SystemExit(f"{SCHEMA_FILE} holds no MIGRATIONS list")
+    body = found.group(1)
+    entry = re.compile(r'(?<![\w#])r#"(.*?)"#(?!#)', re.S)
+    rest = re.sub(r"//[^\n]*", "", entry.sub("", body))
+    rest = rest.replace(",", "").strip()
+    if rest:
+        raise SystemExit(
+            f'{SCHEMA_FILE}: every MIGRATIONS entry must be a raw string, r#"..."#; '
+            f"this check cannot read {rest.splitlines()[0].strip()[:60]!r}"
+        )
+    return entry.findall(body)
 
 
-def tables(sql):
-    """Each table's columns: name to (type, not null, default)."""
+def edits(old, new):
+    """Each released migration that `new` no longer holds as released."""
+    found = []
+    for index, text in enumerate(old):
+        if index >= len(new):
+            found.append(f"migration {index + 1} is gone")
+        elif new[index] != text:
+            found.append(
+                f"migration {index + 1} changed after its release; "
+                "append a new migration instead"
+            )
+    return found
+
+
+def tables(entries):
+    """Each table's columns, name to (type, not null, default), once the
+    migrations have run in order."""
     database = sqlite3.connect(":memory:")
-    database.executescript(sql)
+    for index, sql in enumerate(entries):
+        try:
+            database.executescript(sql)
+        except sqlite3.Error as error:
+            raise SystemExit(f"migration {index + 1} does not run: {error}")
     names = database.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
     ).fetchall()
@@ -90,15 +131,15 @@ def main(args):
     if ref is None:
         return 0
     with open(SCHEMA_FILE, encoding="utf-8") as file:
-        new = tables(schema_sql(file.read()))
-    old = tables(schema_sql(git("show", f"{ref}:{SCHEMA_FILE}")))
-    found = losses(old, new)
+        new = migrations(file.read())
+    old = migrations(git("show", f"{ref}:{SCHEMA_FILE}"))
+    found = edits(old, new) + losses(tables(old), tables(new))
     for loss in found:
         print(loss, file=sys.stderr)
     if found:
         print(f"{len(found)} break(s) against {ref}; see docs/JOURNAL_AND_STORE.md", file=sys.stderr)
         return 1
-    print(f"the store only grew since {ref}")
+    print(f"the store's migrations only added since {ref}")
     return 0
 
 

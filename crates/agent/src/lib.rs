@@ -67,8 +67,21 @@ pub enum AgentError {
     Journal(std::io::Error),
 }
 
+/// The size a journal segment is cut at.
+pub const JOURNAL_SEGMENT_BYTES: u64 = 1024 * 1024;
+
 /// Runs the agent in `dir` until it exits.
 pub async fn run(dir: PathBuf, clock: impl Clock) -> Result<ExitCause, AgentError> {
+    run_cutting_segments_at(dir, clock, JOURNAL_SEGMENT_BYTES).await
+}
+
+/// [`run`], with the journal cut into segments of `segment_bytes`: how a
+/// caller makes every append open a new file.
+pub async fn run_cutting_segments_at(
+    dir: PathBuf,
+    clock: impl Clock,
+    segment_bytes: u64,
+) -> Result<ExitCause, AgentError> {
     let dir = std::path::absolute(&dir).map_err(AgentError::Dir)?;
     let _lock = dir::lock(&dir)
         .map_err(AgentError::Dir)?
@@ -81,9 +94,9 @@ pub async fn run(dir: PathBuf, clock: impl Clock) -> Result<ExitCause, AgentErro
     let trimming = tokio::spawn(trim_logs(dir.clone()));
     let codex_sock = dir.join(dir::PRIVATE).join(dir::CODEX_SOCK);
     let ended = match wire::Kind::try_from(spec.kind) {
-        Ok(wire::Kind::ClaudeSdk) => host::run::<ClaudeSdk>(dir, spec, clock).await,
-        Ok(wire::Kind::ClaudePty) => host::run::<ClaudePty>(dir, spec, clock).await,
-        Ok(wire::Kind::Codex) => host::run::<Codex>(dir, spec, clock).await,
+        Ok(wire::Kind::ClaudeSdk) => host::run::<ClaudeSdk>(dir, spec, clock, segment_bytes).await,
+        Ok(wire::Kind::ClaudePty) => host::run::<ClaudePty>(dir, spec, clock, segment_bytes).await,
+        Ok(wire::Kind::Codex) => host::run::<Codex>(dir, spec, clock, segment_bytes).await,
         Ok(wire::Kind::Unspecified) | Err(_) => Err(AgentError::UnknownKind(spec.kind)),
     };
     trimming.abort();

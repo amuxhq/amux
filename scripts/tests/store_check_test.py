@@ -16,13 +16,83 @@ OLD = "CREATE TABLE agents (id BLOB NOT NULL, name TEXT NOT NULL) STRICT;"
 
 class StoreCheckTest(unittest.TestCase):
     def losses(self, new):
-        return check.losses(check.tables(OLD), check.tables(new))
+        return check.losses(check.tables([OLD]), check.tables([new]))
 
-    def test_the_checked_in_schema_loads(self):
+    def test_the_checked_in_migrations_load(self):
         source = (ROOT / check.SCHEMA_FILE).read_text(encoding="utf-8")
-        tables = check.tables(check.schema_sql(source))
+        entries = check.migrations(source)
+        self.assertGreaterEqual(len(entries), 1)
+        tables = check.tables(entries)
         self.assertIn("agents", tables)
+        self.assertEqual(check.edits(entries, entries), [])
         self.assertEqual(check.losses(tables, tables), [])
+
+    def test_every_entry_of_the_list_is_read(self):
+        source = (
+            "pub(crate) const MIGRATIONS: &[&str] = &[\n"
+            '    // 1\n    r#"CREATE TABLE a (x);"#,\n'
+            '    // 2\n    r#"ALTER TABLE a ADD COLUMN y;\n"#,\n'
+            "];\n"
+        )
+        self.assertEqual(
+            check.migrations(source),
+            ["CREATE TABLE a (x);", "ALTER TABLE a ADD COLUMN y;\n"],
+        )
+
+    def test_an_entry_the_check_cannot_read_is_refused_not_skipped(self):
+        for entry in (
+            '"ALTER TABLE a DROP COLUMN x;"',
+            'r"ALTER TABLE a DROP COLUMN x;"',
+            'r##"ALTER TABLE a DROP COLUMN x;"##',
+            "SECOND",
+        ):
+            source = (
+                "pub(crate) const MIGRATIONS: &[&str] = &[\n"
+                '    // 1: the first.\n    r#"CREATE TABLE a (x);"#,\n'
+                f"    {entry},\n"
+                "];\n"
+            )
+            with self.assertRaises(SystemExit, msg=entry) as refused:
+                check.migrations(source)
+            self.assertIn("must be a raw string", str(refused.exception))
+
+    def test_appending_a_migration_is_allowed(self):
+        new = [OLD, "ALTER TABLE agents ADD COLUMN note TEXT;"]
+        self.assertEqual(check.edits([OLD], new), [])
+        self.assertEqual(check.losses(check.tables([OLD]), check.tables(new)), [])
+
+    def test_editing_a_released_migration_is_a_break(self):
+        self.assertEqual(
+            check.edits([OLD], [OLD + " -- tidied"]),
+            ["migration 1 changed after its release; append a new migration instead"],
+        )
+
+    def test_removing_a_released_migration_is_a_break(self):
+        self.assertEqual(check.edits([OLD, "CREATE TABLE b (x);"], [OLD]), ["migration 2 is gone"])
+
+    def test_a_migration_that_drops_is_a_break(self):
+        new = [OLD, "ALTER TABLE agents DROP COLUMN name;"]
+        self.assertEqual(
+            check.losses(check.tables([OLD]), check.tables(new)),
+            ["column agents.name is gone"],
+        )
+
+    def test_a_migration_that_cannot_run_is_named(self):
+        with self.assertRaises(SystemExit) as refused:
+            check.tables([OLD, "ALTER TABLE missing ADD COLUMN x TEXT;"])
+        self.assertIn("migration 2 does not run", str(refused.exception))
+
+    # SQLite takes this on the empty tables the check builds and refuses it
+    # on a store that holds rows, so the check has to name it itself.
+    def test_a_required_column_added_by_a_migration_is_a_break(self):
+        new = [OLD, "ALTER TABLE agents ADD COLUMN must TEXT NOT NULL;"]
+        self.assertEqual(
+            check.losses(check.tables([OLD]), check.tables(new)),
+            [
+                "column agents.must is new, NOT NULL and has no default, "
+                "so an existing file cannot take it"
+            ],
+        )
 
     def test_growing_is_allowed(self):
         self.assertEqual(

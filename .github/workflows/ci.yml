@@ -64,37 +64,30 @@ jobs:
           python3 scripts/ci-affected.py --base "$base" --head "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
 
   check-and-clippy:
-    name: Check and Clippy
+    name: Format, Check and Clippy
     needs: changes
     if: needs.changes.outputs.tests == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # Formatting is seconds of work on the pinned nightly's rustfmt, so it
+      # shares this job rather than waiting for a runner of its own. The
+      # stable toolchain is installed second, which leaves it the default.
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 2026-10-16
+        with:
+          toolchain: nightly-2026-08-30
+          components: rustfmt
       - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
         with:
           components: clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - uses: ./.github/actions/setup-just
-      - name: Run Clippy
-        run: just lint
-
-  fmt:
-    name: Format
-    needs: changes
-    if: needs.changes.outputs.tests == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 2026-10-16
-        with:
-          toolchain: nightly-2026-08-30
-          components: rustfmt
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - uses: ./.github/actions/setup-just
       - name: Check formatting
         run: just fmt-check
+      - name: Run Clippy
+        if: always()
+        run: just lint
 
   miri:
     name: Pointer checks over the C ABI
@@ -230,15 +223,6 @@ jobs:
         if: always()
         shell: bash
         run: sccache --show-stats
-      - name: Keep the test report
-        # Every test's result and time, and a failing test's output, in
-        # JUnit form: target/nextest/ci/junit.xml.
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-report-${{ matrix.os }}-${{ matrix.part }}
-          path: target/nextest/ci/junit.xml
-          if-no-files-found: ignore
 
   platform-free:
     name: Simulated stories and doctests
@@ -265,21 +249,28 @@ jobs:
         run: just doctest
 
   models:
-    name: Models (${{ matrix.model }})
+    name: Models (${{ matrix.models }})
     needs: changes
     if: needs.changes.outputs.models == 'true'
     # The protocol models explore every state of the real code at their CI
-    # bounds, minutes of every core each; one job per model keeps
-    # each model's run beside the others rather than after them, and none
-    # of them on the platform test jobs.
+    # bounds, minutes of every core each, so they stay off the platform test
+    # jobs. A job runs a few of them one after another: a job per model spent
+    # as long starting as checking, and twelve of them left the run's other
+    # jobs waiting for a runner.
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         # Every protocol model, a module of the models' integration test
-        # binary: `just tests-check` fails when one is missing here.
-        model: [client, composed, family, lifecycle, path, presence, relay, replication, single_daemon, socket, supervisor, switch]
+        # binary: `just tests-check` fails when one is missing here. Each
+        # line is one job, sized to about eight minutes on the runner.
+        models:
+          - family relay
+          - path lifecycle
+          - single_daemon composed
+          - replication presence
+          - client socket supervisor switch
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
@@ -289,25 +280,17 @@ jobs:
           shared-key: models
       - uses: ./.github/actions/setup-just
       - uses: ./.github/actions/setup-nextest
-      - name: Check the model at its CI bounds
-        run: just test-crate models -- -E 'binary_id(models::integration) & test(/^${{ matrix.model }}::/)'
-
-  build:
-    name: Build (ubuntu-latest)
-    needs: changes
-    if: needs.changes.outputs.product == 'true'
-    # The shipping binary on Linux only. On macOS and Windows it took 14 and
-    # 19 minutes of every push and set how long CI takes; nightly.yml builds
-    # those, and release.yml builds all three for a release.
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - uses: ./.github/actions/setup-just
-      - name: Build product release
-        run: just release-check
+      - name: Check each model at its CI bounds
+        # Every model of the job runs, whichever fails.
+        run: |
+          failed=
+          for model in ${{ matrix.models }}; do
+            just test-crate models -- -E "binary_id(models::integration) & test(/^${model}::/)" || failed="$failed $model"
+          done
+          if [ -n "$failed" ]; then
+            echo "failed:$failed"
+            exit 1
+          fi
 
   terminal-journeys:
     name: Terminal journeys (${{ matrix.os }})
@@ -336,6 +319,9 @@ jobs:
         run: just journey terminal all
       - name: Upload the terminal journeys' results
         if: always()
+        # The upload has waited on a failing artifact service for twenty
+        # minutes after the journeys were done.
+        timeout-minutes: 5
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: terminal-journeys-${{ matrix.os }}

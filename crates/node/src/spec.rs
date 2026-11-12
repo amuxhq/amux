@@ -360,8 +360,6 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
             effort: at.resolved.effort.clone(),
             install_path: launch.install_path.to_string_lossy().into_owned(),
             step_budget_micros: launch.agent_step_budget_micros,
-            // The agent's default; only its own tests write a size here.
-            journal_segment_bytes: 0,
         }),
         created_at_ms: at.created_at_ms,
         incarnation: at.incarnation,

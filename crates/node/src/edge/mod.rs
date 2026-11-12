@@ -26,14 +26,13 @@ mod web_sign_in;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
 use account::Binding;
 pub(crate) use account::{Account, AccountCredentials};
-pub use binding::{AccountAccess, Grant, PurchaseStore};
 pub use cloud::UDP_BLOCKED_MEMORY;
 use futures_util::stream;
 pub(crate) use relay_server::Accounts;
@@ -318,6 +317,9 @@ pub struct Edge {
     listening: bool,
     /// The app is suspended: its links are closed and nothing is dialled.
     suspended: tokio::sync::Mutex<bool>,
+    /// True while the app is suspended, for the dispatcher, which takes no
+    /// connection meanwhile.
+    refusing_links: Arc<AtomicBool>,
 }
 
 impl Edge {
@@ -374,6 +376,7 @@ impl Edge {
         let link_ctx = LinkCtx::new_live(local_host.clone(), channels.link_registry())
             .with_incoming_streams(incoming_streams_tx.clone())
             .with_clock(clock.clone());
+        let refusing_links = Arc::new(AtomicBool::new(false));
         let dispatcher = TunnelDispatcher::new(
             trust.clone(),
             pair_mode.clone(),
@@ -381,7 +384,8 @@ impl Edge {
             pairing_tx,
             DEVICE_TLS_HANDSHAKE_TIMEOUT,
         )
-        .with_link_ctx(link_ctx.clone());
+        .with_link_ctx(link_ctx.clone())
+        .refusing_while(refusing_links.clone());
 
         let mut tasks = vec![
             serve_inbound_streams(Arc::new(dispatcher.clone()), incoming_streams_rx),
@@ -547,6 +551,7 @@ impl Edge {
             dial: options.dial,
             listening: options.lan.is_some(),
             suspended: tokio::sync::Mutex::new(false),
+            refusing_links,
         });
         Ok(edge)
     }
@@ -791,7 +796,9 @@ impl Edge {
 
     /// The app is about to be suspended, its sockets with it: every link
     /// says goodbye and closes, the relay link too, and nothing is dialled
-    /// until [`Edge::resume`]. A link left open would be dropped by its peer
+    /// until [`Edge::resume`], nor taken: a peer whose own path still reaches
+    /// this host may redial it at once, when the relay's word that the host
+    /// left overtakes the goodbye. A link left open would be dropped by its peer
     /// at the peer's idle timeout while the phone sleeps, and the phone,
     /// whose timers do not count the time it sleeps, would find it dead only
     /// when it next wrote to it, the link through the relay not even then
@@ -803,6 +810,8 @@ impl Edge {
             return;
         }
         tracing::info!(host = %self.host_id(), "suspending: closing every link");
+        // Before the links close, so none comes up behind them.
+        self.refusing_links.store(true, Ordering::SeqCst);
         self.reachability.stop_dialling();
         // The core first, so the relay link's ending asks for no other.
         crate::driver::CoreLinks::new(self.runtime.clone())
@@ -828,6 +837,7 @@ impl Edge {
             return;
         }
         tracing::info!(host = %self.host_id(), "resuming: dialling every host");
+        self.refusing_links.store(false, Ordering::SeqCst);
         if let Err(error) = self.network_changed() {
             tracing::warn!(%error, "rebinding the link socket on resume failed");
         }

@@ -60,7 +60,7 @@ class TestsCatalogTest(unittest.TestCase):
         self.assertNotIn("support", modules)
         self.assertNotIn("stories", modules)
 
-    def test_every_protocol_model_has_its_own_ci_job(self):
+    def test_every_protocol_model_is_in_a_ci_job(self):
         suites = [
             {
                 "name": "protocol-models",
@@ -75,7 +75,9 @@ class TestsCatalogTest(unittest.TestCase):
             "  models:\n"
             "    strategy:\n"
             "      matrix:\n"
-            "        model: [family, retired]\n"
+            "        models:\n"
+            "          - family\n"
+            "          - retired other\n"
             "  build:\n"
             "    runs-on: ubuntu-latest\n"
         )
@@ -84,6 +86,7 @@ class TestsCatalogTest(unittest.TestCase):
             catalog.validate_models_matrix(suites, workflow),
             [
                 "protocol-models model presence is not in the CI models job's matrix",
+                "the CI models job's matrix names other, which is no protocol-models model",
                 "the CI models job's matrix names retired, which is no protocol-models model",
             ],
         )

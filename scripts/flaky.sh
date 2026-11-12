@@ -27,7 +27,10 @@ if [ -n "$load" ]; then
     burners=
     i=0
     while [ "$i" -lt "$cores" ]; do
-        sh -c 'while :; do :; done' &
+        # A burner ends by itself once this script is gone: killed outright,
+        # the script runs no trap, and loops left behind keep every core
+        # busy until someone finds them.
+        sh -c 'n=0; while :; do n=$((n + 1)); if [ "$n" -ge 200000 ]; then n=0; kill -0 "$1" 2>/dev/null || exit 0; fi; done' burner $$ &
         burners="$burners $!"
         i=$((i + 1))
     done

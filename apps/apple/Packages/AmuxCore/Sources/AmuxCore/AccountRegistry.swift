@@ -70,6 +70,10 @@ public final class AccountRegistry {
     public private(set) var stores: StoreBundle?
     /// The profile nobody has signed in on, if there is one.
     public private(set) var unbound: String?
+    /// An account asked onto the screen before any profile list named it: a
+    /// sign-in is answered on its own path, and can come before the list
+    /// that carries the new account. It goes on screen when a list names it.
+    private var awaited: AccountId?
     /// Answers for an account that is not on screen, dropped.
     public private(set) var dropped = 0
     /// Told when what is on screen changes, before `changed`.
@@ -181,6 +185,10 @@ public final class AccountRegistry {
             seen = seen.filter { listed.contains($0.key) }
             persist()
         }
+        if let wanted = awaited, accounts.contains(where: { $0.id == wanted }) {
+            awaited = nil
+            if selected != wanted { return place(wanted) }
+        }
         // Nothing was on screen yet, or what was is gone.
         if selected.map({ id in !accounts.contains { $0.id == id } }) ?? (unbound == nil) {
             place(next())
@@ -199,12 +207,18 @@ public final class AccountRegistry {
     }
 
     public func select(_ id: AccountId) {
-        guard accounts.contains(where: { $0.id == id }), selected != id else { return }
+        awaited = nil
+        guard selected != id else { return }
+        guard accounts.contains(where: { $0.id == id }) else {
+            awaited = id
+            return
+        }
         place(id)
     }
 
     /// Takes an account off the screen before its profile is deleted.
     public func leave(_ id: AccountId) {
+        if awaited == id { awaited = nil }
         guard selected == id else { return }
         place(next(leaving: id))
     }

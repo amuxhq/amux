@@ -51,7 +51,15 @@ final class RuntimeCoordinatorTests: XCTestCase {
             refreshToken: "refresh-\(account)")
         if case .failure(let why) = bound {
             XCTFail("\(account) did not sign in: \(why)", file: file, line: line)
+            return
         }
+        // The sign-in's answer can come before the profile list that names
+        // the account, and the account goes on screen with that list.
+        await eventually("\(account) on screen", {
+            guard let listed = coordinator.profiles.first(where: { $0.subject == account })
+            else { return false }
+            return coordinator.profile?.id == listed.id
+        }, file: file, line: line)
     }
 
     private func binding(_ coordinator: RuntimeCoordinator, _ profile: String?) -> AccountBinding? {

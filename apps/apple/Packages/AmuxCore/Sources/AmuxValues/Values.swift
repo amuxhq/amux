@@ -3044,7 +3044,7 @@ public enum Filing: String, Codable, Hashable, Sendable, CaseIterable {
     case pinned = "Pinned"
     /// Done with: stopped when it was live, out of other agents' listing, and
     /// the only kind retention deletes. A message from the person or its own
-    /// parent resumes it, filed active again.
+    /// parent resumes it, filed open again.
     case closed = "Closed"
 }
 

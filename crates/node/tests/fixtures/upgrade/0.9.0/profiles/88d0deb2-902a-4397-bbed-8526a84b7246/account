@@ -1,0 +1,10 @@
+{
+  "service": "https://account.example",
+  "subject": "the-release's-account",
+  "name": null,
+  "email": "keeper@example.com",
+  "picture": null,
+  "bound_at_ms": 1,
+  "refresh_token": null,
+  "client_id": "cli"
+}

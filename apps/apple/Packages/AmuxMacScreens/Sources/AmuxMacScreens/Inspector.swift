@@ -46,7 +46,7 @@ public struct ChangesPane: View {
     @ViewBuilder private var comparison: some View {
         let label = HStack(spacing: 5) {
             Icon("git-branch", size: 13).foregroundStyle(.secondary)
-            Text(ChatWords.comparison(chat.comparison, base: chat.base))
+            Text(Self.compared(chat.comparison, base: chat.base))
                 .font(.system(size: 13, weight: .medium))
                 .lineLimit(1)
         }
@@ -57,9 +57,9 @@ public struct ChangesPane: View {
                         chat.compare(comparison)
                     } label: {
                         if comparison == chat.comparison {
-                            Label(ChatWords.comparison(comparison, base: chat.base), systemImage: "checkmark")
+                            Label(Self.compared(comparison, base: chat.base), systemImage: "checkmark")
                         } else {
-                            Text(ChatWords.comparison(comparison, base: chat.base))
+                            Text(Self.compared(comparison, base: chat.base))
                         }
                     }
                 }
@@ -71,6 +71,14 @@ public struct ChangesPane: View {
             .fixedSize()
         } else {
             label
+        }
+    }
+
+    /// Both ends, as the references name them: "main → working tree".
+    static func compared(_ comparison: Comparison, base: String?) -> String {
+        switch comparison {
+        case .uncommitted: "Last commit → working tree"
+        case .onBranch: "\(base ?? "base") → working tree"
         }
     }
 
@@ -125,7 +133,7 @@ private struct ReviewView: View {
                     Text(ChatWords.comments(review.count)).foregroundStyle(.secondary)
                     Spacer()
                     Button(ChatWords.attachReview(review.count), action: attach)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(PillButtonStyle(prominent: true, small: true))
                 }
                 .font(.system(size: 12))
                 .padding(10)
@@ -188,15 +196,12 @@ private struct FileHeader: View {
                 Icon(folded ? "chevron-right" : "chevron-down", size: 12)
                     .foregroundStyle(.tertiary)
                     .frame(width: 12)
-                Text(file.oldPath.map { "\($0) → \(file.path)" } ?? file.path)
-                    .font(.system(size: 12, design: .monospaced))
-                    .lineLimit(1)
-                    .truncationMode(.head)
+                FileName(path: file.path, from: file.oldPath)
                 Spacer(minLength: 6)
-                if file.status == .added { Text("new").foregroundStyle(.green) }
-                if file.status == .deleted { Text("deleted").foregroundStyle(.red) }
-                Text("+\(file.added)").foregroundStyle(.green).monospacedDigit()
-                Text("−\(file.removed)").foregroundStyle(.red).monospacedDigit()
+                if file.status == .added { Text("new").foregroundStyle(Palette.added) }
+                if file.status == .deleted { Text("deleted").foregroundStyle(Palette.removed) }
+                Text("+\(file.added)").foregroundStyle(Palette.added).monospacedDigit()
+                Text("−\(file.removed)").foregroundStyle(Palette.removed).monospacedDigit()
             }
             .font(.system(size: 11.5))
             .padding(.horizontal, 10)
@@ -206,6 +211,24 @@ private struct FileHeader: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// A file's name in the text colour after its folder in a quieter one, so
+/// the eye finds the file; its old path first when it moved.
+private struct FileName: View {
+    let path: String
+    let from: String?
+
+    var body: some View {
+        let folder = (path as NSString).deletingLastPathComponent
+        let name = (path as NSString).lastPathComponent
+        (Text(from.map { "\($0) → " } ?? "").foregroundStyle(.tertiary)
+            + Text(folder.isEmpty ? "" : folder + "/").foregroundStyle(.secondary)
+            + Text(name).foregroundStyle(.primary).fontWeight(.medium))
+            .font(.system(size: 12))
+            .lineLimit(1)
+            .truncationMode(.head)
     }
 }
 
@@ -227,7 +250,7 @@ private struct DiffLineView: View {
             PatchText(kind: line.kind, text: line.text)
         }
         .font(.system(size: 11, design: .monospaced))
-        .background(selected ? Color.accentColor.opacity(0.22) : (hovering ? Palette.hover : .clear))
+        .background(selected ? Palette.selection : (hovering ? Palette.hover : .clear))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .help("Click to comment on this line; Shift-click to take in more")
@@ -239,7 +262,7 @@ private struct Comment: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Icon("message-square-text", size: 14).foregroundStyle(Color.accentColor)
+            Icon("message-square-text", size: 14).foregroundStyle(Palette.accent)
             Text(text).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -267,17 +290,18 @@ private struct Writer: View {
                 .focused($focused)
                 .onSubmit(save)
             HStack {
-                Button("Cancel", action: cancel).keyboardShortcut(.escape, modifiers: [])
+                Button("Cancel", action: cancel)
+                    .buttonStyle(PillButtonStyle(small: true))
+                    .keyboardShortcut(.escape, modifiers: [])
                 Button("Comment", action: save)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(PillButtonStyle(prominent: true, small: true))
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            .controlSize(.small)
         }
         .font(.system(size: 12))
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.raised))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.accentColor.opacity(0.5)))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.accent.opacity(0.5)))
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .onAppear { focused = true }

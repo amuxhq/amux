@@ -1,3 +1,4 @@
+import AppKit
 import AmuxMacScreens
 import AmuxValues
 import Foundation
@@ -163,7 +164,20 @@ public enum Stories {
             phaseSinceMs: Int64(Date.now.timeIntervalSince1970 * 1000) - ago * 1000,
             host: host, hostReach: .online(.direct), children: children, familyAttention: attention,
             members: children + 1, descendants: children, backgroundJobs: 0, closeHeld: false, filing: filing,
-            topLevel: true, branch: "main", exitCause: exit)
+            topLevel: true, branch: "main", exitCause: exit, repository: repository(cwd))
+    }
+
+    /// The repository the runtime would name for a folder under /src, as if
+    /// each had an origin at github.com/amuxhq: the tints are the runtime's
+    /// for those remotes.
+    static func repository(_ cwd: String) -> Repository? {
+        let name = (cwd as NSString).lastPathComponent
+        let tints: [String: UInt8] = ["amux": 5, "website": 7, "console": 6, "amuxcloud": 0, "skills": 3]
+        let letters = name.filter { $0.isLetter || $0.isNumber }.lowercased()
+        guard let first = letters.first, let last = letters.last else { return nil }
+        return Repository(
+            key: "github.com/amuxhq/\(name)", name: name,
+            mark: letters.count == 1 ? String(first) : "\(first)\(last)", tint: tints[name] ?? 7)
     }
 
     private static func row(
@@ -198,13 +212,13 @@ public enum Stories {
         rows: [
             row(card(2, "Write the release notes", on: machine, .working, cwd: "/src/website", ago: 12),
                 step("Reading CHANGELOG.md")),
-            row(card(3, "Tidy the settings page", on: "build-box", .working, children: 2, ago: 95),
+            row(card(3, "Tidy the settings page", on: "build-box", .working, cwd: "/src/console", children: 2, ago: 95),
                 step("cargo build -p amux-ui"), expanded: true),
-            row(card(7, "Check the toggles", on: "build-box", .working, ago: 30), step("Searching for “Toggle(”"),
+            row(card(7, "Check the toggles", on: "build-box", .working, cwd: "/src/console", ago: 30), step("Searching for “Toggle(”"),
                 depth: 1),
-            row(card(8, "Check the copy", on: "build-box", .idle, ago: 200), .lastSaid("Two labels say “Enabled”."),
+            row(card(8, "Check the copy", on: "build-box", .idle, cwd: "/src/console", ago: 200), .lastSaid("Two labels say “Enabled”."),
                 depth: 1),
-            row(card(4, "Review the store migration", on: "build-box", .idle, ago: 7_200),
+            row(card(4, "Review the store migration", on: "build-box", .idle, cwd: "/src/amuxcloud", ago: 7_200),
                 .lastSaid("The migration is safe; two nits inside.")),
             row(card(5, "Bump the toolchain", on: machine, .exited, ago: 86_400, exit: .failed("rustup was not found")),
                 .exited(.failed("rustup was not found"))),
@@ -215,7 +229,7 @@ public enum Stories {
         rows: [
             row(card(9, "Rename the crates", on: machine, .exited, filing: .closed, ago: 172_800, exit: .finished),
                 .lastSaid("Renamed all twelve; the build is green.")),
-            row(card(10, "Draft the launch post", on: machine, .exited, filing: .closed, ago: 259_200, exit: .finished),
+            row(card(10, "Draft the launch post", on: machine, .exited, cwd: "/src/website", filing: .closed, ago: 259_200, exit: .finished),
                 .lastSaid("The draft is in notes/launch.md.")),
             row(card(11, "Measure cold start", on: "build-box", .exited, filing: .closed, ago: 400_000, exit: .finished),
                 .lastSaid("Cold start is 410 ms on the M1.")),
@@ -224,18 +238,18 @@ public enum Stories {
     private static let busy = FleetContent(sections: [pinned, needsYou, live, settled])
 
     private static let fleet = [
-        Story("fleet.no-agents") { MainStory(MainContent(profiles: [signedIn, work], fleet: FleetContent())) },
-        Story("fleet.busy") { MainStory(MainContent(profiles: [signedIn, work], fleet: busy)) },
+        Story("fleet.no-agents") { MainStory(MainContent(profiles: [signedIn, work], fleet: FleetContent(), thisMac: thisMac)) },
+        Story("fleet.busy") { MainStory(MainContent(profiles: [signedIn, work], fleet: busy, thisMac: thisMac)) },
         Story("fleet.finish-setup") {
             MainStory(
                 MainContent(
                     profiles: [signedIn, work],
                     fleet: FleetContent(sections: [needsYou, FleetSection(
                         kind: .live, families: 1, foldedByDefault: false, rows: [live.rows[0]])]),
-                    toFinish: 3))
+                    thisMac: thisMac, toFinish: 3))
         },
         Story("fleet.settled") {
-            MainStory(MainContent(profiles: [signedIn, work], fleet: busy), place: Place(settled: true))
+            MainStory(MainContent(profiles: [signedIn, work], fleet: busy, thisMac: thisMac), place: Place(settled: true))
         },
     ]
 
@@ -347,7 +361,7 @@ public enum Stories {
             refused: [], askInput: nil, context: nil, ended: nil,
             git: Git(
                 baseBranch: "main", branch: "relay-flake",
-                onBranch: ChangeTotals(files: 3, added: 48, removed: 12),
+                onBranch: ChangeTotals(files: 3, added: 48, removed: 12), remote: "github.com/amuxhq/amux",
                 uncommitted: ChangeTotals(files: 2, added: 30, removed: 4)),
             signIn: nil)
     }
@@ -551,7 +565,10 @@ private struct MainStory: View {
                 ChatPane(
                     chat: chat, row: content.fleet.sections.flatMap(\.rows).first { $0.card.agent == agent },
                     changesOpen: place.changes,
-                    actions: AgentActions(openChanges: { place.changes = true }, reveal: {}, openEditor: {}))
+                    actions: AgentActions(
+                        openChanges: { place.changes = true }, reveal: {}, openEditor: {}, editor: "VS Code",
+                        editorIcon: appIcon("com.microsoft.VSCode"), terminalIcon: appIcon("com.apple.Terminal"),
+                        finderIcon: appIcon("com.apple.finder")))
             } else if place.surface == .agents, place.agent == nil {
                 NewAgentPage(surface: starting)
             } else if place.surface == .hosts, let id = place.host,
@@ -569,5 +586,13 @@ private struct MainStory: View {
                 ChangesPane(chat: chat) { place.changes = false }
             }
         }
+    }
+}
+
+/// An installed app's icon, as the app's own card shows it.
+@MainActor
+private func appIcon(_ bundle: String) -> NSImage? {
+    NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle).map {
+        NSWorkspace.shared.icon(forFile: $0.path)
     }
 }

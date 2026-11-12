@@ -351,6 +351,11 @@ message Git {
   // From where the branch left its base to the working tree, so uncommitted
   // work counts.
   optional ChangeTotals on_branch = 4;
+  // Where origin points, as host/owner/name: no scheme, credentials, port
+  // or ".git" ("github.com/amuxhq/amux"); a local remote is its path.
+  // Clients group checkouts of one repository by it, worktrees and other
+  // machines' checkouts included. Absent without an origin.
+  optional string remote = 5;
 }
 
 message ChangeTotals {

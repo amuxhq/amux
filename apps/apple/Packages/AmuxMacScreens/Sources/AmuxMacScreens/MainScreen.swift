@@ -272,7 +272,8 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
     @ViewBuilder private var title: some View {
         if place.surface == .agents, let agent = place.agent, let row = content.fleet.row(agent) {
             HStack(spacing: 6) {
-                Text(PlacesWords.place(row))
+                RepositoryTile(repository: row.card.repository, size: 18)
+                Text(row.card.repository?.name ?? PlacesWords.place(row))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Text("/").foregroundStyle(.tertiary)
@@ -301,7 +302,7 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
 
     @ViewBuilder private var notices: some View {
         if let problem = content.problem {
-            Notice(text: problem, symbol: "triangle-alert", tint: .red, dismiss: actions.dismissProblem)
+            Notice(text: problem, symbol: "triangle-alert", tint: Palette.failure, dismiss: actions.dismissProblem)
         }
         if let note = content.note {
             Notice(text: note, symbol: "circle-check", tint: .secondary)

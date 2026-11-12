@@ -42,6 +42,9 @@ pub struct GitFacts {
     /// uncommitted work. None without a base or a commit, or when the
     /// branch shares no history with it.
     pub on_branch: Option<ChangeTotals>,
+    /// Where origin points, as [`remote_identity`] writes it; None without
+    /// an origin.
+    pub remote: Option<String>,
 }
 
 /// What a comparison runs from; it always runs to the working tree.
@@ -245,12 +248,65 @@ pub async fn facts(cwd: &Path, recorded_base: Option<&str>) -> Result<Option<Git
         },
         _ => None,
     };
+    let remote = answer(cwd, &["config", "--get", "remote.origin.url"])
+        .await?
+        .map(|url| remote_identity(&url))
+        .filter(|remote| !remote.is_empty());
     Ok(Some(GitFacts {
         branch,
         base_branch,
         uncommitted,
         on_branch,
+        remote,
     }))
+}
+
+/// A remote's URL as the repository it names, the same for every way of
+/// writing it: `host/owner/name`, with no scheme, credentials, port or
+/// trailing `.git`, the host in lower case. `git@github.com:amuxhq/amux.git`
+/// and `https://token@github.com/amuxhq/amux` are both
+/// `github.com/amuxhq/amux`. A local remote is its path.
+pub fn remote_identity(url: &str) -> String {
+    let url = url.trim();
+    let trimmed = |path: &str| {
+        let path = path.trim_end_matches('/');
+        path.strip_suffix(".git")
+            .unwrap_or(path)
+            .trim_end_matches('/')
+            .to_owned()
+    };
+    let joined = |authority: &str, path: &str| {
+        // Credentials end at the authority's last '@'; a port follows its
+        // last ':' (an IPv6 literal keeps its brackets).
+        let host = authority
+            .rsplit_once('@')
+            .map_or(authority, |(_, host)| host);
+        let host = match host.rsplit_once(':') {
+            Some((name, port)) if !name.is_empty() && port.chars().all(|c| c.is_ascii_digit()) => {
+                name
+            }
+            _ => host,
+        };
+        let path = trimmed(path.trim_start_matches('/'));
+        match path.is_empty() {
+            true => host.to_ascii_lowercase(),
+            false => format!("{}/{path}", host.to_ascii_lowercase()),
+        }
+    };
+    if let Some((scheme, rest)) = url.split_once("://") {
+        if scheme.eq_ignore_ascii_case("file") {
+            return trimmed(rest);
+        }
+        let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
+        return joined(authority, path);
+    }
+    // scp-like `user@host:owner/name`: a ':' before any '/'.
+    if let Some((authority, path)) = url.split_once(':') {
+        if !authority.contains('/') && !authority.is_empty() {
+            return joined(authority, path);
+        }
+    }
+    trimmed(url)
 }
 
 /// Compares the working tree of `cwd` with where `comparison` runs from:
@@ -606,6 +662,32 @@ fn text(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn every_way_of_writing_a_remote_names_one_repository() {
+        for url in [
+            "git@github.com:amuxhq/amux.git",
+            "https://github.com/amuxhq/amux",
+            "https://x-access-token:secret@github.com/amuxhq/amux.git/",
+            "ssh://git@GitHub.com:22/amuxhq/amux.git",
+            "git://github.com/amuxhq/amux",
+        ] {
+            assert_eq!(
+                super::remote_identity(url),
+                "github.com/amuxhq/amux",
+                "{url}"
+            );
+        }
+        assert_eq!(super::remote_identity("/srv/git/amux.git"), "/srv/git/amux");
+        assert_eq!(
+            super::remote_identity("file:///srv/git/amux"),
+            "/srv/git/amux"
+        );
+        assert_eq!(
+            super::remote_identity("https://gitlab.example.com/group/sub/tool.git"),
+            "gitlab.example.com/group/sub/tool"
+        );
+    }
+
     /// The scratch index holds the repository's file names, so it is made
     /// where only this user can read it, whatever the index's own mode.
     #[cfg(unix)]

@@ -31,5 +31,6 @@ fn to_wire(facts: git_facts::GitFacts) -> wire::Git {
         base_branch: facts.base_branch,
         uncommitted: totals(facts.uncommitted),
         on_branch: totals(facts.on_branch),
+        remote: facts.remote,
     }
 }

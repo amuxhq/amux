@@ -3084,8 +3084,10 @@ public struct FleetCard: Codable, Hashable, Sendable {
     public var branch: String?
     /// How it ended, once it has.
     public var exitCause: ExitCause?
+    /// The repository it works in, by its remote, else its folder.
+    public var repository: Repository?
 
-    public init(agent: AgentKey, name: String, handle: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, closeHeld: Bool, filing: Filing, topLevel: Bool, branch: String?, exitCause: ExitCause?) {
+    public init(agent: AgentKey, name: String, handle: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, closeHeld: Bool, filing: Filing, topLevel: Bool, branch: String?, exitCause: ExitCause?, repository: Repository?) {
         self.agent = agent
         self.name = name
         self.handle = handle
@@ -3105,6 +3107,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
         self.topLevel = topLevel
         self.branch = branch
         self.exitCause = exitCause
+        self.repository = repository
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -3127,6 +3130,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
         case topLevel = "top_level"
         case branch
         case exitCause = "exit_cause"
+        case repository
     }
 }
 
@@ -3600,13 +3604,19 @@ public struct Git: Codable, Hashable, Sendable {
     /// From where the branch left its base to the working tree, so uncommitted
     /// work counts.
     public var onBranch: ChangeTotals?
+    /// Where origin points, as host/owner/name: no scheme, credentials, port
+    /// or ".git" ("github.com/amuxhq/amux"); a local remote is its path.
+    /// Clients group checkouts of one repository by it, worktrees and other
+    /// machines' checkouts included. Absent without an origin.
+    public var remote: String?
     /// Working tree against HEAD.
     public var uncommitted: ChangeTotals?
 
-    public init(baseBranch: String?, branch: String?, onBranch: ChangeTotals?, uncommitted: ChangeTotals?) {
+    public init(baseBranch: String?, branch: String?, onBranch: ChangeTotals?, remote: String?, uncommitted: ChangeTotals?) {
         self.baseBranch = baseBranch
         self.branch = branch
         self.onBranch = onBranch
+        self.remote = remote
         self.uncommitted = uncommitted
     }
 
@@ -3614,6 +3624,7 @@ public struct Git: Codable, Hashable, Sendable {
         case baseBranch = "base_branch"
         case branch
         case onBranch = "on_branch"
+        case remote
         case uncommitted
     }
 }
@@ -5479,6 +5490,32 @@ public struct ReportSent: Codable, Hashable, Sendable {
         case id
         case receivedAtMs = "received_at_ms"
         case notSent = "not_sent"
+    }
+}
+
+public struct Repository: Codable, Hashable, Sendable {
+    /// What its checkouts share: the remote, else the folder's path.
+    public var key: String
+    /// What a person calls it: the remote's last segment, else the
+    /// folder's name. "amux".
+    public var name: String
+    /// The first and last letter or digit of the name, lower case: "ax".
+    public var mark: String
+    /// Below [`REPOSITORY_TINTS`], the same for every checkout of it.
+    public var tint: UInt8
+
+    public init(key: String, name: String, mark: String, tint: UInt8) {
+        self.key = key
+        self.name = name
+        self.mark = mark
+        self.tint = tint
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case key
+        case name
+        case mark
+        case tint
     }
 }
 

@@ -1,3 +1,4 @@
+import AppKit
 import AmuxValues
 import AmuxWords
 import SwiftUI
@@ -15,13 +16,22 @@ public struct AgentActions {
     public var openEditor: (@MainActor () -> Void)?
     /// The editor's name, for its line.
     public var editor: String
+    /// The apps' own icons, so each action is known at a glance: the
+    /// editor's, Terminal's and Finder's.
+    public var editorIcon: NSImage?
+    public var terminalIcon: NSImage?
+    public var finderIcon: NSImage?
 
     public init(
         openChanges: @escaping @MainActor () -> Void = {}, openAgent: @escaping @MainActor (AgentKey) -> Void = { _ in },
         openTerminal: @escaping @MainActor () -> Void = {}, reveal: (@MainActor () -> Void)? = nil,
-        openEditor: (@MainActor () -> Void)? = nil, editor: String = "Editor"
+        openEditor: (@MainActor () -> Void)? = nil, editor: String = "Editor", editorIcon: NSImage? = nil,
+        terminalIcon: NSImage? = nil, finderIcon: NSImage? = nil
     ) {
         self.editor = editor
+        self.editorIcon = editorIcon
+        self.terminalIcon = terminalIcon
+        self.finderIcon = finderIcon
         self.openChanges = openChanges
         self.openAgent = openAgent
         self.openTerminal = openTerminal
@@ -47,14 +57,10 @@ struct FloatingCard: View {
         VStack(alignment: .leading, spacing: 0) {
             group {
                 Line(symbol: HostSymbol.of(row), text: PlaceNames.host(row.hostName))
-                Line(symbol: "folder", text: folder)
                     .help(PlaceNames.path(row.workingDirectory))
                 if let branch {
                     Line(symbol: "git-branch", text: branch)
                 }
-            }
-            Divider().padding(.horizontal, 8)
-            group {
                 Button(action: actions.openChanges) {
                     Line(symbol: "diff", text: "Changes") { ChangeCounts(changes: changes) }
                 }
@@ -62,12 +68,12 @@ struct FloatingCard: View {
                 .help("Show the changes (⌥⌘I)")
             }
             if let family, family.parent != nil || !family.children.isEmpty {
-                Divider().padding(.horizontal, 8)
+                Divider().padding(.horizontal, 10)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Lineage")
                         .font(.system(size: 11.5))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 14)
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 16)
                         .padding(.top, 8)
                         .padding(.bottom, 2)
                     group {
@@ -80,18 +86,22 @@ struct FloatingCard: View {
                     }
                 }
             }
-            Divider().padding(.horizontal, 8)
+            Divider().padding(.horizontal, 10)
             group {
-                Button(action: actions.openTerminal) { Line(symbol: "square-terminal", text: "Open in Terminal") }
-                    .buttonStyle(HoverButtonStyle())
-                    .help("Its own interface, through amux attach")
-                if let reveal = actions.reveal {
-                    Button(action: reveal) { Line(symbol: "folder-open", text: "Show in Finder") }
-                        .buttonStyle(HoverButtonStyle())
-                }
                 if let openEditor = actions.openEditor {
                     Button(action: openEditor) {
-                        Line(symbol: "code", text: "Open in \(actions.editor)")
+                        Line(app: actions.editorIcon, symbol: "code", text: "Open in \(actions.editor)")
+                    }
+                    .buttonStyle(HoverButtonStyle())
+                }
+                Button(action: actions.openTerminal) {
+                    Line(app: actions.terminalIcon, symbol: "square-terminal", text: "Open in Terminal")
+                }
+                .buttonStyle(HoverButtonStyle())
+                .help("Its own interface, through amux attach (⇧⌘T)")
+                if let reveal = actions.reveal {
+                    Button(action: reveal) {
+                        Line(app: actions.finderIcon, symbol: "folder-open", text: "Show in Finder")
                     }
                     .buttonStyle(HoverButtonStyle())
                 }
@@ -101,17 +111,11 @@ struct FloatingCard: View {
         .frame(width: Self.width)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.raised))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.line))
-        .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
-    }
-
-    /// The folder by the name a person knows it by.
-    private var folder: String {
-        let name = (row.workingDirectory as NSString).lastPathComponent
-        return name.isEmpty ? PlaceNames.host(row.hostName) : name
+        .shadow(color: .black.opacity(0.1), radius: 14, y: 6)
     }
 
     private func group(@ViewBuilder _ content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 0) { content() }.padding(6)
+        VStack(alignment: .leading, spacing: 0) { content() }.padding(.vertical, 6).padding(.horizontal, 6)
     }
 
     private func relative(_ card: FleetCard, symbol: String) -> some View {
@@ -120,7 +124,7 @@ struct FloatingCard: View {
         } label: {
             Line(symbol: symbol, text: card.name.isEmpty ? "agent" : card.name) {
                 if card.attention == .needsYou {
-                    Circle().fill(Color.accentColor).frame(width: 6, height: 6)
+                    Circle().fill(Palette.you).frame(width: 6, height: 6)
                 } else {
                     Text(ChatWords.childState(card)).foregroundStyle(.tertiary).lineLimit(1)
                 }
@@ -137,8 +141,8 @@ struct ChangeCounts: View {
     var body: some View {
         if let changes, changes.files > 0 {
             HStack(spacing: 4) {
-                Text("+\(changes.added)").foregroundStyle(.green)
-                Text("−\(changes.removed)").foregroundStyle(.red)
+                Text("+\(changes.added)").foregroundStyle(Palette.added)
+                Text("−\(changes.removed)").foregroundStyle(Palette.removed)
             }
             .monospacedDigit()
         } else {
@@ -174,11 +178,15 @@ struct FloatingPill: View {
 
 /// One line of the card: an icon, words, and what goes at its end.
 private struct Line<Trailing: View>: View {
+    var app: NSImage?
     let symbol: String
     let text: String
     @ViewBuilder let trailing: Trailing
 
-    init(symbol: String, text: String, @ViewBuilder trailing: () -> Trailing = { EmptyView() }) {
+    init(
+        app: NSImage? = nil, symbol: String, text: String, @ViewBuilder trailing: () -> Trailing = { EmptyView() }
+    ) {
+        self.app = app
         self.symbol = symbol
         self.text = text
         self.trailing = trailing()
@@ -186,15 +194,20 @@ private struct Line<Trailing: View>: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            Icon(symbol, size: 14)
-                .foregroundStyle(.secondary)
-                .frame(width: 16)
+            Group {
+                if let app {
+                    Image(nsImage: app).resizable().interpolation(.high).frame(width: 18, height: 18)
+                } else {
+                    Icon(symbol, size: 14).foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 18)
             Text(text).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 6)
             trailing
         }
         .padding(.horizontal, 8)
-        .frame(height: 26)
+        .frame(height: 28)
         .contentShape(Rectangle())
     }
 }

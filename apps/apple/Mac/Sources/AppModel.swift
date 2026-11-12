@@ -322,6 +322,13 @@ final class AppModel {
         return nil
     }()
 
+    /// An installed app's own icon, for the line that opens it.
+    static func appIcon(_ bundle: String) -> NSImage? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle).map {
+            NSWorkspace.shared.icon(forFile: $0.path)
+        }
+    }
+
     /// What the card offers for an agent on this Mac: its folder in Finder
     /// and in the editor. An agent elsewhere has neither here.
     func local(_ agent: AgentKey) -> String? {

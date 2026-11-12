@@ -77,7 +77,7 @@ public struct NewAgentPage: View {
         VStack(spacing: 0) {
             Spacer(minLength: 40)
             Text(heading)
-                .font(.system(size: 24, weight: .semibold))
+                .font(.system(size: 22, weight: .medium))
                 .multilineTextAlignment(.center)
                 .padding(.bottom, 22)
             composer
@@ -308,7 +308,7 @@ public struct NewAgentPage: View {
             } label: {
                 Pick(
                     icon: current.neverAsks ? "circle-alert" : "hand", text: compact ? nil : ChatWords.permission(current),
-                    tint: current.neverAsks ? .orange : .secondary)
+                    tint: current.neverAsks ? Palette.caution : .secondary)
             }
             .menuStyle(.button)
             .buttonStyle(HoverButtonStyle())
@@ -331,7 +331,7 @@ public struct NewAgentPage: View {
         VStack(alignment: .leading, spacing: 6) {
             if let failure = surface.failure {
                 Label { Text(failure).textSelection(.enabled) } icon: { Icon("triangle-alert", size: 13) }
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.failure)
             }
             if surface.listing == .unavailable {
                 Text("\(hostName.capitalizedFirst) could not list its folders. Choose one, or type a path.")
@@ -482,7 +482,7 @@ public struct DirectoryChooser: View {
                 }
                 Spacer(minLength: 6)
                 if surface.directory == directory.path {
-                    Icon("check", size: 13).foregroundStyle(Color.accentColor)
+                    Icon("check", size: 13).foregroundStyle(Palette.accent)
                 }
             }
             .padding(.horizontal, 8)

@@ -141,7 +141,7 @@ struct ChatRow: View {
         case .turnEnd(let failed, let durationMs):
             Text(ChatWords.turnEnd(durationMs: durationMs, failed: failed))
                 .font(.system(size: 12))
-                .foregroundStyle(failed ? AnyShapeStyle(.red) : AnyShapeStyle(.tertiary))
+                .foregroundStyle(failed ? AnyShapeStyle(Palette.failure) : AnyShapeStyle(.tertiary))
                 .padding(.bottom, 18)
         case .stopped:
             GridLine(glyph: "circle-stop", rail: rail, verb: "You stopped it", quiet: true)
@@ -222,7 +222,7 @@ struct ChatRow: View {
                     note: note)
                 ProseView(source: body, streaming: writing, quiet: false)
                     .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.hover))
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.well))
                     .padding(.leading, GridLine.text)
                     .padding(.bottom, 12)
             }
@@ -365,8 +365,8 @@ struct GridLine: View {
     }
 
     private var ink: AnyShapeStyle {
-        if failed { return AnyShapeStyle(.red) }
-        if accented { return AnyShapeStyle(Color.accentColor) }
+        if failed { return AnyShapeStyle(Palette.failure) }
+        if accented { return AnyShapeStyle(Palette.accent) }
         return AnyShapeStyle(.secondary)
     }
 
@@ -390,7 +390,7 @@ struct GridLine: View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             if !verb.isEmpty {
                 Text(verb)
-                    .foregroundStyle(quiet ? AnyShapeStyle(.tertiary) : (failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary)))
+                    .foregroundStyle(quiet ? AnyShapeStyle(.tertiary) : (failed ? AnyShapeStyle(Palette.failure) : AnyShapeStyle(.secondary)))
                     .lineLimit(1)
                     .layoutPriority(1)
             }
@@ -402,8 +402,8 @@ struct GridLine: View {
                     .truncationMode(headTruncation ? .head : .tail)
             }
             if let change {
-                Text("+\(change.0)").foregroundStyle(.green).monospacedDigit()
-                if change.1 > 0 { Text("−\(change.1)").foregroundStyle(.red).monospacedDigit() }
+                Text("+\(change.0)").foregroundStyle(Palette.added).monospacedDigit()
+                if change.1 > 0 { Text("−\(change.1)").foregroundStyle(Palette.removed).monospacedDigit() }
             }
             if !meta.isEmpty {
                 Text(meta).foregroundStyle(.tertiary).lineLimit(1)
@@ -435,7 +435,7 @@ struct GridLine: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.hover))
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.well))
     }
 
     @ViewBuilder private func detailBlock(_ text: String) -> some View {
@@ -454,7 +454,7 @@ struct GridLine: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.hover))
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.well))
         }
     }
 }

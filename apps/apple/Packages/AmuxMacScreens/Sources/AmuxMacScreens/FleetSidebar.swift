@@ -124,6 +124,7 @@ struct FleetSidebar: View {
     private func item(_ row: FleetRow) -> some View {
         FleetRowView(
             row: row, now: fleet.now, selected: place.agent == row.card.agent,
+            local: row.card.agent.host == content.thisMac?.hostId,
             toggleFamily: { actions.toggleFamily(row.card.agent) }, quick: quick(row)
         )
         .onTapGesture {
@@ -139,7 +140,7 @@ struct FleetSidebar: View {
         return switch section.kind {
         case .pinned: "Pinned"
         case .needsYou: "Needs you"
-        case .live: "Agents"
+        case .live: section.kind == fleet.live.first?.kind ? nil : "Recent"
         case .closed: nil
         }
     }
@@ -247,43 +248,72 @@ struct QuickAction {
     let action: () -> Void
 }
 
-/// One agent on one line: its name, and at the end what state it is in or
-/// how long ago it last moved. A row waiting on the person, or one that
-/// failed, says why on a second line: those are the rows to act on.
+/// One agent as a card of two lines beside its repository's tile: its name
+/// and age, then where it works ("amux · build-box"). What it is doing is a
+/// badge on the tile; when it needs the person, or failed, the second line
+/// says why instead. Every row is the same height, so the list keeps one
+/// rhythm.
 struct FleetRowView: View {
     let row: FleetRow
     let now: Date
     let selected: Bool
+    /// It runs on this Mac, which its second line calls so.
+    var local = false
+    /// The surface the row sits on, which rings its tile's badge.
+    var ground: Color = Palette.sidebar
     let toggleFamily: () -> Void
     var quick: [QuickAction] = []
 
     @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: 6) {
-                disclosure
-                Text(row.name)
-                    .font(.system(size: 13))
-                    .foregroundStyle(dimmed ? .secondary : .primary)
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                trailing
+        HStack(spacing: 10) {
+            if row.depth == 0 {
+                RepositoryTile(repository: row.card.repository, size: 30, quiet: dimmed)
+                    .overlay(alignment: .bottomTrailing) {
+                        StatusBadge(
+                            state: state, ground: ground,
+                            lit: selected ? Palette.selection : (hovering ? Palette.hover : .clear)
+                        )
+                        .offset(x: 4, y: 4)
+                    }
+            } else {
+                // A member works where its family does, which the head's
+                // tile says: it keeps only its state, on the family's line.
+                ZStack {
+                    Rectangle().fill(Palette.line).frame(width: 1.5)
+                    StatusBadge(state: state, ground: ground, lit: selected ? Palette.selection : (hovering ? Palette.hover : .clear))
+                }
+                .frame(width: 30, height: 48)
             }
-            .frame(height: 20)
-            if let line = actionable {
-                Text(line.text)
-                    .font(.system(size: 12))
-                    .foregroundStyle(line.color)
-                    .lineLimit(1)
-                    .padding(.leading, 18)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(row.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(dimmed ? .secondary : .primary)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    trailing
+                }
+                .frame(height: 17)
+                HStack(spacing: 4) {
+                    Text(second.text)
+                        .font(.system(size: 12))
+                        .foregroundStyle(second.color)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    disclosure
+                }
+                .frame(height: 15)
             }
         }
-        .padding(.leading, 4 + CGFloat(row.depth) * 16)
+        // A member's line runs under its head's tile, and its words line up
+        // with the head's.
+        .padding(.leading, 8 + CGFloat(max(0, Int(row.depth) - 1)) * 40)
         .padding(.trailing, 8)
-        .padding(.vertical, 4)
+        .frame(height: 48)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(selected ? Palette.selection : (hovering ? Palette.hover : .clear)))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -302,8 +332,7 @@ struct FleetRowView: View {
         }
     }
 
-    /// Under the pointer, the row's own actions; else its state, else its
-    /// age.
+    /// Under the pointer, the row's own actions; else its age.
     @ViewBuilder private var trailing: some View {
         if hovering, !quick.isEmpty {
             HStack(spacing: 0) {
@@ -311,7 +340,7 @@ struct FleetRowView: View {
                     Button(action: action.action) {
                         Icon(action.symbol, size: 13)
                             .foregroundStyle(.secondary)
-                            .frame(width: 22, height: 20)
+                            .frame(width: 22, height: 18)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(HoverButtonStyle())
@@ -319,58 +348,60 @@ struct FleetRowView: View {
                 }
             }
         } else {
-            switch state {
-            case .needsYou:
-                Circle().fill(Color.accentColor).frame(width: 7, height: 7).frame(width: 14)
-            case .working, .starting:
-                Working()
-            case .exited(.failed):
-                Icon("circle-alert", size: 13)
-                    .foregroundStyle(.red)
-            case .hostOffline, .hostAway:
-                Icon("cloud-off", size: 13)
-                    .foregroundStyle(.tertiary)
-            default:
-                Text(row.age(at: now))
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
-            }
+            Text(row.age(at: now))
+                .font(.system(size: 11.5))
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
         }
     }
 
-    /// A chevron for a family's members, folded or listed; the same room
-    /// left blank on a row without any, so names line up.
-    private var disclosure: some View {
-        Group {
-            if row.children > 0 {
-                Button(action: toggleFamily) {
-                    Icon(row.expanded ? "chevron-down" : "chevron-right", size: 11)
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 12, height: 18)
-                        .contentShape(Rectangle())
+    /// A family's size and whether its members are listed, at the end of
+    /// the head's second line.
+    @ViewBuilder private var disclosure: some View {
+        if row.children > 0 {
+            Button(action: toggleFamily) {
+                HStack(spacing: 2) {
+                    Text("\(row.children)").monospacedDigit()
+                    Icon(row.expanded ? "chevron-down" : "chevron-right", size: 10)
                 }
-                .buttonStyle(.plain)
-                .help(row.expanded ? "Fold the family" : "List the family")
-            } else {
-                Color.clear.frame(width: 12, height: 18)
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 4)
+                .frame(height: 15)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(HoverButtonStyle())
+            .help(row.expanded ? "Fold the family" : "List the family")
         }
     }
 
-    /// The second line, only where there is something to act on: what the
-    /// agent asks, or why it stopped.
-    private var actionable: (text: String, color: Color)? {
+    /// The second line: what the agent asks, or why it stopped; else where
+    /// it works.
+    private var second: (text: String, color: Color) {
         switch state {
-        case .needsYou, .exited(.failed): return said
+        case .needsYou, .exited(.failed):
+            let said = said
+            return (said.text, said.color == Palette.you ? Palette.you : .secondary)
         default:
             if let loud = row.loud, let line = FleetWords.secondLine(loud.secondLine, kind: row.card.kind, now: now),
                 line.ink == .ask
             {
-                return ("\(loud.name): \(line.text)", .accentColor)
+                return ("\(loud.name): \(line.text)", Palette.you)
             }
-            return nil
+            if row.depth > 0 {
+                // A member's place is its family's: it says what it is doing.
+                let said = said
+                return (said.text, said.color == Palette.you ? Palette.you : .secondary)
+            }
+            return (place, .secondary)
         }
+    }
+
+    /// "amux · build-box": the repository, then the host.
+    private var place: String {
+        let host = local ? "This Mac" : PlaceNames.host(row.hostName)
+        guard let name = row.card.repository?.name, !name.isEmpty else { return host }
+        return "\(name) · \(host)"
     }
 
     /// What the row would say on its second line, as every client words it.
@@ -398,10 +429,10 @@ struct FleetRowView: View {
 
     private func color(_ ink: FleetWords.Ink) -> Color {
         switch ink {
-        case .ask: .accentColor
+        case .ask: Palette.you
         case .quiet: .secondary
-        case .warning: .orange
-        case .error: .red
+        case .warning: Palette.caution
+        case .error: Palette.failure
         }
     }
 }
@@ -469,7 +500,7 @@ struct SearchField: View {
         .frame(height: 28)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(isFocused || !text.isEmpty ? Palette.selection : (hovering ? Palette.hover : .clear)))
+                .fill(isFocused || !text.isEmpty ? Palette.well : (hovering ? Palette.hover : .clear)))
         .onHover { hovering = $0 }
     }
 
@@ -506,7 +537,7 @@ private struct FinishSettingUp: View {
         .font(.system(size: 12))
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.hover))
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.well))
         .padding(.horizontal, 10)
         .padding(.bottom, 6)
     }

@@ -21,19 +21,22 @@ changes. It is designed as a desktop app — menus, shortcuts, hover, drag and
 drop, the person's own Terminal, Finder and editor — not as the phone's
 screens made larger.
 
-- **The rail** down the left edge switches between surfaces: Agents and
-  Hosts today, with room for more. Its foot holds Settings and the open
-  profile's picture, whose menu signs in or out and switches profiles. A dot
-  on Agents says something needs the person.
+- **The rail** down the left edge, a step darker than the sidebar, carries
+  amux's mark and switches between surfaces: Agents and Hosts today, with
+  room for more. Its foot holds Settings and the open profile's picture,
+  whose menu signs in or out and switches profiles. A coral count on Agents
+  says how many agents need the person.
 - **The agents sidebar** opens with New Agent (⌘N) and Search (⌘F) as plain
   rows, then every agent in the runtime's sections and order (pinned,
-  needing the person, the rest). A row is one line, its name and, at its
-  end, what it is doing: a spinner while it works, an accent dot when it
-  needs the person, a red mark when it failed, a cloud when its host cannot
-  be reached, otherwise its age. Only a row that needs the person or failed
-  takes a second line, saying what is asked or what went wrong. Hovering a
-  row swaps its end for pin and settle buttons; its menu pins, settles,
-  renames and deletes. Families fold under a chevron. The settled agents sit
+  needing the person, the rest). A row is its repository's tile, then its
+  name and age over where it works ("amux · build-box"). What it is doing
+  is a badge on the tile: a blue arc while it works, a coral dot when it
+  needs the person, a red dot when it failed, a cloud when its host cannot
+  be reached. A row that needs the person, or failed, says why in place of
+  where it works. Hovering a row swaps its age for pin and settle buttons;
+  its menu pins, settles, renames and deletes. A family's members hang off a
+  line under the head's tile, each saying what it is doing; the head's count
+  folds them. The settled agents sit
   behind one row anchored at the foot, which swaps the sidebar to them and
   back. Search narrows the list through the runtime's filter, and the arrow
   keys move the selection.
@@ -95,6 +98,21 @@ screens made larger.
 - **The menu bar** carries what the window does: New Agent (⌘N); Show or
   Hide Sidebar (⌃⌘S) and Changes (⌥⌘I), Agents (⌘1) and Hosts (⌘2) in View;
   Back and Forward in Go; Open in Terminal in Agent.
+
+**Repository tiles** come from the runtime's fleet card, the same on every
+client: the repository's name is the last segment of its origin remote (else
+the folder's name), the tile shows that name's first and last letter, and its
+tint is one of eight picked by a hash of the remote. Checkouts of one
+repository — worktrees, and the same repository on another machine — share a
+tile because they share a remote; a fork has its own.
+
+**Colour** follows one rule, taken from the app icon: a cool blue-black
+ground in three steps (rail, sidebar, content), blue for amux itself
+(selection, the action to take, work under way), coral for whatever needs the
+person and nothing else, red for failure only, amber for a permission that
+never asks, and green and red otherwise only in diffs. Tile tints avoid all of
+those, so identity never reads as state. The palette is `Palette` in
+`Chrome.swift`.
 
 The icons are [Lucide](https://lucide.dev)'s, under the ISC licence, bundled
 as SVG in `AmuxMacScreens/Icons` with that licence beside them and drawn as

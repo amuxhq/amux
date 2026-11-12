@@ -260,6 +260,7 @@ fn snapshots_copy_their_envelope_onto_the_row() {
             removed: 3,
         }),
         on_branch: None,
+        remote: Some("github.com/amuxhq/amux".into()),
     };
     let step = Step {
         items: vec![item("m1", "hi")],

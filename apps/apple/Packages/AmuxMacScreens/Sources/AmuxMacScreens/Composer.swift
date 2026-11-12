@@ -52,8 +52,8 @@ struct Composer: View {
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.raised))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(dropping ? Color.accentColor : (focused ? Color.primary.opacity(0.16) : Palette.line)))
-        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+                .strokeBorder(dropping ? Palette.accent : (focused ? Color.primary.opacity(0.14) : Palette.line)))
+        .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
         .onTapGesture { focused = true }
         .onAppear { focused = true }
         .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
@@ -77,29 +77,37 @@ struct Composer: View {
             permission
             Spacer(minLength: 8)
             model
-            if working {
-                Button {
-                    chat.interrupt()
-                } label: {
-                    RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                        .fill(Color.primary)
-                        .frame(width: 9, height: 9)
-                        .frame(width: 28, height: 28)
-                        .background(Circle().fill(Color.primary.opacity(0.1)))
+            // One button where the references have one: Stop while the agent
+            // works and nothing is typed, else Send (which queues while it
+            // works). ⌘. stops either way.
+            let stopping = working && !typed
+            Button {
+                if stopping { chat.interrupt() } else { submit() }
+            } label: {
+                Group {
+                    if stopping {
+                        RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                            .frame(width: 9, height: 9)
+                    } else {
+                        Icon(chat.canResume ? "play" : "arrow-up", size: 15)
+                    }
                 }
-                .buttonStyle(.plain)
-                .help("Stop (⌘.)")
-                .keyboardShortcut(".", modifiers: .command)
-            }
-            Button(action: submit) {
-                Icon(chat.canResume ? "play" : "arrow-up", size: 15)
-                    .foregroundStyle(ready ? Color(nsColor: .textBackgroundColor) : Color.secondary)
-                    .frame(width: 28, height: 28)
-                    .background(Circle().fill(ready ? Color.primary : Color.primary.opacity(0.1)))
+                .foregroundStyle(stopping || ready ? Color(nsColor: .textBackgroundColor) : Color.secondary)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(stopping || ready ? Color.primary : Color.primary.opacity(0.1)))
+                .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .disabled(!ready)
-            .help(chat.canResume ? "Resume" : "Send (Return)")
+            .disabled(!stopping && !ready)
+            .help(stopping ? "Stop (⌘.)" : (chat.canResume ? "Resume" : (working ? "Queue (Return)" : "Send (Return)")))
+            .background {
+                Button("Stop") { chat.interrupt() }
+                    .keyboardShortcut(".", modifiers: .command)
+                    .disabled(!working)
+                    .opacity(0)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+            }
         }
         .padding(.horizontal, 8)
         .padding(.bottom, 8)
@@ -111,7 +119,7 @@ struct Composer: View {
         if let settings = chat.settings, let current = settings.permissions.first(where: \.current) {
             let label = ChipLabel(
                 icon: current.neverAsks ? "circle-alert" : "hand", text: ChatWords.permission(current),
-                tint: current.neverAsks ? .orange : .secondary, menu: settings.changeable.permission == .pick)
+                tint: current.neverAsks ? Palette.caution : .secondary, menu: settings.changeable.permission == .pick)
             if settings.changeable.permission == .pick {
                 Menu {
                     ForEach(settings.permissions.filter(\.settable), id: \.value) { choice in
@@ -201,13 +209,15 @@ struct Composer: View {
         return false
     }
 
+    private var typed: Bool { !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
     private var ready: Bool {
         chat.canResume || (chat.canSend && !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     private var placeholder: String {
         ChatWords.placeholder(
-            chat.frame?.composer.mode, agent: name, host: host, reach: reach ?? .online(.direct), working: working)
+            chat.frame?.composer.mode, host: host, reach: reach ?? .online(.direct), working: working)
     }
 
     private func submit() {

@@ -36,6 +36,8 @@ struct HostsSidebar: View {
     }
 }
 
+/// A machine as the agent rows are drawn: its kind on a tile, its name, and
+/// how this Mac reaches it; a badge on the tile when it cannot be reached.
 struct HostRow: View {
     let host: HostView
     let selected: Bool
@@ -43,29 +45,52 @@ struct HostRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Icon(HostWords.symbol(host), size: 16)
-                .foregroundStyle(.secondary)
-                .frame(width: 18)
+            HostTile(host: host, size: 30)
+                .overlay(alignment: .bottomTrailing) {
+                    if !host.local, !HostWords.online(host) {
+                        Icon("cloud-off", size: 10)
+                            .foregroundStyle(.secondary)
+                            .padding(1.5)
+                            .background(Circle().fill(Palette.sidebar))
+                            .offset(x: 4, y: 4)
+                    }
+                }
             VStack(alignment: .leading, spacing: 2) {
-                Text(PlaceNames.host(host.name)).font(.system(size: 13)).lineLimit(1)
+                Text(PlaceNames.host(host.name))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(host.local || HostWords.online(host) ? .primary : .secondary)
+                    .lineLimit(1)
                 Text(HostWords.reach(host))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
-            Circle()
-                .fill(host.local || HostWords.online(host) ? Color.green : Color.secondary.opacity(0.4))
-                .frame(width: 7, height: 7)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 8)
+        .frame(height: 48)
         .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(selected ? Palette.selection : (hovering ? Palette.hover : .clear)))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// A machine's kind on a plain tile, where a repository would have its
+/// letters.
+struct HostTile: View {
+    let host: HostView
+    var size: CGFloat = 30
+
+    var body: some View {
+        Icon(HostWords.symbol(host), size: size * 0.5)
+            .foregroundStyle(.secondary)
+            .frame(width: size, height: size)
+            .background(RoundedRectangle(cornerRadius: size * 0.3, style: .continuous).fill(Palette.well))
+            .overlay(RoundedRectangle(cornerRadius: size * 0.3, style: .continuous).strokeBorder(Palette.line))
+            .opacity(host.local || HostWords.online(host) ? 1 : 0.6)
     }
 }
 

@@ -724,6 +724,12 @@ pub struct Git {
     /// work counts.
     #[prost(message, optional, tag = "4")]
     pub on_branch: ::core::option::Option<ChangeTotals>,
+    /// Where origin points, as host/owner/name: no scheme, credentials, port
+    /// or ".git" ("github.com/amuxhq/amux"); a local remote is its path.
+    /// Clients group checkouts of one repository by it, worktrees and other
+    /// machines' checkouts included. Absent without an origin.
+    #[prost(string, optional, tag = "5")]
+    pub remote: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for Git {
     const NAME: &'static str = "Git";

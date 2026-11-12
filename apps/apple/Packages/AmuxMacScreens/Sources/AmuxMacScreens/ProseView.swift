@@ -47,11 +47,11 @@ private struct Block: View {
     var body: some View {
         switch block {
         case .heading(let level, let text):
-            Text(text)
+            Text(Inline.styled(text))
                 .font(.system(size: level <= 1 ? 18 : level == 2 ? 15.5 : 14, weight: .semibold))
                 .padding(.top, 4)
         case .paragraph(let text):
-            Text(text).fixedSize(horizontal: false, vertical: true)
+            Text(Inline.styled(text)).fixedSize(horizontal: false, vertical: true)
         case .list(_, let items):
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(items) { item in
@@ -59,7 +59,7 @@ private struct Block: View {
                         Text(item.marker)
                             .foregroundStyle(.secondary)
                             .frame(minWidth: 14, alignment: .trailing)
-                        Text(item.text).fixedSize(horizontal: false, vertical: true)
+                        Text(Inline.styled(item.text)).fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.leading, CGFloat(item.depth) * 18)
                 }
@@ -70,7 +70,7 @@ private struct Block: View {
             HStack(spacing: 10) {
                 Rectangle().fill(Palette.line).frame(width: 3)
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in Text(line) }
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in Text(Inline.styled(line)) }
                 }
                 .foregroundStyle(.secondary)
             }
@@ -78,13 +78,13 @@ private struct Block: View {
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                 GridRow {
                     ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                        Text(cell).fontWeight(.semibold)
+                        Text(Inline.styled(cell)).fontWeight(.semibold)
                     }
                 }
                 Divider()
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
-                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in Text(cell) }
+                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in Text(Inline.styled(cell)) }
                     }
                 }
             }
@@ -92,6 +92,20 @@ private struct Block: View {
         case .rule:
             Divider()
         }
+    }
+}
+
+/// Inline code a size smaller than the prose around it, on a light chip, so
+/// a name reads as code without shouting over the sentence.
+@MainActor
+enum Inline {
+    static func styled(_ text: AttributedString) -> AttributedString {
+        var text = text
+        for run in text.runs where run.inlinePresentationIntent?.contains(.code) == true {
+            text[run.range].font = .system(size: 12.5, design: .monospaced)
+            text[run.range].backgroundColor = Palette.well
+        }
+        return text
     }
 }
 
@@ -104,41 +118,53 @@ private struct CodeBlock: View {
     @State private var copied = false
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            Text(text)
-                .font(.system(size: 12.5, design: .monospaced))
-                .lineSpacing(2)
-                .fixedSize()
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+        VStack(alignment: .leading, spacing: 0) {
+            if let language, !language.isEmpty {
+                HStack {
+                    Text(language).font(.system(size: 11.5)).foregroundStyle(.tertiary)
+                    Spacer()
+                    copy.opacity(hovering ? 1 : 0)
+                }
+                .padding(.leading, 14)
+                .padding(.trailing, 6)
+                .frame(height: 30)
+                Rectangle().fill(Palette.line).frame(height: 1)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(text)
+                    .font(.system(size: 12.5, design: .monospaced))
+                    .lineSpacing(3)
+                    .fixedSize()
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+            }
+            .overlay(alignment: .topTrailing) {
+                if language?.isEmpty ?? true, hovering {
+                    copy.padding(6)
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.well))
-        .overlay(alignment: .topTrailing) {
-            if hovering {
-                HStack(spacing: 4) {
-                    if let language, !language.isEmpty {
-                        Text(language).font(.system(size: 11)).foregroundStyle(.tertiary)
-                    }
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(text, forType: .string)
-                        copied = true
-                    } label: {
-                        Icon(copied ? "check" : "copy", size: 13)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 24, height: 22)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(HoverButtonStyle())
-                    .help(copied ? "Copied" : "Copy")
-                }
-                .padding(6)
-            }
-        }
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Palette.line))
         .onHover { inside in
             hovering = inside
             if !inside { copied = false }
         }
+    }
+
+    private var copy: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            copied = true
+        } label: {
+            Icon(copied ? "check" : "copy", size: 13)
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(HoverButtonStyle())
+        .help(copied ? "Copied" : "Copy")
     }
 }

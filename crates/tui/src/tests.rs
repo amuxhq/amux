@@ -3516,6 +3516,7 @@ fn chat_in_git(items: Vec<Item>, base: Option<&str>) -> SessionState {
             base_branch: base.map(str::to_owned),
             uncommitted: Some(totals(2, 42, 7)),
             on_branch: Some(totals(5, 120, 30)),
+            remote: None,
         }),
         ..fixtures::agent(Kind::ClaudeSdk)
     };

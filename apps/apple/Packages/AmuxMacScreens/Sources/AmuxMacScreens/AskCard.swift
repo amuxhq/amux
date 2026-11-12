@@ -16,7 +16,7 @@ struct AskCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Icon("hand", size: 15).foregroundStyle(Color.accentColor)
+                Icon("hand", size: 15).foregroundStyle(Palette.you)
                 Text(ChatWords.headline(card)).fontWeight(.semibold)
                 Spacer()
                 if let position = ChatWords.position(card) {
@@ -34,7 +34,7 @@ struct AskCardView: View {
         }
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.raised))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.accentColor.opacity(0.45)))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.you.opacity(0.5)))
         .onChange(of: card.key, initial: true) { _, _ in reset() }
     }
 
@@ -65,8 +65,8 @@ struct AskCardView: View {
             if !reason.isEmpty { Text(reason).foregroundStyle(.secondary) }
             HStack(spacing: 6) {
                 Text(path).font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.head)
-                Text("+\(added)").foregroundStyle(.green)
-                Text("−\(removed)").foregroundStyle(.red)
+                Text("+\(added)").foregroundStyle(Palette.added)
+                Text("−\(removed)").foregroundStyle(Palette.removed)
             }
             .font(.system(size: 12))
             Patch(lines: lines)
@@ -123,9 +123,9 @@ struct AskCardView: View {
             }
             .font(.system(size: 12))
         case .rejected(let refusal):
-            Text(refusal.detail ?? "The answer was refused").font(.system(size: 12)).foregroundStyle(.red)
+            Text(refusal.detail ?? "The answer was refused").font(.system(size: 12)).foregroundStyle(Palette.failure)
         case .notConfirmed:
-            Text("The answer may not have arrived").font(.system(size: 12)).foregroundStyle(.orange)
+            Text("The answer may not have arrived").font(.system(size: 12)).foregroundStyle(Palette.caution)
         case .open, .dismissed:
             EmptyView()
         }
@@ -140,9 +140,9 @@ struct AskCardView: View {
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { send(index) }
                 Button("Cancel") { noting = nil }
-                    .buttonStyle(AnswerButtonStyle())
+                    .buttonStyle(PillButtonStyle())
                 Button(ChatWords.button(card.choices[index]).replacingOccurrences(of: "…", with: "")) { send(index) }
-                    .buttonStyle(AnswerButtonStyle(prominent: true))
+                    .buttonStyle(PillButtonStyle(prominent: true))
                     .keyboardShortcut(.defaultAction)
             }
         } else {
@@ -152,7 +152,7 @@ struct AskCardView: View {
                     Button(ChatWords.button(choice)) {
                         if choice.takesNote { noting = index } else { chat.answer(choice: index, note: nil) }
                     }
-                    .buttonStyle(AnswerButtonStyle(prominent: prominent))
+                    .buttonStyle(PillButtonStyle(prominent: prominent))
                     .disabled(card.state == .sending)
                 }
             }
@@ -172,7 +172,7 @@ struct AskCardView: View {
                 Button("Skip") {
                     chat.answer(responses: questions.map { _ in QuestionResponse(note: nil, other: nil, picked: nil) })
                 }
-                .buttonStyle(AnswerButtonStyle())
+                .buttonStyle(PillButtonStyle())
             }
             Button("Answer") {
                 chat.answer(
@@ -182,7 +182,7 @@ struct AskCardView: View {
                         return QuestionResponse(note: nil, other: other, picked: picked.isEmpty ? nil : picked)
                     })
             }
-            .buttonStyle(AnswerButtonStyle(prominent: true))
+            .buttonStyle(PillButtonStyle(prominent: true))
             .keyboardShortcut(.defaultAction)
             .disabled(card.state == .sending)
         }
@@ -209,7 +209,7 @@ private struct Question: View {
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Icon(mark(number), size: 14)
-                            .foregroundStyle(picked.contains(number) ? Color.accentColor : .secondary)
+                            .foregroundStyle(picked.contains(number) ? Palette.accent : .secondary)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(option.label)
                             if !option.description.isEmpty {
@@ -249,7 +249,7 @@ private struct Mono: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.hover))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.well))
     }
 }
 
@@ -274,7 +274,7 @@ private struct Patch: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxHeight: 220)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.hover))
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.well))
     }
 }
 
@@ -285,7 +285,7 @@ struct PatchText: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Text(sign).frame(width: 16).foregroundStyle(.secondary)
+            Text(sign).frame(width: 16).foregroundStyle(signTint)
             Text(text).lineLimit(1)
             Spacer(minLength: 0)
         }
@@ -304,9 +304,17 @@ struct PatchText: View {
 
     private var tint: Color {
         switch kind {
-        case .added: .green.opacity(0.14)
-        case .removed: .red.opacity(0.14)
+        case .added: Palette.added.opacity(0.09)
+        case .removed: Palette.removed.opacity(0.09)
         case .context: .clear
+        }
+    }
+
+    private var signTint: Color {
+        switch kind {
+        case .added: Palette.added
+        case .removed: Palette.removed
+        case .context: .secondary
         }
     }
 }
@@ -360,29 +368,5 @@ struct FlowLayout: Layout {
             x += size.width + spacing
             line = max(line, size.height)
         }
-    }
-}
-
-/// An answer to the agent: the one it expects drawn solid in the text
-/// colour, as the send button is, whether or not the window is in front;
-/// the others quiet fills.
-private struct AnswerButtonStyle: ButtonStyle {
-    var prominent = false
-    @Environment(\.isEnabled) private var enabled
-    @State private var hovering = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: prominent ? .medium : .regular))
-            .lineLimit(1)
-            .foregroundStyle(prominent ? Color(nsColor: .textBackgroundColor) : Color.primary)
-            .padding(.horizontal, 12)
-            .frame(height: 28)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(prominent ? Color.primary : Color.primary.opacity(hovering ? 0.1 : 0.065)))
-            .opacity(configuration.isPressed ? 0.75 : (enabled ? 1 : 0.45))
-            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .onHover { hovering = $0 }
     }
 }

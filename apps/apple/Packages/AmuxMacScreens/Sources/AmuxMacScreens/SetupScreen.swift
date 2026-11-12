@@ -175,7 +175,7 @@ public struct SetupScreen: View {
                 .padding(.top, 22)
             if let error = content.error {
                 Text(error)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.failure)
                     .font(.callout)
                     .multilineTextAlignment(.center)
                     .textSelection(.enabled)
@@ -322,11 +322,11 @@ private struct PairPhone: View {
         let pairing = content.pairing
         if let why = pairing.failed {
             Label("Pairing could not open: \(why)", systemImage: "exclamationmark.triangle")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Palette.caution)
                 .font(.callout)
         } else if pairing.lockedOut {
             HStack(spacing: 10) {
-                Text("Closed after too many wrong codes.").foregroundStyle(.orange)
+                Text("Closed after too many wrong codes.").foregroundStyle(Palette.caution)
                 Button("New Code") { actions.newCode() }
             }
             .font(.callout)
@@ -450,7 +450,7 @@ private struct KeepReachable: View {
                 Label {
                     Text("Paired with \(phone.name)")
                 } icon: {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.accent)
                 }
                 .font(.title3.weight(.medium))
                 .frame(maxWidth: .infinity)

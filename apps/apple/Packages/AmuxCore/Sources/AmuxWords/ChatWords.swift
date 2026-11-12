@@ -386,27 +386,28 @@ public enum ChatWords {
 
     // MARK: - The composer
 
-    /// What the empty field says: who a message goes to, or why sending
-    /// waits while the draft is kept.
+    /// What the empty field says: "Reply", or why sending waits while the
+    /// draft is kept. The agent is named over the chat already, and its
+    /// name is often a whole task title.
     /// `limit` is a usage limit reached, said where the next message would
     /// be typed, which is the one place it changes anything.
     public static func placeholder(
-        _ composer: Composer?, agent: String, host: String, reach: Reach, connecting: Bool = false,
+        _ composer: Composer?, host: String, reach: Reach, connecting: Bool = false,
         working: Bool, limit: String? = nil
     ) -> String {
         // A host still being dialled as the app comes forward is not news:
         // the field reads as it will once it answers.
-        if connecting, case .waiting(.detached)? = composer { return String(localized: "Message \(agent)") }
+        if connecting, case .waiting(.detached)? = composer { return String(localized: "Reply") }
         switch composer {
         case .send?, nil:
             if let limit { return limit }
             return working
                 ? String(localized: "Queue a message")
-                : String(localized: "Message \(agent)")
+                : String(localized: "Reply")
         // The head above says it is stopped and the button says Resume:
         // the field saying so again was a third time.
         case .resume?:
-            return String(localized: "Message \(agent)")
+            return String(localized: "Reply")
         // Not current: nothing sends until the chat is, and the draft stays.
         case .waiting(.catchingUp)?:
             return String(localized: "Catching up · your draft is kept")

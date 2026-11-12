@@ -40,8 +40,8 @@ public struct ChatPane: View {
                                 FloatingCard(
                                     row: row, branch: chat.frame?.git?.branch ?? row.branch,
                                     changes: chat.changes, family: family, actions: actions)
-                            } else {
-                                FloatingPill(changes: chat.changes, open: actions.openChanges)
+                            } else if let changes = chat.changes, changes.files > 0 {
+                                FloatingPill(changes: changes, open: actions.openChanges)
                             }
                         }
                         .padding(.top, 10)
@@ -116,7 +116,11 @@ private struct Feed: View {
                 ForEach(fold.items) { item in
                     switch item {
                     case .row(let id):
-                        RowCell(chat: chat, id: id)
+                        // The step the ask card is about is shown by the card
+                        // under the feed, in full; it comes back once answered.
+                        if id != chat.ask?.itemKey {
+                            RowCell(chat: chat, id: id)
+                        }
                     case .worked(let turn):
                         WorkedLine(turn: turn, open: opened.contains(turn.end)) {
                             if opened.contains(turn.end) { opened.remove(turn.end) } else { opened.insert(turn.end) }
@@ -225,8 +229,8 @@ private struct ActivityLine: View {
                 let parts = ChatWords.activityParts(
                     activity.kind, elapsedMs: activity.sinceMs > 0 ? elapsed : activity.elapsedMs, subject: nil,
                     sinceMs: activity.sinceMs)
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.mini)
+                HStack(spacing: 7) {
+                    Working(size: 11)
                     Text(parts.words).foregroundStyle(.secondary)
                     if let subject = parts.subject {
                         Text(subject).font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
@@ -259,7 +263,7 @@ private struct Footer: View {
                 AskCardView(card: ask, chat: chat)
             }
             if let notice = chat.notice {
-                Text(notice).font(.system(size: 12)).foregroundStyle(.red)
+                Text(notice).font(.system(size: 12)).foregroundStyle(Palette.failure)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if let ended = chat.frame?.ended {
@@ -303,7 +307,7 @@ private struct QueueList: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.hover))
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.well))
     }
 }
 
@@ -452,7 +456,7 @@ private struct WorkedLine: View {
             Button(action: toggle) {
                 HStack(spacing: 4) {
                     Text(ChatWords.turnEnd(durationMs: turn.durationMs, failed: turn.failed))
-                        .foregroundStyle(turn.failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(turn.failed ? AnyShapeStyle(Palette.failure) : AnyShapeStyle(.secondary))
                     Icon(open ? "chevron-down" : "chevron-right", size: 12)
                         .foregroundStyle(.tertiary)
                 }
@@ -499,21 +503,21 @@ private struct AnswerFoot: View {
                 if !files.isEmpty {
                     Button(action: openChanges) {
                         HStack(spacing: 6) {
-                            Icon("diff", size: 13).foregroundStyle(.secondary)
+                            Icon("diff", size: 13).foregroundStyle(.tertiary)
                             Text(files.count == 1 ? "Changed \(files[0].path.split(separator: "/").last ?? "")"
                                 : "Changed \(files.count) files")
-                            Text("+\(files.reduce(0) { $0 + $1.added })").foregroundStyle(.green)
-                            Text("−\(files.reduce(0) { $0 + $1.removed })").foregroundStyle(.red)
+                            Text("+\(files.reduce(0) { $0 + $1.added })").foregroundStyle(Palette.added)
+                            Text("−\(files.reduce(0) { $0 + $1.removed })").foregroundStyle(Palette.removed)
                         }
                         .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
                         .monospacedDigit()
-                        .padding(.horizontal, 8)
-                        .frame(height: 24)
-                        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Palette.well))
+                        .padding(.horizontal, 6)
+                        .frame(height: 22)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .help("Show the changes")
+                    .buttonStyle(HoverButtonStyle())
+                    .help("Show the changes (⌥⌘I)")
                 }
             }
             .padding(.top, -6)

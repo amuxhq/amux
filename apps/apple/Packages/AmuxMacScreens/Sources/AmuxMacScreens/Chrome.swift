@@ -5,7 +5,7 @@ import SwiftUI
 /// and their top bars line up.
 enum Metrics {
     /// The rail's width: one column of icons.
-    static let rail: CGFloat = 52
+    static let rail: CGFloat = 58
     static let sidebar: CGFloat = 272
     static let sidebarRange: ClosedRange<CGFloat> = 220...420
     static let inspector: CGFloat = 380
@@ -16,30 +16,64 @@ enum Metrics {
     static let reading: CGFloat = 760
 }
 
-/// The window's few colours, light and dark, calibrated against the
-/// references: in dark the sidebar sits a shade above the content (as in
-/// Claude's), split from it by a hairline; in light it is a touch grey.
-/// Everything else is the system's.
+/// The window's colours, one philosophy taken from amux's icon: its
+/// blue-black ground, its blue end and its warm end.
+///
+/// - The ground is cool blue-black (light: cool white) in three steps that
+///   lighten toward what the person reads: the rail, then the sidebar,
+///   then the content. Surfaces are told apart by those steps and by
+///   hairlines, not by grey slabs.
+/// - Blue is amux itself: what is selected, the action to take, a link,
+///   an agent at work.
+/// - Coral is the person: anything that needs them, everywhere, and only
+///   that.
+/// - Red is failure only; amber a setting that acts without asking. Green
+///   and red otherwise appear only in diffs, muted.
+/// - A repository's tile takes one of eight tints that none of these
+///   states use, so identity never reads as state.
 enum Palette {
-    static let sidebar = Color(nsColor: dynamic(light: 0xF7F7F6, dark: 0x262628))
-    static let content = Color(nsColor: dynamic(light: 0xFFFFFF, dark: 0x1E1E1F))
-    /// A selected row.
-    static let selection = Color.primary.opacity(0.085)
-    /// A row under the pointer.
-    static let hover = Color.primary.opacity(0.045)
-    /// The floating card, the composer and other surfaces lifted off the
-    /// content.
-    static let raised = Color(nsColor: dynamic(light: 0xFFFFFF, dark: 0x29292B))
-    /// A code block, a bubble: set apart from prose without a border.
-    static let well = Color.primary.opacity(0.05)
-    static let line = Color.primary.opacity(0.09)
+    static let rail = Color(nsColor: dynamic(light: 0xE8EAF0, dark: 0x101116))
+    static let sidebar = Color(nsColor: dynamic(light: 0xF3F4F8, dark: 0x16171D))
+    static let content = Color(nsColor: dynamic(light: 0xFFFFFF, dark: 0x1B1C23))
+    /// The floating card, the composer, menus: lifted off the content.
+    static let raised = Color(nsColor: dynamic(light: 0xFFFFFF, dark: 0x23242C))
+    /// A code block, a bubble, a field: set into the surface it sits on.
+    static let well = Color(nsColor: dynamic(light: 0xF2F3F7, dark: 0x22232B))
+    static let line = Color(nsColor: dynamic(light: 0xE2E4EB, dark: 0x2A2B34))
+    /// A row under the pointer, and one selected.
+    static let hover = Color(nsColor: dynamic(light: 0x0B1230, dark: 0xFFFFFF, alpha: (0.045, 0.045)))
+    static let pressed = Color(nsColor: dynamic(light: 0x0B1230, dark: 0xFFFFFF, alpha: (0.09, 0.09)))
+    static let selection = Color(nsColor: dynamic(light: 0x2F6BFF, dark: 0x4D8BFF, alpha: (0.11, 0.17)))
 
-    private static func dynamic(light: Int, dark: Int) -> NSColor {
+    /// amux: selection, the action to take, links, work under way.
+    static let accent = Color(nsColor: dynamic(light: 0x2563EB, dark: 0x5B95FF))
+    /// The person: whatever needs them.
+    static let you = Color(nsColor: dynamic(light: 0xE0582E, dark: 0xFF8A5C))
+    static let failure = Color(nsColor: dynamic(light: 0xD23B3B, dark: 0xF26464))
+    /// A setting that acts without asking.
+    static let caution = Color(nsColor: dynamic(light: 0xB7791F, dark: 0xF0B44C))
+    static let added = Color(nsColor: dynamic(light: 0x1F8A4C, dark: 0x5CC98A))
+    static let removed = Color(nsColor: dynamic(light: 0xC23B3B, dark: 0xF07878))
+
+    /// The repository tints, by the index every client agrees on: indigo,
+    /// violet, magenta, gold, green, teal, sky, lime. No grey: a grey tile
+    /// reads as disabled.
+    static func tint(_ index: UInt8) -> Color {
+        let tints: [(Int, Int)] = [
+            (0x4F46E5, 0x8B8CFF), (0x8B3FD9, 0xB98CFF), (0xC0399A, 0xF07BCB), (0xA87410, 0xE8B54A),
+            (0x1E8A4F, 0x62CC8E), (0x0F8A8A, 0x4FD0CC), (0x1C7FC4, 0x63B7F2), (0x5E8A12, 0xA9D46B),
+        ]
+        let (light, dark) = tints[Int(index) % tints.count]
+        return Color(nsColor: dynamic(light: light, dark: dark))
+    }
+
+    private static func dynamic(light: Int, dark: Int, alpha: (CGFloat, CGFloat) = (1, 1)) -> NSColor {
         NSColor(name: nil) { appearance in
-            let hex = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let hex = isDark ? dark : light
             return NSColor(
                 srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
-                blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+                blue: CGFloat(hex & 0xFF) / 255, alpha: isDark ? alpha.1 : alpha.0)
         }
     }
 }
@@ -131,7 +165,7 @@ struct HoverButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(
                         configuration.isPressed
-                            ? Palette.selection : (hovering || active ? Palette.hover : .clear)))
+                            ? Palette.pressed : (hovering || active ? Palette.hover : .clear)))
             .onHover { hovering = $0 }
     }
 }
@@ -209,14 +243,21 @@ struct SectionTitle: View {
     }
 }
 
-/// A small spinner for something at work, the size of a glyph in a row:
-/// the system's own, which the window server animates.
+/// Work under way, the size of a glyph in a row: a blue arc turning.
+/// Drawn rather than the system's spinner, whose grey dust reads as
+/// nothing at this size.
 struct Working: View {
+    var size: CGFloat = 12
+    @State private var turning = false
+
     var body: some View {
-        ProgressView()
-            .controlSize(.mini)
-            .scaleEffect(0.8)
-            .frame(width: 14, height: 14)
+        Circle()
+            .trim(from: 0.12, to: 0.82)
+            .stroke(Palette.accent, style: StrokeStyle(lineWidth: max(1.5, size / 7), lineCap: .round))
+            .frame(width: size, height: size)
+            .rotationEffect(.degrees(turning ? 360 : 0))
+            .animation(.linear(duration: 0.9).repeatForever(autoreverses: false), value: turning)
+            .onAppear { turning = true }
             .accessibilityLabel("Working")
     }
 }
@@ -254,5 +295,33 @@ enum Icons {
         image.isTemplate = true
         loaded[name] = image
         return image
+    }
+}
+
+/// The window's one button: a pill, the action expected drawn solid in the
+/// text colour as the send button is, whether or not the window is in
+/// front (the system's prominent style goes grey there); the others quiet
+/// fills; a destructive one red words on the quiet fill.
+struct PillButtonStyle: ButtonStyle {
+    var prominent = false
+    var destructive = false
+    var small = false
+    @Environment(\.isEnabled) private var enabled
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: small ? 12 : 13, weight: prominent ? .medium : .regular))
+            .lineLimit(1)
+            .foregroundStyle(
+                prominent ? Color(nsColor: .textBackgroundColor) : (destructive ? Palette.failure : Color.primary))
+            .padding(.horizontal, small ? 10 : 12)
+            .frame(height: small ? 24 : 28)
+            .background(
+                RoundedRectangle(cornerRadius: small ? 6 : 7, style: .continuous)
+                    .fill(prominent ? Color.primary : Color.primary.opacity(hovering ? 0.1 : 0.065)))
+            .opacity(configuration.isPressed ? 0.75 : (enabled ? 1 : 0.45))
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .onHover { hovering = $0 }
     }
 }

@@ -1208,9 +1208,9 @@ struct AgentRowView: View {
         .contentShape(Rectangle())
     }
 
-    /// The machine and the age, as one quiet run of facts.
+    /// The repository, the machine and the age, as one quiet run of facts.
     private var facts: String {
-        [host, row.age(at: now)].compactMap { $0 }.joined(separator: " · ")
+        [row.card.repository?.name, host, row.age(at: now)].compactMap { $0 }.joined(separator: " · ")
     }
 
     private var stopped: Bool {

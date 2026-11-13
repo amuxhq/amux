@@ -1952,6 +1952,42 @@ async fn behind_routers(kind: testnet::RouterKind, said: &str) -> Net {
     net
 }
 
+/// A second profile made on a host behind a router has a link socket of
+/// its own there, as it has on a real machine: the host's own profile goes
+/// on hearing the desk, and the session it is watching streams on. Sharing
+/// the one socket, the new profile would take the packets meant for the
+/// host, whose link then hears nothing until its idle timeout ends it,
+/// half a minute later.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_second_profile_behind_a_router_leaves_the_hosts_link_hearing() {
+    let said = "said past the second profile";
+    let net = behind_routers(testnet::RouterKind::Strict, said).await;
+    net.current("laptop", "worker").await.unwrap();
+    let mut chat = net.observe("laptop", "worker", 10).await.unwrap();
+    chat.observe_until(observe::caught_up, PATIENCE)
+        .await
+        .unwrap();
+    // A socket's arrivals wake whoever read it last. A link just made
+    // still wakes the laptop's endpoint for its own reasons, and each time
+    // it would take a shared socket back; settled, only arrivals wake it,
+    // and a profile made then would keep every one of them.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    door(&net, "laptop")
+        .await
+        .create_profile(wire::CreateProfileRequest {
+            label: Some("work".to_owned()),
+        })
+        .await
+        .expect("a second profile on the laptop");
+    net.send("worker", "go").await.unwrap();
+    // Far less than the idle timeout: a link gone deaf is still up, and
+    // would carry the reply only once it had timed out and been made again.
+    chat.observe_until(|events| says(events, said), Duration::from_secs(5))
+        .await
+        .expect("the laptop hears the desk's reply on the link it has");
+    net.shutdown().await.unwrap();
+}
+
 /// Behind ordinary routers, which keep one public port for everything a
 /// host sends and let in what comes from wherever it sent: each host
 /// probes the address the relay saw the other at, both routers open, and

@@ -81,7 +81,8 @@ pub use edge::mdns_discovery;
 pub use edge::{
     Cloud, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge, EdgeOptions,
     JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET, LanOptions, LoopbackLink, Relay,
-    RelayCarrier, RelayIdentity, RelayQuic, RelayServing, UDP_BLOCKED_MEMORY, test_interfaces,
+    RelayCarrier, RelayIdentity, RelayQuic, RelayServing, SubstrateFor, UDP_BLOCKED_MEMORY,
+    test_interfaces,
 };
 pub use forward::Owner;
 pub use generation::{Generation, boot_id};

@@ -80,6 +80,10 @@ const LINK_SOCKET_HANDSHAKE: Duration = Duration::from_secs(10);
 /// How long links get to carry their LinkClose before the edge stops.
 const LINK_CLOSE_FLUSH: Duration = Duration::from_millis(200);
 
+/// Hands the profile with this host id what its socket sends and receives
+/// on; see [`EdgeOptions::substrate`].
+pub type SubstrateFor = Arc<dyn Fn(HostId) -> std::io::Result<Arc<dyn Datagrams>> + Send + Sync>;
+
 /// What an installation's edges share. The default serves nothing on the
 /// network: identity, trust and pairing state exist, and a caller links
 /// profiles in process.
@@ -102,13 +106,14 @@ pub struct EdgeOptions {
     pub dial: bool,
     /// Serve the local socket SSH relays hand a peer's link to.
     pub link_socket: bool,
-    /// What the profile's one socket sends and receives on, when something
+    /// What a profile's one socket sends and receives on, when something
     /// stands in for the network under it (a test's imitation of a router);
-    /// unset, a UDP socket is bound. A host handed one starts on it, so
+    /// unset, a UDP socket is bound. A profile handed one starts on it, so
     /// nothing it sends as it starts leaves from anywhere else, and lists
-    /// the LAN address it would have bound. Every profile's edge would
-    /// share it: give it to one profile only.
-    pub substrate: Option<Arc<dyn Datagrams>>,
+    /// the LAN address it would have bound. Each profile's edge asks for
+    /// its own, by the profile's host id: two sockets on one substrate
+    /// would take each other's packets.
+    pub substrate: Option<SubstrateFor>,
     /// Where the cloud link dials, when a test stands in for the cloud.
     pub cloud: CloudOptions,
     /// The machine's interface addresses, when a test stands in for them;
@@ -422,7 +427,10 @@ impl Edge {
                 // own, whatever stands between it and the network.
                 let own = bind_lan(dir, lan).map_err(EdgeError::Lan)?;
                 let addr = own.local_addr().map_err(EdgeError::Lan)?;
-                let substrate = options.substrate.clone().unwrap_or(own);
+                let substrate = match &options.substrate {
+                    Some(handed) => handed(identity.host_id).map_err(EdgeError::Lan)?,
+                    None => own,
+                };
                 let endpoint = LinkEndpoint::new(substrate, identity.host_id, quic_server)
                     .map_err(EdgeError::Lan)?
                     .keeping(dir);
@@ -438,8 +446,11 @@ impl Edge {
             None => (
                 options
                     .substrate
-                    .clone()
-                    .map_or_else(|| LinkSocket::bind_dual_stack(DUAL_STACK_ANY, None), Ok)
+                    .as_ref()
+                    .map_or_else(
+                        || LinkSocket::bind_dual_stack(DUAL_STACK_ANY, None),
+                        |handed| handed(identity.host_id),
+                    )
                     .and_then(|substrate| {
                         LinkEndpoint::new(substrate, identity.host_id, quic_server)
                     })

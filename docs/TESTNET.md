@@ -275,7 +275,9 @@ through to each other. It is the substrate under the host's link socket: the hos
 (`10.n.0.2`) nobody can reach, what it sends leaves from a public loopback port the router's table hands out, and
 what arrives passes only through a mapping the router's filter allows. A mapping nothing has used for the router's
 idle time expires, and the next packet out gets a new port. `public_addr_for(inner, dst)` says which public address
-packets to `dst` leave from now, which is what the relay sees.
+packets to `dst` leave from now, which is what the relay sees. The router stands in front of the host's own
+profile. Each further profile the host's installation serves has a link socket of its own, as on a real machine,
+so it gets a router of the same kind with mappings of its own.
 
 | `RouterKind` | Mapping | Inbound filter |
 | --- | --- | --- |

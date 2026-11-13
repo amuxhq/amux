@@ -132,7 +132,7 @@ pub fn components(theme: Theme) -> Vec<Component> {
     }
     for (name, shows, overview, jobs) in edge_rows() {
         let mut lines: Vec<Line<'static>> =
-            edge_row(&overview, true, jobs, false, written_at(), w, theme)
+            edge_row(&overview, jobs, false, written_at(), w, theme)
                 .into_iter()
                 .collect();
         lines.extend(composer_lines(
@@ -2117,50 +2117,30 @@ fn cards() -> Vec<CardSet> {
 /// The row resting on the composer's box, over a plain composer: what is
 /// still in flight in the chat, and how many background jobs run.
 fn edge_rows() -> Vec<(&'static str, &'static str, ui_view::Overview, usize)> {
-    use ui_view::{Overview, ServerView, TaskLine, TaskMark, TasksView};
+    use ui_view::{Overview, TaskLine, TaskMark, TasksView};
 
-    let server = |name: &str, error: &str, needs_auth: bool| ServerView {
-        name: name.into(),
-        error: error.into(),
-        needs_auth,
-    };
     let task = |subject: &str, mark| TaskLine {
         subject: subject.into(),
         mark,
     };
-    vec![
-        (
-            "composer_tool_servers",
-            "Tool servers newly failing, called out on the row above the composer: two need signing in (warning ink) and one failed to start (error ink), and ctrl+o, which opens the overview that lists them.",
-            Overview {
-                failed_servers: vec![
-                    server("linear", "needs authentication", true),
-                    server("github", "needs authentication", true),
-                    server("postgres", "connection refused", false),
+    vec![(
+        "composer_tasks",
+        "A task list part done on the row above the composer: the task in progress by name, how many of the tasks are done, the background jobs still running and ctrl+o.",
+        Overview {
+            tasks: Some(TasksView {
+                done: 1,
+                total: 3,
+                current: "Reviewing the draft".into(),
+                entries: vec![
+                    task("Draft", TaskMark::Done),
+                    task("Review", TaskMark::Current),
+                    task("Publish", TaskMark::Todo),
                 ],
-                ..Overview::default()
-            },
-            0,
-        ),
-        (
-            "composer_tasks",
-            "A task list part done on the row above the composer: the task in progress by name, how many of the tasks are done, the background jobs still running and ctrl+o.",
-            Overview {
-                tasks: Some(TasksView {
-                    done: 1,
-                    total: 3,
-                    current: "Reviewing the draft".into(),
-                    entries: vec![
-                        task("Draft", TaskMark::Done),
-                        task("Review", TaskMark::Current),
-                        task("Publish", TaskMark::Todo),
-                    ],
-                }),
-                ..Overview::default()
-            },
-            2,
-        ),
-    ]
+            }),
+            ..Overview::default()
+        },
+        2,
+    )]
 }
 
 fn composers() -> Vec<(&'static str, &'static str, Composer, Reach, &'static str)> {

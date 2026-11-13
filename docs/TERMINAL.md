@@ -215,10 +215,13 @@ Enter on a row opens its chat. From top to bottom:
 - **The queue**, just above the composer: prompts waiting behind the running turn, one line each, faint on your
   message's surface, saying how each waits (`queued`, `queued from relay` from another agent, `sending into this
   turn`, `waiting for desk…`, `may not have arrived`).
-- **The row above the composer**, when there is something to say: the task in progress and `3 of 4 tasks`, how
-  many tool servers need signing in (`2 tool servers need sign-in`, in the warning ink) or failed to start (in
-  red), and `ctrl+o` for the overview. The tool servers are counted when the chat opens and again only when
-  another one fails; a send or opening the overview puts them away, and the overview keeps each by name.
+- **The row above the composer**, when there is something to say: the task in progress and `3 of 4 tasks`, the
+  background jobs running, and `ctrl+o` for the overview.
+- **Tool server failures** are told once in the footer, in the warning ink, while the terminal client runs (`tool
+  server github needs sign-in · ctrl+o`): a failure is one host's server failing one way, so it is not told again
+  in the next chat opened or on coming back to this one, and the overview keeps listing it for as long as it
+  fails. A failure the chat showed and then saw ready is forgotten, so failing again is told; a namesake ready in
+  another chat is not recovery, since agents in different folders can carry different servers under one name.
 - **The composer**, boxed, with `Model (effort) · mode` on its bottom edge in the words a person reads (`Opus
   (high) · accept edits`). The model is the one running: Claude's `Default (recommended)` reads as the model it
   stands for (`Opus 5`). The mode is left out while it is the agent's normal one, which asks before acting

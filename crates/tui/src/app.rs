@@ -26,9 +26,9 @@ use crate::chat::layout::{CAP, PAGE};
 use crate::chat::{ChatEffect, ChatView};
 use crate::clipboard::read_clipboard;
 use crate::home::{FleetEffect, Home, Place};
-use crate::open;
 use crate::text::{self, push};
 use crate::theme::Theme;
+use crate::{open, tool_servers};
 
 /// How long a second Ctrl+C has to arrive to quit.
 const QUIT_WINDOW: Duration = Duration::from_secs(3);
@@ -287,6 +287,9 @@ pub struct OpenChat {
     pub session: Arc<Session>,
     pub view: ChatView,
     pub agent: AgentKey,
+    /// The tool server failures this chat has shown, so it can tell when
+    /// one of them recovers.
+    servers_shown: tool_servers::Shown,
 }
 
 impl OpenChat {
@@ -312,6 +315,8 @@ pub struct App {
     /// The keys reference's first line on screen.
     help_scroll: usize,
     notice: Option<(String, Tone, Instant)>,
+    /// The tool server failures the footer has told about, across chats.
+    servers_told: tool_servers::Told,
     opening: Option<AgentKey>,
     layout: Layout,
     /// A report asked for: the next frame drawn is the one it freezes.
@@ -545,6 +550,7 @@ impl App {
             host_offers: HashMap::new(),
             home_held: None,
             offers_asked: HashSet::new(),
+            servers_told: tool_servers::Told::default(),
             desk: None,
             host_folders: HashMap::new(),
             folders_asked: HashSet::new(),
@@ -739,6 +745,7 @@ impl App {
                             session,
                             view,
                             agent,
+                            servers_shown: tool_servers::Shown::default(),
                         });
                     }
                     Err(error) => {
@@ -1694,8 +1701,9 @@ impl App {
     }
 
     /// What the loop does before each frame: a deleted agent's open chat
-    /// closes to the fleet, a draft whose words could not go is saved, and
-    /// the changed files its overview lists are fetched when it asks.
+    /// closes to the fleet, a draft whose words could not go is saved, a
+    /// tool server newly failing is told in the footer, and the changed
+    /// files its overview lists are fetched when it asks.
     pub fn housekeep(&mut self) {
         if let Some(gone) = self.chat_gone() {
             if gone.deleted {
@@ -1716,10 +1724,18 @@ impl App {
             self.fleet
                 .keep_draft(&chat.agent, composer_draft(&chat.view.editor));
         }
-        let wanted = {
+        let (news, wanted) = {
             let state = chat.session.state();
-            chat.view.wants_changes(&state)
+            let news = self.servers_told.look(
+                &chat.agent.host,
+                &state.agent_state().servers,
+                &mut chat.servers_shown,
+            );
+            (news, chat.view.wants_changes(&state))
         };
+        if let Some(words) = news {
+            self.notice = Some((words, Tone::Warn, Instant::now()));
+        }
         if let Some((key, base)) = wanted {
             let client = self.client.clone();
             let agent_id = chat.view.agent_id.clone();

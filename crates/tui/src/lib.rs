@@ -30,6 +30,7 @@ pub mod setup_scenes;
 pub mod terminal;
 pub(crate) mod text;
 pub mod theme;
+mod tool_servers;
 #[cfg(feature = "fixtures")]
 pub mod vocabulary;
 pub mod wheel;

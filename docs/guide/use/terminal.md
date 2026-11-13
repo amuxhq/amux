@@ -111,6 +111,12 @@ its folder and host, how much of its context it has used, and
 - **Ctrl+O** opens the overview beside the chat: the agent's tasks, its
   background jobs, the files it changed, and how close it is to its usage
   limits.
+- **/** at the start of a message lists the agent's commands, such as
+  `/compact` or `/review`, with what each does. Keep typing to narrow the
+  list, move with ↑ and ↓, and press Enter to run one or Tab to fill it in
+  and add to it. A command that needs something after its name, such as
+  `/rename <name>`, is filled in for you to finish. Esc hides the list. In
+  a Codex chat, **$** lists its skills the same way.
 - **Shift+Enter** or **Ctrl+J** starts a new line.
 - **Drag** over text to select it. It's copied when you let go, and the keys
   it offers appear under the box: **R** quotes it in your reply and **Esc**

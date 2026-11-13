@@ -259,9 +259,6 @@ deny:
 shear:
     {{bounded}} 300 cargo shear --locked --deny-warnings
 
-# Warm the product and ordinary test build graphs used by new worktrees.
-warm: build test-build
-
 # `just suite desktop-cli-system` runs exactly the Cargo tests that suite of
 # tests/catalog.toml lists, on `just test`'s build; anything after the
 # name goes to nextest (a test-name filter, `--no-capture`). The bound is the

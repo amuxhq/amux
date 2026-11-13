@@ -279,12 +279,23 @@ struct Host {
     /// the daemon's restarts, and the running daemon's socket on it.
     router: Option<Arc<Router>>,
     attached: Option<Arc<crate::router::Attached>>,
+    /// The same for each further profile the host's installation serves,
+    /// by the profile's host id: a profile's link socket is its own, so
+    /// behind the host's router it has mappings of its own.
+    others: Arc<std::sync::Mutex<BTreeMap<Uuid, Behind>>>,
     /// How a process host runs; none for one in the net's process.
     process: Option<ProcessHost>,
     /// A process host's daemon is up as far as the net's verbs know.
     running: bool,
     /// The host's `claude` and `codex` commands.
     commands: Commands,
+}
+
+/// One link socket's place behind a router: the mappings it has there, and
+/// the running daemon's socket on them.
+struct Behind {
+    router: Arc<Router>,
+    attached: Arc<crate::router::Attached>,
 }
 
 struct Link {
@@ -1744,6 +1755,7 @@ impl Net {
                 lan_handed: false,
                 router: None,
                 attached: None,
+                others: Arc::default(),
                 process,
                 running: false,
                 commands: Commands {
@@ -1939,7 +1951,32 @@ impl Net {
                     _ => Router::new(kind, ROUTER_IDLE)?,
                 };
                 let attached = crate::router::Attached::new(router.clone());
-                edge.substrate = Some(attached.clone());
+                // The host's own profile is the socket its router stands in
+                // front of. Any other profile its installation serves binds
+                // a socket of its own, which a router gives mappings of its
+                // own: handed the host's socket, it would take the packets
+                // meant for the host.
+                let (own, first, others) =
+                    (host.info.host_id, attached.clone(), host.others.clone());
+                edge.substrate = Some(Arc::new(move |profile| {
+                    if profile == own {
+                        return Ok(first.clone());
+                    }
+                    let mut others = others.lock().unwrap_or_else(|poison| poison.into_inner());
+                    let router = match others.get(&profile) {
+                        Some(earlier) if earlier.router.kind() == kind => earlier.router.clone(),
+                        _ => Router::new(kind, ROUTER_IDLE)?,
+                    };
+                    let attached = crate::router::Attached::new(router.clone());
+                    let behind = Behind {
+                        router,
+                        attached: attached.clone(),
+                    };
+                    if let Some(earlier) = others.insert(profile, behind) {
+                        earlier.attached.cut();
+                    }
+                    Ok(attached)
+                }));
                 Some((router, attached))
             }
             None => None,
@@ -2576,7 +2613,18 @@ impl Net {
         // Whatever of the daemon outlives it in this process hears and
         // sends nothing on its router from now on: a crash at once, a clean
         // stop once its last words are out.
-        let attached = host.attached.take();
+        let attached: Vec<Arc<crate::router::Attached>> = host
+            .attached
+            .take()
+            .into_iter()
+            .chain(
+                host.others
+                    .lock()
+                    .unwrap_or_else(|poison| poison.into_inner())
+                    .values()
+                    .map(|behind| behind.attached.clone()),
+            )
+            .collect();
         for ((a, b), link) in &mut self.links {
             if a == name || b == name {
                 link.live = None;
@@ -2597,11 +2645,11 @@ impl Net {
                     seen: crate::link_log::stop_step(host_id)
                         .map_or("no step begun".to_owned(), |step| format!("stuck {step}")),
                 })??;
-            if let Some(attached) = attached {
+            for attached in attached {
                 attached.cut();
             }
         } else {
-            if let Some(attached) = attached {
+            for attached in attached {
                 attached.cut();
             }
             drop(daemon);

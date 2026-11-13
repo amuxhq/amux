@@ -108,7 +108,9 @@ parts:
   models and commands come from the catalogue the snapshot names. The driver reads it as a blob, `GetBlob` with the
   agent and the hash the snapshot names, only while a chat shows the session, never for a session held for a
   fleet row, and keeps every catalogue it fetched under the hash it asked for, for the fleet's sessions, so each
-  version is fetched once; it reaches the state as `Msg::Catalogue` with that hash. Fetches can answer out of order, so the state never replaces a held catalogue the newest
+  version is fetched once; it reaches the state as `Msg::Catalogue` with that hash. A fetch that failed, as one
+  does while the agent's host cannot be reached, is asked again when the stream says `CaughtUp` or the chat is
+  opened again, not at every event in between. Fetches can answer out of order, so the state never replaces a held catalogue the newest
   snapshot names with one it does not name; any other catalogue is kept as it arrives. A field the provider has not
   reported stays at its explicit unknown. Open asks keep the provider's own shape as `OpenAsk::Claude` or
   `OpenAsk::Codex`.

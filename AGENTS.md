@@ -14,7 +14,8 @@ a change keeps them:
 - **A profile on disk.** What a release wrote, a later build opens: the
   `account` and `profile` files, and each agent's spec, journal and facts.
   A new field is one an older file can lack. The upgrade test
-  (`crates/node/tests/upgrade.rs`) opens a profile every release left.
+  (`crates/node/tests/upgrade.rs`) opens a profile left by each release
+  that changed what it writes.
 - **The config file.** A key a release read keeps being read; a rename
   keeps the old name working. A key no build knows is ignored with a
   warning, so a config a release accepted never stops amux starting.

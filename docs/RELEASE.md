@@ -623,11 +623,14 @@ just amux deploy 0.8.0 --rollout 10       # a tenth of the machines on stable ta
 just amux deploy 0.8.0                    # all of stable
 ```
 
-After cutting a release from 0.9.0 on, run `just upgrade-fixture` at its tag
-and commit what it writes under `crates/node/tests/fixtures/upgrade/`: a
-profile as that build leaves it, which every later build's tests open. The
-tag is also what `just proto-compat` and `just store-check` compare against
-from then on, with nothing to switch on.
+After cutting a release that changed what a profile holds on disk (a store
+migration, or a field or file in the `account` or `profile` files or an
+agent's spec, journal or facts), run `just upgrade-fixture` at its tag and
+commit what it writes under `crates/node/tests/fixtures/upgrade/`: a profile
+as that build leaves it, which every later build's tests open. A release
+that changed none of those writes what the newest snapshot already holds,
+so it gets none. Every tag is still what `just proto-compat` and
+`just store-check` compare against from then on, with nothing to switch on.
 
 **Cutting** makes the version exist. `just amux release <version>` refuses a
 tree with other changes in it, a version not above the current one, and a

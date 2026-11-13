@@ -17,8 +17,9 @@
 //! build makes afresh, so nothing here reads those.
 //!
 //! Each directory under `tests/fixtures/upgrade/` is one release's, made at
-//! its tag by `just upgrade-fixture`. Until the first is committed there is
-//! nothing to open.
+//! its tag by `just upgrade-fixture`. Only a release that changed what a
+//! profile holds gets one: any other writes what the newest one already
+//! holds. Until the first is committed there is nothing to open.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -234,8 +235,8 @@ fn an_agents_directory_reads(dir: &Path, agent: uuid::Uuid) {
 }
 
 /// Writes this build's profile, with something in every table of its store.
-/// Run at a release's tag by `just upgrade-fixture`, and the result
-/// committed.
+/// Run by `just upgrade-fixture` at the tag of a release that changed
+/// what a profile holds, and the result committed.
 ///
 /// The release's own agent is a real agent process on the fake provider.
 /// Its child, the agent that asks and the paired host's agent are journals

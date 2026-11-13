@@ -1197,7 +1197,40 @@ impl App {
                 drop(state);
                 return self.raw_attach(&agent).unwrap_or(Flow::Continue);
             }
+            // Bare `x` only: Ctrl+X interrupts in a chat, and Ctrl held
+            // through the leader must not turn an interrupt into a settle.
+            KeyCode::Char('x') if !ctrl_held(&key) => {
+                let agent = chat.agent.clone();
+                drop(state);
+                return self.settle_chat(agent);
+            }
             _ => {}
+        }
+        Flow::Continue
+    }
+
+    /// `<leader> x`: home, settling the chat's agent there. An agent
+    /// already settled stays in its chat: on home, `x` would offer to
+    /// delete it, which is not what "settle" asked for.
+    fn settle_chat(&mut self, agent: AgentKey) -> Flow {
+        let settled = self
+            .fleet
+            .state()
+            .agent(&agent)
+            .is_some_and(|entry| entry.filing() == wire::Filing::Closed);
+        if settled {
+            self.notice("already settled", Tone::Info);
+            return Flow::Continue;
+        }
+        self.close_chat();
+        let effects = {
+            let fleet = self.fleet.state();
+            self.home.settle_from_chat(&fleet, agent)
+        };
+        for effect in effects {
+            if let Some(flow) = self.fleet_effect(effect) {
+                return flow;
+            }
         }
         Flow::Continue
     }
@@ -2147,6 +2180,7 @@ fn panel_entries() -> Vec<crate::chat::PanelEntry> {
             't',
         ),
         entry("this chat", "a", "attach to its own terminal", 'a'),
+        entry("this chat", "x", "settle: done with this agent", 'x'),
         entry("this chat", "k", "focus an older row", 'k'),
         entry("this chat", "j", "focus a newer row", 'j'),
         entry("this chat", "o", "open the focused row", 'o'),
@@ -2219,7 +2253,7 @@ pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'
         ("Leader", String::new()),
     ]);
     // The leader's chords, by their whole keys.
-    let chords: [(&str, &str); 14] = [
+    let chords: [(&str, &str); 15] = [
         ("s", "home"),
         ("n", "new agent, starting from this chat's settings"),
         ("h", "hosts"),
@@ -2230,6 +2264,10 @@ pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'
         ("c", "count changes: uncommitted or on this branch"),
         ("t", "tool steps: collapse, show all or hide"),
         ("a", "attach to the agent's own terminal (this machine)"),
+        (
+            "x",
+            "settle the agent (a message resumes it); asks before cutting work short",
+        ),
         ("k / j", "focus an older or newer row"),
         ("o", "open the focused row or run"),
         ("y", "copy the focused row"),

@@ -2587,6 +2587,66 @@ fn hovering_highlights_a_row_and_its_close_mark_asks_first() {
     assert!(matches!(effects.as_slice(), [FleetEffect::Close(agent)] if agent.agent == b"w2"));
 }
 
+/// `<leader> x` settles the chat's agent from home, and the highlight
+/// lands on the top of the list, not on the row that took the settled
+/// one's place as `x` on home leaves it.
+#[test]
+fn settling_from_a_chat_highlights_the_top_of_home() {
+    let now = now();
+    let mut fleet = FleetState::new();
+    inventory(&mut fleet, host(b"a", "studio", Reads::Online));
+    for (id, name, ago) in [
+        (&b"a1"[..], "alpha", 1_000),
+        (b"b1", "beta", 2_000),
+        (b"g1", "gamma", 3_000),
+    ] {
+        inventory(
+            &mut fleet,
+            home_agent(id, name, Phase::Idle, None, now - ago),
+        );
+    }
+    inventory(
+        &mut fleet,
+        wire::inventory_event::Of::CaughtUp(wire::CaughtUp { revision: 0 }),
+    );
+    let mut home = new_home();
+    let screen = home_screen(&mut home, &fleet, theme());
+    let mut order = ["alpha", "beta", "gamma"];
+    order.sort_by_key(|name| row_of(&screen, name));
+    let [top, middle, _] = order;
+    let key_of = |name: &str| {
+        let id: &[u8] = match name {
+            "alpha" => b"a1",
+            "beta" => b"b1",
+            _ => b"g1",
+        };
+        AgentKey {
+            host: b"a".to_vec(),
+            agent: id.to_vec(),
+        }
+    };
+    let settled = key_of(middle);
+    // The chat had the middle agent open; closing it highlights its row.
+    home.select(settled.clone());
+    // Idle, so nothing is cut short: it settles without asking.
+    let effects = home.settle_from_chat(&fleet, settled.clone());
+    assert!(
+        matches!(effects.as_slice(), [FleetEffect::Close(agent)] if *agent == settled),
+        "{effects:?}"
+    );
+    let mut row = home_agent(&settled.agent, middle, Phase::Idle, None, now);
+    if let wire::inventory_event::Of::Agent(agent) = &mut row {
+        agent.filing = wire::Filing::Closed as i32;
+    }
+    inventory(&mut fleet, row);
+    let screen = home_screen(&mut home, &fleet, theme());
+    let highlighted: Vec<&str> = screen.lines().filter(|line| line.contains('›')).collect();
+    assert!(
+        matches!(highlighted.as_slice(), [line] if line.contains(top)),
+        "{screen}"
+    );
+}
+
 #[test]
 fn a_known_ground_tints_the_highlight_instead_of_marking_it() {
     let fleet = home_fleet();

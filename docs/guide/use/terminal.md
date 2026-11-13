@@ -150,6 +150,7 @@ and pause, and the keys it offers appear above the key line.
 | Ctrl+A, then `n` | A new agent in the same folder, on the same host |
 | Ctrl+A, then `r` | Review the agent's changes |
 | Ctrl+A, then `a` | Switch to the agent's own interface, for an agent on this machine |
+| Ctrl+A, then `x` | Settle the agent and go home, asking first if that would cut work short |
 | Ctrl+A, then `d` | Leave for the shell |
 | Ctrl+A, then `?` | Every key |
 

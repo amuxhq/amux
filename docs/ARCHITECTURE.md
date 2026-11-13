@@ -203,7 +203,7 @@ addresses change. See [embedding](EMBEDDED.md).
 | CLI, terminal client, Mac app and any [other client](guide/build/build-a-client.md) | the front door (`<root>/amux.sock`), then the profile's `profiles/<id>/sock` | `InstallationService` on the front door; `AgentService`, `SessionService` and `ProfileAdminService` on the profile socket |
 | phone UI | in process, through [`client::InProcess`](../crates/client/src/lib.rs) | the same `AgentService` and `SessionService` calls |
 | paired daemon | a link stream, after a pinned mutual-TLS handshake | `AgentService` and `SessionService`, answered only for this host's own agents |
-| an agent's tool server | `agents/<id>/tools.sock`, which the daemon listens on for that agent alone | `AgentService` and `SessionService`; the socket it arrived on is the caller's identity |
+| an agent's tool server, and its agent process for a spawn | `agents/<id>/tools.sock`, which the daemon listens on for that agent alone | `AgentService` and `SessionService`; the socket it arrived on is the caller's identity |
 
 The daemon dials in the other direction exactly once per agent: it connects
 to `ctl.sock`, reads a Hello, ingests the journal whenever a Nudge arrives,
@@ -289,7 +289,7 @@ agents/<agent_id>/            the agent's UUID; ours, never the provider's
   lock                        held by the agent process for its life; the kernel releases it on death
   ctl.sock                    the agent listens; the daemon is its only client
   pty.sock                    the agent listens; local terminal clients connect (terminal Claude and Codex only)
-  tools.sock                  the daemon listens; the agent's tool server is its only client
+  tools.sock                  the daemon listens; the agent's tool server and, for a spawn, the agent process are its only clients
   agent.log, agent.log.1      the agent process's stderr, and the part before its last move (1 MiB each)
   journal/0000000000          length-prefixed protobuf steps; the file name is the global offset of its first byte
   journal/0001048576          the next segment (1 MiB by default)
@@ -300,6 +300,7 @@ agents/<agent_id>/            the agent's UUID; ours, never the provider's
     provider-session          the provider's session or thread id, so a resume continues it
     provider.log, .1          the provider child's stderr, capped as agent.log is
     transcript-cursor         how far terminal Claude's transcript has been read
+    agent.sock                the agent listens; its tool server asks it here, for a child
     hooks.sock                terminal Claude's hook command connects here
     messaging.sock            terminal Claude's messaging socket
     codex.sock                Codex's app server, for Codex agents; removed when the agent exits
@@ -319,7 +320,7 @@ the agent's directory.
 | the directory, `spec.<n>` | daemon | daemon, one file per incarnation | agent at start | daemon, on delete, a parent's delete, or retention; never on exit, because resume uses the directory again |
 | `lock` | daemon | — | held by the agent; the daemon try-locks it to probe liveness | with the directory |
 | `ctl.sock`, `pty.sock` | agent | — | the daemon dials `ctl.sock`; terminal clients dial `pty.sock` | agent, at exit |
-| `tools.sock` | daemon | — | the agent's tool server | daemon, when the agent exits; bound again at resume |
+| `tools.sock` | daemon | — | the agent's tool server; the agent process, for a spawn | daemon, when the agent exits; bound again at resume |
 | `journal/*` | agent | agent | daemon, from its cursor | daemon: segments wholly below a cursor that has reached the drive, keeping the newest two for debug bundles |
 | `pty/*` | agent | agent | terminal clients, by position | agent, oldest first |
 | `blobs/*` | agent or daemon | the agent for what the model attaches and for its catalogue, before the step whose snapshot names it; the daemon for what a person attaches and for diff patches; temp file then rename, so two writers are safe | the provider by path; the daemon to serve `GetBlob` | with the directory |
@@ -558,7 +559,7 @@ notifications on its own inventory entry, which only hosts paired with it read
 The code builds and its tests run on Windows in CI, but a Unix primitive is
 nicer in several places, and Windows pays for each:
 
-- **Local sockets.** `ctl.sock`, `pty.sock`, `tools.sock`, `hooks.sock`, the
+- **Local sockets.** `ctl.sock`, `pty.sock`, `tools.sock`, `agent.sock`, `hooks.sock`, the
   profile socket and the front door are named pipes. Each bind makes a fresh
   pipe and writes its name into the file at the socket's path, because a pipe
   lives on while any connection to it is open and a successor could not take

@@ -1,12 +1,14 @@
 //! The agent process: `amux internal agent <dir>` hosts one provider for one agent.
 //!
 //! It takes `<dir>/lock` for its lifetime, reads the newest `spec.<n>`,
-//! listens on `ctl.sock` (and `pty.sock` and `private/hooks.sock` for the
-//! kinds that have them), starts the provider child and runs the kind's
-//! interpreter, writing every step to `journal/` and raw terminal bytes to
-//! `pty/`. It never dials the daemon: the daemon dials `ctl.sock`, gets a
+//! listens on `ctl.sock` and `private/agent.sock` (and `pty.sock` and
+//! `private/hooks.sock` for the kinds that have them), starts the provider
+//! child and runs the kind's interpreter, writing every step to `journal/`
+//! and raw terminal bytes to `pty/`. The daemon dials `ctl.sock`, gets a
 //! Hello and then a Nudge whenever the journal grows, and sends inputs and
-//! stops, each input answered with the interpreter's verdict.
+//! stops, each input answered with the interpreter's verdict. The agent
+//! dials the daemon for one thing, on `tools.sock`: a child its own tool
+//! server asked it for on `private/agent.sock`.
 //!
 //! The lifecycle rules (grace, drain, stop modes, the one-shot exit) are the
 //! agent core's (the `agent-core` crate); the host module drives it. The
@@ -26,6 +28,7 @@ mod host;
 mod notebook;
 mod provider;
 mod ready;
+pub mod spawns;
 mod terminal;
 mod tools;
 mod tree;
@@ -33,7 +36,7 @@ mod tree;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub use agent_core::ExitCause;
+pub use agent_core::{ExitCause, Spawn};
 pub use agent_dir::{
     Clock, ManualClock, SystemClock, clock, ctl, local_socket, read_frame, read_message,
     write_frame, write_message,
@@ -45,7 +48,8 @@ use interpret::codex::Codex;
 pub use crate::dir::{BLOBS, CTL_SOCK, HOOKS_SOCK, JOURNAL, LOCK, PRIVATE, PTY, PTY_SOCK};
 pub use crate::dump::RECORD;
 pub use crate::tools::{
-    NOT_RUNNING, RETRY_WINDOW, TOOLS_SOCK, ToolsError, serve_tools, serve_tools_on,
+    NOT_RUNNING, NOT_TAKING_SPAWNS, RETRY_WINDOW, TOOLS_SOCK, ToolsError, serve_tools,
+    serve_tools_on,
 };
 
 /// The version this agent reports in its Hello and stamps on what it writes.

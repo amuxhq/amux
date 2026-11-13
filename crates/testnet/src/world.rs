@@ -61,8 +61,10 @@ pub trait World {
         input: wire::Input,
     ) -> Result<wire::SendInputResponse, NetError>;
 
-    /// Starts `decl` as a child of `parent` on the host it names; the
-    /// returned row is the child's own once its process said Hello.
+    /// Starts `decl` as a child of `parent` on the host it names, as
+    /// `parent`'s own spawn tool does: through its agent process, which
+    /// knows of the child from then on. The returned row is the child's own
+    /// once its process said Hello.
     async fn spawn_child(&mut self, parent: &str, decl: AgentDecl)
     -> Result<wire::Agent, NetError>;
     /// Deletes the agent on its own host, as a client does there. Its

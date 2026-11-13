@@ -28,9 +28,9 @@ provider children, and how it ends.
 
 | Crate or file | What it holds |
 |---|---|
-| [`crates/agent`](../crates/agent/src/lib.rs) | The process: `run` and `main` in `lib.rs`; the driver that runs the agent core over the provider child, the sockets and the journal in `host.rs`; provider children in `provider.rs`; typing into terminal Claude in `terminal.rs`; reading terminal Claude's first screen in `ready.rs`; the facts ring in `crates/core-ring`; raw attach on `pty.sock` in `attach.rs`; the tool server in `tools.rs`; the agent's part of a dump in `dump.rs`; directory helpers in `dir.rs` |
+| [`crates/agent`](../crates/agent/src/lib.rs) | The process: `run` and `main` in `lib.rs`; the driver that runs the agent core over the provider child, the sockets and the journal in `host.rs`; provider children in `provider.rs`; typing into terminal Claude in `terminal.rs`; reading terminal Claude's first screen in `ready.rs`; the facts ring in `crates/core-ring`; raw attach on `pty.sock` in `attach.rs`; the tool server in `tools.rs`; the agent's end of the socket its tool server asks on in `spawns.rs`; the agent's part of a dump in `dump.rs`; directory helpers in `dir.rs` |
 | [`crates/agent-core`](../crates/agent-core/src/lib.rs) | The lifecycle as a state machine around the interpreter: one step per input (a provider fact, a daemon dialling in or leaving, a control frame, a timer, a failed write, a job's result), asking for journal steps, provider writes, frames, timers, jobs and the exit; how the next incarnation starts from the facts ring |
-| [`crates/agent-dir`](../crates/agent-dir/src/lib.rs) | What the agent and the daemon must agree on: the file and socket names, the directory lock, the frame format on `ctl.sock` and `pty.sock` (`ctl.rs`), local sockets (`local_socket.rs`) and the injectable clock (`clock.rs`) |
+| [`crates/agent-dir`](../crates/agent-dir/src/lib.rs) | What the agent and the daemon must agree on: the file and socket names, the directory lock, the frame format on `ctl.sock` and `pty.sock` (`ctl.rs`), the socket its tool server asks the agent on, `private/agent.sock` (`agent_sock.rs`), local sockets (`local_socket.rs`) and the injectable clock (`clock.rs`) |
 | [`crates/journal`](../crates/journal/src/lib.rs) | The segmented, append-only journal writer and reader |
 | [`crates/pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal hosting: spawn in a process group, output stream, input, resize, signals |
 | [`crates/interpret`](../crates/interpret/src/lib.rs) | The per-kind interpreters the process runs |
@@ -57,13 +57,15 @@ agents/<agent id>/
   ctl.sock               the agent listens; the daemon is its only client
   pty.sock               the agent listens; local terminal clients connect
                          (terminal Claude and Codex only)
-  tools.sock             the daemon listens; the agent's tool server is its only client
+  tools.sock             the daemon listens; its clients are the agent's tool server
+                         and, for a spawn, the agent process itself
   journal/0000000000 …   steps, in segments named by the offset of their first byte
   pty/0000000000 …       terminal Claude's raw terminal bytes, named the same way
   blobs/<sha256>         bytes items refer to, and what the agent offers as an
                          encoded Catalogue its snapshot names, each named by its hash
   agent.log              the agent process's stderr
   private/               the agent's own state; the daemon never reads it
+    agent.sock           the agent listens; its tool server asks it here, for a child
     hooks.sock           terminal Claude's hook command connects here
     messaging.sock       terminal Claude's messaging socket (Claude binds it)
     codex.sock           Codex's app server listens here; the agent is one client
@@ -178,7 +180,8 @@ provider's process group at once and writes nothing.
 | `Running` | `Stop` arrives | The interpreter cancels the turn the provider's own way, so an open ask closes as dismissed and its call as cancelled; `Draining` (stop) |
 | `Draining` | The turn ends, or no turn is running | A turn end is marked `last`; `exit` with `DAEMON_LOST` or `STOPPED`; a one-shot agent whose turn ends quiescent while it drains for a lost daemon exits `FINISHED`, as its parent hears it |
 | `Draining` after the daemon was lost | An ask is open (phase needs you) | A drain deadline is armed; when it passes, `exit` with `ORPHANED` |
-| `Running`, the agent has a parent | A turn ends with nothing running, nothing queued, no accepted agent message still unconsumed, no typed prompt the provider has yet to record, and the last report of every child incarnation the daemon named live already taken | The turn end is marked `last`; `exit` with `FINISHED` (the one-shot rule) |
+| `Running`, the agent has a parent | A turn ends with nothing running, nothing queued, no accepted agent message still unconsumed, no typed prompt the provider has yet to record, no child it asked for still unsettled, and the last report of every child incarnation it made or was told is live already taken | The turn end is marked `last`; `exit` with `FINISHED` (the one-shot rule) |
+| `Running`, the agent has a parent and sits idle | A child it asked for is settled as never made, and nothing else is waited for: a later daemon's `children` frame leaves out a spawn its predecessor never answered, or a refusal arrives after a turn cut short has ended | `exit` with `FINISHED`; no turn end was marked `last`, so the daemon reports the exit to the parent |
 | Any | The interpreter asks to exit (`Effect::Exit`) | `exit` with `ENDED_UNEXPECTEDLY` and the interpreter's words |
 | Any | A write to the directory fails (in practice, a full disk): a journal frame, a blob, or the provider's own state in `private/` that the next incarnation resumes from (Codex's thread id, the transcript position) | `exit` with `DIRECTORY_FAILED` and the failed write as the detail; if even that cannot be written, the provider is killed. The cause is then not in the journal either, so the row says `ENDED_UNEXPECTEDLY` (or `ENDED_WHILE_AWAY`) |
 | Any | The provider exits | The loop ends; `PROVIDER_EXITED` with the exit code or signal |
@@ -234,6 +237,23 @@ agents are live below it: one child's report can start a turn that spawns
 the next before the daemon says the first has gone, and a child with its own
 child reports mid-way and again at its end.
 
+Which children there are to wait for, the agent learns from two sides. The
+children it asked for it knows itself: its tool server's `spawn` goes
+through the process ([the tool server](#the-tool-server)), which tells the
+core of the child before the request reaches the daemon and of the daemon's
+answer before the tool server has it. A turn's end and a daemon's frame
+arrive on different sockets, in either order, so a subagent that learned of
+its own spawn only from the daemon could end its turn first and exit under a
+child it had just started. The children that exist the daemon knows, and
+says in its answer to the create and in the `children` frame. A child the
+daemon made owes its last report; a refused one is dropped; one whose
+daemon went away before answering stays asked for until a `children` frame
+names it, or one from a daemon that connected since leaves it out. A frame
+that leaves a child out never drops it otherwise, since the daemon may have
+written the frame before it made the child.
+[Agent tools](AGENT_TOOLS.md#families) has the rule in full, and why a
+child created for the agent from outside it is not covered.
+
 The one-shot rule is what having a parent means: there is no flag. An input
 that arrives while such an agent is exiting is answered `REFUSAL_EXITING`,
 and the daemon then treats it as exited and resumes it if the sender is its
@@ -256,7 +276,7 @@ version integer, and a frame a reader does not know is ignored.
 | `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's record for a report, answered in any mode |
 | `rename` | daemon → agent | `Rename { name }`: a Codex agent's thread takes the agent's new name, so Codex's own app shows what amux does; other kinds have nothing to rename |
 | `stop` | daemon → agent | `Stop { kill }`: without `kill`, cancel the turn the provider's own way and exit; with it, kill everything below the provider and its process group at once (the daemon's escalation past the stop deadline) |
-| `children` | daemon → agent | `Children { children }`: the agents directly below this one that are live, on every host its daemon knows of, each with its incarnation, sent when the agent connects with any and whenever the list changes; a one-shot agent waits for each incarnation's last report |
+| `children` | daemon → agent | `Children { children }`: the agents directly below this one that are live, on every host its daemon knows of, each with its incarnation, sent whenever the list changes and when the daemon connects: always to an agent it found running (even with none, which settles a spawn the last daemon took and never answered), and to one it has just started only if it has any; a one-shot agent waits for each incarnation's last report |
 | `dump` | agent → daemon | `DumpPart` holding the agent's record, answering a dump request |
 | `dump_asked` | agent → daemon | `DumpAsked { reason, invariant, record }`: the agent's core asked for a report (the invariant it broke, or none for a step over its budget), with its record built then. The daemon writes the one report, with that record for this agent, after a limit of its own per kind; one asked with no daemon connected waits, the newest of each kind, and goes right after the next `hello` |
 | `reply` | agent → daemon | `Verdict { id, verdict }`: the interpreter's verdict on an input, keyed by its input id, which the daemon relays as the `SendInput` reply; or on an agent message, keyed by its envelope id, which settles the message's delivery |
@@ -663,7 +683,7 @@ launch, so an incarnation launched once the policy is gone reads amux's
 server as Claude reports it. The host's catalogue ask
 leaves out `--strict-mcp-config` there for the same reason.
 
-The fleet tools (agents, hosts, send, spawn, stop) dial the daemon at
+Four fleet tools (agents, hosts, send, stop) dial the daemon at
 `<dir>/tools.sock`, a socket the daemon listens on for this agent alone, so
 the daemon knows who is calling from the connection and nothing in a request
 claims an id. A daemon that adopts a live agent after a restart binds the
@@ -674,6 +694,27 @@ from the provider's own record, and attach writes the file into `blobs/` and
 returns the element the model puts in its reply. The tool server never writes
 the journal; the agent process is its only writer. [Agent tools](AGENT_TOOLS.md)
 describes each tool.
+
+The fifth fleet tool, spawn, is the one call the tool server makes of the
+agent process, on `<dir>/private/agent.sock`, and the one call the agent
+process makes of the daemon. The socket is for whatever a tool server needs
+of its agent process: each connection carries one `AgentAsk` and its
+`AgentAnswer`, framed as control frames are, and each says which kind it
+is, so a later build can add an ask. A process that reads an ask it does
+not know refuses it in words. A spawn's ask is the `CreateAgentRequest` the
+daemon takes, with the child's agent id the tool server chose, and its
+answer the daemon's `CreateAgentResponse` or the words of a refusal. For
+each spawn the process
+([`spawns.rs`](../crates/agent/src/spawns.rs)) tells its core the child was
+asked for and waits until the core has it; makes the create on `tools.sock`
+as the tool server used to, redialling for five seconds and making the call
+itself at most once; tells its core how the daemon answered and waits
+again; and only then answers the tool server. The provider cannot go on
+with its turn, let alone end it, before the core knows what became of the
+spawn. A request that arrives once the core is gone, the process exiting, is
+dropped unmade, and the tool server reports that its agent process went
+away. A tool server that finds no such socket says its agent process is not
+taking spawn requests and asks nobody else.
 
 ## Exit and self-destruct
 
@@ -740,7 +781,7 @@ the system.
 | Codex attach | `just suite desktop-cli-system codex_attach::` | Codex's own app joins a fresh agent's server; its prompt shows in amux's chat, and an approval is answered from amux, then from the app |
 | Codex attach, live | `just live codex attach` | The same against the real Codex, from amux's client and Codex's app in two terminals: a timed capture of each (`app.cast`, `amux.cast`, raw bytes), a text frame of both per step and a verdict, in `target/live/codex-attach/` |
 | Dump | `just suite agent-dump-redaction` | The dump part carries no planted secret |
-| Tool server | `just suite agent-tool-server` | Tool calls reach a scripted daemon on `tools.sock`, retry across an update window, and come back as the items the interpreter draws |
+| Tool server | `just suite agent-tool-server` | Tool calls reach a scripted daemon on `tools.sock`, a spawn by way of the agent process's own socket; they retry across an update window and come back as the items the interpreter draws; a subagent stays for a child it spawned that its daemon has not named |
 
 These run the real process code against the scripted fake providers in
 [`crates/provider-fakes`](../crates/provider-fakes/src/lib.rs) and recorded

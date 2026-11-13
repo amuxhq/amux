@@ -182,6 +182,233 @@ fn one_shot_working() -> Run {
     run
 }
 
+const CHILD: &[u8] = b"child";
+/// The daemon that dials in once the first has gone.
+const NEXT: ConnId = ConnId(2);
+
+impl Run {
+    /// What the process heard of the child its tool server asked for.
+    fn hears(&mut self, heard: Spawn) -> Vec<Output> {
+        self.on(Input::Spawn {
+            child: CHILD.to_vec(),
+            heard,
+        })
+    }
+
+    /// The connected daemon's word of the live children: the child in its
+    /// first incarnation, or none.
+    fn children(&mut self, live: bool) -> Vec<Output> {
+        let connection = self.agent.life.connection.expect("a daemon is connected");
+        self.on(Input::Control {
+            connection,
+            frame: CtlFrame {
+                of: Some(ctl_frame::Of::Children(wire::Children {
+                    children: live
+                        .then(|| wire::LiveChild {
+                            agent_id: CHILD.to_vec(),
+                            incarnation: 1,
+                        })
+                        .into_iter()
+                        .collect(),
+                })),
+            },
+        })
+    }
+
+    /// The daemon goes away and the next one dials in.
+    fn next_daemon(&mut self) {
+        self.on(Input::DaemonGone { connection: DAEMON });
+        self.on(Input::DaemonDials { connection: NEXT });
+    }
+
+    /// The child's last report arrives and the provider runs it as a turn,
+    /// which ends.
+    fn child_reports_and_the_turn_ends(&mut self) -> Vec<Output> {
+        self.frame(ctl_frame::Of::AgentMessage(wire::Envelope {
+            id: b"report".to_vec(),
+            from: Some(wire::Sender {
+                value: Some(wire::sender::Value::Agent(wire::AgentSender {
+                    agent: Some(AgentRef {
+                        agent_id: CHILD.to_vec(),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })),
+            }),
+            body: Some(wire::envelope::Body::Report(wire::ChildReport {
+                from_incarnation: 1,
+                end: Some(wire::child_report::End::TurnEnded(wire::TurnEnded {
+                    text: "done".into(),
+                    last: true,
+                    ..Default::default()
+                })),
+                ..Default::default()
+            })),
+            ..Default::default()
+        }));
+        self.fact(json!({"type": "user", "envelope": "report"}));
+        self.fact(json!({"type": "turn_start"}));
+        self.turn_end()
+    }
+}
+
+/// Whether the turn end in `out` was marked the incarnation's last.
+fn marked_last(out: &[Output]) -> Option<bool> {
+    out.iter().find_map(|output| match output {
+        Output::AppendJournal(step) => step.turn_end.as_ref().map(|end| end.last),
+        _ => None,
+    })
+}
+
+/// A one-shot agent's turn ends after it spawned a child and before its
+/// daemon has said a word of that child: it stays, because it asked for the
+/// child itself, and exits once the child's last report has had its turn.
+#[test]
+fn a_one_shot_agent_stays_for_a_child_it_spawned_before_its_daemon_names_it() {
+    let mut run = one_shot_working();
+    run.hears(Spawn::Requested);
+    run.hears(Spawn::Created { incarnation: 1 });
+    let out = run.turn_end();
+    assert_eq!(marked_last(&out), Some(false));
+    assert!(!closes(&out), "its child still works");
+
+    let out = run.children(true);
+    assert!(!closes(&out), "the daemon's word changes nothing");
+    let out = run.child_reports_and_the_turn_ends();
+    assert_eq!(marked_last(&out), Some(true));
+    assert!(closes(&out));
+    assert_eq!(provider_exits(&mut run), Some(ExitCause::Finished));
+}
+
+/// A spawn the daemon refused made no child: nothing is waited for.
+#[test]
+fn a_one_shot_agent_whose_spawn_was_refused_exits_at_its_turns_end() {
+    let mut run = one_shot_working();
+    run.hears(Spawn::Requested);
+    run.hears(Spawn::Refused);
+    let out = run.turn_end();
+    assert_eq!(marked_last(&out), Some(true));
+    assert!(closes(&out));
+    assert_eq!(provider_exits(&mut run), Some(ExitCause::Finished));
+}
+
+/// The daemon's frame can be written before it made the child, and read
+/// before its answer: a child still being asked for is not dropped for
+/// being absent from it.
+#[test]
+fn a_children_frame_before_the_answer_does_not_clear_a_child_asked_for() {
+    let mut run = one_shot_working();
+    run.hears(Spawn::Requested);
+    run.children(false);
+    let summary = run.agent.summary();
+    assert_eq!(summary["spawns_unsettled"], 1, "{summary}");
+    run.hears(Spawn::Created { incarnation: 1 });
+    let out = run.turn_end();
+    assert_eq!(marked_last(&out), Some(false));
+    assert!(!closes(&out), "its child still works");
+    assert_eq!(run.agent.exiting(), None);
+}
+
+/// The daemon went away before it answered the spawn. The agent stays past
+/// its turn's end, and a frame names the child: it was made, and the agent
+/// waits for its last report.
+#[test]
+fn an_unconfirmed_spawn_a_frame_names_is_waited_for() {
+    let mut run = one_shot_working();
+    run.hears(Spawn::Requested);
+    run.hears(Spawn::Unconfirmed);
+    let out = run.turn_end();
+    assert_eq!(marked_last(&out), Some(false));
+    assert!(!closes(&out), "nobody has said whether there is a child");
+
+    let out = run.children(true);
+    assert!(!closes(&out), "there is one: its last report is to come");
+    assert_eq!(run.agent.summary()["spawns_unsettled"], 0);
+    let out = run.child_reports_and_the_turn_ends();
+    assert!(closes(&out));
+    assert_eq!(provider_exits(&mut run), Some(ExitCause::Finished));
+}
+
+/// A frame that leaves the child out says it was never made only when it
+/// comes from a daemon that connected after the one that went away: that
+/// one may have written its frame before it made the child. No report is
+/// coming to start another turn, so the agent, idle with nothing left to
+/// wait for, finishes on the next daemon's word.
+#[test]
+fn an_unconfirmed_spawn_the_next_daemons_frame_leaves_out_ends_the_wait() {
+    let mut run = one_shot_working();
+    run.hears(Spawn::Requested);
+    run.hears(Spawn::Unconfirmed);
+    let out = run.turn_end();
+    assert!(!closes(&out), "nobody has said whether there is a child");
+    let out = run.children(false);
+    assert!(!closes(&out), "written, perhaps, before the child was made");
+
+    run.next_daemon();
+    let out = run.children(false);
+    assert!(closes(&out), "there is none, and nothing else to wait for");
+    assert_eq!(dumps(&out), Vec::<&DumpReason>::new());
+    assert_eq!(provider_exits(&mut run), Some(ExitCause::Finished));
+}
+
+/// Settled as never made while the turn still runs, the spawn leaves the
+/// turn's end to decide, as ever.
+#[test]
+fn an_unconfirmed_spawn_settled_mid_turn_leaves_the_exit_to_the_turns_end() {
+    let mut run = one_shot_working();
+    run.hears(Spawn::Requested);
+    run.hears(Spawn::Unconfirmed);
+    run.next_daemon();
+    let out = run.children(false);
+    assert!(!closes(&out), "the turn still runs");
+    assert_eq!(run.agent.summary()["spawns_unsettled"], 0);
+    let out = run.turn_end();
+    assert_eq!(marked_last(&out), Some(true));
+    assert!(closes(&out));
+}
+
+/// A turn cut short can end while the spawn it made is still with the
+/// daemon. The agent stays. A child made then is waited for; a refusal
+/// leaves nothing to wait for and no turn to come, and the agent finishes.
+#[test]
+fn a_spawn_answered_after_its_turn_ended_is_waited_for_or_ends_the_wait() {
+    let mut run = one_shot_working();
+    run.hears(Spawn::Requested);
+    let out = run.turn_end();
+    assert_eq!(marked_last(&out), Some(false));
+    assert!(!closes(&out), "the daemon has not answered yet");
+    let out = run.hears(Spawn::Created { incarnation: 1 });
+    assert!(!closes(&out), "its child works");
+    assert_eq!(run.agent.exiting(), None);
+
+    let mut run = one_shot_working();
+    run.hears(Spawn::Requested);
+    run.turn_end();
+    let out = run.hears(Spawn::Refused);
+    assert!(
+        closes(&out),
+        "there is no child, and nothing else to wait for"
+    );
+    assert_eq!(dumps(&out), Vec::<&DumpReason>::new());
+    assert_eq!(provider_exits(&mut run), Some(ExitCause::Finished));
+}
+
+/// An agent without a parent keeps what it spawned too, and never exits
+/// for it.
+#[test]
+fn an_agent_without_a_parent_never_exits_over_its_spawns() {
+    let mut run = Run::start(&spec(false, Some("do the thing")));
+    run.on(Input::DaemonDials { connection: DAEMON });
+    run.fact(json!({"type": "ready"}));
+    run.reflect("p1");
+    run.hears(Spawn::Requested);
+    run.hears(Spawn::Unconfirmed);
+    assert!(!closes(&run.turn_end()));
+    run.next_daemon();
+    assert!(!closes(&run.children(false)));
+    assert_eq!(run.agent.exiting(), None);
+}
+
 /// A spec that names no budget runs under the agent's own.
 #[test]
 fn a_spec_without_a_budget_runs_under_the_agents_own() {

@@ -33,12 +33,20 @@ freely, and nothing gets a shim for a shape no release shipped. A change that
 cannot keep a promise is not made by breaking it: it is the next protocol
 (`amux/2`, beside `amux/1`) or a new column or table.
 
-- Build, test and lint through `just` (`just --list`); `wt` is for worktrees,
-  sessions and this tree's daemon. Recipes carry timeouts; a firing timeout is
-  a hang to diagnose.
+- Build, test and lint through `just` (`just --list`); `wt` is for worktrees
+  and this tree's daemon. Recipes carry timeouts; a firing timeout is a hang
+  to diagnose.
 - Before a change reaches main, run `just premerge` and the tests of the
   crates it touched. A failing golden is re-recorded in the same change,
   after reading what moved.
+- Land a branch on main with a merge commit made in your tree:
+  `git fetch origin main && git switch --detach origin/main && git merge
+  --no-ff <branch>`, with a message saying what the branch does. Rerun those
+  checks on the merge, then `git push origin HEAD:main`. If a check fails, fix
+  it on the branch and land again; if the push is refused, someone landed
+  first, so start again from the fetch. Never force-push. Afterwards,
+  `git switch <branch>` to keep working. Without push access, open a pull
+  request instead.
 - The why of a change and its test evidence go in the commit message; search
   past decisions with `git log --grep`. A rejected alternative that should
   constrain future work goes in that component's page in `docs/`.

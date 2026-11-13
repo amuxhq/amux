@@ -1,67 +1,55 @@
-# wt owns the tree, its environment, its daemon and the phone lease;
+# wt owns the tree, its environment, its daemon and the simulator pools;
 # `just --list` is the task list.
 
-bin = ["target/debug"]
-commands = ["amux"]
+# Start a new tree with the main checkout's build output: third-party crates
+# stay fresh, so the first build only compiles this workspace.
+copy = ["target"]
+
+# `amux` inside a tree is the tree's own build, never the installed one.
+[bin]
+amux = "target/debug/amux"
 
 [env]
-AMUX_CONFIG = "{{root()}}/.wt/amux/config.toml"
-AMUX_LOG = "{{root()}}/.wt/amux/amux.log"
+AMUX_CONFIG = "{{root}}/.wt/amux/config.toml"
+AMUX_LOG = "{{root}}/.wt/amux/amux.log"
 
 [files.".wt/amux/config.toml"]
-marker = "#"
 content = """
-host_name = "{{name_short()}}"
-root = "{{root()}}/.wt/amux"
+host_name = "{{name_short}}"
+root = "{{root}}/.wt/amux"
 supervisor = false
 keep_awake = false
 
 [discovery]
-scope = "{{name()}}"
+scope = "{{name}}"
 """
 
-[hooks]
-after_new = "just build"
-warm = "just warm"
+[lifecycle]
+create = "just build"
+start = "amux server start"
+stop = "amux server stop"
 
-# This checkout's daemon. A resource: `wt remove` stops it.
-[resource.daemon]
-tied_to = "tree"
-name = "{{name_short()}}"
-exists = 'test -S "{{root()}}/.wt/amux/amux.sock" && amux status >/dev/null 2>&1'
-create = "amux server start"
-destroy = "amux server stop"
-
-# The pinned iPhones this Mac owns, created on demand. A recipe leases one
-# and gets it clean; the tree keeps it for two minutes so the next recipe in
-# a series takes it without queueing; one nobody has leased for half an hour
-# is deleted, and the next use pays the fifty-second create again. The
-# recipes name a kind, golden or small, and apps/apple/Tools/ios_simulators.py maps
-# the kind to the leased device. Count, keep, idle and wait are machine
-# facts: override under [resources.iphone] in ~/.wt/config.toml. The hooks go
-# through scripts/py for the same reason the recipes do: a hook inherits
-# whatever PATH it was started with, and on a Mac a bare python3 is often the
-# 3.9 the system ships, which cannot read these scripts at all.
-[resource.iphone]
-tied_to = "machine"
-count = 2
-name = "amux-iphone-{{index()}}"
-exists = 'scripts/py apps/apple/Tools/ios_simulators.py exists "$WT_SELF"'
-create = 'scripts/py apps/apple/Tools/ios_simulators.py create "$WT_SELF" golden'
-destroy = 'xcrun simctl delete "$WT_SELF"'
-acquire = 'scripts/py apps/apple/Tools/ios_simulators.py acquire "$WT_SELF"'
-keep = "2m"
+# The pinned iPhones this Mac owns. A recipe leases one and gets it clean;
+# a tree prefers the one it used last, so a series of recipes reuses a booted
+# device. One nobody has leased for half an hour is deleted, and the next use
+# pays the fifty-second create again. The recipes name a kind, golden or
+# small, and apps/apple/Tools/ios_simulators.py maps the kind to the leased
+# device; its `acquire` creates the device when it is missing. Size, wait and
+# idle are machine facts: override under [pool.iphone] in ~/.wt/config.toml.
+# The commands go through scripts/py because a hook inherits whatever PATH it
+# was started with, and on a Mac a bare python3 is often the system's 3.9.
+[pool.iphone]
+size = 2
+name = "amux-iphone-{{n}}"
+acquire = 'scripts/py apps/apple/Tools/ios_simulators.py acquire "$WT_LEASE" golden'
 idle = "30m"
+retire = 'xcrun simctl delete "$WT_LEASE" || true'
 wait = "45m"
 
-[resource.iphone-small]
-tied_to = "machine"
-count = 1
-name = "amux-small-{{index()}}"
-exists = 'scripts/py apps/apple/Tools/ios_simulators.py exists "$WT_SELF"'
-create = 'scripts/py apps/apple/Tools/ios_simulators.py create "$WT_SELF" small'
-destroy = 'xcrun simctl delete "$WT_SELF"'
-acquire = 'scripts/py apps/apple/Tools/ios_simulators.py acquire "$WT_SELF"'
-keep = "2m"
+[pool.iphone-small]
+size = 1
+name = "amux-small-{{n}}"
+acquire = 'scripts/py apps/apple/Tools/ios_simulators.py acquire "$WT_LEASE" small'
 idle = "30m"
+retire = 'xcrun simctl delete "$WT_LEASE" || true'
 wait = "45m"

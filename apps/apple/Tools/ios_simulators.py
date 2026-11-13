@@ -13,7 +13,7 @@ Every capture and measurement names a *kind* of device, ``golden`` or
   of the same naming scheme, so the only difference between the two
   environments is whether anything coordinates.
 
-wt calls the subcommands at the bottom to create, probe and prepare a device;
+wt's pool calls ``acquire`` at the bottom on every lease to create and prepare a device;
 the recipes call ``ready`` to get the udid of the device their kind means.
 """
 
@@ -55,7 +55,7 @@ def device_name(kind: str) -> str:
     leased = os.environ.get(entry["lease"])
     if leased:
         return leased
-    if os.environ.get("WT_TARGET"):
+    if os.environ.get("WT_TREE"):
         pool = "iphone" if kind == "golden" else "iphone-small"
         raise SystemExit(
             f"no {kind} simulator is leased for this command: run it under "
@@ -335,17 +335,11 @@ def ready(kind: str) -> str:
 
 def main() -> None:
     arguments = sys.argv[1:]
-    # The subcommands wt's pool recipes call, each about one named device.
-    if arguments[:1] == ["exists"]:
-        raise SystemExit(0 if find(arguments[1]) else 1)
-    if arguments[:1] == ["create"]:
+    # wt's pool runs this on every lease of the named device: create and boot
+    # it if it is missing (about fifty seconds), then pin and clean it.
+    if arguments[:1] == ["acquire"]:
         name, kind = arguments[1], arguments[2]
         udid = ensure(name, KINDS[kind]["device_type"])
-        pin(udid)
-        print(f"{name}: {udid} (iOS 26.5, booted, en_US, 9:41, light)", flush=True)
-        return
-    if arguments[:1] == ["acquire"]:
-        udid = find(arguments[1])["udid"]
         pin(udid)
         clean(udid)
         return

@@ -276,7 +276,7 @@ impl Theme {
                 // The sixteen conventional blues are too dark to read on
                 // black, so in that face attention takes light cyan.
                 attention: Token::new((108, 160, 232), Color::LightCyan),
-                user_surface: Token::new((24, 34, 46), Color::Black),
+                user_surface: Token::new((27, 30, 35), Color::Black),
                 selection: Token::new((52, 68, 92), Color::Blue),
                 panel: Token::new((23, 27, 34), Color::Blue),
                 hairline: Token::new((44, 50, 58), Color::DarkGray),
@@ -311,7 +311,7 @@ impl Theme {
                 faint: Token::new((134, 139, 150), Color::DarkGray),
                 emphasis: Token::new((21, 24, 31), Color::Black),
                 attention: Token::new((38, 94, 168), Color::Blue),
-                user_surface: Token::new((232, 239, 246), Color::Cyan),
+                user_surface: Token::new((234, 234, 231), Color::Cyan),
                 selection: Token::new((190, 210, 235), Color::Cyan),
                 panel: Token::new((240, 240, 238), Color::Gray),
                 hairline: Token::new((220, 223, 228), Color::Gray),
@@ -384,7 +384,9 @@ impl Theme {
             // Enough to read as a block and no more. The person's own
             // message is the one thing on the screen they do not need to
             // find, so its surface states where it is rather than shouting.
-            user_surface: surface(0.10),
+            // It stays a grey: a wash of the scheme's blue was tried and
+            // fought the violet code ink beside it.
+            user_surface: surface(0.085),
             selection: surface(0.28),
             panel: surface(0.055),
             hairline: surface(0.2),
@@ -665,13 +667,6 @@ fn make_readable(tokens: &mut Tokens, faces: &Faces) {
     // diff still reads as a diff in sixteen colours.
     tokens.diff_added_bg = tinted(tokens.diff_added_bg, tokens.ok, faces);
     tokens.diff_removed_bg = tinted(tokens.diff_removed_bg, tokens.error, faces);
-
-    // The person's own words wear a wash of the scheme's blue, so the largest
-    // block on the screen is one of its colours rather than one more grey.
-    // Only the shade moves: in sixteen colours there is no wash to draw, and
-    // the block's face is decided below as for any other shade of the ground.
-    const YOU_WASH: f64 = 0.07;
-    tokens.user_surface.rgb = mix(tokens.user_surface.rgb, tokens.attention.rgb, YOU_WASH);
 
     // A scheme's block surfaces are shades of its background, and rounding
     // each one to its own terminal face turns a barely-there shade into a

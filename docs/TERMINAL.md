@@ -48,8 +48,9 @@ you look up (ages, folders, hosts, counts). Colour marks meaning only: the atten
 what needs you, red for failure, a soft violet mixed from the terminal's blue and magenta for code and paths inside
 the agent's text (the terminal's cyan in sixteen colours), green and red for lines added and removed wherever you
 read a diff or its counts, and the terminal's yellow for what is worth noticing, like a usage limit near. Headings
-and links in the agent's text keep the reading inks: a heading bright and bold, a link underlined. Your own messages sit on a surface
-washed with the terminal's blue. An agent that acts without asking has a heavy yellow composer box, heavy so that it
+and links in the agent's text keep the reading inks: a heading bright and bold, a link underlined. Your own messages sit on a plain grey
+surface, a shade of the terminal's ground; a wash of the terminal's blue was tried and dropped because it clashed
+with the violet of code. An agent that acts without asking has a heavy yellow composer box, heavy so that it
 shows in a scheme whose yellow is pale. Anything that looks like a control can be clicked, and every
 key in a key line too.
 

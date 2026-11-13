@@ -2,17 +2,17 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 6 recorded 5: input 0xb33bc545544b43269bcaeaf3c3d31338
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 18 recorded 17: fact Stream type=stream_event uuid=eefcc38d-14ef-443c-ba88-1cec55063b53
-  composer Send activity=Some(Running { key: "toolu_01W4Z2576KPZjFR1Jr8nXgXm" }) queue=[] underway=[] refused=[]
 ## 22 recorded 21: input 0xe2f925cdcf974c0cb496006a60038cca
-  composer Send activity=Some(Running { key: "toolu_01W4Z2576KPZjFR1Jr8nXgXm" }) queue=[QueuedRow { input_id: [226, 249, 37, 205, 207, 151, 76, 12, 180, 150, 0, 106, 96, 3, 140, 202], text: [Text("Also append the word BANANA.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
+  composer Send activity=Some(Working) queue=[QueuedRow { input_id: [226, 249, 37, 205, 207, 151, 76, 12, 180, 150, 0, 106, 96, 3, 140, 202], text: [Text("Also append the word BANANA.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 23 recorded 22: input stdin-4-now
+  composer Send activity=Some(Working) queue=[QueuedRow { input_id: [226, 249, 37, 205, 207, 151, 76, 12, 180, 150, 0, 106, 96, 3, 140, 202], text: [Text("Also append the word BANANA.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
+## 36 recorded 35: fact Stream type=stream_event uuid=1d0d7639-62b5-43f0-8627-27089c1d538b
   composer Send activity=Some(Running { key: "toolu_01W4Z2576KPZjFR1Jr8nXgXm" }) queue=[QueuedRow { input_id: [226, 249, 37, 205, 207, 151, 76, 12, 180, 150, 0, 106, 96, 3, 140, 202], text: [Text("Also append the word BANANA.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
 ## 51 recorded 50: fact Stream type=user uuid=e4d1874a-3e16-408e-afd7-849efd486d5b
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [226, 249, 37, 205, 207, 151, 76, 12, 180, 150, 0, 106, 96, 3, 140, 202], text: [Text("Also append the word BANANA.")], from_agent: None, steered: true, can_withdraw: false, can_send_now: false }] underway=[] refused=[]
 ## 53 recorded 52: fact Stream type=user uuid=e2f925cd-cf97-4c0c-b496-006a60038cca
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 60 recorded 59: fact Stream type=stream_event uuid=42073f83-8ac5-4be0-99b0-01d43a9f6b03
+## 74 recorded 73: fact Stream type=stream_event uuid=c522afc7-9bae-449f-afdf-da5cbce29c9c
   composer Send activity=Some(Running { key: "toolu_017KfEhkKGzHaSCkS3xfPKN7" }) queue=[] underway=[] refused=[]
 ## 89 recorded 88: fact Stream type=user uuid=351dc2c8-daab-4f68-8c1b-f874ef321e1b
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
@@ -26,10 +26,10 @@
      1 boundary:1 Hidden collapsed
      2 b33bc545-544b-4326-9bca-eaf3c3d31338 Prompt { text: [Text("Use Bash to run exactly: python3 -c 'import time; time.sleep(15)'; echo S1. Then use Bash to run exactly: python3 -c 'import time; time.sleep(5)'; echo S2. Then reply exactly DONE plus any extra words the user asked for.")], steered: false }
      3 daed4565-5473-4360-a4d4-1a8b869b074a Hidden collapsed
-     4 toolu_01W4Z2576KPZjFR1Jr8nXgXm Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", description: "Sleep 15 seconds then echo S1", state: Succeeded, exit_code: None, output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(15546) } run[toolu_01W4Z2576KPZjFR1Jr8nXgXm..toolu_01W4Z2576KPZjFR1Jr8nXgXm x1 recent=0 RunCounts { commands: 1, …
+     4 toolu_01W4Z2576KPZjFR1Jr8nXgXm Command { command: "python3 -c 'import time; time.sleep(15)'; echo S1", description: "Sleep 15 seconds then echo S1", state: Succeeded, exit_code: None, output_head: ["S1"], more_lines: 0, output_trimmed: false, output_tail: ["S1"], duration_ms: Some(15186) } run[toolu_01W4Z2576KPZjFR1Jr8nXgXm..toolu_01W4Z2576KPZjFR1Jr8nXgXm x1 recent=0 RunCounts { commands: 1, …
      5 e2f925cd-cf97-4c0c-b496-006a60038cca Prompt { text: [Text("Also append the word BANANA.")], steered: true }
      6 edc5f883-ff15-479c-bf5b-d75764375b3b Hidden collapsed
-     7 toolu_017KfEhkKGzHaSCkS3xfPKN7 Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", description: "Sleep 5 seconds then echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5289) } run[toolu_017KfEhkKGzHaSCkS3xfPKN7..toolu_017KfEhkKGzHaSCkS3xfPKN7 x1 recent=0 RunCounts { commands: 1, edi…
+     7 toolu_017KfEhkKGzHaSCkS3xfPKN7 Command { command: "python3 -c 'import time; time.sleep(5)'; echo S2", description: "Sleep 5 seconds then echo S2", state: Succeeded, exit_code: None, output_head: ["S2"], more_lines: 0, output_trimmed: false, output_tail: ["S2"], duration_ms: Some(5056) } run[toolu_017KfEhkKGzHaSCkS3xfPKN7..toolu_017KfEhkKGzHaSCkS3xfPKN7 x1 recent=0 RunCounts { commands: 1, edi…
      8 67ff0335-90fb-44b9-81bc-8913171abfb8 Hidden collapsed
      9 msg_011CgZmSbZQzKGtxpvz1PPnB:0 Prose { text: [Text("DONE BANANA")], streaming: false, working_note: false }
     10 turn:1 TurnEnd { duration_ms: Some(23356), failed: false }

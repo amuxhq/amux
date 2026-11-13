@@ -17,6 +17,7 @@
 
 mod facts;
 mod recording;
+mod streamed;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -132,6 +133,15 @@ struct TaskProgress {
     finished: bool,
 }
 
+/// A shell call whose input Claude is still writing: its id and the
+/// input's JSON as far as it has arrived.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct StreamingCall {
+    id: String,
+    name: String,
+    json: String,
+}
+
 /// A subagent or background task Claude reports.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct TaskState {
@@ -181,9 +191,13 @@ pub struct State {
     /// The uuids of the messages amux handed Claude that no result has
     /// answered yet.
     unanswered: BTreeSet<String>,
-    /// The message being streamed, and its open blocks by index.
+    /// The message being streamed.
     stream: Option<String>,
-    stream_tools: BTreeMap<u32, String>,
+    /// The shell calls of the message being streamed whose input is still
+    /// arriving, by block index. A checkpoint from before this field
+    /// existed reads it as empty.
+    #[serde(default)]
+    streaming_calls: BTreeMap<u32, StreamingCall>,
     /// Content blocks seen per assistant message, so whole blocks and
     /// streamed ones land on the same key.
     blocks: BTreeMap<String, u32>,
@@ -286,7 +300,7 @@ impl State {
             clients: BTreeMap::new(),
             unanswered: BTreeSet::new(),
             stream: None,
-            stream_tools: BTreeMap::new(),
+            streaming_calls: BTreeMap::new(),
             blocks: BTreeMap::new(),
             tools: BTreeMap::new(),
             asks: BTreeMap::new(),

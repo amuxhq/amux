@@ -1,0 +1,28 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"stream","json":{"claude_code_version":"2.1.323","model":"claude-opus-5-5","permissionMode":"default","session_id":"s1","subtype":"init","type":"system","uuid":"init-s1"}}
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 2 input {"id":"p1","prompt":{"text":"push"}}
+effect reply p1 accepted
+effect user 70310000-0000-4000-8000-000000000000 "push"
+item 70310000-0000-4000-8000-000000000000 prompt final input=p1 at=1800000000000 text="push"
+snapshot WORKING queue=[] working_on="push" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 3 fact {"channel":"stream","json":{"event":{"message":{"content":[],"id":"msg_1","model":"claude-opus-5-5","role":"assistant","type":"message","usage":{"input_tokens":2,"output_tokens":1}},"type":"message_start"},"parent_tool_use_id":null,"session_id":"s1","type":"stream_event","uuid":"ms"}}
+snapshot WORKING queue=[] working_on="push" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=2/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+## 4 fact {"channel":"stream","json":{"event":{"content_block":{"id":"toolu_a","input":{},"name":"Bash","type":"tool_use"},"index":0,"type":"content_block_start"},"parent_tool_use_id":null,"session_id":"s1","type":"stream_event","uuid":"bs0"}}
+## 5 fact {"channel":"stream","json":{"event":{"delta":{"partial_json":"{\"description\": \"Push b","type":"input_json_delta"},"index":0,"type":"content_block_delta"},"parent_tool_use_id":null,"session_id":"s1","type":"stream_event","uuid":"d1"}}
+## 6 fact {"channel":"stream","json":{"event":{"delta":{"partial_json":"oth repos\", \"command\": \"git pu","type":"input_json_delta"},"index":0,"type":"content_block_delta"},"parent_tool_use_id":null,"session_id":"s1","type":"stream_event","uuid":"d2"}}
+item toolu_a tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING input=shell:"git pu"
+## 7 fact {"channel":"stream","json":{"event":{"delta":{"partial_json":"sh origin main\\","type":"input_json_delta"},"index":0,"type":"content_block_delta"},"parent_tool_use_id":null,"session_id":"s1","type":"stream_event","uuid":"d3"}}
+item toolu_a tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING input=shell:"git push origin main"
+## 8 fact {"channel":"stream","json":{"event":{"delta":{"partial_json":"nsleep 1\", \"timeout\": 60000}","type":"input_json_delta"},"index":0,"type":"content_block_delta"},"parent_tool_use_id":null,"session_id":"s1","type":"stream_event","uuid":"d4"}}
+## 9 fact {"channel":"stream","json":{"event":{"index":0,"type":"content_block_stop"},"parent_tool_use_id":null,"session_id":"s1","type":"stream_event","uuid":"be0"}}
+## 10 fact {"channel":"stream","json":{"message":{"content":[{"id":"toolu_a","input":{"command":"git push origin main\nsleep 1","description":"Push both repos","timeout":60000},"name":"Bash","type":"tool_use"}],"id":"msg_1","model":"claude-opus-5-5","role":"assistant","type":"message","usage":{"input_tokens":2,"output_tokens":1}},"parent_tool_use_id":null,"session_id":"s1","type":"assistant","uuid":"a1"}}
+item toolu_a tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING input=shell:"git push origin main\nsleep 1"
+## 11 fact {"channel":"stream","json":{"event":{"content_block":{"id":"toolu_b","input":{},"name":"Bash","type":"tool_use"},"index":1,"type":"content_block_start"},"parent_tool_use_id":null,"session_id":"s1","type":"stream_event","uuid":"bs1"}}
+## 12 fact {"channel":"stream","json":{"event":{"delta":{"partial_json":"{\"command\": \"ls\", \"descr","type":"input_json_delta"},"index":1,"type":"content_block_delta"},"parent_tool_use_id":null,"session_id":"s1","type":"stream_event","uuid":"d5"}}
+## 13 fact {"channel":"stream","json":{"event":{"delta":{"partial_json":"iption\": \"List","type":"input_json_delta"},"index":1,"type":"content_block_delta"},"parent_tool_use_id":null,"session_id":"s1","type":"stream_event","uuid":"d6"}}
+## 14 fact {"channel":"stream","json":{"event":{"delta":{"partial_json":" files\"}","type":"input_json_delta"},"index":1,"type":"content_block_delta"},"parent_tool_use_id":null,"session_id":"s1","type":"stream_event","uuid":"d7"}}
+item toolu_b tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING input=shell:"ls"
+## 15 fact {"channel":"stream","json":{"event":{"index":1,"type":"content_block_stop"},"parent_tool_use_id":null,"session_id":"s1","type":"stream_event","uuid":"be1"}}

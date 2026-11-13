@@ -384,9 +384,16 @@ through the same task, so it never interleaves with a prompt half-way.
 
 The agent runs the spec's command with the spec's arguments plus
 `--print --input-format stream-json --output-format stream-json --verbose
---permission-prompt-tool stdio --replay-user-messages`, `--session-id <id>`
-or `--resume <id>` (kept in `private/provider-session` as for terminal
-Claude, and replaced the same way), `--settings <json>` and `--mcp-config`.
+--include-partial-messages --permission-prompt-tool stdio
+--replay-user-messages`, `--session-id <id>` or `--resume <id>` (kept in
+`private/provider-session` as for terminal Claude, and replaced the same
+way), `--settings <json>` and `--mcp-config`. It also appends one sentence to
+Claude's system prompt, joined to any `--append-system-prompt` the spec's
+arguments carry: write a Bash call's `description` before its `command`.
+Claude streams a call's input in the order the model writes its fields, and
+by its own tool definition the description comes last, after a command that
+can take the model many seconds to write; asked, it writes the description
+first, so the call's row can open on it.
 A reset gives Claude a new session, which the interpreter names once Claude's
 next `init` reports it; the agent saves it and names it on later user
 messages. Claude leads a process group of its own and finishes its turn

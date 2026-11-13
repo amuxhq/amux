@@ -2,7 +2,7 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 6 recorded 5: input 0xb179bed08ba84918856e1378bec65f8f
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 19 recorded 18: fact Stream type=stream_event uuid=b474190b-b77a-4875-892e-52b1f39015ea
+## 30 recorded 29: fact Stream type=stream_event uuid=7a101af3-282a-4e69-8d7c-0f78201f5489
   composer Send activity=Some(Running { key: "toolu_01AZBDo9L68r63wnDdnnMogS" }) queue=[] underway=[] refused=[]
 ## 36 recorded 35: fact Stream type=control_request
   ask 6b2032a9-41e7-45fd-99ad-18195d83be8d -> "toolu_01AZBDo9L68r63wnDdnnMogS" 1/1 Open

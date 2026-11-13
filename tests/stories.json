@@ -342,6 +342,18 @@
       "clients": ["phone", "terminal"]
     },
     {
+      "name": "chat.commands",
+      "shows": "A bare \"/\" in the composer: every command the agent offers rises over the composer, the first lit, with how many more scroll below.",
+      "clients": ["terminal"],
+      "why": "The phone's command list is drawn by the phone; this judges the terminal's flyover."
+    },
+    {
+      "name": "chat.commands-typed",
+      "shows": "\"/re\" in the composer: only the commands it starts are offered, a plugin's by the name after its namespace, with each one's argument hint and description.",
+      "clients": ["terminal"],
+      "why": "The phone's command list is drawn by the phone; this judges the terminal's flyover."
+    },
+    {
       "name": "chat.permissions",
       "shows": "The permission picker on an agent with full access, which is marked as acting without asking.",
       "clients": ["terminal"],

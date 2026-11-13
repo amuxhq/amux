@@ -21,6 +21,7 @@ use crate::theme::Theme;
 const W: u16 = 100;
 const H: u16 = 30;
 
+mod commands;
 mod narrow;
 mod onboarding;
 mod round2;

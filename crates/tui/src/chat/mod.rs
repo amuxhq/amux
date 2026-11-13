@@ -8,6 +8,7 @@
 
 pub mod ask;
 pub mod changes;
+pub mod commands;
 pub mod composer;
 pub mod feed;
 pub mod layout;
@@ -423,6 +424,11 @@ pub struct ChatView {
     picker: Option<crate::setup::Picker>,
     /// The picker's flyover as last drawn, for clicks.
     flyover: crate::setup::Flyover,
+    /// The lit command and whether the commands' flyover was closed.
+    menu: commands::Menu,
+    /// The commands' flyover as last drawn, for clicks; None when it was
+    /// not drawn.
+    menu_flyover: Option<crate::setup::Flyover>,
     /// Where the feed's first line was drawn, for clicks.
     feed_origin: (u16, u16),
     epoch: u64,
@@ -517,6 +523,8 @@ impl ChatView {
             setting_prefix: false,
             picker: None,
             flyover: crate::setup::Flyover::default(),
+            menu: commands::Menu::default(),
+            menu_flyover: None,
             feed_origin: (0, 0),
             thumbs: thumbs::Thumbs::new(crate::terminal::image_picker()),
             covered: false,
@@ -842,7 +850,60 @@ impl ChatView {
         if let Some(selected) = self.tray {
             return self.tray_key(state, selected, key);
         }
+        if let Some(effects) = self.command_key(state, key) {
+            return effects;
+        }
         self.composer_key(state, key)
+    }
+
+    /// The agent's commands the draft offers now: while the composer has
+    /// the keys, its cursor at the draft's end, and the person has not
+    /// closed them on this draft.
+    fn offered_commands(&self, state: &SessionState) -> Vec<ui_view::CommandMatch> {
+        let text = self.editor.text();
+        if !self.composer_has_keys(state)
+            || ui_view::sign_in(state).is_some()
+            || self.editor.cursor_chars() != text.chars().count()
+            || self.menu.closed(text)
+        {
+            return Vec::new();
+        }
+        ui_view::command_matches(&ui_view::settings(state).commands, text)
+    }
+
+    /// A key while the commands' flyover is open: it moves the lit command,
+    /// fills it in, runs it or closes the flyover. None when the flyover is
+    /// not open or the key is the draft's.
+    fn command_key(&mut self, state: &SessionState, key: KeyEvent) -> Option<Vec<ChatEffect>> {
+        let matches = self.offered_commands(state);
+        if matches.is_empty() || key.modifiers.contains(KeyModifiers::CONTROL) {
+            return None;
+        }
+        let text = self.editor.text().to_owned();
+        let lit = &matches[self.menu.selected(&text, &matches)];
+        match key.code {
+            KeyCode::Up => self.menu.step(&text, &matches, -1),
+            KeyCode::Down => self.menu.step(&text, &matches, 1),
+            KeyCode::Tab if key.modifiers.is_empty() => self.fill_command(lit),
+            KeyCode::Enter if !key.modifiers.contains(KeyModifiers::SHIFT) => {
+                let runs = commands::enter_runs(&lit.command);
+                self.fill_command(lit);
+                if runs {
+                    return Some(self.submit(state));
+                }
+            }
+            KeyCode::Esc => self.menu.close(&text),
+            _ => return None,
+        }
+        Some(vec![])
+    }
+
+    /// Puts a picked command in the draft, as the shared view says.
+    fn fill_command(&mut self, found: &ui_view::CommandMatch) {
+        let attachments = self.editor.attachments().to_vec();
+        self.editor.set(&found.picked, attachments);
+        self.focus = None;
+        self.not_sent = None;
     }
 
     /// Whether `card` takes a key pressed at `now_ms`, the key before it
@@ -1480,6 +1541,20 @@ impl ChatView {
                     }
                 }
                 _ => {}
+            }
+            return vec![];
+        }
+        // The commands' flyover: a click on a command fills it in; one
+        // elsewhere goes on as usual.
+        if event.kind == MouseEventKind::Down(MouseButton::Left)
+            && let Some(flyover) = &self.menu_flyover
+            && flyover.covers(event.column, event.row)
+        {
+            if let Some(at) = flyover.choice_at(event.column, event.row)
+                && let Some(found) = self.offered_commands(state).get(at)
+            {
+                let found = found.clone();
+                self.fill_command(&found);
             }
             return vec![];
         }
@@ -2802,6 +2877,15 @@ impl ChatView {
                 Hint::Keys(keys(&pairs))
             };
         }
+        let offered = if plain_box.is_some() {
+            self.offered_commands(state)
+        } else {
+            Vec::new()
+        };
+        let lit_command = self.menu.selected(self.editor.text(), &offered);
+        if let Some(lit) = offered.get(lit_command) {
+            hint = Hint::Keys(keys(&commands::hints(&lit.command)));
+        }
         if let Some(selecting) = self.selection_hint(state) {
             hint = selecting;
         }
@@ -3053,6 +3137,7 @@ impl ChatView {
         let covered = self.covered
             || self.panel.is_some()
             || self.picker.is_some()
+            || !offered.is_empty()
             || self.stop_ask.is_some();
         self.thumbs.draw(
             paint,
@@ -3110,6 +3195,29 @@ impl ChatView {
         }
         if let Some(at) = flyover_cursor {
             paint.set_cursor_position(at);
+        }
+        // The draft is one "/word" (or ends in a Codex "$word"): the
+        // agent's commands it starts rise from the box, lined up under the
+        // draft's words.
+        self.menu_flyover = None;
+        if let (false, Some((at, boxed))) = (offered.is_empty(), &boxed_at) {
+            let all = ui_view::settings(state).commands;
+            let room = usize::from(area.width).saturating_sub(4);
+            let (lines, rows) = commands::panel(&all, &offered, lit_command, room, theme);
+            let anchor = (area.x + boxed.text_x as u16).saturating_sub(2);
+            let above = (area.y as usize + bottom_start + at) as u16;
+            if let Some((rect, skip)) = crate::panel::rise(paint, lines, anchor, above, area) {
+                self.menu_flyover = Some(crate::setup::Flyover {
+                    rect,
+                    choices: rows
+                        .into_iter()
+                        .enumerate()
+                        .skip(skip)
+                        .filter_map(|(line, at)| at.map(|at| (rect.y + (line - skip) as u16, at)))
+                        .collect(),
+                    cursor: None,
+                });
+            }
         }
         // The leader held: its keys rise from the hint line's `ctrl+a
         // more`, in a flyover like the settings', over the feed.

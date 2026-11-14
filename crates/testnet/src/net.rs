@@ -241,6 +241,10 @@ pub enum NetError {
     Serve(#[from] node::ServeError),
     #[error("refused: {}", .0.message())]
     Refused(Box<tonic::Status>),
+    /// A spawn an agent asked its own process for got no child: the words
+    /// its model would read.
+    #[error("refused: {0}")]
+    SpawnRefused(String),
     #[error(transparent)]
     Stuck(#[from] Stuck),
     #[error(transparent)]
@@ -1424,10 +1428,12 @@ impl Net {
         Ok(ClientApi::new(&self.runtime(&agent.host)?, Some(agent.id)))
     }
 
-    /// `parent` spawns `decl` through its tools socket, naming
-    /// `decl.host` as the host: the parent's host resolves the name among
-    /// the hosts it trusts and forwards the create there, where the child
-    /// plays its script in that host's work directory.
+    /// `parent` spawns `decl` as its own spawn tool does: the request goes
+    /// to `parent`'s agent process on its own socket, and that process
+    /// asks its daemon on its tools socket. It names `decl.host` as the
+    /// host: the parent's host resolves the name among the hosts it trusts
+    /// and forwards the create there, where the child plays its script in
+    /// that host's work directory.
     pub async fn spawn_child(
         &mut self,
         parent: &str,
@@ -1465,16 +1471,24 @@ impl Net {
             ..CreateAgentRequest::default()
         };
         providers::choose(&self.choices(), id, provider, decl.kind, &script)?;
-        let tools = self.tools(parent)?;
+        let asked = self.agent_dir(parent)?;
         let target = self.runtime(&decl.host)?;
         target.set_launch(self.launch(&host, Some((decl.kind, &script, provider))));
-        let spawned = tools.create_agent(tonic::Request::new(request)).await;
+        let spawned = agent_dir::agent_sock::spawn(&asked, &request).await;
         target.set_launch(self.launch(&host, None));
-        let agent = spawned
-            .map_err(|status| NetError::Refused(Box::new(status)))?
-            .into_inner()
-            .agent
-            .expect("a created agent is answered");
+        let agent = match spawned {
+            Ok(agent_dir::agent_sock::Spawned::Created(response)) => {
+                response.agent.expect("a created agent is answered")
+            }
+            Ok(agent_dir::agent_sock::Spawned::Refused(why)) => {
+                return Err(NetError::SpawnRefused(why));
+            }
+            Err(error) => {
+                return Err(NetError::SpawnRefused(format!(
+                    "{parent}'s agent process did not answer: {error:?}"
+                )));
+            }
+        };
         self.agents.insert(
             decl.name.clone(),
             NetAgent {

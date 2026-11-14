@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package amux.v1;
 
+import "amux/v1/agent_service.proto";
 import "amux/v1/chat.proto";
 import "amux/v1/records.proto";
 import "amux/v1/dump.proto";
@@ -9,7 +10,8 @@ import "amux/v1/session_service.proto";
 
 // The agent process's contract with its daemon: the immutable spec file each
 // incarnation starts from, and the frames on the agent directory's ctl.sock
-// and pty.sock. The journal between them frames Step (records.proto).
+// and pty.sock. The journal between them frames Step (records.proto). Last,
+// what the agent's tool server asks of the process on private/agent.sock.
 
 // One immutable file per incarnation, spec.<n> in the agent directory. The
 // daemon writes it before each spawn and never rewrites it; a resume writes
@@ -254,4 +256,28 @@ message PtyHello {
 message PtyResize {
   uint32 rows = 1;
   uint32 cols = 2;
+}
+
+// What an agent's tool server asks its own agent process, on
+// private/agent.sock in the agent directory. One connection carries one ask
+// and its answer, each framed as on ctl.sock.
+message AgentAsk {
+  oneof of {
+    // A child agent: the request the daemon takes, as the tool server
+    // would have sent it there. The agent process hands it to its daemon
+    // and the answer back, so it knows of every child it asked for from
+    // before the daemon does.
+    CreateAgentRequest spawn = 1;
+  }
+}
+
+message AgentAnswer {
+  oneof of {
+    // The daemon made the child: its answer, as it gave it.
+    CreateAgentResponse spawned = 1;
+    // The ask was not carried out, or nobody can say whether it was: why,
+    // in the words the model reads. Also the answer to an ask the agent
+    // process does not know, from a build before that ask existed.
+    string refused = 2;
+  }
 }

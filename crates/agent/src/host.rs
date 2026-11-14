@@ -1,6 +1,7 @@
 //! The agent process's driver: the provider child, its terminal or
-//! app-server socket, the hooks socket, the control socket, attach serving
-//! and the journal writer around the agent core.
+//! app-server socket, the hooks socket, the control socket, the socket
+//! its tool server asks on, attach serving and the journal writer around
+//! the agent core.
 //!
 //! Everything the process hears becomes an [`Input`] to
 //! [`agent_core::Agent`], stepped with the clock as of that moment, and
@@ -35,7 +36,7 @@ use crate::dir::{self, PtyLog};
 use crate::hook_answers::HookAnswers;
 use crate::local_socket::{LocalListener, LocalStream};
 use crate::provider::{Provider, ProviderEvent};
-use crate::{AgentError, ExitCause, attach, ctl};
+use crate::{AgentError, ExitCause, attach, ctl, spawns};
 
 /// The facts ring's size across its two segments, when the spec leaves it
 /// unset.
@@ -161,6 +162,8 @@ struct Channels {
     jobs: mpsc::UnboundedReceiver<(JobId, JobResult)>,
     /// Records built for dumps' asks.
     records: mpsc::UnboundedReceiver<Built>,
+    /// What the tool server's socket heard of the children it asks for.
+    spawns: mpsc::UnboundedReceiver<spawns::Heard>,
 }
 
 /// A write the core asked for failed.
@@ -190,6 +193,8 @@ pub(crate) async fn run<I: Interpreter>(
     } else {
         None
     };
+    let asks =
+        LocalListener::bind(&agent_dir::agent_sock::path(&dir)).map_err(AgentError::Socket)?;
 
     let (provider_tx, provider_rx) = mpsc::channel(256);
     let (connections_tx, connections_rx) = mpsc::channel(4);
@@ -197,7 +202,11 @@ pub(crate) async fn run<I: Interpreter>(
     let (control_tx, control_rx) = mpsc::unbounded_channel();
     let (jobs_tx, jobs_rx) = mpsc::unbounded_channel();
     let (records_tx, records_rx) = mpsc::unbounded_channel();
-    let mut tasks = vec![tokio::spawn(accept(ctl, connections_tx))];
+    let (spawns_tx, spawns_rx) = mpsc::unbounded_channel();
+    let mut tasks = vec![
+        tokio::spawn(accept(ctl, connections_tx)),
+        tokio::spawn(spawns::serve(asks, dir.clone(), spawns_tx)),
+    ];
     let hook_answers = HookAnswers::default();
     if let Some(hooks) = hooks {
         let gate = HookGate {
@@ -294,6 +303,7 @@ pub(crate) async fn run<I: Interpreter>(
         control: control_rx,
         jobs: jobs_rx,
         records: records_rx,
+        spawns: spawns_rx,
     };
     let cause = driver.run(&mut channels).await;
     // The listeners live in these tasks; waiting for each to be dropped
@@ -388,6 +398,13 @@ impl<I: Interpreter> Driver<I> {
                     self.feed(Input::JobDone { job, result }).await;
                 }
                 Some(built) = channels.records.recv() => self.built(built),
+                Some(spawns::Heard { child, heard, taken }) = channels.spawns.recv() => {
+                    self.feed(Input::Spawn { child, heard }).await;
+                    // The spawn goes on only now that the core has it: the
+                    // request to the daemon, or the answer to the tool
+                    // server and with it the rest of the provider's turn.
+                    let _ = taken.send(());
+                }
                 () = sleep => self.on_timers().await,
             }
         }

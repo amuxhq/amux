@@ -972,13 +972,17 @@ impl Daemon {
 
     /// A connection to the agent's process said Hello: the process is live
     /// and hears which of its children are, and a start waiting on it is
-    /// answered.
+    /// answered. A process this daemon has just started has no children to
+    /// hear of and is told nothing. One it found running is told even when
+    /// it has none: it may hold a spawn its last daemon took and went away
+    /// without answering, which only this daemon's word settles.
     pub(crate) fn process_hello(&mut self, agent: AgentId, out: &mut Vec<Output>) {
         let children = self.children_of(agent).unwrap_or_default();
+        let found_running = self.doing(agent) != Some(&Doing::Starting);
         let process = self.families.processes.entry(agent).or_default();
         process.hello = true;
         process.told = children;
-        if !process.told.is_empty() {
+        if found_running || !process.told.is_empty() {
             out.push(Output::WriteControl {
                 agent,
                 frame: children_frame(&process.told),
@@ -2017,6 +2021,22 @@ mod tests {
             Some(Vec::new()),
             "{exited:?}"
         );
+    }
+
+    /// A process the daemon has just started is told nothing of children
+    /// it cannot have. One that says Hello with no start waiting on it was
+    /// found running, as a restarted daemon finds it: it is told it has
+    /// none, which settles a spawn its last daemon never answered.
+    #[test]
+    fn a_process_found_running_hears_its_children_even_when_it_has_none() {
+        let mut rig = rig();
+        let (_, out) = rig.call(create(PARENT, "lead", None));
+        assert!(out.contains(&Output::DialAgent { agent: PARENT }));
+        let started = rig.step(Input::AgentHello { agent: PARENT });
+        assert_eq!(children_told(&started, PARENT), None, "{started:?}");
+
+        let found = rig.step(Input::AgentHello { agent: PARENT });
+        assert_eq!(children_told(&found, PARENT), Some(Vec::new()), "{found:?}");
     }
 
     #[test]

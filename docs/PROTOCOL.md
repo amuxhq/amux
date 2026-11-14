@@ -789,7 +789,7 @@ never does, because its directory and journal are its whole interface (see
 | --- | --- | --- |
 | The installation front door, `<root>/amux.sock` | `InstallationService` | every client on this machine, to find profiles, sign them in and follow them |
 | A profile's client socket, `<data_dir>/profiles/<id>/sock` | `AgentService`, `SessionService`, `ProfileAdminService` | the terminal client, the CLI and third-party clients, at the path the front door reports as `Profile.socket_path` |
-| An agent's `agents/<id>/tools.sock` | `AgentService` and `SessionService`, with that agent as the caller | the agent's MCP tool server, and nothing else |
+| An agent's `agents/<id>/tools.sock` | `AgentService` and `SessionService`, with that agent as the caller | the agent's MCP tool server and, for the child a spawn asks for, its agent process; nothing else |
 | A profile's `link.sock` | a link, not a service | `amux internal ssh-link`, carrying an SSH link |
 | A link stream whose handshake presented a pinned key | `AgentService` and `SessionService`, with that host as the caller | paired daemons, including a phone's embedded daemon |
 | A link stream admitted by an open pairing window | `PairingService` | a host pairing with this one |

@@ -24,12 +24,15 @@
 //!   the final boundary, the provider is asked to finish, and the agent
 //!   waits for it to exit, killing it past a deadline.
 //! - An agent with a parent is one-shot: at a turn end with nothing queued,
-//!   running or accepted-but-unconsumed, and the last report of every child
-//!   incarnation the daemon named live already taken, it exits, and input
-//!   arriving while it does is refused as `REFUSAL_EXITING`, on which the
-//!   daemon resumes it with that input. A turn end after which the
-//!   incarnation exits is marked last, so its parent can tell its final
-//!   report from an earlier one.
+//!   running or accepted-but-unconsumed, no child it asked for still
+//!   unsettled, and the last report of every child incarnation it was told
+//!   of already taken, it exits, and input arriving while it does is
+//!   refused as `REFUSAL_EXITING`, on which the daemon resumes it with that
+//!   input. A turn end after which the incarnation exits is marked last, so
+//!   its parent can tell its final report from an earlier one. It knows the
+//!   children it asked for itself, since its tool server's spawn passes
+//!   through the process ([`Input::Spawn`]), and the daemon's `children`
+//!   frame says which exist.
 //! - The provider exiting ends the agent, whatever state it was in.
 
 #![forbid(unsafe_code)]
@@ -46,6 +49,7 @@ use interpret::{Effect, Event, Interpreter, Stepped, reply};
 use wire::{AgentHello, AgentSpec, CtlFrame, Nudge, Phase, Step, Verdict, ctl_frame};
 
 use crate::awaited::Awaited;
+pub use crate::awaited::Spawn;
 pub use crate::start::Resumed;
 
 /// A provider fact exactly as it arrived.
@@ -112,6 +116,15 @@ pub enum Input {
     Control {
         connection: ConnId,
         frame: CtlFrame,
+    },
+    /// What became of a child the agent's own tool server asked for, as the
+    /// driver carries the request to the daemon and the answer back. The
+    /// driver feeds `Requested` before the daemon can have heard of the
+    /// child, and the answer before the tool server has it, so no turn can
+    /// end on a spawn the core has not heard of.
+    Spawn {
+        child: Vec<u8>,
+        heard: Spawn,
     },
     Timer(TimerId),
     /// The clock, as an input.
@@ -359,8 +372,9 @@ pub struct Turn {
     phase: Phase,
     /// A turn ended in this step.
     ended: bool,
-    /// The turn that ended was marked this one-shot incarnation's last: the
-    /// step ends by exiting it finished.
+    /// The step ends by exiting this one-shot incarnation finished: the turn
+    /// that ended was marked its last, or the last child it sat idle
+    /// waiting on turned out never to have been made.
     finishing: bool,
 }
 
@@ -540,6 +554,7 @@ impl<I: Interpreter> Agent<I> {
             "drain_deadline": life.ask.is_some(),
             "phase": life.turn.phase as i32,
             "children_owe_reports": !life.awaited.none(),
+            "spawns_unsettled": life.awaited.unsettled(),
             "asked_to_exit": life.asked_to_exit.as_ref().map(cause),
             "reading_git": life.git.reading.is_some(),
             "exited": life.exited.as_ref().map(cause),
@@ -703,7 +718,17 @@ impl<I: Interpreter> Agent<I> {
             }
             Input::Control { connection, frame } => {
                 if self.life.connection == Some(connection) {
-                    self.control(frame, out);
+                    self.control(connection, frame, out);
+                }
+            }
+            // Kept in any mode: an agent on its way out decides nothing by
+            // it, and one that stays must not have missed it.
+            Input::Spawn { child, heard } => {
+                let connection = self.life.connection;
+                let unsettled = self.life.awaited.unsettled();
+                self.life.awaited.heard(&child, heard, connection);
+                if self.life.awaited.unsettled() < unsettled {
+                    self.settled();
                 }
             }
             Input::Timer(id) => self.timer(id, out),
@@ -712,7 +737,7 @@ impl<I: Interpreter> Agent<I> {
         }
     }
 
-    fn control(&mut self, frame: CtlFrame, out: &mut Vec<Output>) {
+    fn control(&mut self, connection: ConnId, frame: CtlFrame, out: &mut Vec<Output>) {
         match frame.of {
             // A dump is answered in any mode: a draining agent is often the
             // one someone wants to look at.
@@ -755,10 +780,26 @@ impl<I: Interpreter> Agent<I> {
                 }
             }
             Some(ctl_frame::Of::Stop(stop)) => self.stop(stop.kill, out),
-            Some(ctl_frame::Of::Children(children)) => self.life.awaited.children(&children),
+            Some(ctl_frame::Of::Children(children)) => {
+                let settled = self.life.awaited.children(&children, connection);
+                if settled {
+                    self.settled();
+                }
+            }
             // Hello, nudges, dump parts and replies travel the other way.
             _ => {}
         }
+    }
+
+    /// A child asked for has been settled. Its answer comes while the turn
+    /// that spawned it runs, and that turn's end decides as ever; but a
+    /// turn cut short can end first, and a spawn no daemon answered is
+    /// settled whenever the next daemon speaks. If the child turns out not
+    /// to exist, no report is coming to start another turn: a one-shot
+    /// agent this leaves idle with nothing to wait for has finished.
+    fn settled(&mut self) {
+        self.life.turn.finishing =
+            self.life.mode == Mode::Running && self.life.params.one_shot && self.quiescent();
     }
 
     /// An input or agent message reaches the interpreter while the agent
@@ -930,8 +971,9 @@ impl<I: Interpreter> Agent<I> {
     }
 
     /// No accepted agent message waits to be consumed, no typed prompt
-    /// waits for the provider to record it, and no child's last report is
-    /// still to come. A prompt typed into one of terminal Claude's own
+    /// waits for the provider to record it, no child asked for is still
+    /// unsettled, and no child's last report is still to come. A prompt
+    /// typed into one of terminal Claude's own
     /// screens is never recorded, so a one-shot child stays, idle, until a
     /// later prompt row takes it, a stop ends it or its daemon is lost.
     fn nothing_pending(&self) -> bool {

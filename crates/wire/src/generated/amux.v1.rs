@@ -14519,6 +14519,65 @@ impl ::prost::Name for PtyResize {
         "type.googleapis.com/amux.v1.PtyResize".into()
     }
 }
+/// What an agent's tool server asks its own agent process, on
+/// private/agent.sock in the agent directory. One connection carries one ask
+/// and its answer, each framed as on ctl.sock.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AgentAsk {
+    #[prost(oneof = "agent_ask::Of", tags = "1")]
+    pub of: ::core::option::Option<agent_ask::Of>,
+}
+/// Nested message and enum types in `AgentAsk`.
+pub mod agent_ask {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Of {
+        /// A child agent: the request the daemon takes, as the tool server
+        /// would have sent it there. The agent process hands it to its daemon
+        /// and the answer back, so it knows of every child it asked for from
+        /// before the daemon does.
+        #[prost(message, tag = "1")]
+        Spawn(super::CreateAgentRequest),
+    }
+}
+impl ::prost::Name for AgentAsk {
+    const NAME: &'static str = "AgentAsk";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AgentAsk".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.AgentAsk".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AgentAnswer {
+    #[prost(oneof = "agent_answer::Of", tags = "1, 2")]
+    pub of: ::core::option::Option<agent_answer::Of>,
+}
+/// Nested message and enum types in `AgentAnswer`.
+pub mod agent_answer {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Of {
+        /// The daemon made the child: its answer, as it gave it.
+        #[prost(message, tag = "1")]
+        Spawned(super::CreateAgentResponse),
+        /// The ask was not carried out, or nobody can say whether it was: why,
+        /// in the words the model reads. Also the answer to an ask the agent
+        /// process does not know, from a build before that ask existed.
+        #[prost(string, tag = "2")]
+        Refused(::prost::alloc::string::String),
+    }
+}
+impl ::prost::Name for AgentAnswer {
+    const NAME: &'static str = "AgentAnswer";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AgentAnswer".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.AgentAnswer".into()
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum PtyMode {

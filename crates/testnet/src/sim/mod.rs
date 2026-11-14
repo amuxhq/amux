@@ -35,7 +35,7 @@ use std::time::Duration;
 
 use daemon_core::payload::{ClientRequest, PeerReply, PeerRequest, Response};
 use daemon_core::{AgentId, CallId, Create, HostId, Input, Resume};
-use models::net::{Lane, Net};
+use models::net::{Net, Spawn};
 use rng::Rng;
 pub use shrink::{Reproduction, same_failure, shrink};
 use uuid::Uuid;
@@ -343,6 +343,14 @@ impl SimNet {
     /// Creates an agent on its host, as a client does, and waits for its
     /// process to say Hello.
     pub fn spawn(&mut self, decl: AgentDecl) -> Result<wire::Agent, NetError> {
+        self.create(decl, false)
+    }
+
+    /// Creates an agent on its host. With `asked_by_parent` the create is
+    /// its parent's own spawn: the parent's process hears of the child
+    /// before the daemon does and of the answer once it has come, as the
+    /// agent process hears each spawn it carries to its daemon.
+    fn create(&mut self, decl: AgentDecl, asked_by_parent: bool) -> Result<wire::Agent, NetError> {
         if self.agents.contains_key(&decl.name) {
             return Err(NetError::AgentExists(decl.name));
         }
@@ -407,7 +415,13 @@ impl SimNet {
             None => sim.net.add_agent(agent, &decl.name, &steps),
         }
         let what = format!("{} to start on {}", decl.name, decl.host);
-        let row = match forwarded_by {
+        let asking = parent_id
+            .filter(|_| asked_by_parent)
+            .and_then(|parent| sim.net.process_of(parent));
+        if let Some(p) = asking {
+            sim.net.spawn_heard(p, agent.0.to_vec(), Spawn::Requested);
+        }
+        let made = match forwarded_by {
             Some(from) => {
                 let request = wire::CreateAgentRequest {
                     agent_id: agent.0.to_vec(),
@@ -424,31 +438,25 @@ impl SimNet {
                     host: host_id,
                     request: Box::new(PeerRequest::CreateAgent(request)),
                 };
-                let row = registry_call(&mut sim, from, &what, forward)?;
-                // The answer reaches the parent's provider through its
-                // tools, after the frames its daemon wrote to its process
-                // in the same step: those arrive before the provider can
-                // go on.
-                if let Some(p) = parent_id.and_then(|parent| sim.net.process_of(parent)) {
-                    while let Some(lane) = sim
-                        .net
-                        .deliverable()
-                        .into_iter()
-                        .find(|lane| matches!(lane, Lane::ToAgent(to, _) if *to == p))
-                    {
-                        sim.net.deliver(lane);
-                    }
-                }
-                row
+                registry_call(&mut sim, from, &what, forward)
             }
             None => registry_call(
                 &mut sim,
                 h,
                 &what,
                 ClientRequest::CreateAgent(Box::new(create)),
-            )?,
+            ),
+        };
+        if let Some(p) = asking {
+            let heard = match &made {
+                Ok(Some(row)) => Spawn::Created {
+                    incarnation: row.incarnation,
+                },
+                Ok(None) | Err(_) => Spawn::Refused,
+            };
+            sim.net.spawn_heard(p, agent.0.to_vec(), heard);
         }
-        .ok_or_else(|| answered_without_row(&decl.host, &what))?;
+        let row = made?.ok_or_else(|| answered_without_row(&decl.host, &what))?;
         drop(sim);
         self.agents.insert(
             decl.name.clone(),
@@ -747,7 +755,7 @@ impl World for SimNet {
         parent: &str,
         decl: AgentDecl,
     ) -> Result<wire::Agent, NetError> {
-        self.spawn(decl.parent(parent))
+        self.create(decl.parent(parent), true)
     }
 
     async fn delete(&mut self, agent: &str) -> Result<Ack, NetError> {

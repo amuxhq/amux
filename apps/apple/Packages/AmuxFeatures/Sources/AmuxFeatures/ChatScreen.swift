@@ -1062,8 +1062,8 @@ enum DeleteWords {
         }
     }
 
-    /// "The branch fix-scroll keeps what was committed.", when the branch has
-    /// commits of its own.
+    /// "The branch fix-scroll keeps what was committed.", whenever the row
+    /// names a branch.
     static func branch(_ goes: WorkspaceGoes) -> String? {
         goes.branch.map { String(localized: "The branch \($0) keeps what was committed.") }
     }

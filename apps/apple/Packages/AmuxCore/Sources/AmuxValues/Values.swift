@@ -7297,8 +7297,8 @@ public enum Waiting: String, Codable, Hashable, Sendable, CaseIterable {
 /// uncommitted changes the row last reported. A client says so before
 /// confirming, and sends the delete with consent to discard them.
 public struct WorkspaceGoes: Codable, Hashable, Sendable {
-    /// The branch that keeps what was committed; none when it has no
-    /// commits of its own.
+    /// The branch that keeps what was committed; none on a detached head
+    /// or before the row's git facts were read.
     public var branch: String?
     /// Its uncommitted changes, when it has any.
     public var uncommitted: ChangeTotals?

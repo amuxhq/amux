@@ -446,7 +446,7 @@ fn archive_in_worktree(git: wire::Git) -> FleetState {
 /// worktree goes, with the uncommitted changes its row reports and the
 /// branch that keeps what was committed; confirming agrees to lose those
 /// changes. Without changes the worktree just goes, and nothing is
-/// discarded; a branch with nothing committed is not named.
+/// discarded; the branch is named whenever the row has one.
 #[test]
 fn deleting_the_last_agent_in_a_worktree_warns_what_goes_and_confirming_discards_it() {
     let totals = |files, added, removed| {
@@ -492,8 +492,8 @@ fn deleting_the_last_agent_in_a_worktree_warns_what_goes_and_confirming_discards
     }));
     assert!(screen.contains("Its worktree goes too."), "{screen}");
     assert!(
-        !screen.contains("The branch"),
-        "nothing committed:\n{screen}"
+        screen.contains("The branch fix-scroll keeps what was committed."),
+        "the row cannot say the branch has nothing committed:\n{screen}"
     );
     assert!(
         matches!(effects.as_slice(), [FleetEffect::Delete(_, false)]),

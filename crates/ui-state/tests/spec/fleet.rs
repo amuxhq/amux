@@ -449,18 +449,22 @@ fn a_delete_removes_the_workspace_only_with_its_last_member_counting_its_descend
     );
 }
 
+/// Equal totals on the branch and uncommitted do not say the branch has no
+/// commits of its own: a line committed and then changed again uncommitted
+/// gives equal totals over a unique commit. The row carries no count of
+/// commits, so the branch is always named when the row has one.
 #[test]
-fn a_branch_whose_changes_are_all_uncommitted_is_not_named() {
+fn the_branch_is_named_whenever_the_row_has_one() {
     use wire::experimental::WorkspaceKind::Git;
     let mut fleet = FleetState::new();
     for msg in [
         host("a"),
         agent(in_workspace(
-            row("a", "fresh", Phase::Idle, None),
+            row("a", "same", Phase::Idle, None),
             Git,
-            "/w/fresh",
+            "/w/same",
             true,
-            git("fresh", totals(2, 5, 1), totals(2, 5, 1)),
+            git("same", totals(1, 1, 1), totals(1, 1, 1)),
         )),
         agent(in_workspace(
             row("a", "clean", Phase::Idle, None),
@@ -469,14 +473,35 @@ fn a_branch_whose_changes_are_all_uncommitted_is_not_named() {
             true,
             git("clean", totals(0, 0, 0), totals(4, 30, 2)),
         )),
+        agent(in_workspace(
+            row("a", "detached", Phase::Idle, None),
+            Git,
+            "/w/detached",
+            true,
+            Some(wire::Git {
+                branch: None,
+                ..Default::default()
+            }),
+        )),
         caught_up(),
     ] {
         fleet.update(msg);
     }
-    let fresh = fleet.delete_removes_workspace(&at("a", "fresh")).unwrap();
-    assert_eq!(fresh.branch, None, "nothing committed on it to keep");
-    assert_eq!(fresh.uncommitted, totals(2, 5, 1));
+    let same = fleet.delete_removes_workspace(&at("a", "same")).unwrap();
+    assert_eq!(
+        same.branch.as_deref(),
+        Some("same"),
+        "equal totals may hide a commit"
+    );
+    assert_eq!(same.uncommitted, totals(1, 1, 1));
     let clean = fleet.delete_removes_workspace(&at("a", "clean")).unwrap();
     assert_eq!(clean.uncommitted, None, "no uncommitted files");
     assert_eq!(clean.branch.as_deref(), Some("clean"));
+    let detached = fleet
+        .delete_removes_workspace(&at("a", "detached"))
+        .unwrap();
+    assert_eq!(
+        detached.branch, None,
+        "a detached head has no branch to name"
+    );
 }

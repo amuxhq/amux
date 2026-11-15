@@ -29,8 +29,8 @@ const WORKSPACES: &str = "workspaces/1";
 pub struct WorkspaceGoes {
     /// Its uncommitted changes, when it has any.
     pub uncommitted: Option<ChangeTotals>,
-    /// The branch that keeps what was committed; none when it has no
-    /// commits of its own.
+    /// The branch that keeps what was committed; none on a detached head
+    /// or before the row's git facts were read.
     pub branch: Option<String>,
 }
 
@@ -292,11 +292,11 @@ impl FleetState {
         let uncommitted = git
             .and_then(|git| git.uncommitted)
             .filter(|totals| totals.files > 0);
-        // A branch whose changes are all uncommitted has no commits of its
-        // own to keep.
-        let branch = git
-            .filter(|git| git.on_branch != git.uncommitted)
-            .and_then(|git| git.branch.clone());
+        // Named whenever the row has one: equal totals on the branch and
+        // uncommitted do not prove it has no commits of its own (a line
+        // committed, then changed again uncommitted), and the row carries
+        // no count of commits.
+        let branch = git.and_then(|git| git.branch.clone());
         Some(WorkspaceGoes {
             uncommitted,
             branch,

@@ -2789,6 +2789,7 @@ fn timer_kind(id: &TimerId) -> &'static str {
         TimerId::Source(..) => "Source",
         TimerId::Start(_) => "Start",
         TimerId::Exit(_) => "Exit",
+        TimerId::Grace(_) => "Grace",
         TimerId::PairWindow => "PairWindow",
         TimerId::Pairing(_) => "Pairing",
         TimerId::Attempt(_) => "Attempt",

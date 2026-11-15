@@ -634,6 +634,8 @@ pub struct Profile {
     pub profile: ProfileId,
     /// The installation's generation as of this run.
     pub generation: u64,
+    /// The machine has booted since the daemon before this one started.
+    pub rebooted: bool,
     /// The profile's directory.
     pub dir: PathBuf,
     /// The profile's store, open.
@@ -667,6 +669,7 @@ impl ProfileRuntime {
         let Profile {
             profile,
             generation,
+            rebooted,
             dir,
             store,
             launch,
@@ -688,6 +691,8 @@ impl ProfileRuntime {
             replicas: dir.join(crate::install::REPLICAS),
             budget: launch.step_budget,
             workspaces: launch.experiments.is_on(&settings::experiments::WORKSPACES),
+            suspension: launch.experiments.is_on(&settings::experiments::SUSPENSION),
+            rebooted,
         };
         let mut core = None;
         let runtime = Arc::new_cyclic(|me| Self {
@@ -759,6 +764,13 @@ impl ProfileRuntime {
     /// The profile's network edge, once started.
     pub fn edge(&self) -> Option<Arc<crate::edge::Edge>> {
         self.edge.get().cloned()
+    }
+
+    /// Tells the core the daemon is on its way out: under the suspension
+    /// experiment it records no more exits, and the next start's sweep
+    /// decides each agent that ends meanwhile.
+    pub async fn stopping(&self) {
+        self.driver().feed(daemon_core::Input::Stopping).await;
     }
 
     /// Closes the edge's links with `reason` and stops serving the network.

@@ -23,6 +23,7 @@ mod resumption;
 mod settings;
 mod single_daemon;
 mod supervisor;
+mod suspension;
 mod upgrade;
 mod workspaces;
 mod worktree;

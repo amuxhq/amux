@@ -49,7 +49,9 @@ pub mod workspaces;
 pub use blobs::Blobs;
 pub use checkpoints::Checkpoints;
 pub use deliveries::{Deliveries, DrainReport, delivery_envelope_id};
-pub use families::{Create, Ended, FamilyState, Filing, Refusal, Resume};
+pub use families::{
+    CAUSELESS_GRACE_MS, CONTINUE_AFTER_RESTART, Create, Ended, FamilyState, Filing, Refusal, Resume,
+};
 pub use fingerprint::Fingerprint;
 pub use ids::{
     AccountId, AgentId, AttemptId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId,
@@ -127,6 +129,17 @@ pub struct StartOptions {
     /// on as it started: each own agent is a member of the workspace its
     /// folder is in, and a create in a new workspace writes its row first.
     pub workspaces: bool,
+    /// The daemon runs the suspension experiment (`suspension/1`): an own
+    /// agent's run is kept across the resumes that continue it, an end its
+    /// journal gives no cause for is recorded only after a grace, and after
+    /// a restart of the machine each agent found gone is suspended or
+    /// continued. Rows already suspended are handled with it off too.
+    #[serde(default)]
+    pub suspension: bool,
+    /// The machine has booted since the daemon before this one started: an
+    /// agent this start finds gone ended with the machine, not by a fault.
+    #[serde(default)]
+    pub rebooted: bool,
 }
 
 impl Daemon {
@@ -235,6 +248,7 @@ impl Daemon {
             Input::ControlClosed { agent, ended } => self.control_closed(agent, ended, out),
             Input::Adopted { agent } => self.adopted(agent, out),
             Input::Exiting { agent } => self.exiting(agent),
+            Input::Stopping => self.daemon_stopping(),
             Input::Retain(retain) => self.retain(retain, out),
             Input::Swept => {
                 self.swept(out);
@@ -252,7 +266,7 @@ impl Daemon {
                 id: TimerId::Lane(agent),
             } => self.lane_timer(agent, out),
             Input::Timer {
-                id: id @ (TimerId::Start(_) | TimerId::Exit(_)),
+                id: id @ (TimerId::Start(_) | TimerId::Exit(_) | TimerId::Grace(_)),
             } => self.registry_timer(id, out),
             Input::Timer {
                 id: TimerId::Ingest(agent),

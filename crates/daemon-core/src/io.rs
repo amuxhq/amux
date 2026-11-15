@@ -199,6 +199,10 @@ pub enum Input {
     Exiting {
         agent: AgentId,
     },
+    /// The daemon has been asked to stop (a signal, a client, its
+    /// supervisor handing over): under the suspension experiment it records
+    /// no more exits, and the next start's sweep decides each one.
+    Stopping,
     /// The interpreter's verdict on a message the core wrote to the agent,
     /// by the message's envelope id; none when the connection it was
     /// written on ended first.
@@ -309,6 +313,7 @@ impl Input {
             Input::ControlClosed { .. } => "ControlClosed",
             Input::Adopted { .. } => "Adopted",
             Input::Exiting { .. } => "Exiting",
+            Input::Stopping => "Stopping",
             Input::Verdict { .. } => "Verdict",
             Input::Swept => "Swept",
             Input::Checkpointed => "Checkpointed",

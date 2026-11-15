@@ -98,6 +98,8 @@ pub(crate) struct Installation {
     pub(crate) data_dir: PathBuf,
     pub(crate) front_door: Option<PathBuf>,
     generation: u64,
+    /// The machine has booted since the daemon before this one started.
+    rebooted: bool,
     /// What each profile opens with; its repositories and Claude kind
     /// follow the settings, so a profile opened after a change starts with
     /// it.
@@ -287,6 +289,7 @@ impl Installation {
         Ok(ProfileRuntime::open(Profile {
             profile,
             generation: self.generation,
+            rebooted: self.rebooted,
             dir,
             store,
             launch,
@@ -601,6 +604,9 @@ pub async fn start(
         data_dir,
         front_door,
         generation: generation.counter,
+        rebooted: last_run
+            .as_ref()
+            .is_some_and(|last| last.boot_id != boot_id),
         launch: Mutex::new(launch),
         clock,
         push,
@@ -840,6 +846,20 @@ impl Daemon {
     /// A failure before the flag leaves the installation dirty, the safe
     /// error.
     pub async fn shutdown(mut self) -> io::Result<()> {
+        // First: the system may be signalling the agents too, and an exit
+        // recorded from here on would reach paired hosts before the links
+        // close, and have them stop its children.
+        let runtimes: Vec<Arc<ProfileRuntime>> = self
+            .installation
+            .hosted
+            .lock()
+            .unwrap()
+            .values()
+            .map(|hosted| hosted.runtime.clone())
+            .collect();
+        for runtime in runtimes {
+            runtime.stopping().await;
+        }
         if let Some(front_door) = self.front_door.take() {
             front_door.abort();
         }

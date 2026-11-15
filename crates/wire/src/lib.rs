@@ -37,12 +37,14 @@ pub mod google {
 
 pub use google::rpc;
 
+mod continued;
 mod error;
 mod host_name;
 #[cfg(test)]
 mod pinned;
 mod said;
 pub use amux::v1::*;
+pub use continued::{continued_input_id, is_continued_input};
 pub use host_name::{HostName, HostNameError, MAX_HOST_NAME_CHARS};
 /// An error's code, gRPC's own.
 pub use rpc::Code as ErrorCode;

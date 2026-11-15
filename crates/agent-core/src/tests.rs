@@ -685,3 +685,146 @@ fn a_draining_agent_is_not_woken() {
     let out = run.frame(ctl_frame::Of::Stop(wire::Stop { kill: false }));
     assert!(out.contains(&Output::CancelTimer { id: TimerId::Wake }));
 }
+
+/// The core around headless Claude's own interpreter, for rules that hang
+/// on what Claude's stream says rather than on the stand-in's.
+mod headless_claude {
+    use interpret::claude_sdk::ClaudeSdk;
+
+    use super::*;
+
+    struct Claude {
+        agent: Agent<ClaudeSdk>,
+        now_ms: u64,
+    }
+
+    impl Claude {
+        /// A one-shot headless Claude started on its spawn prompt, with its
+        /// daemon connected.
+        fn one_shot(prompt: &str) -> Self {
+            let mut out = Vec::new();
+            let agent = Agent::<ClaudeSdk>::start(&spec(true, Some(prompt)), None, 1_000, &mut out);
+            let mut claude = Self {
+                agent,
+                now_ms: 1_000,
+            };
+            claude.on(Input::DaemonDials { connection: DAEMON });
+            claude
+        }
+
+        fn on(&mut self, input: Input) -> Vec<Output> {
+            self.now_ms += 1;
+            let mut out = Vec::new();
+            self.agent.step(
+                Input::Tick {
+                    now_ms: self.now_ms,
+                },
+                &mut out,
+            );
+            self.agent.step(input, &mut out);
+            out
+        }
+
+        /// One line of Claude's stream-json output.
+        fn says(&mut self, line: serde_json::Value) -> Vec<Output> {
+            self.on(Input::Provider(Fact {
+                channel: Channel::Stream,
+                payload: serde_json::to_vec(&line).expect("json"),
+            }))
+        }
+
+        /// A main-thread assistant message.
+        fn assistant(&mut self, uuid: &str, content: serde_json::Value) -> Vec<Output> {
+            self.says(json!({
+                "type": "assistant", "uuid": uuid, "session_id": "s", "parent_tool_use_id": null,
+                "message": {
+                    "id": format!("msg-{uuid}"), "type": "message", "role": "assistant",
+                    "model": "claude-test", "content": content,
+                    "usage": {"input_tokens": 10, "output_tokens": 5},
+                },
+            }))
+        }
+
+        /// The result that ends the main thread's turn.
+        fn result(&mut self, uuid: &str, text: &str) -> Vec<Output> {
+            self.says(json!({
+                "type": "result", "subtype": "success", "uuid": uuid, "session_id": "s",
+                "is_error": false, "duration_ms": 10, "num_turns": 1, "result": text,
+            }))
+        }
+    }
+
+    /// Headless Claude starts the subagents its Agent tool asks for in the
+    /// background: the call's result only says the subagent was launched,
+    /// and the parent's turn ends while the subagent still works. A
+    /// one-shot agent that left then would kill the subagent and report
+    /// "launched" as its answer. It stays until the subagent's
+    /// notification has started Claude's follow-up turn and that turn has
+    /// ended, and only then finishes.
+    #[test]
+    fn a_one_shot_headless_claude_stays_while_a_background_subagent_it_started_runs() {
+        let mut claude = Claude::one_shot("count the files with a subagent");
+        claude.says(json!({"type": "system", "subtype": "init", "uuid": "i1", "session_id": "s", "model": "claude-test"}));
+        claude.assistant(
+            "a1",
+            json!([{"type": "tool_use", "id": "toolu_agent", "name": "Agent",
+                "input": {"description": "count", "prompt": "Count the files.", "subagent_type": "general-purpose"}}]),
+        );
+        claude.says(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1task", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "count", "is_backgrounded": true,
+        }));
+        claude.says(json!({
+            "type": "user", "uuid": "u1", "session_id": "s", "parent_tool_use_id": null,
+            "message": {"role": "user", "content": [{
+                "type": "tool_result", "tool_use_id": "toolu_agent", "is_error": false,
+                "content": [{"type": "text", "text": "Async agent launched successfully.\nagentId: a1task\nThe agent is working in the background. You will be notified automatically when it completes."}],
+            }]},
+        }));
+        claude.assistant(
+            "a2",
+            json!([{"type": "text", "text": "The subagent is running in the background."}]),
+        );
+        let out = claude.result("r1", "The subagent is running in the background.");
+        assert_eq!(
+            marked_last(&out),
+            Some(false),
+            "the turn that launched a running subagent is not the agent's last"
+        );
+        assert!(
+            !closes(&out),
+            "the agent left while its subagent was running"
+        );
+        assert_eq!(exit_of(&out), None);
+
+        // The subagent works on, then finishes.
+        let out = claude.says(json!({
+            "type": "system", "subtype": "task_progress", "uuid": "t2", "session_id": "s",
+            "task_id": "a1task", "tool_use_id": "toolu_agent", "description": "count",
+            "last_tool_name": "Bash", "usage": {"total_tokens": 100, "tool_uses": 1, "duration_ms": 5},
+        }));
+        assert!(!closes(&out));
+        let out = claude.says(json!({
+            "type": "system", "subtype": "task_notification", "uuid": "t3", "session_id": "s",
+            "task_id": "a1task", "tool_use_id": "toolu_agent", "status": "completed",
+            "output_file": "/tmp/claude/tasks/a1task.output", "summary": "There are 3 files.",
+        }));
+        assert!(
+            !closes(&out),
+            "the notification starts Claude's follow-up turn"
+        );
+
+        // Claude's follow-up turn on the notification is the last.
+        claude.says(json!({"type": "system", "subtype": "init", "uuid": "i2", "session_id": "s", "model": "claude-test"}));
+        claude.assistant(
+            "a3",
+            json!([{"type": "text", "text": "Done: there are 3 files."}]),
+        );
+        let out = claude.result("r2", "Done: there are 3 files.");
+        assert_eq!(marked_last(&out), Some(true));
+        assert!(closes(&out));
+        let out = claude.on(Input::ProviderExited { code: Some(0) });
+        assert_eq!(exit_of(&out), Some(&ExitCause::Finished));
+    }
+}

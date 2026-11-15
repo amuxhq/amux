@@ -3,6 +3,7 @@
 
 import { render } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { Banner, Button, type ChoiceGroup, Icons, Kbd, Picker, Textarea } from "./ui.tsx";
 import {
   byPage,
   type AgentChoice,
@@ -29,6 +30,12 @@ async function activeTab(): Promise<number | null> {
   if (pinned !== null) return pinned;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab?.id ?? null;
+}
+
+/** A folder's path as far as tells it apart: its last three parts. */
+function shortPath(path: string): string {
+  const parts = path.split("/").filter(Boolean);
+  return parts.length > 3 ? `…/${parts.slice(-3).join("/")}` : path;
 }
 
 function same(a: Destination | null, b: Destination | null): boolean {
@@ -74,35 +81,6 @@ function App() {
   const tabId = state.tabId;
   const { review } = state;
   const items = review.comments.length + review.snippets.length;
-  const pages = byPage(review.comments);
-  // Numbered as each page's pins are; a page heading only once there are several.
-  const comment = (comment: PendingComment, index: number) => (
-    <li key={comment.id}>
-      <button
-        type="button"
-        class="comment"
-        title="Show it on the page"
-        onClick={() => tabId !== null && post({ type: "focus", tabId, id: comment.id })}
-      >
-        <span class="number">{index + 1}</span>
-        <span class="body">
-          <span class="target">
-            {comment.quote ? `“${comment.quote}”` : comment.region ? "Box" : comment.element.text || comment.element.selector}
-          </span>
-          {comment.text ? <span class="text">{comment.text}</span> : <span class="text none">No comment</span>}
-          {state.thumbnails[comment.id] && <img class="thumbnail" src={state.thumbnails[comment.id]} alt="" />}
-        </span>
-      </button>
-      <button
-        type="button"
-        class="remove"
-        aria-label="Delete comment"
-        onClick={() => tabId !== null && post({ type: "delete", tabId, id: comment.id })}
-      >
-        ×
-      </button>
-    </li>
-  );
 
   return (
     <main class="panel">
@@ -112,60 +90,20 @@ function App() {
         <Status reach={state.reach} />
       </header>
       <div class="scroll">
-      <Problem state={state} />
-      {state.outcome && "sent" in state.outcome && (
-        <p class="outcome sent" role="status">
-          <span class="glyph">✓</span> Sent to {state.outcome.sent}
-        </p>
-      )}
-      {state.outcome && "failed" in state.outcome && (
-        <p class="outcome failed" role="alert">
-          <span class="glyph">!</span> Not sent: {state.outcome.failed}
-        </p>
-      )}
-      {review.comments.length === 0 && review.snippets.length === 0 ? (
-        <Empty state={state} />
-      ) : (
-        <ol class="comments">
-          {pages.length === 1
-            ? pages[0]!.comments.map(comment)
-            : pages.map((page) => [
-                <li key={page.url} class="page" title={page.url}>
-                  {page.title || page.url}
-                </li>,
-                ...page.comments.map(comment),
-              ])}
-          {review.snippets.map((snippet) => (
-            <li key={snippet.id}>
-              <div class="comment">
-                <span class="number snippet">¶</span>
-                <span class="body">
-                  <span class="target">{snippet.name}</span>
-                  <span class="text">{snippet.text.split("\n")[0]}</span>
-                </span>
-              </div>
-              <button
-                type="button"
-                class="remove"
-                aria-label="Remove"
-                onClick={() => tabId !== null && post({ type: "deleteSnippet", tabId, id: snippet.id })}
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ol>
-      )}
-      {items > 0 && !state.reviewing && state.blocked === null && review.comments.length > 0 && !state.needsGrant && (
-        <button type="button" class="link" onClick={() => tabId !== null && post({ type: "review", tabId })}>
-          Add more on the page
-        </button>
-      )}
-      {state.needsGrant && !state.reviewing && state.blocked === null && items > 0 && (
-        <p class="notice">
-          To add more, click the amux button in the toolbar or press <kbd>{shortcut}</kbd> while you’re on the page.
-        </p>
-      )}
+        <Problem state={state} />
+        {state.outcome && "sent" in state.outcome && <Banner tone="success">Sent to {state.outcome.sent}</Banner>}
+        {state.outcome && "failed" in state.outcome && <Banner tone="error">Not sent: {state.outcome.failed}</Banner>}
+        {items === 0 ? <Empty state={state} /> : <Comments state={state} />}
+        {items > 0 && state.blocked === null && !state.reviewing && review.comments.length > 0 && !state.needsGrant && (
+          <Button variant="ghost" size="sm" class="add-more" onClick={() => tabId !== null && post({ type: "review", tabId })}>
+            <Icons.plus /> Add more on the page
+          </Button>
+        )}
+        {items > 0 && state.needsGrant && !state.reviewing && state.blocked === null && (
+          <Banner tone="notice">
+            To add more, click the amux button in the toolbar or press <Kbd>{shortcut}</Kbd> while you’re on the page.
+          </Banner>
+        )}
       </div>
       <Composer
         state={state}
@@ -183,6 +121,71 @@ function App() {
         }}
       />
     </main>
+  );
+}
+
+function Comments({ state }: { state: PanelState }) {
+  const { tabId, review } = state;
+  const pages = byPage(review.comments);
+  const row = (comment: PendingComment, index: number) => (
+    <li key={comment.id} class="row">
+      <button
+        type="button"
+        class="row-main"
+        title="Show it on the page"
+        onClick={() => tabId !== null && post({ type: "focus", tabId, id: comment.id })}
+      >
+        <span class="number">{index + 1}</span>
+        <span class="row-body">
+          <span class="row-target">
+            {comment.quote ? `“${comment.quote}”` : comment.region ? "Box" : comment.element.text || comment.element.selector}
+          </span>
+          {comment.text ? <span class="row-text">{comment.text}</span> : <span class="row-text none">No comment</span>}
+          {state.thumbnails[comment.id] && <img class="thumbnail" src={state.thumbnails[comment.id]} alt="" />}
+        </span>
+      </button>
+      <Button
+        variant="ghost"
+        size="icon"
+        class="row-remove"
+        aria-label="Delete comment"
+        onClick={() => tabId !== null && post({ type: "delete", tabId, id: comment.id })}
+      >
+        <Icons.close />
+      </Button>
+    </li>
+  );
+  return (
+    <ol class="rows">
+      {pages.length === 1
+        ? pages[0]!.comments.map(row)
+        : pages.map((page) => [
+            <li key={page.url} class="section" title={page.url}>
+              {page.title || page.url}
+            </li>,
+            ...page.comments.map(row),
+          ])}
+      {review.snippets.map((snippet) => (
+        <li key={snippet.id} class="row">
+          <div class="row-main">
+            <span class="number snippet">¶</span>
+            <span class="row-body">
+              <span class="row-target">{snippet.name}</span>
+              <span class="row-text">{snippet.text.split("\n")[0]}</span>
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="row-remove"
+            aria-label="Remove"
+            onClick={() => tabId !== null && post({ type: "deleteSnippet", tabId, id: snippet.id })}
+          >
+            <Icons.close />
+          </Button>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -205,87 +208,64 @@ function Problem({ state }: { state: PanelState }) {
   const { reach, blocked } = state;
   if (reach.status === "not-installed") {
     return (
-      <p class="notice">
-        amux isn’t set up for this browser yet. Install or update amux from <a href="https://amux.sh" target="_blank">amux.sh</a>, then start it: it
-        registers itself with your browsers when it starts.
-      </p>
+      <Banner tone="notice">
+        amux isn’t set up for this browser yet. Install or update amux from{" "}
+        <a href="https://amux.sh" target="_blank">
+          amux.sh
+        </a>
+        , then start it: it registers itself with your browsers when it starts.
+      </Banner>
     );
   }
   if (reach.status === "not-running") {
     return (
-      <p class="notice">
+      <Banner tone="notice">
         amux isn’t running. Open the amux app, or run <code>amux server start</code>.
-      </p>
+      </Banner>
     );
   }
   if (reach.status === "stopped") {
-    return <p class="notice">amux’s connection stopped{reach.detail ? `: ${reach.detail}` : "."}</p>;
+    return <Banner tone="error">amux’s connection stopped{reach.detail ? `: ${reach.detail}` : "."}</Banner>;
   }
   if (blocked === "browser-page") {
-    return <p class="notice">The browser’s own pages can’t be reviewed. Open a website or a local file.</p>;
+    return <Banner tone="notice">The browser’s own pages can’t be reviewed. Open a website or a local file.</Banner>;
   }
   if (blocked === "file-access") {
     return (
-      <div class="notice">
+      <Banner tone="notice">
         <p>To review local files, turn on “Allow access to file URLs” for amux.</p>
-        <button type="button" onClick={() => post({ type: "fileAccess" })}>
+        <Button size="sm" onClick={() => post({ type: "fileAccess" })}>
           Open amux’s settings
-        </button>
-      </div>
+        </Button>
+      </Banner>
     );
   }
   return null;
 }
-
-const ICON = { width: 16, height: 16, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", "stroke-width": 1.5 };
-
-/** A block with a pointer on it. */
-const BlockIcon = () => (
-  <svg {...ICON} aria-hidden="true">
-    <rect x="1.75" y="3.25" width="12.5" height="7.5" rx="1.5" />
-    <path d="M9 8.5l4 5.5-1.6.2-.9 1.5z" fill="currentColor" stroke="none" />
-  </svg>
-);
-
-/** Lines of text with one picked out. */
-const TextIcon = () => (
-  <svg {...ICON} aria-hidden="true" stroke-linecap="round">
-    <path d="M2 4h12M2 12h7" />
-    <rect x="1.5" y="6.25" width="9" height="3.5" rx="1" fill="currentColor" stroke="none" opacity="0.35" />
-    <path d="M3 8h6" />
-  </svg>
-);
-
-/** A dashed region. */
-const BoxIcon = () => (
-  <svg {...ICON} aria-hidden="true" stroke-dasharray="2.5 2">
-    <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
-  </svg>
-);
 
 /** The three gestures, as the overlay's toolbar names them. */
 function Gestures() {
   return (
     <ul class="gestures">
       <li>
-        <span class="gesture-glyph">
-          <BlockIcon />
+        <span class="gesture-icon">
+          <Icons.block />
         </span>
         <span>
           <strong>Click a block</strong> to comment on all of it
         </span>
       </li>
       <li>
-        <span class="gesture-glyph">
-          <TextIcon />
+        <span class="gesture-icon">
+          <Icons.text />
         </span>
         <span>
           <strong>Select text</strong> to comment on a phrase
         </span>
       </li>
       <li>
-        <span class="gesture-glyph">
-          <BoxIcon />
+        <span class="gesture-icon">
+          <Icons.box />
         </span>
         <span>
           <strong>Drag a box</strong> to send a picture of a region
@@ -303,7 +283,7 @@ function Empty({ state }: { state: PanelState }) {
         <h2>Reviewing this page</h2>
         <Gestures />
         <p class="muted">
-          Hold <kbd>Shift</kbd> to use the page normally. Press <kbd>Esc</kbd> when you’re done.
+          Hold <Kbd>Shift</Kbd> to use the page normally. Press <Kbd>Esc</Kbd> when you’re done.
         </p>
       </div>
     );
@@ -312,10 +292,10 @@ function Empty({ state }: { state: PanelState }) {
     return (
       <div class="empty">
         <h2>Comment on this page</h2>
-        <p class="notice">
-          Click the amux button in the toolbar, or press <kbd>{shortcut}</kbd>, while you’re on this page. The panel
+        <Banner tone="notice">
+          Click the amux button in the toolbar, or press <Kbd>{shortcut}</Kbd>, while you’re on this page. The panel
           can’t start a review by itself on a page you haven’t opened amux on.
-        </p>
+        </Banner>
         <Gestures />
       </div>
     );
@@ -324,16 +304,15 @@ function Empty({ state }: { state: PanelState }) {
     <div class="empty">
       <h2>Comment on this page</h2>
       <Gestures />
-      <button
-        type="button"
-        class="primary"
-        onClick={() => state.tabId !== null && post({ type: "review", tabId: state.tabId })}
-      >
-        Review this page
-      </button>
-      <p class="muted">
-        Or press <kbd>{shortcut}</kbd>. Your comments go to an agent together, like a review of its changes.
-      </p>
+      <div class="empty-actions">
+        <Button variant="primary" onClick={() => state.tabId !== null && post({ type: "review", tabId: state.tabId })}>
+          Review this page
+        </Button>
+        <span class="muted">
+          or <Kbd>{shortcut}</Kbd>
+        </span>
+      </div>
+      <p class="muted">Your comments go to an agent together, like a review of its changes.</p>
     </div>
   );
 }
@@ -350,19 +329,33 @@ interface ComposerProps {
 function Composer({ state, destination, onDestination, message, onMessage, onSend }: ComposerProps) {
   const { review } = state;
   const count = review.comments.length + review.snippets.length;
-  const groups = useMemo(() => {
-    const byProfile = new Map<string, { label: string; agents: AgentChoice[] }>();
-    for (const profile of state.profiles) byProfile.set(profile.id, { label: profile.label, agents: [] });
-    for (const agent of state.agents) {
-      if (agent.closed) continue;
-      byProfile.get(agent.profile)?.agents.push(agent);
-    }
-    return [...byProfile.entries()];
-  }, [state.agents, state.profiles]);
+  const groups = useMemo((): ChoiceGroup[] => {
+    const many = state.profiles.length > 1;
+    const label = (profile: string) => state.profiles.find((candidate) => candidate.id === profile)?.label ?? "";
+    const agents: ChoiceGroup[] = state.profiles.map((profile) => ({
+      label: many ? profile.label : "Agents",
+      choices: state.agents
+        .filter((agent) => agent.profile === profile.id && !agent.closed)
+        .map((agent: AgentChoice) => ({
+          value: JSON.stringify({ kind: "agent", profile: agent.profile, host: agent.host, agent: agent.agent }),
+          label: agent.name,
+          detail: [agent.repository || agent.cwd, agent.local ? "" : agent.hostName].filter(Boolean).join(" · "),
+          badge: agent.needsYou ? "Needs you" : undefined,
+        })),
+    }));
+    const folders: ChoiceGroup = {
+      label: "New agent in",
+      choices: state.folders.map((folder) => ({
+        value: JSON.stringify({ kind: "new", profile: folder.profile, cwd: folder.path }),
+        label: folder.name || folder.path,
+        detail: [shortPath(folder.path), many ? label(folder.profile) : ""].filter(Boolean).join(" · "),
+        icon: "plus" as const,
+      })),
+    };
+    return [...agents, folders].filter((group) => group.choices.length > 0);
+  }, [state.agents, state.profiles, state.folders]);
   if (count === 0 || state.reach.status !== "ok") return null;
-  const many = state.profiles.length > 1;
-  const value = destination ? JSON.stringify(destination) : "";
-  const noun = review.comments.length > 0 ? (review.comments.length === 1 ? "comment" : "comments") : "";
+  const noun = review.comments.length === 1 ? "comment" : "comments";
   const label =
     review.comments.length > 0
       ? `Send ${review.comments.length} ${noun}`
@@ -377,48 +370,15 @@ function Composer({ state, destination, onDestination, message, onMessage, onSen
         onSend();
       }}
     >
-      <label>
-        <span>To</span>
-        <select
-          value={value}
-          onChange={(event) => {
-            const picked = (event.target as HTMLSelectElement).value;
-            onDestination(picked ? (JSON.parse(picked) as Destination) : null);
-          }}
-        >
-          <option value="">Choose an agent…</option>
-          {groups.map(([id, group]) => (
-            <optgroup key={id} label={many ? group.label : "Agents"}>
-              {group.agents.map((agent) => (
-                <option
-                  key={agent.agent}
-                  value={JSON.stringify({ kind: "agent", profile: agent.profile, host: agent.host, agent: agent.agent })}
-                >
-                  {agent.name}
-                  {agent.needsYou ? " · needs you" : ""}
-                  {agent.repository ? ` · ${agent.repository}` : ""}
-                  {agent.local ? "" : ` · ${agent.hostName}`}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-          {state.folders.length > 0 && (
-            <optgroup label="New agent in">
-              {state.folders.map((folder) => (
-                <option
-                  key={`${folder.profile}:${folder.path}`}
-                  value={JSON.stringify({ kind: "new", profile: folder.profile, cwd: folder.path })}
-                >
-                  {folder.name || folder.path}
-                  {many ? ` · ${state.profiles.find((profile) => profile.id === folder.profile)?.label ?? ""}` : ""}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
-      </label>
-      <textarea
-        rows={3}
+      <Picker
+        groups={groups}
+        value={destination ? JSON.stringify(destination) : null}
+        placeholder="Choose an agent…"
+        search="Find an agent or folder"
+        onChange={(value) => onDestination(JSON.parse(value) as Destination)}
+      />
+      <Textarea
+        rows={2}
         placeholder="What should the agent do with these? (optional)"
         value={message}
         onInput={(event) => onMessage((event.target as HTMLTextAreaElement).value)}
@@ -431,11 +391,11 @@ function Composer({ state, destination, onDestination, message, onMessage, onSen
       />
       <div class="send-row">
         <span class="muted">
-          <kbd>{isMac ? "⌘↩" : "Ctrl+↩"}</kbd>
+          <Kbd>{isMac ? "⌘↩" : "Ctrl+↩"}</Kbd> to send
         </span>
-        <button type="submit" class="primary" disabled={!destination || state.sending}>
+        <Button variant="primary" type="submit" disabled={!destination || state.sending}>
           {state.sending ? "Sending…" : label}
-        </button>
+        </Button>
       </div>
     </form>
   );

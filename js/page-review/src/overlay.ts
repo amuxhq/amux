@@ -39,21 +39,21 @@ export function createOverlay(host: Host): Overlay {
     <div class="pins"></div>
     <form class="editor" hidden>
       <div class="editor-target"></div>
-      <textarea rows="3" placeholder="Add a comment"></textarea>
+      <textarea class="field" rows="3" placeholder="Add a comment"></textarea>
       <div class="editor-row">
-        <button type="button" class="wider" title="Comment on the block around it">Wider</button>
-        <button type="button" class="delete">Delete</button>
+        <button type="button" class="btn btn-ghost btn-sm wider" title="Comment on the block around it">Wider</button>
+        <button type="button" class="btn btn-danger btn-sm delete">Delete</button>
         <span class="grow"></span>
-        <button type="button" class="cancel">Cancel</button>
-        <button type="submit" class="save" title="⌘↩">Add</button>
+        <button type="button" class="btn btn-sm cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm save" title="⌘↩">Add</button>
       </div>
     </form>
     <div class="toolbar" hidden>
       <span class="mark" aria-hidden="true"></span>
       <span class="hint">Click a block, select text, or drag a box</span>
-      <button type="button" class="tool-box" aria-pressed="false" title="Drag a box over anything, text included">Box</button>
+      <button type="button" class="btn btn-ghost btn-sm tool-box" aria-pressed="false" title="Drag a box over anything, text included">Box</button>
       <span class="count"></span>
-      <button type="button" class="done">Done</button>
+      <button type="button" class="btn btn-primary btn-sm done">Done</button>
     </div>`;
   const $ = <T extends Element>(selector: string) => shadow.querySelector(selector) as T;
   const hover = $<HTMLDivElement>(".hover");

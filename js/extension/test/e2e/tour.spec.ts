@@ -141,7 +141,7 @@ test("the overlay and the panel, comment by comment", async () => {
     await page.locator("amux-page-review .cancel").click();
 
     await panel.bringToFront();
-    await expect(panel.locator(".comments .comment")).toHaveCount(3);
+    await expect(panel.locator(".rows .row-main")).toHaveCount(3);
     await shots([panel], "panel-03-comments");
 
     // Follow a link in the same tab and comment there too.
@@ -153,22 +153,29 @@ test("the overlay and the panel, comment by comment", async () => {
     await page.locator("#refunds").click();
     await addComment(page, "Say 60 days");
     await panel.bringToFront();
-    await expect(panel.locator(".comments .comment")).toHaveCount(4);
+    await expect(panel.locator(".rows .row-main")).toHaveCount(4);
     await shots([panel], "panel-04-two-pages");
 
-    const folder = panel.locator("select option", { hasText: "work" }).last();
-    const value = await folder.getAttribute("value");
-    if (value?.includes('"new"')) {
-      await panel.locator("select").selectOption(value);
+    await panel.locator(".picker-trigger").click();
+    await expect(panel.getByRole("listbox")).toBeVisible();
+    await panel.getByRole("option", { name: /^site/ }).hover();
+    await shots([panel], "panel-05-picker");
+    await panel.keyboard.type("work");
+    await shots([panel], "panel-05-picker-search");
+    await panel.keyboard.press("Escape");
+    const folder = panel.getByRole("group", { name: "New agent in" }).getByRole("option");
+    if ((await folder.count()) > 0) {
+      await panel.locator(".picker-trigger").click();
+      await folder.first().click();
       await shots([panel], "panel-05-new-agent");
     }
 
-    const site = panel.locator("select option", { hasText: "site" });
-    await panel.locator("select").selectOption(await site.getAttribute("value"));
+    await panel.locator(".picker-trigger").click();
+    await panel.getByRole("option", { name: /^site/ }).click();
     await panel.locator(".composer textarea").fill("Please fix these");
     await shots([panel], "panel-06-ready");
     await panel.getByRole("button", { name: /Send 4 comments/ }).click();
-    await expect(panel.locator(".outcome")).toContainText("Sent to site", { timeout: 30_000 });
+    await expect(panel.locator(".banner-success")).toContainText("Sent to site", { timeout: 30_000 });
     await shots([panel], "panel-07-sent");
 
     await page.bringToFront();
@@ -189,7 +196,7 @@ test("the panel where the extension has not been let in", async () => {
     const panel = await openPanel(context, tabId);
     await expect(panel.locator(".status.ok")).toBeVisible({ timeout: 30_000 });
     await panel.getByRole("button", { name: "Review this page" }).click();
-    await expect(panel.locator(".notice")).toBeVisible();
+    await expect(panel.locator(".banner")).toBeVisible();
     await shots([panel], "panel-08-needs-grant");
   } finally {
     await context.close();
@@ -202,7 +209,7 @@ test("the panel when amux is not installed, and not running", async () => {
     const page = await missing.context.newPage();
     await page.goto(`${origin}/pricing`);
     const panel = await openPanel(missing.context, await tabOf(missing.worker, `${origin}/pricing`));
-    await expect(panel.locator(".notice")).toBeVisible({ timeout: 30_000 });
+    await expect(panel.locator(".banner")).toBeVisible({ timeout: 30_000 });
     await shots([panel], "panel-09-not-installed");
   } finally {
     await missing.context.close();
@@ -214,7 +221,7 @@ test("the panel when amux is not installed, and not running", async () => {
     const page = await stopped.context.newPage();
     await page.goto(`${origin}/pricing`);
     const panel = await openPanel(stopped.context, await tabOf(stopped.worker, `${origin}/pricing`));
-    await expect(panel.locator(".notice")).toBeVisible({ timeout: 30_000 });
+    await expect(panel.locator(".banner")).toBeVisible({ timeout: 30_000 });
     await shots([panel], "panel-10-not-running");
   } finally {
     await stopped.context.close();

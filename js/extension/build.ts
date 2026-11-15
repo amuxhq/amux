@@ -11,6 +11,7 @@ import { build } from "esbuild";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { CONTROLS, tokens } from "../page-review/src/tokens.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "../..");
@@ -48,7 +49,13 @@ await Promise.all([
 const manifest = JSON.parse(readFileSync(join(here, "static/manifest.json"), "utf8"));
 if (dev) manifest.name = "amux (dev)";
 writeFileSync(join(out, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-for (const file of ["panel.html", "panel.css"]) copyFileSync(join(here, "static", file), join(out, file));
+copyFileSync(join(here, "static/panel.html"), join(out, "panel.html"));
+// The panel's sheet starts with the palette and controls every amux surface
+// on the web shares, the overlay's included.
+writeFileSync(
+  join(out, "panel.css"),
+  `${tokens(":root")}\n${CONTROLS}\n${readFileSync(join(here, "static/panel.css"), "utf8")}`,
+);
 copyFileSync(join(repo, "images/brand/amux.png"), join(out, "icon.png"));
 copyFileSync(wasm, join(out, "browser_core.wasm"));
 console.log(`built ${out}`);

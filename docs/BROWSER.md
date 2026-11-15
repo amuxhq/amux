@@ -151,6 +151,17 @@ review going into the chat's composer as a diff review does. `npm run build`
 in `js/page-review` builds the one file such a host injects. Gestures are
 built on pointer events, so a touch mode can be added without a rewrite.
 
+**The look** is one set of design tokens and control styles
+([`tokens.ts`](../js/page-review/src/tokens.ts)): the overlay applies them in
+its shadow root and the extension's build puts them at the top of the panel's
+sheet, so a button or a field looks the same on the page and in the panel. The
+panel's few controls (button, banner, growing text box, keys, and the agent
+picker, a searchable grouped list a native select cannot draw) are hand-made
+Preact components in [`ui.tsx`](../js/extension/src/panel/ui.tsx), not a
+component library: a library would bring React, a CSS framework and a build
+step for six controls, and the overlay, which shares their look, must stay free
+of any framework for the apps that will inject it.
+
 ## WebAssembly is optional
 
 The extension compiles the pure client crates (`wire`, `ui-state`, `ui-view`,

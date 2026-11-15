@@ -82,13 +82,13 @@ test("a page review goes from the page to the agent", async () => {
     await expect(page.locator("amux-page-review .pin")).toHaveCount(3);
 
     await panel.bringToFront();
-    await expect(panel.locator(".comments li")).toHaveCount(3);
+    await expect(panel.locator(".rows .row")).toHaveCount(3);
     await expect(panel.locator(".thumbnail")).toHaveCount(1);
-    const choice = panel.locator("select option", { hasText: "site" });
-    await panel.locator("select").selectOption(await choice.getAttribute("value"));
+    await panel.locator(".picker-trigger").click();
+    await panel.getByRole("option", { name: /^site/ }).click();
     await panel.locator(".composer textarea").fill("Please fix these");
     await panel.getByRole("button", { name: "Send 3 comments" }).click();
-    await expect(panel.locator(".outcome")).toContainText("Sent to site", { timeout: 30_000 });
+    await expect(panel.locator(".banner-success")).toContainText("Sent to site", { timeout: 30_000 });
 
     // What the provider read.
     await expect

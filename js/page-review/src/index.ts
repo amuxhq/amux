@@ -5,4 +5,5 @@
 
 export { createOverlay } from "./overlay.ts";
 export { anchorOf, blockAround, selectorFor, snap, sourceFromMarkup, visibleText, wider } from "./blocks.ts";
+export { CONTROLS, tokens } from "./tokens.ts";
 export type { Anchor, Comment, Host, Overlay, Region } from "./types.ts";

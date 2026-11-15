@@ -51,6 +51,9 @@ pub struct Sqlite {
     pub(crate) conn: Connection,
     pub(crate) own_host: Vec<u8>,
     pub(crate) markers: HashMap<AgentKey, Marker>,
+    /// The `workspaces/1` experiment's table is there: rows read carry its
+    /// entries.
+    pub(crate) workspaces_1: bool,
     /// How many resets each replica row has absorbed since the store
     /// opened: what a replica that was told to forget its block went
     /// through, for the checks that judge it.
@@ -90,8 +93,32 @@ impl Sqlite {
         experiments: &[&str],
     ) -> Result<Self, OpenError> {
         let mut store = Self::open(path, own_host)?;
-        crate::experiments::settle(&mut store.conn, experiments)?;
+        store.settle_experiments(experiments)?;
         Ok(store)
+    }
+
+    /// Makes the tables of the experiment versions in `experiments` and
+    /// drops every other experiment's, as [`Sqlite::open_with`] does; for a
+    /// store opened otherwise, such as one in memory.
+    pub fn settle_experiments(&mut self, experiments: &[&str]) -> Result<(), OpenError> {
+        crate::experiments::settle(&mut self.conn, experiments)?;
+        self.workspaces_1 = experiments.contains(&crate::experiments::WORKSPACES_1.version);
+        Ok(())
+    }
+
+    /// Writes the agent's entry for the experiment `version`, or removes it
+    /// when `entry` is none. Does nothing for a version whose tables the
+    /// store does not have: a build ignores what it does not run.
+    pub fn put_experimental(
+        &mut self,
+        agent: &AgentKey,
+        version: &str,
+        entry: Option<&[u8]>,
+    ) -> Result<(), StoreError> {
+        if version != crate::experiments::WORKSPACES_1.version || !self.workspaces_1 {
+            return Ok(());
+        }
+        self.write(|rows| rows.put_workspaces_1(agent, entry))
     }
 
     /// A store with the same schema that lives only in memory: gone when
@@ -116,6 +143,7 @@ impl Sqlite {
             conn,
             own_host,
             markers: HashMap::new(),
+            workspaces_1: false,
             #[cfg(feature = "explore")]
             resets: HashMap::new(),
         })
@@ -327,6 +355,7 @@ impl Sqlite {
         let result = f(&Rows {
             conn: &tx,
             own_host: &self.own_host,
+            workspaces_1: self.workspaces_1,
         });
         tx.finish()?;
         result
@@ -370,6 +399,7 @@ impl Sqlite {
         let result = f(&Rows {
             conn: &tx,
             own_host: &self.own_host,
+            workspaces_1: self.workspaces_1,
         })?;
         tx.commit()?;
         Ok(result)

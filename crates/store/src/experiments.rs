@@ -42,8 +42,13 @@ pub fn prefix(version: &str) -> String {
     format!("exp_{}_", version.replace('/', "_"))
 }
 
+/// The table [`WORKSPACES_1`] keeps each agent's workspace in.
+pub const WORKSPACES_1_MEMBERS: &str = "exp_workspaces_1_members";
+
 /// What an agent's workspace is, for the host's own agents and replicas
-/// alike, joined when a row is read. For own agents it is a cache: the
+/// alike, joined when a row is read: a row read while the table is there
+/// carries its entry in [`AgentRow::experimental`](crate::AgentRow), and a
+/// row removed takes its entry with it. For own agents it is a cache: the
 /// folder is the truth.
 pub const WORKSPACES_1: ExperimentTables = ExperimentTables {
     version: "workspaces/1",

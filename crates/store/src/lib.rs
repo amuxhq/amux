@@ -139,6 +139,12 @@ pub struct AgentRow {
     /// A person or a parent chose the name, so the provider does not title
     /// the agent.
     pub name_given: bool,
+    /// The entries of the experiments whose tables the store has, by
+    /// version (`workspaces/1`), joined from those tables when the row is
+    /// read: the agents table holds none, and [`Sqlite::put_agent`] writes
+    /// none. An experiment writes its entries with
+    /// [`Sqlite::put_experimental`].
+    pub experimental: std::collections::BTreeMap<String, Vec<u8>>,
 }
 
 impl AgentRow {
@@ -188,6 +194,7 @@ impl AgentRow {
             title: None,
             last_said: None,
             name_given: false,
+            experimental: std::collections::BTreeMap::new(),
         }
     }
 }

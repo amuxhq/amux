@@ -645,6 +645,11 @@ pub struct State {
     final_error: Option<String>,
     /// Commands still running after the turn that started them ended.
     background: Option<BTreeSet<String>>,
+    /// The other threads on this agent's server, its native subagents, by
+    /// thread id: whether each still runs. One that ended is kept, so a
+    /// late report of its spawn does not bring it back.
+    #[serde(default)]
+    threads: BTreeMap<String, bool>,
     /// How many times Codex was asked for its background jobs, which
     /// names each ask.
     jobs_asked: u32,
@@ -726,6 +731,7 @@ impl State {
             reviewed: BTreeMap::new(),
             final_error: None,
             background: None,
+            threads: BTreeMap::new(),
             jobs_asked: 0,
             plan: None,
             proposed: None,
@@ -1904,8 +1910,11 @@ impl Interpreter for Codex {
         state.shared.reincarnate(spec);
         state.incarnation = spec.incarnation;
         state.name = spec.name.clone();
-        // A hidden thread goes with the process that held it.
+        // A hidden thread goes with the process that held it, and so do
+        // its commands and subagents.
         state.titling = Titling::Unasked;
+        state.background = None;
+        state.threads.clear();
         state.resume()
     }
 
@@ -1950,8 +1959,23 @@ impl Interpreter for Codex {
         state.shared.typed_unrecorded()
     }
 
+    /// The shared holds, with two more of Codex's own: a command known to
+    /// run on past its turn counts until its own `item/completed`, even
+    /// before Codex lists its background terminals or if that fails, and
+    /// every subagent thread still running.
     fn holds(state: &Self::State) -> crate::Holds {
-        state.shared.holds()
+        let mut holds = state.shared.holds();
+        let mut running: BTreeSet<String> = state
+            .shared
+            .jobs()
+            .jobs
+            .into_iter()
+            .map(|job| job.item_key)
+            .collect();
+        running.extend(state.background.iter().flatten().cloned());
+        holds.background_jobs = running.len();
+        holds.subagents = state.threads.values().filter(|running| **running).count();
+        holds
     }
 
     fn input_shape(input: &Input) -> crate::shape::InputShape {

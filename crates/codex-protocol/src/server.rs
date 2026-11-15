@@ -163,6 +163,19 @@ pub struct ThreadStarted {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadStatusChanged {
     pub thread_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<ThreadStatus>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// What a thread is doing: `active` while it runs a turn, `idle` once it
+/// waits, and others (`notLoaded`, `systemError`) when it runs nothing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadStatus {
+    #[serde(rename = "type")]
+    pub kind: String,
     #[serde(flatten)]
     pub extra: Extra,
 }

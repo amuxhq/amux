@@ -754,6 +754,7 @@ impl<A: OpenAsk> Shared<A> {
     pub fn holds(&self) -> crate::Holds {
         crate::Holds {
             background_jobs: self.jobs.as_ref().map_or(0, |jobs| jobs.jobs.len()),
+            subagents: 0,
             turn_owed: self.held.turn_owed,
             wakeups: self.held.wakeups.len(),
             session_grant: self.held.session_grant,

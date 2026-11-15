@@ -140,6 +140,9 @@ pub trait Interpreter {
 pub struct Holds {
     /// Jobs it runs in the background, which a kill would end or orphan.
     pub background_jobs: usize,
+    /// Subagents it runs as threads of its own (Codex's), which a kill
+    /// would end.
+    pub subagents: usize,
     /// A background job ended between turns, and the provider reports it
     /// in a turn of its own that has not started yet.
     pub turn_owed: bool,

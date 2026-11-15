@@ -62,7 +62,9 @@ version = "0.1.0"
 dependencies = [
  "core-ring",
  "interpret",
+ "prost",
  "serde_json",
+ "settings",
  "wire",
 ]
 

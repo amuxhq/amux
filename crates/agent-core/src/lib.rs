@@ -33,6 +33,14 @@
 //!   children it asked for itself, since its tool server's spawn passes
 //!   through the process ([`Input::Spawn`]), and the daemon's `children`
 //!   frame says which exist.
+//! - An agent without a parent whose spec carries the suspension
+//!   experiment's delay suspends itself: once it has been idle for that
+//!   long without a break (no turn, nothing queued or pending, every
+//!   child's last report taken, nothing the interpreter says the provider
+//!   holds, and no terminal client attached), it exits the ordinary
+//!   graceful way, with cause suspended. The daemon resumes it with the
+//!   next message, and one arriving as it exits is refused as
+//!   `REFUSAL_EXITING`, as for a one-shot agent.
 //! - The provider exiting ends the agent, whatever state it was in.
 
 #![forbid(unsafe_code)]
@@ -62,6 +70,10 @@ pub const DEFAULT_GRACE_MS: u64 = 5 * 60 * 1000;
 pub const DEFAULT_DRAIN_MS: u64 = 5 * 60 * 1000;
 /// How long a provider asked to finish gets before its group is killed.
 pub const PROVIDER_STOP_MS: u64 = 10 * 1000;
+/// The key of the suspension experiment's entry in the spec's
+/// `experimental` map: its version in the registry in `crates/settings`,
+/// which the daemon writes it under.
+pub const SUSPENSION: &str = "suspension/1";
 
 /// A timer the core asks the driver to arm. One of each at a time: arming
 /// one replaces it.
@@ -74,6 +86,8 @@ pub enum TimerId {
     Drain,
     /// A provider asked to finish has not exited.
     ProviderStop,
+    /// The agent has been idle for its suspension delay.
+    Suspend,
 }
 
 /// A job the driver runs; its outcome returns as [`Input::JobDone`].
@@ -110,6 +124,12 @@ pub enum Input {
     /// this starts the grace timer.
     DaemonGone {
         connection: ConnId,
+    },
+    /// How many terminal clients are attached to the agent's terminal now,
+    /// fed whenever one attaches or leaves. Someone watching it is not an
+    /// idle agent.
+    Attached {
+        clients: u32,
     },
     /// A frame from a daemon: a person's input, an agent message, a stop, a
     /// rename, the live children, a dump request.
@@ -233,6 +253,8 @@ pub enum ExitCause {
     Killed,
     /// One-shot: a child agent finished its work.
     Finished,
+    /// An agent without a parent was idle for its suspension delay.
+    Suspended,
     /// The provider could not be started.
     Unstarted(String),
     /// The interpreter ended the incarnation.
@@ -252,6 +274,7 @@ impl ExitCause {
             ExitCause::Stopped => (wire::ExitCause::Stopped, None),
             ExitCause::Killed => (wire::ExitCause::Killed, None),
             ExitCause::Finished => (wire::ExitCause::Finished, None),
+            ExitCause::Suspended => (wire::ExitCause::Suspended, None),
             ExitCause::Unstarted(why) => (
                 wire::ExitCause::CouldNotStart,
                 Some(format!("the provider: {why}")),
@@ -273,12 +296,16 @@ impl ExitCause {
     }
 
     /// Decided by the lifecycle itself, which may end an incarnation only
-    /// at a turn end or a drain deadline; the other causes are things that
-    /// happened to it.
-    fn decided_by_the_lifecycle(&self) -> bool {
+    /// at a turn end, a drain deadline or its suspension deadline; the
+    /// other causes are things that happened to it.
+    pub fn decided_by_the_lifecycle(&self) -> bool {
         matches!(
             self,
-            ExitCause::DaemonLost | ExitCause::Orphaned | ExitCause::Stopped | ExitCause::Finished
+            ExitCause::DaemonLost
+                | ExitCause::Orphaned
+                | ExitCause::Stopped
+                | ExitCause::Finished
+                | ExitCause::Suspended
         )
     }
 }
@@ -291,6 +318,9 @@ struct Params {
     one_shot: bool,
     grace_ms: u64,
     drain_ms: u64,
+    /// How long the agent must be idle before it suspends; none when it
+    /// never does: it has a parent, or the spec carries no delay.
+    suspend_after_ms: Option<u64>,
     /// How long one step may take before it asks for a dump.
     budget: StepBudget,
 }
@@ -302,11 +332,24 @@ impl Params {
             0 => default,
             ms => u64::from(ms),
         };
+        // The daemon writes the delay only for an agent without a parent
+        // while the experiment is on; an entry that does not decode is
+        // never worth failing over.
+        let suspend_after_ms = spec
+            .experimental
+            .get(SUSPENSION)
+            .and_then(|bytes| {
+                <wire::experimental::SuspensionSpec as prost::Message>::decode(bytes.as_slice())
+                    .ok()
+            })
+            .map(|suspension| suspension.after_ms)
+            .filter(|after| *after > 0 && spec.parent.is_none());
         Self {
             agent_id: spec.agent_id.clone(),
             one_shot: spec.parent.is_some(),
             grace_ms: ms(config.grace_ms, DEFAULT_GRACE_MS),
             drain_ms: ms(config.drain_ms, DEFAULT_DRAIN_MS),
+            suspend_after_ms,
             budget: match config.step_budget_micros {
                 0 => StepBudget::AGENT,
                 micros => StepBudget { micros },
@@ -421,6 +464,8 @@ struct Decided {
     turn_ended: bool,
     turn_running: bool,
     deadline_passed: bool,
+    /// The suspension timer fired with the agent still idle.
+    suspension_due: bool,
 }
 
 /// The incarnation, the grace and drain timers, the pending set, the open
@@ -451,6 +496,11 @@ struct Life {
     awaited: Awaited,
     /// The interpreter asked the process to exit.
     asked_to_exit: Option<ExitCause>,
+    /// Terminal clients attached to the agent's terminal.
+    attached: u32,
+    /// When the agent suspends: armed while it is idle, cancelled the
+    /// moment it is not.
+    suspend: Option<u64>,
     git: GitReads,
     next_job: u64,
     /// The process exits: nothing more happens to this incarnation.
@@ -487,6 +537,8 @@ impl<I: Interpreter> Agent<I> {
                 turn: Turn::default(),
                 awaited: Awaited::default(),
                 asked_to_exit: None,
+                attached: 0,
+                suspend: None,
                 git: GitReads::default(),
                 next_job: 0,
                 exited: None,
@@ -556,6 +608,9 @@ impl<I: Interpreter> Agent<I> {
             "children_owe_reports": !life.awaited.none(),
             "spawns_unsettled": life.awaited.unsettled(),
             "asked_to_exit": life.asked_to_exit.as_ref().map(cause),
+            "suspends_after_ms": life.params.suspend_after_ms,
+            "attached": life.attached,
+            "suspension_armed": life.suspend.is_some(),
             "reading_git": life.git.reading.is_some(),
             "exited": life.exited.as_ref().map(cause),
         })
@@ -605,7 +660,9 @@ impl<I: Interpreter> Agent<I> {
     /// per input taken or decision made:
     ///
     /// - the lifecycle ends an incarnation only at a turn end, with no turn
-    ///   running, or at a drain deadline;
+    ///   running, or at a drain deadline; and suspends it only at its
+    ///   suspension deadline, with no turn running;
+    /// - the suspension timer runs only while the agent is idle;
     /// - the pending set never holds an input the journal recorded as taken;
     /// - the drain timer waits on one open ask at most, and only while the
     ///   agent drains for a lost daemon with an ask open;
@@ -614,13 +671,31 @@ impl<I: Interpreter> Agent<I> {
     pub fn check_step_invariants(&self) -> Result<(), Violation> {
         if let Some(decided) = &self.touched.decided
             && decided.cause.decided_by_the_lifecycle()
-            && decided.turn_running
-            && !decided.turn_ended
-            && !decided.deadline_passed
         {
+            let in_its_time = match decided.cause {
+                ExitCause::Suspended => decided.suspension_due && !decided.turn_running,
+                _ => !decided.turn_running || decided.turn_ended || decided.deadline_passed,
+            };
+            if !in_its_time {
+                return Err(Violation {
+                    invariant: EXIT_OUTSIDE_TURN_END,
+                    detail: format!(
+                        "{:?} decided while a turn ran or before its deadline",
+                        decided.cause
+                    ),
+                });
+            }
+        }
+        if self.life.suspend.is_some() && !self.idle() {
             return Err(Violation {
-                invariant: EXIT_OUTSIDE_TURN_END,
-                detail: format!("{:?} decided while a turn ran", decided.cause),
+                invariant: SUSPENSION_WHILE_BUSY,
+                detail: format!(
+                    "armed in {:?} at phase {:?}, {} attached, holding {:?}",
+                    self.life.mode,
+                    self.life.turn.phase,
+                    self.life.attached,
+                    I::holds(&self.interpreter)
+                ),
             });
         }
         if let Some(taken) = self
@@ -721,6 +796,7 @@ impl<I: Interpreter> Agent<I> {
                     self.control(connection, frame, out);
                 }
             }
+            Input::Attached { clients } => self.life.attached = clients,
             // Kept in any mode: an agent on its way out decides nothing by
             // it, and one that stays must not have missed it.
             Input::Spawn { child, heard } => {
@@ -859,6 +935,26 @@ impl<I: Interpreter> Agent<I> {
                     self.finish(cause, out);
                 }
             }
+            TimerId::Suspend => match self.life.suspend {
+                Some(at) if at <= now && self.idle() => {
+                    self.life.suspend = None;
+                    self.touched.decided = Some(Decided {
+                        cause: ExitCause::Suspended,
+                        turn_ended: false,
+                        turn_running: self.life.turn.running(),
+                        deadline_passed: false,
+                        suspension_due: true,
+                    });
+                    self.exit(ExitCause::Suspended, out);
+                }
+                // Fired early by a clock that disagrees: it is still due.
+                Some(at) if self.idle() => out.push(Output::ArmTimer {
+                    id: TimerId::Suspend,
+                    at_ms: at,
+                }),
+                // Settling after the step cancels one that is no longer due.
+                _ => {}
+            },
         }
     }
 
@@ -945,8 +1041,53 @@ impl<I: Interpreter> Agent<I> {
                 turn_ended,
                 turn_running,
                 deadline_passed: false,
+                suspension_due: false,
             });
             self.exit(cause, out);
+        } else {
+            self.watch_idle(turn_ended, out);
+        }
+    }
+
+    /// The suspension timer: armed `after` from the moment the agent became
+    /// idle, cancelled the moment it is not, and armed afresh after a turn
+    /// that both began and ended since the last step, so it fires only
+    /// after that long without a break.
+    fn watch_idle(&mut self, turn_ended: bool, out: &mut Vec<Output>) {
+        let Some(after) = self.life.params.suspend_after_ms else {
+            return;
+        };
+        if self.idle() {
+            if self.life.suspend.is_none() || turn_ended {
+                let at_ms = self.life.now_ms.saturating_add(after);
+                self.life.suspend = Some(at_ms);
+                out.push(Output::ArmTimer {
+                    id: TimerId::Suspend,
+                    at_ms,
+                });
+            }
+        } else {
+            self.cancel_suspension(out);
+        }
+    }
+
+    /// Whether the agent is idle the way suspension needs: running, with
+    /// nothing to do and nothing waited for (`quiescent`), nothing the
+    /// provider holds that ending it would lose or cut short (background
+    /// jobs, a turn it owes, wake-ups, a grant for its session), and nobody
+    /// at its terminal.
+    fn idle(&self) -> bool {
+        self.life.mode == Mode::Running
+            && self.life.attached == 0
+            && self.quiescent()
+            && I::holds(&self.interpreter).nothing()
+    }
+
+    fn cancel_suspension(&mut self, out: &mut Vec<Output>) {
+        if self.life.suspend.take().is_some() {
+            out.push(Output::CancelTimer {
+                id: TimerId::Suspend,
+            });
         }
     }
 
@@ -957,6 +1098,7 @@ impl<I: Interpreter> Agent<I> {
             turn_ended: false,
             turn_running: self.life.turn.running(),
             deadline_passed: true,
+            suspension_due: false,
         });
         self.exit(ExitCause::Orphaned, out);
     }
@@ -1013,6 +1155,7 @@ impl<I: Interpreter> Agent<I> {
             out.push(Output::CancelTimer { id: TimerId::Grace });
         }
         self.cancel_drain(out);
+        self.cancel_suspension(out);
         let until = self.life.now_ms.saturating_add(PROVIDER_STOP_MS);
         self.life.mode = Mode::Exiting { cause, until };
         out.push(Output::ArmTimer {
@@ -1025,6 +1168,7 @@ impl<I: Interpreter> Agent<I> {
     fn finish(&mut self, cause: ExitCause, out: &mut Vec<Output>) {
         self.life.grace = None;
         self.life.ask = None;
+        self.life.suspend = None;
         self.life.exited = Some(cause.clone());
         out.push(Output::Exit(cause));
     }
@@ -1200,11 +1344,15 @@ fn sender_id(envelope: &wire::Envelope) -> &[u8] {
 
 pub const EXIT_OUTSIDE_TURN_END: Check = Check {
     id: "agent.exit_outside_turn_end",
-    sentence: "an agent exits only at a turn end or a drain deadline",
+    sentence: "an agent exits only at a turn end, a drain deadline or its suspension deadline",
 };
 pub const TAKEN_STILL_PENDING: Check = Check {
     id: "agent.taken_still_pending",
     sentence: "the pending set never holds an input the journal recorded as taken",
+};
+pub const SUSPENSION_WHILE_BUSY: Check = Check {
+    id: "agent.suspension_while_busy",
+    sentence: "the suspension timer runs only while the agent is idle with nothing held",
 };
 pub const DEADLINE_WITHOUT_ORPHAN: Check = Check {
     id: "agent.deadline_without_orphan",
@@ -1216,6 +1364,7 @@ pub const CHECKS: &[Check] = &[
     EXIT_OUTSIDE_TURN_END,
     TAKEN_STILL_PENDING,
     DEADLINE_WITHOUT_ORPHAN,
+    SUSPENSION_WHILE_BUSY,
 ];
 
 pub use core_ring::{Check, DumpReason, StepBudget, Violation};

@@ -563,6 +563,7 @@ fn a_lifecycle_exit_decided_mid_turn_is_a_violation() {
         turn_ended: false,
         turn_running: true,
         deadline_passed: false,
+        suspension_due: false,
     });
     assert_eq!(
         run.agent.check_step_invariants().map_err(|v| v.invariant),
@@ -631,4 +632,241 @@ fn the_lifecycles_summary_holds_states_and_counts() {
     assert_eq!(summary["connected"], true, "{summary}");
     let text = summary.to_string();
     assert!(!text.contains("p1") && !text.contains("hello"), "{text}");
+}
+
+// --- suspension ----------------------------------------------------------
+
+const AFTER_MS: u64 = 600_000;
+
+/// An agent without a parent whose spec carries the suspension delay.
+fn suspending_spec(one_shot: bool) -> AgentSpec {
+    use prost::Message as _;
+    let mut spec = spec(one_shot, None);
+    spec.experimental.insert(
+        SUSPENSION.to_owned(),
+        wire::experimental::SuspensionSpec { after_ms: AFTER_MS }.encode_to_vec(),
+    );
+    spec
+}
+
+/// The suspension timer as the outputs last asked for it.
+fn suspension_timer(out: &[Output]) -> Option<Option<u64>> {
+    out.iter().rev().find_map(|output| match output {
+        Output::ArmTimer {
+            id: TimerId::Suspend,
+            at_ms,
+        } => Some(Some(*at_ms)),
+        Output::CancelTimer {
+            id: TimerId::Suspend,
+        } => Some(None),
+        _ => None,
+    })
+}
+
+/// A suspending agent whose provider is ready, its daemon connected: idle,
+/// with the timer armed from the provider's readiness.
+fn idle_suspending() -> Run {
+    let mut run = Run::start(&suspending_spec(false));
+    run.on(Input::DaemonDials { connection: DAEMON });
+    let out = run.fact(json!({"type": "ready"}));
+    assert_eq!(
+        suspension_timer(&out),
+        Some(Some(run.now_ms + AFTER_MS)),
+        "{out:?}"
+    );
+    run
+}
+
+/// The daemon writes the delay under the experiment's version in the
+/// registry; the agent reads it under the same key.
+#[test]
+fn the_spec_key_is_the_experiments_version() {
+    assert_eq!(SUSPENSION, settings::experiments::SUSPENSION.version);
+}
+
+#[test]
+fn an_idle_agent_suspends_after_its_delay_the_ordinary_graceful_way() {
+    let mut run = idle_suspending();
+    let at = run.agent.life.suspend.expect("armed");
+    let out = run.at(at, Input::Timer(TimerId::Suspend));
+    assert!(closes(&out), "{out:?}");
+    let end = out.iter().find_map(|output| match output {
+        Output::AppendJournal(step) => step.incarnation_end.clone(),
+        _ => None,
+    });
+    assert_eq!(
+        end.map(|end| end.cause),
+        Some(wire::ExitCause::Suspended as i32)
+    );
+    assert_eq!(run.agent.exiting(), Some(&ExitCause::Suspended));
+    assert!(dumps(&out).is_empty(), "{out:?}");
+    // A message arriving as it exits is refused as exiting, which the
+    // daemon answers by resuming it with that message.
+    let out = run.prompt("late", "are you there");
+    assert!(
+        matches!(verdicts(&out).as_slice(), [(id, verdict)] if id == b"late"
+            && matches!(&verdict.of, Some(wire::send_input_response::Of::Rejected(rejected))
+                if rejected.refusal() == wire::Refusal::Exiting)),
+        "{out:?}"
+    );
+    assert_eq!(provider_exits(&mut run), Some(ExitCause::Suspended));
+}
+
+/// Anything that happens to an idle agent breaks its quiet: the timer is
+/// cancelled, and armed afresh from the moment it is idle again.
+#[test]
+fn a_turn_cancels_the_timer_and_its_end_arms_it_afresh() {
+    let mut run = idle_suspending();
+    let out = run.prompt("p1", "hello");
+    assert_eq!(suspension_timer(&out), Some(None));
+    run.reflect("p1");
+    let out = run.at(run.now_ms + 5_000, json_fact(json!({"type": "turn_end"})));
+    assert_eq!(suspension_timer(&out), Some(Some(run.now_ms + AFTER_MS)));
+    // A turn the provider starts itself counts as a turn.
+    let out = run.fact(json!({"type": "turn_start"}));
+    assert_eq!(suspension_timer(&out), Some(None));
+    assert_eq!(run.agent.life.suspend, None);
+    // A stale timer does nothing.
+    let out = run.on(Input::Timer(TimerId::Suspend));
+    assert!(!closes(&out) && run.agent.exiting().is_none(), "{out:?}");
+}
+
+#[test]
+fn a_terminal_client_attached_keeps_the_agent_awake() {
+    let mut run = idle_suspending();
+    let out = run.on(Input::Attached { clients: 1 });
+    assert_eq!(suspension_timer(&out), Some(None));
+    assert_eq!(
+        suspension_timer(&run.on(Input::Attached { clients: 2 })),
+        None
+    );
+    assert_eq!(
+        suspension_timer(&run.on(Input::Attached { clients: 1 })),
+        None
+    );
+    let out = run.on(Input::Attached { clients: 0 });
+    assert_eq!(suspension_timer(&out), Some(Some(run.now_ms + AFTER_MS)));
+}
+
+/// A background job, the turn the provider owes for its end, a wake-up
+/// and a grant for the session each keep the agent from suspending.
+#[test]
+fn what_the_provider_holds_keeps_the_agent_awake() {
+    let mut run = idle_suspending();
+    let out = run.fact(json!({"type": "job_started", "id": "j1"}));
+    assert_eq!(suspension_timer(&out), Some(None));
+    // Its end is reported in a turn the provider starts itself: until that
+    // turn has run, the agent is not idle.
+    let out = run.fact(json!({"type": "job_ended", "id": "j1", "reported": true}));
+    assert_eq!(suspension_timer(&out), None);
+    assert_eq!(
+        suspension_timer(&run.fact(json!({"type": "turn_start"}))),
+        None
+    );
+    let out = run.turn_end();
+    assert_eq!(suspension_timer(&out), Some(Some(run.now_ms + AFTER_MS)));
+
+    // A one-shot wake-up holds until it fires and its turn ends; a
+    // recurring one until it is cancelled.
+    assert_eq!(
+        suspension_timer(&run.fact(json!({"type": "wakeup", "id": "w1"}))),
+        Some(None)
+    );
+    run.fact(json!({"type": "wakeup_fired", "id": "w1"}));
+    assert_eq!(
+        suspension_timer(&run.turn_end()),
+        Some(Some(run.now_ms + AFTER_MS))
+    );
+    run.fact(json!({"type": "wakeup", "id": "w2", "recurring": true}));
+    run.fact(json!({"type": "wakeup_fired", "id": "w2"}));
+    assert_eq!(suspension_timer(&run.turn_end()), None);
+    assert_eq!(run.agent.life.suspend, None);
+    let out = run.fact(json!({"type": "wakeup_cancelled", "id": "w2"}));
+    assert_eq!(suspension_timer(&out), Some(Some(run.now_ms + AFTER_MS)));
+
+    // A permission granted for the session holds for the incarnation.
+    run.prompt("p1", "touch a file");
+    run.reflect("p1");
+    run.fact(json!({"type": "ask", "id": "a1", "tool": "t", "tool_name": "Bash"}));
+    let answer = wire::Input::new(
+        b"ok".to_vec(),
+        wire::ClaudeSdkInput {
+            of: Some(wire::claude_sdk_input::Of::Answer(wire::ClaudeAnswer {
+                ask_key: "a1".into(),
+                of: Some(wire::claude_answer::Of::Permission(
+                    wire::PermissionAnswer {
+                        of: Some(wire::permission_answer::Of::Allow(wire::PermissionAllow {
+                            scope: Some(0),
+                        })),
+                    },
+                )),
+            })),
+        },
+    );
+    run.frame(ctl_frame::Of::Input(answer));
+    assert_eq!(suspension_timer(&run.turn_end()), None);
+    assert_eq!(run.agent.life.suspend, None);
+    assert!(dumps(&run.out).is_empty(), "{:?}", run.out);
+}
+
+/// Only an agent without a parent with the delay in its spec suspends: a
+/// child ends itself after its work, and no entry means today's agent.
+#[test]
+fn an_agent_suspends_only_without_a_parent_and_with_the_delay_in_its_spec() {
+    for spec in [suspending_spec(true), spec(false, None)] {
+        let mut run = Run::start(&spec);
+        run.on(Input::DaemonDials { connection: DAEMON });
+        run.fact(json!({"type": "ready"}));
+        run.prompt("p1", "hello");
+        run.reflect("p1");
+        run.turn_end();
+        assert_eq!(suspension_timer(&run.out), None, "{:?}", spec.parent);
+    }
+}
+
+/// A stop or a lost daemon takes the agent out of running: the timer goes.
+#[test]
+fn a_draining_agent_does_not_suspend() {
+    let mut run = idle_suspending();
+    run.prompt("p1", "hello");
+    run.reflect("p1");
+    let out = run.frame(ctl_frame::Of::Stop(wire::Stop { kill: false }));
+    assert_eq!(run.agent.life.suspend, None, "{out:?}");
+    let mut run = idle_suspending();
+    let out = run.on(Input::DaemonGone { connection: DAEMON });
+    assert!(run.agent.life.suspend.is_some(), "{out:?}");
+    run.at(run.now_ms + GRACE_MS, Input::Timer(TimerId::Grace));
+    assert_eq!(run.agent.exiting(), Some(&ExitCause::DaemonLost));
+    assert_eq!(run.agent.life.suspend, None);
+}
+
+#[test]
+fn a_suspension_armed_while_busy_or_decided_early_is_a_violation() {
+    let mut run = idle_suspending();
+    run.prompt("p1", "hello");
+    run.agent.life.suspend = Some(run.now_ms);
+    assert_eq!(
+        run.agent.check_step_invariants().map_err(|v| v.invariant),
+        Err(crate::SUSPENSION_WHILE_BUSY)
+    );
+    let run = idle_suspending();
+    let mut agent = run.agent;
+    agent.touched.decided = Some(Decided {
+        cause: ExitCause::Suspended,
+        turn_ended: true,
+        turn_running: false,
+        deadline_passed: false,
+        suspension_due: false,
+    });
+    assert_eq!(
+        agent.check_step_invariants().map_err(|v| v.invariant),
+        Err(crate::EXIT_OUTSIDE_TURN_END)
+    );
+}
+
+fn json_fact(fact: serde_json::Value) -> Input {
+    Input::Provider(Fact {
+        channel: Channel::Stream,
+        payload: serde_json::to_vec(&fact).expect("json"),
+    })
 }

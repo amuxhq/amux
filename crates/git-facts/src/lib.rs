@@ -269,10 +269,10 @@ pub async fn facts(cwd: &Path, recorded_base: Option<&str>) -> Result<Option<Git
 pub fn remote_identity(url: &str) -> String {
     let url = url.trim();
     let trimmed = |path: &str| {
-        let path = path.trim_end_matches('/');
+        let path = path.trim_end_matches(['/', '\\']);
         path.strip_suffix(".git")
             .unwrap_or(path)
-            .trim_end_matches('/')
+            .trim_end_matches(['/', '\\'])
             .to_owned()
     };
     let joined = |authority: &str, path: &str| {
@@ -300,14 +300,25 @@ pub fn remote_identity(url: &str) -> String {
         let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
         return joined(authority, path);
     }
-    // scp-like `user@host:owner/name`: a ':' before any '/'.
+    // scp-like `user@host:owner/name`: a ':' before any '/'. A drive
+    // letter and a slash (`C:\src\amux`, `C:/src/amux`) is a Windows path,
+    // as git reads it too.
     if let Some((authority, path)) = url.split_once(':')
-        && !authority.contains('/')
+        && !authority.contains(['/', '\\'])
         && !authority.is_empty()
+        && !is_drive(authority, path)
     {
         return joined(authority, path);
     }
     trimmed(url)
+}
+
+/// Whether `letter:` then `rest` starts a Windows path: one ASCII letter,
+/// then a slash either way.
+fn is_drive(letter: &str, rest: &str) -> bool {
+    letter.len() == 1
+        && letter.chars().all(|c| c.is_ascii_alphabetic())
+        && rest.starts_with(['/', '\\'])
 }
 
 /// Compares the working tree of `cwd` with where `comparison` runs from:
@@ -687,6 +698,11 @@ mod tests {
             super::remote_identity("https://gitlab.example.com/group/sub/tool.git"),
             "gitlab.example.com/group/sub/tool"
         );
+        assert_eq!(
+            super::remote_identity(r"C:\Users\ada\src\amux.git"),
+            r"C:\Users\ada\src\amux"
+        );
+        assert_eq!(super::remote_identity("C:/src/amux"), "C:/src/amux");
     }
 
     /// The scratch index holds the repository's file names, so it is made

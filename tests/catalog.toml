@@ -194,7 +194,7 @@ evidence = "the checker's printed verdict"
 update = ""
 cargo = [
   { package = "models", kind = "lib", targets = ["models"], features = [] },
-  { package = "models", modules = ["client", "composed", "family", "lifecycle", "path", "presence", "relay", "replication", "single_daemon", "socket", "supervisor", "switch"], features = [] },
+  { package = "models", modules = ["client", "composed", "family", "lifecycle", "path", "presence", "relay", "replication", "single_daemon", "socket", "supervisor", "switch", "workspaces"], features = [] },
 ]
 
 [[suite]]
@@ -520,7 +520,7 @@ cargo = [
 [[suite]]
 name = "state-machine-cores"
 contract = "Each state-machine core takes one input to the outputs it wants done and ends every step by checking its cheap invariants, a checkpoint this build cannot decode is refused, and the ring of inputs since a checkpoint resumes from the newest one with a torn tail cut."
-paths = ["crates/agent-core/src", "crates/core-ring/src", "crates/daemon-core/src", "crates/path-core/src", "crates/relay-core/src", "crates/supervisor-core/src"]
+paths = ["crates/agent-core/src", "crates/core-ring/src", "crates/daemon-core/src", "crates/path-core/src", "crates/relay-core/src", "crates/supervisor-core/src", "crates/workspace-core/src"]
 recipe = "just suite state-machine-cores"
 boundary = "Single daemon"
 oracle = "The exact outputs of a step, the checkpoint a restored core writes, and the inputs a ring hands back."
@@ -538,6 +538,7 @@ cargo = [
   { package = "path-core", kind = "lib", targets = ["path_core"], features = [] },
   { package = "relay-core", kind = "lib", targets = ["relay_core"], features = [] },
   { package = "supervisor-core", kind = "lib", targets = ["supervisor_core"], features = [] },
+  { package = "workspace-core", kind = "lib", targets = ["workspace_core"], features = [] },
 ]
 
 [[suite]]

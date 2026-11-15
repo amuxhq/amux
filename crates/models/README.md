@@ -361,6 +361,37 @@ under three sets of faults. Walked one seeded delivery at a time, the same
 model is the testnet's simulated mode. The properties are in
 `src/net/mod.rs`, and the judging of a step in `src/net/env.rs`.
 
+## Workspaces
+
+`WorkspaceLifecycle` runs the real `workspace_core::Workspaces`, held
+between steps as its value, around one workspace on disk of a chosen
+origin: a wt tree or a git worktree this host makes for its first agent, a
+wt tree a person made, another host's wt tree, or a plain folder. Agents are
+created in it and launched; they suspend, are settled or exit, and are
+deleted, with or without consent to discard its changes. A person opens and
+closes a `wt shell`, pins the tree, unpins it, runs a hard `wt stop` and
+edits its files. Another host's daemon holds the tree and lets it go, and
+stops a tree it made. The create hook, a make, a start and a stop each
+succeed or fail, and the daemon restarts. The backend's holds are modelled
+by their meaning. A claim counts the moment the core asks for it, and is
+granted behind a stop hook that already runs. A stop-when-unheld call
+begins only once nothing holds the tree, and does nothing if the tree is
+pinned. A removal is refused, keeping the tree and clearing its owner, if
+anything holds or pins it, or if it is dirty and the delete does not
+discard, and its answer reaches the core after it ran, so an agent may wake
+between. A restart keeps the agents' processes and loses the daemon's
+claims and its calls still waiting, and the restarted daemon adds every
+live agent from its folder, the running ones first, then sweeps the trees
+it owns. What must happen eventually (a workspace this host made, owed a
+stop and held by nothing, has stopped) is judged where the world rests;
+that a running member finds its workspace started is judged whenever the
+backend has nothing left to do, since a running member can always sleep and
+the world never rests with one. The
+wt tree this host makes is checked in CI in two worlds whose union is the
+whole: one without a pin or another host's hold, and one with every holder
+but no failures, edits or restarts. The whole world is checked nightly. The
+properties are in `src/workspaces.rs`.
+
 ## Bounds
 
 A model explores real stores, so a state costs a store transaction or two

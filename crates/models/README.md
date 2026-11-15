@@ -121,6 +121,19 @@ eventually is judged where the world rests with no timer still armed; a
 path the bound on waits cut short is not judged. The properties are in
 `src/family.rs`.
 
+`FamilyDeliveries::suspending()` runs both cores under the suspension
+experiment, and the world may also suspend the parent while nothing written
+to it is unanswered, and restart the parent's machine once, with the parent
+idle or in its turn as its journal last said: every process on it is gone
+and its daemon starts on a new boot. A resumed process takes the message it
+was resumed with as its first input. Beyond the family's own promises it
+checks that neither a suspension nor a restart has the child asked to stop
+while its parent's row is live and open, that a restart leaves no live,
+open row exited, and that a report is dropped only once its parent was
+deleted, unpaired or stopped since it was sent; and that a suspended parent
+is sometimes woken by its child's report, and a parent continued after a
+restart sometimes takes a report sent to its earlier incarnation.
+
 ## Agent lifecycle
 
 `AgentLifecycle` runs the real agent core around the test kind's

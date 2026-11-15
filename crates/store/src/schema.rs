@@ -1,18 +1,34 @@
-//! The store's schema. A fresh file is given it whole; any other file must
-//! carry this build's stamp, or it is refused and left as it is.
+//! The store's schema, as the migrations that make it.
 //!
-//! The schema only grows. A later build may add a table, or a column that
-//! is nullable or has a default, and adds whichever of those a file lacks
-//! when it opens it. Nothing is dropped, renamed or retyped, so there are
-//! no migrations and an older build can still read a newer build's file.
+//! A store is made and changed by one ordered list of SQL texts. Opening a
+//! file runs the entries it has not had, in one transaction, and stamps it
+//! with how many it now holds, so a change to the schema reaches every store
+//! the next time amux starts.
+//!
+//! To change the schema, append an entry to [`MIGRATIONS`]. Two rules keep
+//! every build able to open every store:
+//!
+//! - An entry only adds: a table, an index, or a column that is nullable or
+//!   has a default. It may fill what it added. Nothing is dropped, renamed
+//!   or retyped, so a build from before the entry still reads and writes
+//!   the file, which is what a rollback to the previous release does.
+//! - An entry that a release shipped never changes. A store that ran it is
+//!   never given it again.
+//!
+//! `just store-check` holds both against the latest release. Code that reads
+//! a column an entry added takes its default, or NULL, to mean what builds
+//! before the entry did: a row an older build wrote after the entry ran
+//! holds nothing else.
 
-/// The stamp in a store's `user_version`. It stays 1: because the schema
-/// only grows, every build reads every store, and adding to the schema
-/// keeps the stamp.
-pub const SCHEMA_VERSION: u32 = 1;
+/// How many migrations this build knows: the stamp it leaves in the
+/// `user_version` of a store it made or brought up to date.
+pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
 
-/// The whole schema, run once on a fresh file.
-pub(crate) const SCHEMA: &str = r#"
+/// Every migration, oldest first. A store's `user_version` is how many of
+/// them it has had.
+pub(crate) const MIGRATIONS: &[&str] = &[
+    // 1: the store as amux 0.9.0 made it.
+    r#"
 -- One profile's store: this host's own agents and the replicas it follows.
 -- Enum-valued columns hold the wire integer and are never interpreted by
 -- the store, so a value this binary does not know is stored and served.
@@ -45,10 +61,10 @@ CREATE TABLE agents (
   background_jobs     INTEGER NOT NULL DEFAULT 0, -- copied from the newest snapshot: jobs the provider runs in the background
   descendants         INTEGER NOT NULL DEFAULT 0, -- live agents below this one: own rows counted here, replicas as their origin counts
   filing              INTEGER NOT NULL DEFAULT 1, -- amux.v1.Filing: how the person filed the agent, apart from its lifecycle
+  filed_at_ms         INTEGER NOT NULL DEFAULT 0, -- when the filing last changed, on the origin's clock; pins list in this order
   title               TEXT,              -- what a person reads the agent as, when it is not the name
   last_said           TEXT,              -- copied from the newest snapshot: the line a row quotes from the newest reply
   name_given          INTEGER NOT NULL DEFAULT 0, -- a person or a parent chose the name
-  filed_at_ms         INTEGER NOT NULL DEFAULT 0, -- when the filing last changed, on the origin's clock; pins list in this order
   PRIMARY KEY (origin_host, agent_id)
 ) STRICT;
 
@@ -131,4 +147,5 @@ CREATE TABLE items (
 CREATE UNIQUE INDEX items_by_position ON items (origin_host, agent_id, position);
 CREATE INDEX items_by_revision ON items (origin_host, agent_id, revision);
 CREATE INDEX items_by_input ON items (origin_host, agent_id, input_id) WHERE input_id IS NOT NULL;
-"#;
+"#,
+];

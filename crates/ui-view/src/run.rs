@@ -1,7 +1,9 @@
 //! The one fold for tool steps. A run is every tool step between two pieces
 //! of what the agent or the person put in the transcript: a turn reads as
 //! the agent's text with its work in between, and a client folds each run
-//! of that work to one line, what it did, not every call. Thinking, retry
+//! of that work to one line, what it did, not every call. While a run is
+//! under way it shows its newest step and any step still running, under a
+//! line of what the steps it no longer shows did. Thinking, retry
 //! notices, a subagent's own steps and items that draw nothing pass through
 //! a run; anything else ends it.
 //!
@@ -17,7 +19,7 @@
 //! newest step, which no page moves; [`keep_open_runs`] moves each hold to
 //! its run's newest step as the run grows, so a trim never takes it.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -25,8 +27,10 @@ use ui_state::{Fold, Held, ItemClass, Key, SessionState};
 
 use crate::rows::{CallPhase, ExploreVerb, RowKind, kind_of, subject_of};
 
-/// While a run is under way, how many of its newest steps show.
-pub const LIVE_STEPS: u32 = 3;
+/// How many of a run's newest steps say how many steps follow them: the
+/// newest, and the one before it, which a client draws last while the
+/// newest is the composer's to ask about.
+const RECENT_STEPS: u32 = 2;
 
 /// A row's place in its run.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
@@ -43,9 +47,16 @@ pub struct Run {
     /// It starts at the oldest held rows and older history exists, so it may
     /// continue below: its counts are a floor.
     pub open_below: bool,
-    /// For one of the run's newest steps, how many steps follow it (none for
-    /// the newest); absent for the rest.
+    /// For one of the run's two newest steps, how many steps follow it
+    /// (none for the newest); absent for the rest.
     pub recent: Option<u32>,
+    /// While the run is under way this step shows: it is the newest, or it
+    /// is still running. False once the run is over.
+    pub live_shown: bool,
+    /// On the oldest step a live run shows, what the steps it does not
+    /// show did, for the line above it; absent elsewhere, and when it shows
+    /// every step.
+    pub hidden: Option<RunCounts>,
     /// This step failed and nothing later in its turn redid it, and the
     /// turn has ended: it stays in view when the run folds.
     pub unresolved_failure: bool,
@@ -61,24 +72,32 @@ impl Run {
     pub fn is_last(&self) -> bool {
         self.recent == Some(0)
     }
-
-    /// This step shows while the run is under way.
-    pub fn shows_live(&self) -> bool {
-        self.live && self.recent.is_some_and(|after| after < LIVE_STEPS)
-    }
 }
 
 /// What a run's steps did.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct RunCounts {
     pub commands: u32,
-    /// Files changed, counting each file of a multi-file change.
+    /// Files changed, each counted once however often it changed.
     pub edits: u32,
+    /// Files read, each counted once however often it was read.
     pub reads: u32,
+    /// Searches of files or the web.
     pub searches: u32,
+    /// Folders listed.
+    pub lists: u32,
+    /// Pages fetched.
+    pub fetches: u32,
+    /// Subagents run, started or stopped.
     pub subagents: u32,
-    /// Tool-server calls, fetches, listings and the rest.
+    /// Tool-server calls, images and the rest.
     pub other: u32,
+}
+
+impl RunCounts {
+    fn is_empty(&self) -> bool {
+        *self == RunCounts::default()
+    }
 }
 
 /// The run the item `held` sits in, stated for its row; `kind` and
@@ -91,22 +110,41 @@ pub(crate) fn run_of(
 ) -> Option<Run> {
     let transcript = state.transcript();
     let run = transcript.run_at(held.item.order)?;
+    let order = held.item.order;
     let step = held.class.fold() == Fold::Step;
-    let recent = step
-        .then(|| steps_after(state, &run, held.item.order))
-        .flatten();
-    let counts = (run.newest == held.item.order).then(|| counts(state, &run));
+    let live = !run.closed;
+    let recent = step.then(|| steps_after(state, &run, order)).flatten();
+    let newest = run.newest == order;
+    let live_shown = live && step && shows_live(held, &run);
+    // One walk of the run serves both the newest step's counts and the
+    // line above the oldest step a live run shows, which are often the
+    // same step.
+    let tally = (newest || live_shown).then(|| tally(state, &run, live));
+    let hidden = tally
+        .as_ref()
+        .filter(|tally| live_shown && tally.first_shown == Some(order))
+        .map(|tally| tally.hidden.clone())
+        .filter(|hidden| !hidden.is_empty());
+    let counts = tally.filter(|_| newest).map(|tally| tally.all);
     Some(Run {
         first: run.oldest_key.clone(),
         last: run.newest_key.clone(),
         steps: run.steps,
-        live: !run.closed,
+        live,
         open_below: run.open_below,
         recent,
+        live_shown,
+        hidden,
         unresolved_failure: step && (failed || failed_kind(kind)) && unresolved(state, held),
         counts,
         open: false,
     })
+}
+
+/// A live run's step shows when it is the newest or still running, so
+/// calls made side by side all show while they run.
+fn shows_live(held: &Held, run: &ui_state::Run) -> bool {
+    held.item.order == run.newest || matches!(&held.class, ItemClass::Tool(tool) if tool.in_flight)
 }
 
 /// Whether the run the item at `order` sits in is open: `open` holds one
@@ -173,7 +211,7 @@ pub fn keep_open_runs(state: &SessionState, open: &mut HashSet<Key>) {
 }
 
 /// How many steps follow the one at `order` in `run`, when it is among the
-/// run's newest few; the walk stops there, so a long run costs no more.
+/// run's two newest; the walk stops there, so a long run costs no more.
 fn steps_after(state: &SessionState, run: &ui_state::Run, order: u64) -> Option<u32> {
     let mut after = 0;
     for held in state.transcript().range(order..=run.newest).rev() {
@@ -184,34 +222,82 @@ fn steps_after(state: &SessionState, run: &ui_state::Run, order: u64) -> Option<
             return Some(after);
         }
         after += 1;
-        if after >= LIVE_STEPS {
+        if after >= RECENT_STEPS {
             return None;
         }
     }
     None
 }
 
-fn counts(state: &SessionState, run: &ui_state::Run) -> RunCounts {
-    let mut counts = RunCounts::default();
+/// What a run's steps did: all of them, and, under way, those it does not
+/// show; and the oldest step it shows.
+struct Tally {
+    all: RunCounts,
+    hidden: RunCounts,
+    first_shown: Option<u64>,
+}
+
+fn tally(state: &SessionState, run: &ui_state::Run, live: bool) -> Tally {
+    let mut all = Counting::default();
+    let mut hidden = Counting::default();
+    let mut first_shown = None;
     for held in state.transcript().range(run.oldest..=run.newest) {
         if held.class.fold() != Fold::Step {
             continue;
         }
-        match kind_of(state, held).0 {
+        let kind = kind_of(state, held).0;
+        all.count(&kind);
+        if live && shows_live(held, run) {
+            first_shown.get_or_insert(held.item.order);
+        } else {
+            hidden.count(&kind);
+        }
+    }
+    Tally {
+        all: all.counts,
+        hidden: hidden.counts,
+        first_shown,
+    }
+}
+
+/// Counts with the files already counted, so a file changed or read twice
+/// counts once.
+#[derive(Default)]
+struct Counting {
+    counts: RunCounts,
+    edited: BTreeSet<String>,
+    read: BTreeSet<String>,
+}
+
+impl Counting {
+    fn count(&mut self, kind: &RowKind) {
+        let counts = &mut self.counts;
+        match kind {
             RowKind::Command { .. } | RowKind::Background { .. } => counts.commands += 1,
             RowKind::FileChange { files, .. } => {
-                counts.edits += u32::try_from(files.len().max(1)).unwrap_or(u32::MAX);
+                for file in files {
+                    if self.edited.insert(file.path.clone()) {
+                        counts.edits += 1;
+                    }
+                }
             }
-            RowKind::Explore { verb, .. } => match verb {
-                ExploreVerb::Read => counts.reads += 1,
+            RowKind::Explore { verb, subject, .. } => match verb {
+                ExploreVerb::Read => {
+                    if self.read.insert(subject.clone()) {
+                        counts.reads += 1;
+                    }
+                }
                 ExploreVerb::Search | ExploreVerb::WebSearch => counts.searches += 1,
-                ExploreVerb::List | ExploreVerb::Fetch => counts.other += 1,
+                ExploreVerb::List => counts.lists += 1,
+                ExploreVerb::Fetch => counts.fetches += 1,
             },
-            RowKind::Subagent { .. } => counts.subagents += 1,
+            RowKind::Subagent { .. } | RowKind::Child { .. } => counts.subagents += 1,
+            // Bookkeeping and amux's own look around draw nothing, so
+            // they did nothing the person would count.
+            RowKind::Hidden => {}
             _ => counts.other += 1,
         }
     }
-    counts
 }
 
 /// A failed step stays unresolved when its turn has ended and no later

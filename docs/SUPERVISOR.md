@@ -178,9 +178,10 @@ three things:
 
 A daemon with no pipe has no supervisor and goes straight on. Before `go`,
 nothing the daemon has done needs undoing if the supervisor puts the previous
-binary back: the only writes are the generation file and creating a profile
-store that did not exist. That is what makes activation the
-rollback checkpoint. The
+binary back: the only writes are the generation file and opening each
+profile's store, which creates it or runs the migrations it lacks, and
+migrations only add, so the previous binary still reads it. That is what
+makes activation the rollback checkpoint. The
 daemon's startup order is described in [Architecture](ARCHITECTURE.md).
 
 ## Restarts
@@ -312,8 +313,8 @@ three ways:
 | Anything else | An update is in progress: count failed starts against it as if this supervisor had done the swap. |
 
 Rollback restores the binary only, and only before activation. There is no
-store backup: the store only grows, so the previous binary reads whatever the
-new one added. A bad release that has already activated is fixed by a
+store backup: the new binary's migrations only add to the store, so the
+previous binary reads and writes it as the new one left it. A bad release that has already activated is fixed by a
 corrective release with a higher version, never by moving back.
 
 The supervisor needs write access to the directory holding the `amux` binary,

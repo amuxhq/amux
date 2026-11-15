@@ -1,10 +1,14 @@
 //! amux's tool server: `amux internal mcp <dir>`, which the harness spawns from the
 //! install path and speaks MCP to over stdio.
 //!
-//! Its identity is its agent's directory. The fleet tools (agents, hosts,
-//! send, spawn, stop) dial the daemon at `<dir>/tools.sock`, the socket the
+//! Its identity is its agent's directory. Four fleet tools (agents, hosts,
+//! send, stop) dial the daemon at `<dir>/tools.sock`, the socket the
 //! daemon listens on for this agent alone, so the daemon knows who is
-//! calling from the connection and nothing in a request claims an id. The
+//! calling from the connection and nothing in a request claims an id.
+//! Spawn asks the agent process instead, on `<dir>/private/agent.sock`,
+//! and the agent process makes the same call to the daemon on the same
+//! socket ([`create`]): an agent waits for the children it asked for, and
+//! this way its process knows of each one before the daemon does. The
 //! other two never reach the daemon: status returns ok and is observed by
 //! the interpreter as the provider's tool-call fact, and attach writes the
 //! file into `<dir>/blobs/` and returns the element the model puts in its
@@ -12,12 +16,15 @@
 //! writer.
 //!
 //! A fleet call made while the daemon is being replaced retries for a few
-//! seconds; with no daemon at all it says so plainly.
+//! seconds; with no daemon at all it says so plainly, and so does a spawn
+//! whose agent process is not listening.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use agent_core::Spawn;
 pub use agent_dir::TOOLS_SOCK;
+use agent_dir::agent_sock::{self, Spawned};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tonic::transport::{Channel, Endpoint};
@@ -33,9 +40,17 @@ use crate::dir;
 /// What a fleet call answers when no daemon is listening.
 pub const NOT_RUNNING: &str = "amux daemon isn't running";
 
+/// What a spawn answers when its agent process has no socket for its tool
+/// server: the process was started by a build from before spawns went
+/// through it.
+pub const NOT_TAKING_SPAWNS: &str = "this agent's process is not taking spawn requests";
+
 /// How long a fleet call keeps redialling a daemon that is not answering:
 /// long enough to cover an update's restart.
 pub const RETRY_WINDOW: Duration = Duration::from_secs(5);
+
+/// What a call answers when the daemon's answer holds no agent row.
+const NO_AGENT: &str = "the daemon's answer named no agent";
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
 
@@ -346,15 +361,14 @@ impl Server {
                 attachments: positioned.attachments,
             })),
         };
-        let sent = self
-            .daemon_once(format!("the message to {to}"), |mut client| {
-                let request = wire::SendMessageRequest {
-                    envelope: Some(request.clone()),
-                };
-                async move { client.agents.send_message(request).await }
-            })
-            .await
-            .map_err(|refusal| refusal.or_else(|status| refused(&status, &to)))?;
+        let sent = once(&self.dir, format!("the message to {to}"), |mut client| {
+            let request = wire::SendMessageRequest {
+                envelope: Some(request.clone()),
+            };
+            async move { client.agents.send_message(request).await }
+        })
+        .await
+        .map_err(|refusal| refusal.or_else(|status| refused(&status, &to)))?;
         let id = if sent.envelope_id.is_empty() {
             request.id
         } else {
@@ -363,8 +377,9 @@ impl Server {
         Ok(json!({ "id": interpret::to_hex(&id) }).to_string())
     }
 
-    /// The parent is not in the request: the daemon sets it from the
-    /// socket the call came in on, as it sets a message's sender.
+    /// Asked of the agent process, which asks the daemon. The parent is
+    /// not in the request: the daemon sets it from the socket the agent
+    /// process's call comes in on, as it sets a message's sender.
     async fn spawn(&self, arguments: &Value) -> Answer {
         let kind = required(arguments, "kind")?;
         let Some(kind) = kind_named(&kind) else {
@@ -399,15 +414,16 @@ impl Server {
             }),
             ..CreateAgentRequest::default()
         };
-        let agent = self
-            .daemon_once("the new agent".to_owned(), |mut client| {
-                let request = request.clone();
-                async move { client.agents.create_agent(request).await }
-            })
-            .await
-            .map_err(|refusal| refusal.or_else(|status| Refusal(plain(&status))))?
-            .agent
-            .ok_or_else(|| Refusal("the daemon's answer named no agent".to_owned()))?;
+        let agent = match agent_sock::spawn(&self.dir, &request).await {
+            Ok(Spawned::Created(response)) => response.agent.ok_or(NO_AGENT)?,
+            Ok(Spawned::Refused(why)) => return Err(Refusal(why)),
+            Err(agent_sock::AskError::NotListening(_)) => return Err(NOT_TAKING_SPAWNS.into()),
+            Err(agent_sock::AskError::Lost(error)) => {
+                return Err(Refusal(format!(
+                    "this agent's process went away before confirming the new agent ({error}); it may have asked the daemon for it, so the call was not made again"
+                )));
+            }
+        };
         Ok(json!({
             "name": agent.name,
             "id": interpret::to_hex(&agent.agent_id),
@@ -426,7 +442,7 @@ impl Server {
             agent_id: child.agent_id.clone(),
             filing: Filing::Closed as i32,
         };
-        self.daemon_once(format!("the stop for {name}"), |mut client| {
+        once(&self.dir, format!("the stop for {name}"), |mut client| {
             let request = request.clone();
             async move { client.agents.file_agent(request).await }
         })
@@ -448,7 +464,7 @@ impl Server {
         .await
         .map_err(|status| refused(&status, name))?
         .agent
-        .ok_or_else(|| Refusal("the daemon's answer named no agent".to_owned()))
+        .ok_or_else(|| NO_AGENT.into())
     }
 
     /// The inventory read to CaughtUp: every host entry and agent row.
@@ -505,51 +521,9 @@ impl Server {
         F: Fn(wire::ClientStubs) -> Fut,
         Fut: std::future::Future<Output = Result<tonic::Response<T>, Status>>,
     {
-        self.dial(call, true).await.map_err(|(status, _)| status)
-    }
-
-    /// Runs a call the daemon acts on (a send, spawn or stop) at most
-    /// once. Only dialling is retried over the window: once the call has
-    /// gone out, the daemon may have acted on it even if the answer never
-    /// came, so it is never made again on the model's behalf. `Ok(Err)`
-    /// is the daemon's own refusal.
-    async fn daemon_once<T, F, Fut>(&self, what: String, call: F) -> Result<T, Settled>
-    where
-        F: Fn(wire::ClientStubs) -> Fut,
-        Fut: std::future::Future<Output = Result<tonic::Response<T>, Status>>,
-    {
-        match self.dial(call, false).await {
-            Ok(answer) => Ok(answer),
-            Err((status, true)) if lost(&status) => Err(Settled::Unconfirmed(format!(
-                "the daemon went away before confirming {what}; it may have taken it, so the call was not made again"
-            ))),
-            Err((status, _)) => Err(Settled::Refused(status)),
-        }
-    }
-
-    /// The error says whether the call reached the daemon.
-    async fn dial<T, F, Fut>(&self, call: F, resend: bool) -> Result<T, (Status, bool)>
-    where
-        F: Fn(wire::ClientStubs) -> Fut,
-        Fut: std::future::Future<Output = Result<tonic::Response<T>, Status>>,
-    {
-        let deadline = tokio::time::Instant::now() + RETRY_WINDOW;
-        let mut backoff = Duration::from_millis(50);
-        loop {
-            let failed = match connect(&self.dir.join(TOOLS_SOCK)).await {
-                Ok(channel) => match call(wire::client_stubs(channel)).await {
-                    Ok(response) => return Ok(response.into_inner()),
-                    Err(status) if resend && lost(&status) => (status, true),
-                    Err(status) => return Err((status, true)),
-                },
-                Err(_) => (Status::unavailable(NOT_RUNNING), false),
-            };
-            if tokio::time::Instant::now() + backoff > deadline {
-                return Err(failed);
-            }
-            tokio::time::sleep(backoff).await;
-            backoff = (backoff * 2).min(Duration::from_millis(500));
-        }
+        dial(&self.dir, call, true)
+            .await
+            .map_err(|(status, _)| status)
     }
 
     // --- local tools -----------------------------------------------------
@@ -646,6 +620,74 @@ fn status(arguments: &Value) -> Answer {
     match arguments.get("working_on") {
         Some(Value::String(_) | Value::Null) => Ok("ok".to_owned()),
         _ => Err("working_on must be a string, or null to clear it".into()),
+    }
+}
+
+/// The agent process's half of a spawn: asks the daemon serving the agent
+/// in `dir` for the child its tool server asked the process for, under the
+/// rule of any call the daemon acts on. The answer is the tool server's, in
+/// the words the model reads; beside it, what the agent's core is to hear
+/// of the child.
+pub(crate) async fn create(dir: &Path, request: CreateAgentRequest) -> (Spawned, Spawn) {
+    let made = once(dir, "the new agent".to_owned(), |mut client| {
+        let request = request.clone();
+        async move { client.agents.create_agent(request).await }
+    })
+    .await;
+    match made {
+        Ok(response) => match response.agent.as_ref().map(|agent| agent.incarnation) {
+            Some(incarnation) => (
+                Spawned::Created(Box::new(response)),
+                Spawn::Created { incarnation },
+            ),
+            None => (Spawned::Refused(NO_AGENT.to_owned()), Spawn::Refused),
+        },
+        Err(Settled::Refused(status)) => (Spawned::Refused(plain(&status)), Spawn::Refused),
+        Err(Settled::Unconfirmed(text)) => (Spawned::Refused(text), Spawn::Unconfirmed),
+    }
+}
+
+/// Runs a call the daemon acts on (a send, spawn or stop) at most once.
+/// Only dialling is retried over the window: once the call has gone out,
+/// the daemon may have acted on it even if the answer never came, so it is
+/// never made again on the model's behalf.
+async fn once<T, F, Fut>(dir: &Path, what: String, call: F) -> Result<T, Settled>
+where
+    F: Fn(wire::ClientStubs) -> Fut,
+    Fut: std::future::Future<Output = Result<tonic::Response<T>, Status>>,
+{
+    match dial(dir, call, false).await {
+        Ok(answer) => Ok(answer),
+        Err((status, true)) if lost(&status) => Err(Settled::Unconfirmed(format!(
+            "the daemon went away before confirming {what}; it may have taken it, so the call was not made again"
+        ))),
+        Err((status, _)) => Err(Settled::Refused(status)),
+    }
+}
+
+/// Dials the daemon serving the agent in `dir` afresh each attempt, until
+/// the window closes. The error says whether the call reached the daemon.
+async fn dial<T, F, Fut>(dir: &Path, call: F, resend: bool) -> Result<T, (Status, bool)>
+where
+    F: Fn(wire::ClientStubs) -> Fut,
+    Fut: std::future::Future<Output = Result<tonic::Response<T>, Status>>,
+{
+    let deadline = tokio::time::Instant::now() + RETRY_WINDOW;
+    let mut backoff = Duration::from_millis(50);
+    loop {
+        let failed = match connect(&dir.join(TOOLS_SOCK)).await {
+            Ok(channel) => match call(wire::client_stubs(channel)).await {
+                Ok(response) => return Ok(response.into_inner()),
+                Err(status) if resend && lost(&status) => (status, true),
+                Err(status) => return Err((status, true)),
+            },
+            Err(_) => (Status::unavailable(NOT_RUNNING), false),
+        };
+        if tokio::time::Instant::now() + backoff > deadline {
+            return Err(failed);
+        }
+        tokio::time::sleep(backoff).await;
+        backoff = (backoff * 2).min(Duration::from_millis(500));
     }
 }
 

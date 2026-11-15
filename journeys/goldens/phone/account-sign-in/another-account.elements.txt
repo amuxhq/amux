@@ -26,6 +26,7 @@ you.close | Close |  | 342,82,40,36
  | Agents |  | 16,127,116,42
  | Nothing needs you |  | 16,170,130,18
  | Switch account | ada | 20,66,36,36
+ | New Agent |  | 350,66,27,36
  | All |  | 16,198,123,32
  | All |  | 69,205,17,18
  | Needs you |  | 139,198,123,32

@@ -17,7 +17,7 @@ public enum ListingState: Equatable, Sendable {
     case unavailable
 }
 
-/// Starting an agent, as the sheet reads and changes it. The app adapts its
+/// Starting an agent, as the New Agent page reads and changes it. The app adapts its
 /// new-agent store to this; a story holds one still.
 @MainActor
 public protocol NewAgentSurface: AnyObject {

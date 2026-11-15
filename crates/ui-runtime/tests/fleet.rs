@@ -635,6 +635,65 @@ async fn a_chat_on_screen_fetches_its_catalogue_once_per_hash_and_home_never_doe
     calls.none().await;
 }
 
+/// A chat opened while its agent's host is away cannot fetch what the agent
+/// offers. It asks again when it has caught up with the host, so the
+/// models and permissions show without the chat being opened again; until
+/// then no event asks a host that cannot answer.
+#[tokio::test]
+async fn a_catalogue_its_host_could_not_give_is_fetched_once_the_chat_catches_up() {
+    let (fleet, mut calls, _inventory) = fleet_of(vec![named(b"a")]).await;
+    let fleet = Arc::new(fleet);
+    let mut streams = Streams::default();
+    let (agent, _) = streams.answer(&mut calls).await;
+    let feed = streams.feed(&agent);
+    feed.send(offering(1, b"first"));
+    feed.send(detached());
+
+    let opening = tokio::spawn({
+        let fleet = fleet.clone();
+        async move { fleet.open(&key(b"a"), CHAT).await }
+    });
+    let (request, reply) = calls.get_blob().await;
+    assert_eq!(request.hash, b"first");
+    reply.send(Err(unreachable())).ok();
+    let chat = opening.await.unwrap().expect("the chat opens");
+    assert!(models(&chat).is_empty());
+
+    // The host still away, what else arrives asks nothing.
+    feed.send(offering(2, b"first"));
+    calls.none().await;
+
+    feed.send(caught_up(2));
+    let (request, reply) = calls.get_blob().await;
+    assert_eq!(request.hash, b"first");
+    reply.send(Ok(catalogue("gpt-1"))).ok();
+    until(chat.changed(), || {
+        (models(&chat) == ["gpt-1"]).then_some(())
+    })
+    .await;
+    calls.none().await;
+
+    // A fetch lost on its way to a host that came back meanwhile is asked
+    // again when it fails, not at the next time the host comes back.
+    feed.send(offering(3, b"second"));
+    let (request, lost) = calls.get_blob().await;
+    assert_eq!(request.hash, b"second");
+    feed.send(detached());
+    until(chat.changed(), || (!chat.state().caught_up()).then_some(())).await;
+    feed.send(caught_up(3));
+    until(chat.changed(), || chat.state().caught_up().then_some(())).await;
+    calls.none().await;
+    lost.send(Err(transport())).ok();
+    let (request, reply) = calls.get_blob().await;
+    assert_eq!(request.hash, b"second");
+    reply.send(Ok(catalogue("gpt-2"))).ok();
+    until(chat.changed(), || {
+        (models(&chat) == ["gpt-2"]).then_some(())
+    })
+    .await;
+    calls.none().await;
+}
+
 fn inventory_host(reach: wire::trusted::Reach) -> wire::InventoryEvent {
     wire::InventoryEvent {
         of: Some(wire::inventory_event::Of::Host(

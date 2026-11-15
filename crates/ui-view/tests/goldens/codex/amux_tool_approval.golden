@@ -24,7 +24,7 @@
      1 boundary:1 Hidden collapsed
      2 prompt:7031 Prompt { text: [Text("Get the parser reviewed.")], steered: false }
      3 exec-1 Child { action: Start, name: "reviewer", host: "", kind: "", state: Succeeded, result: "" } run[exec-1..exec-2 x2 recent=1] collapsed
-     4 exec-2 ToolCall { server: "spec", tool: "ask_the_operator", fact: "BLUE", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"BLUE\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-1..exec-2 x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 2 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: fals…
+     4 exec-2 ToolCall { server: "spec", tool: "ask_the_operator", fact: "BLUE", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"BLUE\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-1..exec-2 x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note:…
      5 turn:1 TurnEnd { duration_ms: Some(0), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None

@@ -47,6 +47,7 @@ pub(crate) const EXPLORATION: &[(&str, ToolClass)] = &[
 pub(crate) const TASK_TOOLS: &[&str] = &["TaskCreate", "TaskUpdate", "TaskGet", "TaskList"];
 
 pub(crate) const QUESTION_TOOL: &str = "AskUserQuestion";
+pub(crate) const SHELL_TOOL: &str = "Bash";
 pub(crate) const PLAN_TOOL: &str = "ExitPlanMode";
 
 /// Claude's built-in tools that write or edit files. In plan mode Claude
@@ -966,7 +967,7 @@ pub fn tool_input(name: &str, server: &str, input: &Value, old_source: &str) -> 
         tool_input::Of::OtherJson(input.to_string().into_bytes())
     } else {
         match name {
-            "Bash" => tool_input::Of::Shell(ShellInput {
+            SHELL_TOOL => tool_input::Of::Shell(ShellInput {
                 description: read::<BashInput>(input).description,
             }),
             "Edit" | "MultiEdit" => {

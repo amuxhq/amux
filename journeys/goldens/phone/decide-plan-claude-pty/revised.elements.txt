@@ -1,10 +1,10 @@
 shell |  | agents | 0,62,402,778
 chat |  | planner-pty | 0,116,402,724
-chat.row.boundary | Started |  | 16,124,370,34
-chat.row.prompt | Move the journal. |  | 16,158,370,40
-chat.row.plan | Plan sent back, Check the copy before switching. | folded | 16,198,370,65
-chat.row.plan | Plan proposed, Move the journal |  | 16,261,370,185
-chat.prose.render |  | rendered | 58,300,316,134
+chat.row.prompt | Move the journal. |  | 16,124,370,40
+chat.prose.render |  | rendered | 245,134,127,20
+chat.row.plan | Plan sent back, Check the copy before switching. | folded | 16,164,370,65
+chat.row.plan | Plan proposed, Move the journal |  | 16,227,370,185
+chat.prose.render |  | rendered | 58,266,316,134
 ask | Plan ready | open | 12,664,378,166
 ask.more | More |  | 338,672,44,44
 ask.plan.auto |  | off | 28,720,346,38
@@ -18,10 +18,9 @@ chat.title | planner-pty | planner-pty | 76,66,165,36
  | Switch to Accept edits, As the work starts | 0 | 28,720,346,38
  | Approve |  | 28,770,169,44
  | Send back… |  | 205,770,169,44
- | Started |  | 16,124,370,34
- | Move the journal. |  | 16,158,370,40
- | Plan sent back, “Check the copy before switching.” |  | 16,198,370,65
- | Plan proposed, Move the journal, Move the journal, 1., Copy the journal to the new store., 2., Check the copy against the original., 3., Point the daemon at it., 4., Keep the old journal for a week. |  | 16,261,370,185
+ | Move the journal. |  | 16,124,370,40
+ | Plan sent back, “Check the copy before switching.” |  | 16,164,370,65
+ | Plan proposed, Move the journal, Move the journal, 1., Copy the journal to the new store., 2., Check the copy against the original., 3., Point the daemon at it., 4., Keep the old journal for a week. |  | 16,227,370,185
 BackButton | Agents |  | 16,62,44,44
  | planner-pty, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36

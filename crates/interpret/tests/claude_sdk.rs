@@ -46,6 +46,7 @@ goldens! {
     usage_health_and_sign_in_are_strip_fields => "strip",
     a_usage_windows_stated_state_ends_when_it_resets => "usage_reset",
     refusal_fallback_is_a_model_switch_row => "rows",
+    a_shell_call_opens_on_its_streamed_description => "streamed_command",
     inputs_become_stream_json_writes => "inputs",
     send_now_steers_a_queued_prompt_into_the_running_turn => "steering",
     recorded_cleared => "recorded_cleared",

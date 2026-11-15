@@ -2,13 +2,17 @@ import AmuxCore
 import AmuxMacScreens
 import AmuxValues
 import Foundation
+import Observation
 
-/// The shared new-agent store as the Mac's sheet reads it, with what
+/// The shared new-agent store as the Mac's New Agent page reads it, with what
 /// leaves the Mac — asking a host for its directories and offers, starting
 /// the agent — sent through the stores.
+/// Observable for the one thing it holds itself, the first message: the
+/// store's own fields are observed through it.
 @MainActor
+@Observable
 final class MacNewAgent: NewAgentSurface {
-    let stores: StoreBundle
+    @ObservationIgnored let stores: StoreBundle
     private var model: NewAgentStore { stores.newAgent }
 
     init(stores: StoreBundle) {

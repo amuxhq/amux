@@ -21,6 +21,7 @@
 mod env;
 mod provider;
 
+pub use agent_core::Spawn;
 use daemon_core::payload::ClientRequest;
 use daemon_core::{AgentId, Create, HostId};
 pub use env::{

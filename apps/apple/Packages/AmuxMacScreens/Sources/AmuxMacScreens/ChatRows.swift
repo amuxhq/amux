@@ -88,14 +88,29 @@ struct ChatRow: View {
                 toggle: toggle)
         case .fileChange(let files, let state):
             fileChange(files, state)
-        case .command(let command, let state, let head, let more, let trimmed, _, let durationMs, let exitCode):
-            GridLine(
-                glyph: glyph(state, "terminal"), accented: accented(state),
-                failed: state == .failed, rail: rail,
-                verb: ChatWords.verb(state, row, wants: "Wants to run", doing: "Running", done: "Ran"),
-                subject: ChatWords.firstLine(command),
-                meta: ChatWords.meta(commandMeta(state, exitCode, durationMs), row, verbPhase: state, note: false),
-                quote: denial, output: head, trimmed: trimmed, more: more)
+        case .command(let command, let description, let state, let head, let more, let trimmed, _, let durationMs,
+            let exitCode):
+            let meta = commandMeta(state, exitCode, durationMs)
+            if let said = ChatWords.described(description) {
+                // The agent said what it is for: its words lead, the command
+                // faint under them, and the meta says where it stands.
+                GridLine(
+                    glyph: glyph(state, "terminal"), accented: accented(state),
+                    failed: state == .failed, rail: rail, verb: said,
+                    meta: ChatWords.meta(
+                        meta + [ChatWords.describedState(state, decided: row.decision != nil) ?? ""], row,
+                        note: false),
+                    note: ChatWords.commandLine(command), codeNote: true,
+                    quote: denial, output: head, trimmed: trimmed, more: more)
+            } else {
+                GridLine(
+                    glyph: glyph(state, "terminal"), accented: accented(state),
+                    failed: state == .failed, rail: rail,
+                    verb: ChatWords.verb(state, row, wants: "Wants to run", doing: "Running", done: "Ran"),
+                    subject: ChatWords.firstLine(command),
+                    meta: ChatWords.meta(meta, row, verbPhase: state, note: false),
+                    quote: denial, output: head, trimmed: trimmed, more: more)
+            }
         case .explore(let verb, let subject, let state, let result):
             GridLine(
                 glyph: glyph(state, "search"), accented: accented(state), failed: state == .failed,
@@ -111,10 +126,15 @@ struct ChatRow: View {
                 note: running && !lastTool.isEmpty ? "└ \(lastTool)" : nil,
                 detail: !running && !answer.isEmpty ? answer : nil, prose: true, detailLines: expanded ? nil : 2,
                 opens: true, open: expanded, toggle: toggle)
-        case .background(let command, let running, _):
+        case .background(let command, let description, let running, _):
+            let said = ChatWords.described(description)
             GridLine(
-                glyph: "play", rail: rail, verb: "In background", subject: ChatWords.firstLine(command),
-                meta: running ? "running" : "finished")
+                glyph: "play", rail: rail, verb: said ?? "In background",
+                subject: said == nil ? ChatWords.firstLine(command) : "",
+                meta: said == nil
+                    ? (running ? "running" : "finished")
+                    : (running ? "in background · running" : "in background · finished"),
+                note: said == nil ? nil : ChatWords.commandLine(command), codeNote: true)
         case .image(let path, let generated, let image):
             VStack(alignment: .leading, spacing: 6) {
                 GridLine(
@@ -326,6 +346,8 @@ struct GridLine: View {
     var meta = ""
     var change: (UInt32, UInt32)?
     var note: String?
+    /// The note is code, a command under the words that describe it.
+    var codeNote = false
     var quiet = false
     var headTruncation = false
     var quote: String?
@@ -348,7 +370,8 @@ struct GridLine: View {
             VStack(alignment: .leading, spacing: 4) {
                 line
                 if let note {
-                    Text(note).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(3)
+                    Text(note).font(.system(size: 12, design: codeNote ? .monospaced : .default))
+                        .foregroundStyle(.secondary).lineLimit(3)
                 }
                 if let quote {
                     Text("“\(quote)”").font(.system(size: 12)).italic().foregroundStyle(.secondary)

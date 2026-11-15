@@ -11,7 +11,7 @@ use claude_protocol::stream::{
     StreamDelta, StreamEvent, SystemInitMessage, TaskUsage, Usage, UserMessageOutput,
 };
 use prost::Message as _;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::claude_item::Kind;
 use wire::{
@@ -20,11 +20,11 @@ use wire::{
     ToolState, Turn, TurnOutcome, UsageMeter, UsageState,
 };
 
-use super::{AskMeta, Call, Request, State, TaskState, Tool};
+use super::{AskMeta, Call, Request, State, StreamingCall, TaskState, Tool, streamed};
 use crate::claude_answers::{AnswerShape, Decided, ToolDecisionState};
 use crate::claude_common::{
-    AnsweredResult, JobInput, PLAN_TOOL, QUESTION_TOOL, auto_models, blocks_text, claude_limit,
-    item_body, job_kind, message_text, offered_commands, offered_models, old_source,
+    AnsweredResult, JobInput, PLAN_TOOL, QUESTION_TOOL, SHELL_TOOL, auto_models, blocks_text,
+    claude_limit, item_body, job_kind, message_text, offered_commands, offered_models, old_source,
     permission_scopes, plan_ask, question_ask, question_ask_text, split_tool_name, tool_input,
     tool_result_text,
 };
@@ -61,6 +61,13 @@ struct TaskReport<'a> {
     summary: Option<&'a str>,
     task_type: Option<&'a str>,
     backgrounded: bool,
+}
+
+/// A shell call's input as far as it has been read while streaming.
+#[derive(Serialize)]
+struct StreamedShell<'a> {
+    description: &'a str,
+    command: &'a str,
 }
 
 impl State {
@@ -682,7 +689,7 @@ impl State {
         match event {
             StreamEvent::MessageStart { message, .. } => {
                 self.stream = written(&message.id);
-                self.stream_tools.clear();
+                self.streaming_calls.clear();
                 self.usage_seen(&message.usage);
                 self.shared.turn_started();
             }
@@ -700,8 +707,19 @@ impl State {
                     ContentBlock::Thinking { thinking, .. } => {
                         self.open_block(emit, key, thinking, true)
                     }
+                    // A shell call waits for what it is for; anything
+                    // else is drawn from its name until its input arrives.
+                    ContentBlock::ToolUse { id, name, .. } if name == SHELL_TOOL => {
+                        self.streaming_calls.insert(
+                            *index,
+                            StreamingCall {
+                                id: id.clone(),
+                                name: name.clone(),
+                                json: String::new(),
+                            },
+                        );
+                    }
                     ContentBlock::ToolUse { id, name, .. } => {
-                        self.stream_tools.insert(*index, id.clone());
                         self.tool_seen(emit, id, name, None, "");
                     }
                     _ => {}
@@ -715,11 +733,15 @@ impl State {
                 let appended = match delta {
                     StreamDelta::Text { text, .. } => text,
                     StreamDelta::Thinking { thinking, .. } => thinking,
+                    StreamDelta::ToolInput { partial_json, .. } => {
+                        return self.call_streamed(emit, *index, partial_json);
+                    }
                     _ => return,
                 };
                 self.shared.append(emit, &key, appended);
             }
             StreamEvent::ContentBlockStop { index, .. } => {
+                self.streaming_calls.remove(index);
                 let Some(message) = self.stream.clone() else {
                     return;
                 };
@@ -733,6 +755,47 @@ impl State {
             StreamEvent::MessageStop { .. } => self.stream = None,
             StreamEvent::Unknown(_) => {}
         }
+    }
+
+    /// More of a shell call's input. The call is drawn once its
+    /// description has arrived, with as much of the command's first line as
+    /// has arrived under it, and grows with that line until its end; the
+    /// whole command comes with the finished call. Before its description
+    /// the call is not drawn at all: its row would have to change shape when
+    /// the description arrived. Claude is asked to write the description
+    /// first; when it writes the command first, the call appears just
+    /// before it is complete.
+    fn call_streamed(&mut self, emit: &mut Emit, index: u32, json: &str) {
+        let Some(call) = self.streaming_calls.get_mut(&index) else {
+            return;
+        };
+        call.json.push_str(json);
+        let fields = streamed::string_fields(&call.json);
+        let field = |key: &str| fields.iter().find(|field| field.key == key);
+        let Some(description) =
+            field("description").filter(|field| field.complete && !field.value.trim().is_empty())
+        else {
+            return;
+        };
+        let (command, line_ended) = match field("command") {
+            Some(field) => match field.value.split_once('\n') {
+                Some((line, _)) => (line, true),
+                None => (field.value.as_str(), field.complete),
+            },
+            None => ("", false),
+        };
+        let input = serde_json::to_value(StreamedShell {
+            description: &description.value,
+            command,
+        })
+        .expect("two strings serialize");
+        let (id, name) = (call.id.clone(), call.name.clone());
+        // Past the first line nothing drawn changes until the call is
+        // finished, so the rest of the input is not read.
+        if line_ended {
+            self.streaming_calls.remove(&index);
+        }
+        self.tool_seen(emit, &id, &name, Some(&input), "");
     }
 
     fn open_block(&mut self, emit: &mut Emit, key: String, text: &str, thinking: bool) {

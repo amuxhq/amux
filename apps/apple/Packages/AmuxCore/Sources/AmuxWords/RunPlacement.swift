@@ -61,17 +61,12 @@ public enum RunPlacement: Equatable, Sendable {
             return .step(header: Header(words: ChatWords.run(run, counts: counts()), open: true))
         }
         if run.live {
-            // Under way: the newest few steps, with how many came before.
-            let shown = min(run.steps, liveSteps)
-            let earlier = run.steps - shown
-            guard earlier > 0, run.recent == shown - 1 else { return .own }
-            return .step(header: Header(words: ChatWords.earlier(earlier), open: false))
+            // Under way: the newest step and any still running, under what
+            // the steps it no longer shows did.
+            guard let hidden = run.hidden else { return .own }
+            return .step(header: Header(words: ChatWords.run(run, counts: hidden), open: false))
         }
         if run.recent == 0 { return .folded(words: ChatWords.run(run, counts: counts())) }
         return .failed
     }
-
-    /// While a run is under way, how many of its newest steps show: the
-    /// shared fold's own number.
-    public static let liveSteps: UInt32 = 3
 }

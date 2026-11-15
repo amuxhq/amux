@@ -1,0 +1,21 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 2 input {"id":"p1","prompt":{"text":"push"}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 6 fact {"channel":"stream","json":{"event":{"delta":{"partial_json":"oth repos\", \"command\": \"git pu","type":"input_json_delta"},"index":0,"type":"content_block_delta"},"parent_tool_use_id":null,"session_id":"s1","type":"stream_event","uuid":"d2"}}
+  composer Send activity=Some(Running { key: "toolu_a" }) queue=[] underway=[] refused=[]
+## 14 fact {"channel":"stream","json":{"event":{"delta":{"partial_json":" files\"}","type":"input_json_delta"},"index":1,"type":"content_block_delta"},"parent_tool_use_id":null,"session_id":"s1","type":"stream_event","uuid":"d7"}}
+  composer Send activity=Some(Running { key: "toolu_b" }) queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Hidden collapsed
+     2 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("push")], steered: false }
+     3 toolu_a Command { command: "git push origin main\nsleep 1", description: "Push both repos", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_a..toolu_b x2 recent=1 live shown]
+     4 toolu_b Command { command: "ls", description: "List files", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_a..toolu_b x2 recent=0 live shown RunCounts { commands: 2, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }]
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 2, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-opus-5-5 "Opus 5.5" efforts=[]
+  permission* unlisted "default" "default" unsettable
+  changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Opus 5.5") effort=None permission=None mode=None

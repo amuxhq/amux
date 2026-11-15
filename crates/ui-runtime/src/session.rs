@@ -151,12 +151,43 @@ pub(crate) struct Inner {
     /// The transcript failed its check and a dump was asked for.
     dumped: AtomicBool,
     catalogues: Arc<Catalogues>,
-    /// The catalogue hash last fetched for; asked again only when a chat
-    /// opens anew.
-    asked: Mutex<Option<Vec<u8>>>,
+    asked: Mutex<Asked>,
+}
+
+/// The fetch of the catalogue a snapshot names. One that failed is not
+/// repeated at every event after it, which would ask a host that cannot
+/// answer over and over; it is repeated when it may end differently: the
+/// chat caught up with the agent's host, or opened anew.
+#[derive(Default)]
+struct Asked {
+    /// The hash last fetched for.
+    hash: Option<Vec<u8>>,
+    /// That fetch has not answered yet.
+    out: bool,
+    /// A reason to ask again came while the fetch was out, so its failure
+    /// asks again at once: the host may have come back only after the
+    /// call to it was lost.
+    again: bool,
 }
 
 impl Inner {
+    fn asked(&self) -> MutexGuard<'_, Asked> {
+        self.asked
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+    }
+
+    /// A fetch that failed may succeed now: the next look at the catalogue
+    /// asks again, or the fetch still out does if it fails.
+    fn ask_again(&self) {
+        let mut asked = self.asked();
+        if asked.out {
+            asked.again = true;
+        } else {
+            asked.hash = None;
+        }
+    }
+
     fn model(&self) -> MutexGuard<'_, Model> {
         self.model
             .lock()
@@ -239,7 +270,13 @@ impl Inner {
     /// Applies one stream event, answering an Append whose base is not
     /// held with Get before the next event, so later appends meet it.
     async fn event(self: &Arc<Self>, event: SessionEvent) -> Outcome {
+        let caught_up = matches!(event.of, Some(session_event::Of::CaughtUp(_)));
         let outcome = self.apply(Msg::Event(event));
+        if caught_up {
+            // The agent's host answers, so a fetch that failed while it
+            // could not be reached is worth asking again.
+            self.ask_again();
+        }
         if outcome.session {
             self.want_catalogue();
         }
@@ -336,14 +373,15 @@ impl Inner {
             return;
         }
         {
-            let mut asked = self
-                .asked
-                .lock()
-                .unwrap_or_else(|poison| poison.into_inner());
-            if asked.as_ref() == Some(&wanted) {
+            let mut asked = self.asked();
+            if asked.hash.as_ref() == Some(&wanted) {
                 return;
             }
-            *asked = Some(wanted.clone());
+            *asked = Asked {
+                hash: Some(wanted.clone()),
+                out: true,
+                again: false,
+            };
         }
         tokio::spawn(self.clone().fetch_catalogue(wanted));
     }
@@ -363,6 +401,21 @@ impl Inner {
                 .map_err(|_| DriverError::Undecodable),
             Err(error) => Err(DriverError::from(&error)),
         };
+        let again = {
+            let mut asked = self.asked();
+            // A fetch for a hash the snapshot has since replaced leaves the
+            // newer one's fetch alone.
+            if asked.hash.as_ref() == Some(&wanted) {
+                asked.out = false;
+                let again = std::mem::take(&mut asked.again) && fetched.is_err();
+                if again {
+                    asked.hash = None;
+                }
+                again
+            } else {
+                false
+            }
+        };
         match fetched {
             Ok(catalogue) => {
                 self.catalogues.keep(wanted.clone(), catalogue.clone());
@@ -375,6 +428,9 @@ impl Inner {
                 hash: wanted,
                 error,
             }),
+        }
+        if again {
+            self.want_catalogue();
         }
     }
 
@@ -544,7 +600,7 @@ impl Session {
             closed: AtomicBool::new(false),
             dumped: AtomicBool::new(false),
             catalogues,
-            asked: Mutex::new(None),
+            asked: Mutex::default(),
         });
         let mut stream = inner
             .client
@@ -638,11 +694,7 @@ impl Session {
         self.inner.apply(Msg::Window(cap.max(tail) as usize));
         if on_screen && !was_on_screen {
             // A chat opening anew asks again after a failed fetch.
-            *self
-                .inner
-                .asked
-                .lock()
-                .unwrap_or_else(|poison| poison.into_inner()) = None;
+            self.inner.ask_again();
         }
         if on_screen {
             self.inner.want_catalogue();

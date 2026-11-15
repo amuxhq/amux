@@ -1109,6 +1109,14 @@ impl Net {
         self.transition(|t| t.relay(p, input))
     }
 
+    /// The process hears of a child its tool server asked it for: the
+    /// request on its way to the daemon, or how the daemon answered it.
+    /// Its core takes it at once, as the process's driver has it do before
+    /// the spawn goes any further.
+    pub fn spawn_heard(&mut self, p: usize, child: Vec<u8>, heard: agent_core::Spawn) {
+        self.transition(|t| t.feed_agent(p, agent_core::Input::Spawn { child, heard }));
+    }
+
     /// Moves the clock on: every timer it passes falls due, in the order it
     /// was armed for.
     pub fn advance(&mut self, by_ms: u64) {
@@ -2785,6 +2793,7 @@ fn agent_input(input: &agent_core::Input) -> &'static str {
             Some(ctl_frame::Of::Stop(_)) => "Control Stop",
             _ => "Control",
         },
+        In::Spawn { .. } => "Spawn",
         In::Timer(_) => "Timer",
         In::Tick { .. } => "Tick",
         In::WriteFailed { .. } => "WriteFailed",

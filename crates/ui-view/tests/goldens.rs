@@ -107,7 +107,7 @@ fn describe_row(row: &ui_view::Row) -> String {
     if let Some(run) = &row.run {
         let _ = write!(
             line,
-            " run[{}..{} x{}{}{}{}{}{}]",
+            " run[{}..{} x{}{}{}{}{}{}{}{}]",
             run.first,
             run.last,
             run.steps,
@@ -115,6 +115,11 @@ fn describe_row(row: &ui_view::Row) -> String {
                 .map(|after| format!(" recent={after}"))
                 .unwrap_or_default(),
             if run.live { " live" } else { "" },
+            if run.live_shown { " shown" } else { "" },
+            run.hidden
+                .as_ref()
+                .map(|hidden| format!(" hidden={hidden:?}"))
+                .unwrap_or_default(),
             if run.open_below { " open_below" } else { "" },
             if run.unresolved_failure {
                 " unresolved"

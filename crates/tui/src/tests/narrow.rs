@@ -94,6 +94,7 @@ fn a_step_after_always_allow_keeps_its_command_at_80_columns() {
     let command = "python3 -c 'import time; time.sleep(28)'";
     let mut row = call_row(RowKind::Command {
         command: command.into(),
+        description: String::new(),
         state: CallPhase::Running,
         exit_code: None,
         output_head: vec![],

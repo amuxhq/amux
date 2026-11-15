@@ -566,7 +566,16 @@ nothing is inferred.
 - **Streaming.** Text and thinking stream: `content_block_start` opens an
   item keyed `<message id>:<block index>`, each delta is an append, and
   `content_block_stop` completes it. Tool calls are keyed by their tool-use
-  id and land on their `tool_result`.
+  id and land on their `tool_result`. A call opens at its
+  `content_block_start`, drawn from its name, except a Bash call: its input
+  streams as pieces of JSON, read as far as they go, and the call opens only
+  once its description has arrived whole, with the command's first line as
+  far as it has arrived under it, growing with that line until its end. The
+  finished call brings the whole command. A row that opened before its
+  description would change shape when the description came; a call that
+  writes its command first opens when the description arrives, a moment
+  before the call is complete. The record keeps no words, so a replay of
+  one opens the call with the finished call instead.
 - **Correlation by id.** Every user message the interpreter hands Claude
   carries a UUID derived from its input or envelope id (`client_uuid`).
   Claude echoes it on the message's replay and on its `command_lifecycle`

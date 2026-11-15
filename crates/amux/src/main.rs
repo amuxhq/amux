@@ -719,8 +719,16 @@ mod tests {
                 "help",
             ]
         );
+        // Every line here but `internal agent` and `internal catalogue` is
+        // run by something an earlier build wrote or a host at another
+        // version: a login item or service unit, a supervisor handing over to
+        // the release it installed, a running agent's provider, a paired
+        // host over SSH. Those lines keep parsing in every later build; a
+        // line is added here, never changed.
         for hidden in [
             &["amux", "supervise"][..],
+            &["amux", "--config", "/config.toml", "supervise"],
+            &["amux", "supervise", "--inherit", "state"],
             &["amux", "daemon"],
             &["amux", "relay"],
             &["amux", "internal", "agent", "/dir"],

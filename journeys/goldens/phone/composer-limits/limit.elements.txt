@@ -1,10 +1,10 @@
 shell |  | agents | 0,62,402,778
 chat |  | limited | 0,116,402,724
-chat.row.boundary | Started |  | 16,124,370,34
-chat.row.prompt | Rewrite the pricing page's FAQ. |  | 16,158,370,40
-chat.row.prose | The FAQ is rewritten. | final | 16,210,370,20
-chat.prose.render |  | rendered | 16,210,370,20
-chat.row.turn-end | Worked <t> |  | 16,237,62,16
+chat.row.prompt | Rewrite the pricing page's FAQ. |  | 16,124,370,40
+chat.prose.render |  | rendered | 146,134,226,20
+chat.row.prose | The FAQ is rewritten. | final | 16,176,370,20
+chat.prose.render |  | rendered | 16,176,370,20
+chat.row.turn-end | Worked <t> |  | 16,203,62,16
 chat.field | <volatile>
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
@@ -17,10 +17,9 @@ chat.title | limited | limited | 76,66,165,36
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
- | Started |  | 16,124,370,34
- | Rewrite the pricing page's FAQ. |  | 16,158,370,40
- | The FAQ is rewritten. |  | 16,210,370,20
- | Worked <t> |  | 16,237,62,16
+ | Rewrite the pricing page's FAQ. |  | 16,124,370,40
+ | The FAQ is rewritten. |  | 16,176,370,20
+ | Worked <t> |  | 16,203,62,16
 BackButton | Agents |  | 16,62,44,44
  | limited, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36

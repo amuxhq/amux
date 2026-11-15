@@ -111,6 +111,12 @@ its folder and host, how much of its context it has used, and
 - **Ctrl+O** opens the overview beside the chat: the agent's tasks, its
   background jobs, the files it changed, and how close it is to its usage
   limits.
+- **/** at the start of a message lists the agent's commands, such as
+  `/compact` or `/review`, with what each does. Keep typing to narrow the
+  list, move with ↑ and ↓, and press Enter to run one or Tab to fill it in
+  and add to it. A command that needs something after its name, such as
+  `/rename <name>`, is filled in for you to finish. Esc hides the list. In
+  a Codex chat, **$** lists its skills the same way.
 - **Shift+Enter** or **Ctrl+J** starts a new line.
 - **Drag** over text to select it. It's copied when you let go, and the keys
   it offers appear under the box: **R** quotes it in your reply and **Esc**
@@ -130,8 +136,11 @@ such as Ghostty, kitty or iTerm2, an image also shows a thumbnail, including
 inside tmux, where amux turns on `allow-passthrough` for its own pane.
 
 The agent's tool steps fold into one line between its replies, such as
-`▸ 3 commands · 2 edits · 4 reads`. Click it to see each step, and click a
-step to see its output or its diff.
+`▸ Read 4 files, edited 2 files, ran 3 commands`. Click it to see each step,
+and click a step to see its output or its diff. While the agent works, you see
+the step it's on now under a line of what it has done so far. When Claude says
+what a command is for, the step reads as Claude's words, with the command
+itself faint underneath.
 
 Your unsent message belongs to the chat, not to the terminal. Close the
 terminal, or pick the chat up on your phone, and it's still there.
@@ -147,6 +156,7 @@ and pause, and the keys it offers appear above the key line.
 | Ctrl+A, then `n` | A new agent in the same folder, on the same host |
 | Ctrl+A, then `r` | Review the agent's changes |
 | Ctrl+A, then `a` | Switch to the agent's own interface, for an agent on this machine |
+| Ctrl+A, then `x` | Settle the agent and go home, asking first if that would cut work short |
 | Ctrl+A, then `d` | Leave for the shell |
 | Ctrl+A, then `?` | Every key |
 

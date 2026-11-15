@@ -1,11 +1,11 @@
 shell |  | agents | 0,62,402,778
 chat |  | filer | 0,116,402,724
-chat.row.boundary | Started |  | 16,124,370,34
-chat.row.prompt | File the reconnect flake. |  | 16,158,370,40
-chat.row.run | 1 call | folded | 16,198,370,44
-chat.row.form | Sent 3 fields to, linear | folded | 16,228,370,44
-chat.row.prose | Filed it in Linear. | final | 16,274,370,20
-chat.prose.render |  | rendered | 16,274,370,20
+chat.row.prompt | File the reconnect flake. |  | 16,124,370,40
+chat.prose.render |  | rendered | 198,134,174,20
+chat.row.run | Used 1 tool | folded | 16,164,370,44
+chat.row.form | Sent 3 fields to, linear | folded | 16,194,370,44
+chat.row.prose | Filed it in Linear. | final | 16,240,370,20
+chat.prose.render |  | rendered | 16,240,370,20
 chat.row.turn-end | <volatile>
 chat.field | Message filer |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
@@ -19,12 +19,11 @@ chat.title | filer | filer | 76,66,165,36
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
- | Started |  | 16,124,370,34
- | File the reconnect flake. |  | 16,158,370,40
- | 1 call |  | 16,198,370,44
- | Sent 3 fields to, linear |  | 16,228,370,44
- | Filed it in Linear. |  | 16,274,370,20
- | Worked <t> |  | 16,301,62,16
+ | File the reconnect flake. |  | 16,124,370,40
+ | Used 1 tool |  | 16,164,370,44
+ | Sent 3 fields to, linear |  | 16,194,370,44
+ | Filed it in Linear. |  | 16,240,370,20
+ | Worked <t> |  | 16,267,62,16
 BackButton | Agents |  | 16,62,44,44
  | filer, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36

@@ -7,8 +7,11 @@
 //! `ctl.sock` and reads the journal. This crate holds what both sides must
 //! agree on: the names, the lock, the local sockets both kinds of socket
 //! are, the framing on the control socket, and the clock every deadline on
-//! either side runs on.
+//! either side runs on. The agent's tool server is a third process that
+//! works in the directory; how it reaches its agent process on
+//! `private/agent.sock` is here too ([`agent_sock`]).
 
+pub mod agent_sock;
 pub mod clock;
 pub mod ctl;
 pub mod local_socket;
@@ -35,6 +38,9 @@ pub const JOURNAL: &str = "journal";
 pub const PTY: &str = "pty";
 /// The agent's own state; the daemon never reads it.
 pub const PRIVATE: &str = "private";
+/// The agent listens, under `private/`; its tool server is the only
+/// client.
+pub const AGENT_SOCK: &str = "agent.sock";
 /// What the agent process writes to stderr: the daemon opens it for the
 /// process, which has no terminal and no daemon pipe to write to.
 pub const AGENT_LOG: &str = "agent.log";

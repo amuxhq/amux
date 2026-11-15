@@ -13,7 +13,7 @@
 == chat
      1 boundary:1 Hidden collapsed
      2 1fb42be9-7de5-4130-93ab-2f141ad4a481 Prompt { text: [Text("Delegate to the `counter` subagent, then reply with exactly what it said.")], steered: false }
-     3 toolu_01Q8zwfYAnrWZY75jncoudw8 Subagent { description: "Run counter subagent", running: false, tool_count: 0, last_tool: "", answer: "ONE TWO THREE", duration_ms: Some(981) } run[toolu_01Q8zwfYAnrWZY75jncoudw8..toolu_01Q8zwfYAnrWZY75jncoudw8 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
+     3 toolu_01Q8zwfYAnrWZY75jncoudw8 Subagent { description: "Run counter subagent", running: false, tool_count: 0, last_tool: "", answer: "ONE TWO THREE", duration_ms: Some(981) } run[toolu_01Q8zwfYAnrWZY75jncoudw8..toolu_01Q8zwfYAnrWZY75jncoudw8 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0 }]
      4 stream:56c4c3db-364c-4ebc-b91e-5bff896feb04 Prose { text: [Text("The `counter` subagent is running in the background. I'll reply with its exact output once it reports back.")], streaming: false, working_note: false }
      5 turn:1 TurnEnd { duration_ms: Some(2016), failed: false }
      6 1e375f83-9923-4c07-b3fe-498a1df28590 Prose { text: [Text("ONE TWO THREE")], streaming: false, working_note: false }

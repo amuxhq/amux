@@ -120,7 +120,6 @@ The recipes a build or change usually needs:
 | `just protobuf` | Regenerates the committed protobuf output |
 | `just codegen-check` | Fails if the committed protobuf output is stale |
 | `just mobile-check` | Check the provider-free client graph for iOS |
-| `just warm` | `just build` and `just test-build` |
 | `just premerge` | The quick checks before a change reaches main; see [CI](CI.md) |
 | `just ci` | The whole check sequence; see [CI](CI.md) |
 
@@ -156,22 +155,24 @@ differs from what the generator writes.
 
 ## Worktrees
 
-Development happens in git worktrees managed by `wt`, which owns worktrees,
-sessions, each tree's rendered environment and its daemon; `just` owns every
-build and test task. [`.wt.toml`](../.wt.toml) holds the tree's side:
+Development happens in git worktrees managed by `wt`, which owns each tree's
+environment, its daemon and the simulator pools; `just` owns every build and
+test task. [`.wt.toml`](../.wt.toml) holds the tree's side:
 
-- A new worktree runs `just build`, and `just warm` is the warm hook. `just
-  warm` builds the desktop product and compiles the ordinary workspace test
-  targets without running them. `wt` warms the canonical checkout with it,
-  then gives a new worktree a copy-on-write snapshot of that `target`
-  directory, so unchanged Cargo output is already there while each tree owns
-  every later write. Removing the worktree removes its build output; there is
-  no shared writable Cargo target.
+- A new tree starts with a copy-on-write copy of the main checkout's `target`
+  directory, so third-party crates that haven't changed are already built.
+  Then `just build` runs in the background, logging to `.wt/create.log`;
+  `wt ls` shows whether it is still running or failed. Each tree owns its
+  build output, and removing the tree removes it.
+- `amux` inside a tree is a wrapper that runs that tree's
+  `target/debug/amux`. Until the tree's first build has succeeded it refuses
+  and says why, rather than run the binary copied from the main checkout.
 - Each tree gets its own amux installation under `.wt/amux/`:
-  `AMUX_CONFIG` names its installation file, `AMUX_LOG` its daemon log, and
-  `target/debug` is on the tree's PATH. The installation sets its own
-  discovery scope, so a worktree's daemon never meets real machines or other
-  trees, and turns `keep_awake` off. `amux server start` and `amux server
-  stop` create and destroy it.
+  `AMUX_CONFIG` names its installation file and `AMUX_LOG` its daemon log.
+  The installation sets its own discovery scope, so a tree's daemon never
+  meets real machines or other trees. It has no supervisor, so it never
+  installs a release, and it turns `keep_awake` off. `wt start` and `wt stop`
+  start and stop its daemon.
 - The pinned iPhone simulators are machine-wide resources that the iOS
   recipes lease through `scripts/with`.
+- [AGENTS.md](../AGENTS.md) says how a branch lands on main.

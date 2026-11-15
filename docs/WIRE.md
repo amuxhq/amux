@@ -18,7 +18,7 @@ different versions talking. Host-to-host links, pairing and the relay are in
 | [`records.proto`](../proto/amux/v1/records.proto) | The kind-neutral records: `Step`, `Item`, `Append`, `Snapshot`, `Kind`, `ExitCause`, agent messages, attachments, blobs, diffs, and the streams' `CaughtUp` and `Lagged` |
 | [`chat.proto`](../proto/amux/v1/chat.proto) | What the kinds share inside a body: item bodies, snapshot pieces, asks, input and answer pieces, the catalogue |
 | [`claude.proto`](../proto/amux/v1/claude.proto), [`codex.proto`](../proto/amux/v1/codex.proto) | The per-kind item, snapshot and input bodies |
-| [`agent_process.proto`](../proto/amux/v1/agent_process.proto) | The agent spec and what seeds its queue, and the `ctl.sock` and `pty.sock` frames |
+| [`agent_process.proto`](../proto/amux/v1/agent_process.proto) | The agent spec and what seeds its queue, the `ctl.sock` and `pty.sock` frames, and what an agent's tool server asks its agent process on `private/agent.sock` |
 | [`error.proto`](../proto/amux/v1/error.proto) | `ErrorReason`, the amux reasons an error's `google.rpc.ErrorInfo` names |
 | [`link.proto`](../proto/amux/v1/link.proto), [`pairing_service.proto`](../proto/amux/v1/pairing_service.proto) | Host-to-host link control, and pairing |
 | [`installation_service.proto`](../proto/amux/v1/installation_service.proto) | `InstallationService`: the installation and its profiles |
@@ -37,7 +37,7 @@ client never opens a store and never dials another host.
 | --- | --- | --- |
 | Terminal client, CLI, a third-party client | gRPC over the profile's local socket (`PROFILE_SOCKET` in [`crates/node/src/profiles.rs`](../crates/node/src/profiles.rs)) | `AgentService`, `SessionService`, `ProfileAdminService` |
 | Phone app | An in-process call into the embedded runtime | The same services, the same implementation |
-| An agent's tool server | gRPC over the agent's `tools.sock`; the socket is the caller's identity | `AgentService` and `SessionService`, restricted |
+| An agent's tool server, and its agent process for a spawn | gRPC over the agent's `tools.sock`; the socket is the caller's identity | `AgentService` and `SessionService`, restricted |
 | A paired host's daemon | An application stream on the link | `AgentService` and `SessionService`, answered for a peer |
 | Profile and installation management | gRPC over the installation's front-door socket | `InstallationService` |
 | A host pairing with this one | A link stream while a pairing window is open | `PairingService` |
@@ -778,6 +778,22 @@ A change that cannot be made this way, or a sweeping clean-up, is the next
 protocol: a new ALPN, `amux/2`, served beside `amux/1`, which TLS settles
 before any amux message.
 
+To add to the protocol:
+
+1. Add the field, arm, value, message or call to its `.proto`, with the next
+   unused number, and say in its comment what an absent or zero value means:
+   it must be what builds without the field did.
+2. Run `just protobuf` and commit the regenerated Rust with the schema.
+3. Decide what each side does when the other is older. A reader treats the
+   field's absence as the old behaviour. A writer cannot assume an older
+   reader saw the field, and a daemon in between rebuilds envelopes, so a
+   new envelope field is lost there; meaning that must survive goes in the
+   per-kind body.
+4. Run `just proto-compat`. To take something away, delete it and leave its
+   number `reserved`; the name is never reused either.
+5. Update this page and, when a client would notice,
+   [build a client](guide/build/build-a-client.md).
+
 Strings builds agree on outside any schema, such as the ALPN and the pairing
 labels, are pinned by a test in `crates/wire/src/pinned.rs`.
 
@@ -815,9 +831,10 @@ Nothing else carries a version integer either:
   client shows "amux *version* is running · restart to update" when they
   differ.
 - **`ctl.sock` and the journal** have no version integer at all.
-- **The store** only grows, so its stamp stays 1; a store with another stamp
-  is refused, by name, and left as it is (see
-  [the journal and store](JOURNAL_AND_STORE.md)).
+- **The store**'s stamp counts the migrations it has had, and no build
+  refuses a store for it: a build runs the ones a store lacks and opens a
+  store that has had more as it is, because migrations only add (see
+  [the journal and store](JOURNAL_AND_STORE.md#schema-and-migrations)).
 
 ## Writing a client
 

@@ -541,7 +541,7 @@ fn every_setting_changes_at_once() {
         "Send usage counts",
         "Send reports automatically",
         "Signed in as jordan@example.com",
-        "Pro until",
+        "Pro",
     ] {
         assert!(drawn.contains(words), "{words}: {drawn}");
     }

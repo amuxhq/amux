@@ -1,7 +1,8 @@
 //! A stream made up from an agent's record stands for the stream the
 //! record was made from. Every fixture's record, turned into a stream and
 //! recorded again, is the record it was, alias for alias, but for what the
-//! interpreter derives from words the record does not keep ([`derived`]).
+//! interpreter derives from words the record does not keep ([`derived`],
+//! [`streamed_opening`]).
 //! And a record a report carried reproduces the check its stream broke, at
 //! the step that broke it, from the record alone.
 
@@ -174,6 +175,48 @@ fn derived(difference: &str) -> bool {
     size || answer
 }
 
+/// Whether a difference is where a shell call's row opens while headless
+/// Claude streams the call's input. The row opens once the input's
+/// description has streamed in whole, which only its words say, so a
+/// made-up stream opens it with the finished call instead: the recorded
+/// stream writes the call's item at an input delta, the made-up one at the
+/// assistant frame that carries the whole call.
+fn streamed_opening(difference: &str, recorded: &Value) -> bool {
+    let Some((at, rest)) = difference.split_once(".step") else {
+        return false;
+    };
+    let Some((segment, event)) = at
+        .strip_prefix(".segments[")
+        .and_then(|at| at.strip_suffix(']'))
+        .and_then(|at| at.split_once("].events["))
+    else {
+        return false;
+    };
+    let (Ok(segment), Ok(event)) = (segment.parse::<usize>(), event.parse::<usize>()) else {
+        return false;
+    };
+    let shape = &recorded["segments"][segment]["events"][event]["event"]["shape"];
+    let rest = rest.strip_prefix(".items").unwrap_or(rest);
+    let (expected, value) = if let Some(value) = rest.strip_prefix(": only recorded: ") {
+        (
+            shape["event"]["delta"]["type"] == "=input_json_delta",
+            value,
+        )
+    } else if let Some(value) = rest.strip_prefix(": only made up: ") {
+        (shape["type"] == "=assistant", value)
+    } else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(value) else {
+        return false;
+    };
+    let items = value.get("items").unwrap_or(&value);
+    expected
+        && items
+            .as_array()
+            .is_some_and(|items| items.iter().all(|item| item["arm"] == "tool"))
+}
+
 /// The fixtures whose title comes out of the words of a provider's answer.
 /// A record keeps no words, so its replay has no title to take.
 const TITLED_FROM_WORDS: &[&str] = &[
@@ -228,7 +271,10 @@ fn round_trip<I: Interpreter>(kind: &str) -> Outcome {
                 }
             }
         }
-        let other: Vec<&String> = found.iter().filter(|line| !derived(line)).collect();
+        let other: Vec<&String> = found
+            .iter()
+            .filter(|line| !derived(line) && !streamed_opening(line, &recorded))
+            .collect();
         if TITLED_FROM_WORDS.contains(&name.as_str()) {
             outcome.derived.push(name);
         } else if found.is_empty() {

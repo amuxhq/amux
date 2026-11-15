@@ -206,7 +206,7 @@ impl Drawer {
     fn style(&self) -> Style {
         let theme = self.theme;
         let mut style = if self.heading {
-            theme.heading()
+            theme.emphasis()
         } else if self.done {
             theme.faint()
         } else if self.quoted() {
@@ -224,7 +224,7 @@ impl Drawer {
             style = style.add_modifier(Modifier::CROSSED_OUT);
         }
         if self.link.is_some() {
-            style = theme.link(style);
+            style = style.add_modifier(Modifier::UNDERLINED);
         }
         style
     }
@@ -457,7 +457,7 @@ impl Drawer {
             let url = &from[..end];
             self.runs.push(Run {
                 text: url.to_owned(),
-                style: self.theme.link(style),
+                style: style.add_modifier(Modifier::UNDERLINED),
                 link: Some(url.to_owned()),
             });
             rest = &from[end..];

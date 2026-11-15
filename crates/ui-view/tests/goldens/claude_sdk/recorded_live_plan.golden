@@ -57,7 +57,7 @@
      2 a36c0888-d548-4025-99fd-8fe49922087f Prompt { text: [Text("Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval with the ExitPlanMode tool.")], steered: false }
      3 02de5f7e-aaaa-456f-a258-89bcbddac724 Hidden collapsed
      4 msg_011CgZmkhBFnmwcBi1SkJ3kU:0 Thinking { text: "", open: false, duration_ms: Some(920) }
-     5 toolu_01LBd2bwpJvXTMMnXAchFT2u Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_01LBd2bwpJvXTMMnXAchFT2u..toolu_018XZV31HkWJjmFt3PxrPVDe x3 recent=2] collapsed
+     5 toolu_01LBd2bwpJvXTMMnXAchFT2u Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_01LBd2bwpJvXTMMnXAchFT2u..toolu_018XZV31HkWJjmFt3PxrPVDe x3] collapsed
      6 toolu_01JG5eUBRrQpBr2uzfxfUjw9 Explore { verb: Search, subject: "select:ExitPlanMode,EnterPlanMode", state: Succeeded, result: "" } run[toolu_01LBd2bwpJvXTMMnXAchFT2u..toolu_018XZV31HkWJjmFt3PxrPVDe x3 recent=1] collapsed
      7 0d0365e9-23aa-430e-a1e8-82bf57adc602 Hidden run[toolu_01LBd2bwpJvXTMMnXAchFT2u..toolu_018XZV31HkWJjmFt3PxrPVDe x3] collapsed
      8 msg_011CgZmkrSNJEY8jgzwM52YD:0 Thinking { text: "", open: false, duration_ms: Some(1013) } run[toolu_01LBd2bwpJvXTMMnXAchFT2u..toolu_018XZV31HkWJjmFt3PxrPVDe x3] collapsed
@@ -71,7 +71,7 @@
     16 fe9cbf32-1494-4c97-bcda-75c4be26f3a8 Hidden collapsed
     17 msg_011CgZmmN3bbYx6ct9rs8iCB:0 Thinking { text: "", open: false, duration_ms: Some(896) }
     18 toolu_01JKDeTGxD754hVJtAJZqJeK FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[toolu_01JKDeTGxD754hVJtAJZqJeK..toolu_01FhHxcpPHL99r1yVYpSYeij x2 recent=1] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: false } collapsed
-    19 toolu_01FhHxcpPHL99r1yVYpSYeij Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_01JKDeTGxD754hVJtAJZqJeK..toolu_01FhHxcpPHL99r1yVYpSYeij x2 recent=0 RunCounts { commands: 0, edits: 1, reads: 1, searches: 0, subagents: 0, other: 0 }]
+    19 toolu_01FhHxcpPHL99r1yVYpSYeij Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_01JKDeTGxD754hVJtAJZqJeK..toolu_01FhHxcpPHL99r1yVYpSYeij x2 recent=0 RunCounts { commands: 0, edits: 1, reads: 1, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }]
     20 3de691e8-a0da-4432-8d0d-23b77047687c Hidden collapsed
     21 msg_011CgZmmUXmqqmx2HT3mqX8H:0 Prose { text: [Text("`README.md` now contains `UPDATED` instead of `CURRENT`. I read the file back and it shows `UPDATED` on line 1, with the trailing newline unchanged.\n\nThe plan you approved is saved at `<MACHINE_PATH>")], streaming: false, working_note: false }
     22 turn:1 TurnEnd { duration_ms: Some(11789), failed: false }

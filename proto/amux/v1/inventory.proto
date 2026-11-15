@@ -187,7 +187,7 @@ enum Filing {
   FILING_PINNED = 2;
   // Done with: stopped when it was live, out of other agents' listing, and
   // the only kind retention deletes. A message from the person or its own
-  // parent resumes it, filed active again.
+  // parent resumes it, filed open again.
   FILING_CLOSED = 3;
 }
 

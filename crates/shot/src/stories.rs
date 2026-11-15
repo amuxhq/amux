@@ -255,6 +255,12 @@ pub fn all() -> Vec<Story> {
         story("chat.settings", || {
             Scene::Chat(Box::new(tui::vocabulary::chat_settings()))
         }),
+        story("chat.commands", || {
+            Scene::Chat(Box::new(tui::vocabulary::chat_commands("/")))
+        }),
+        story("chat.commands-typed", || {
+            Scene::Chat(Box::new(tui::vocabulary::chat_commands("/re")))
+        }),
         story("chat.permissions", || {
             Scene::Chat(Box::new(tui::vocabulary::chat_permissions()))
         }),

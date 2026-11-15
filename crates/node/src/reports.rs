@@ -30,9 +30,10 @@ use wire::{DumpFile, DumpRequest, SubmitReportRequest, SubmitReportResponse};
 
 use crate::runtime::ProfileRuntime;
 
-/// The report header's schema this build writes. amux.sh accepts exactly
-/// this one; it stays 1 until 0.9.0, and before then a header change keeps
-/// the version and ships with amux.sh's reader.
+/// The report header's schema this build writes. A header amux.sh's reader
+/// of this version could not take raises it, and amux.sh goes on accepting
+/// every version a released build sends: builds in the field keep sending
+/// theirs.
 pub const REPORT_SCHEMA: u32 = 1;
 /// What a report's header is called, and its packed dump.
 pub const REPORT_JSON: &str = "report.json";

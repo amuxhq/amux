@@ -45,10 +45,12 @@ is drawn only while its words are on screen, so a block scrolled half off leaves
 Ink goes by importance, in four steps mixed from the terminal's own text and ground: brightest for what the eye
 should land on (names, the key in a legend), normal for what you act on, grey for what you read, faint for what
 you look up (ages, folders, hosts, counts). Colour marks meaning only: the attention ink (the terminal's blue) for
-what needs you and for headings and links in the agent's text, red for failure, the terminal's cyan for code and
-paths inside the agent's text, green and red for lines added and removed wherever you read a diff or its counts,
-and the terminal's yellow for what is worth noticing, like a usage limit near. Your own messages sit on a surface
-washed with the terminal's blue. An agent that acts without asking has a heavy yellow composer box, heavy so that it
+what needs you, red for failure, a soft violet mixed from the terminal's blue and magenta for code and paths inside
+the agent's text (the terminal's cyan in sixteen colours), green and red for lines added and removed wherever you
+read a diff or its counts, and the terminal's yellow for what is worth noticing, like a usage limit near. Headings
+and links in the agent's text keep the reading inks: a heading bright and bold, a link underlined. Your own messages sit on a plain grey
+surface, a shade of the terminal's ground; a wash of the terminal's blue was tried and dropped because it clashed
+with the violet of code. An agent that acts without asking has a heavy yellow composer box, heavy so that it
 shows in a scheme whose yellow is pale. Anything that looks like a control can be clicked, and every
 key in a key line too.
 
@@ -192,16 +194,20 @@ Enter on a row opens its chat. From top to bottom:
     as you scroll through a long answer; as the next turn's message nears the top the pinned one fades, then that
     message takes the pin. Clicking it scrolls to the message;
   - everything the agent wrote is in one reading ink, across the chat's full width; code and paths wear the
-    terminal's cyan, and code blocks are highlighted in its palette. A single line break in its text stays a line
+    code ink, a violet mixed from the terminal's blue and magenta, and code blocks are highlighted in its palette. A single line break in its text stays a line
     break, as Claude's and Codex's own interfaces draw it; a blank line parts paragraphs. Thinking is never drawn;
   - each run of tool steps between two pieces of its text folds to one faint line of what the steps did
-    (`▸ 3 commands · 2 edits · 4 reads`). Clicking it, or the leader then `o`, opens it to one line per step,
-    verb first (`Ran just lint · exit 1 · 22s`, `Edited session.rs · +0 −1`); clicking a step opens its detail: a
-    command's last lines of output, an edit's patch, a call's result;
+    (`▸ Read 4 files, edited 2 files, ran 3 commands`), a file read or changed twice counted once. Clicking it, or
+    the leader then `o`, opens it to one line per step, verb first (`Ran just lint · exit 1 · 22s`, `Edited
+    session.rs · +0 −1`); a command Claude said what it is for reads as those words with the command faint under
+    them (`Run the quick checks · 22s` over `$ just premerge`), its words as Claude wrote them, never re-tensed;
+    Codex says nothing of the kind, so its commands keep the verb. Clicking a step opens its detail: a command's
+    last lines of output, an edit's patch, a call's result;
   - a failure the turn ended without fixing stays in view in red where it ran, above its folded run's line; one
     fixed later in the turn folds away with the rest;
-  - while the agent is at a run, its newest three steps show as they happen, the current one bright, and the
-    running turn ends in `Working · 33s`, which becomes a faint `Worked 6m` when the turn ends;
+  - while the agent is at a run, its newest step shows, bright while it runs, with any other step still running
+    beside it, under a faint line of what the rest did so far; when the agent speaks again the run folds to its
+    line. The running turn ends in `Working · 33s`, which becomes a faint `Worked 6m` when the turn ends;
   - a plan is drawn as the agent's text under a landmark that folds like a run (`▾ Plan · Move the
     journal`), and once decided folds to `▸ Plan · Move the journal · approved` or `· sent back` with the note
     under it;
@@ -210,10 +216,13 @@ Enter on a row opens its chat. From top to bottom:
 - **The queue**, just above the composer: prompts waiting behind the running turn, one line each, faint on your
   message's surface, saying how each waits (`queued`, `queued from relay` from another agent, `sending into this
   turn`, `waiting for desk…`, `may not have arrived`).
-- **The row above the composer**, when there is something to say: the task in progress and `3 of 4 tasks`, how
-  many tool servers need signing in (`2 tool servers need sign-in`, in the warning ink) or failed to start (in
-  red), and `ctrl+o` for the overview. The tool servers are counted when the chat opens and again only when
-  another one fails; a send or opening the overview puts them away, and the overview keeps each by name.
+- **The row above the composer**, when there is something to say: the task in progress and `3 of 4 tasks`, the
+  background jobs running, and `ctrl+o` for the overview.
+- **Tool server failures** are told once in the footer, in the warning ink, while the terminal client runs (`tool
+  server github needs sign-in · ctrl+o`): a failure is one host's server failing one way, so it is not told again
+  in the next chat opened or on coming back to this one, and the overview keeps listing it for as long as it
+  fails. A failure the chat showed and then saw ready is forgotten, so failing again is told; a namesake ready in
+  another chat is not recovery, since agents in different folders can carry different servers under one name.
 - **The composer**, boxed, with `Model (effort) · mode` on its bottom edge in the words a person reads (`Opus
   (high) · accept edits`). The model is the one running: Claude's `Default (recommended)` reads as the model it
   stands for (`Opus 5`). The mode is left out while it is the agent's normal one, which asks before acting

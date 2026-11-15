@@ -124,8 +124,8 @@ store-check *ARGS:
     {{bounded}} 60 scripts/py scripts/store-check.py "$@"
 
 # Write the profile the upgrade test opens, as this commit's build leaves it,
-# under crates/node/tests/fixtures/upgrade/. Run once at a release's tag and
-# commit the result.
+# under crates/node/tests/fixtures/upgrade/. Run once at the tag of a release
+# that changed what a profile holds on disk, and commit the result.
 upgrade-fixture: nextest
     {{bounded}} 600 cargo nextest run --locked -p node --run-ignored only -E 'test(write_this_releases_profile)'
 
@@ -258,9 +258,6 @@ deny:
 # `cargo install --locked cargo-shear@1.14.0`.
 shear:
     {{bounded}} 300 cargo shear --locked --deny-warnings
-
-# Warm the product and ordinary test build graphs used by new worktrees.
-warm: build test-build
 
 # `just suite desktop-cli-system` runs exactly the Cargo tests that suite of
 # tests/catalog.toml lists, on `just test`'s build; anything after the

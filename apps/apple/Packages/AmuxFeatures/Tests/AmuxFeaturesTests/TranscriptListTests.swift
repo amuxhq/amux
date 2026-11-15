@@ -285,7 +285,7 @@ private func prose(_ id: String, _ order: UInt64, _ text: String) -> Row {
 /// A step on the rail: a finished background command.
 private func step(_ id: String, _ order: UInt64) -> Row {
     Row(
-        id: id, order: order, atMs: 0, kind: .background(command: id, running: false, durationMs: nil),
+        id: id, order: order, atMs: 0, kind: .background(command: id, description: "", running: false, durationMs: nil),
         collapsed: false, attention: false, decision: nil, parent: nil, run: nil)
 }
 

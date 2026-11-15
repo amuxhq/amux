@@ -206,6 +206,19 @@ fn a_clear_typed_at_the_terminal_is_the_session_the_next_incarnation_resumes() {
             .await;
         let after = agent.provider_session();
         assert_ne!(after, before, "the clear's session is the one kept");
+        // Claude names the new session in a hook before it writes that
+        // session's transcript, and the agent journals the clear on the
+        // hook. Killed between the two, Claude leaves a transcript with no
+        // conversation, which the next incarnation replaces rather than
+        // resumes: the story of a session file with no conversation, not
+        // this one, which is of a clear Claude finished.
+        let (config, work) = (agent.claude_config(), agent.work());
+        agent
+            .until("Claude to write the cleared session's transcript", || {
+                agent::claude::history::session_file(&config, &work, after.trim())
+                    == agent::claude::history::SessionFile::Conversation
+            })
+            .await;
         drop(screen);
         daemon.kill().await;
         assert_eq!(agent.exit().await, ExitCause::Killed);

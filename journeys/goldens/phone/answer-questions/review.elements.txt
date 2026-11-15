@@ -1,8 +1,8 @@
 shell |  | agents | 0,62,402,778
 chat |  | asker | 0,116,402,724
-chat.row.boundary | Started |  | 16,124,370,34
-chat.row.prompt | Add a settings screen. |  | 16,158,370,40
-chat.row.question | Asking, 3 questions |  | 16,210,370,20
+chat.row.prompt | Add a settings screen. |  | 16,124,370,40
+chat.prose.render |  | rendered | 210,134,162,20
+chat.row.question | Asking, 3 questions |  | 16,176,370,20
 ask | 3 questions | open | 12,428,378,402
 ask.more | More |  | 338,436,44,44
 ask.step.0 |  | answered | 28,484,80,44
@@ -28,9 +28,8 @@ chat.title | asker | asker | 76,66,165,36
  | Order · Which section should come first?, Skipped |  | 28,662,346,40
  | Send answers |  | 28,714,346,44
  | Reply instead |  | 28,782,114,20
- | Started |  | 16,124,370,34
- | Add a settings screen. |  | 16,158,370,40
- | Asking, 3 questions |  | 16,210,370,20
+ | Add a settings screen. |  | 16,124,370,40
+ | Asking, 3 questions |  | 16,176,370,20
 BackButton | Agents |  | 16,62,44,44
  | asker, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36

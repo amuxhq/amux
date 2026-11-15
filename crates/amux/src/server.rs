@@ -230,6 +230,7 @@ fn edge_options(config: &InstallationConfig) -> node::EdgeOptions {
         discovery_scope: config.discovery.scope.clone(),
         dial: true,
         link_socket: true,
+        substrate: None,
         cloud: node::CloudOptions::default(),
         interfaces: node::test_interfaces(),
         liveness: Default::default(),

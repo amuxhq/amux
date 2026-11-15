@@ -348,17 +348,13 @@ pub fn profile(signed_in: bool) -> wire::Profile {
         cloud: Some(wire::CloudStanding {
             standing: Some(if signed_in {
                 Standing::SignedIn(wire::RelayLink {
-                    state: Some(wire::relay_link::State::Connecting(wire::Empty {})),
+                    state: Some(wire::relay_link::State::Connected(wire::RelayConnected {
+                        tier: wire::Tier::Pro as i32,
+                    })),
                 })
             } else {
                 Standing::Unbound(wire::Empty {})
             }),
-        }),
-        access: signed_in.then_some(wire::Access {
-            pro: true,
-            // 18 Jan 2027.
-            until_ms: Some(1_800_230_400_000),
-            grant: Some(wire::access::Grant::Granted(wire::Empty {})),
         }),
         ..Default::default()
     }

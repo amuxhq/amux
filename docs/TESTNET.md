@@ -275,7 +275,9 @@ through to each other. It is the substrate under the host's link socket: the hos
 (`10.n.0.2`) nobody can reach, what it sends leaves from a public loopback port the router's table hands out, and
 what arrives passes only through a mapping the router's filter allows. A mapping nothing has used for the router's
 idle time expires, and the next packet out gets a new port. `public_addr_for(inner, dst)` says which public address
-packets to `dst` leave from now, which is what the relay sees.
+packets to `dst` leave from now, which is what the relay sees. The router stands in front of the host's own
+profile. Each further profile the host's installation serves has a link socket of its own, as on a real machine,
+so it gets a router of the same kind with mappings of its own.
 
 | `RouterKind` | Mapping | Inbound filter |
 | --- | --- | --- |
@@ -390,7 +392,7 @@ The harness owns resources, verbs and observations, never scenarios. Scenarios l
 | `send(name, text)`, `input(...)` | Send a prompt, or any input (an answer, a withdrawal, an interrupt), through the agent's own host. |
 | `stop(name)` | Stop the agent on its own host, as a person does; it can be resumed. |
 | `delete(name)` | Delete an agent on its own host, as a person does. Its children follow on their own hosts by the family rule, after the call returns. |
-| `spawn_child(parent, decl)` | Spawn through the parent's tool socket, naming the child's host. |
+| `spawn_child(parent, decl)` | Spawn as the parent's own spawn tool does, through its agent process's own socket, naming the child's host. |
 | `next_start(name, script)` | Give the next process the host starts for `name` this script, for a resume the host makes itself. |
 | `freeze(name)`, `thaw(name)` | Stop an agent process where it stands, holding its lock and connection, and let it run again. |
 | `sign_in(host, account)`, `set_tier(account, tier)` | Sign a host in through its front door; change what an account has bought. |

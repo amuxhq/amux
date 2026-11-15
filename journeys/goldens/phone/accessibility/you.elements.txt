@@ -18,7 +18,6 @@ you.report | Report a Problem |  | 16,1580,370,69
 you.dump | Export Diagnostics |  | 16,1650,370,112
 you.help.caption |  |  | 16,1769,366,106
 you.close | Close |  | 342,82,40,36
- | Switch account |  | 21,66,34,36
  | decision-sdk, Idle, The deploy check passed., desk, /private/tmp/amux-phone-journey/net/desk/work, <age> |  | 0,333,402,150
  | Agents |  | 16,124,174,62
  | Nothing needs you |  | 16,191,155,22

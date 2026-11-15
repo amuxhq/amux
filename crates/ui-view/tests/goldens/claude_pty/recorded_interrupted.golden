@@ -11,7 +11,7 @@
 == chat
      1 boundary:1 Hidden collapsed
      2 e6ebcddd-54ab-46e2-b820-e76dc427e567 Prompt { text: [Text("Use Bash to run exactly: python3 -c 'import select; select.select([], [], [], 30)'; printf SHOULD_NOT_FINISH. Do not do anything else.")], steered: false }
-     3 toolu_01HLFK8EUYZ9NnLWz12cAGd5 Command { command: "python3 -c 'import select; select.select([], [], [], 30)'; printf SHOULD_NOT_FINISH", state: Cancelled, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell yo…
+     3 toolu_01HLFK8EUYZ9NnLWz12cAGd5 Command { command: "python3 -c 'import select; select.select([], [], [], 30)'; printf SHOULD_NOT_FINISH", description: "Wait 30 seconds then print marker", state: Cancelled, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP w…
      4 turn:1 Stopped
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 35634, window_tokens: None, percent: None, near_full: false }) sign-in None

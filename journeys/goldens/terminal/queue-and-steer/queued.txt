@@ -15,13 +15,13 @@
 
 
 
-
     Run the soak.                                                                                    hh:mm
 
 
     Starting the long run.
 
-  ● Running scripts/soak --for 1h
+  ● Soak
+  │   $ scripts/soak --for 1h
 
     Working
 

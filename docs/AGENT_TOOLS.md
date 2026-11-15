@@ -48,10 +48,30 @@ nothing in a request can claim one. The socket serves the ordinary
 `AgentService` and `SessionService` with a few calls refused; [the protocol](PROTOCOL.md)
 describes what the tools socket allows.
 
-Five tools are fleet tools and dial the daemon; two never reach it. The tool
-server never writes the journal: the agent process is its one writer, and the
-interpreter reads amux's own tool calls from the provider's record like any
-other fact.
+Five tools are fleet tools; two never reach the daemon. Four of the five
+(`agents`, `hosts`, `send`, `stop`) dial the daemon themselves. The fifth,
+`spawn`, asks its own agent process, which asks the daemon for it: the agent
+process listens on `<dir>/private/agent.sock` for its tool server alone,
+takes the `CreateAgentRequest` the tool server would have sent the daemon,
+makes that call on `<dir>/tools.sock` itself, and hands the daemon's answer
+back. So the daemon still learns who is spawning from the socket the call
+arrives on, the model reads what it would have read, and the agent process
+knows of every child it asked for from before the daemon does, which is what
+lets it wait for them ([one-shot](#families)). The socket carries one ask
+and one answer per connection, in the control socket's framing (a varint
+length, then the protobuf message): an `AgentAsk`, then an `AgentAnswer`.
+Each says which kind it is. Spawn is the only ask today, answered with the
+daemon's `CreateAgentResponse` or the words of the refusal; a later build
+can add another, and an agent process from before it refuses it in words.
+The socket carries no gRPC, because an ask has one answer and the tool
+server turns every refusal into words for the model anyway. A tool server
+whose agent process has no such socket (a process started by a build from
+before the socket) answers `this agent's process is not taking
+spawn requests`; it does not go to the daemon in its place.
+
+The tool server never writes the journal: the agent process is its one
+writer, and the interpreter reads amux's own tool calls from the provider's
+record like any other fact.
 
 A fleet call that cannot connect redials with backoff (50 ms doubling to
 500 ms) for up to five seconds, which covers the daemon restarting for an
@@ -60,7 +80,8 @@ running`. Reads (`agents`, `hosts`, and resolving a name) also redial when the
 connection drops under them. A call the daemon acts on (`send`, `spawn`,
 `stop`) is made at most once: if the daemon goes away after the call went
 out, the tool answers that the daemon went away before confirming, that it
-may have taken the call, and that the call was not made again.
+may have taken the call, and that the call was not made again. The agent
+process makes a spawn's call under the same rule.
 
 ## The seven tools
 
@@ -69,7 +90,7 @@ may have taken the call, and that the call was not made again.
 | `agents` | none | `{"agents": [...]}`, one row per agent the person has not settled | `SubscribeInventory`, read to `CaughtUp` |
 | `hosts` | none | `{"hosts": [...]}`, the trusted hosts | the same inventory |
 | `send` | `to`, `text`, `context?` | `{"id": "<envelope id>"}` once the recipient has the message | `ResolveAgent`, then `SendMessage` |
-| `spawn` | `kind`, `prompt`, `name?`, `cwd?`, `host?` | `{"name", "id"}` of the child | `CreateAgent` |
+| `spawn` | `kind`, `prompt`, `name?`, `cwd?`, `host?` | `{"name", "id"}` of the child | `CreateAgent`, made by the agent process |
 | `stop` | `name` | `{}` once the child has ended | `ResolveAgent`, then `FileAgent` (closed) |
 | `status` | `working_on`: a string, or null | `ok` | nothing |
 | `attach` | `path`, `name?` | the attachment element | nothing |
@@ -280,6 +301,8 @@ parent edge: it talks to its user, and the daemon knows who that is.
 ![Spawn returns once the child's process has started and said hello. The first prompt is the first input in the child's queue. The child is one-shot because it has a parent: it exits when its turn ends with an empty queue and no accepted message pending, and the parent hears "finished" from the daemon, once, through the outbox. A parent's later send resumes the child with that message as its prompt.](figures/spawn-sequence.svg)
 
 **Spawn.** `CreateAgent` from the tools socket makes the caller the parent.
+The call is the agent process's, made for its tool server's `spawn`
+([the tool server](#the-tool-server)).
 The daemon writes the child's row first, so a crash leaves a row the next
 start marks exited rather than a directory nothing lists; then the directory
 and `spec.1` with the kind, working directory, parent and the first prompt;
@@ -293,18 +316,70 @@ parent hears that it failed.
 
 **One-shot.** An agent with a parent exits when a turn ends with nothing
 queued, nothing running, no accepted message still pending, no prompt typed
-into terminal Claude still waiting for Claude to record it, and no child of
-its still to send its last report; its exit cause is `FINISHED`, which its
-journal's last step records, and that turn's report is marked `last`. A
-subagent whose own child still works therefore stays: each report the
-child sends starts its next turn, and it reports up as usual. Its daemon
-tells it which of its own children are live, in which incarnation (the
-`children` control frame), and it waits for each incarnation's last report:
-a mid-way report from a child that waits on its own child, or the report of
-an earlier child, never stands in for it. An unreachable child's host leaves it
-waiting, and stopping it (or its own parent's exit) ends it. Input
-that arrives while it exits is answered `REFUSAL_EXITING`. Its transcript
-and its parent edge stay.
+into terminal Claude still waiting for Claude to record it, no child it
+asked for still unsettled, and no child of its still to send its last
+report; its exit cause is `FINISHED`, which its journal's last step
+records, and that turn's report is marked `last`. A subagent whose own child
+still works therefore stays: each report the child sends starts its next
+turn, and it reports up as usual. It waits for each child incarnation's last
+report: a mid-way report from a child that waits on its own child, or the
+report of an earlier child, never stands in for it. An unreachable child's
+host leaves it waiting, and stopping it (or its own parent's exit) ends it.
+Input that arrives while it exits is answered `REFUSAL_EXITING`. Its
+transcript and its parent edge stay.
+
+The agent process knows of its children from two sides, and each side owns
+what it alone can know. What the agent asked for, the agent process knows
+itself, because `spawn` goes through it: it holds the child from the moment
+the request arrives, before the daemon has heard of it, and the tool server
+gets the daemon's answer only once the process has taken it, so no turn can
+end on a spawn the process has not heard of. What exists, the daemon knows:
+its answer to the create, and the `children` control frame, which names the
+agent's live children with their incarnations.
+
+| The daemon's answer | The child |
+| --- | --- |
+| It made the child (the answer carries the row, and the row its incarnation) | owes its last report from then on |
+| It refused, or no daemon was there to ask | is dropped: there is none |
+| It took the request and went away before answering | stays asked for until a `children` frame settles it: one that names the child says it was made, and it owes its last report; one that leaves it out, from a daemon that connected after the one that went away, says it never was |
+
+A frame that names a child always counts. A frame that leaves one out
+counts only when it cannot have been written before the child was made: the
+daemon may write a frame, then make the child, and the agent read them in
+that order or with the answer between. So a child still being asked for is
+never dropped for being left out, and neither is one whose daemon went
+away, until the frame is a later daemon's, which read its children from the
+store the first one left. The frame remains how the agent hears of
+children it did not ask for in this incarnation, and how a daemon that finds
+the agent already running (after a restart, an update) tells it where it
+stands. Such a daemon sends the frame even when the agent has no live
+children, since that is the word that settles a spawn its predecessor never
+answered. A subagent left idle by that word, with nothing else to wait for,
+exits `FINISHED` then; no turn end marked `last` preceded it, so its parent
+hears that it exited. A refusal does the same when it arrives after the
+turn that spawned was cut short and has already ended.
+
+A child created for an agent from outside it (a client naming a `parent` on
+the profile's socket) does not pass through the parent's process. The parent
+learns of it from the `children` frame alone, as every child was learned of
+before spawns went through the agent process: a subagent whose turn ends
+before that frame arrives exits without waiting for such a child. amux's own
+clients do not create children this way.
+
+The same holds for a child on another host whose create went out and whose
+answer was lost on the way: the daemon answers that the host stopped
+answering, which is a refusal, and a daemon that takes over mid-way does not
+hold the child until its host lists it. If that host made the child, the
+parent waits for it once a `children` frame names it or its report arrives,
+and not before.
+
+Three other ways to close the gap between a turn's end and the daemon's word
+of a new child were considered and turned down. Having the agent ask its
+daemon whether it may finish makes an agent's exit wait on a daemon's
+answer, and leaves what the agent itself asked for in the other process's
+keeping. Reading the spawn out of the provider's own record of the tool
+call makes the lifecycle depend on each provider's format. Letting a
+subagent exit before its child changes what every parent hears, and when.
 
 **Resume.** A parent's send to its exited child, or to one answering
 `exiting`, resumes it: same identity, same provider session, the next spec
@@ -446,8 +521,13 @@ rule and the links underneath.
 ## Tests
 
 - [`crates/agent/tests/tools.rs`](../crates/agent/tests/tools.rs): the tool
-  list, each tool against a scripted daemon, the retry window over a daemon
-  restart, and `attach` without a daemon.
+  list, each tool against a scripted daemon, a spawn's way through the agent
+  process (asked of the daemon once; refused, unconfirmed and with no agent
+  process listening), a subagent staying for a child its daemon has not
+  named, the retry window over a daemon restart, and `attach` without a
+  daemon.
+- [`crates/agent-core/src/tests.rs`](../crates/agent-core/src/tests.rs) and
+  `awaited.rs` beside it: the one-shot rule for each way a spawn can end.
 - [`crates/node/tests/messaging.rs`](../crates/node/tests/messaging.rs): the
   lane's acceptance and deduplication, lineage checks, resume on a parent's
   message, and the outbox across daemon crashes, resumed parents and failed

@@ -49,6 +49,28 @@ final class AccountRegistryTests: XCTestCase {
         XCTAssertEqual(switched, [AccountId("ada")])
     }
 
+    func testAnAccountSelectedBeforeItIsListedGoesOnScreenWhenAListNamesIt() {
+        let registry = AccountRegistry()
+        registry.show([profile("p0", "ada")])
+        var switched: [AccountId?] = []
+        registry.switching = { switched.append($0) }
+        // A sign-in answered before the list that carries its account.
+        registry.select(AccountId("bob"))
+        XCTAssertEqual(registry.selected, AccountId("ada"))
+        // The list from before the sign-in: the new profile, nobody's yet.
+        registry.show([profile("p0", "ada"), profile("p1")])
+        XCTAssertEqual(registry.selected, AccountId("ada"))
+        registry.show([profile("p0", "ada"), profile("p1", "bob")])
+        XCTAssertEqual(registry.selected, AccountId("bob"))
+        XCTAssertEqual(registry.profile, "p1")
+        XCTAssertEqual(switched, [AccountId("bob")])
+        // Choosing another account since forgets the one waited for.
+        registry.select(AccountId("carol"))
+        registry.select(AccountId("ada"))
+        registry.show([profile("p0", "ada"), profile("p1", "bob"), profile("p2", "carol")])
+        XCTAssertEqual(registry.selected, AccountId("ada"))
+    }
+
     func testAnotherAccountGetsItsOwnProfileAndGoesOnScreenWhenSelected() {
         let registry = AccountRegistry()
         registry.show([profile("p0", "ada")])

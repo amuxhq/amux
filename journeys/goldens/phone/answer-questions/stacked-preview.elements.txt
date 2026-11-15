@@ -1,7 +1,7 @@
 shell |  | agents | 0,62,402,778
 chat |  | asker | 0,116,402,724
-chat.row.boundary | Started |  | 16,42,370,34
 chat.row.prompt | Add a settings screen. |  | 16,76,370,40
+chat.prose.render |  | rendered | 210,86,162,20
 chat.row.question | Asking, 3 questions |  | 16,128,370,20
 ask | 3 questions | open | 12,162,378,668
 ask.more | More |  | 338,170,44,44
@@ -40,7 +40,6 @@ Theme ──────────
  | Skip |  | 28,714,169,44
  | Next |  | 205,714,169,44
  | Reply instead |  | 28,782,114,20
- | Started |  | 16,42,370,34
  | Add a settings screen. |  | 16,76,370,40
  | Asking, 3 questions |  | 16,128,370,20
 BackButton | Agents |  | 16,62,44,44

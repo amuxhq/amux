@@ -421,7 +421,7 @@ cargo = [
 
 [[suite]]
 name = "sqlite-store-contract"
-contract = "The SQLite profile store answers one reader and writer suite, retention trims own and replica rows on a driven clock, and the file refuses a store of another schema version untouched and keeps its position tripwire, one transaction per commit and its rows across a reopen; a store in memory dumps every row canonically and restores to an equal store."
+contract = "The SQLite profile store answers one reader and writer suite, retention trims own and replica rows on a driven clock, and the file runs the migrations a store lacks, leaves it untouched when one fails, opens a store a newer build added to, and keeps its position tripwire, one transaction per commit and its rows across a reopen; a store in memory dumps every row canonically and restores to an equal store."
 paths = ["crates/store/tests"]
 recipe = "just suite sqlite-store-contract"
 boundary = "Single daemon"

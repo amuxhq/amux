@@ -150,6 +150,35 @@ pub struct Provider {
     census: Vec<tree::Descendant>,
 }
 
+/// Asked of headless Claude so a command's row can open on what it is for
+/// while the model is still writing the command: Claude streams a call's
+/// input in the order the model writes its fields, and by its own tool
+/// definition's order the description comes last, after commands that can
+/// take the model many seconds to write.
+const DESCRIPTION_FIRST: &str = "When you call the Bash tool, write its \"description\" field before its \"command\" field in the input JSON.";
+
+/// Adds `text` to the system prompt the agent's own arguments append, so
+/// neither flag can displace the other, or appends it alone.
+fn append_system_prompt(args: &mut Vec<String>, text: &str) {
+    const FLAG: &str = "--append-system-prompt";
+    for index in 0..args.len() {
+        if args[index] == FLAG
+            && let Some(value) = args.get_mut(index + 1)
+        {
+            *value = format!("{value}\n\n{text}");
+            return;
+        }
+        if let Some(value) = args[index]
+            .strip_prefix(FLAG)
+            .and_then(|rest| rest.strip_prefix('='))
+        {
+            args[index] = format!("{FLAG}={value}\n\n{text}");
+            return;
+        }
+    }
+    args.extend([FLAG.to_owned(), text.to_owned()]);
+}
+
 impl Provider {
     pub async fn spawn(
         spec: &AgentSpec,
@@ -173,7 +202,8 @@ impl Provider {
         events: mpsc::Sender<ProviderEvent>,
     ) -> Result<Self, ProviderError> {
         let (session, resume) = claude_session(spec, dir)?;
-        let (args, settings, withheld) = claude_launch(spec, dir, false)?;
+        let (mut args, settings, withheld) = claude_launch(spec, dir, false)?;
+        append_system_prompt(&mut args, DESCRIPTION_FIRST);
         if withheld {
             let _ = events
                 .send(ProviderEvent::Fact(Fact {
@@ -1566,6 +1596,28 @@ fn environment(command: &mut tokio::process::Command, spec: &AgentSpec) {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+
+    /// amux's line joins a prompt the agent's own arguments append, in
+    /// either spelling of the flag, and stands alone otherwise.
+    #[test]
+    fn the_description_first_line_joins_an_appended_prompt() {
+        let strings = |args: &[&str]| args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+        let mut args = strings(&["--model", "opus"]);
+        super::append_system_prompt(&mut args, "B");
+        assert_eq!(
+            args,
+            strings(&["--model", "opus", "--append-system-prompt", "B"])
+        );
+        let mut args = strings(&["--append-system-prompt", "A", "--model", "opus"]);
+        super::append_system_prompt(&mut args, "B");
+        assert_eq!(
+            args,
+            strings(&["--append-system-prompt", "A\n\nB", "--model", "opus"])
+        );
+        let mut args = strings(&["--append-system-prompt=A"]);
+        super::append_system_prompt(&mut args, "B");
+        assert_eq!(args, strings(&["--append-system-prompt=A\n\nB"]));
+    }
 
     /// A file reaches Codex as its element naming where the file is, so the
     /// model can open it; an image goes as its element and then as a local

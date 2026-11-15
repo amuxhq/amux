@@ -26,14 +26,13 @@ mod web_sign_in;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
 use account::Binding;
 pub(crate) use account::{Account, AccountCredentials};
-pub use binding::{AccountAccess, Grant, PurchaseStore};
 pub use cloud::UDP_BLOCKED_MEMORY;
 use futures_util::stream;
 pub(crate) use relay_server::Accounts;
@@ -81,6 +80,10 @@ const LINK_SOCKET_HANDSHAKE: Duration = Duration::from_secs(10);
 /// How long links get to carry their LinkClose before the edge stops.
 const LINK_CLOSE_FLUSH: Duration = Duration::from_millis(200);
 
+/// Hands the profile with this host id what its socket sends and receives
+/// on; see [`EdgeOptions::substrate`].
+pub type SubstrateFor = Arc<dyn Fn(HostId) -> std::io::Result<Arc<dyn Datagrams>> + Send + Sync>;
+
 /// What an installation's edges share. The default serves nothing on the
 /// network: identity, trust and pairing state exist, and a caller links
 /// profiles in process.
@@ -103,6 +106,14 @@ pub struct EdgeOptions {
     pub dial: bool,
     /// Serve the local socket SSH relays hand a peer's link to.
     pub link_socket: bool,
+    /// What a profile's one socket sends and receives on, when something
+    /// stands in for the network under it (a test's imitation of a router);
+    /// unset, a UDP socket is bound. A profile handed one starts on it, so
+    /// nothing it sends as it starts leaves from anywhere else, and lists
+    /// the LAN address it would have bound. Each profile's edge asks for
+    /// its own, by the profile's host id: two sockets on one substrate
+    /// would take each other's packets.
+    pub substrate: Option<SubstrateFor>,
     /// Where the cloud link dials, when a test stands in for the cloud.
     pub cloud: CloudOptions,
     /// The machine's interface addresses, when a test stands in for them;
@@ -172,6 +183,7 @@ impl Default for EdgeOptions {
             discovery_scope: String::new(),
             dial: false,
             link_socket: false,
+            substrate: None,
             cloud: CloudOptions::default(),
             interfaces: None,
             liveness: Default::default(),
@@ -318,6 +330,9 @@ pub struct Edge {
     listening: bool,
     /// The app is suspended: its links are closed and nothing is dialled.
     suspended: tokio::sync::Mutex<bool>,
+    /// True while the app is suspended, for the dispatcher, which takes no
+    /// connection meanwhile.
+    refusing_links: Arc<AtomicBool>,
 }
 
 impl Edge {
@@ -374,6 +389,7 @@ impl Edge {
         let link_ctx = LinkCtx::new_live(local_host.clone(), channels.link_registry())
             .with_incoming_streams(incoming_streams_tx.clone())
             .with_clock(clock.clone());
+        let refusing_links = Arc::new(AtomicBool::new(false));
         let dispatcher = TunnelDispatcher::new(
             trust.clone(),
             pair_mode.clone(),
@@ -381,7 +397,8 @@ impl Edge {
             pairing_tx,
             DEVICE_TLS_HANDSHAKE_TIMEOUT,
         )
-        .with_link_ctx(link_ctx.clone());
+        .with_link_ctx(link_ctx.clone())
+        .refusing_while(refusing_links.clone());
 
         let mut tasks = vec![
             serve_inbound_streams(Arc::new(dispatcher.clone()), incoming_streams_rx),
@@ -405,14 +422,18 @@ impl Edge {
         let quic_server = Some(identity.quic_server_config(trust.clone(), &tickets)?);
         let (quic_endpoint, lan_addr) = match &options.lan {
             Some(lan) => {
-                let endpoint = LinkEndpoint::new(
-                    bind_lan(dir, lan).map_err(EdgeError::Lan)?,
-                    identity.host_id,
-                    quic_server,
-                )
-                .map_err(EdgeError::Lan)?
-                .keeping(dir);
-                let addr = endpoint.local_addr().map_err(EdgeError::Lan)?;
+                // A profile handed its substrate still takes its LAN port
+                // for a moment: the address it lists and remembers is its
+                // own, whatever stands between it and the network.
+                let own = bind_lan(dir, lan).map_err(EdgeError::Lan)?;
+                let addr = own.local_addr().map_err(EdgeError::Lan)?;
+                let substrate = match &options.substrate {
+                    Some(handed) => handed(identity.host_id).map_err(EdgeError::Lan)?,
+                    None => own,
+                };
+                let endpoint = LinkEndpoint::new(substrate, identity.host_id, quic_server)
+                    .map_err(EdgeError::Lan)?
+                    .keeping(dir);
                 let _ = crate::install::write_cache(
                     &dir.join(LAN_PORT_FILE),
                     addr.port().to_string().as_bytes(),
@@ -423,7 +444,13 @@ impl Edge {
             // Listening on no known port, the profile still dials and is
             // reached through forwarders from one socket of both families.
             None => (
-                LinkSocket::bind_dual_stack(DUAL_STACK_ANY, None)
+                options
+                    .substrate
+                    .as_ref()
+                    .map_or_else(
+                        || LinkSocket::bind_dual_stack(DUAL_STACK_ANY, None),
+                        |handed| handed(identity.host_id),
+                    )
                     .and_then(|substrate| {
                         LinkEndpoint::new(substrate, identity.host_id, quic_server)
                     })
@@ -547,6 +574,7 @@ impl Edge {
             dial: options.dial,
             listening: options.lan.is_some(),
             suspended: tokio::sync::Mutex::new(false),
+            refusing_links,
         });
         Ok(edge)
     }
@@ -791,7 +819,9 @@ impl Edge {
 
     /// The app is about to be suspended, its sockets with it: every link
     /// says goodbye and closes, the relay link too, and nothing is dialled
-    /// until [`Edge::resume`]. A link left open would be dropped by its peer
+    /// until [`Edge::resume`], nor taken: a peer whose own path still reaches
+    /// this host may redial it at once, when the relay's word that the host
+    /// left overtakes the goodbye. A link left open would be dropped by its peer
     /// at the peer's idle timeout while the phone sleeps, and the phone,
     /// whose timers do not count the time it sleeps, would find it dead only
     /// when it next wrote to it, the link through the relay not even then
@@ -803,6 +833,8 @@ impl Edge {
             return;
         }
         tracing::info!(host = %self.host_id(), "suspending: closing every link");
+        // Before the links close, so none comes up behind them.
+        self.refusing_links.store(true, Ordering::SeqCst);
         self.reachability.stop_dialling();
         // The core first, so the relay link's ending asks for no other.
         crate::driver::CoreLinks::new(self.runtime.clone())
@@ -828,6 +860,7 @@ impl Edge {
             return;
         }
         tracing::info!(host = %self.host_id(), "resuming: dialling every host");
+        self.refusing_links.store(false, Ordering::SeqCst);
         if let Err(error) = self.network_changed() {
             tracing::warn!(%error, "rebinding the link socket on resume failed");
         }

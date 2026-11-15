@@ -4,7 +4,7 @@ import Foundation
 import Observation
 
 /// Starting an agent that holds still: what a host listed and offered, which
-/// the sheet can be clicked through, with nothing ever started.
+/// the New Agent page can be clicked through, with nothing ever started.
 @MainActor
 @Observable
 final class StillNewAgent: NewAgentSurface {

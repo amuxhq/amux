@@ -241,6 +241,10 @@ pub enum NetError {
     Serve(#[from] node::ServeError),
     #[error("refused: {}", .0.message())]
     Refused(Box<tonic::Status>),
+    /// A spawn an agent asked its own process for got no child: the words
+    /// its model would read.
+    #[error("refused: {0}")]
+    SpawnRefused(String),
     #[error(transparent)]
     Stuck(#[from] Stuck),
     #[error(transparent)]
@@ -279,12 +283,23 @@ struct Host {
     /// the daemon's restarts, and the running daemon's socket on it.
     router: Option<Arc<Router>>,
     attached: Option<Arc<crate::router::Attached>>,
+    /// The same for each further profile the host's installation serves,
+    /// by the profile's host id: a profile's link socket is its own, so
+    /// behind the host's router it has mappings of its own.
+    others: Arc<std::sync::Mutex<BTreeMap<Uuid, Behind>>>,
     /// How a process host runs; none for one in the net's process.
     process: Option<ProcessHost>,
     /// A process host's daemon is up as far as the net's verbs know.
     running: bool,
     /// The host's `claude` and `codex` commands.
     commands: Commands,
+}
+
+/// One link socket's place behind a router: the mappings it has there, and
+/// the running daemon's socket on them.
+struct Behind {
+    router: Arc<Router>,
+    attached: Arc<crate::router::Attached>,
 }
 
 struct Link {
@@ -1413,10 +1428,12 @@ impl Net {
         Ok(ClientApi::new(&self.runtime(&agent.host)?, Some(agent.id)))
     }
 
-    /// `parent` spawns `decl` through its tools socket, naming
-    /// `decl.host` as the host: the parent's host resolves the name among
-    /// the hosts it trusts and forwards the create there, where the child
-    /// plays its script in that host's work directory.
+    /// `parent` spawns `decl` as its own spawn tool does: the request goes
+    /// to `parent`'s agent process on its own socket, and that process
+    /// asks its daemon on its tools socket. It names `decl.host` as the
+    /// host: the parent's host resolves the name among the hosts it trusts
+    /// and forwards the create there, where the child plays its script in
+    /// that host's work directory.
     pub async fn spawn_child(
         &mut self,
         parent: &str,
@@ -1454,16 +1471,24 @@ impl Net {
             ..CreateAgentRequest::default()
         };
         providers::choose(&self.choices(), id, provider, decl.kind, &script)?;
-        let tools = self.tools(parent)?;
+        let asked = self.agent_dir(parent)?;
         let target = self.runtime(&decl.host)?;
         target.set_launch(self.launch(&host, Some((decl.kind, &script, provider))));
-        let spawned = tools.create_agent(tonic::Request::new(request)).await;
+        let spawned = agent_dir::agent_sock::spawn(&asked, &request).await;
         target.set_launch(self.launch(&host, None));
-        let agent = spawned
-            .map_err(|status| NetError::Refused(Box::new(status)))?
-            .into_inner()
-            .agent
-            .expect("a created agent is answered");
+        let agent = match spawned {
+            Ok(agent_dir::agent_sock::Spawned::Created(response)) => {
+                response.agent.expect("a created agent is answered")
+            }
+            Ok(agent_dir::agent_sock::Spawned::Refused(why)) => {
+                return Err(NetError::SpawnRefused(why));
+            }
+            Err(error) => {
+                return Err(NetError::SpawnRefused(format!(
+                    "{parent}'s agent process did not answer: {error:?}"
+                )));
+            }
+        };
         self.agents.insert(
             decl.name.clone(),
             NetAgent {
@@ -1744,6 +1769,7 @@ impl Net {
                 lan_handed: false,
                 router: None,
                 attached: None,
+                others: Arc::default(),
                 process,
                 running: false,
                 commands: Commands {
@@ -1904,6 +1930,7 @@ impl Net {
                 .unwrap_or_else(|| self.topology.scope.clone()),
             dial: decl.lan,
             link_socket: true,
+            substrate: None,
             cloud: node::CloudOptions::default(),
             // An in-process host is reached on loopback alone, which it
             // never lists, and has no interfaces of its own to list after
@@ -1926,6 +1953,48 @@ impl Net {
         if let Some(hook) = &self.edge_hook {
             hook(name, &mut edge);
         }
+        // A host behind a router starts behind it, as a real one does. Put
+        // there once it ran, its first packets would leave from a socket of
+        // its own, and a handshake begun on that one is answered where the
+        // host no longer listens: its dial to the relay then waits out its
+        // timeout and the pause before the next.
+        let behind = match host.decl.router {
+            Some(kind) => {
+                let router = match &host.router {
+                    Some(router) if router.kind() == kind => router.clone(),
+                    _ => Router::new(kind, ROUTER_IDLE)?,
+                };
+                let attached = crate::router::Attached::new(router.clone());
+                // The host's own profile is the socket its router stands in
+                // front of. Any other profile its installation serves binds
+                // a socket of its own, which a router gives mappings of its
+                // own: handed the host's socket, it would take the packets
+                // meant for the host.
+                let (own, first, others) =
+                    (host.info.host_id, attached.clone(), host.others.clone());
+                edge.substrate = Some(Arc::new(move |profile| {
+                    if profile == own {
+                        return Ok(first.clone());
+                    }
+                    let mut others = others.lock().unwrap_or_else(|poison| poison.into_inner());
+                    let router = match others.get(&profile) {
+                        Some(earlier) if earlier.router.kind() == kind => earlier.router.clone(),
+                        _ => Router::new(kind, ROUTER_IDLE)?,
+                    };
+                    let attached = crate::router::Attached::new(router.clone());
+                    let behind = Behind {
+                        router,
+                        attached: attached.clone(),
+                    };
+                    if let Some(earlier) = others.insert(profile, behind) {
+                        earlier.attached.cut();
+                    }
+                    Ok(attached)
+                }));
+                Some((router, attached))
+            }
+            None => None,
+        };
         let handed = edge.lan.as_ref().is_some_and(|lan| lan.socket.is_some());
         let options = node::StartOptions {
             // The host's config file, as on a real install: what a journey
@@ -1975,12 +2044,11 @@ impl Net {
         host.runtime = Arc::downgrade(&runtime);
         host.daemon = Some(std::sync::Mutex::new(daemon));
         host.lan_handed = handed;
-        if let Some(kind) = host.decl.router {
-            let router = match &host.router {
-                Some(router) if router.kind() == kind => router.clone(),
-                _ => Router::new(kind, ROUTER_IDLE)?,
-            };
-            self.put_behind(name, router)?;
+        if let Some((router, attached)) = behind {
+            if let Some(earlier) = host.attached.replace(attached) {
+                earlier.cut();
+            }
+            host.router = Some(router);
         }
         Ok(())
     }
@@ -2559,7 +2627,18 @@ impl Net {
         // Whatever of the daemon outlives it in this process hears and
         // sends nothing on its router from now on: a crash at once, a clean
         // stop once its last words are out.
-        let attached = host.attached.take();
+        let attached: Vec<Arc<crate::router::Attached>> = host
+            .attached
+            .take()
+            .into_iter()
+            .chain(
+                host.others
+                    .lock()
+                    .unwrap_or_else(|poison| poison.into_inner())
+                    .values()
+                    .map(|behind| behind.attached.clone()),
+            )
+            .collect();
         for ((a, b), link) in &mut self.links {
             if a == name || b == name {
                 link.live = None;
@@ -2580,11 +2659,11 @@ impl Net {
                     seen: crate::link_log::stop_step(host_id)
                         .map_or("no step begun".to_owned(), |step| format!("stuck {step}")),
                 })??;
-            if let Some(attached) = attached {
+            for attached in attached {
                 attached.cut();
             }
         } else {
-            if let Some(attached) = attached {
+            for attached in attached {
                 attached.cut();
             }
             drop(daemon);

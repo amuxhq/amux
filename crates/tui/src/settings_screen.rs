@@ -75,21 +75,26 @@ fn on_off(on: bool) -> &'static str {
     if on { "on" } else { "off" }
 }
 
-/// What the account may do, as a person reads it: "Pro", "Pro until 12
-/// Nov", "Free".
-pub fn plan_words(access: Option<&wire::Access>) -> String {
-    match access {
-        Some(access) if access.pro => match access.until_ms {
-            Some(until) => {
-                let date = chrono::DateTime::from_timestamp_millis(until)
-                    .map(|at| at.format("%-d %b").to_string())
-                    .unwrap_or_default();
-                format!("Pro until {date}")
-            }
-            None => "Pro".to_owned(),
-        },
-        Some(_) => "Free".to_owned(),
-        None => String::new(),
+/// The plan the relay carries this machine's connections on, as a person
+/// reads it: "Pro" or "Free"; nothing while the relay link is not up, when
+/// the daemon holds no word of it.
+pub fn plan_words(profile: &wire::Profile) -> String {
+    use wire::cloud_standing::Standing;
+    use wire::relay_link::State;
+    let connected = match profile
+        .cloud
+        .as_ref()
+        .and_then(|cloud| cloud.standing.as_ref())
+    {
+        Some(Standing::SignedIn(wire::RelayLink {
+            state: Some(State::Connected(connected)),
+        })) => connected,
+        _ => return String::new(),
+    };
+    match connected.tier() {
+        wire::Tier::Pro => "Pro".to_owned(),
+        wire::Tier::Free => "Free".to_owned(),
+        wire::Tier::Unspecified => String::new(),
     }
 }
 
@@ -398,7 +403,7 @@ impl SettingsScreen {
             Row::Telemetry => on_off(settings.telemetry).to_owned(),
             Row::AutoReports => on_off(settings.auto_reports).to_owned(),
             Row::Account => match &self.profile {
-                Some(profile) if signed_in(profile) => plan_words(profile.access.as_ref()),
+                Some(profile) if signed_in(profile) => plan_words(profile),
                 _ => String::new(),
             },
             Row::Repository(_) | Row::AddRepository => String::new(),

@@ -32,8 +32,6 @@ pub struct ProfileState {
     /// Its standing with that account; unbound for a profile not in
     /// service.
     pub cloud: Cloud,
-    /// What the account may do, once the service has said.
-    pub access: Option<crate::edge::AccountAccess>,
 }
 
 /// The account a profile is bound to, as its service described it.
@@ -151,7 +149,6 @@ pub(crate) fn state(hosted: &Hosted) -> ProfileState {
                 email: record.email,
                 picture: record.picture,
             }),
-        access: edge.as_ref().and_then(|edge| edge.account().access()),
         cloud: edge.map_or(Cloud::Unbound, |edge| edge.cloud()),
     }
 }

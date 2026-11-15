@@ -3044,7 +3044,7 @@ public enum Filing: String, Codable, Hashable, Sendable, CaseIterable {
     case pinned = "Pinned"
     /// Done with: stopped when it was live, out of other agents' listing, and
     /// the only kind retention deletes. A message from the person or its own
-    /// parent resumes it, filed active again.
+    /// parent resumes it, filed open again.
     case closed = "Closed"
 }
 
@@ -5720,10 +5720,10 @@ public enum RowKind: Codable, Hashable, Sendable {
     /// payment-tests on build · Codex". `host` is empty for the caller's own
     /// host, and `kind` empty when the call does not say it.
     case child(action: ChildAction, name: String, host: String, kind: String, state: CallPhase, result: String)
-    case command(command: String, state: CallPhase, outputHead: [String], moreLines: UInt, outputTrimmed: Bool, outputTail: [String], durationMs: Int64?, exitCode: Int32?)
+    case command(command: String, description: String, state: CallPhase, outputHead: [String], moreLines: UInt, outputTrimmed: Bool, outputTail: [String], durationMs: Int64?, exitCode: Int32?)
     case explore(verb: ExploreVerb, subject: String, state: CallPhase, result: String)
     case subagent(description: String, running: Bool, toolCount: UInt32, lastTool: String, answer: String, durationMs: Int64?)
-    case background(command: String, running: Bool, durationMs: Int64?)
+    case background(command: String, description: String, running: Bool, durationMs: Int64?)
     case image(path: String, generated: Bool, image: BlobRef?)
     case slashOutput(command: String, args: String, output: String)
     /// An ask that is the work: resolves in place.
@@ -5806,6 +5806,7 @@ public enum RowKind: Codable, Hashable, Sendable {
 
     private enum CommandKeys: String, CodingKey {
         case command
+        case description
         case state
         case outputHead = "output_head"
         case moreLines = "more_lines"
@@ -5833,6 +5834,7 @@ public enum RowKind: Codable, Hashable, Sendable {
 
     private enum BackgroundKeys: String, CodingKey {
         case command
+        case description
         case running
         case durationMs = "duration_ms"
     }
@@ -5970,6 +5972,7 @@ public enum RowKind: Codable, Hashable, Sendable {
                 keyedBy: CommandKeys.self, forKey: .command)
             self = .command(
                 command: try _fields.decode(String.self, forKey: .command),
+                description: try _fields.decode(String.self, forKey: .description),
                 state: try _fields.decode(CallPhase.self, forKey: .state),
                 outputHead: try _fields.decode([String].self, forKey: .outputHead),
                 moreLines: try _fields.decode(UInt.self, forKey: .moreLines),
@@ -6000,6 +6003,7 @@ public enum RowKind: Codable, Hashable, Sendable {
                 keyedBy: BackgroundKeys.self, forKey: .background)
             self = .background(
                 command: try _fields.decode(String.self, forKey: .command),
+                description: try _fields.decode(String.self, forKey: .description),
                 running: try _fields.decode(Bool.self, forKey: .running),
                 durationMs: try _fields.decodeIfPresent(Int64.self, forKey: .durationMs))
         case .image:
@@ -6123,10 +6127,11 @@ public enum RowKind: Codable, Hashable, Sendable {
             try _fields.encode(kind, forKey: .kind)
             try _fields.encode(state, forKey: .state)
             try _fields.encode(result, forKey: .result)
-        case .command(let command, let state, let outputHead, let moreLines, let outputTrimmed, let outputTail, let durationMs, let exitCode):
+        case .command(let command, let description, let state, let outputHead, let moreLines, let outputTrimmed, let outputTail, let durationMs, let exitCode):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: CommandKeys.self, forKey: .command)
             try _fields.encode(command, forKey: .command)
+            try _fields.encode(description, forKey: .description)
             try _fields.encode(state, forKey: .state)
             try _fields.encode(outputHead, forKey: .outputHead)
             try _fields.encode(moreLines, forKey: .moreLines)
@@ -6150,10 +6155,11 @@ public enum RowKind: Codable, Hashable, Sendable {
             try _fields.encode(lastTool, forKey: .lastTool)
             try _fields.encode(answer, forKey: .answer)
             try _fields.encodeIfPresent(durationMs, forKey: .durationMs)
-        case .background(let command, let running, let durationMs):
+        case .background(let command, let description, let running, let durationMs):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: BackgroundKeys.self, forKey: .background)
             try _fields.encode(command, forKey: .command)
+            try _fields.encode(description, forKey: .description)
             try _fields.encode(running, forKey: .running)
             try _fields.encodeIfPresent(durationMs, forKey: .durationMs)
         case .image(let path, let generated, let image):
@@ -6242,6 +6248,9 @@ public struct Run: Codable, Hashable, Sendable {
     /// It starts at the oldest held rows and older history exists, so it may
     /// continue below: its counts are a floor.
     public var openBelow: Bool
+    /// While the run is under way this step shows: it is the newest, or it
+    /// is still running. False once the run is over.
+    public var liveShown: Bool
     /// This step failed and nothing later in its turn redid it, and the
     /// turn has ended: it stays in view when the run folds.
     public var unresolvedFailure: Bool
@@ -6250,19 +6259,25 @@ public struct Run: Codable, Hashable, Sendable {
     public var open: Bool
     /// What the run's steps did, on its newest step's row only.
     public var counts: RunCounts?
-    /// For one of the run's newest steps, how many steps follow it (none for
-    /// the newest); absent for the rest.
+    /// On the oldest step a live run shows, what the steps it does not
+    /// show did, for the line above it; absent elsewhere, and when it shows
+    /// every step.
+    public var hidden: RunCounts?
+    /// For one of the run's two newest steps, how many steps follow it
+    /// (none for the newest); absent for the rest.
     public var recent: UInt32?
 
-    public init(first: String, last: String, steps: UInt32, live: Bool, openBelow: Bool, unresolvedFailure: Bool, open: Bool, counts: RunCounts?, recent: UInt32?) {
+    public init(first: String, last: String, steps: UInt32, live: Bool, openBelow: Bool, liveShown: Bool, unresolvedFailure: Bool, open: Bool, counts: RunCounts?, hidden: RunCounts?, recent: UInt32?) {
         self.first = first
         self.last = last
         self.steps = steps
         self.live = live
         self.openBelow = openBelow
+        self.liveShown = liveShown
         self.unresolvedFailure = unresolvedFailure
         self.open = open
         self.counts = counts
+        self.hidden = hidden
         self.recent = recent
     }
 
@@ -6272,9 +6287,11 @@ public struct Run: Codable, Hashable, Sendable {
         case steps
         case live
         case openBelow = "open_below"
+        case liveShown = "live_shown"
         case unresolvedFailure = "unresolved_failure"
         case open
         case counts
+        case hidden
         case recent
     }
 }
@@ -6282,19 +6299,28 @@ public struct Run: Codable, Hashable, Sendable {
 /// What a run's steps did.
 public struct RunCounts: Codable, Hashable, Sendable {
     public var commands: UInt32
-    /// Files changed, counting each file of a multi-file change.
+    /// Files changed, each counted once however often it changed.
     public var edits: UInt32
+    /// Files read, each counted once however often it was read.
     public var reads: UInt32
+    /// Searches of files or the web.
     public var searches: UInt32
+    /// Folders listed.
+    public var lists: UInt32
+    /// Pages fetched.
+    public var fetches: UInt32
+    /// Subagents run, started or stopped.
     public var subagents: UInt32
-    /// Tool-server calls, fetches, listings and the rest.
+    /// Tool-server calls, images and the rest.
     public var other: UInt32
 
-    public init(commands: UInt32, edits: UInt32, reads: UInt32, searches: UInt32, subagents: UInt32, other: UInt32) {
+    public init(commands: UInt32, edits: UInt32, reads: UInt32, searches: UInt32, lists: UInt32, fetches: UInt32, subagents: UInt32, other: UInt32) {
         self.commands = commands
         self.edits = edits
         self.reads = reads
         self.searches = searches
+        self.lists = lists
+        self.fetches = fetches
         self.subagents = subagents
         self.other = other
     }
@@ -6304,6 +6330,8 @@ public struct RunCounts: Codable, Hashable, Sendable {
         case edits
         case reads
         case searches
+        case lists
+        case fetches
         case subagents
         case other
     }

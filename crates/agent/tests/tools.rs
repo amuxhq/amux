@@ -1,7 +1,8 @@
 //! amux's tool server against a stand-in daemon on the agent's tools.sock:
-//! the seven tools as the model calls them, the retry over an update
-//! window, and the whole path from a provider's call through the harness's
-//! launch of `<install path> mcp <dir>` to the item the interpreter draws.
+//! the seven tools as the model calls them, a spawn's way through the agent
+//! process's own socket, the retry over an update window, and the whole
+//! path from a provider's call through the harness's launch of
+//! `<install path> mcp <dir>` to the item the interpreter draws.
 
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -9,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use agent::local_socket::{LocalListener, LocalStream};
-use agent::{NOT_RUNNING, RETRY_WINDOW, TOOLS_SOCK};
+use agent::{ExitCause, NOT_RUNNING, NOT_TAKING_SPAWNS, RETRY_WINDOW, Spawn, TOOLS_SOCK};
 use prost::Message as _;
 use provider_fakes::{Step, Tool, ToolClass};
 use serde_json::{Value, json};
@@ -419,6 +420,7 @@ fn row(id: &[u8], host: &[u8], name: &str) -> Row {
         name: name.to_owned(),
         lifecycle: Lifecycle::Live as i32,
         phase: Phase::Idle as i32,
+        incarnation: 1,
         ..Default::default()
     }
 }
@@ -464,7 +466,9 @@ fn fleet() -> Fleet {
 
 // --- the tool server, driven as a harness drives it ------------------------
 
-/// An agent directory with a spec, and the tool server serving it.
+/// An agent directory with a spec, the tool server serving it, and the
+/// agent process's end of its own socket, with what the agent's core
+/// would have heard on it.
 struct Mcp {
     _root: tempfile::TempDir,
     dir: PathBuf,
@@ -472,15 +476,36 @@ struct Mcp {
     to_server: tokio::io::DuplexStream,
     from_server: tokio::io::Lines<BufReader<tokio::io::DuplexStream>>,
     next_id: u64,
+    /// Each word of a spawn the core was told, in order.
+    spawns: Arc<Mutex<Vec<Spawn>>>,
 }
 
 impl Mcp {
     async fn start() -> Self {
+        Self::start_with(true).await
+    }
+
+    /// With `agent_listens` unset, nothing listens on the agent's own
+    /// socket: an agent process a build before the socket started.
+    async fn start_with(agent_listens: bool) -> Self {
         let root = tempfile::tempdir().unwrap();
         let dir = root.path().join("agents").join(interpret::to_hex(&ME));
         let cwd = root.path().join("work");
-        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join(agent::PRIVATE)).unwrap();
         std::fs::create_dir_all(&cwd).unwrap();
+        let spawns = Arc::new(Mutex::new(Vec::new()));
+        if agent_listens {
+            let listener = LocalListener::bind(&agent_dir::agent_sock::path(&dir)).unwrap();
+            let (heard, mut told) = tokio::sync::mpsc::unbounded_channel();
+            tokio::spawn(agent::spawns::serve(listener, dir.clone(), heard));
+            let spawns = spawns.clone();
+            tokio::spawn(async move {
+                while let Some(agent::spawns::Heard { heard, taken, .. }) = told.recv().await {
+                    spawns.lock().unwrap().push(heard);
+                    let _ = taken.send(());
+                }
+            });
+        }
         let spec = AgentSpec {
             agent_id: ME.to_vec(),
             kind: Kind::ClaudePty as i32,
@@ -499,6 +524,7 @@ impl Mcp {
             to_server,
             from_server: BufReader::new(from_server).lines(),
             next_id: 0,
+            spawns,
         };
         let init = mcp
             .request(
@@ -799,6 +825,115 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
         3,
         "the daemon refused the stranger and the unknown kind never reached it"
     );
+}
+
+/// A spawn goes to the agent process, which asks the daemon once and hands
+/// its answer back. The agent's core hears of the child before the daemon
+/// does, then what became of it: made in an incarnation, refused, or taken
+/// by a daemon that went away without saying.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_spawn_goes_through_the_agent_process_which_asks_the_daemon_once() {
+    let mut mcp = Mcp::start().await;
+    let fleet = fleet();
+    let daemon = Daemon::listen(&mcp.dir, fleet.clone());
+    let spawned = mcp
+        .ok(
+            "spawn",
+            json!({ "kind": "codex", "prompt": "Write the tests." }),
+        )
+        .await;
+    let calls = fleet.calls();
+    let [Call::Create(created)] = calls.as_slice() else {
+        panic!("one create, got {calls:?}");
+    };
+    assert_eq!(
+        spawned,
+        json!({ "name": "quiet-otter", "id": interpret::to_hex(&created.agent_id) }),
+        "the daemon's answer came back"
+    );
+    assert_eq!(
+        *mcp.spawns.lock().unwrap(),
+        [Spawn::Requested, Spawn::Created { incarnation: 1 }]
+    );
+
+    mcp.refused(
+        "spawn",
+        json!({ "kind": "codex", "prompt": "x", "host": "stranger" }),
+    )
+    .await;
+    assert_eq!(
+        mcp.spawns.lock().unwrap()[2..],
+        [Spawn::Requested, Spawn::Refused]
+    );
+    daemon.stop().await;
+
+    let severed = Fleet {
+        sever: Some(Arc::default()),
+        ..self::fleet()
+    };
+    let _daemon = Daemon::listen(&mcp.dir, severed.clone());
+    let refusal = mcp
+        .refused("spawn", json!({ "kind": "codex", "prompt": "x" }))
+        .await;
+    assert!(refusal.contains("may have taken it"), "{refusal}");
+    assert_eq!(
+        mcp.spawns.lock().unwrap()[4..],
+        [Spawn::Requested, Spawn::Unconfirmed]
+    );
+    assert_eq!(severed.calls().len(), 1, "asked once");
+}
+
+/// With no daemon the agent process says so, as the tool server does for
+/// its own calls, and no child was made.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_spawn_with_no_daemon_is_refused_plainly() {
+    let mut mcp = Mcp::start().await;
+    assert_eq!(
+        mcp.refused("spawn", json!({ "kind": "codex", "prompt": "x" }))
+            .await,
+        NOT_RUNNING
+    );
+    assert_eq!(
+        *mcp.spawns.lock().unwrap(),
+        [Spawn::Requested, Spawn::Refused]
+    );
+}
+
+/// An agent process without a socket of its own (one a build before the
+/// socket started) takes no spawn: the tool server says so at once and does not
+/// go to the daemon in its place.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_spawn_whose_agent_process_is_not_listening_is_refused_plainly() {
+    let mut mcp = Mcp::start_with(false).await;
+    let fleet = fleet();
+    let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
+    assert_eq!(
+        mcp.refused("spawn", json!({ "kind": "codex", "prompt": "x" }))
+            .await,
+        NOT_TAKING_SPAWNS
+    );
+    assert!(fleet.calls().is_empty(), "{:?}", fleet.calls());
+}
+
+/// An ask of a kind the agent process does not know, as a later build's
+/// tool server would send an earlier agent process, is refused in words:
+/// nothing is told to the core and nothing goes to the daemon.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_ask_the_agent_process_does_not_know_is_refused_in_words() {
+    let mcp = Mcp::start().await;
+    let fleet = fleet();
+    let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
+    let answer = agent_dir::agent_sock::ask(&mcp.dir, &wire::AgentAsk { of: None })
+        .await
+        .unwrap();
+    assert_eq!(
+        answer.of,
+        Some(wire::agent_answer::Of::Refused(
+            agent_dir::agent_sock::UNKNOWN_ASK.to_owned()
+        ))
+    );
+    assert!(mcp.spawns.lock().unwrap().is_empty());
+    assert!(fleet.calls().is_empty(), "{:?}", fleet.calls());
 }
 
 /// The stop tool stops, as a person's stop does: the daemon ends the child
@@ -1164,6 +1299,75 @@ fn drawn(kind: Kind, item: &wire::Item) -> Option<Drawn> {
             _ => None,
         },
     }
+}
+
+/// A one-shot agent whose only turn spawns with `arguments` through the
+/// whole path: the provider's call, the tool server at the install path,
+/// the agent's own socket and its call to the daemon's tools.sock.
+/// The daemon never sends a `children` frame.
+async fn a_one_shot_agent_that_spawns(arguments: Value) -> (Agent, support::Daemon, Fleet, Daemon) {
+    let agent = Agent::start(Setup {
+        parent: true,
+        steps: vec![
+            Step::Tool(Tool {
+                name: Some("mcp__amux__spawn".to_owned()),
+                class: ToolClass::Consequential,
+                input: Some(arguments),
+                outcome: Default::default(),
+                wait_for: None,
+            }),
+            Step::TurnEnd,
+        ],
+        ..Setup::sdk()
+    })
+    .await;
+    let fleet = fleet();
+    let tools = Daemon::listen(&agent.dir, fleet.clone());
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p1", "go").await, Verdict::Accepted);
+    agent
+        .wait("the turn ends", |log| log.turn_ends() == 1)
+        .await;
+    (agent, daemon, fleet, tools)
+}
+
+/// Whether the agent marked its one turn end as its incarnation's last.
+fn marked_last(agent: &Agent) -> Vec<bool> {
+    agent
+        .log()
+        .steps
+        .iter()
+        .filter_map(|step| step.turn_end.as_ref().map(|end| end.last))
+        .collect()
+}
+
+/// A sub-agent ends the turn it spawned a child in, and its daemon has not
+/// named the child: the turn's end and the daemon's word of the child come
+/// on different sockets, in either order. It stays all the same, since its
+/// own process carried the spawn to the daemon.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sub_agent_stays_for_the_child_it_spawned_before_its_daemon_names_it() {
+    let (agent, mut daemon, fleet, _tools) =
+        a_one_shot_agent_that_spawns(json!({ "kind": "codex", "prompt": "Write the tests." }))
+            .await;
+    assert_eq!(fleet.calls().len(), 1, "{:?}", fleet.calls());
+    assert_eq!(marked_last(&agent), [false], "its child still works");
+    assert!(!agent.finished());
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+}
+
+/// A spawn the daemon refused made no child, and the sub-agent's turn end
+/// is its last.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sub_agent_whose_spawn_was_refused_finishes_at_its_turns_end() {
+    let (agent, _daemon, fleet, _tools) =
+        a_one_shot_agent_that_spawns(json!({ "kind": "codex", "prompt": "x", "host": "stranger" }))
+            .await;
+    assert_eq!(fleet.calls().len(), 1, "{:?}", fleet.calls());
+    assert_eq!(agent.exit().await, ExitCause::Finished);
+    assert_eq!(marked_last(&agent), [true]);
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -21,7 +21,7 @@
 == chat
      1 boundary:1 Hidden collapsed
      2 340c9d8d-c711-4a18-a07f-d97ee9a26441 Prompt { text: [Text("Use the Bash tool to run exactly: printf escaped > escaped.txt. Then reply with the single word done.")], steered: false }
-     3 toolu_01Deb4FKBuR8mXnD7YHFojnR Command { command: "printf escaped > escaped.txt", state: Denied, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed."], more_lines: 0, output_trimmed: false,…
+     3 toolu_01Deb4FKBuR8mXnD7YHFojnR Command { command: "printf escaped > escaped.txt", description: "Write the word escaped to escaped.txt", state: Denied, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you ho…
      4 turn:1 Stopped
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 35611, window_tokens: None, percent: None, near_full: false }) sign-in None

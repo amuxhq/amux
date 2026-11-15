@@ -31,7 +31,7 @@
      4 msg_011CgZmQF9Hc13K2AkQz6Emm:0 Thinking { text: "", open: false, duration_ms: Some(1214) }
      5 toolu_01DHURjhAAt57YEtWxGmX1Ad Explore { verb: Search, subject: "select:mcp__external__ask_the_operator", state: Succeeded, result: "" } run[toolu_01DHURjhAAt57YEtWxGmX1Ad..toolu_013S6DrSm9oi34Z7JNWwNbtS x2 recent=1] collapsed
      6 6d3aa5d8-eaea-4fad-98b1-f1686fa39f1e Hidden run[toolu_01DHURjhAAt57YEtWxGmX1Ad..toolu_013S6DrSm9oi34Z7JNWwNbtS x2] collapsed
-     7 toolu_013S6DrSm9oi34Z7JNWwNbtS ToolCall { server: "external", tool: "ask_the_operator", fact: "LINK", state: Succeeded, result: "LINK" } run[toolu_01DHURjhAAt57YEtWxGmX1Ad..toolu_013S6DrSm9oi34Z7JNWwNbtS x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 1 }]
+     7 toolu_013S6DrSm9oi34Z7JNWwNbtS ToolCall { server: "external", tool: "ask_the_operator", fact: "LINK", state: Succeeded, result: "LINK" } run[toolu_01DHURjhAAt57YEtWxGmX1Ad..toolu_013S6DrSm9oi34Z7JNWwNbtS x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 1 }]
      8 ask:f478e87e-8aae-4e54-abfb-1b6605a013fc Ask(Link { server: "external", message: "Open the page to confirm.", url: "https://example.com/confirm", resolution: Answered })
      9 5fbe02d6-5b7d-4650-b5a8-08f055a85b70 Hidden collapsed
     10 msg_011CgZmQTyi7UhEhQYN2gEVD:0 Prose { text: [Text("LINK")], streaming: false, working_note: false }

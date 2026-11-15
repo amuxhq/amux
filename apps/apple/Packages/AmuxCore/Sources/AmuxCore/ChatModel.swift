@@ -1245,7 +1245,7 @@ extension RowKind {
     /// A step the agent is still at: what a live run draws bright.
     public var inFlight: Bool {
         let phase: CallPhase? = switch self {
-        case .command(_, let state, _, _, _, _, _, _): state
+        case .command(_, _, let state, _, _, _, _, _, _): state
         case .explore(_, _, let state, _): state
         case .fileChange(_, let state): state
         case .toolCall(_, _, _, let state, _): state

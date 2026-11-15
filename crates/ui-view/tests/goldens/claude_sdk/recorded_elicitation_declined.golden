@@ -31,7 +31,7 @@
      4 msg_011CgZkQk9gNRy6sAGU1v6Kx:0 Thinking { text: "", open: false, duration_ms: Some(919) }
      5 toolu_01CbaWDAuMPFJfgysPp443hc Explore { verb: Search, subject: "select:mcp__external__ask_the_operator", state: Succeeded, result: "" } run[toolu_01CbaWDAuMPFJfgysPp443hc..toolu_016pZBLH3jCUq3rgKZxAArtR x2 recent=1] collapsed
      6 66b27f65-c7af-4991-a540-c2c5d3ef4fac Hidden run[toolu_01CbaWDAuMPFJfgysPp443hc..toolu_016pZBLH3jCUq3rgKZxAArtR x2] collapsed
-     7 toolu_016pZBLH3jCUq3rgKZxAArtR ToolCall { server: "external", tool: "ask_the_operator", fact: "ALBATROSS", state: Succeeded, result: "elicitation decline" } run[toolu_01CbaWDAuMPFJfgysPp443hc..toolu_016pZBLH3jCUq3rgKZxAArtR x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 1 }]
+     7 toolu_016pZBLH3jCUq3rgKZxAArtR ToolCall { server: "external", tool: "ask_the_operator", fact: "ALBATROSS", state: Succeeded, result: "elicitation decline" } run[toolu_01CbaWDAuMPFJfgysPp443hc..toolu_016pZBLH3jCUq3rgKZxAArtR x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 1 }]
      8 ask:bc321f69-9489-4958-86d8-efb7f385aa6e Ask(Form { server: "external", message: "Confirm the word ALBATROSS.", fields: [], resolution: Declined })
      9 3cd4c9db-9cd2-45f3-8df6-c926d2becda4 Hidden collapsed
     10 msg_011CgZkQv9Sg8WFQWrmoLWAA:0 Prose { text: [Text("elicitation decline")], streaming: false, working_note: false }

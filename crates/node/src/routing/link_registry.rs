@@ -364,17 +364,29 @@ impl LinkRegistry {
         let Some(writer) = state.writers.remove(link) else {
             return;
         };
+        // Read before anyone hears the link went. Telling the forwarding
+        // core makes the socket forget the forwarder, and the path machines
+        // may move a link it carried onto the addresses left to try before
+        // this returns: the link would then read as carried by no forwarder,
+        // stay open with nothing to carry it, and its host read online until
+        // the connection timed out.
+        let carried: Vec<_> = state
+            .writers
+            .values()
+            .filter(|carried| {
+                carried
+                    .native_carrier
+                    .as_ref()
+                    .and_then(|carrier| carrier.forwarded_through())
+                    == Some(link.core())
+            })
+            .map(|carried| carried.close_tx.clone())
+            .collect();
         if writer.carrier != CarrierKind::Forwarded {
             self.report_down(&state, link);
         }
-        for carried in state.writers.values().filter(|carried| {
-            carried
-                .native_carrier
-                .as_ref()
-                .and_then(|carrier| carrier.forwarded_through())
-                == Some(link.core())
-        }) {
-            let _ = carried.close_tx.try_send(LinkCloseRequest::ForwarderGone);
+        for close in carried {
+            let _ = close.try_send(LinkCloseRequest::ForwarderGone);
         }
         drop(state);
         if let Some(paths) = self.paths() {

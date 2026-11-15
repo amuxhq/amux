@@ -26,7 +26,7 @@
      3 warning:2 Error { error_kind: "warning", message: "This request was routed to gpt-5.6-mini. To use gpt-5.6-luna for this work, apply for trusted access.", attempts: 0, gave_up: true } attention
      4 rs-1 Thinking { text: "The parser has two entry points.", open: false, duration_ms: None }
      5 note-1 Prose { text: [Text("Splitting the lexer out first.")], streaming: false, working_note: true }
-     6 cmd-1 Background { command: "cargo watch", running: false, duration_ms: Some(9000) } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+     6 cmd-1 Background { command: "cargo watch", description: "", running: false, duration_ms: Some(9000) } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }]
      7 rv-1 SlashOutput { command: "review", args: "", output: "Code review started: current changes" }
      8 unrecognized:3 Unrecognized { what: "item/somethingNew", summary: "a notification amux does not read" }
      9 msg-1 Prose { text: [Text("The lexer is split.")], streaming: false, working_note: false }

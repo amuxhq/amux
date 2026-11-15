@@ -5304,6 +5304,18 @@
           }
         }
       }
+    },
+    "Run the whole suite" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run the whole suite"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

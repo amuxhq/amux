@@ -1,5 +1,5 @@
 //! What the profile file does beyond the reader and writer suite:
-//! refusing a store of another schema, the position tripwire, one
+//! opening a store a newer build added to, the position tripwire, one
 //! transaction per commit, and surviving a reopen.
 
 use rusqlite::{Connection, params};
@@ -31,39 +31,56 @@ fn open(dir: &tempfile::TempDir) -> Sqlite {
     Sqlite::open(&dir.path().join("store.sqlite"), OWN).unwrap()
 }
 
-/// A store written under another schema version, as every one written
-/// before a schema change is, is refused with a message that names the
-/// file and the version, and the file is left exactly as it was: the
-/// person decides what to do with it.
+/// A rollback meets this: the release after this one added to the store,
+/// and this build is started on it again. Migrations only add, so the store
+/// opens, works, and keeps both the newer build's stamp and what it added.
 #[test]
-fn a_store_of_another_schema_version_is_refused_named_and_untouched() {
+fn a_store_a_newer_build_added_to_opens_and_works() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("store.sqlite");
     drop(open(&dir));
     Connection::open(&path)
         .unwrap()
-        .pragma_update(None, "user_version", SCHEMA_VERSION + 1)
+        .execute_batch(&format!(
+            "ALTER TABLE agents ADD COLUMN added_later TEXT;
+             ALTER TABLE items ADD COLUMN counted_later INTEGER NOT NULL DEFAULT 7;
+             CREATE TABLE made_later (id INTEGER PRIMARY KEY, note TEXT) STRICT;
+             INSERT INTO made_later (note) VALUES ('the newer build''s');
+             PRAGMA user_version = {};",
+            SCHEMA_VERSION + 1
+        ))
         .unwrap();
-    let before = std::fs::read(&path).unwrap();
 
-    let error = Sqlite::open(&path, OWN).unwrap_err();
-    assert!(
-        matches!(error, OpenError::OtherSchema { version, .. } if version == SCHEMA_VERSION + 1),
-        "{error:?}"
-    );
-    let message = error.to_string();
-    assert!(
-        message.contains(&path.display().to_string()),
-        "names the file: {message}"
-    );
-    assert!(
-        message.contains("run the amux build that wrote it"),
-        "says how to get at the data: {message}"
-    );
+    let mut store = Sqlite::open(&path, OWN).unwrap();
+    let key = AgentKey::new(OWN, b"agent".to_vec());
+    store
+        .put_agent(&AgentRow::new(key.clone(), wire::Kind::Codex, "/"))
+        .unwrap();
+    store
+        .commit(&key, &[(10, step(&["a", "b"]))], CLOCK)
+        .unwrap();
+    let page = store.page(&key, None, 10).unwrap();
+    assert_eq!(page.items.len(), 2, "this build reads what it wrote");
+
+    let conn = store.connection();
+    let stamp: u32 = conn
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
     assert_eq!(
-        std::fs::read(&path).unwrap(),
-        before,
-        "the refused store is not rewritten"
+        stamp,
+        SCHEMA_VERSION + 1,
+        "the stamp stays the newer build's"
+    );
+    let kept: String = conn
+        .query_row("SELECT note FROM made_later", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(kept, "the newer build's");
+    let defaulted: i64 = conn
+        .query_row("SELECT min(counted_later) FROM items", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        defaulted, 7,
+        "rows this build writes take the new column's default"
     );
 }
 

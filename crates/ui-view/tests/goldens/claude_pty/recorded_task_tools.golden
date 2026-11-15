@@ -7,7 +7,7 @@
 ## 13 recorded 11: fact Transcript type=user uuid=28e06a2a-da3b-4238-a2e3-24ee0625ca69
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat
-     1 toolu_0111yBonGHJL4YvNmE5Zm5iK FileChange { files: [FileRow { path: "/tmp/planner-probe/permission-request-target.txt", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Failed } run[toolu_0111yBonGHJL4YvNmE5Zm5iK..toolu_0111yBonGHJL4YvNmE5Zm5iK x1 recent=0 live RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }] attention
+     1 toolu_0111yBonGHJL4YvNmE5Zm5iK FileChange { files: [FileRow { path: "/tmp/planner-probe/permission-request-target.txt", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Failed } run[toolu_0111yBonGHJL4YvNmE5Zm5iK..toolu_0111yBonGHJL4YvNmE5Zm5iK x1 recent=0 live shown RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0…
 == overview Overview { tasks: Some(TasksView { done: 0, total: 1, current: "Resuming from the live checklist", entries: [TaskLine { subject: "Resume from the live checklist", mark: Current }] }), jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 10830, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings

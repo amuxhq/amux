@@ -21,6 +21,8 @@ enum It {
     Think,
     Read(&'static str),
     Run(&'static str, i32),
+    /// A command and what the agent said it is for.
+    Described(&'static str, &'static str),
     Running(&'static str),
     Edit(&'static str),
     Subagent(&'static str),
@@ -69,6 +71,16 @@ fn item(order: u64, it: &It) -> Item {
                 ToolState::Succeeded,
                 false,
                 Some(*exit),
+            ),
+            "",
+        ),
+        It::Described(command, description) => (
+            tool(
+                "Bash",
+                format!(r#"{{"command":"{command}","description":"{description}"}}"#),
+                ToolState::Succeeded,
+                false,
+                Some(0),
             ),
             "",
         ),
@@ -215,15 +227,15 @@ fn text_splits_a_turn_into_runs_stated_on_every_row() {
 }
 
 #[test]
-fn a_run_at_the_head_is_live_and_shows_its_newest_steps() {
+fn a_run_at_the_head_is_live_and_shows_its_newest_step_under_what_the_rest_did() {
     let state = session(&[
         It::Prompt("go"),
         It::Say("on it"),
         It::Read("a.rs"),
         It::Read("b.rs"),
         It::Think,
-        It::Read("c.rs"),
-        It::Running("just lint"),
+        It::Read("a.rs"),
+        It::Run("just lint", 0),
     ]);
     let run = at(&state, 7);
     assert!(run.live);
@@ -231,16 +243,92 @@ fn a_run_at_the_head_is_live_and_shows_its_newest_steps() {
     assert_eq!(
         (
             at(&state, 3).recent,
-            at(&state, 4).recent,
+            at(&state, 6).recent,
             at(&state, 7).recent
         ),
-        (None, Some(2), Some(0))
+        (None, Some(1), Some(0))
     );
     let none = HashSet::new();
     assert_eq!(
         shown(&state, ToolRows::Collapse { open: &none }),
-        vec![1, 2, 4, 6, 7],
-        "the newest three steps show while it runs; the thinking between them folds"
+        vec![1, 2, 7],
+        "only the newest step shows while it runs"
+    );
+    assert!(run.live_shown && !at(&state, 6).live_shown);
+    assert_eq!(
+        run.hidden,
+        Some(RunCounts {
+            reads: 2,
+            ..RunCounts::default()
+        }),
+        "the line above it says what the rest did, a file read twice once"
+    );
+    assert_eq!(at(&state, 3).hidden, None, "only on the step it heads");
+}
+
+#[test]
+fn a_live_run_shows_every_step_still_running() {
+    let state = session(&[
+        It::Prompt("go"),
+        It::Running("just test"),
+        It::Read("a.rs"),
+        It::Running("just lint"),
+        It::Read("b.rs"),
+    ]);
+    let none = HashSet::new();
+    assert_eq!(
+        shown(&state, ToolRows::Collapse { open: &none }),
+        vec![1, 2, 4, 5],
+        "calls running side by side all show, and the newest"
+    );
+    assert_eq!(
+        at(&state, 2).hidden,
+        Some(RunCounts {
+            reads: 1,
+            ..RunCounts::default()
+        }),
+        "the oldest step shown carries what the hidden ones did"
+    );
+    assert_eq!(at(&state, 4).hidden, None);
+}
+
+#[test]
+fn a_live_run_showing_every_step_has_no_line_above_it() {
+    let state = session(&[It::Prompt("go"), It::Run("just lint", 0)]);
+    let run = at(&state, 2);
+    assert!(run.live_shown);
+    assert_eq!(run.hidden, None);
+}
+
+#[test]
+fn a_finished_run_shows_nothing_live() {
+    let state = session(&[
+        It::Prompt("go"),
+        It::Read("a.rs"),
+        It::Running("just lint"),
+        It::Say("waiting on lint"),
+    ]);
+    assert!(!at(&state, 3).live_shown, "text ended the run");
+    assert_eq!(at(&state, 3).hidden, None);
+}
+
+#[test]
+fn a_run_counts_each_file_once() {
+    let state = session(&[
+        It::Prompt("go"),
+        It::Edit("a.rs"),
+        It::Edit("a.rs"),
+        It::Edit("b.rs"),
+        It::Read("a.rs"),
+        It::Say("done"),
+    ]);
+    assert_eq!(
+        at(&state, 5).counts,
+        Some(RunCounts {
+            edits: 2,
+            reads: 1,
+            ..RunCounts::default()
+        })
     );
 }
 
@@ -418,4 +506,21 @@ fn an_opened_run_stays_open_while_the_window_trims_its_oldest_steps() {
     let oldest = state.transcript().oldest_held().unwrap();
     assert!(oldest > 60, "the window trimmed the run's oldest steps");
     assert_eq!(open, ["k80".to_owned()].into(), "held by its newest step");
+}
+
+#[test]
+fn a_command_carries_what_the_agent_said_it_is_for() {
+    let state = session(&[
+        It::Prompt("go"),
+        It::Described("just premerge", "Run the quick checks"),
+        It::Run("just lint", 0),
+    ]);
+    let descriptions: Vec<String> = rows(&state, ToolRows::ShowAll)
+        .into_iter()
+        .filter_map(|row| match row.kind {
+            ui_view::RowKind::Command { description, .. } => Some(description),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(descriptions, ["Run the quick checks", ""]);
 }

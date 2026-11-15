@@ -692,6 +692,34 @@ impl Home {
         vec![]
     }
 
+    /// `<leader> x` in a chat: settles its agent as `x` does here, asking
+    /// first when that cuts work short. The highlight goes to the top of
+    /// the list, not to where the agent's row was: the person was in the
+    /// chat, so that place means nothing to them, and the top is what
+    /// needs them next.
+    pub fn settle_from_chat(&mut self, fleet: &FleetState, agent: AgentKey) -> Vec<FleetEffect> {
+        // The agent and its subagents leave the list together.
+        let leaving = |key: &AgentKey| {
+            let mut at = Some(key.clone());
+            while let Some(key) = at {
+                if key == agent {
+                    return true;
+                }
+                at = fleet.parent(&key).map(ui_state::agent_key);
+            }
+            false
+        };
+        let top = self
+            .targets_of(fleet)
+            .into_iter()
+            .find(|target| matches!(target, Target::Agent(key) if !leaving(key)))
+            .unwrap_or(Target::New);
+        self.selected = Some(top);
+        self.selected_at = None;
+        self.reveal = true;
+        self.close(fleet, agent)
+    }
+
     /// Pins a top-level agent, or takes its pin away.
     fn pin(fleet: &FleetState, agent: AgentKey) -> Vec<FleetEffect> {
         match fleet.agent(&agent) {

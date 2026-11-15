@@ -1,10 +1,11 @@
 shell |  | agents | 0,62,402,778
 chat |  | worker | 0,116,402,724
-chat.row.boundary | Started |  | 16,124,370,34
-chat.row.prompt | Run the soak. |  | 16,158,370,40
-chat.row.prose | Starting the long run. | final | 16,210,370,20
-chat.prose.render |  | rendered | 16,210,370,20
-chat.row.command | Running, scripts/soak --for <t> |  | 16,241,370,20
+chat.row.prompt | Run the soak. |  | 16,124,370,40
+chat.prose.render |  | rendered | 274,134,98,20
+chat.row.prose | Starting the long run. | final | 16,176,370,20
+chat.prose.render |  | rendered | 16,176,370,20
+chat.row.command | Soak, scripts/soak --for <t>, running |  | 16,207,370,40
+chat.row.meta.volatile | <volatile>
 chat.dock |  | folded | 12,571,378,120
 chat.queued.0 | Also log the peak. | queued | 12,571,378,60
 chat.queued.0.sendNow | Send now |  | 304,579,40,44
@@ -31,15 +32,14 @@ chat.title | worker | worker | 76,66,165,36
  | queued |  | 58,664,46,16
  | Send now |  | 304,639,40,44
  | Withdraw |  | 344,639,40,44
- | Running scripts/soak --for <t> · <t> |  | 28,713,346,27
+ | Running Soak · <t> |  | 28,713,346,27
  | Attach |  | 23,779,44,44
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
  | Interrupt |  | 335,779,44,44
- | Started |  | 16,124,370,34
- | Run the soak. |  | 16,158,370,40
- | Starting the long run. |  | 16,210,370,20
- | Running, scripts/soak --for <t> |  | 16,241,370,20
+ | Run the soak. |  | 16,124,370,40
+ | Starting the long run. |  | 16,176,370,20
+ | Soak, running, $ scripts/soak --for <t> |  | 16,207,370,40
 BackButton | Agents |  | 16,62,44,44
  | worker, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36

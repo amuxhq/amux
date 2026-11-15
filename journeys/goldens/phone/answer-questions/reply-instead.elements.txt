@@ -1,13 +1,14 @@
 shell |  | agents | 0,62,402,778
 chat |  | asker | 0,116,402,724
-chat.row.boundary | Started |  | 16,124,370,34
-chat.row.prompt | Add a settings screen. |  | 16,158,370,40
-chat.row.question | Answered, 2 of 3 questions |  | 16,210,370,203
-chat.row.prose | Thanks, I'll build it that way. | final | 16,427,370,20
-chat.prose.render |  | rendered | 16,427,370,20
-chat.row.turn-end | Worked <t> |  | 16,454,62,16
-chat.row.prompt | Pick the palette too. |  | 16,484,370,40
-chat.row.question | Asking |  | 16,536,370,20
+chat.row.prompt | Add a settings screen. |  | 16,124,370,40
+chat.prose.render |  | rendered | 210,134,162,20
+chat.row.question | Answered, 2 of 3 questions |  | 16,176,370,203
+chat.row.prose | Thanks, I'll build it that way. | final | 16,393,370,20
+chat.prose.render |  | rendered | 16,393,370,20
+chat.row.turn-end | Worked <t> |  | 16,420,62,16
+chat.row.prompt | Pick the palette too. |  | 16,450,370,40
+chat.prose.render |  | rendered | 226,460,146,20
+chat.row.question | Asking |  | 16,502,370,20
 ask | Question | open | 12,614,378,216
 ask.more | More |  | 338,622,44,44
 ask.reply.back | Back |  | 334,658,46,42
@@ -22,13 +23,12 @@ chat.title | asker | asker | 76,66,165,36
  | Back |  | 334,658,46,42
  | Reply in your own words | Let me see both palettes on the desk first. | 40,709,322,39
  | Send reply |  | 28,770,346,44
- | Started |  | 16,124,370,34
- | Add a settings screen. |  | 16,158,370,40
- | Answered, 2 of 3 questions, Layout, Stacked, Entry, “From the help panel”, Order, Skipped |  | 16,210,370,203
- | Thanks, I'll build it that way. |  | 16,427,370,20
- | Worked <t> |  | 16,454,62,16
- | Pick the palette too. |  | 16,484,370,40
- | Asking |  | 16,536,370,20
+ | Add a settings screen. |  | 16,124,370,40
+ | Answered, 2 of 3 questions, Layout, Stacked, Entry, “From the help panel”, Order, Skipped |  | 16,176,370,203
+ | Thanks, I'll build it that way. |  | 16,393,370,20
+ | Worked <t> |  | 16,420,62,16
+ | Pick the palette too. |  | 16,450,370,40
+ | Asking |  | 16,502,370,20
 BackButton | Agents |  | 16,62,44,44
  | asker, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36

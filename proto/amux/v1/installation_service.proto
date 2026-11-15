@@ -210,41 +210,10 @@ message Profile {
   CloudStanding cloud = 6;
   // The account's picture, an https URL; empty when it has none.
   string picture_url = 7;
-  // What the account may do, as amux.sh last said; absent until the
-  // daemon has read it, and for a profile never signed in.
-  Access access = 8;
   // The account's identifier at its service, kept after a sign-out: what
   // makes two profiles' accounts the same. Empty for a profile never signed
   // in.
-  string account_subject = 9;
-}
-
-// What an account may do. `pro` is the whole gate; the rest explains it.
-message Access {
-  bool pro = 1;
-  // When access ends, or ended, in milliseconds since the epoch; absent
-  // when nothing ends.
-  optional int64 until_ms = 2;
-  // Why the account has it; absent when nothing was ever bought or given.
-  oneof grant {
-    // Given without a purchase: complimentary, a trial, a beta.
-    Empty granted = 3;
-    Purchase purchased = 4;
-  }
-}
-
-message Purchase {
-  PurchaseStore store = 1;
-  // Whether it charges again; a cancelled subscription runs to its end.
-  bool will_renew = 2;
-  // When it charges again, in milliseconds since the epoch.
-  optional int64 renews_at_ms = 3;
-}
-
-enum PurchaseStore {
-  PURCHASE_STORE_UNSPECIFIED = 0;
-  PURCHASE_STORE_APP_STORE = 1;
-  PURCHASE_STORE_WEB = 2;
+  string account_subject = 8;
 }
 
 // A profile's standing with its cloud account: what the person asked for
@@ -273,6 +242,11 @@ message RelayLink {
 }
 
 message RelayConnected {
+  // The plan the relay admitted this link on, from the credential the host
+  // connected with: whether the relay carries streams to and from this host.
+  // It is the only statement of the plan here, and the one the relay
+  // enforces. What the account bought, where, and when it renews are the
+  // account service's to say, and a client that shows them asks it.
   Tier tier = 1;
 }
 

@@ -1,9 +1,9 @@
 shell |  | agents | 0,62,402,778
 chat |  | filer | 0,116,402,724
-chat.row.boundary | Started |  | 16,124,370,34
-chat.row.prompt | File the reconnect flake. |  | 16,158,370,40
-chat.row.run | 1 call | folded | 16,198,370,44
-chat.row.form | linear needs details | folded | 16,228,370,44
+chat.row.prompt | File the reconnect flake. |  | 16,124,370,40
+chat.prose.render |  | rendered | 198,134,174,20
+chat.row.run | Used 1 tool | folded | 16,164,370,44
+chat.row.form | linear needs details | folded | 16,194,370,44
 ask | linear needs details | open | 12,468,378,362
 ask.more | More |  | 338,476,44,44
 ask.field.title |  | Reconnect flake in e2e | 28,595,346,41
@@ -24,10 +24,9 @@ chat.title | filer | filer | 76,66,165,36
  | Estimate |  | 28,694,61,18
  | Submit |  | 28,770,169,44
  | Decline |  | 205,770,169,44
- | Started |  | 16,124,370,34
- | File the reconnect flake. |  | 16,158,370,40
- | 1 call |  | 16,198,370,44
- | linear needs details |  | 16,228,370,44
+ | File the reconnect flake. |  | 16,124,370,40
+ | Used 1 tool |  | 16,164,370,44
+ | linear needs details |  | 16,194,370,44
 BackButton | Agents |  | 16,62,44,44
  | filer, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36

@@ -388,18 +388,18 @@ def validate(suites: list[dict[str, Any]]) -> tuple[list[str], set[tuple[str, st
 
 
 def models_matrix(text: str) -> set[str] | None:
-    """The models a CI workflow's models job runs, one per matrix entry."""
+    """The models a CI workflow's models job runs: each matrix entry names a few."""
     job = re.search(r"^  models:\n((?:    .*\n|\s*\n)*)", text, re.MULTILINE)
     if job is None:
         return None
-    targets = re.search(r"^\s+model: \[([^\]]*)\]", job.group(1), re.MULTILINE)
-    if targets is None:
+    entries = re.search(r"^\s+models:\n((?:\s+- [\w ]+\n)+)", job.group(1), re.MULTILINE)
+    if entries is None:
         return None
-    return {target.strip() for target in targets.group(1).split(",") if target.strip()}
+    return {model for line in entries.group(1).splitlines() for model in line.split()[1:]}
 
 
 def validate_models_matrix(suites: list[dict[str, Any]], workflow: str) -> list[str]:
-    """Every protocol model's suite module is its own entry of the CI models job."""
+    """Every protocol model's suite module is in an entry of the CI models job."""
     suite = next((suite for suite in suites if suite["name"] == MODELS_SUITE), None)
     if suite is None:
         return [f"suite {MODELS_SUITE} is missing"]

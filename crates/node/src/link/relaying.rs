@@ -18,7 +18,7 @@ use daemon_core::DumpReason;
 use daemon_core::payload::ForwardRefusal;
 use relay_core::{Input, Output, Relay};
 
-use super::forwarder::{ForwardLinks, Forwarder, HoldLimits, LinkLimits};
+use super::forwarder::{ForwardLinks, Forwarded, Forwarder, HoldLimits, LinkLimits};
 use super::link_log::PathKind;
 use super::socket::{ForwardSink, HostKey, LinkSocket};
 use crate::HostId;
@@ -423,6 +423,11 @@ impl RelayLinks {
         lock(&self.admitted).senders.contains_key(&stand_in)
     }
 
+    /// The link admitted at `stand_in` at this moment.
+    fn at(&self, stand_in: SocketAddr) -> Option<daemon_core::LinkId> {
+        lock(&self.admitted).senders.get(&stand_in).copied()
+    }
+
     /// The link whose forwarded packets arrive from `stand_in`: one seen
     /// there, or one whose connection quinn has moved there since, after
     /// its sender's NAT rebound or its network changed. True in the second
@@ -555,17 +560,47 @@ struct Arrivals {
 
 impl ForwardSink for Arrivals {
     fn arrived(&self, sender: SocketAddr, dst: HostId, payload: &[u8]) {
-        match self.links.sender(sender) {
-            Some((link, moved)) => {
-                // Packets from the new address that came before quinn moved
-                // the connection there were held; they go first.
-                if moved {
-                    self.forwarder.on_admitted(link, sender);
-                }
-                self.forwarder.on_packet(link, dst, payload)
+        self.carry(self.links.sender(sender), sender, dst, payload);
+    }
+}
+
+impl Arrivals {
+    /// Carries a packet from `sender` on the link `found` there a moment
+    /// ago. A host started again links from the address its last link
+    /// still holds, and the registry puts the one in the other's place on
+    /// another thread while the new link's first packets arrive: the link
+    /// found may be gone by now, or the address may have been no link's
+    /// and have become one's since. So a packet dropped or held is looked
+    /// for at the address again, and goes on the link there now. Left
+    /// dropped, or held after the admission that would have released it,
+    /// a peer's first flight waits out its sender's retransmit, about a
+    /// second.
+    fn carry(
+        &self,
+        found: Option<(daemon_core::LinkId, bool)>,
+        sender: SocketAddr,
+        dst: HostId,
+        payload: &[u8],
+    ) {
+        if let Some((link, moved)) = found {
+            // Packets from the new address that came before quinn moved
+            // the connection there were held; they go first.
+            if moved {
+                self.forwarder.on_admitted(link, sender);
             }
-            None => self.forwarder.hold(sender, dst, payload),
-        };
+            let gave_way = matches!(
+                self.forwarder.on_packet(link, dst, payload),
+                Forwarded::Dropped(_)
+            ) && self.links.at(sender) != Some(link);
+            if !gave_way {
+                return;
+            }
+            tracing::debug!(%sender, "a forwarded packet's link gave way as it arrived");
+        }
+        self.forwarder.hold(sender, dst, payload);
+        if let Some(link) = self.links.at(sender) {
+            self.forwarder.on_admitted(link, sender);
+        }
     }
 }
 
@@ -857,6 +892,69 @@ mod tests {
                 net.take_sent(),
                 vec![(lan, encode_delivered(stayer, b"\x40yo"))],
                 "and reached there"
+            );
+        }
+    }
+
+    /// A host killed and started again links from the address its last
+    /// link still holds, and the new link takes the old one's place while
+    /// the first flight the host sent a peer arrives. Whichever the
+    /// forwarder found at the address as the flight came, the old link or
+    /// none, the flight goes on the new one.
+    #[test]
+    fn relaying_carries_a_first_flight_that_arrives_as_its_senders_link_is_replaced() {
+        for found_the_old_link in [true, false] {
+            let Stayed {
+                net,
+                socket,
+                relaying,
+                user,
+                stayer,
+                stayer_lan,
+                link: _stayer_link,
+            } = relay_with_a_stayer();
+            let laptop = HostId::new_v4();
+            let laptop_lan: SocketAddr = "203.0.113.30:6000".parse().unwrap();
+            let laptop_at = arrive(&net, &socket, laptop_lan, QUIC).unwrap();
+            let launch = |link: u64| {
+                relaying.step([Input::LinkUp {
+                    link: daemon_core::LinkId(link),
+                    user,
+                    host: core(laptop),
+                    tier: Some(relay_core::Tier::Pro),
+                    instance: [link as u8; 16],
+                    direct: None,
+                    advertised: Vec::new(),
+                }]);
+                let (tx, _rx) = mpsc::channel(8);
+                let carrier = Dialled::at(laptop_at);
+                relaying.admitted(daemon_core::LinkId(link), tx, laptop, carrier.clone(), None);
+                carrier
+            };
+            let _first = launch(1);
+            arrive(
+                &net,
+                &socket,
+                laptop_lan,
+                &encode_forwarded(stayer, b"\x40before"),
+            );
+            assert_eq!(
+                net.take_sent(),
+                vec![(stayer_lan, encode_delivered(laptop, b"\x40before"))]
+            );
+
+            let forwarding = relaying.forwarding.get().unwrap();
+            let arrivals = Arrivals {
+                forwarder: forwarding.forwarder.clone(),
+                links: forwarding.links.clone(),
+            };
+            let found = found_the_old_link.then_some((daemon_core::LinkId(1), false));
+            let _second = launch(2);
+            arrivals.carry(found, laptop_at, stayer, b"\x40first");
+            assert_eq!(
+                net.take_sent(),
+                vec![(stayer_lan, encode_delivered(laptop, b"\x40first"))],
+                "found the old link: {found_the_old_link}"
             );
         }
     }

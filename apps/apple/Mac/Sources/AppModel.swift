@@ -31,7 +31,7 @@ final class AppModel {
         didSet { if selected != oldValue { open(selected) } }
     }
     /// What the open profile's screens draw: its fleet, hosts, chats and
-    /// the new-agent sheet, in the stores the phone draws from too.
+    /// the New Agent page, in the stores the phone draws from too.
     private(set) var stores: StoreBundle?
     /// Where the main window is: its surface, the agent or host open, and
     /// which panes show.

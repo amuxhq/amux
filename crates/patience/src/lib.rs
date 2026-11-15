@@ -21,6 +21,10 @@ pub const PATIENCE: Duration = Duration::from_secs(30);
 /// How often a polling wait looks again.
 const POLL: Duration = Duration::from_millis(20);
 
+/// Added to what a wait last saw when its final look was still under way
+/// as the deadline passed.
+const UNANSWERED: &str = "one more look had not answered when the time ran out";
+
 /// Why a wait did not pass.
 #[derive(Debug, thiserror::Error)]
 pub enum Stuck {
@@ -47,7 +51,8 @@ pub enum Stuck {
 /// future (`|| async { .. }`), so a wait can run inside a spawned task;
 /// a probe that must mutate what it captures does so before the future,
 /// as in `|| std::future::ready(step())`. Each `Err` is what the probe
-/// saw instead, and the last of them is reported if the deadline passes.
+/// saw instead, and the last of them is reported if the deadline passes,
+/// also when it passes while the probe is looking once more.
 pub async fn until<T, E, F>(what: &str, probe: impl FnMut() -> F) -> Result<T, Stuck>
 where
     E: Display,
@@ -68,14 +73,26 @@ where
     F: Future<Output = Result<T, E>>,
 {
     let deadline = Instant::now() + patience;
+    let mut last: Option<String> = None;
     loop {
         let seen = match tokio::time::timeout_at(deadline, probe()).await {
             Ok(Ok(found)) => return Ok(found),
             Ok(Err(saw)) => saw.to_string(),
+            // The deadline passed while a look was under way. After an
+            // earlier look answered, that is the ordinary end of a wait
+            // whose condition never held, and what that look saw is the
+            // news; only a wait whose first look never answered is hung.
             Err(_) => {
-                return Err(Stuck::Hung {
-                    what: what.to_owned(),
-                    waited: patience,
+                return Err(match last {
+                    Some(seen) => Stuck::Deadline {
+                        what: what.to_owned(),
+                        waited: patience,
+                        seen: format!("{seen}\n({UNANSWERED})"),
+                    },
+                    None => Stuck::Hung {
+                        what: what.to_owned(),
+                        waited: patience,
+                    },
                 });
             }
         };
@@ -86,6 +103,7 @@ where
                 seen,
             });
         }
+        last = Some(seen);
         tokio::time::sleep(POLL).await;
     }
 }
@@ -180,6 +198,26 @@ mod tests {
         .await
         .unwrap_err();
         assert!(matches!(stuck, Stuck::Hung { .. }), "got {stuck}");
+    }
+
+    /// A look takes time, so the deadline often lands inside one. The
+    /// wait then still says what the look before it saw.
+    #[tokio::test(start_paused = true)]
+    async fn a_deadline_inside_a_look_reports_what_the_look_before_saw() {
+        let calls = AtomicUsize::new(0);
+        let stuck = until_within("a slow look", Duration::from_millis(100), || async {
+            if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err::<(), _>("first look")
+            } else {
+                std::future::pending().await
+            }
+        })
+        .await
+        .unwrap_err();
+        let Stuck::Deadline { seen, .. } = &stuck else {
+            panic!("expected a deadline, got {stuck}");
+        };
+        assert!(seen.starts_with("first look\n"), "{seen}");
     }
 
     #[tokio::test]

@@ -586,6 +586,38 @@ async fn words_typed_into_a_chat_that_closes_under_the_person_end_no_other_agent
         .unwrap();
 }
 
+/// The leader then `x` in a chat settles its agent and goes home; an idle
+/// agent has no work to cut short, so nothing asks first.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_leader_then_x_settles_the_chats_agent_and_goes_home() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let (net, client, config) = desk_of(&["finished"]).await;
+    let finished = net.agent("finished").unwrap().id;
+    let mut app = app_listing(client, config, &[finished.as_bytes()]).await;
+    open_chat(&mut app, finished.as_bytes()).await;
+    let mut changed = app.fleet.changed();
+    app.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+    press(&mut app, KeyCode::Char('x'));
+    assert!(app.chat.is_none(), "home");
+    tokio::time::timeout(PATIENCE, async {
+        while app
+            .fleet
+            .state()
+            .find(finished.as_bytes())
+            .is_none_or(|agent| agent.filing() != wire::Filing::Closed)
+        {
+            changed.changed().await.unwrap();
+        }
+    })
+    .await
+    .expect("the agent is settled");
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
 /// The whole screen as text, one row a line.
 fn screen_text(buffer: &Buffer) -> String {
     (0..buffer.area.height)

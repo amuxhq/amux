@@ -1,11 +1,11 @@
 shell |  | agents | 0,62,402,778
 chat |  | planner-pty | 0,116,402,724
-chat.row.boundary | Started |  | 16,124,370,34
-chat.row.prompt | Move the journal. |  | 16,158,370,40
-chat.row.plan | Plan sent back, Check the copy before switching. | folded | 16,198,370,65
-chat.row.plan | Plan approved, Move the journal | folded | 16,249,370,44
-chat.row.prose | Moving the journal as planned. | final | 16,295,370,20
-chat.prose.render |  | rendered | 16,295,370,20
+chat.row.prompt | Move the journal. |  | 16,124,370,40
+chat.prose.render |  | rendered | 245,134,127,20
+chat.row.plan | Plan sent back, Check the copy before switching. | folded | 16,164,370,65
+chat.row.plan | Plan approved, Move the journal | folded | 16,215,370,44
+chat.row.prose | Moving the journal as planned. | final | 16,261,370,20
+chat.prose.render |  | rendered | 16,261,370,20
 chat.row.turn-end | <volatile>
 chat.field | Message planner-pty |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
@@ -19,12 +19,11 @@ chat.title | planner-pty | planner-pty | 76,66,165,36
  | Fake 1 |  | 71,779,129,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
- | Started |  | 16,124,370,34
- | Move the journal. |  | 16,158,370,40
- | Plan sent back, “Check the copy before switching.” |  | 16,198,370,65
- | Plan approved, Move the journal |  | 16,249,370,44
- | Moving the journal as planned. |  | 16,295,370,20
- | Worked <t> |  | 16,323,64,16
+ | Move the journal. |  | 16,124,370,40
+ | Plan sent back, “Check the copy before switching.” |  | 16,164,370,65
+ | Plan approved, Move the journal |  | 16,215,370,44
+ | Moving the journal as planned. |  | 16,261,370,20
+ | Worked <t> |  | 16,289,72,16
 BackButton | Agents |  | 16,62,44,44
  | planner-pty, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36

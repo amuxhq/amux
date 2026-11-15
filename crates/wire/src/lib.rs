@@ -516,6 +516,8 @@ mod tests {
         "AgentSpec",
         "CtlFrame",
         "PtyFrame",
+        "AgentAsk",
+        "AgentAnswer",
         "ProviderOffer",
         "Step",
         "Message",

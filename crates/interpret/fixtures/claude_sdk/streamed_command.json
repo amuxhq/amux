@@ -1,0 +1,325 @@
+{
+  "about": "A shell call is drawn once its description has streamed in, with the command's first line as far as it has arrived, and grows with that line until its end; the finished call brings the whole command. A call written command first appears only when its description arrives.",
+  "spec": {
+    "created_at_ms": 1800000000000
+  },
+  "events": [
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "system",
+          "subtype": "init",
+          "uuid": "init-s1",
+          "session_id": "s1",
+          "claude_code_version": "2.1.323",
+          "model": "claude-opus-5-5",
+          "permissionMode": "default"
+        }
+      }
+    },
+    {
+      "input": {
+        "id": "p1",
+        "prompt": {
+          "text": "push"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "stream_event",
+          "uuid": "ms",
+          "session_id": "s1",
+          "parent_tool_use_id": null,
+          "event": {
+            "type": "message_start",
+            "message": {
+              "id": "msg_1",
+              "type": "message",
+              "role": "assistant",
+              "model": "claude-opus-5-5",
+              "content": [],
+              "usage": {
+                "input_tokens": 2,
+                "output_tokens": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "stream_event",
+          "uuid": "bs0",
+          "session_id": "s1",
+          "parent_tool_use_id": null,
+          "event": {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {
+              "type": "tool_use",
+              "id": "toolu_a",
+              "name": "Bash",
+              "input": {}
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "stream_event",
+          "uuid": "d1",
+          "session_id": "s1",
+          "parent_tool_use_id": null,
+          "event": {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {
+              "type": "input_json_delta",
+              "partial_json": "{\"description\": \"Push b"
+            }
+          }
+        }
+      },
+      "expect": {
+        "items": []
+      }
+    },
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "stream_event",
+          "uuid": "d2",
+          "session_id": "s1",
+          "parent_tool_use_id": null,
+          "event": {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {
+              "type": "input_json_delta",
+              "partial_json": "oth repos\", \"command\": \"git pu"
+            }
+          }
+        }
+      },
+      "expect": {
+        "items": [
+          "toolu_a"
+        ]
+      }
+    },
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "stream_event",
+          "uuid": "d3",
+          "session_id": "s1",
+          "parent_tool_use_id": null,
+          "event": {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {
+              "type": "input_json_delta",
+              "partial_json": "sh origin main\\"
+            }
+          }
+        }
+      },
+      "expect": {
+        "items": [
+          "toolu_a"
+        ]
+      }
+    },
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "stream_event",
+          "uuid": "d4",
+          "session_id": "s1",
+          "parent_tool_use_id": null,
+          "event": {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {
+              "type": "input_json_delta",
+              "partial_json": "nsleep 1\", \"timeout\": 60000}"
+            }
+          }
+        }
+      },
+      "expect": {
+        "items": []
+      }
+    },
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "stream_event",
+          "uuid": "be0",
+          "session_id": "s1",
+          "parent_tool_use_id": null,
+          "event": {
+            "type": "content_block_stop",
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "assistant",
+          "uuid": "a1",
+          "session_id": "s1",
+          "parent_tool_use_id": null,
+          "message": {
+            "id": "msg_1",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-opus-5-5",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_a",
+                "name": "Bash",
+                "input": {
+                  "description": "Push both repos",
+                  "command": "git push origin main\nsleep 1",
+                  "timeout": 60000
+                }
+              }
+            ],
+            "usage": {
+              "input_tokens": 2,
+              "output_tokens": 1
+            }
+          }
+        }
+      },
+      "expect": {
+        "items": [
+          "toolu_a"
+        ]
+      }
+    },
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "stream_event",
+          "uuid": "bs1",
+          "session_id": "s1",
+          "parent_tool_use_id": null,
+          "event": {
+            "type": "content_block_start",
+            "index": 1,
+            "content_block": {
+              "type": "tool_use",
+              "id": "toolu_b",
+              "name": "Bash",
+              "input": {}
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "stream_event",
+          "uuid": "d5",
+          "session_id": "s1",
+          "parent_tool_use_id": null,
+          "event": {
+            "type": "content_block_delta",
+            "index": 1,
+            "delta": {
+              "type": "input_json_delta",
+              "partial_json": "{\"command\": \"ls\", \"descr"
+            }
+          }
+        }
+      },
+      "expect": {
+        "items": []
+      }
+    },
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "stream_event",
+          "uuid": "d6",
+          "session_id": "s1",
+          "parent_tool_use_id": null,
+          "event": {
+            "type": "content_block_delta",
+            "index": 1,
+            "delta": {
+              "type": "input_json_delta",
+              "partial_json": "iption\": \"List"
+            }
+          }
+        }
+      },
+      "expect": {
+        "items": []
+      }
+    },
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "stream_event",
+          "uuid": "d7",
+          "session_id": "s1",
+          "parent_tool_use_id": null,
+          "event": {
+            "type": "content_block_delta",
+            "index": 1,
+            "delta": {
+              "type": "input_json_delta",
+              "partial_json": " files\"}"
+            }
+          }
+        }
+      },
+      "expect": {
+        "items": [
+          "toolu_b"
+        ]
+      }
+    },
+    {
+      "fact": {
+        "channel": "stream",
+        "json": {
+          "type": "stream_event",
+          "uuid": "be1",
+          "session_id": "s1",
+          "parent_tool_use_id": null,
+          "event": {
+            "type": "content_block_stop",
+            "index": 1
+          }
+        }
+      }
+    }
+  ]
+}

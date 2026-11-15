@@ -132,7 +132,7 @@ pub fn components(theme: Theme) -> Vec<Component> {
     }
     for (name, shows, overview, jobs) in edge_rows() {
         let mut lines: Vec<Line<'static>> =
-            edge_row(&overview, true, jobs, false, written_at(), w, theme)
+            edge_row(&overview, jobs, false, written_at(), w, theme)
                 .into_iter()
                 .collect();
         lines.extend(composer_lines(
@@ -794,6 +794,7 @@ fn row_sets() -> Vec<RowSet> {
     let command = |state, exit_code, output: &[&str], more| {
         row(RowKind::Command {
             command: "cargo test -p store".into(),
+            description: String::new(),
             state,
             exit_code,
             output_head: output.iter().map(|s| (*s).into()).collect(),
@@ -1238,6 +1239,7 @@ fn row_sets() -> Vec<RowSet> {
                 (
                     row(RowKind::Background {
                         command: "npm run dev".into(),
+                        description: String::new(),
                         running: true,
                         duration_ms: None,
                     }),
@@ -1246,6 +1248,7 @@ fn row_sets() -> Vec<RowSet> {
                 (
                     row(RowKind::Background {
                         command: "cargo watch".into(),
+                        description: String::new(),
                         running: false,
                         duration_ms: Some(240_000),
                     }),
@@ -2114,50 +2117,30 @@ fn cards() -> Vec<CardSet> {
 /// The row resting on the composer's box, over a plain composer: what is
 /// still in flight in the chat, and how many background jobs run.
 fn edge_rows() -> Vec<(&'static str, &'static str, ui_view::Overview, usize)> {
-    use ui_view::{Overview, ServerView, TaskLine, TaskMark, TasksView};
+    use ui_view::{Overview, TaskLine, TaskMark, TasksView};
 
-    let server = |name: &str, error: &str, needs_auth: bool| ServerView {
-        name: name.into(),
-        error: error.into(),
-        needs_auth,
-    };
     let task = |subject: &str, mark| TaskLine {
         subject: subject.into(),
         mark,
     };
-    vec![
-        (
-            "composer_tool_servers",
-            "Tool servers newly failing, called out on the row above the composer: two need signing in (warning ink) and one failed to start (error ink), and ctrl+o, which opens the overview that lists them.",
-            Overview {
-                failed_servers: vec![
-                    server("linear", "needs authentication", true),
-                    server("github", "needs authentication", true),
-                    server("postgres", "connection refused", false),
+    vec![(
+        "composer_tasks",
+        "A task list part done on the row above the composer: the task in progress by name, how many of the tasks are done, the background jobs still running and ctrl+o.",
+        Overview {
+            tasks: Some(TasksView {
+                done: 1,
+                total: 3,
+                current: "Reviewing the draft".into(),
+                entries: vec![
+                    task("Draft", TaskMark::Done),
+                    task("Review", TaskMark::Current),
+                    task("Publish", TaskMark::Todo),
                 ],
-                ..Overview::default()
-            },
-            0,
-        ),
-        (
-            "composer_tasks",
-            "A task list part done on the row above the composer: the task in progress by name, how many of the tasks are done, the background jobs still running and ctrl+o.",
-            Overview {
-                tasks: Some(TasksView {
-                    done: 1,
-                    total: 3,
-                    current: "Reviewing the draft".into(),
-                    entries: vec![
-                        task("Draft", TaskMark::Done),
-                        task("Review", TaskMark::Current),
-                        task("Publish", TaskMark::Todo),
-                    ],
-                }),
-                ..Overview::default()
-            },
-            2,
-        ),
-    ]
+            }),
+            ..Overview::default()
+        },
+        2,
+    )]
 }
 
 fn composers() -> Vec<(&'static str, &'static str, Composer, Reach, &'static str)> {
@@ -2608,6 +2591,82 @@ pub fn chat_settings() -> ChatScene {
     ChatScene { view, state, now }
 }
 
+/// The commands a headless Claude chat offers, as its catalogue lists them.
+fn offered_commands() -> Vec<wire::OfferedCommand> {
+    [
+        (
+            "clear",
+            "Clear the conversation history and free up context",
+            "",
+            "",
+        ),
+        (
+            "compact",
+            "Clear the history but keep a summary in context",
+            "[instructions]",
+            "",
+        ),
+        ("context", "Show what is using the context window", "", ""),
+        ("cost", "Show what this session has cost so far", "", ""),
+        (
+            "init",
+            "Write a CLAUDE.md that documents the codebase",
+            "",
+            "",
+        ),
+        (
+            "pr-comments",
+            "Get the comments from a GitHub pull request",
+            "<pr>",
+            "",
+        ),
+        ("review", "Review a pull request", "[pr]", ""),
+        (
+            "security-review",
+            "Review the pending changes on this branch for security problems",
+            "",
+            "",
+        ),
+        (
+            "code-review:review",
+            "Review the current diff for correctness bugs",
+            "[level] [target]",
+            "code-review",
+        ),
+        (
+            "release-notes",
+            "Write release notes since the last tag",
+            "",
+            "repo",
+        ),
+    ]
+    .into_iter()
+    .map(
+        |(name, description, argument_hint, source)| wire::OfferedCommand {
+            name: name.into(),
+            description: description.into(),
+            argument_hint: argument_hint.into(),
+            source: source.into(),
+        },
+    )
+    .collect()
+}
+
+/// A headless Claude chat with `typed` in its composer: the commands it
+/// starts offered over the composer.
+pub fn chat_commands(typed: &str) -> ChatScene {
+    let (_, _, state, _) = control_chats()
+        .into_iter()
+        .next()
+        .expect("the headless Claude chat comes first");
+    let now = written_at();
+    let mut view = crate::chat::ChatView::new(b"agent".to_vec(), now, false);
+    for c in typed.chars() {
+        view.key(&state, KeyEvent::from(KeyCode::Char(c)), Theme::default());
+    }
+    ChatScene { view, state, now }
+}
+
 /// A reply using every markdown form, on a Codex chat with full access, so
 /// one screen shows how formatted prose and the permission edge are drawn.
 pub fn chat_formatted() -> ChatScene {
@@ -2844,6 +2903,7 @@ fn control_chats() -> Vec<(
                 model("haiku", "Haiku 4.5", &[]),
             ],
             permissions: claude(true),
+            commands: offered_commands(),
             ..Default::default()
         },
     );

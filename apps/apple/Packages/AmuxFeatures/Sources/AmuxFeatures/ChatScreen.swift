@@ -700,9 +700,9 @@ public struct ChatStanding: View {
                 DeleteCard(
                     name: subject.name, descendants: descendants, workspaceGoes: subject.workspaceGoes,
                     cancel: { showing = nil }
-                ) {
+                ) { shown in
                     showing = nil
-                    actions(.deleting(subject.workspaceGoes))
+                    actions(.deleting(shown))
                 }
             case .settings?:
                 if let settings = model.settings {
@@ -1003,10 +1003,25 @@ private struct DeleteCard: View {
     @Environment(\.design) private var design
     let name: String
     let descendants: Int
-    /// The workspace that goes with it, when one does.
-    let workspaceGoes: WorkspaceGoes?
+    /// The workspace that goes with it, when one does, as the card first
+    /// showed it. State keeps the value it starts with for as long as the
+    /// card stays up, so a fleet change while it is open changes neither
+    /// what it says nor what confirming agrees to.
+    @State private var workspaceGoes: WorkspaceGoes?
     let cancel: () -> Void
-    let confirm: () -> Void
+    /// Handed the workspace the card named, to delete exactly as it said.
+    let confirm: (WorkspaceGoes?) -> Void
+
+    init(
+        name: String, descendants: Int, workspaceGoes: WorkspaceGoes?,
+        cancel: @escaping () -> Void, confirm: @escaping (WorkspaceGoes?) -> Void
+    ) {
+        self.name = name
+        self.descendants = descendants
+        _workspaceGoes = State(initialValue: workspaceGoes)
+        self.cancel = cancel
+        self.confirm = confirm
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1030,7 +1045,9 @@ private struct DeleteCard: View {
             }
             ButtonPair {
                 choiceButton(String(localized: "Cancel"), kind: .outline, id: "chat.delete.cancel", action: cancel)
-                choiceButton(String(localized: "Delete"), kind: .destructive, id: "chat.delete.confirm", action: confirm)
+                choiceButton(String(localized: "Delete"), kind: .destructive, id: "chat.delete.confirm") {
+                    confirm(workspaceGoes)
+                }
             }
         }
         .padding(16)

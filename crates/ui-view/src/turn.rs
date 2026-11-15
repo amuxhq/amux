@@ -179,7 +179,7 @@ fn finished_span(transcript: &Transcript, order: u64) -> Option<RangeInclusive<u
     };
     let head = transcript.head()?;
     let end = between(transcript, start + 1, head).find(|held| bounds_turn(&held.class))?;
-    (end.class == ItemClass::Turn).then(|| start..=end.item.order)
+    (end.class == ItemClass::Turn).then_some(start..=end.item.order)
 }
 
 /// How an item takes part in the answer, read from its class alone: the

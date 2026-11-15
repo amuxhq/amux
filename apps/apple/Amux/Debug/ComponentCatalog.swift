@@ -178,7 +178,7 @@ enum ComponentCatalog {
                 command: "/cost", args: "", output: "Total cost: $0.42\nTotal duration: 18m 3s"))),
             row("turn-end", r("z1", 25, .turnEnd(failed: false, durationMs: 102_000))),
             row("stopped", r("z2", 26, .stopped)),
-            row("compaction", r("z3", 27, .compaction(automatic: true, tokensAfter: 22_000, tokensBefore: 148_000))),
+            row("compaction", r("z3", 27, .compaction(automatic: true, idle: false, tokensAfter: 22_000, tokensBefore: 148_000))),
             row("error", height: 140, expanded: false, r("z4", 28, .error(
                 errorKind: "Provider overloaded", message: "The API returned 529 ten times in a row.",
                 attempts: 10, gaveUp: true))),

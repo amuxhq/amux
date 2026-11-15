@@ -35,6 +35,10 @@ pub struct State<const FORGET: bool> {
     tools: BTreeMap<String, String>,
     /// A stop interrupted the turn running: its end reads as cut short.
     interrupted: bool,
+    /// When a `wake` fact asked to hear the clock; the tick that reaches
+    /// it writes a `woke` item.
+    #[serde(default)]
+    wake: Option<i64>,
 }
 
 impl<const FORGET: bool> State<FORGET> {
@@ -85,6 +89,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
         {
             "ready" => shared.provider_started(),
             "model" => state.model = Some(text_of(&value, "model")),
+            "wake" => state.wake = value.get("at").and_then(Value::as_i64),
             "turn_start" => {
                 shared.turn_started();
             }
@@ -307,6 +312,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
             model: None,
             tools: BTreeMap::new(),
             interrupted: false,
+            wake: None,
         };
         let step = state.shared.initial_step(Self::unknown_snapshot());
         (state, step)
@@ -320,7 +326,21 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
     fn step(state: &mut Self::State, event: Event) -> Stepped {
         let mut emit = Emit::default();
         match event {
-            Event::Tick { at_ms } => state.shared.tick(at_ms),
+            Event::Tick { at_ms } => {
+                state.shared.tick(at_ms);
+                if state.wake.is_some_and(|wake| wake <= at_ms) {
+                    state.wake = None;
+                    state.shared.item(
+                        &mut emit,
+                        ItemDraft {
+                            key: format!("woke:{at_ms}"),
+                            body: body(claude_item::Kind::Prompt(wire::Prompt {})),
+                            complete: true,
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
             Event::Fact(fact) if fact.channel == Channel::Stream => {
                 Self::fact(state, &mut emit, fact)
             }
@@ -361,6 +381,10 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {
         state.shared.pending_messages().iter().cloned().collect()
+    }
+
+    fn wake_at(state: &Self::State) -> Option<i64> {
+        state.wake
     }
 
     fn typed_unrecorded(state: &Self::State) -> bool {

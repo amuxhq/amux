@@ -1814,6 +1814,10 @@ impl State {
                             tokens_before: metadata.pre_tokens,
                             tokens_after: after,
                             automatic: metadata.trigger == CompactTrigger::Auto,
+                            // Claude's terminal compacts an idle
+                            // conversation itself; its transcript row is
+                            // not known to say so apart from any other.
+                            idle: false,
                         })),
                         at_ms,
                         complete: true,

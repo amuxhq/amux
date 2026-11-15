@@ -891,6 +891,7 @@ fn compacting_status_is_an_item() {
                     tokens_before: Some(21_378),
                     tokens_after: Some(4_266),
                     automatic: false,
+                    idle: false,
                 }),
             ),
         ]
@@ -2268,5 +2269,280 @@ fn a_first_prompt_is_drawn_while_claude_starts_and_written_once() {
     assert_eq!(
         ran.step.snapshot.expect("a snapshot").phase(),
         wire::Phase::Working
+    );
+}
+
+const MINUTE: i64 = 60 * 1000;
+
+/// A turn that ends at `at`, whose request read a conversation of 250k
+/// tokens and wrote to the cache for `ttl` ("1h" or "5m").
+fn big_turn_ending(state: &mut State, at: i64, ttl: &str) -> i32 {
+    let created = if ttl == "1h" {
+        json!({"ephemeral_1h_input_tokens": 10_000, "ephemeral_5m_input_tokens": 0})
+    } else {
+        json!({"ephemeral_1h_input_tokens": 0, "ephemeral_5m_input_tokens": 10_000})
+    };
+    ClaudeSdk::step(state, Event::Tick { at_ms: at });
+    ClaudeSdk::step(
+        state,
+        stream(
+            json!({"type": "stream_event", "event": {"type": "message_start", "message": {
+                "id": "msg_1",
+                "usage": {
+                    "input_tokens": 2,
+                    "cache_read_input_tokens": 240_000,
+                    "cache_creation_input_tokens": 10_000,
+                    "cache_creation": created,
+                },
+            }}}),
+        ),
+    );
+    let ended = ClaudeSdk::step(
+        state,
+        stream(json!({"type": "result", "subtype": "success", "uuid": "r1", "duration_ms": 10})),
+    );
+    ended.step.turn_end.expect("the turn ends").outcome
+}
+
+fn compact_sent(stepped: &interpret::Stepped) -> Option<String> {
+    stepped.effects.iter().find_map(|effect| match effect {
+        Effect::UserMessage { uuid, text, .. } if text == "/compact" => Some(uuid.clone()),
+        _ => None,
+    })
+}
+
+fn compactions(stepped: &interpret::Stepped) -> Vec<wire::Compaction> {
+    use prost::Message as _;
+    stepped
+        .step
+        .items
+        .iter()
+        .filter_map(
+            |item| match wire::ClaudeItem::decode(item.body.as_slice()).ok()?.kind? {
+                wire::claude_item::Kind::Compaction(compaction) => Some(compaction),
+                _ => None,
+            },
+        )
+        .collect()
+}
+
+/// Headless Claude does not compact while idle, as its terminal does: amux
+/// sends `/compact` just inside the hour its cache lives. It is nobody's
+/// turn: no prompt is drawn, no turn ends, a prompt typed meanwhile waits
+/// for it, and the compaction row says it ran while idle.
+#[test]
+fn an_idle_conversation_on_the_hour_cache_is_compacted_before_it_expires() {
+    let mut state = started();
+    big_turn_ending(&mut state, 1_000, "1h");
+    let due = 1_000 + 55 * MINUTE;
+    assert_eq!(ClaudeSdk::wake_at(&state), Some(due));
+    assert!(compact_sent(&ClaudeSdk::step(&mut state, Event::Tick { at_ms: due - 1 })).is_none());
+
+    let sent = ClaudeSdk::step(&mut state, Event::Tick { at_ms: due });
+    let uuid = compact_sent(&sent).expect("the idle compaction is sent");
+    assert!(
+        sent.step.items.is_empty(),
+        "nothing draws it: {:?}",
+        sent.step.items
+    );
+    // Only the deadline for its result is awaited now.
+    assert_eq!(ClaudeSdk::wake_at(&state), Some(due + 10 * MINUTE));
+
+    let typed = ClaudeSdk::step(
+        &mut state,
+        sdk_input(
+            b"p2",
+            wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+                text: "carry on".into(),
+                ..Default::default()
+            }),
+        ),
+    );
+    assert!(
+        !typed
+            .effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::UserMessage { .. })),
+        "a prompt waits for the compaction: {:?}",
+        typed.effects
+    );
+
+    ClaudeSdk::step(
+        &mut state,
+        stream(
+            json!({"type": "system", "subtype": "status", "status": "compacting", "uuid": "st"}),
+        ),
+    );
+    let boundary = ClaudeSdk::step(
+        &mut state,
+        stream(
+            json!({"type": "system", "subtype": "compact_boundary", "uuid": "cb", "session_id": "s",
+            "compact_metadata": {"trigger": "manual", "pre_tokens": 250_000, "post_tokens": 30_000}}),
+        ),
+    );
+    assert_eq!(
+        compactions(&boundary),
+        [wire::Compaction {
+            tokens_before: Some(250_000),
+            tokens_after: Some(30_000),
+            automatic: false,
+            idle: true,
+        }]
+    );
+    let over = ClaudeSdk::step(
+        &mut state,
+        stream(
+            json!({"type": "result", "subtype": "success", "uuid": "r2", "duration_ms": 17_000,
+            "user_message_uuid": uuid, "user_message_uuids": [uuid]}),
+        ),
+    );
+    assert_eq!(over.step.turn_end, None, "no turn ends for it");
+    assert!(
+        over.effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::UserMessage { text, .. } if text == "carry on")),
+        "the waiting prompt goes on: {:?}",
+        over.effects
+    );
+}
+
+/// On the five-minute cache, or once the hour has passed (a machine that
+/// slept through it), compacting would read the conversation uncached and
+/// save nothing.
+#[test]
+fn no_idle_compaction_without_a_warm_hour_cache() {
+    let mut state = started();
+    big_turn_ending(&mut state, 1_000, "5m");
+    assert_eq!(ClaudeSdk::wake_at(&state), None);
+
+    let mut state = started();
+    big_turn_ending(&mut state, 1_000, "1h");
+    let late = ClaudeSdk::step(
+        &mut state,
+        Event::Tick {
+            at_ms: 1_000 + 61 * MINUTE,
+        },
+    );
+    assert!(compact_sent(&late).is_none());
+    assert_eq!(ClaudeSdk::wake_at(&state), None);
+}
+
+/// A result that never names amux's `/compact` would hold the queue
+/// forever: after ten minutes amux stops waiting, and a prompt goes on.
+#[test]
+fn an_idle_compaction_without_its_result_stops_holding_the_queue() {
+    let mut state = started();
+    big_turn_ending(&mut state, 1_000, "1h");
+    let due = 1_000 + 55 * MINUTE;
+    assert!(compact_sent(&ClaudeSdk::step(&mut state, Event::Tick { at_ms: due })).is_some());
+    ClaudeSdk::step(
+        &mut state,
+        Event::Tick {
+            at_ms: due + 10 * MINUTE,
+        },
+    );
+    assert_eq!(ClaudeSdk::wake_at(&state), None);
+    let typed = ClaudeSdk::step(
+        &mut state,
+        sdk_input(
+            b"p2",
+            wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+                text: "carry on".into(),
+                ..Default::default()
+            }),
+        ),
+    );
+    assert!(
+        typed
+            .effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::UserMessage { text, .. } if text == "carry on")),
+        "{:?}",
+        typed.effects
+    );
+    // The compaction is forgotten, not left to block the next idle
+    // stretch, which the person's prompt's turn starts afresh.
+    let next = due + 20 * MINUTE;
+    big_turn_ending(&mut state, next, "1h");
+    assert_eq!(ClaudeSdk::wake_at(&state), Some(next + 55 * MINUTE));
+}
+
+/// A stop during an idle compaction cancels it, and is no stop of the
+/// person's: the next turn does not end interrupted.
+#[test]
+fn a_stop_cancels_an_idle_compaction_and_no_turn_of_anybodys() {
+    let mut state = started();
+    big_turn_ending(&mut state, 1_000, "1h");
+    let due = 1_000 + 55 * MINUTE;
+    let uuid = compact_sent(&ClaudeSdk::step(&mut state, Event::Tick { at_ms: due })).unwrap();
+    let stopped = ClaudeSdk::step(
+        &mut state,
+        sdk_input(
+            b"s1",
+            wire::claude_sdk_input::Of::Interrupt(Default::default()),
+        ),
+    );
+    let written: Vec<String> = stopped
+        .effects
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::ProviderWrite(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        written.iter().any(|line| line.contains("interrupt")),
+        "{written:?}"
+    );
+    ClaudeSdk::step(
+        &mut state,
+        stream(
+            json!({"type": "result", "subtype": "error_during_execution", "uuid": "r2",
+            "duration_ms": 5, "terminal_reason": "aborted_streaming", "user_message_uuid": uuid}),
+        ),
+    );
+    assert!(!state.shared().is_housekeeping());
+    assert_eq!(
+        big_turn_ending(&mut state, due + MINUTE, "1h"),
+        wire::TurnOutcome::Completed as i32
+    );
+}
+
+/// The cache lives an hour from the last request, not from the turn's
+/// end: a turn that waited long on a tool after its last request leaves
+/// less of the hour, and none once it has passed.
+#[test]
+fn the_cache_hour_counts_from_the_last_request() {
+    let mut state = started();
+    big_turn_ending(&mut state, 1_000, "1h");
+    assert_eq!(ClaudeSdk::wake_at(&state), Some(1_000 + 55 * MINUTE));
+
+    let mut state = started();
+    ClaudeSdk::step(&mut state, Event::Tick { at_ms: 1_000 });
+    ClaudeSdk::step(
+        &mut state,
+        stream(
+            json!({"type": "stream_event", "event": {"type": "message_start", "message": {
+                "id": "msg_1",
+                "usage": {"input_tokens": 2, "cache_read_input_tokens": 240_000,
+                    "cache_creation_input_tokens": 10_000,
+                    "cache_creation": {"ephemeral_1h_input_tokens": 10_000}},
+            }}}),
+        ),
+    );
+    ClaudeSdk::step(
+        &mut state,
+        Event::Tick {
+            at_ms: 1_000 + 70 * MINUTE,
+        },
+    );
+    ClaudeSdk::step(
+        &mut state,
+        stream(json!({"type": "result", "subtype": "success", "uuid": "r1", "duration_ms": 10})),
+    );
+    assert_eq!(
+        ClaudeSdk::wake_at(&state),
+        None,
+        "the hour ran out during the turn"
     );
 }

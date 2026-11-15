@@ -34,9 +34,9 @@ use wire::{
 };
 
 use super::{
-    AskMeta, DROPPED_NOTIFICATIONS, FRESH_THREAD_REQUEST, ListedSkill, Proposed, RESUME_REQUEST,
-    Request, State, Streamed, WorkState, ask_key, client_message_id, elicitation_response,
-    item_body, work_ask, work_complete,
+    AskMeta, DROPPED_NOTIFICATIONS, FRESH_THREAD_REQUEST, IdleCompaction, ListedSkill, Proposed,
+    RESUME_REQUEST, Request, State, Streamed, WorkState, ask_key, client_message_id,
+    elicitation_response, item_body, work_ask, work_complete,
 };
 use crate::claude_common::compact_json;
 use crate::shared::{Output, json_as_written, patch_first_change};
@@ -665,6 +665,7 @@ impl State {
                         self.interrupt_pending = false;
                         self.shared.turn_abandoned();
                     }
+                    Request::IdleCompact => self.idle_compaction_over(emit),
                     Request::Steer { .. } => {}
                     Request::Inject { envelope_id, .. } => {
                         self.shared.message_consumed(&envelope_id);
@@ -724,6 +725,7 @@ impl State {
             Request::Steer { .. }
             | Request::Interrupt
             | Request::Compact
+            | Request::IdleCompact
             | Request::Models { .. }
             | Request::Name
             | Request::TitleConfig
@@ -1567,6 +1569,24 @@ impl State {
             ServerNotification::ThreadStarted(started) => {
                 self.thread_started(emit, &started.thread, None, false);
             }
+            // The turn Codex runs an idle compaction in is nobody's: no
+            // turn of the agent's starts or ends for it.
+            ServerNotification::TurnStarted(started)
+                if matches!(self.idle_compaction, Some(IdleCompaction::Requested { .. }))
+                    && !self.shared.is_busy() =>
+            {
+                self.idle_compaction = Some(IdleCompaction::Running {
+                    turn: started.turn.id.clone(),
+                });
+            }
+            ServerNotification::TurnCompleted(completed)
+                if matches!(
+                    &self.idle_compaction,
+                    Some(IdleCompaction::Running { turn }) if *turn == completed.turn.id
+                ) =>
+            {
+                self.idle_compaction_over(emit);
+            }
             ServerNotification::TurnStarted(started) => {
                 self.plan_overtaken(emit);
                 self.shared.turn_started();
@@ -1637,6 +1657,7 @@ impl State {
                 );
             }
             ServerNotification::ThreadTokenUsageUpdated(updated) => {
+                self.last_request_ms = Some(self.shared.now_ms());
                 let usage = updated.token_usage;
                 self.context_tokens = Some(usage.last.total_tokens as u64);
                 if let Some(window) = usage.model_context_window {
@@ -2030,10 +2051,17 @@ impl State {
             }
             ThreadItem::ContextCompaction(_) => {
                 if completed {
-                    self.boundary(
+                    let idle = matches!(
+                        &self.idle_compaction,
+                        Some(IdleCompaction::Running { turn: running }) if running == turn
+                    );
+                    self.boundary_item(
                         emit,
-                        wire::BoundaryKind::Compacted,
-                        wire::IncarnationEnd::default(),
+                        wire::Boundary {
+                            kind: wire::BoundaryKind::Compacted as i32,
+                            idle,
+                            ..Default::default()
+                        },
                     );
                 }
             }
@@ -2723,6 +2751,7 @@ impl State {
 
     pub(super) fn exited(&mut self, emit: &mut Emit, exit: wire::IncarnationEnd) {
         emit.end_incarnation(exit.clone());
+        self.idle_compaction = None;
         self.offers_asked = false;
         // The next server is asked afresh; this one will answer nothing.
         self.skills_asked = 0;

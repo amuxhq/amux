@@ -2536,3 +2536,178 @@ fn a_first_prompt_is_drawn_while_codex_starts_and_sent_once() {
         ran.step.items
     );
 }
+
+const MINUTE: i64 = 60 * 1000;
+
+/// An idle thread of 150k tokens whose last turn ended at `at`.
+fn big_idle_codex(at: i64) -> State {
+    let mut state = idle_codex();
+    Codex::step(&mut state, Event::Tick { at_ms: at });
+    Codex::step(&mut state, prompt(b"p1", "count"));
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+        ),
+    );
+    // Codex records the prompt, by the client id amux gave it.
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1",
+            "item": {"id": "u1", "type": "userMessage", "clientId": "7031",
+                "content": [{"type": "text", "text": "count"}]}}}),
+        ),
+    );
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "thread/tokenUsage/updated", "params": {"threadId": "t1", "turnId": "turn-1",
+            "tokenUsage": {"last": {"totalTokens": 150_000}, "modelContextWindow": 400_000}}}),
+        ),
+    );
+    let ended = Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "completed"}}}),
+        ),
+    );
+    assert!(ended.step.turn_end.is_some());
+    state
+}
+
+/// amux compacts an idle Codex thread inside the half hour OpenAI's cache
+/// keeps it. Codex runs the compaction as a turn of its own, which is
+/// nobody's: no turn starts or ends for the agent, a message waits for it,
+/// and the compacted boundary says it ran while idle.
+#[test]
+fn an_idle_thread_is_compacted_inside_the_cache_lifetime() {
+    let mut state = big_idle_codex(1_000);
+    let due = 1_000 + 25 * MINUTE;
+    assert_eq!(Codex::wake_at(&state), Some(due));
+    let sent = writes(&Codex::step(&mut state, Event::Tick { at_ms: due }).effects);
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent[0]["method"], "thread/compact/start");
+    // Until its turn starts, only the deadline for starting it is awaited.
+    assert_eq!(Codex::wake_at(&state), Some(due + 2 * MINUTE));
+
+    let held = writes(&Codex::step(&mut state, agent_message(b"e1")).effects);
+    assert!(
+        held.is_empty(),
+        "a message waits for the compaction: {held:?}"
+    );
+
+    Codex::step(&mut state, rpc(json!({"id": sent[0]["id"], "result": {}})));
+    let started = Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-2"}}}),
+        ),
+    );
+    assert_eq!(started.step.turn_end, None);
+    assert_eq!(Codex::wake_at(&state), None);
+    let compacted = Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-2",
+            "item": {"id": "c1", "type": "contextCompaction"}}}),
+        ),
+    );
+    let boundaries: Vec<wire::Boundary> = compacted
+        .step
+        .items
+        .iter()
+        .filter_map(|item| {
+            use prost::Message as _;
+            match wire::CodexItem::decode(item.body.as_slice()).ok()?.kind? {
+                wire::codex_item::Kind::Boundary(boundary) => Some(boundary),
+                _ => None,
+            }
+        })
+        .collect();
+    assert_eq!(
+        boundaries,
+        [wire::Boundary {
+            kind: wire::BoundaryKind::Compacted as i32,
+            idle: true,
+            ..Default::default()
+        }]
+    );
+    let over = Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-2", "status": "completed"}}}),
+        ),
+    );
+    assert_eq!(over.step.turn_end, None, "no turn ends for it");
+    let released = writes(&over.effects);
+    assert_eq!(released[0]["method"], "thread/inject_items", "{released:?}");
+    assert!(is_empty_turn(&released[1]), "{released:?}");
+}
+
+/// A machine that slept past the half hour finds the cache gone:
+/// compacting then saves nothing.
+#[test]
+fn no_idle_compaction_once_the_cache_has_gone() {
+    let mut state = big_idle_codex(1_000);
+    let late = Codex::step(
+        &mut state,
+        Event::Tick {
+            at_ms: 1_000 + 31 * MINUTE,
+        },
+    );
+    assert!(writes(&late.effects).is_empty());
+    assert_eq!(Codex::wake_at(&state), None);
+}
+
+/// Codex accepting the compaction and never starting a turn for it would
+/// hold the queue forever: amux stops waiting after two minutes.
+#[test]
+fn an_idle_compaction_codex_never_starts_stops_holding_the_queue() {
+    let mut state = big_idle_codex(1_000);
+    let due = 1_000 + 25 * MINUTE;
+    let sent = writes(&Codex::step(&mut state, Event::Tick { at_ms: due }).effects);
+    Codex::step(&mut state, rpc(json!({"id": sent[0]["id"], "result": {}})));
+    assert_eq!(Codex::wake_at(&state), Some(due + 2 * MINUTE));
+    Codex::step(
+        &mut state,
+        Event::Tick {
+            at_ms: due + 2 * MINUTE,
+        },
+    );
+    assert!(!state.shared().is_housekeeping());
+    let typed = writes(&Codex::step(&mut state, prompt(b"p2", "carry on")).effects);
+    assert_eq!(typed[0]["method"], "turn/start", "{typed:?}");
+}
+
+/// A stop during an idle compaction interrupts the turn Codex runs it in.
+#[test]
+fn a_stop_interrupts_an_idle_compactions_turn() {
+    let mut state = big_idle_codex(1_000);
+    let due = 1_000 + 25 * MINUTE;
+    let sent = writes(&Codex::step(&mut state, Event::Tick { at_ms: due }).effects);
+    Codex::step(&mut state, rpc(json!({"id": sent[0]["id"], "result": {}})));
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-2"}}}),
+        ),
+    );
+    let stop = Event::Input(wire::Input::new(
+        b"s1".to_vec(),
+        wire::CodexInput {
+            of: Some(wire::codex_input::Of::Interrupt(Default::default())),
+        },
+    ));
+    let written = writes(&Codex::step(&mut state, stop).effects);
+    assert_eq!(written[0]["method"], "turn/interrupt", "{written:?}");
+    assert_eq!(written[0]["params"]["turnId"], "turn-2");
+    let over = Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-2", "status": "interrupted"}}}),
+        ),
+    );
+    assert_eq!(over.step.turn_end, None);
+    assert!(!state.shared().is_housekeeping());
+}

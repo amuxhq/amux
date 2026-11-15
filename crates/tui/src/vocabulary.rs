@@ -1467,13 +1467,14 @@ fn row_sets() -> Vec<RowSet> {
         ("row_stopped", "You stopped it.", vec![(row(RowKind::Stopped), CLOSED)]),
         (
             "row_compaction",
-            "Compaction with its counts, and an automatic one without.",
+            "Compaction with its counts, an automatic one without, and one amux ran while the agent sat idle.",
             vec![
                 (
                     row(RowKind::Compaction {
                         tokens_before: Some(148_000),
                         tokens_after: Some(22_000),
                         automatic: false,
+                        idle: false,
                     }),
                     CLOSED,
                 ),
@@ -1482,6 +1483,16 @@ fn row_sets() -> Vec<RowSet> {
                         tokens_before: None,
                         tokens_after: None,
                         automatic: true,
+                        idle: false,
+                    }),
+                    CLOSED,
+                ),
+                (
+                    row(RowKind::Compaction {
+                        tokens_before: Some(248_000),
+                        tokens_after: Some(31_000),
+                        automatic: false,
+                        idle: true,
                     }),
                     CLOSED,
                 ),

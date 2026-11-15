@@ -411,8 +411,13 @@ fn body(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'sta
             tokens_before,
             tokens_after,
             automatic,
+            idle,
         } => {
-            let mut words = String::from("Compacted");
+            let mut words = String::from(if *idle {
+                "Compacted while idle"
+            } else {
+                "Compacted"
+            });
             if let (Some(before), Some(after)) = (tokens_before, tokens_after) {
                 words.push_str(&format!(
                     " · {} → {}",
@@ -420,7 +425,7 @@ fn body(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'sta
                     text::tokens(*after)
                 ));
             }
-            if *automatic {
+            if *automatic && !*idle {
                 words.push_str(" · automatic");
             }
             vec![rule(&words, width, theme)]

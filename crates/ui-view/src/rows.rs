@@ -161,6 +161,8 @@ pub enum RowKind {
         tokens_before: Option<u64>,
         tokens_after: Option<u64>,
         automatic: bool,
+        /// amux compacted the conversation while the agent sat idle.
+        idle: bool,
     },
     Error {
         error_kind: String,
@@ -972,6 +974,7 @@ fn compaction(c: &wire::Compaction) -> RowKind {
         tokens_before: c.tokens_before,
         tokens_after: c.tokens_after,
         automatic: c.automatic,
+        idle: c.idle,
     }
 }
 
@@ -1014,6 +1017,7 @@ fn boundary(b: &wire::Boundary, provider: Provider) -> RowKind {
             tokens_before: None,
             tokens_after: None,
             automatic: false,
+            idle: b.idle,
         },
         BoundaryKind::Unspecified
         | BoundaryKind::Started

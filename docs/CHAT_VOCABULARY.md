@@ -93,7 +93,7 @@ transcript, not an agent. Only an amux spawn makes an agent with a chat of its o
 |---|---|---|---|---|---|
 | Turn finished | `TurnEnd { duration_ms, cost_usd, failed }` | A quiet footer under the last reply: "Worked 1m 42s". | full | full: duration and cost | full |
 | Stopped | `Stopped` | "You stopped it". A turn interrupted so the person's reply could go instead of answering a question is a `TurnEnd`, since nobody stopped it. | full | full | full |
-| Compaction | `Compaction { tokens_before, tokens_after, automatic }` | A rule: "Compacted · 148k → 22k". | full | full | partial: a compacted boundary, no counts |
+| Compaction | `Compaction { tokens_before, tokens_after, automatic, idle }` | A rule: "Compacted · 148k → 22k"; "Compacted while idle · 248k → 31k" for one amux ran while the agent sat idle. | full | full | partial: a compacted boundary, no counts |
 | Error | `Error { error_kind, message, attempts, gave_up }` | What failed and what to do. While the provider retries, the retry shows on the activity line instead. | full | full | full: typed error kind and will-retry |
 | Model switched | `ModelSwitch { from, to, reason }` | A notice: "Switched to Sonnet · reason". | none | full: refusal fallback | full: reroute with reason |
 | Session boundaries | `Boundary { kind, cause }` | A rule where the chat above no longer holds: cleared, or lost its daemon. A start, resume, restart, fork or exit carries the same conversation on and is not drawn; how an exited agent ended is the composer's to say. Claude's compacted boundary sits beside its compaction row and is not drawn; Codex's is drawn as that row, without counts. | full | full | full |

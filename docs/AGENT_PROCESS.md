@@ -287,7 +287,9 @@ then the effects run (replies are sent, bytes go to the provider). A reply
 therefore never reaches the daemon before the step that explains it is on
 disk. Before each event, when the clock has moved since the last one, the
 core feeds the interpreter a `Tick`, so the interpreter never reads a clock
-itself.
+itself. When the interpreter asks to hear the clock at a time no event may
+bring (`Interpreter::wake_at`, for an idle compaction), the core arms its
+wake timer for it and feeds the `Tick` when it fires, while the agent runs.
 
 A later connection takes over from an earlier one: a restarted daemon may
 dial in before the previous daemon's socket has closed. Frames from a

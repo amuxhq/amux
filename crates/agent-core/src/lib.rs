@@ -74,6 +74,8 @@ pub enum TimerId {
     Drain,
     /// A provider asked to finish has not exited.
     ProviderStop,
+    /// The time the interpreter asked to be woken at has come.
+    Wake,
 }
 
 /// A job the driver runs; its outcome returns as [`Input::JobDone`].
@@ -455,6 +457,8 @@ struct Life {
     next_job: u64,
     /// The process exits: nothing more happens to this incarnation.
     exited: Option<ExitCause>,
+    /// When the wake timer is armed for, as the interpreter last asked.
+    wake: Option<u64>,
 }
 
 impl<I: Interpreter> Agent<I> {
@@ -490,6 +494,7 @@ impl<I: Interpreter> Agent<I> {
                 git: GitReads::default(),
                 next_job: 0,
                 exited: None,
+                wake: None,
             },
             touched: Touched::default(),
         };
@@ -523,6 +528,7 @@ impl<I: Interpreter> Agent<I> {
             self.take_input(input, out);
             if self.life.exited.is_none() {
                 self.settle(out);
+                self.rearm_wake(out);
             }
         }
         let checked = self.check_step_invariants();
@@ -859,7 +865,43 @@ impl<I: Interpreter> Agent<I> {
                     self.finish(cause, out);
                 }
             }
+            TimerId::Wake => {
+                self.life.wake = None;
+                // The interpreter hears the time it asked for; what it
+                // does then is its own. A draining or exiting agent starts
+                // nothing new.
+                if self.life.mode == Mode::Running {
+                    self.tick(out);
+                }
+            }
         }
+    }
+
+    /// Arms the wake timer for when the interpreter now asks, or cancels
+    /// it when it asks for nothing.
+    fn rearm_wake(&mut self, out: &mut Vec<Output>) {
+        // A time no later than the last tick the interpreter heard, it has
+        // already seen: asking for it again would wake it to nothing, at
+        // once and without end.
+        let heard = self.life.ticked.unwrap_or(0);
+        let wanted = if self.life.mode == Mode::Running {
+            I::wake_at(&self.interpreter)
+                .map(|at| u64::try_from(at).unwrap_or(0))
+                .filter(|at| *at > heard)
+        } else {
+            None
+        };
+        if wanted == self.life.wake {
+            return;
+        }
+        self.life.wake = wanted;
+        out.push(match wanted {
+            Some(at_ms) => Output::ArmTimer {
+                id: TimerId::Wake,
+                at_ms,
+            },
+            None => Output::CancelTimer { id: TimerId::Wake },
+        });
     }
 
     /// A write to the agent directory failed, which in practice is a full
@@ -1041,13 +1083,18 @@ impl<I: Interpreter> Agent<I> {
     /// after a tick when the clock moved since the interpreter last heard
     /// it.
     fn feed(&mut self, event: Event, out: &mut Vec<Output>) {
+        self.tick(out);
+        self.feed_one(event, out);
+    }
+
+    /// The clock to the interpreter, when it moved since it last heard it.
+    fn tick(&mut self, out: &mut Vec<Output>) {
         let now = self.life.now_ms;
         if self.life.ticked.is_none_or(|ticked| now > ticked) {
             self.life.ticked = Some(now);
             let at_ms = i64::try_from(now).unwrap_or(i64::MAX);
             self.feed_one(Event::Tick { at_ms }, out);
         }
-        self.feed_one(event, out);
     }
 
     fn feed_one(&mut self, event: Event, out: &mut Vec<Output>) {

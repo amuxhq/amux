@@ -155,6 +155,9 @@ pub fn edit(path: &Path) -> Result<()> {
     for key in &config.ignored {
         eprintln!("amux: {key} is not a setting this amux knows, so it is ignored");
     }
+    for name in config.experiments.unknown_names() {
+        eprintln!("amux: this amux has no experiment named {name:?}, so it is ignored");
+    }
     Ok(())
 }
 

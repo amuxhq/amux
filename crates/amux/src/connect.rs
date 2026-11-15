@@ -31,6 +31,12 @@ pub fn load_config(path: Option<&Path>) -> Result<InstallationConfig> {
     for key in &config.ignored {
         eprintln!("amux: {}: ignoring unknown key `{key}`", path.display());
     }
+    for name in config.experiments.unknown_names() {
+        eprintln!(
+            "amux: {}: ignoring unknown experiment `{name}`",
+            path.display()
+        );
+    }
     Ok(config)
 }
 

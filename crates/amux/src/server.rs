@@ -86,6 +86,9 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
     for key in &config.ignored {
         tracing::warn!(key, "ignoring an unknown config key");
     }
+    for name in config.experiments.unknown_names() {
+        tracing::warn!(name, "ignoring an experiment this build does not have");
+    }
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;

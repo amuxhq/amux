@@ -1,4 +1,5 @@
 pub mod edit;
+pub mod experiments;
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -436,6 +437,9 @@ pub struct InstallationConfig {
     pub releases_url: String,
     pub discovery: DiscoverySettings,
     pub agent: AgentSettings,
+    /// The experiments switched on, and each one's own table. Read when the
+    /// daemon starts; a change takes effect at the next start.
+    pub experiments: experiments::ExperimentSettings,
     #[serde(skip)]
     pub path: Option<PathBuf>,
     /// Keys the file set that this version does not know, as dotted paths.
@@ -464,6 +468,7 @@ impl Default for InstallationConfig {
             releases_url: format!("{DEFAULT_CLOUD_URL}/releases"),
             discovery: DiscoverySettings::default(),
             agent: AgentSettings::default(),
+            experiments: experiments::ExperimentSettings::default(),
             path: None,
             ignored: Vec::new(),
         }
@@ -485,6 +490,10 @@ impl InstallationConfig {
         let mut config: Self =
             serde_ignored::deserialize(document, |key| ignored.push(key.to_string()))
                 .map_err(invalid)?;
+        // The keys under `[experiments]` are collected whole, so the ones
+        // this build reads nothing from are named here.
+        ignored.extend(config.experiments.ignored_keys());
+        ignored.sort();
         config.ignored = ignored;
         config.updates()?;
         Ok(config)

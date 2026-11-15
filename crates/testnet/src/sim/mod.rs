@@ -769,7 +769,15 @@ impl World for SimNet {
             return Err(NetError::Down(at.host.clone()));
         }
         let what = format!("{agent} to be deleted");
-        registry_call(&mut sim, h, &what, ClientRequest::DeleteAgent { agent: id })?;
+        registry_call(
+            &mut sim,
+            h,
+            &what,
+            ClientRequest::DeleteAgent {
+                agent: id,
+                discard: false,
+            },
+        )?;
         drop(sim);
         self.agents.remove(agent);
         Ok(self.ack(format!("{agent} deleted")))

@@ -254,3 +254,69 @@ async fn without_the_experiment_a_new_workspace_from_another_host_is_a_plain_wor
 
     net.shutdown().await.unwrap();
 }
+
+/// The laptop deletes an agent on the desk whose worktree has work nobody
+/// committed, saying `discard`.
+async fn delete_from_laptop(net: &Net, agent: &wire::Agent, discard: bool) {
+    net.client("laptop")
+        .unwrap()
+        .delete_agent(tonic::Request::new(wire::DeleteAgentRequest {
+            agent_id: agent.agent_id.clone(),
+            discard_workspace_changes: discard,
+        }))
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_delete_from_another_host_discards_a_worktrees_changes_only_when_it_says_so() {
+    let homes = tempfile::tempdir().unwrap();
+    let net = Net::start_with(topology(false), options(true, homes.path().to_owned()))
+        .await
+        .unwrap();
+    let mut agents = Vec::new();
+    for name in ["keep-draft", "lose-draft"] {
+        let agent = create(&net, name).await;
+        row_on(&net, "desk", &agent, "the worktree made", |row| {
+            made(entry(row))
+        })
+        .await;
+        std::fs::write(Path::new(&agent.cwd).join("draft.txt"), "draft\n").unwrap();
+        agents.push(agent);
+    }
+    let made = agents;
+
+    delete_from_laptop(&net, &made[0], false).await;
+    delete_from_laptop(&net, &made[1], true).await;
+    until("the discarded worktree to go", || async {
+        if Path::new(&made[1].cwd).exists() {
+            Err("still there")
+        } else {
+            Ok(())
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        Path::new(&made[0].cwd).join("draft.txt").is_file(),
+        "a delete that did not say so keeps the work"
+    );
+    let site = net
+        .host("desk")
+        .unwrap()
+        .work
+        .with_file_name("repositories")
+        .join("site");
+    let marker = site.join(".git/worktrees/keep-draft/amux-owner");
+    until("the kept worktree to be no longer amux's", || async {
+        if marker.exists() {
+            Err("still marked")
+        } else {
+            Ok(())
+        }
+    })
+    .await
+    .unwrap();
+
+    net.shutdown().await.unwrap();
+}

@@ -140,8 +140,8 @@ impl Daemon {
                 self.kill(call, agent, out);
                 Ok(())
             }
-            ClientRequest::DeleteAgent { agent } => {
-                self.delete(call, agent, out);
+            ClientRequest::DeleteAgent { agent, discard } => {
+                self.delete(call, agent, discard, out);
                 Ok(())
             }
             ClientRequest::RenameAgent { agent, name } => {

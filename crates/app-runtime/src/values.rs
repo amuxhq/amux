@@ -614,7 +614,13 @@ pub enum AgentAct {
     Pin,
     /// Files it back as open: un-pinned, or reopened without resuming.
     Unfile,
+    /// Deletes it, keeping the uncommitted changes of a workspace that goes
+    /// with it: such a workspace stays on disk, no longer amux's.
     Delete,
+    /// Deletes it, agreeing to lose the uncommitted changes of the workspace
+    /// that goes with it, which its card's `workspace_goes` names. Sent only
+    /// after the person read those and confirmed.
+    DeleteDiscardingChanges,
 }
 
 /// What only the app sees, which the runtime records for product

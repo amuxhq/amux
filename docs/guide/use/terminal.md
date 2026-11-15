@@ -239,7 +239,9 @@ Press `,` on home for settings:
   environment. The agent appears at once and starts when its worktree is
   ready. A name the repository's branches already have gets a suffix
   (`fix-2`) instead of failing. When you delete a worktree's last agent,
-  amux removes the worktree, unless it holds changes you haven't committed.
+  amux removes the worktree. The confirmation lists its uncommitted changes,
+  which confirming discards; otherwise a worktree with changes stays on disk
+  ([Settling and deleting](agents-working-together.md#settling-and-deleting)).
 
 These settings belong to the machine, so your phone and every other terminal
 see a change at once. Copying when you select is the exception: it applies to
@@ -275,7 +277,7 @@ Everything the app does is also a command. Name an agent by its name, by
 | `amux settle <agent>` | You're done with an agent: stops it if it's running, and settles its subagents. It can be resumed later. |
 | `amux resume <agent> [message]` | Start a stopped or settled agent again |
 | `amux rename <agent> <name>` | Rename an agent |
-| `amux rm <agent>` | Delete an agent, its history and its subagents |
+| `amux rm <agent>` | Delete an agent, its history and its subagents; `--discard-changes` also removes a worktree that goes with it when it has uncommitted changes |
 | `amux pair [target]` | Pair with another machine, or open this one for pairing ([Add another computer](../get-started/add-another-computer.md)) |
 | `amux hosts` | List your paired machines, and ones you could pair |
 | `amux unpair <host>` | Stop trusting a machine |

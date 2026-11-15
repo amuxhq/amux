@@ -69,3 +69,12 @@ Code's own interface, so you can read them from any device.
 Settling or deleting an agent does the same to its subagents, and to their
 subagents in turn, on every machine. A subagent on a machine that's offline
 follows as soon as that machine is back.
+
+With the `workspaces` experiment on, deleting the last agent in a worktree
+amux made removes the worktree too. Before you confirm, the terminal and the
+iPhone app say so, with how many files have uncommitted changes and the
+branch that keeps what was committed. Confirming discards those changes. A
+worktree whose changes weren't shown to you stays on disk, no longer amux's,
+and so does one you delete from an older app or with `amux rm` without
+`--discard-changes`. A worktree that other agents still use stays until the
+last of them goes; its subagents count as going with it.

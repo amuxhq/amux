@@ -293,6 +293,72 @@ async fn a_new_worktree_is_answered_first_marked_as_this_hosts_and_goes_with_its
     daemon.shutdown().await.unwrap();
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dirty_worktree_stays_nobodys_without_consent_and_goes_with_it() {
+    let install = Install::new();
+    let repo = repository(&install);
+    let daemon = install.start("boot-1", launch(&install, true)).await;
+    let runtime = runtime(&daemon, &install);
+    let made = |name: &'static str| {
+        let runtime = runtime.clone();
+        let repo = repo.clone();
+        async move {
+            let agent = runtime
+                .spawn(in_new_workspace(&repo, name), None)
+                .await
+                .unwrap();
+            running(&runtime, &agent).await;
+            row_until(&runtime, &agent, "the worktree made", |row| {
+                entry(row).is_some_and(|entry| !entry.creating)
+            })
+            .await;
+            // Work nobody committed.
+            std::fs::write(Path::new(&agent.cwd).join("draft.txt"), "draft\n").unwrap();
+            agent
+        }
+    };
+
+    // A delete that says nothing of the changes, as every client before
+    // the warning sends: the worktree stays, with its branch, and is no
+    // longer amux's.
+    let kept = made("keep-draft").await;
+    runtime.kill_agent(id_of(&kept)).await.unwrap();
+    runtime.delete(id_of(&kept)).await.unwrap();
+    let marker = repo.join(".git/worktrees/keep-draft/amux-owner");
+    until("the worktree to be disowned", || async {
+        if marker.exists() {
+            Err("still marked")
+        } else {
+            Ok(())
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        Path::new(&kept.cwd).join("draft.txt").is_file(),
+        "the draft stays"
+    );
+    assert!(branches(&repo).contains(&"keep-draft".to_owned()));
+
+    // With consent the dirty worktree goes, and its empty branch with it.
+    let lost = made("lose-draft").await;
+    runtime.kill_agent(id_of(&lost)).await.unwrap();
+    runtime.delete_discarding(id_of(&lost), true).await.unwrap();
+    gone(Path::new(&lost.cwd)).await;
+    until("the empty branch to go", || async {
+        if branches(&repo).contains(&"lose-draft".to_owned()) {
+            Err("still there")
+        } else {
+            Ok(())
+        }
+    })
+    .await
+    .unwrap();
+
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
 // wt and its backend are Unix-only.
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]

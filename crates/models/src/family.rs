@@ -991,7 +991,10 @@ impl<'a> Transition<'a> {
                     PARENTS,
                     Input::ClientCall {
                         call: DELETE,
-                        request: ClientRequest::DeleteAgent { agent: PARENT },
+                        request: ClientRequest::DeleteAgent {
+                            agent: PARENT,
+                            discard: false,
+                        },
                     },
                 );
             }

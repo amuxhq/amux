@@ -276,6 +276,7 @@ async fn replica_agent_is_refused_on_every_read_and_input() {
             peer.agents
                 .delete_agent(DeleteAgentRequest {
                     agent_id: coder.clone(),
+                    ..Default::default()
                 })
                 .await
                 .err(),

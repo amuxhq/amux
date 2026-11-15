@@ -473,6 +473,7 @@ async fn a_deleted_agents_chat_keeps_no_draft() {
     daemon
         .delete_agent(wire::DeleteAgentRequest {
             agent_id: doomed.as_bytes().to_vec(),
+            ..Default::default()
         })
         .await
         .unwrap();
@@ -538,6 +539,7 @@ async fn words_typed_into_a_chat_that_closes_under_the_person_end_no_other_agent
     client
         .delete_agent(wire::DeleteAgentRequest {
             agent_id: doomed.as_bytes().to_vec(),
+            ..Default::default()
         })
         .await
         .unwrap();

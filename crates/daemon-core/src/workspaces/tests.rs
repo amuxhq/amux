@@ -445,7 +445,10 @@ fn an_agent_in_an_existing_folder_launches_at_once_and_deleting_the_last_member_
         ended: Ended::Exited,
     });
 
-    let (_, out) = rig.call(ClientRequest::DeleteAgent { agent: MATE });
+    let (_, out) = rig.call(ClientRequest::DeleteAgent {
+        agent: MATE,
+        discard: false,
+    });
     assert!(
         workspace_jobs(&out).contains(&WorkspaceJob::Delete {
             workspace: git.clone(),
@@ -454,6 +457,78 @@ fn an_agent_in_an_existing_folder_launches_at_once_and_deleting_the_last_member_
         "{out:#?}"
     );
     assert!(rig.row(MATE).is_none());
+}
+
+/// Two agents created in a worktree this host made, both exited.
+fn two_members(rig: &mut Rig) -> Key {
+    let git = Key {
+        kind: Kind::Git,
+        id: "/worktrees/shop/pair".into(),
+    };
+    for (agent, name) in [(LEAD, "lead"), (MATE, "mate")] {
+        let mut request = create(agent, Some(name), false, &git.id);
+        if let ClientRequest::CreateAgent(create) = &mut request {
+            create.workspace = Some(Resolved {
+                workspace: git.clone(),
+                made_here: true,
+            });
+        }
+        rig.call(request);
+        rig.step(Input::AgentHello { agent });
+        rig.step(Input::ControlClosed {
+            agent,
+            ended: Ended::Exited,
+        });
+    }
+    git
+}
+
+#[test]
+fn consent_to_discard_sticks_to_the_workspace_until_its_last_member_goes() {
+    let mut rig = rig();
+    let git = two_members(&mut rig);
+
+    // The first delete agrees to discard, but the workspace has another
+    // member: nothing is removed yet.
+    let (_, out) = rig.call(ClientRequest::DeleteAgent {
+        agent: MATE,
+        discard: true,
+    });
+    assert!(workspace_jobs(&out).is_empty(), "{out:#?}");
+    // The last member's delete does not say so, as a child deleted with its
+    // parent or an older client's would not: the consent given stands.
+    let (_, out) = rig.call(ClientRequest::DeleteAgent {
+        agent: LEAD,
+        discard: false,
+    });
+    assert!(
+        workspace_jobs(&out).contains(&WorkspaceJob::Delete {
+            workspace: git,
+            discard: true
+        }),
+        "{out:#?}"
+    );
+}
+
+#[test]
+fn without_consent_the_last_members_delete_keeps_the_workspaces_changes() {
+    let mut rig = rig();
+    let git = two_members(&mut rig);
+    let mut jobs = Vec::new();
+    for agent in [MATE, LEAD] {
+        let (_, out) = rig.call(ClientRequest::DeleteAgent {
+            agent,
+            discard: false,
+        });
+        jobs.extend(workspace_jobs(&out));
+    }
+    assert!(
+        jobs.contains(&WorkspaceJob::Delete {
+            workspace: git,
+            discard: false
+        }),
+        "{jobs:#?}"
+    );
 }
 
 #[test]

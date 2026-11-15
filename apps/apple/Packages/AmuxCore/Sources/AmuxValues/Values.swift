@@ -257,7 +257,6 @@ public struct ActivityLine: Codable, Hashable, Sendable {
 
 /// A change to one agent from outside its chat.
 public enum AgentAct: Codable, Hashable, Sendable {
-    case delete
     case rename(String)
     /// Files it as done with, stopping it now when live. One whose host
     /// cannot be reached is held, shown on its card, and goes when the
@@ -269,6 +268,13 @@ public enum AgentAct: Codable, Hashable, Sendable {
     case pin
     /// Files it back as open: un-pinned, or reopened without resuming.
     case unfile
+    /// Deletes it, keeping the uncommitted changes of a workspace that goes
+    /// with it: such a workspace stays on disk, no longer amux's.
+    case delete
+    /// Deletes it, agreeing to lose the uncommitted changes of the workspace
+    /// that goes with it, which its card's `workspace_goes` names. Sent only
+    /// after the person read those and confirmed.
+    case deleteDiscardingChanges
 
     private enum Tag: String, CodingKey {
         case rename = "Rename"
@@ -279,11 +285,12 @@ public enum AgentAct: Codable, Hashable, Sendable {
            let _name = try? _single.decode(String.self)
         {
             switch _name {
-            case "Delete": self = .delete
             case "Close": self = .close
             case "CancelClose": self = .cancelClose
             case "Pin": self = .pin
             case "Unfile": self = .unfile
+            case "Delete": self = .delete
+            case "DeleteDiscardingChanges": self = .deleteDiscardingChanges
             default:
                 throw DecodingError.dataCorruptedError(
                     in: _single, debugDescription: "no AgentAct is named \(_name)")
@@ -305,9 +312,6 @@ public enum AgentAct: Codable, Hashable, Sendable {
 
     public func encode(to encoder: any Encoder) throws {
         switch self {
-        case .delete:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("Delete")
         case .rename(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .rename)
@@ -323,6 +327,12 @@ public enum AgentAct: Codable, Hashable, Sendable {
         case .unfile:
             var _container = encoder.singleValueContainer()
             try _container.encode("Unfile")
+        case .delete:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Delete")
+        case .deleteDiscardingChanges:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("DeleteDiscardingChanges")
         }
     }
 }
@@ -3111,8 +3121,11 @@ public struct FleetCard: Codable, Hashable, Sendable {
     public var branch: String?
     /// How it ended, once it has.
     public var exitCause: ExitCause?
+    /// Deleting it removes its workspace, and what goes with that: a
+    /// delete's confirmation says so. None when the workspace stays.
+    public var workspaceGoes: WorkspaceGoes?
 
-    public init(agent: AgentKey, name: String, handle: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, closeHeld: Bool, filing: Filing, topLevel: Bool, branch: String?, exitCause: ExitCause?) {
+    public init(agent: AgentKey, name: String, handle: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, closeHeld: Bool, filing: Filing, topLevel: Bool, branch: String?, exitCause: ExitCause?, workspaceGoes: WorkspaceGoes?) {
         self.agent = agent
         self.name = name
         self.handle = handle
@@ -3132,6 +3145,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
         self.topLevel = topLevel
         self.branch = branch
         self.exitCause = exitCause
+        self.workspaceGoes = workspaceGoes
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -3154,6 +3168,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
         case topLevel = "top_level"
         case branch
         case exitCause = "exit_cause"
+        case workspaceGoes = "workspace_goes"
     }
 }
 
@@ -7276,4 +7291,25 @@ public enum Waiting: String, Codable, Hashable, Sendable, CaseIterable {
     case detached = "Detached"
     /// The local runtime is being reconnected.
     case reconnecting = "Reconnecting"
+}
+
+/// What a delete removes with the agent: its workspace, and with it the
+/// uncommitted changes the row last reported. A client says so before
+/// confirming, and sends the delete with consent to discard them.
+public struct WorkspaceGoes: Codable, Hashable, Sendable {
+    /// The branch that keeps what was committed; none when it has no
+    /// commits of its own.
+    public var branch: String?
+    /// Its uncommitted changes, when it has any.
+    public var uncommitted: ChangeTotals?
+
+    public init(branch: String?, uncommitted: ChangeTotals?) {
+        self.branch = branch
+        self.uncommitted = uncommitted
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case branch
+        case uncommitted
+    }
 }

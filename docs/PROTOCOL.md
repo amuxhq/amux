@@ -980,7 +980,16 @@ A git worktree made this way carries this host's id in
 `<repository>/.git/worktrees/<name>/amux-owner`, and a wt tree records the
 owner `amux:<host id>`. Each goes with its last agent: a clean one is
 removed, with its branch when that has no commits of its own. One with
-changes stays and stops being amux's. A wt tree is claimed while one of its
+changes stays and stops being amux's, unless a delete agreed to lose them:
+`DeleteAgentRequest.discard_workspace_changes`, which a client sets only
+after warning the person. That consent belongs to the workspace once any of
+its agents' deletes gives it, until the workspace goes or gains an agent, so
+a parent deleted with consent still discards when its child, sharing the
+folder, follows by the family rule without it. A delete forwarded to the
+agent's host carries the field, and an older host ignores it and keeps the
+changes. Retention, the family rule and every client before the field never
+discard. The host checks for changes itself when it removes the workspace,
+whatever the rows said. A wt tree is claimed while one of its
 agents runs, started before the first launches, and stopped once nothing
 holds it. A tree a person made with wt is only held and run in; amux never
 starts, stops or removes it. Every launch in a wt tree runs the provider in

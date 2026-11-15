@@ -1547,10 +1547,17 @@ impl ProfileRuntime {
     /// Deletes an agent: stops its process if live, then removes its rows
     /// and its directory. Its children, on this host or another, follow by
     /// the family rule once their host sees it gone. A delete whose caller
-    /// goes away still finishes.
+    /// goes away still finishes. A workspace it removes keeps its changes:
+    /// one with uncommitted work stays on disk, no longer amux's.
     pub async fn delete(&self, id: AgentId) -> Result<(), RegistryError> {
+        self.delete_discarding(id, false).await
+    }
+
+    /// [`ProfileRuntime::delete`], where `discard` says whether the person
+    /// agreed to lose the uncommitted changes of a workspace it removes.
+    pub async fn delete_discarding(&self, id: AgentId, discard: bool) -> Result<(), RegistryError> {
         let agent = core_agent(id);
-        self.registry(id, ClientRequest::DeleteAgent { agent })
+        self.registry(id, ClientRequest::DeleteAgent { agent, discard })
             .await
             .map(drop)
     }

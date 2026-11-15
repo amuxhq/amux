@@ -162,9 +162,12 @@ pub enum ClientRequest {
         agent: AgentId,
     },
     /// Stops the agent and removes its rows and its directory; answered
-    /// with nothing.
+    /// with nothing. `discard`: the person agreed to lose the uncommitted
+    /// changes of a workspace the delete removes.
     DeleteAgent {
         agent: AgentId,
+        #[serde(default)]
+        discard: bool,
     },
     /// Renames the agent; answered with its row.
     RenameAgent {

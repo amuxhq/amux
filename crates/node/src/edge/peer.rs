@@ -237,8 +237,12 @@ impl AgentService for PeerApi {
         request: Request<DeleteAgentRequest>,
     ) -> Result<Response<DeleteAgentResponse>, Status> {
         let runtime = self.own(&request, &request.get_ref().agent_id).await?;
+        let request = request.into_inner();
         runtime
-            .delete(agent_id(&request.get_ref().agent_id)?)
+            .delete_discarding(
+                agent_id(&request.agent_id)?,
+                request.discard_workspace_changes,
+            )
             .await
             .map(|()| Response::new(DeleteAgentResponse {}))
             .map_err(|error| status(error.to_wire()))

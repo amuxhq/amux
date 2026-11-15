@@ -471,7 +471,10 @@ impl AgentService for ClientApi {
             return forwarded(&runtime, host, request).await;
         }
         runtime
-            .delete(agent_id(&request.agent_id)?)
+            .delete_discarding(
+                agent_id(&request.agent_id)?,
+                request.discard_workspace_changes,
+            )
             .await
             .map(|()| Response::new(DeleteAgentResponse {}))
             .map_err(|error| status(error.to_wire()))

@@ -438,12 +438,13 @@ pub async fn settle(client: &mut Client, reference: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn delete(client: &mut Client, reference: &str) -> Result<()> {
+pub async fn delete(client: &mut Client, reference: &str, discard_changes: bool) -> Result<()> {
     let agent = resolve(client, reference).await?;
     client
         .agents
         .delete_agent(DeleteAgentRequest {
             agent_id: agent.agent_id.clone(),
+            discard_workspace_changes: discard_changes,
         })
         .await
         .map_err(crate::plain)?;

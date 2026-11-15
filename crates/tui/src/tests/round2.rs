@@ -375,7 +375,7 @@ fn moving_to_cancel_in_the_stop_window_cancels() {
     assert!(
         !effects
             .iter()
-            .any(|effect| matches!(effect, FleetEffect::Close(_) | FleetEffect::Delete(_))),
+            .any(|effect| matches!(effect, FleetEffect::Close(_) | FleetEffect::Delete(..))),
         "Enter on [Cancel] did {effects:?}:\n{screen}"
     );
 }
@@ -414,8 +414,98 @@ fn x_settles_an_agent_and_deletes_only_a_settled_one() {
     home.key(&fleet, key(KeyCode::Char('x')));
     let effects = home.key(&fleet, key(KeyCode::Enter));
     assert!(
-        matches!(effects.as_slice(), [FleetEffect::Delete(agent)] if agent.agent == b"old"),
+        matches!(effects.as_slice(), [FleetEffect::Delete(agent, _)] if agent.agent == b"old"),
         "x on a settled agent did {effects:?}"
+    );
+}
+
+/// The settled `archive` of [`home_fleet`], the last agent in a worktree
+/// its host made, with the git facts its last turn end read.
+fn archive_in_worktree(git: wire::Git) -> FleetState {
+    use prost::Message as _;
+    let mut fleet = home_fleet();
+    let key = ui_state::AgentKey {
+        host: b"a".to_vec(),
+        agent: b"old".to_vec(),
+    };
+    let mut row = fleet.agent(&key).unwrap().clone();
+    let entry = wire::experimental::AgentWorkspace {
+        kind: wire::experimental::WorkspaceKind::Git as i32,
+        id: "/worktrees/amux/archive".into(),
+        made_by_amux: true,
+        ..Default::default()
+    };
+    row.experimental
+        .insert("workspaces/1".into(), entry.encode_to_vec());
+    row.git = Some(git);
+    inventory(&mut fleet, wire::inventory_event::Of::Agent(row));
+    fleet
+}
+
+/// Decided: deleting the last agent in a worktree amux made says the
+/// worktree goes, with the uncommitted changes its row reports and the
+/// branch that keeps what was committed; confirming agrees to lose those
+/// changes. Without changes the worktree just goes, and nothing is
+/// discarded; a branch with nothing committed is not named.
+#[test]
+fn deleting_the_last_agent_in_a_worktree_warns_what_goes_and_confirming_discards_it() {
+    let totals = |files, added, removed| {
+        Some(wire::ChangeTotals {
+            files,
+            added,
+            removed,
+        })
+    };
+    let confirm = |fleet: &FleetState| {
+        let mut home = new_home();
+        home_at(&mut home, fleet, W, H);
+        focus(&mut home, fleet, "archive");
+        home.key(fleet, key(KeyCode::Char('x')));
+        let screen = home_at(&mut home, fleet, W, H);
+        let effects = home.key(fleet, key(KeyCode::Enter));
+        (screen, effects)
+    };
+
+    let (screen, effects) = confirm(&archive_in_worktree(wire::Git {
+        branch: Some("fix-scroll".into()),
+        uncommitted: totals(3, 42, 7),
+        on_branch: totals(4, 50, 7),
+        ..Default::default()
+    }));
+    for line in [
+        "Delete archive and its history?",
+        "Its worktree goes too, with 3 uncommitted files (+42 \u{2212}7).",
+        "The branch fix-scroll keeps what was committed.",
+    ] {
+        assert!(screen.contains(line), "no {line:?} in:\n{screen}");
+    }
+    assert!(
+        matches!(effects.as_slice(), [FleetEffect::Delete(agent, true)] if agent.agent == b"old"),
+        "{effects:?}"
+    );
+
+    let (screen, effects) = confirm(&archive_in_worktree(wire::Git {
+        branch: Some("fix-scroll".into()),
+        uncommitted: totals(0, 0, 0),
+        on_branch: totals(0, 0, 0),
+        ..Default::default()
+    }));
+    assert!(screen.contains("Its worktree goes too."), "{screen}");
+    assert!(
+        !screen.contains("The branch"),
+        "nothing committed:\n{screen}"
+    );
+    assert!(
+        matches!(effects.as_slice(), [FleetEffect::Delete(_, false)]),
+        "{effects:?}"
+    );
+
+    // An agent in a folder of its own: the delete says nothing more.
+    let (screen, effects) = confirm(&home_fleet());
+    assert!(!screen.contains("worktree"), "{screen}");
+    assert!(
+        matches!(effects.as_slice(), [FleetEffect::Delete(_, false)]),
+        "{effects:?}"
     );
 }
 
@@ -571,7 +661,7 @@ fn a_sentence_typed_on_home_stops_nothing() {
     assert!(
         !effects
             .iter()
-            .any(|effect| matches!(effect, FleetEffect::Close(_) | FleetEffect::Delete(_))),
+            .any(|effect| matches!(effect, FleetEffect::Close(_) | FleetEffect::Delete(..))),
         "typing \"so sure, yes\" on home did {effects:?}"
     );
 }
@@ -1141,7 +1231,7 @@ fn deleting_the_last_row_moves_the_highlight_to_the_new_last_row() {
     home.key(&fleet, key(KeyCode::End));
     home.key(&fleet, key(KeyCode::Char('x')));
     let deleted = match home.key(&fleet, key(KeyCode::Enter)).as_slice() {
-        [FleetEffect::Delete(agent)] => agent.clone(),
+        [FleetEffect::Delete(agent, _)] => agent.clone(),
         effects => panic!("x on the last row did {effects:?}"),
     };
     let kept = if deleted.agent == b"old" {
@@ -1168,7 +1258,7 @@ fn deleting_the_last_row_moves_the_highlight_to_the_new_last_row() {
     home.key(&fleet, key(KeyCode::Char('x')));
     let effects = home.key(&fleet, key(KeyCode::Enter));
     assert!(
-        matches!(effects.as_slice(), [FleetEffect::Delete(agent)] if agent.agent != deleted.agent
+        matches!(effects.as_slice(), [FleetEffect::Delete(agent, _)] if agent.agent != deleted.agent
             && agent.agent.starts_with(b"old")),
         "x after the delete did {effects:?}:\n{screen}"
     );

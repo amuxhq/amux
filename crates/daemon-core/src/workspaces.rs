@@ -431,9 +431,10 @@ impl Daemon {
         );
     }
 
-    /// The agent's row was deleted: a delete, its parent's or retention's,
-    /// none of which may discard its workspace's changes yet.
-    pub(crate) fn member_removed(&mut self, agent: AgentId, out: &mut Vec<Output>) {
+    /// The agent's row was deleted: by a delete, which may agree to discard
+    /// its workspace's changes, or by its parent's or retention's, which
+    /// never do.
+    pub(crate) fn member_removed(&mut self, agent: AgentId, discard: bool, out: &mut Vec<Output>) {
         if !self.workspaces_on() {
             return;
         }
@@ -441,7 +442,7 @@ impl Daemon {
         self.feed(
             Core::Removed {
                 member: member(agent),
-                discard: false,
+                discard,
             },
             None,
             out,

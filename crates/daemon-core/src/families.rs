@@ -281,7 +281,11 @@ pub(crate) enum Op {
     Resume(Box<Resume>),
     Stop,
     Kill,
-    Delete,
+    /// `discard`: the delete agreed to lose the uncommitted changes of the
+    /// workspace it removes.
+    Delete {
+        discard: bool,
+    },
     File(Filing),
 }
 
@@ -404,8 +408,8 @@ enum Phase {
 enum Then {
     /// The caller hears the agent's row.
     Answer,
-    /// The agent's rows and directory go.
-    Delete,
+    /// The agent's rows and directory go; `discard` as the delete said.
+    Delete { discard: bool },
 }
 
 /// What an operation came to, for its caller.
@@ -489,8 +493,14 @@ impl Daemon {
         self.registry_call(Caller::Client(call), agent, Op::Kill, out);
     }
 
-    pub(crate) fn delete(&mut self, call: CallId, agent: AgentId, out: &mut Vec<Output>) {
-        self.registry_call(Caller::Client(call), agent, Op::Delete, out);
+    pub(crate) fn delete(
+        &mut self,
+        call: CallId,
+        agent: AgentId,
+        discard: bool,
+        out: &mut Vec<Output>,
+    ) {
+        self.registry_call(Caller::Client(call), agent, Op::Delete { discard }, out);
     }
 
     /// Begins the agent's next queued operation, and the one after it while
@@ -512,7 +522,7 @@ impl Daemon {
                 Op::Resume(resume) => self.begin_resume(resume, out),
                 Op::Stop => self.begin_ending(agent, false, Then::Answer, out),
                 Op::Kill => self.begin_ending(agent, true, Then::Answer, out),
-                Op::Delete => self.begin_delete(agent, out),
+                Op::Delete { discard } => self.begin_delete(agent, discard, out),
                 Op::File(filing) => self.begin_file(agent, filing, out),
             };
             match began {
@@ -1109,7 +1119,9 @@ impl Daemon {
         if !self.families.processes.contains_key(&agent) {
             return match then {
                 Then::Answer => Ok(Began::Finished(Box::new(self.row_outcome(agent)))),
-                Then::Delete => self.remove_agent(agent, out).map(Began::Waiting),
+                Then::Delete { discard } => {
+                    self.remove_agent(agent, discard, out).map(Began::Waiting)
+                }
             };
         }
         if kill {
@@ -1178,26 +1190,36 @@ impl Daemon {
     /// and its directory. Nothing about it reaches a subscriber until its
     /// removal does, so none reads the stop as an exit it could resume
     /// from.
-    fn begin_delete(&mut self, agent: AgentId, out: &mut Vec<Output>) -> Result<Began, Refusal> {
+    fn begin_delete(
+        &mut self,
+        agent: AgentId,
+        discard: bool,
+        out: &mut Vec<Output>,
+    ) -> Result<Began, Refusal> {
         let key = self.own_key(agent);
         if self.store.agent(&key)?.is_none() {
             return Err(Refusal::NotFound);
         }
         self.answers.mute(&key);
-        self.begin_ending(agent, false, Then::Delete, out)
+        self.begin_ending(agent, false, Then::Delete { discard }, out)
     }
 
     /// Removes a stopped agent's rows, then its directory. Its children, on
     /// this host or another, follow by the family rule once their host
     /// sees it gone.
-    fn remove_agent(&mut self, agent: AgentId, out: &mut Vec<Output>) -> Result<Doing, Refusal> {
+    fn remove_agent(
+        &mut self,
+        agent: AgentId,
+        discard: bool,
+        out: &mut Vec<Output>,
+    ) -> Result<Doing, Refusal> {
         let key = self.own_key(agent);
         let removed = (|| {
             let parent = self.store.agent(&key)?.and_then(|row| row.parent);
             // Rows first: a crash between the two leaves a directory with
             // no row, which the next sweep removes.
             self.store.delete_agent(&key)?;
-            self.member_removed(agent, out);
+            self.member_removed(agent, discard, out);
             let removed = AgentRemoved {
                 host_id: key.host.clone(),
                 agent_id: key.agent.clone(),
@@ -1411,7 +1433,7 @@ impl Daemon {
                         let outcome = self.row_outcome(agent);
                         self.finish(agent, outcome, out);
                     }
-                    Then::Delete => match self.remove_agent(agent, out) {
+                    Then::Delete { discard } => match self.remove_agent(agent, discard, out) {
                         Ok(doing) => self.set_doing(agent, doing),
                         Err(refusal) => self.finish(agent, Err(refusal), out),
                     },
@@ -1481,7 +1503,7 @@ impl Daemon {
     }
 
     fn stop_timed_out(&mut self, agent: AgentId, then: Then, out: &mut Vec<Output>) {
-        if then == Then::Delete {
+        if matches!(then, Then::Delete { .. }) {
             let key = self.own_key(agent);
             self.unmute_published(&key, out);
         }
@@ -1643,7 +1665,8 @@ impl Daemon {
         let op = match says {
             ParentSays::Exited => Op::Stop,
             ParentSays::Closed => Op::File(Filing::Closed),
-            ParentSays::Deleted => Op::Delete,
+            // A child goes with its parent keeping its changes.
+            ParentSays::Deleted => Op::Delete { discard: false },
         };
         self.registry_call(Caller::Family, child, op, out);
     }
@@ -2454,7 +2477,10 @@ mod tests {
             agent: PARENT,
             filing: Filing::Closed,
         });
-        rig.call(ClientRequest::DeleteAgent { agent: PARENT });
+        rig.call(ClientRequest::DeleteAgent {
+            agent: PARENT,
+            discard: false,
+        });
 
         // The exit announces the CaughtUp, answers the stop, and the delete
         // behind it removes the row, all in one step.

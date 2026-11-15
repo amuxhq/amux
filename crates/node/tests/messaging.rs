@@ -291,7 +291,10 @@ async fn an_agent_acts_only_on_its_own_children_and_starts_them_with_defaults() 
             .await
             .unwrap_err(),
         tools
-            .delete_agent(Request::new(wire::DeleteAgentRequest { agent_id: id() }))
+            .delete_agent(Request::new(wire::DeleteAgentRequest {
+                agent_id: id(),
+                ..Default::default()
+            }))
             .await
             .unwrap_err(),
         tools

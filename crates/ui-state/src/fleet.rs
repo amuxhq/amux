@@ -3,10 +3,36 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use wire::{Agent, HostEntry, InventoryEvent, inventory_event};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use wire::experimental::{AgentWorkspace, WorkspaceKind};
+use wire::{Agent, ChangeTotals, HostEntry, InventoryEvent, inventory_event};
 
 pub use crate::model::{AgentKey, Attention, ExitCause, HostId};
 use crate::session::Connection;
+
+/// The workspace entry a host running the workspaces experiment puts on
+/// its rows.
+fn workspace_of(agent: &Agent) -> Option<AgentWorkspace> {
+    use prost::Message as _;
+    let bytes = agent.experimental.get(WORKSPACES)?;
+    AgentWorkspace::decode(bytes.as_slice()).ok()
+}
+
+/// The version of the workspaces experiment this build reads.
+const WORKSPACES: &str = "workspaces/1";
+
+/// What a delete removes with the agent: its workspace, and with it the
+/// uncommitted changes the row last reported. A client says so before
+/// confirming, and sends the delete with consent to discard them.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkspaceGoes {
+    /// Its uncommitted changes, when it has any.
+    pub uncommitted: Option<ChangeTotals>,
+    /// The branch that keeps what was committed; none when it has no
+    /// commits of its own.
+    pub branch: Option<String>,
+}
 
 /// The key naming an agent's row.
 /// What a person reads the agent as: its title when it has one, else its
@@ -238,6 +264,43 @@ impl FleetState {
             stack.extend(self.families.children(&at).rev().cloned());
         }
         out
+    }
+
+    /// Whether deleting the agent removes its workspace, and what it loses
+    /// with it: none when the workspace stays. It goes with its last member
+    /// when its host made it. The agent's own descendants go with it, so a
+    /// member among them does not keep the workspace; any other member does.
+    /// What it reports is the row's last reading; the host checks again
+    /// when it removes the workspace.
+    pub fn delete_removes_workspace(&self, agent: &AgentKey) -> Option<WorkspaceGoes> {
+        let row = self.agents.get(agent)?;
+        let entry = workspace_of(row)?;
+        if !entry.made_by_amux || entry.kind() == WorkspaceKind::Folder {
+            return None;
+        }
+        let going: BTreeSet<AgentKey> = self.family(agent).into_iter().map(agent_key).collect();
+        let shared = self.agents.iter().any(|(key, other)| {
+            key.host == agent.host
+                && !going.contains(key)
+                && workspace_of(other)
+                    .is_some_and(|theirs| theirs.kind == entry.kind && theirs.id == entry.id)
+        });
+        if shared {
+            return None;
+        }
+        let git = row.git.as_ref();
+        let uncommitted = git
+            .and_then(|git| git.uncommitted)
+            .filter(|totals| totals.files > 0);
+        // A branch whose changes are all uncommitted has no commits of its
+        // own to keep.
+        let branch = git
+            .filter(|git| git.on_branch != git.uncommitted)
+            .and_then(|git| git.branch.clone());
+        Some(WorkspaceGoes {
+            uncommitted,
+            branch,
+        })
     }
 
     /// The agent's children as a fleet lists them. A closed child is done

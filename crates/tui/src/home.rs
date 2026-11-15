@@ -73,7 +73,9 @@ pub enum FleetEffect {
     Pin(AgentKey),
     /// Takes its pin away.
     Unpin(AgentKey),
-    Delete(AgentKey),
+    /// Deletes it; `true` when the person confirmed losing the uncommitted
+    /// changes of the workspace that goes with it.
+    Delete(AgentKey, bool),
     /// Leave amux.
     Quit,
     /// Show the key help.
@@ -745,7 +747,7 @@ impl Home {
             return self.draft_key(fleet, key);
         }
         if let Some(overlay) = self.overlay.take() {
-            return self.overlay_key(overlay, key);
+            return self.overlay_key(fleet, overlay, key);
         }
         let targets = self.targets_of(fleet);
         if self.filtering {
@@ -868,7 +870,12 @@ impl Home {
         }
     }
 
-    fn overlay_key(&mut self, overlay: Overlay, key: KeyEvent) -> Vec<FleetEffect> {
+    fn overlay_key(
+        &mut self,
+        fleet: &FleetState,
+        overlay: Overlay,
+        key: KeyEvent,
+    ) -> Vec<FleetEffect> {
         match overlay {
             Overlay::Hosts => {
                 if !matches!(
@@ -905,7 +912,8 @@ impl Home {
                 focus,
             } => match key.code {
                 KeyCode::Enter if focus == Confirmed::Yes && delete => {
-                    vec![FleetEffect::Delete(agent)]
+                    let discard = discards(fleet, &agent);
+                    vec![FleetEffect::Delete(agent, discard)]
                 }
                 KeyCode::Enter if focus == Confirmed::Yes => vec![FleetEffect::Close(agent)],
                 KeyCode::Enter | KeyCode::Esc => vec![],
@@ -1093,7 +1101,9 @@ impl Home {
                 _ => None,
             };
             let effect = match answer {
-                Some(Confirmed::Yes) if *delete => vec![FleetEffect::Delete(agent.clone())],
+                Some(Confirmed::Yes) if *delete => {
+                    vec![FleetEffect::Delete(agent.clone(), discards(fleet, agent))]
+                }
                 Some(Confirmed::Yes) => vec![FleetEffect::Close(agent.clone())],
                 _ => vec![],
             };
@@ -1360,10 +1370,10 @@ impl Home {
                 delete,
                 focus,
             }) => {
-                let (sentence, verb) = if *delete {
-                    (format!("Delete {name} and its history?"), "Delete")
+                let (sentences, verb) = if *delete {
+                    (delete_sentences(fleet, agent, name), "Delete")
                 } else {
-                    (close_sentence(fleet, agent, name), "Settle")
+                    (vec![close_sentence(fleet, agent, name)], "Settle")
                 };
                 let (buttons, spots) = crate::panel::buttons(
                     &[(verb, Confirmed::Yes), ("Cancel", Confirmed::No)],
@@ -1376,11 +1386,21 @@ impl Home {
                 );
                 // The sentence wraps rather than widen the window past the
                 // screen.
-                let inner = text::str_width(&sentence)
+                let widest = sentences
+                    .iter()
+                    .map(|sentence| text::str_width(sentence))
+                    .max();
+                let inner = widest
+                    .unwrap_or(0)
                     .max(crate::panel::content_width(std::slice::from_ref(&legend)))
-                    .clamp(36, 48)
+                    // Wide enough for a delete's warning to read one
+                    // sentence a line.
+                    .clamp(36, if *delete { 60 } else { 48 })
                     .min(width.saturating_sub(8));
-                let said = text::wrap(&sentence, inner);
+                let said: Vec<String> = sentences
+                    .iter()
+                    .flat_map(|sentence| text::wrap(sentence, inner))
+                    .collect();
                 let mut rows = vec![Line::default()];
                 rows.extend(
                     said.iter()
@@ -2090,6 +2110,40 @@ fn close_cuts(fleet: &FleetState, agent: &AgentKey) -> Option<String> {
 /// What the settle window asks: what settling cuts short ("desk-1 is
 /// working and has 2 background jobs and 1 subagent. Settling stops them."),
 /// else the plain question.
+/// What asking before a delete says: the delete, then, when the agent's
+/// workspace goes with it, that the worktree goes with any uncommitted
+/// changes its row last reported, and the branch that keeps what was
+/// committed.
+fn delete_sentences(fleet: &FleetState, agent: &AgentKey, name: &str) -> Vec<String> {
+    let mut sentences = vec![format!("Delete {name} and its history?")];
+    let Some(goes) = fleet.delete_removes_workspace(agent) else {
+        return sentences;
+    };
+    sentences.push(match goes.uncommitted {
+        Some(totals) => format!(
+            "Its worktree goes too, with {} uncommitted {} (+{} \u{2212}{}).",
+            totals.files,
+            if totals.files == 1 { "file" } else { "files" },
+            totals.added,
+            totals.removed
+        ),
+        None => "Its worktree goes too.".to_owned(),
+    });
+    if let Some(branch) = goes.branch {
+        sentences.push(format!("The branch {branch} keeps what was committed."));
+    }
+    sentences
+}
+
+/// Whether confirming a delete agrees to lose uncommitted changes: only
+/// when the warning named them. Changes the row has not reported yet are
+/// kept, by the host's own check when it removes the workspace.
+fn discards(fleet: &FleetState, agent: &AgentKey) -> bool {
+    fleet
+        .delete_removes_workspace(agent)
+        .is_some_and(|goes| goes.uncommitted.is_some())
+}
+
 fn close_sentence(fleet: &FleetState, agent: &AgentKey, name: &str) -> String {
     match close_cuts(fleet, agent) {
         Some(cuts) => format!("{name} {cuts}. Settling stops it now."),

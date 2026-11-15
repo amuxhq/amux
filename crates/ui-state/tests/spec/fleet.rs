@@ -291,3 +291,192 @@ fn a_stop_released_at_a_listings_end_changes_its_row() {
         "the released stop's row did not change: {changed:?}"
     );
 }
+
+/// A row in `workspace` on its host, which made it when `made`, with the
+/// git facts its last turn end read.
+fn in_workspace(
+    mut agent: Agent,
+    kind: wire::experimental::WorkspaceKind,
+    workspace: &str,
+    made: bool,
+    git: Option<wire::Git>,
+) -> Agent {
+    use prost::Message as _;
+    let entry = wire::experimental::AgentWorkspace {
+        kind: kind as i32,
+        id: workspace.into(),
+        made_by_amux: made,
+        ..Default::default()
+    };
+    agent
+        .experimental
+        .insert("workspaces/1".into(), entry.encode_to_vec());
+    agent.git = git;
+    agent
+}
+
+fn totals(files: u32, added: u32, removed: u32) -> Option<wire::ChangeTotals> {
+    Some(wire::ChangeTotals {
+        files,
+        added,
+        removed,
+    })
+}
+
+fn git(
+    branch: &str,
+    uncommitted: Option<wire::ChangeTotals>,
+    on_branch: Option<wire::ChangeTotals>,
+) -> Option<wire::Git> {
+    Some(wire::Git {
+        branch: Some(branch.into()),
+        uncommitted,
+        on_branch,
+        ..Default::default()
+    })
+}
+
+#[test]
+fn a_delete_removes_the_workspace_only_with_its_last_member_counting_its_descendants_gone() {
+    use wire::experimental::WorkspaceKind::{Folder, Git, Wt};
+    let changed = git("fix-scroll", totals(3, 42, 7), totals(5, 60, 9));
+    let mut fleet = FleetState::new();
+    for msg in [
+        host("a"),
+        host("b"),
+        // A parent and its child share a tree; another agent shares a
+        // worktree with a stranger; one is alone in a folder of its own.
+        agent(in_workspace(
+            row("a", "parent", Phase::Idle, None),
+            Wt,
+            "/t/fix",
+            true,
+            changed.clone(),
+        )),
+        agent(in_workspace(
+            row("a", "child", Phase::Idle, Some(("a", "parent"))),
+            Wt,
+            "/t/fix",
+            true,
+            None,
+        )),
+        agent(in_workspace(
+            row("a", "one", Phase::Idle, None),
+            Git,
+            "/w/pair",
+            true,
+            None,
+        )),
+        agent(in_workspace(
+            row("a", "two", Phase::Idle, None),
+            Git,
+            "/w/pair",
+            true,
+            None,
+        )),
+        agent(in_workspace(
+            row("a", "notes", Phase::Idle, None),
+            Folder,
+            "/n",
+            false,
+            None,
+        )),
+        agent(in_workspace(
+            row("a", "hand", Phase::Idle, None),
+            Wt,
+            "/t/mine",
+            false,
+            None,
+        )),
+        // The same path on another host is another workspace.
+        agent(in_workspace(
+            row("b", "away", Phase::Idle, None),
+            Git,
+            "/w/solo",
+            true,
+            None,
+        )),
+        agent(in_workspace(
+            row("a", "solo", Phase::Idle, None),
+            Git,
+            "/w/solo",
+            true,
+            None,
+        )),
+        agent(row("a", "old", Phase::Idle, None)),
+        caught_up(),
+    ] {
+        fleet.update(msg);
+    }
+
+    let goes = fleet
+        .delete_removes_workspace(&at("a", "parent"))
+        .expect("its child goes with it");
+    assert_eq!(goes.uncommitted, totals(3, 42, 7));
+    assert_eq!(goes.branch.as_deref(), Some("fix-scroll"));
+    assert_eq!(
+        fleet.delete_removes_workspace(&at("a", "child")),
+        None,
+        "its parent stays in the tree"
+    );
+    assert_eq!(
+        fleet.delete_removes_workspace(&at("a", "one")),
+        None,
+        "a stranger shares it"
+    );
+    assert_eq!(
+        fleet.delete_removes_workspace(&at("a", "notes")),
+        None,
+        "a folder is never removed"
+    );
+    assert_eq!(
+        fleet.delete_removes_workspace(&at("a", "hand")),
+        None,
+        "a hand-made tree is kept"
+    );
+    assert_eq!(
+        fleet.delete_removes_workspace(&at("a", "solo")),
+        Some(ui_state::WorkspaceGoes {
+            uncommitted: None,
+            branch: None,
+        }),
+        "the other host's agent is in another workspace; no git facts read yet"
+    );
+    assert_eq!(
+        fleet.delete_removes_workspace(&at("a", "old")),
+        None,
+        "no entry, no workspace"
+    );
+}
+
+#[test]
+fn a_branch_whose_changes_are_all_uncommitted_is_not_named() {
+    use wire::experimental::WorkspaceKind::Git;
+    let mut fleet = FleetState::new();
+    for msg in [
+        host("a"),
+        agent(in_workspace(
+            row("a", "fresh", Phase::Idle, None),
+            Git,
+            "/w/fresh",
+            true,
+            git("fresh", totals(2, 5, 1), totals(2, 5, 1)),
+        )),
+        agent(in_workspace(
+            row("a", "clean", Phase::Idle, None),
+            Git,
+            "/w/clean",
+            true,
+            git("clean", totals(0, 0, 0), totals(4, 30, 2)),
+        )),
+        caught_up(),
+    ] {
+        fleet.update(msg);
+    }
+    let fresh = fleet.delete_removes_workspace(&at("a", "fresh")).unwrap();
+    assert_eq!(fresh.branch, None, "nothing committed on it to keep");
+    assert_eq!(fresh.uncommitted, totals(2, 5, 1));
+    let clean = fleet.delete_removes_workspace(&at("a", "clean")).unwrap();
+    assert_eq!(clean.uncommitted, None, "no uncommitted files");
+    assert_eq!(clean.branch.as_deref(), Some("clean"));
+}

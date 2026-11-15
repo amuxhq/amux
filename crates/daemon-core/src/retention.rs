@@ -136,7 +136,8 @@ impl Daemon {
             AgentId::from_slice(&agent.agent).filter(|_| agent.host == self.store.own_host())
         {
             self.journal_readers.remove(&own);
-            self.member_removed(own, out);
+            // Retention never discards a workspace's changes.
+            self.member_removed(own, false, out);
         }
         self.forget_draft(&agent.agent);
         if let Err(error) = self.parent_changed(agent, ParentSays::Deleted, out) {

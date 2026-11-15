@@ -1374,6 +1374,7 @@ impl Net {
         let agent = self.agent(name)?.clone();
         let request = DeleteAgentRequest {
             agent_id: agent.id.as_bytes().to_vec(),
+            ..DeleteAgentRequest::default()
         };
         match self.process(&agent.host)?.cloned() {
             Some(process) => {

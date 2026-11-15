@@ -1420,9 +1420,10 @@ impl App {
             }
             FleetEffect::Pin(agent) => self.file(agent, wire::Filing::Pinned, "pin"),
             FleetEffect::Unpin(agent) => self.file(agent, wire::Filing::Open, "unpin"),
-            FleetEffect::Delete(agent) => self.spawn(async move {
+            FleetEffect::Delete(agent, discard) => self.spawn(async move {
                 let request = DeleteAgentRequest {
                     agent_id: agent.agent,
+                    discard_workspace_changes: discard,
                 };
                 Some(match client.delete_agent(request).await {
                     Ok(_) => AppEvent::Notice("deleted".into(), Tone::Info),

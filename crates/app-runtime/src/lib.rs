@@ -395,9 +395,12 @@ impl AppRuntime {
             }
             AgentAct::Pin => self.fleet.file(agent, Filing::Pinned).await.map(drop),
             AgentAct::Unfile => self.fleet.file(agent, Filing::Open).await.map(drop),
-            AgentAct::Delete => self
+            AgentAct::Delete | AgentAct::DeleteDiscardingChanges => self
                 .client
-                .delete_agent(DeleteAgentRequest { agent_id })
+                .delete_agent(DeleteAgentRequest {
+                    agent_id,
+                    discard_workspace_changes: *act == AgentAct::DeleteDiscardingChanges,
+                })
                 .await
                 .map(drop),
         }

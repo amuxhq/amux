@@ -117,7 +117,17 @@ enum Command {
     /// Rename an agent.
     Rename { agent: String, name: String },
     /// Delete an agent, its history and its children.
-    Rm { agent: String },
+    ///
+    /// When it is the last agent in a worktree amux made, the worktree goes
+    /// too. One with uncommitted changes stays on disk unless
+    /// --discard-changes says they may be lost.
+    Rm {
+        agent: String,
+        /// Remove the worktree that goes with the agent even if it has
+        /// uncommitted changes, losing them.
+        #[arg(long)]
+        discard_changes: bool,
+    },
     /// Save a report of this host into one directory: the records of its
     /// daemon core, its agents and the chats on screen, and our own logs,
     /// with nothing anybody wrote.
@@ -578,7 +588,10 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                     Command::Rename { agent, name } => {
                         verbs::rename(&mut client, &agent, &name).await
                     }
-                    Command::Rm { agent } => verbs::delete(&mut client, &agent).await,
+                    Command::Rm {
+                        agent,
+                        discard_changes,
+                    } => verbs::delete(&mut client, &agent, discard_changes).await,
                     Command::Dump { reason, send } => {
                         let selected = connect::profile(&config, profile).await?;
                         let mut admin = connect::admin_of(&selected).await?;
@@ -683,6 +696,22 @@ mod tests {
 
     /// The help a person sees lists the commands they run and nothing amux
     /// runs on itself; the hidden entries still parse.
+    #[test]
+    fn rm_keeps_a_worktrees_changes_unless_told_to_discard_them() {
+        let parsed = |args: &[&str]| match Cli::try_parse_from(args).unwrap().command {
+            Some(Command::Rm {
+                agent,
+                discard_changes,
+            }) => (agent, discard_changes),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(parsed(&["amux", "rm", "fix"]), ("fix".to_owned(), false));
+        assert_eq!(
+            parsed(&["amux", "rm", "fix", "--discard-changes"]),
+            ("fix".to_owned(), true)
+        );
+    }
+
     #[test]
     fn help_lists_only_what_people_run() {
         let help = Cli::command().render_help().to_string();

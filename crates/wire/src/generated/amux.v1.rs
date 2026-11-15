@@ -7415,6 +7415,17 @@ impl ::prost::Name for ResumeAgentResponse {
 pub struct DeleteAgentRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
+    /// The person agreed to lose the uncommitted changes in the agent's
+    /// workspace when this delete removes it: a client sets it only after
+    /// warning them and their confirming. A workspace its host made is removed
+    /// with its last agent; with this unset, as from every build before it, a
+    /// workspace with changes stays on disk and stops being amux's, so nothing
+    /// is lost. The host checks for changes itself when it removes the
+    /// workspace, and the consent holds for that workspace until it is removed
+    /// or gains an agent. Deletes amux makes itself (retention, children going
+    /// with their parent) never set it.
+    #[prost(bool, tag = "2")]
+    pub discard_workspace_changes: bool,
 }
 impl ::prost::Name for DeleteAgentRequest {
     const NAME: &'static str = "DeleteAgentRequest";

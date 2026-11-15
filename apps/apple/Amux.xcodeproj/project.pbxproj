@@ -14,12 +14,12 @@
 		108379821A1408D28DB67B7C /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 2BA304BF0D2207C48DE6459A /* InfoPlist.xcstrings */; };
 		1F71DC755174214F60A5E1B2 /* AccessibilityAuditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 456A00ECD8EEBD4C0C5E19EA /* AccessibilityAuditTests.swift */; };
 		2AB9F9F887627829BEBBB09D /* MenuSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F29C3D017EFCF2521645DAB /* MenuSource.swift */; };
-		397B8AE7013A6651F031B2C7 /* AmuxShell in Frameworks */ = {isa = PBXBuildFile; productRef = 62675EA602BEE702494C2D3C /* AmuxShell */; };
+		397B8AE7013A6651F031B2C7 /* AmuxPush in Frameworks */ = {isa = PBXBuildFile; productRef = 57B721515F0D34E773AC0EFD /* AmuxPush */; };
 		48C852D18B47B3DA431FDA05 /* Door.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA38C20C8560FEE2BB88D9F /* Door.swift */; };
 		546E08243B4B5BE2BDFDAB84 /* DoorServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 590B62F0B4C074AA2233FC70 /* DoorServer.swift */; };
 		553BF8DD2498F7F22153BE30 /* ComponentCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37F1F76966F0F1B7A14313E7 /* ComponentCatalog.swift */; };
 		60B54AE413844E002F4EBB19 /* AmuxCore in Frameworks */ = {isa = PBXBuildFile; productRef = 848B7908370DBF226D9CCEF9 /* AmuxCore */; };
-		6805234D9DC817A50B5F83BD /* AmuxDesign in Frameworks */ = {isa = PBXBuildFile; productRef = C0C0812086F76FDC86EC6F93 /* AmuxDesign */; };
+		6805234D9DC817A50B5F83BD /* AmuxWords in Frameworks */ = {isa = PBXBuildFile; productRef = C08EE50C33508A933E1A921A /* AmuxWords */; };
 		6B19BAA39C6C7A8BAC26801A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 77ECF06E521C94FBE6BCA2F1 /* PrivacyInfo.xcprivacy */; };
 		715AA5D2603E575492541590 /* Stories.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49AD796E9CE095BEB4462249 /* Stories.swift */; };
 		81316F8788C3CE4719D72EB7 /* Instrumentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F6B63077F05D267C35ED8B7 /* Instrumentation.swift */; };
@@ -35,14 +35,15 @@
 		BD68D3CF9F5A540F6C3FCE62 /* ScriptedChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8653CA7820599C23895CAB29 /* ScriptedChat.swift */; };
 		BFD2EE45792143D71B460CF0 /* DoorLines.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB72F14B366D0C657F5D98FA /* DoorLines.swift */; };
 		C2C5A57355760307F4612B69 /* PushKeychainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15A6564E38B94FF35200EFC8 /* PushKeychainTests.swift */; };
+		C6963BF3CE7707F2FF2CB446 /* AmuxShell in Frameworks */ = {isa = PBXBuildFile; productRef = 62675EA602BEE702494C2D3C /* AmuxShell */; };
 		CA1F697290D6919EF12B1899 /* frozen-frame.png in Resources */ = {isa = PBXBuildFile; fileRef = 6DC1FF3D962A7B46549AF24A /* frozen-frame.png */; };
 		CAD420C705F7B9D3741E4C03 /* ReportTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03CB11BE8186B9B3BB3A02C2 /* ReportTools.swift */; };
 		CE11C489AB20BA6178BB5061 /* ScriptedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDC802B81DEFE678F21C7226 /* ScriptedStore.swift */; };
 		D089F8E1D4F8BC606C2D4825 /* ChatFeedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EEC45DFA7E5DD6C27FB07F4 /* ChatFeedTests.swift */; };
-		E4DF9C7A152AFAF210FB4241 /* AmuxFeatures in Frameworks */ = {isa = PBXBuildFile; productRef = ED0B17C1ED307B6E87D386C9 /* AmuxFeatures */; };
+		E4DF9C7A152AFAF210FB4241 /* AmuxDesign in Frameworks */ = {isa = PBXBuildFile; productRef = C0C0812086F76FDC86EC6F93 /* AmuxDesign */; };
 		ED8720902FE38642BEFCF796 /* Previews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF5EF956B2120FCD601EC06B /* Previews.swift */; };
 		EEEEF4C1DDA205961E7286E0 /* DebugCopy.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = DED864CA0D0EB693E625CE90 /* DebugCopy.xcstrings */; };
-		EF9507B8D384D5EAE754EFB4 /* AmuxPush in Frameworks */ = {isa = PBXBuildFile; productRef = 57B721515F0D34E773AC0EFD /* AmuxPush */; };
+		EF9507B8D384D5EAE754EFB4 /* AmuxFeatures in Frameworks */ = {isa = PBXBuildFile; productRef = ED0B17C1ED307B6E87D386C9 /* AmuxFeatures */; };
 		F073F2C3564C00E3DE4850C2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 75B8EB7D0AC92E0E6CB50314 /* Assets.xcassets */; };
 		F57D20E641910776C2CB94DE /* DoorTargetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F5CB3619E7C3A489C1D92DF /* DoorTargetTests.swift */; };
 		F99BD8E096C2973B6CC4F697 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BAD30E79F5FE66C97691B57 /* RootView.swift */; };
@@ -142,10 +143,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				60B54AE413844E002F4EBB19 /* AmuxCore in Frameworks */,
-				6805234D9DC817A50B5F83BD /* AmuxDesign in Frameworks */,
-				E4DF9C7A152AFAF210FB4241 /* AmuxFeatures in Frameworks */,
-				EF9507B8D384D5EAE754EFB4 /* AmuxPush in Frameworks */,
-				397B8AE7013A6651F031B2C7 /* AmuxShell in Frameworks */,
+				6805234D9DC817A50B5F83BD /* AmuxWords in Frameworks */,
+				E4DF9C7A152AFAF210FB4241 /* AmuxDesign in Frameworks */,
+				EF9507B8D384D5EAE754EFB4 /* AmuxFeatures in Frameworks */,
+				397B8AE7013A6651F031B2C7 /* AmuxPush in Frameworks */,
+				C6963BF3CE7707F2FF2CB446 /* AmuxShell in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -392,6 +394,7 @@
 			name = Amux;
 			packageProductDependencies = (
 				848B7908370DBF226D9CCEF9 /* AmuxCore */,
+				C08EE50C33508A933E1A921A /* AmuxWords */,
 				C0C0812086F76FDC86EC6F93 /* AmuxDesign */,
 				ED0B17C1ED307B6E87D386C9 /* AmuxFeatures */,
 				57B721515F0D34E773AC0EFD /* AmuxPush */,
@@ -1113,6 +1116,10 @@
 		BD58A4D58CF5C76D1388E5A1 /* AmuxPush */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = AmuxPush;
+		};
+		C08EE50C33508A933E1A921A /* AmuxWords */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AmuxWords;
 		};
 		C0C0812086F76FDC86EC6F93 /* AmuxDesign */ = {
 			isa = XCSwiftPackageProductDependency;

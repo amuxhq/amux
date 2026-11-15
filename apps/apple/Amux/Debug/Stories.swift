@@ -2,6 +2,7 @@ import AmuxCore
 import AmuxDesign
 import AmuxFeatures
 import AmuxShell
+import AmuxWords
 import SwiftUI
 
 /// Whole screens in named states, drawn from invented values with no
@@ -254,7 +255,7 @@ enum StoryFleet {
                 cwd: "/Users/ada/src/\(name)", phaseSinceMs: ms(minutesAgo: minutes),
                 host: host.name, hostReach: reach, children: children, familyAttention: attention,
                 members: children + 1, descendants: children, backgroundJobs: 0, closeHeld: false, filing: filing, topLevel: true,
-                branch: branch, exitCause: exit),
+                branch: branch, exitCause: exit, repository: nil),
             depth: 0, expanded: false, secondLine: second, loud: nil)
     }
 }

@@ -296,6 +296,10 @@ pub enum PeerRequest {
 }
 
 /// A peer's whole reply to one of its unary calls.
+// An agent row is the largest variant by far, but a reply only ever travels
+// boxed (`Answer::Reply(Box<PeerReply>)`), so its size is paid once per
+// reply and boxing the row inside it would add a second allocation.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PeerReply {
     Fetched(#[serde(with = "codec::message")] wire::ListItemsResponse),

@@ -1,5 +1,7 @@
 import AmuxCore
+import AmuxMacScreens
 import AmuxValues
+import AmuxWords
 import AppKit
 import Foundation
 import Observation
@@ -28,12 +30,24 @@ final class AppModel {
     var selected: String? {
         didSet { if selected != oldValue { open(selected) } }
     }
-    /// The open profile's agents, in the order its fleet lists them.
-    private(set) var agents: [FleetCard] = []
-    /// Every machine the open profile knows, this Mac among them.
-    private(set) var hosts: [HostView] = []
-    /// The agent selected in the list.
-    var selectedAgent: AgentKey?
+    /// What the open profile's screens draw: its fleet, hosts, chats and
+    /// the New Agent page, in the stores the phone draws from too.
+    private(set) var stores: StoreBundle?
+    /// Where the main window is: its surface, the agent or host open, and
+    /// which panes show.
+    var place = Place() {
+        didSet {
+            guard place.agent != oldValue.agent else { return }
+            showChat(place.agent, leaving: oldValue.agent)
+            // Leaving the new-agent page leaves what was typed there.
+            if place.agent != nil { starting = nil }
+        }
+    }
+    /// The open agent's chat, while one is open.
+    private(set) var chat: MacChat?
+    /// The new-agent page's store, while the page is open.
+    var starting: MacNewAgent?
+    @ObservationIgnored private var firstMessage: Task<Void, Never>?
     /// The installation's settings, as the daemon last answered them.
     private(set) var settings: MachineSettings?
     /// Setting up the open profile.
@@ -94,6 +108,7 @@ final class AppModel {
             }.value
             runtime = attached
             phase = .attached
+            tickAges()
             // The first profile list reaches the main actor while attaching,
             // before there was a runtime to open its first profile from.
             open(selected)
@@ -104,10 +119,25 @@ final class AppModel {
         }
     }
 
+    /// Moves the fleet's clock on every half minute, so a row's age counts
+    /// while the window shows it.
+    private func tickAges() {
+        Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                guard let self else { return }
+                self.stores?.fleet.refreshOrder(now: Date())
+            }
+        }
+    }
+
     /// The daemon's profile list moved.
     private func show(_ listed: [ProfileView]) {
         profiles = listed
         Self.log.notice("profiles: \(listed.count, privacy: .public)")
+        if let stores, let account = listed.first(where: { $0.id == selected })?.account {
+            stores.show(account: account)
+        }
         if selected.map({ id in !listed.contains { $0.id == id } }) ?? true {
             selected = listed.first?.id
         }
@@ -117,12 +147,24 @@ final class AppModel {
     private func open(_ id: String?) {
         setup?.close()
         setup = nil
+        chat = nil
+        stores?.closeChats()
+        stores?.attach(nil)
+        stores = nil
         profile?.close()
         profile = nil
-        agents = []
-        hosts = []
-        selectedAgent = nil
+        place.agent = nil
+        place.host = nil
+        place.settled = false
         guard let id, let runtime else { return }
+        let stores = StoreBundle(account: AccountId(id))
+        if let account = profiles.first(where: { $0.id == id })?.account {
+            stores.show(account: account)
+        }
+        // Told each time the fleet lands, which can be a moment after it
+        // moved while the window's first frame goes up.
+        stores.saw = { [weak self] _, _ in self?.setup?.fleetMoved() }
+        self.stores = stores
         Task {
             let opened = await Task.detached { () -> Result<Profile, RuntimeFailure> in
                 Result { () throws(RuntimeFailure) in
@@ -134,7 +176,8 @@ final class AppModel {
                 // Another profile was picked while this one opened.
                 guard selected == id else { opened.close(); return }
                 profile = opened
-                list(opened.fleetOpening())
+                stores.attach(opened)
+                Self.log.notice("agents: \(stores.fleet.rows.count, privacy: .public)")
                 setup = Setup(app: self, profile: opened)
                 // The steps arrive with a later step; the screens they open
                 // name this Mac by its settings.
@@ -150,28 +193,24 @@ final class AppModel {
     private func moved(_ moved: Moved, in id: String) {
         guard selected == id else { return }
         switch moved {
-        case .fleet(let delta): list(delta)
-        case .chat: break
-        case .signInOffers(let offers): setup?.offersMoved(offers)
+        case .fleet, .chat: stores?.moved(moved)
+        case .signInOffers(let offers):
+            stores?.moved(moved)
+            setup?.offersMoved(offers)
         case .onboarding(let state): setup?.stepsMoved(state)
         case .pairing(let status): setup?.pairingMoved(status)
         }
     }
 
-    private func list(_ delta: FleetDelta) {
-        if let hosts = delta.hosts { self.hosts = hosts }
-        guard let view = delta.view else {
-            if delta.hosts == nil { Self.log.notice("fleet: no view yet") }
-            return
-        }
-        agents = view.sections.flatMap(\.rows).map(\.card)
-        Self.log.notice("agents: \(self.agents.count, privacy: .public)")
-        setup?.fleetMoved()
-    }
+    /// The open profile's agents, in the order its fleet lists them.
+    var agents: [FleetCard] { stores?.fleet.rows.map(\.card) ?? [] }
+
+    /// The machines the open profile trusts, this Mac apart.
+    var hosts: [HostView] { stores?.hosts.hosts ?? [] }
 
     /// The agents on this Mac.
     var localAgents: [AgentKey] {
-        guard let local = hosts.first(where: \.local)?.hostId else { return [] }
+        guard let local = stores?.hosts.local?.hostId else { return [] }
         return agents.map(\.agent).filter { $0.host == local }
     }
 
@@ -180,8 +219,161 @@ final class AppModel {
 
     /// Selects an agent in the list, saying why.
     func show(_ agent: AgentKey, saying note: String?) {
-        selectedAgent = agent
+        place.surface = .agents
+        place.agent = agent
         self.note = note
+    }
+
+    /// Opens the agent's chat in the centre, leaving the one there: its
+    /// session stays open a while, so going back to it is instant.
+    private func showChat(_ agent: AgentKey?, leaving old: AgentKey?) {
+        if let old { stores?.leave(old) }
+        chat = nil
+        guard let agent, let stores else { return }
+        do {
+            let model = try stores.chat(agent)
+            let host = stores.fleet.row(agent).map { PlaceNames.host($0.hostName) } ?? "its host"
+            chat = MacChat(model: model, host: host)
+        } catch {
+            problem = error.description
+        }
+    }
+
+    /// The open agent's parent and children.
+    func family(_ agent: AgentKey) -> FamilyHeader? {
+        _ = stores?.applied
+        return profile?.family(agent)
+    }
+
+    /// Opens the new-agent page, on this Mac to begin with.
+    func newAgent() {
+        place.surface = .agents
+        place.agent = nil
+        prepareNewAgent()
+    }
+
+    /// Readies the new-agent page's store, once per visit: its host's
+    /// folders and offers are asked for as it opens.
+    func prepareNewAgent() {
+        guard starting == nil, let stores else { return }
+        stores.startNewAgent(on: stores.hosts.local?.id)
+        starting = MacNewAgent(stores: stores)
+    }
+
+    /// Opens an agent's chat from elsewhere: the host page, a relative on
+    /// the card, or the new-agent page once its agent started.
+    func openChat(_ agent: AgentKey) {
+        place.surface = .agents
+        place.agent = agent
+    }
+
+    /// The new-agent page's agent started: its chat opens and the first
+    /// message goes to it as soon as the chat can take it.
+    func started(_ agent: AgentKey) {
+        let prompt = starting?.prompt.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        starting = nil
+        openChat(agent)
+        guard !prompt.isEmpty else { return }
+        firstMessage = Task { [weak self] in
+            for _ in 0..<300 {
+                guard let self, !Task.isCancelled, place.agent == agent else { return }
+                if let chat, chat.model.frame?.caughtUp == true, chat.model.frame?.composer.mode == .send {
+                    chat.draft = prompt
+                    chat.send()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+    }
+
+    // MARK: - Opening an agent elsewhere
+
+    /// The agent's own interface in Terminal: a script that runs
+    /// `amux attach` there, opened as Terminal opens any `.command` file.
+    func openTerminal(_ agent: AgentKey) {
+        guard let row = stores?.fleet.row(agent) else { return }
+        var script = "#!/bin/zsh -l\n"
+        if let config = Self.config { script += "export AMUX_CONFIG=\(Self.quoted(config))\n" }
+        script += "exec amux attach \(Self.quoted(row.card.handle)) --in native\n"
+        let url = FileManager.default.temporaryDirectory.appending(path: "amux-attach-\(row.card.handle).command")
+        do {
+            try script.write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+            NSWorkspace.shared.open(url)
+        } catch {
+            problem = "Terminal could not be opened: \(error.localizedDescription)"
+        }
+    }
+
+    private static func quoted(_ text: String) -> String {
+        "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// The editor a developer most likely uses, among those installed.
+    static let editor: (name: String, url: URL)? = {
+        let known = [
+            ("VS Code", "com.microsoft.VSCode"), ("Cursor", "com.todesktop.230313mzl4w4u92"), ("Zed", "dev.zed.Zed"),
+            ("Sublime Text", "com.sublimetext.4"), ("Xcode", "com.apple.dt.Xcode"),
+        ]
+        for (name, id) in known {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) { return (name, url) }
+        }
+        return nil
+    }()
+
+    /// An installed app's own icon, for the line that opens it.
+    static func appIcon(_ bundle: String) -> NSImage? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle).map {
+            NSWorkspace.shared.icon(forFile: $0.path)
+        }
+    }
+
+    /// What the card offers for an agent on this Mac: its folder in Finder
+    /// and in the editor. An agent elsewhere has neither here.
+    func local(_ agent: AgentKey) -> String? {
+        guard let local = stores?.hosts.local?.hostId, agent.host == local,
+            let row = stores?.fleet.row(agent), !row.workingDirectory.isEmpty
+        else { return nil }
+        return row.workingDirectory
+    }
+
+    func reveal(_ path: String) {
+        NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)])
+    }
+
+    func openInEditor(_ path: String) {
+        guard let editor = Self.editor else { return reveal(path) }
+        NSWorkspace.shared.open(
+            [URL(filePath: path)], withApplicationAt: editor.url, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    func dismissProblem() { problem = nil }
+
+    /// Stops trusting a paired host, leaving its page.
+    func revoke(_ host: [UInt8]) {
+        if let id = HostId(bytes: host) { stores?.revoke(id) }
+        if place.host == host { place.host = nil }
+    }
+
+    /// Pins, settles, renames or deletes an agent; a refusal is said on the
+    /// window.
+    func act(_ act: AgentAct, on agent: AgentKey) async {
+        guard let stores else { return }
+        let outcome: Result<Nothing, RuntimeFailure> =
+            switch act {
+            case .rename(let name): await stores.rename(name, of: agent)
+            case .close: await stores.close(agent)
+            case .cancelClose: await stores.cancelClose(agent)
+            case .pin: await stores.pin(agent)
+            case .unfile: await stores.unfile(agent)
+            case .delete: await stores.delete(agent)
+            }
+        switch outcome {
+        case .success:
+            if act == .delete, place.agent == agent { place.agent = nil }
+        case .failure(let error): problem = error.description
+        }
     }
 
     // MARK: - Settings

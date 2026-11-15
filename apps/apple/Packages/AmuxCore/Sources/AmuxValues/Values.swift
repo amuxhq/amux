@@ -3084,8 +3084,10 @@ public struct FleetCard: Codable, Hashable, Sendable {
     public var branch: String?
     /// How it ended, once it has.
     public var exitCause: ExitCause?
+    /// The repository it works in, by its remote, else its folder.
+    public var repository: Repository?
 
-    public init(agent: AgentKey, name: String, handle: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, closeHeld: Bool, filing: Filing, topLevel: Bool, branch: String?, exitCause: ExitCause?) {
+    public init(agent: AgentKey, name: String, handle: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, closeHeld: Bool, filing: Filing, topLevel: Bool, branch: String?, exitCause: ExitCause?, repository: Repository?) {
         self.agent = agent
         self.name = name
         self.handle = handle
@@ -3105,6 +3107,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
         self.topLevel = topLevel
         self.branch = branch
         self.exitCause = exitCause
+        self.repository = repository
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -3127,6 +3130,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
         case topLevel = "top_level"
         case branch
         case exitCause = "exit_cause"
+        case repository
     }
 }
 
@@ -3600,13 +3604,19 @@ public struct Git: Codable, Hashable, Sendable {
     /// From where the branch left its base to the working tree, so uncommitted
     /// work counts.
     public var onBranch: ChangeTotals?
+    /// Where origin points, as host/owner/name: no scheme, credentials, port
+    /// or ".git" ("github.com/amuxhq/amux"); a local remote is its path.
+    /// Clients group checkouts of one repository by it, worktrees and other
+    /// machines' checkouts included. Absent without an origin.
+    public var remote: String?
     /// Working tree against HEAD.
     public var uncommitted: ChangeTotals?
 
-    public init(baseBranch: String?, branch: String?, onBranch: ChangeTotals?, uncommitted: ChangeTotals?) {
+    public init(baseBranch: String?, branch: String?, onBranch: ChangeTotals?, remote: String?, uncommitted: ChangeTotals?) {
         self.baseBranch = baseBranch
         self.branch = branch
         self.onBranch = onBranch
+        self.remote = remote
         self.uncommitted = uncommitted
     }
 
@@ -3614,6 +3624,7 @@ public struct Git: Codable, Hashable, Sendable {
         case baseBranch = "base_branch"
         case branch
         case onBranch = "on_branch"
+        case remote
         case uncommitted
     }
 }
@@ -5482,6 +5493,32 @@ public struct ReportSent: Codable, Hashable, Sendable {
     }
 }
 
+public struct Repository: Codable, Hashable, Sendable {
+    /// What its checkouts share: the remote, else the folder's path.
+    public var key: String
+    /// What a person calls it: the remote's last segment, else the
+    /// folder's name. "amux".
+    public var name: String
+    /// The first and last letter or digit of the name, lower case: "ax".
+    public var mark: String
+    /// Below [`REPOSITORY_TINTS`], the same for every checkout of it.
+    public var tint: UInt8
+
+    public init(key: String, name: String, mark: String, tint: UInt8) {
+        self.key = key
+        self.name = name
+        self.mark = mark
+        self.tint = tint
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case key
+        case name
+        case mark
+        case tint
+    }
+}
+
 /// A folder worth offering as a repository: where Claude Code or Codex ran
 /// lately.
 public struct RepositorySuggestion: Codable, Hashable, Sendable {
@@ -5645,8 +5682,12 @@ public struct Row: Codable, Hashable, Sendable {
     /// opens to it.
     public var parent: String?
     public var run: Run?
+    /// Where it stands in its finished turn, when the client folds turns
+    /// ([`ToolRows::Turns`]); None in the turn under way and for every
+    /// other fold.
+    public var turn: TurnPlace?
 
-    public init(id: String, order: UInt64, atMs: Int64, kind: RowKind, collapsed: Bool, attention: Bool, decision: Decision?, parent: String?, run: Run?) {
+    public init(id: String, order: UInt64, atMs: Int64, kind: RowKind, collapsed: Bool, attention: Bool, decision: Decision?, parent: String?, run: Run?, turn: TurnPlace?) {
         self.id = id
         self.order = order
         self.atMs = atMs
@@ -5656,6 +5697,7 @@ public struct Row: Codable, Hashable, Sendable {
         self.decision = decision
         self.parent = parent
         self.run = run
+        self.turn = turn
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -5668,6 +5710,7 @@ public struct Row: Codable, Hashable, Sendable {
         case decision
         case parent
         case run
+        case turn
     }
 }
 
@@ -6956,6 +6999,118 @@ public struct TasksView: Codable, Hashable, Sendable {
     }
 }
 
+public enum TurnPart: Codable, Hashable, Sendable {
+    /// What opened the turn. The line over its work goes under it; None
+    /// when the turn did nothing but answer.
+    case prompt(worked: Worked?)
+    /// Folded under the line until the turn is opened.
+    case work
+    /// Work drawn whatever the fold: an error, a boundary, a compaction, or
+    /// a failed step the turn never fixed.
+    case kept
+    /// The agent's text the turn ended on.
+    case answer
+    /// The turn's end, drawn as the foot under its answer: the answer's rows,
+    /// for copying it, and each file the turn changed, once, with what all
+    /// its edits in the turn added and removed.
+    case end(answer: [String], files: [FileRow])
+
+    private enum Tag: String, CodingKey {
+        case prompt = "Prompt"
+        case end = "End"
+    }
+
+    private enum PromptKeys: String, CodingKey {
+        case worked
+    }
+
+    private enum EndKeys: String, CodingKey {
+        case answer
+        case files
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "Work": self = .work
+            case "Kept": self = .kept
+            case "Answer": self = .answer
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no TurnPart is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a TurnPart names exactly one variant"))
+        }
+        switch _tag {
+        case .prompt:
+            let _fields = try _container.nestedContainer(
+                keyedBy: PromptKeys.self, forKey: .prompt)
+            self = .prompt(
+                worked: try _fields.decodeIfPresent(Worked.self, forKey: .worked))
+        case .end:
+            let _fields = try _container.nestedContainer(
+                keyedBy: EndKeys.self, forKey: .end)
+            self = .end(
+                answer: try _fields.decode([String].self, forKey: .answer),
+                files: try _fields.decode([FileRow].self, forKey: .files))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .prompt(let worked):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: PromptKeys.self, forKey: .prompt)
+            try _fields.encodeIfPresent(worked, forKey: .worked)
+        case .work:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Work")
+        case .kept:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Kept")
+        case .answer:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Answer")
+        case .end(let answer, let files):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: EndKeys.self, forKey: .end)
+            try _fields.encode(answer, forKey: .answer)
+            try _fields.encode(files, forKey: .files)
+        }
+    }
+}
+
+/// Where a row stands in a finished turn, stated on every row of one when
+/// the client folds turns.
+public struct TurnPlace: Codable, Hashable, Sendable {
+    /// The turn's end, which names it: what opens and closes it.
+    public var end: String
+    /// Whether the reader opened its work.
+    public var open: Bool
+    public var part: TurnPart
+
+    public init(end: String, open: Bool, part: TurnPart) {
+        self.end = end
+        self.open = open
+        self.part = part
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case end
+        case open
+        case part
+    }
+}
+
 /// How a prompt of this client's is on its way.
 public enum Underway: Codable, Hashable, Sendable {
     /// Sent; `waiting` while the link to the agent's host is down, which
@@ -7239,4 +7394,20 @@ public enum Waiting: String, Codable, Hashable, Sendable, CaseIterable {
     case detached = "Detached"
     /// The local runtime is being reconnected.
     case reconnecting = "Reconnecting"
+}
+
+/// The line over a finished turn's work: "Worked for 3m 14s".
+public struct Worked: Codable, Hashable, Sendable {
+    public var failed: Bool
+    public var durationMs: Int64?
+
+    public init(failed: Bool, durationMs: Int64?) {
+        self.failed = failed
+        self.durationMs = durationMs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case failed
+        case durationMs = "duration_ms"
+    }
 }

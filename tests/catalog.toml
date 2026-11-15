@@ -898,7 +898,7 @@ cargo = [
 
 [[suite]]
 name = "view-goldens"
-contract = "Each view is a pure function of the session state; row ids are item keys and never move, run membership is an attribute, a run of tool steps names only the failures its ended turn left unresolved, attachments keep their positions, and every choice an ask card offers reaches the interpreter as an input it accepts."
+contract = "Each view is a pure function of the session state; row ids are item keys and never move, run membership is an attribute, a run of tool steps names only the failures its ended turn left unresolved, a finished turn folded to its answer keeps those failures in view and names every row a change moves, attachments keep their positions, and every choice an ask card offers reaches the interpreter as an input it accepts."
 paths = ["crates/ui-view/tests"]
 recipe = "just suite view-goldens"
 boundary = "Views"
@@ -912,7 +912,7 @@ evidence = ""
 update = "Rerun with UI_VIEW_UPDATE_GOLDENS=1 and review the golden diff."
 cargo = [
   { package = "ui-view", kind = "lib", targets = ["ui_view"], features = [] },
-  { package = "ui-view", modules = ["answers", "goldens", "runs", "views"], features = [] },
+  { package = "ui-view", modules = ["answers", "goldens", "runs", "turns", "views"], features = [] },
 ]
 
 [[suite]]

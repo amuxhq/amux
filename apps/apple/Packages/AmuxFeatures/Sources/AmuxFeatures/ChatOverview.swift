@@ -1,5 +1,6 @@
 import AmuxCore
 import AmuxDesign
+import AmuxWords
 import SwiftUI
 
 /// The agent's own page, as a chat app's contact page is the person's: its

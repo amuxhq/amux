@@ -1,3 +1,4 @@
+import AmuxWords
 import XCTest
 @testable import AmuxFeatures
 

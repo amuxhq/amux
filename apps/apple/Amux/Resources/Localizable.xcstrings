@@ -3769,18 +3769,6 @@
         }
       }
     },
-    "Message %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in ios/Packages/AmuxCore/Sources/AmuxCore/ComposerState.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Message %@"
-          }
-        }
-      }
-    },
     "Mode" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
@@ -5001,6 +4989,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Replied: %@"
+          }
+        }
+      }
+    },
+    "Reply" : {
+      "comment" : "English app copy. Used in Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reply"
           }
         }
       }

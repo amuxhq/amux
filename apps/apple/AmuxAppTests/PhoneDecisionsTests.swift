@@ -402,7 +402,7 @@ final class PhoneDecisionsTests: XCTestCase {
             agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 9, count: 16)),
             name: "cx", handle: "cx", kind: .codex, attention: .idle, cwd: "~/src", phaseSinceMs: 0,
             host: "desk", hostReach: .online(.direct), children: 0, familyAttention: .idle,
-            members: 1, descendants: 0, backgroundJobs: 2, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: nil)
+            members: 1, descendants: 0, backgroundJobs: 2, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: nil, repository: nil)
         let fleet = FleetStore()
         fleet.show(
             FleetView(

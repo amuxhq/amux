@@ -14,12 +14,14 @@ mod fleet;
 mod form;
 mod onboarding;
 mod overview;
+mod repository;
 mod review;
 mod rows;
 mod run;
 mod segments;
 mod settings;
 mod text;
+mod turn;
 
 pub use ask::{
     Answer, AskBody, AskCard, CardState, Choice, ChoiceOutcome, OptionView, QuestionResponse,
@@ -48,6 +50,7 @@ pub use overview::{
     TaskLine, TaskMark, TasksView, UsageLabel, UsageView, UsageWindowView, changes, diff_base,
     overview, usage_windows,
 };
+pub use repository::{REPOSITORY_TINTS, Repository};
 pub use review::{DiffLine, FileStatus, Hunk, LineKind, ReviewDoc, ReviewFile, review_doc};
 pub use rows::{
     AnswerView, AskRow, CallPhase, ChildAction, Decision, DecisionView, EditLine, ExploreVerb,
@@ -62,6 +65,7 @@ pub use settings::{
     SettingsView, Slash, controls, new_agent_pick, new_agent_settings, setting_input, settings,
     slash, typed_setting,
 };
+pub use turn::{TurnPart, TurnPlace, Worked, turn_keys, turn_rows_moved};
 /// Why an input was refused, which every client words.
 pub use ui_state::Refusal;
 /// The most an attachment may hold, which every client checks before it

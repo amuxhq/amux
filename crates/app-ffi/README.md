@@ -180,7 +180,9 @@ host held; a row new at either edge, or held through a reload, is read with
 What a view folds is held in Rust, so a read needs nothing passed in: a chat
 draws each run folded to its newest step until `amux_session_toggle_run`
 opens it, and keeps an open run open as it grows, pages in older steps or
-trims its oldest; a fleet lists a family's members under its root once
+trims its oldest; after `amux_session_fold_turns(chat, true)` it also folds
+each finished turn to its prompt, the line over its work and its answer,
+until `amux_session_toggle_turn` opens it; a fleet lists a family's members under its root once
 `amux_fleet_toggle_family` opens it, narrowed by the last `amux_fleet_filter`.
 Each change is handed over by the next step.
 

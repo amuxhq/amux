@@ -23,6 +23,12 @@ public protocol ChatSource: AnyObject, Sendable {
     /// Opens or closes the run `member` sits in; the next delta carries its
     /// rows drawn so, and it stays open as it grows.
     func toggleRun(_ member: String)
+    /// Folds each finished turn to its prompt, the line over its work and
+    /// its answer, or only its runs; the next delta carries every row so.
+    func foldTurns(_ on: Bool)
+    /// Opens or closes the finished turn whose end is `end`; the next delta
+    /// carries its rows drawn so.
+    func toggleTurn(_ end: String)
     func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome?
     func withdraw(_ input: [UInt8]) async -> ActOutcome?
     /// A queued or sent prompt as the draft it came from, attachments whole.
@@ -294,6 +300,9 @@ public final class ChatModel {
     /// part of the run's work, not things to read.
     public func shows(_ row: Row) -> Bool {
         if row.run != nil, row.kind.passesThroughRuns { return false }
+        // A closed turn's work stays folded, a subagent's steps with it,
+        // however its subagent was left.
+        if let turn = row.turn, !turn.open, turn.part == .work { return false }
         return !row.collapsed || row.parent.map(expanded.contains) == true
     }
 
@@ -337,6 +346,17 @@ public final class ChatModel {
     /// the next delta hands them over.
     public func toggleRun(_ run: Run) {
         source.toggleRun(run.last)
+    }
+
+    /// Folds each finished turn to its answer, as the Mac reads a chat.
+    public func foldTurns(_ on: Bool) {
+        source.foldTurns(on)
+    }
+
+    /// Opens or closes a finished turn's work; its rows say which, as the
+    /// next delta hands them over.
+    public func toggleTurn(_ turn: TurnPlace) {
+        source.toggleTurn(turn.end)
     }
 
     /// What a run's steps did: carried on its newest step's row only.

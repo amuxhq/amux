@@ -80,6 +80,14 @@ public final class Chat: ChatSource, @unchecked Sendable {
         call(()) { live in member.withCString { amux_session_toggle_run(live, $0) } }
     }
 
+    public func foldTurns(_ on: Bool) {
+        call(()) { live in amux_session_fold_turns(live, on) }
+    }
+
+    public func toggleTurn(_ end: String) {
+        call(()) { live in end.withCString { amux_session_toggle_turn(live, $0) } }
+    }
+
     // MARK: - Acts
 
     public func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> {

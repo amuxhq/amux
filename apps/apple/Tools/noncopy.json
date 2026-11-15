@@ -238,7 +238,9 @@
       {"literal": "\"1\"", "context": "return (host, record[\"scope\"] ?? \"\", name, record[\"pair\"] == \"1\")", "reason": "Wire or record key read from the runtime or the network, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/FleetStore.swift": [
-      {"literal": "\"s\"", "context": "return \"\\(needYou) need you · \\(agents) agent\\(agents == 1 ? \"\" : \"s\")\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"s\"", "context": "return \"\\(needYou) need you · \\(agents) agent\\(agents == 1 ? \"\" : \"s\")\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxCore/Sources/AmuxWords/FleetRow.swift": [
       {"literal": "\"agent\"", "context": "public var name: String { card.name.isEmpty ? \"agent\" : card.name }", "reason": "Placeholder name for an unnamed agent, matching the runtime's own default.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/HostGroup.swift": [
@@ -253,7 +255,7 @@
       {"literal": "\"not a UUID: \\(text)\"", "context": ".init(codingPath: decoder.codingPath, debugDescription: \"not a UUID: \\(text)\"))", "reason": "Decoder or invariant diagnostic retained for debugging; not displayed by a view.", "count": 1},
       {"literal": "\"%02x\"", "context": "agentUUID?.uuidString.lowercased() ?? agent.map { String(format: \"%02x\", $0) }.joined()", "reason": "Format string for hex digits, not interface copy.", "count": 1}
     ],
-    "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Markdown.swift": [
+    "apps/apple/Packages/AmuxCore/Sources/AmuxWords/Markdown.swift": [
       {"literal": "\"#\"", "context": "if trimmed.hasPrefix(\"#\"), let level = Self.headingLevel(trimmed) {", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
       {"literal": "\"-\"", "context": "if trimmed.allSatisfy({ $0 == \"-\" || $0 == \"*\" || $0 == \"_\" }), trimmed.count >= 3 {", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
       {"literal": "\"*\"", "context": "if trimmed.allSatisfy({ $0 == \"-\" || $0 == \"*\" || $0 == \"_\" }), trimmed.count >= 3 {", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
@@ -637,7 +639,7 @@
       {"literal": "\"paywall.buy\"", "context": ".identified(\"paywall.buy\", label: title, value: state, enabled: false)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"paywall.buy\"", "context": ".identified(\"paywall.buy\", label: title, value: state)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
-    "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/PlaceNames.swift": [
+    "apps/apple/Packages/AmuxCore/Sources/AmuxWords/PlaceNames.swift": [
       {"literal": "\".local\"", "context": "let suffix = \".local\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"/\"", "context": "var parts = path.split(separator: \"/\", omittingEmptySubsequences: true).map(String.init)", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"/\"", "context": "var root = path.hasPrefix(\"/\") ? \"/\" : \"\"", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 2},
@@ -680,7 +682,7 @@
       {"literal": "\"report.refusal\"", "context": ".identified(\"report.refusal\", label: \"Not sent\", value: why)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"report.sent\"", "context": ".identified(\"report.sent\", label: \"Report sent\", value: receipt.id)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
-    "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/RowState.swift": [
+    "apps/apple/Packages/AmuxCore/Sources/AmuxWords/RowState.swift": [
       {"literal": "\"working\"", "context": "case .working: \"working\"", "reason": "Door and capture vocabulary for a row's state; a screen's wording may change without rewriting the journeys that drive it.", "count": 1},
       {"literal": "\"host-offline\"", "context": "case .hostOffline: \"host-offline\"", "reason": "Door and capture vocabulary for a row's state; a screen's wording may change without rewriting the journeys that drive it.", "count": 1},
       {"literal": "\"unsupported\"", "context": "case .unsupported: \"unsupported\"", "reason": "Door and capture vocabulary for a row's state; a screen's wording may change without rewriting the journeys that drive it.", "count": 1},
@@ -1399,7 +1401,7 @@
       {"literal": "\"chat.settle.confirm\"", "context": "choiceButton(String(localized: \"Settle\"), kind: .destructive, id: \"chat.settle.confirm\", action: confirm)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.settle.card\"", "context": ".identified(\"chat.settle.card\", label: cuts)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
-    "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift": [
+    "apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift": [
       {"literal": "\"\\(verb) \\(count)\\(plus) \\(noun)\"", "context": "return \"\\(verb) \\(count)\\(plus) \\(noun)\"", "reason": "Joins a catalogued verb, a count and a catalogued noun; it has no words of its own.", "count": 1},
       {"literal": "\"\\(count)\"", "context": "case ..<1_000: \"\\(count)\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"%.1fM\"", "context": "default: String(format: \"%.1fM\", Double(count) / 1_000_000)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
@@ -1639,7 +1641,7 @@
       {"literal": "\"sign-in.keep\"", "context": ".accessibilityIdentifier(\"sign-in.keep\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"sign-in.discard\"", "context": ".accessibilityIdentifier(\"sign-in.discard\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
-    "apps/apple/Packages/AmuxCore/Sources/AmuxCore/OpenableLink.swift": [
+    "apps/apple/Packages/AmuxCore/Sources/AmuxWords/OpenableLink.swift": [
       {"literal": "\"https\"", "context": "private static let schemes: Set<String> = [\"https\", \"http\", \"mailto\"]", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"http\"", "context": "private static let schemes: Set<String> = [\"https\", \"http\", \"mailto\"]", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"mailto\"", "context": "private static let schemes: Set<String> = [\"https\", \"http\", \"mailto\"]", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}

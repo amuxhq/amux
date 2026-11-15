@@ -1,5 +1,6 @@
 import AmuxCore
 import AmuxDesign
+import AmuxWords
 import QuickLook
 import SwiftUI
 
@@ -805,7 +806,7 @@ public struct ChatStanding: View {
             $0.blocked ? ChatWords.limitReached($0, now: Date()) : nil
         }
         return ChatWords.placeholder(
-            model.frame?.composer.mode, agent: subject.name, host: subject.host,
+            model.frame?.composer.mode, host: subject.host,
             reach: subject.reach, connecting: subject.connecting, working: working, limit: limit)
     }
 

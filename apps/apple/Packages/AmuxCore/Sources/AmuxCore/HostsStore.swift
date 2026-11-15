@@ -207,7 +207,11 @@ public final class HostsStore {
         localNetwork = permission
     }
 
-    public func host(_ id: HostId) -> HostView? { hosts.first { $0.id == id } }
+    /// A trusted host, this device among them where it is one (the Mac), so
+    /// starting an agent here reads this machine's own settings.
+    public func host(_ id: HostId) -> HostView? {
+        hosts.first { $0.id == id } ?? local.flatMap { $0.id == id ? $0 : nil }
+    }
 
     /// A trusted host, or one found on this network.
     public func known(_ id: HostId) -> HostView? {

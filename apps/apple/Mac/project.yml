@@ -82,6 +82,8 @@ targets:
         product: AmuxCore
       - package: AmuxCore
         product: AmuxValues
+      - package: AmuxCore
+        product: AmuxWords
       - package: AmuxMacScreens
         product: AmuxMacScreens
 
@@ -133,6 +135,8 @@ targets:
         product: AmuxCore
       - package: AmuxCore
         product: AmuxValues
+      - package: AmuxCore
+        product: AmuxWords
       - package: AmuxMacScreens
         product: AmuxMacScreens
       - package: AmuxMacScreens

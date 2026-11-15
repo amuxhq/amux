@@ -704,6 +704,7 @@ fn row(kind: RowKind) -> Row {
         decision: None,
         attention: false,
         parent: None,
+        turn: None,
     }
 }
 
@@ -2270,6 +2271,7 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
         base_branch: Some("main".into()),
         uncommitted: Some(totals(4, 42, 7)),
         on_branch: Some(totals(6, 120, 30)),
+        remote: None,
     };
     let file = |path: &str, added, removed, change: wire::DiffFileChange| wire::DiffFile {
         path: path.into(),

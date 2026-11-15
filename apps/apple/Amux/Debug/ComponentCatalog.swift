@@ -1,6 +1,7 @@
 import AmuxCore
 import AmuxDesign
 import AmuxFeatures
+import AmuxWords
 import SwiftUI
 import UIKit
 
@@ -995,7 +996,7 @@ enum CatalogFixtures {
 
     static let git = Git(
         baseBranch: "main", branch: "refactor-auth",
-        onBranch: ChangeTotals(files: 6, added: 120, removed: 30),
+        onBranch: ChangeTotals(files: 6, added: 120, removed: 30), remote: nil,
         uncommitted: ChangeTotals(files: 5, added: 56, removed: 20))
 
     static let changes = Changes(
@@ -1306,18 +1307,18 @@ enum CatalogFixtures {
         agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 5, count: 16)),
         name: "docs-sweep", handle: "docs-sweep", kind: .claudeSdk, attention: .exited, cwd: "", phaseSinceMs: 0,
         host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .exited,
-        members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: .finished)
+        members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: .finished, repository: nil)
 
     static let family = FamilyHeader(
         children: [
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 3, count: 16)),
                       name: "worker-2", handle: "worker-2", kind: .claudeSdk, attention: .needsYou, cwd: "", phaseSinceMs: 0,
                       host: "Laptop", hostReach: .online(.direct), children: 0, familyAttention: .needsYou,
-                      members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: nil),
+                      members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: nil, repository: nil),
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 4, count: 16)),
                       name: "worker-3", handle: "worker-3", kind: .codex, attention: .working, cwd: "", phaseSinceMs: 0,
                       host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .working,
-                      members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: nil),
+                      members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: nil, repository: nil),
         ],
         attention: .needsYou, needYou: 1, parent: nil)
 }

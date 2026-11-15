@@ -7,21 +7,27 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		035611E5D9670FD8719D3FB0 /* AmuxMacStories in Frameworks */ = {isa = PBXBuildFile; productRef = 19F1801ED0469DAFC4255A3D /* AmuxMacStories */; };
+		0FF81B02E36F12E1E02B7166 /* MacChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D266B60D21AF474C2CDE0A /* MacChat.swift */; };
 		1366EDAC147C92755DDA7632 /* AmuxCore in Frameworks */ = {isa = PBXBuildFile; productRef = BB7D28F0961F4B8152ACC52E /* AmuxCore */; };
 		2AA29F182EE17F3BA30F28E8 /* AmuxValues in Frameworks */ = {isa = PBXBuildFile; productRef = EDF6099D303E94EA79ED9065 /* AmuxValues */; };
 		3758B979E572D9ECE8CF5F67 /* AmuxMacStories in Frameworks */ = {isa = PBXBuildFile; productRef = 4A003AAF384DBE90FB7A3C95 /* AmuxMacStories */; };
 		3B91C043C0933A2A675FB555 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AD0F409077019ED26D1A62A /* AppModel.swift */; };
+		434061D586640136A2C0D615 /* MacNewAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDF30FE89C87A5A6106AFD47 /* MacNewAgent.swift */; };
 		4392C923FBBB70AB383F7070 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35ACFC26A1D58966C680CFB4 /* MainWindow.swift */; };
+		4579F28F51468255CED4809A /* MacNewAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDF30FE89C87A5A6106AFD47 /* MacNewAgent.swift */; };
 		4B2CDB27BE213B97988EF311 /* SettingsWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2562BD49C150F71B56CD979B /* SettingsWindow.swift */; };
-		4E6FFBCE4B0040245C2042FA /* AmuxMacStories in Frameworks */ = {isa = PBXBuildFile; productRef = 19F1801ED0469DAFC4255A3D /* AmuxMacStories */; };
+		4E6FFBCE4B0040245C2042FA /* AmuxMacScreens in Frameworks */ = {isa = PBXBuildFile; productRef = BFD9FAA1300DAA573A2CAFE4 /* AmuxMacScreens */; };
 		748BF46B286856646B0449F8 /* SetupWalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7C00CABFF413D47B11818BC /* SetupWalk.swift */; };
 		882195E368B9D757F25FE602 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35ACFC26A1D58966C680CFB4 /* MainWindow.swift */; };
 		8B3E1B675CE87AB02FD5AD6A /* Setup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 010C7AFBB1A5638DA828D47A /* Setup.swift */; };
 		9086C8CAD17CB7FE5E2200DC /* StoryList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 823B6AB1C3DAE4F5B02FBFF6 /* StoryList.swift */; };
 		9BCEDAAAFE6DCB85B84B0794 /* SettingsWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2562BD49C150F71B56CD979B /* SettingsWindow.swift */; };
-		A43E21BEE71AB152FE3941A6 /* AmuxMacScreens in Frameworks */ = {isa = PBXBuildFile; productRef = 57207651FF3989CB1A0312B1 /* AmuxMacScreens */; };
-		AD169E3D4ECB90B24354606F /* AmuxMacScreens in Frameworks */ = {isa = PBXBuildFile; productRef = BFD9FAA1300DAA573A2CAFE4 /* AmuxMacScreens */; };
+		A43E21BEE71AB152FE3941A6 /* AmuxWords in Frameworks */ = {isa = PBXBuildFile; productRef = FF98E2A1DD42B08FB225C51F /* AmuxWords */; };
+		AD169E3D4ECB90B24354606F /* AmuxWords in Frameworks */ = {isa = PBXBuildFile; productRef = A0BC4A3ACA7D7826754DB2ED /* AmuxWords */; };
+		B01344530777C58DF863E29D /* MacChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D266B60D21AF474C2CDE0A /* MacChat.swift */; };
 		B1972D9315DD1F5BA784F8BE /* AmuxCore in Frameworks */ = {isa = PBXBuildFile; productRef = C9DF306C58F8962847633A1A /* AmuxCore */; };
+		BA66F94FABD630C779FD6590 /* AmuxMacScreens in Frameworks */ = {isa = PBXBuildFile; productRef = 57207651FF3989CB1A0312B1 /* AmuxMacScreens */; };
 		BA7D6919A2A4CCE6C23223C5 /* Capture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C543ED284151F1A2C46529A /* Capture.swift */; };
 		C4AB5E62EB42518BC1B00D88 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AD0F409077019ED26D1A62A /* AppModel.swift */; };
 		D5D889A5278B8F70810357FE /* AmuxMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA7C9EEC1ABEC000EEAB795C /* AmuxMacApp.swift */; };
@@ -50,6 +56,8 @@
 		C2B49A41F366B23EA3C5BE8A /* AmuxMacScreens */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AmuxMacScreens; path = ../Packages/AmuxMacScreens; sourceTree = SOURCE_ROOT; };
 		C6361E231B9F50C6C65E2E69 /* Storybook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Storybook.swift; sourceTree = "<group>"; };
 		D7C00CABFF413D47B11818BC /* SetupWalk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupWalk.swift; sourceTree = "<group>"; };
+		E1D266B60D21AF474C2CDE0A /* MacChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacChat.swift; sourceTree = "<group>"; };
+		EDF30FE89C87A5A6106AFD47 /* MacNewAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacNewAgent.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -59,8 +67,9 @@
 			files = (
 				1366EDAC147C92755DDA7632 /* AmuxCore in Frameworks */,
 				2AA29F182EE17F3BA30F28E8 /* AmuxValues in Frameworks */,
-				AD169E3D4ECB90B24354606F /* AmuxMacScreens in Frameworks */,
-				4E6FFBCE4B0040245C2042FA /* AmuxMacStories in Frameworks */,
+				AD169E3D4ECB90B24354606F /* AmuxWords in Frameworks */,
+				4E6FFBCE4B0040245C2042FA /* AmuxMacScreens in Frameworks */,
+				035611E5D9670FD8719D3FB0 /* AmuxMacStories in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -70,7 +79,8 @@
 			files = (
 				B1972D9315DD1F5BA784F8BE /* AmuxCore in Frameworks */,
 				D9262014405B10045DFEE1DD /* AmuxValues in Frameworks */,
-				A43E21BEE71AB152FE3941A6 /* AmuxMacScreens in Frameworks */,
+				A43E21BEE71AB152FE3941A6 /* AmuxWords in Frameworks */,
+				BA66F94FABD630C779FD6590 /* AmuxMacScreens in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -91,6 +101,8 @@
 			children = (
 				AA7C9EEC1ABEC000EEAB795C /* AmuxMacApp.swift */,
 				1AD0F409077019ED26D1A62A /* AppModel.swift */,
+				E1D266B60D21AF474C2CDE0A /* MacChat.swift */,
+				EDF30FE89C87A5A6106AFD47 /* MacNewAgent.swift */,
 				35ACFC26A1D58966C680CFB4 /* MainWindow.swift */,
 				2562BD49C150F71B56CD979B /* SettingsWindow.swift */,
 				010C7AFBB1A5638DA828D47A /* Setup.swift */,
@@ -166,6 +178,7 @@
 			packageProductDependencies = (
 				BB7D28F0961F4B8152ACC52E /* AmuxCore */,
 				EDF6099D303E94EA79ED9065 /* AmuxValues */,
+				A0BC4A3ACA7D7826754DB2ED /* AmuxWords */,
 				BFD9FAA1300DAA573A2CAFE4 /* AmuxMacScreens */,
 				19F1801ED0469DAFC4255A3D /* AmuxMacStories */,
 			);
@@ -208,6 +221,7 @@
 			packageProductDependencies = (
 				C9DF306C58F8962847633A1A /* AmuxCore */,
 				1D93496E06294471E1E9ECB3 /* AmuxValues */,
+				FF98E2A1DD42B08FB225C51F /* AmuxWords */,
 				57207651FF3989CB1A0312B1 /* AmuxMacScreens */,
 			);
 			productName = AmuxMac;
@@ -265,6 +279,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				C4AB5E62EB42518BC1B00D88 /* AppModel.swift in Sources */,
+				B01344530777C58DF863E29D /* MacChat.swift in Sources */,
+				4579F28F51468255CED4809A /* MacNewAgent.swift in Sources */,
 				4392C923FBBB70AB383F7070 /* MainWindow.swift in Sources */,
 				9BCEDAAAFE6DCB85B84B0794 /* SettingsWindow.swift in Sources */,
 				E769F0244255E2ECDF2B38EF /* Setup.swift in Sources */,
@@ -290,6 +306,8 @@
 			files = (
 				D5D889A5278B8F70810357FE /* AmuxMacApp.swift in Sources */,
 				3B91C043C0933A2A675FB555 /* AppModel.swift in Sources */,
+				0FF81B02E36F12E1E02B7166 /* MacChat.swift in Sources */,
+				434061D586640136A2C0D615 /* MacNewAgent.swift in Sources */,
 				882195E368B9D757F25FE602 /* MainWindow.swift in Sources */,
 				4B2CDB27BE213B97988EF311 /* SettingsWindow.swift in Sources */,
 				8B3E1B675CE87AB02FD5AD6A /* Setup.swift in Sources */,
@@ -620,6 +638,10 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = AmuxMacScreens;
 		};
+		A0BC4A3ACA7D7826754DB2ED /* AmuxWords */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AmuxWords;
+		};
 		AD8C1C6BEEEE9B322B265EE1 /* AmuxMacScreens */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = AmuxMacScreens;
@@ -639,6 +661,10 @@
 		EDF6099D303E94EA79ED9065 /* AmuxValues */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = AmuxValues;
+		};
+		FF98E2A1DD42B08FB225C51F /* AmuxWords */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AmuxWords;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

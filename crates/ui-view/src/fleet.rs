@@ -12,6 +12,7 @@ use ui_state::{
 };
 use wire::{Agent, Filing, HostEntry, Kind, Lifecycle, RouteKind, Said, Wants, trusted};
 
+use crate::repository::Repository;
 use crate::text::{within, without_direction_controls};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
@@ -29,6 +30,8 @@ pub struct FleetCard {
     /// end; None on a detached head or outside a repository.
     pub branch: Option<String>,
     pub cwd: String,
+    /// The repository it works in, by its remote, else its folder.
+    pub repository: Option<Repository>,
     pub phase_since_ms: i64,
     pub host: String,
     pub host_reach: Reach,
@@ -336,6 +339,10 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
         exit_cause: (attention == Attention::Exited).then(|| ui_state::exit_cause(agent)),
         branch: agent.git.as_ref().and_then(|git| git.branch.clone()),
         cwd: agent.cwd.clone(),
+        repository: Repository::of(
+            agent.git.as_ref().and_then(|git| git.remote.as_deref()),
+            &agent.cwd,
+        ),
         phase_since_ms: agent.phase_since_ms,
         host: fleet
             .host(&agent.host_id)

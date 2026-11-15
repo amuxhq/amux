@@ -3,6 +3,7 @@
 //! the host's next turn, and the views the host asks for by row key.
 
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use tokio::task::JoinHandle;
@@ -38,6 +39,11 @@ pub struct Chat {
     /// The runs the reader opened, each held by one of its steps: rows
     /// fold every other run to its newest step.
     open_runs: Mutex<HashSet<Key>>,
+    /// Whether the host folds each finished turn to its answer, as the Mac
+    /// does, rather than only its runs.
+    folds_turns: AtomicBool,
+    /// The finished turns the reader opened, each held by its end.
+    open_turns: Mutex<HashSet<Key>>,
     /// The draft this device's daemon kept for the agent when the chat
     /// opened.
     kept: Option<Draft>,
@@ -72,6 +78,8 @@ impl Chat {
             clock,
             changed_files: Mutex::new(None),
             open_runs: Mutex::new(HashSet::new()),
+            folds_turns: AtomicBool::new(false),
+            open_turns: Mutex::new(HashSet::new()),
             kept,
             sent: Mutex::new(None),
         });
@@ -127,14 +135,43 @@ impl Chat {
     }
 
     /// Rows for these keys, in order, skipping keys not held, each run
-    /// folded to its newest step unless the reader opened it.
+    /// folded to its newest step unless the reader opened it, and with
+    /// [`Chat::fold_turns`] each finished turn folded to its answer unless
+    /// the reader opened it.
     pub fn rows_for(&self, keys: &[Key]) -> Vec<Row> {
-        let open = self.open_runs.lock().unwrap();
-        ui_view::chat_rows_for(
-            &self.session.state(),
-            keys,
-            ToolRows::Collapse { open: &open },
-        )
+        let runs = self.open_runs.lock().unwrap();
+        let turns = self.open_turns.lock().unwrap();
+        ui_view::chat_rows_for(&self.session.state(), keys, self.tools(&runs, &turns))
+    }
+
+    fn tools<'a>(&self, runs: &'a HashSet<Key>, turns: &'a HashSet<Key>) -> ToolRows<'a> {
+        if self.folds_turns.load(Ordering::Relaxed) {
+            ToolRows::Turns { runs, turns }
+        } else {
+            ToolRows::Collapse { open: runs }
+        }
+    }
+
+    /// Folds each finished turn to its answer, or only its runs; the next
+    /// delta carries every row drawn so.
+    pub fn fold_turns(&self, on: bool) {
+        if self.folds_turns.swap(on, Ordering::Relaxed) != on {
+            self.changes.push(self.keys(), false, false);
+        }
+    }
+
+    /// Opens or closes the finished turn `end` closes; the next delta
+    /// carries its rows drawn so.
+    pub fn toggle_turn(&self, end: &str) {
+        let end = end.to_owned();
+        {
+            let mut open = self.open_turns.lock().unwrap();
+            if !open.remove(&end) {
+                open.insert(end.clone());
+            }
+        }
+        let keys = ui_view::turn_keys(&self.session.state(), &end);
+        self.changes.push(keys, false, false);
     }
 
     /// Opens or closes the run `member` belongs to; the next delta carries
@@ -236,8 +273,23 @@ impl Chat {
         if !open.is_empty() && (reloaded || !changed.is_empty()) {
             ui_view::keep_open_runs(&state, &mut open);
         }
+        // Folding turns, a change moves the place in its turn of rows it
+        // does not touch itself.
+        let widened: Vec<Key>;
+        let changed =
+            if self.folds_turns.load(Ordering::Relaxed) && !reloaded && !changed.is_empty() {
+                widened = changed
+                    .iter()
+                    .cloned()
+                    .chain(ui_view::turn_rows_moved(&state, changed))
+                    .collect();
+                &widened[..]
+            } else {
+                changed
+            };
         let (keys, wanted) = sent.keys_moved(state.transcript(), reloaded, changed);
-        let rows = ui_view::chat_rows_for(&state, &wanted, ToolRows::Collapse { open: &open });
+        let turns = self.open_turns.lock().unwrap();
+        let rows = ui_view::chat_rows_for(&state, &wanted, self.tools(&open, &turns));
         let frame = frame(&state, self.clock.now_ms(), ended);
         ChatDelta {
             chat: self.id,

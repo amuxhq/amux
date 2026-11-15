@@ -1,4 +1,5 @@
 import AmuxCore
+import AmuxWords
 import XCTest
 
 @testable import AmuxFeatures
@@ -7,7 +8,7 @@ final class ChatWordsTests: XCTestCase {
     private func row(_ kind: RowKind, attention: Bool = false, decision: Decision? = nil) -> Row {
         Row(
             id: "k", order: 1, atMs: 0, kind: kind, collapsed: false, attention: attention,
-            decision: decision, parent: nil, run: nil)
+            decision: decision, parent: nil, run: nil, turn: nil)
     }
 
     func testDurationsAndCountsReadTheWayTheVocabularyWritesThem() {
@@ -197,19 +198,19 @@ final class ChatWordsTests: XCTestCase {
         XCTAssertEqual(ChatWords.headTask(waiting), "Run the tests")
     }
 
-    func testTheEmptyFieldSaysWhoAMessageGoesToOrWhySendingWaits() {
+    func testTheEmptyFieldSaysReplyOrWhySendingWaits() {
         XCTAssertEqual(
-            ChatWords.placeholder(.send, agent: "refactor-auth", host: "Studio", reach: .online(.direct), working: false),
-            "Message refactor-auth")
+            ChatWords.placeholder(.send, host: "Studio", reach: .online(.direct), working: false),
+            "Reply")
         XCTAssertEqual(
-            ChatWords.placeholder(.send, agent: "refactor-auth", host: "Studio", reach: .online(.direct), working: true),
+            ChatWords.placeholder(.send, host: "Studio", reach: .online(.direct), working: true),
             "Queue a message")
         XCTAssertEqual(
-            ChatWords.placeholder(.waiting(.detached), agent: "a", host: "Studio", reach: .away, working: false),
+            ChatWords.placeholder(.waiting(.detached), host: "Studio", reach: .away, working: false),
             "Studio is out of reach · your draft is kept")
         XCTAssertEqual(
-            ChatWords.placeholder(.resume, agent: "a", host: "Studio", reach: .online(.direct), working: false),
-            "Message a")
+            ChatWords.placeholder(.resume, host: "Studio", reach: .online(.direct), working: false),
+            "Reply")
     }
 
     /// A settled agent's head says what the person did, unless it failed.
@@ -232,7 +233,7 @@ final class ChatWordsTests: XCTestCase {
         XCTAssertTrue(reached.hasPrefix("5-hour limit reached · resets "), reached)
         XCTAssertEqual(
             ChatWords.placeholder(
-                .send, agent: "a", host: "Studio", reach: .online(.direct), working: false, limit: reached),
+                .send, host: "Studio", reach: .online(.direct), working: false, limit: reached),
             reached, "the limit is said where the next message is typed")
         var past = usage
         past.windows[0].resetsAtMs = nowMs - 1

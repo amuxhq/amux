@@ -1,6 +1,7 @@
 import AmuxCore
 import AmuxDesign
 import AmuxFeatures
+import AmuxWords
 import PhotosUI
 import StoreKit
 import SwiftUI

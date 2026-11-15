@@ -2885,6 +2885,31 @@ pub unsafe extern "C" fn amux_session_toggle_run(chat: *const AmuxChat, member: 
     let _ = unsafe { read(chat, |chat| chat.toggle_run(&member)) };
 }
 
+/// Folds each finished turn to its prompt, the line over its work and its
+/// answer (true), or only its runs (false, as a chat opens); the next step
+/// hands over every row drawn so.
+///
+/// # Safety
+/// `chat` is from `amux_session_open`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_session_fold_turns(chat: *const AmuxChat, on: bool) {
+    // SAFETY: the caller's contract.
+    let _ = unsafe { read(chat, |chat| chat.fold_turns(on)) };
+}
+
+/// Opens or closes the finished turn whose end is the row `end`; the next
+/// step hands over its rows drawn so.
+///
+/// # Safety
+/// `chat` is from `amux_session_open`; `end` is NUL-terminated or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_session_toggle_turn(chat: *const AmuxChat, end: *const c_char) {
+    // SAFETY: the caller's contract.
+    let end = unsafe { text(end) }.unwrap_or_default().to_owned();
+    // SAFETY: the caller's contract.
+    let _ = unsafe { read(chat, |chat| chat.toggle_turn(&end)) };
+}
+
 /// Starts an act on the chat and answers its ticket, after the step that
 /// hands over what it moved.
 ///

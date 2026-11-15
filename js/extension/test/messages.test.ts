@@ -27,5 +27,7 @@ describe("a tab's comments by page", () => {
     expect(pageOf("file:///doc.html#section")).toBe("file:///doc.html");
     expect(pageOf("http://localhost:5173/pricing")).toBe("http://localhost:5173/pricing");
     expect(pageOf(undefined)).toBe("");
+    expect(pageOf("http://localhost:5173/#/settings")).toBe("http://localhost:5173/#/settings");
+    expect(pageOf("http://localhost:5173/#!/settings")).toBe("http://localhost:5173/#!/settings");
   });
 });

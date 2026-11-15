@@ -126,12 +126,12 @@ and opens the extension's settings.
 
 **State.** A tab's comments may span pages, as a person follows links while
 reviewing: each comment keeps the page it was made on (its address without the
-`#fragment`, so a link within a document stays on its page), the page shows
-only its own as pins, and Send sends one page review per page. Each tab's
-unsent comments live in the browser's session storage, and their screenshots in
-IndexedDB, because the service worker is stopped whenever it is idle and
-session storage has too little room for images. Both go when the tab closes or
-the review is sent.
+`#fragment`, so a link within a document stays on its page; an app's `#/route`
+counts as a page), the page shows only its own as pins, and Send sends one page
+review per page. Each tab's unsent comments live in the browser's session
+storage, and their screenshots in IndexedDB, because the service worker is
+stopped whenever it is idle and session storage has too little room for images.
+Both go when the tab closes or the review is sent.
 
 ## The overlay and its hosts
 

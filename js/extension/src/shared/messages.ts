@@ -35,10 +35,14 @@ export interface PendingReview {
 
 /**
  * The page an address names: without its fragment, so following a link
- * within a document (`doc.html#section`) stays on the same page.
+ * within a document (`doc.html#section`) stays on the same page. A fragment
+ * that is an app's route (`#/settings`, `#!/settings`) names a page of its own.
  */
 export function pageOf(url: string | undefined): string {
-  return (url ?? "").split("#")[0]!;
+  const address = url ?? "";
+  const at = address.indexOf("#");
+  if (at < 0 || /^#!?\//.test(address.slice(at))) return address;
+  return address.slice(0, at);
 }
 
 /** A tab's comments by the page they were made on, in the order first made. */

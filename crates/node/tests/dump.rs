@@ -640,6 +640,82 @@ async fn no_report_carries_a_word_and_an_agents_record_holds_what_its_interprete
     assert!(events.iter().all(|fed| fed["broken"].is_null()), "{text}");
 }
 
+/// The daemon core's record holds where each workspace is, what it was
+/// made from, and the jobs that made and claim it: under the workspaces
+/// experiment no bundle carries the repository's folder, the workspace's
+/// or the agent's name in any of them.
+#[tokio::test(flavor = "multi_thread")]
+async fn no_report_carries_a_workspaces_folder_or_its_repository() {
+    const MARKER: &str = "PLANTEDmarkerphrase0007";
+    let install = Install::new();
+    let repo = install.work.join(format!("{MARKER}-repository"));
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.join("README"), "first\n").unwrap();
+    git(&repo, &["add", "README"]);
+    git(&repo, &["commit", "-q", "-m", "first"]);
+    let mut launch = install.launch("idle", vec![]);
+    launch.experiments =
+        ::settings::experiments::Enabled::of(&[&::settings::experiments::WORKSPACES]);
+    let daemon = install.start("boot-1", launch).await;
+    let runtime = runtime(&daemon, &install);
+    let agent = runtime
+        .spawn(
+            wire::CreateAgentRequest {
+                new_workspace: true,
+                ..create(&repo, &format!("{}-tree", MARKER.to_lowercase()), None)
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    until("the agent to be running", || async {
+        runtime
+            .live()
+            .contains(&id_of(&agent))
+            .then_some(())
+            .ok_or("not yet")
+    })
+    .await
+    .unwrap();
+
+    let mut bundles = Vec::new();
+    for (automatic, check) in [(false, ""), (true, "daemon.test")] {
+        bundles.push(
+            runtime
+                .dump(DumpRequest {
+                    reason: format!("asked by {check}"),
+                    automatic,
+                    check: check.to_owned(),
+                    ..DumpRequest::default()
+                })
+                .await
+                .unwrap(),
+        );
+    }
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+
+    for bundle in &bundles {
+        for (name, _) in tree(bundle) {
+            let bytes = std::fs::read(bundle.join(&name)).unwrap();
+            for planted in [
+                MARKER.to_owned(),
+                MARKER.to_lowercase(),
+                repo.to_string_lossy().into_owned(),
+                agent.cwd.clone(),
+            ] {
+                assert!(
+                    !holds(&bytes, &planted),
+                    "{name} holds {planted}: {}",
+                    String::from_utf8_lossy(&bytes)
+                );
+            }
+        }
+    }
+}
+
 /// A client's chats go into a dump as their records, whatever asked for
 /// it; a whole session, which holds its chat's conversation, never does.
 #[tokio::test(flavor = "multi_thread")]

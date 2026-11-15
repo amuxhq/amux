@@ -84,6 +84,11 @@ const TEXT: &[(&str, Text)] = &[
     ("dump_path", Text::Alias("path")),
     ("removed_dirs", Text::Alias("path")),
     ("pinned", Text::Alias("path")),
+    // A workspace's id is its root, a path on its host, and a plan names
+    // the repository it is made from and the folder that asked for it.
+    ("Key.id", Text::Alias("path")),
+    ("repository", Text::Alias("path")),
+    ("folder", Text::Alias("path")),
     ("branch", Text::Alias("branch")),
     ("branches", Text::Alias("branch")),
     ("base_branch", Text::Alias("branch")),

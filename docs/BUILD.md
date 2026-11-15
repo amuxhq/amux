@@ -28,7 +28,9 @@ Other tools a full checkout uses:
 - Xcode and XcodeGen build the iPhone app (see [the iPhone app](IOS.md)).
 - `tmux` drives the terminal journeys.
 - Node 24 or newer, with npm, builds and tests the browser extension under
-  `js/` (`just browser`, `just browser-test`).
+  `js/` (`just browser`, `just browser-test`). Biome formats and lints it
+  (`just js-fmt`), and `js/.npmrc` stops packages' install scripts from
+  running.
 - [`gitleaks`](https://github.com/gitleaks/gitleaks) scans what a push
   would publish for credentials. `just hooks` installs that scan as the
   pre-push hook, for every worktree at once; it reads `.gitleaks.toml`, and

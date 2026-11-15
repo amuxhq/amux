@@ -3,7 +3,7 @@
 // are six of them, and the overlay, which shares their look, has to stay
 // free of any framework.
 
-import type { ButtonHTMLAttributes, ComponentChildren, TextareaHTMLAttributes } from "preact";
+import type { ButtonHTMLAttributes, ComponentChildren, SVGAttributes, TextareaHTMLAttributes } from "preact";
 import { useEffect, useId, useMemo, useRef, useState } from "preact/hooks";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -13,7 +13,13 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 export function Button({ variant = "secondary", size = "md", type = "button", class: extra, ...rest }: ButtonProps) {
-  const classes = ["btn", variant !== "secondary" && `btn-${variant}`, size === "sm" && "btn-sm", size === "icon" && "btn-icon", extra]
+  const classes = [
+    "btn",
+    variant !== "secondary" && `btn-${variant}`,
+    size === "sm" && "btn-sm",
+    size === "icon" && "btn-icon",
+    extra,
+  ]
     .filter(Boolean)
     .join(" ");
   return <button type={type} class={classes} {...rest} />;
@@ -23,61 +29,77 @@ export function Kbd({ children }: { children: ComponentChildren }) {
   return <kbd class="kbd">{children}</kbd>;
 }
 
-const ICON = { width: 16, height: 16, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", "stroke-width": 1.5, "aria-hidden": true } as const;
+/** A 16-point line icon. Decorative: the words beside it say what it means. */
+function Svg({ children, ...rest }: { children: ComponentChildren } & SVGAttributes<SVGSVGElement>) {
+  return (
+    <svg
+      aria-hidden="true"
+      width={16}
+      height={16}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      stroke-width={1.5}
+      {...rest}
+    >
+      {children}
+    </svg>
+  );
+}
 
 export const Icons = {
   check: () => (
-    <svg {...ICON} stroke-linecap="round" stroke-linejoin="round">
+    <Svg stroke-linecap="round" stroke-linejoin="round">
       <path d="M3.5 8.5l3 3 6-7" />
-    </svg>
+    </Svg>
   ),
   alert: () => (
-    <svg {...ICON} stroke-linecap="round">
+    <Svg stroke-linecap="round">
       <circle cx="8" cy="8" r="6.25" />
       <path d="M8 4.75v3.75M8 11.1v.15" />
-    </svg>
+    </Svg>
   ),
   info: () => (
-    <svg {...ICON} stroke-linecap="round">
+    <Svg stroke-linecap="round">
       <circle cx="8" cy="8" r="6.25" />
       <path d="M8 7.25v4M8 4.9v.15" />
-    </svg>
+    </Svg>
   ),
   chevrons: () => (
-    <svg {...ICON} stroke-linecap="round" stroke-linejoin="round">
+    <Svg stroke-linecap="round" stroke-linejoin="round">
       <path d="M5 6.25L8 3.5l3 2.75M5 9.75L8 12.5l3-2.75" />
-    </svg>
+    </Svg>
   ),
   close: () => (
-    <svg {...ICON} stroke-linecap="round">
+    <Svg stroke-linecap="round">
       <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
-    </svg>
+    </Svg>
   ),
   plus: () => (
-    <svg {...ICON} stroke-linecap="round">
+    <Svg stroke-linecap="round">
       <path d="M8 3.5v9M3.5 8h9" />
-    </svg>
+    </Svg>
   ),
   /** A block with a pointer on it. */
   block: () => (
-    <svg {...ICON}>
+    <Svg>
       <rect x="1.75" y="3.25" width="12.5" height="7.5" rx="1.5" />
       <path d="M9 8.5l4 5.5-1.6.2-.9 1.5z" fill="currentColor" stroke="none" />
-    </svg>
+    </Svg>
   ),
   /** Lines of text with one picked out. */
   text: () => (
-    <svg {...ICON} stroke-linecap="round">
+    <Svg stroke-linecap="round">
       <path d="M2 4h12M2 12h7" />
       <rect x="1.5" y="6.25" width="9" height="3.5" rx="1" fill="currentColor" stroke="none" opacity="0.35" />
       <path d="M3 8h6" />
-    </svg>
+    </Svg>
   ),
   /** A dashed region. */
   box: () => (
-    <svg {...ICON} stroke-dasharray="2.5 2">
+    <Svg stroke-dasharray="2.5 2">
       <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
-    </svg>
+    </Svg>
   ),
 };
 
@@ -143,7 +165,7 @@ export function Picker({ groups, value, placeholder, onChange, search }: PickerP
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const input = useRef<HTMLInputElement>(null);
-  const list = useRef<HTMLUListElement>(null);
+  const list = useRef<HTMLDivElement>(null);
   const id = useId();
 
   const all = useMemo(() => groups.flatMap((group) => group.choices), [groups]);
@@ -166,7 +188,12 @@ export function Picker({ groups, value, placeholder, onChange, search }: PickerP
     const box = trigger.current?.getBoundingClientRect();
     setAbove(!!box && box.top > window.innerHeight - box.bottom);
     setQuery("");
-    setActive(Math.max(0, all.findIndex((choice) => choice.value === value)));
+    setActive(
+      Math.max(
+        0,
+        all.findIndex((choice) => choice.value === value),
+      ),
+    );
     setOpen(true);
   }
 
@@ -261,50 +288,53 @@ export function Picker({ groups, value, placeholder, onChange, search }: PickerP
             }}
             onKeyDown={onKey}
           />
-          <ul class="picker-list" role="listbox" id={`${id}-list`} ref={list}>
-            {flat.length === 0 && <li class="picker-empty">Nothing matches</li>}
+          <div class="picker-list" role="listbox" id={`${id}-list`} ref={list}>
+            {flat.length === 0 && <div class="picker-empty">Nothing matches</div>}
             {shown.map((group) => (
-              <li key={group.label} role="presentation">
-                <div class="picker-group">{group.label}</div>
-                <ul role="group" aria-label={group.label}>
-                  {group.choices.map((choice) => {
-                    index += 1;
-                    const at = index;
-                    return (
-                      <li
-                        key={choice.value}
-                        id={`${id}-${at}`}
-                        data-index={at}
-                        role="option"
-                        aria-selected={choice.value === value}
-                        class={`picker-option${at === active ? " active" : ""}`}
-                        onPointerMove={() => setActive(at)}
-                        onClick={() => pick(choice)}
-                      >
-                        {choice.icon === "plus" && (
-                          <span class="picker-option-icon">
-                            <Icons.plus />
-                          </span>
-                        )}
-                        <span class="picker-value">
-                          <span class="picker-label">
-                            {choice.label}
-                            {choice.badge && <span class="badge">{choice.badge}</span>}
-                          </span>
-                          {choice.detail && <span class="picker-detail">{choice.detail}</span>}
+              // biome-ignore lint/a11y/useSemanticElements: an ARIA group of options inside a listbox, not a form's fieldset
+              <div key={group.label} role="group" aria-label={group.label}>
+                <div class="picker-group" aria-hidden="true">
+                  {group.label}
+                </div>
+                {group.choices.map((choice) => {
+                  index += 1;
+                  const at = index;
+                  return (
+                    // biome-ignore lint/a11y/useFocusableInteractive: focus stays in the search field, which names the active option (aria-activedescendant)
+                    // biome-ignore lint/a11y/useKeyWithClickEvents: the search field's keys move between and pick options
+                    <div
+                      key={choice.value}
+                      id={`${id}-${at}`}
+                      data-index={at}
+                      role="option"
+                      aria-selected={choice.value === value}
+                      class={`picker-option${at === active ? " active" : ""}`}
+                      onPointerMove={() => setActive(at)}
+                      onClick={() => pick(choice)}
+                    >
+                      {choice.icon === "plus" && (
+                        <span class="picker-option-icon">
+                          <Icons.plus />
                         </span>
-                        {choice.value === value && (
-                          <span class="picker-check">
-                            <Icons.check />
-                          </span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </li>
+                      )}
+                      <span class="picker-value">
+                        <span class="picker-label">
+                          {choice.label}
+                          {choice.badge && <span class="badge">{choice.badge}</span>}
+                        </span>
+                        {choice.detail && <span class="picker-detail">{choice.detail}</span>}
+                      </span>
+                      {choice.value === value && (
+                        <span class="picker-check">
+                          <Icons.check />
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
       )}
     </div>

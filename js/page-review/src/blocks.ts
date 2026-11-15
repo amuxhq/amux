@@ -4,17 +4,64 @@ import type { Anchor } from "./types.ts";
 
 /** Elements that are a block whatever their CSS says. */
 const BLOCK_TAGS = new Set([
-  "ARTICLE", "ASIDE", "BLOCKQUOTE", "BUTTON", "CANVAS", "DD", "DETAILS", "DIALOG",
-  "DT", "FIELDSET", "FIGCAPTION", "FIGURE", "FOOTER", "FORM", "H1", "H2", "H3", "H4",
-  "H5", "H6", "HEADER", "HR", "IFRAME", "IMG", "INPUT", "LI", "MAIN", "NAV", "OL",
-  "P", "PICTURE", "PRE", "SECTION", "SELECT", "SUMMARY", "SVG", "TABLE", "TD",
-  "TEXTAREA", "TH", "TR", "UL", "VIDEO",
+  "ARTICLE",
+  "ASIDE",
+  "BLOCKQUOTE",
+  "BUTTON",
+  "CANVAS",
+  "DD",
+  "DETAILS",
+  "DIALOG",
+  "DT",
+  "FIELDSET",
+  "FIGCAPTION",
+  "FIGURE",
+  "FOOTER",
+  "FORM",
+  "H1",
+  "H2",
+  "H3",
+  "H4",
+  "H5",
+  "H6",
+  "HEADER",
+  "HR",
+  "IFRAME",
+  "IMG",
+  "INPUT",
+  "LI",
+  "MAIN",
+  "NAV",
+  "OL",
+  "P",
+  "PICTURE",
+  "PRE",
+  "SECTION",
+  "SELECT",
+  "SUMMARY",
+  "SVG",
+  "TABLE",
+  "TD",
+  "TEXTAREA",
+  "TH",
+  "TR",
+  "UL",
+  "VIDEO",
 ]);
 
 /** Displays that make an element a block of its own. */
 const BLOCK_DISPLAYS = new Set([
-  "block", "flex", "grid", "list-item", "table", "table-cell", "table-row",
-  "inline-block", "inline-flex", "inline-grid", "flow-root",
+  "block",
+  "flex",
+  "grid",
+  "list-item",
+  "table",
+  "table-cell",
+  "table-row",
+  "inline-block",
+  "inline-flex",
+  "inline-grid",
+  "flow-root",
 ]);
 
 /** Smaller than this either way and an element is not a block worth naming. */
@@ -81,9 +128,7 @@ export function blockAround(x: number, y: number, width: number, height: number)
   let candidate = document.elementFromPoint(x + width / 2, y + height / 2);
   while (candidate && candidate !== document.documentElement) {
     const box = candidate.getBoundingClientRect();
-    const holds = corners.every(
-      ([cx, cy]) => cx >= box.left && cx <= box.right && cy >= box.top && cy <= box.bottom,
-    );
+    const holds = corners.every(([cx, cy]) => cx >= box.left && cx <= box.right && cy >= box.top && cy <= box.bottom);
     if (holds && candidate !== document.body) return snap(candidate);
     candidate = candidate.parentElement;
   }
@@ -119,9 +164,8 @@ const MOST_TEXT = 200;
 /** The block's visible text, its whitespace folded, cut short. */
 export function visibleText(element: Element): string {
   const raw =
-    element instanceof HTMLElement
-      ? element.innerText || element.textContent || ""
-      : element.textContent || "";
+    // biome-ignore lint/performance/useDomNodeTextContent: innerText is the text as shown, without hidden parts and with layout's line breaks
+    element instanceof HTMLElement ? element.innerText || element.textContent || "" : element.textContent || "";
   const folded = raw.replace(/\s+/g, " ").trim();
   if (folded.length <= MOST_TEXT) {
     if (folded) return folded;
@@ -138,12 +182,9 @@ export function visibleText(element: Element): string {
 export function sourceFromMarkup(element: Element): string {
   let current: Element | null = element;
   while (current) {
-    const path =
-      current.getAttribute("data-inspector-relative-path") ??
-      current.getAttribute("data-source-file");
+    const path = current.getAttribute("data-inspector-relative-path") ?? current.getAttribute("data-source-file");
     if (path) {
-      const line =
-        current.getAttribute("data-inspector-line") ?? current.getAttribute("data-source-line");
+      const line = current.getAttribute("data-inspector-line") ?? current.getAttribute("data-source-line");
       return line ? `${path}:${line}` : path;
     }
     const joined = current.getAttribute("data-source") ?? current.getAttribute("data-loc");

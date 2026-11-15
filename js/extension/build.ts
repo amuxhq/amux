@@ -7,18 +7,17 @@
 // `just browser-dev-host` points at that tree's own amux, so it never
 // talks to an installed one.
 
-import { build } from "esbuild";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
 import { CONTROLS, tokens } from "../page-review/src/tokens.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "../..");
 const dev = process.argv.includes("--dev");
 const out = join(here, dev ? "dist-dev" : "dist");
-const wasm =
-  process.env.AMUX_BROWSER_CORE ?? join(repo, "target/wasm32-unknown-unknown/wasm/browser_core.wasm");
+const wasm = process.env.AMUX_BROWSER_CORE ?? join(repo, "target/wasm32-unknown-unknown/wasm/browser_core.wasm");
 
 if (!existsSync(wasm)) {
   console.error(`No ${wasm}: build it first with \`just browser\`.`);
@@ -40,8 +39,18 @@ const common = {
 };
 
 await Promise.all([
-  build({ ...common, entryPoints: [join(here, "src/background/index.ts")], format: "esm", outfile: join(out, "background.js") }),
-  build({ ...common, entryPoints: [join(here, "src/content/index.ts")], format: "iife", outfile: join(out, "content.js") }),
+  build({
+    ...common,
+    entryPoints: [join(here, "src/background/index.ts")],
+    format: "esm",
+    outfile: join(out, "background.js"),
+  }),
+  build({
+    ...common,
+    entryPoints: [join(here, "src/content/index.ts")],
+    format: "iife",
+    outfile: join(out, "content.js"),
+  }),
   build({ ...common, entryPoints: [join(here, "src/page/index.ts")], format: "iife", outfile: join(out, "page.js") }),
   build({ ...common, entryPoints: [join(here, "src/panel/index.tsx")], format: "esm", outfile: join(out, "panel.js") }),
 ]);

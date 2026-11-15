@@ -9,13 +9,13 @@
 // the copy under test is given access to every site unless a test asks for
 // the grant a person's browser would have.
 
-import { type BrowserContext, type Page, type Worker, chromium, expect } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { type BrowserContext, chromium, expect, type Page, type Worker } from "@playwright/test";
 
 export const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "../../../..");
@@ -59,7 +59,13 @@ export function makeDesk(): Desk {
   writeFileSync(
     script,
     JSON.stringify({
-      steps: [{ text: { chunks: ["ready"] } }, "turn_end", ...Array(12).fill([{ text: { chunks: ["on it"] } }, "turn_end"]).flat()],
+      steps: [
+        { text: { chunks: ["ready"] } },
+        "turn_end",
+        ...Array(12)
+          .fill([{ text: { chunks: ["on it"] } }, "turn_end"])
+          .flat(),
+      ],
     }),
   );
   const config = join(root, "config.toml");
@@ -118,7 +124,14 @@ export async function browser(desk: Desk, options: Options = {}): Promise<{ cont
 
 function writeHost(desk: Desk, profile: string) {
   const host = join(desk.root, "host.sh");
-  const exports = ["AMUX_CONFIG", "PATH", "AMUX_FAKE_SCRIPT", "AMUX_FAKE_INPUT_LOG", "CLAUDE_CONFIG_DIR", "AMUX_TEST_DISCOVERY_MODE"]
+  const exports = [
+    "AMUX_CONFIG",
+    "PATH",
+    "AMUX_FAKE_SCRIPT",
+    "AMUX_FAKE_INPUT_LOG",
+    "CLAUDE_CONFIG_DIR",
+    "AMUX_TEST_DISCOVERY_MODE",
+  ]
     .map((name) => `export ${name}=${JSON.stringify(desk.env[name] ?? "")}`)
     .join("\n");
   writeFileSync(host, `#!/bin/sh\n${exports}\nexec ${JSON.stringify(join(binaries, "amux"))} internal browser "$@"\n`);
@@ -185,4 +198,3 @@ export async function phrase(page: Page, id: string, words: string) {
     { id, words },
   );
 }
-

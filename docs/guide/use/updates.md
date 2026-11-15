@@ -2,7 +2,7 @@
 title: Updates and channels
 description: How amux keeps itself up to date without interrupting your agents, and how to choose between stable and preview releases.
 sidebar:
-  order: 6
+  order: 5
 ---
 
 amux updates itself. About once an hour it checks for a new release, and when

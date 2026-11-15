@@ -50,8 +50,7 @@ function fromVue(element: Element): string {
 function fromSvelte(element: Element): string {
   let current: Element | null = element;
   while (current) {
-    const meta = (current as unknown as { __svelte_meta?: { loc?: { file?: string; line?: number } } })
-      .__svelte_meta;
+    const meta = (current as unknown as { __svelte_meta?: { loc?: { file?: string; line?: number } } }).__svelte_meta;
     if (meta?.loc?.file) {
       return meta.loc.line ? `${relative(meta.loc.file)}:${meta.loc.line + 1}` : relative(meta.loc.file);
     }

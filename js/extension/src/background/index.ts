@@ -5,6 +5,19 @@
 // its shortcut or using its menu grants it the current tab for that moment
 // (activeTab), and only then does it put the overlay into the page.
 
+import type {
+  AgentChoice,
+  Destination,
+  FromPanel,
+  FromTab,
+  PanelState,
+  PendingComment,
+  PendingReview,
+  Snippet,
+  ToPanel,
+  ToTab,
+} from "../shared/messages.ts";
+import { pageOf } from "../shared/messages.ts";
 import { Amux } from "./amux.ts";
 import { captureRegion } from "./capture.ts";
 import {
@@ -18,19 +31,6 @@ import {
   reviewImages,
   sweepImages,
 } from "./store.ts";
-import { pageOf } from "../shared/messages.ts";
-import type {
-  AgentChoice,
-  Destination,
-  FromPanel,
-  FromTab,
-  PanelState,
-  PendingComment,
-  PendingReview,
-  Snippet,
-  ToPanel,
-  ToTab,
-} from "../shared/messages.ts";
 
 declare const __AMUX_HOST__: string;
 
@@ -144,7 +144,11 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   const page = info.pageUrl ?? tab.url ?? "";
   let snippet: Snippet;
   if (info.menuItemId === "selection") {
-    snippet = { id: crypto.randomUUID(), name: `From ${title || page}`, text: `${info.selectionText ?? ""}\n\n${page}` };
+    snippet = {
+      id: crypto.randomUUID(),
+      name: `From ${title || page}`,
+      text: `${info.selectionText ?? ""}\n\n${page}`,
+    };
   } else if (info.menuItemId === "link") {
     snippet = { id: crypto.randomUUID(), name: "Link", text: info.linkUrl ?? "" };
   } else {
@@ -343,7 +347,9 @@ async function suggest(url: string, agents: AgentChoice[]): Promise<Destination 
   if (url.startsWith("file:")) {
     const path = decodeURIComponent(new URL(url).pathname);
     const holders = agents
-      .filter((agent) => agent.local && agent.cwd && path.startsWith(agent.cwd.endsWith("/") ? agent.cwd : `${agent.cwd}/`))
+      .filter(
+        (agent) => agent.local && agent.cwd && path.startsWith(agent.cwd.endsWith("/") ? agent.cwd : `${agent.cwd}/`),
+      )
       .sort((a, b) => Number(a.closed) - Number(b.closed) || b.cwd.length - a.cwd.length);
     const holder = holders[0];
     if (holder) return { kind: "agent", profile: holder.profile, host: holder.host, agent: holder.agent };
@@ -369,7 +375,7 @@ async function state(tabId: number): Promise<PanelState> {
   const kind = blocked(tab?.url);
   return {
     tabId,
-    blocked: kind === "unknown" ? null : kind ?? ((await fileAccessMissing(tab?.url)) ? "file-access" : null),
+    blocked: kind === "unknown" ? null : (kind ?? ((await fileAccessMissing(tab?.url)) ? "file-access" : null)),
     reviewing: reviewing.has(tabId),
     needsGrant: needsGrant.has(tabId),
     review,

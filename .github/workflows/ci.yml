@@ -370,6 +370,11 @@ jobs:
       - name: Install Chromium for the end-to-end test
         working-directory: js
         run: npm ci --no-audit --no-fund && npx playwright install --with-deps chromium
+      # Known vulnerabilities in what the extension ships (its runtime
+      # dependencies, bundled into it), not in the tools that build it.
+      - name: Audit the extension's shipped dependencies
+        working-directory: js
+        run: npm audit --omit=dev --audit-level=moderate
       # Types, unit tests, and the extension in Chromium against the built
       # amux and the fake providers.
       - name: Test the browser extension

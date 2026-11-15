@@ -46,7 +46,9 @@ export function pageOf(url: string | undefined): string {
 }
 
 /** A tab's comments by the page they were made on, in the order first made. */
-export function byPage(comments: readonly PendingComment[]): Array<{ url: string; title: string; comments: PendingComment[] }> {
+export function byPage(
+  comments: readonly PendingComment[],
+): Array<{ url: string; title: string; comments: PendingComment[] }> {
   const pages = new Map<string, { url: string; title: string; comments: PendingComment[] }>();
   for (const comment of comments) {
     const page = pages.get(comment.url) ?? { url: comment.url, title: comment.title, comments: [] };

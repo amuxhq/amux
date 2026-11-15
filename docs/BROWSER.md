@@ -95,18 +95,23 @@ build that wrote the manifest, for an extension at another version: its name,
 its arguments (a browser passes the extension's origin, and on Windows a
 window handle) and its framing only ever add. The command-line test in
 `crates/amux/src/main.rs` parses it. Everything the extension and amux say
-inside the framing is `amux.v1`, which only adds too.
+inside the framing is `amux.v1`, which only adds too. The bridge's greeting names the
+revision of the framing it speaks (`framing`, from 1), which goes up whenever
+the framing adds something, so an extension can tell what an older amux
+understands without reading meaning into amux's version.
 
 **Registration.** The supervisor writes, when it starts, a host manifest into
 the `NativeMessagingHosts` folder of each Chromium browser installed (Chrome,
 its Beta and Canary, Chromium, Edge, Brave, Arc, Vivaldi), naming a small
 script beside the installed binary that runs `amux internal browser`. It does
-so only when it is the installed `~/.amux/bin/amux`, so a test or a
-development tree never points a person's browsers at itself; it rewrites a
-file only when its bytes would change. `amux uninstall` removes the manifests
-that name this installation's script. A manifest allows only the extension's
-ID, which its public key (`key` in the manifest) fixes, in the store and
-unpacked alike.
+so only when it is the installed `~/.amux/bin/amux`, so a test or a development
+tree never points a person's browsers at itself; it rewrites a file only when
+its bytes would change. `amux uninstall` removes the manifests that name this
+installation's script. A manifest allows only the extension's ID, which its
+public key (`key` in the manifest) fixes, in the store and unpacked alike.
+Browsers sandboxed as a snap or a Flatpak on Linux (Ubuntu's Chromium is a
+snap) read neither these folders nor run a host outside their sandbox, so the
+extension cannot reach amux from them.
 
 **Profiles** work as in the terminal and the Mac app: the profiles from the
 front door, each profile's fleet from its own inventory stream, and the
@@ -183,6 +188,9 @@ just browser              # browser-core as WebAssembly, then js/extension/dist
 just browser --dev        # js/extension/dist-dev, the copy a development tree loads
 just browser-test         # types, unit tests, and the end-to-end test
 just browser-tour         # screenshots of every surface, light and dark
+just js-check             # Biome, types and unit tests, without building
+just js-fmt               # format and fix with Biome
+just browser-release 1.2.0  # set the version, build, zip for the store
 just browser-dev-host     # let dist-dev reach this tree's amux
 ```
 
@@ -211,11 +219,15 @@ the extension has not been let into (a browser without access to every site)
 and those for amux not installed and not running. It checks little; it is for
 looking at a change. The notices for the browser's own pages and for local
 files cannot be reached under Playwright, since the panel learns a tab's
-address only from the toolbar button's grant.
+address only from the toolbar button's grant. Look at the tour before landing a
+change to the overlay or the panel.
 
 The JavaScript is one npm workspace under `js/`, as the crates are one Cargo
-workspace: one lockfile, one base `tsconfig`, Vitest and Playwright. It needs
-Node 24 or later, which runs the TypeScript build scripts directly.
+workspace: one lockfile, one base `tsconfig`, Biome for format and lint,
+Vitest and Playwright. It needs Node 24 or later, which runs the TypeScript
+build scripts directly. Packages' install scripts never run (`js/.npmrc`).
+`just premerge` runs `just js-check` when anything under `js/` differs from
+main, so a change elsewhere pays nothing for it.
 
 ## Rejected alternatives
 

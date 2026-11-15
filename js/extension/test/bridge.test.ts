@@ -26,7 +26,9 @@ describe("the native port", () => {
           const port = {
             disconnected: false,
             sent: [] as unknown[],
-            deliver: (frame: unknown) => listeners.forEach((listen) => listen(frame)),
+            deliver: (frame: unknown) => {
+              for (const listen of listeners) listen(frame);
+            },
             onMessage: { addListener: (listen: (frame: unknown) => void) => listeners.push(listen) },
             onDisconnect: { addListener() {} },
             postMessage(message: unknown) {
@@ -60,7 +62,13 @@ describe("the native port", () => {
     const { Bridge } = await import("../src/background/bridge.ts");
     const bridge = new Bridge("sh.amux.browser");
     bridge.hold(true);
-    const cancel = bridge.stream("installation", "/amux.v1.AgentService/SubscribeInventory", "", () => {}, () => {});
+    const cancel = bridge.stream(
+      "installation",
+      "/amux.v1.AgentService/SubscribeInventory",
+      "",
+      () => {},
+      () => {},
+    );
     cancel();
     expect(ports[0]!.sent).toContainEqual({ id: 1, cancel: true });
     expect(ports[0]!.disconnected).toBe(false);

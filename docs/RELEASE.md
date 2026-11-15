@@ -15,7 +15,7 @@ the same two commands, on its own schedule:
 | The iPhone app | `just ios release`: archive, validate, upload to App Store Connect | `just ios deploy <version>`: submit it for review, or give it to TestFlight's external testers | `ios-v<version>-b<build>` |
 | The `amux` binary | `just amux release <version>`: the Release workflow builds the pushed tag | `just amux deploy <version>`: sign the channel manifest and publish it to amux.sh | `v<version>` |
 | The Mac app | `just mac release <version>`: build, sign with Developer ID, make the update zip and the disk image ([MAC](MAC.md#releases)) | `just mac deploy <version>`: sign the channel's Mac feed and publish it with the disk image | `mac-v<version>` |
-| The browser extension | `just browser`, then zip `js/extension/dist` with its `version` in `static/manifest.json` raised | upload the zip to the extension's Chrome Web Store listing, which reviews it and updates browsers on its own schedule | none yet |
+| The browser extension | `just browser-release <version>`: raise the manifest's version, build, and zip into `target/browser`; commit the manifest | upload the zip to the extension's Chrome Web Store listing, which reviews it and updates browsers on its own schedule | none yet |
 
 The extension's ID is fixed by the public key in its manifest, which the host
 manifests amux writes name; the listing must keep that key, so the store's ID

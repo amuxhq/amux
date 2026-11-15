@@ -19,13 +19,17 @@
 //! and this command answers with
 //!
 //! ```text
-//! {"hello": {"version": "0.9.1"}}                     once, first
+//! {"hello": {"version": "0.9.1", "framing": 1}}       once, first
 //! {"id": 1, "message": "<base64>", "more": true}       a part of a response message
 //! {"id": 1, "message": "<base64>"}                     a message, or its last part
 //! {"id": 1, "end": {"code": 0, "message": "", "details": "<base64>"}}
 //! ```
 //!
 //! A cancelled call ends with gRPC's "cancelled" (1).
+//!
+//! `framing` is which revision of this framing the bridge speaks. It only
+//! ever adds, and goes up when it does, so an extension can tell what an
+//! older amux understands without reading meaning into amux's version.
 //!
 //! A browser refuses a message to the extension over 1 MB, so a response
 //! message is sent in parts of at most [`PART`] bytes before encoding, and
@@ -62,6 +66,9 @@ pub const PART: usize = 512 * 1024;
 /// 64 MiB; an attachment is at most 64 MiB of its own bytes, which base64
 /// and the JSON around it make larger, so the limit allows for both.
 const MOST_IN: u32 = 96 * 1024 * 1024;
+
+/// The revision of the framing this bridge speaks, sent in its greeting.
+const FRAMING: u32 = 1;
 
 /// What the surface header names this client as.
 const SURFACE: &str = "browser";
@@ -113,7 +120,7 @@ where
             }
         }
     });
-    let _ = frames.send(json!({ "hello": { "version": node::version() } }));
+    let _ = frames.send(json!({ "hello": { "version": node::version(), "framing": FRAMING } }));
     let routes = Arc::new(Routes::new(sockets));
     let mut calls: HashMap<u64, tokio::task::AbortHandle> = HashMap::new();
     loop {
@@ -421,6 +428,7 @@ mod tests {
         let hello = read_frame(&mut browser).await.unwrap().unwrap();
         let hello: Value = serde_json::from_slice(&hello).unwrap();
         assert_eq!(hello["hello"]["version"], json!(node::version()));
+        assert_eq!(hello["hello"]["framing"], json!(1));
         write_frame(
             &mut browser,
             &json!({"id": 1, "call": {"target": "installation", "method": "/amux.v1.InstallationService/ListProfiles", "body": ""}}),

@@ -246,7 +246,9 @@ export function createOverlay(host: Host): Overlay {
         }
         if (ours(event)) {
           // A pin outlines its own target while pointed at; the rest of ours hides the outline.
-          const onPin = event.composedPath().some((node) => node instanceof HTMLElement && node.classList.contains("pin"));
+          const onPin = event
+            .composedPath()
+            .some((node) => node instanceof HTMLElement && node.classList.contains("pin"));
           if (!onPin) hover.hidden = true;
           return;
         }

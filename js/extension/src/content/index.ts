@@ -3,7 +3,7 @@
 // code says a block was drawn from. Injected on demand, so it keeps to one
 // copy per page however many times it is injected.
 
-import { createOverlay, type Comment, type Host, type Overlay } from "@amux/page-review";
+import { type Comment, createOverlay, type Host, type Overlay } from "@amux/page-review";
 import type { FromTab, ToTab } from "../shared/messages.ts";
 
 declare global {

@@ -60,7 +60,8 @@ export function toBase64(bytes: Uint8Array): string {
 
 /** A frame as the bridge sends it. */
 type Frame =
-  | { hello: { version: string } }
+  /** `framing`: the revision of the framing the bridge speaks, which only adds. */
+  | { hello: { version: string; framing: number } }
   | { id: number; message: string; more?: boolean }
   | { id: number; end: End };
 

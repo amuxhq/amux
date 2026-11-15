@@ -2,7 +2,7 @@
 title: Troubleshooting
 description: What to check when amux isn't running, a machine is out of reach, or an agent can't carry on, and how to send a report.
 sidebar:
-  order: 7
+  order: 6
 ---
 
 ## Start with amux status

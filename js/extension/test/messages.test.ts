@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byPage, pageOf, type PendingComment } from "../src/shared/messages.ts";
+import { byPage, type PendingComment, pageOf } from "../src/shared/messages.ts";
 
 function comment(id: string, url: string): PendingComment {
   return {

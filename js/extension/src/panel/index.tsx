@@ -3,10 +3,9 @@
 
 import { render } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { Banner, Button, type ChoiceGroup, Icons, Kbd, Picker, Textarea } from "./ui.tsx";
 import {
-  byPage,
   type AgentChoice,
+  byPage,
   type Destination,
   type FromPanel,
   type PanelState,
@@ -14,6 +13,7 @@ import {
   type Reach,
   type ToPanel,
 } from "../shared/messages.ts";
+import { Banner, Button, type ChoiceGroup, Icons, Kbd, Picker, Textarea } from "./ui.tsx";
 
 const port = chrome.runtime.connect({ name: "panel" });
 const post = (message: FromPanel) => port.postMessage(message);
@@ -95,7 +95,12 @@ function App() {
         {state.outcome && "failed" in state.outcome && <Banner tone="error">Not sent: {state.outcome.failed}</Banner>}
         {items === 0 ? <Empty state={state} /> : <Comments state={state} />}
         {items > 0 && state.blocked === null && !state.reviewing && review.comments.length > 0 && !state.needsGrant && (
-          <Button variant="ghost" size="sm" class="add-more" onClick={() => tabId !== null && post({ type: "review", tabId })}>
+          <Button
+            variant="ghost"
+            size="sm"
+            class="add-more"
+            onClick={() => tabId !== null && post({ type: "review", tabId })}
+          >
             <Icons.plus /> Add more on the page
           </Button>
         )}
@@ -138,7 +143,11 @@ function Comments({ state }: { state: PanelState }) {
         <span class="number">{index + 1}</span>
         <span class="row-body">
           <span class="row-target">
-            {comment.quote ? `“${comment.quote}”` : comment.region ? "Box" : comment.element.text || comment.element.selector}
+            {comment.quote
+              ? `“${comment.quote}”`
+              : comment.region
+                ? "Box"
+                : comment.element.text || comment.element.selector}
           </span>
           {comment.text ? <span class="row-text">{comment.text}</span> : <span class="row-text none">No comment</span>}
           {state.thumbnails[comment.id] && <img class="thumbnail" src={state.thumbnails[comment.id]} alt="" />}
@@ -210,7 +219,7 @@ function Problem({ state }: { state: PanelState }) {
     return (
       <Banner tone="notice">
         amux isn’t set up for this browser yet. Install or update amux from{" "}
-        <a href="https://amux.sh" target="_blank">
+        <a href="https://amux.sh" target="_blank" rel="noopener">
           amux.sh
         </a>
         , then start it: it registers itself with your browsers when it starts.

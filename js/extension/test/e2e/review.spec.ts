@@ -5,10 +5,10 @@
 // the side panel, and the provider receives the page review with its
 // screenshot. See harness.ts for how this differs from a person's browser.
 
-import { expect, test } from "@playwright/test";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { join } from "node:path";
+import { expect, test } from "@playwright/test";
 import {
   addComment,
   amux,
@@ -92,13 +92,16 @@ test("a page review goes from the page to the agent", async () => {
 
     // What the provider read.
     await expect
-      .poll(() => {
-        try {
-          return readFileSync(desk.inputLog, "utf8");
-        } catch {
-          return "";
-        }
-      }, { timeout: 30_000 })
+      .poll(
+        () => {
+          try {
+            return readFileSync(desk.inputLog, "utf8");
+          } catch {
+            return "";
+          }
+        },
+        { timeout: 30_000 },
+      )
       .toContain("Too much space here");
     const read = readFileSync(desk.inputLog, "utf8");
     expect(read).toContain("Please fix these");

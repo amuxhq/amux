@@ -24,7 +24,10 @@ export async function crop(captured: Blob, region: Region): Promise<Shot> {
   const png = new Uint8Array(await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer());
 
   const thumbScale = Math.min(1, THUMBNAIL_WIDTH / width);
-  const small = new OffscreenCanvas(Math.max(1, Math.round(width * thumbScale)), Math.max(1, Math.round(height * thumbScale)));
+  const small = new OffscreenCanvas(
+    Math.max(1, Math.round(width * thumbScale)),
+    Math.max(1, Math.round(height * thumbScale)),
+  );
   small.getContext("2d")!.drawImage(canvas, 0, 0, small.width, small.height);
   const jpeg = new Uint8Array(await (await small.convertToBlob({ type: "image/jpeg", quality: 0.8 })).arrayBuffer());
   let binary = "";

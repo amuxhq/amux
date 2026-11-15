@@ -3,9 +3,16 @@
 // the part the drivers play in the other clients; browser-core does every
 // encoding and decoding.
 
+import {
+  type AgentChoice,
+  byPage,
+  type Destination,
+  type Folder,
+  type PendingReview,
+  type Reach,
+} from "../shared/messages.ts";
 import { Bridge, CallError, UNAVAILABLE } from "./bridge.ts";
 import { core } from "./core.ts";
-import { byPage, type AgentChoice, type Destination, type Folder, type PendingReview, type Reach } from "../shared/messages.ts";
 
 interface Profile {
   id: string;
@@ -26,9 +33,9 @@ export interface Image {
 }
 
 function randomHex(bytes: number): string {
-  return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
+  return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 export class Amux {

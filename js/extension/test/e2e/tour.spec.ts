@@ -8,10 +8,10 @@
 // learns a tab's address only once the toolbar button grants the tab, which
 // Playwright cannot press. They share the not-running notice's look.
 
-import { type BrowserContext, type Page, expect, test } from "@playwright/test";
 import { mkdirSync, rmSync } from "node:fs";
 import type { Server } from "node:http";
 import { join } from "node:path";
+import { type BrowserContext, expect, type Page, test } from "@playwright/test";
 import {
   addComment,
   amux,

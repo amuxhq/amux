@@ -17,7 +17,6 @@ people will notice updates the page that describes it.
   [What amux sends](guide/understand/what-amux-sends.md).
 - **Use:** [Terminal app](guide/use/terminal.md),
   [iPhone app](guide/use/iphone.md),
-  [Browser extension](guide/use/browser.md),
   [Agents working together](guide/use/agents-working-together.md),
   [Running amux on a server](guide/use/server.md),
   [Updates and channels](guide/use/updates.md),

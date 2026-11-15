@@ -153,6 +153,24 @@ browser-test: (browser "--dev")
     {{bounded}} 900 cargo build --locked -p amux -p provider-fakes --bins
     {{bounded}} 600 sh -c 'cd js && npm run check && npx vitest run && npx playwright install chromium >/dev/null && npx playwright test'
 
+# Cut a release of the browser extension: set VERSION (like 1.2.0) in its
+# manifest, build it, and zip it into target/browser for the Chrome Web
+# Store. Commit the manifest; uploading is a person's step (docs/RELEASE.md).
+browser-release VERSION:
+    {{bounded}} 30 scripts/py scripts/browser_version.py "{{VERSION}}"
+    {{just_executable()}} browser
+    {{bounded}} 60 sh -c 'mkdir -p target/browser && rm -f "target/browser/amux-{{VERSION}}.zip" && cd js/extension/dist && zip -qr "../../../target/browser/amux-{{VERSION}}.zip" . && echo "target/browser/amux-{{VERSION}}.zip"'
+
+# Format and fix the JavaScript under js/ with Biome.
+js-fmt:
+    {{bounded}} 300 sh -c 'cd js && npm ci --no-audit --no-fund --loglevel=error && npm run fmt'
+
+# The browser extension's fast checks, without building it: Biome's format
+# and lint, the types, and the unit tests. `just premerge` runs them when
+# anything under js/ differs from main.
+js-check:
+    {{bounded}} 300 sh -c 'cd js && npm ci --no-audit --no-fund --loglevel=error && npm run check && npx vitest run'
+
 # Screenshot every surface the extension draws, light and dark, into
 # js/tour: the overlay's modes and the side panel's states.
 browser-tour: (browser "--dev")
@@ -360,6 +378,7 @@ premerge: no-update-flags fmt-check codegen-check proto-compat store-check depen
     {{just_executable()}} ios script-tests
     {{just_executable()}} test -- -p interpret -p replay-support -p tui -p ui-view
     {{just_executable()}} journey terminal all
+    if git diff --quiet "$(git merge-base HEAD origin/main)" -- js; then echo "js: unchanged since main"; else {{just_executable()}} js-check; fi
 
 # Run the same task sequence exercised across continuous-integration jobs.
 ci: no-update-flags lint fmt-check codegen-check proto-compat store-check dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test doctest release-check mobile-check

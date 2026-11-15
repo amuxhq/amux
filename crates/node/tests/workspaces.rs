@@ -463,8 +463,7 @@ async fn the_experiments_entry_reaches_hosts_that_run_it_and_others_pass_rows_on
     let a = Host::start(true).await;
     let b = Host::start(false).await;
     let c = Host::start(true).await;
-    // B's agent is there before the hosts link: its row reaches the others
-    // with their first catch-up.
+    // An agent on B, which does not run the experiment.
     let b_folder = place(&b.install, "notes");
     let on_b_own = b
         .runtime

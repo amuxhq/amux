@@ -99,8 +99,8 @@ enum Request {
         message: String,
     },
     /// A `SendInputRequest` carrying a prompt in the agent's kind: the words,
-    /// with one U+FFFC where each attachment goes, the page review first and
-    /// then each piece of text sent from a page.
+    /// with one U+FFFC where each attachment goes, a review of each page
+    /// first and then each piece of text sent from a page.
     SendPrompt {
         fleet: u32,
         host: String,
@@ -108,7 +108,8 @@ enum Request {
         #[serde(rename = "inputId")]
         input_id: String,
         text: String,
-        page: Option<wire::PageReview>,
+        #[serde(default)]
+        pages: Vec<wire::PageReview>,
         #[serde(default)]
         texts: Vec<Snippet>,
     },
@@ -277,7 +278,7 @@ fn answer(request: Request) -> Result<Value, String> {
             agent,
             input_id,
             text,
-            page,
+            pages,
             texts,
         } => {
             let key = ui_state::AgentKey {
@@ -286,7 +287,7 @@ fn answer(request: Request) -> Result<Value, String> {
             };
             let kind = with_fleet(fleet, |state| state.agent(&key).map(|agent| agent.kind()))?
                 .ok_or("no such agent in the fleet")?;
-            let attachments = page
+            let attachments = pages
                 .into_iter()
                 .map(wire::attachment::Of::Page)
                 .chain(texts.into_iter().map(|snippet| {

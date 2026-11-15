@@ -13,12 +13,35 @@ export interface Snippet {
   text: string;
 }
 
-/** A tab's comments and snippets, kept until they are sent. */
+/**
+ * A comment as the tab keeps it: with the page it was made on, since a tab
+ * may move to another page before its comments are sent.
+ */
+export interface PendingComment extends Comment {
+  url: string;
+  title: string;
+}
+
+/**
+ * A tab's comments and snippets, kept until they are sent. `url` and `title`
+ * are the page last commented on, for choosing where the review goes.
+ */
 export interface PendingReview {
   url: string;
   title: string;
-  comments: Comment[];
+  comments: PendingComment[];
   snippets: Snippet[];
+}
+
+/** A tab's comments by the page they were made on, in the order first made. */
+export function byPage(comments: readonly PendingComment[]): Array<{ url: string; title: string; comments: PendingComment[] }> {
+  const pages = new Map<string, { url: string; title: string; comments: PendingComment[] }>();
+  for (const comment of comments) {
+    const page = pages.get(comment.url) ?? { url: comment.url, title: comment.title, comments: [] };
+    page.comments.push(comment);
+    pages.set(comment.url, page);
+  }
+  return [...pages.values()];
 }
 
 /** An agent the picker offers. */
@@ -64,6 +87,11 @@ export interface PanelState {
   /** Why this tab cannot be reviewed, when it cannot. */
   blocked: "browser-page" | "file-access" | null;
   reviewing: boolean;
+  /**
+   * The panel's own button could not reach the page: the extension has the
+   * tab only after its toolbar button, shortcut or menu was used on it.
+   */
+  needsGrant: boolean;
   review: PendingReview;
   thumbnails: Record<string, string>;
   reach: Reach;

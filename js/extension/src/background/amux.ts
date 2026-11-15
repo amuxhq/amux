@@ -5,7 +5,7 @@
 
 import { Bridge, CallError, UNAVAILABLE } from "./bridge.ts";
 import { core } from "./core.ts";
-import type { AgentChoice, Destination, Folder, PendingReview, Reach } from "../shared/messages.ts";
+import { byPage, type AgentChoice, type Destination, type Folder, type PendingReview, type Reach } from "../shared/messages.ts";
 
 interface Profile {
   id: string;
@@ -74,12 +74,17 @@ export class Amux {
   async watch(): Promise<void> {
     if (this.watching) return;
     this.watching = true;
+    this.bridge.hold(true);
     await this.open();
   }
 
-  /** Stops every stream, so the service worker may sleep. */
+  /**
+   * Stops every stream and lets the native port close once no call is open,
+   * so the service worker and the bridge process may stop.
+   */
   unwatch() {
     this.watching = false;
+    this.bridge.hold(false);
     if (this.retry) clearTimeout(this.retry);
     this.retry = null;
     for (const profile of this.profiles.values()) {
@@ -133,13 +138,8 @@ export class Amux {
   }
 
   private async subscribe(id: string, label: string) {
-    let localHost = "";
-    try {
-      const message = await this.bridge.unary(id, "/amux.v1.ProfileAdminService/GetDeviceIdentity", "");
-      localHost = (await core<{ hostId: string }>({ op: "deviceIdentity", message })).hostId;
-    } catch {
-      // Without it every agent reads as another host's; the picker still works.
-    }
+    // Without it every agent reads as another host's; the picker still works.
+    const localHost = await this.localHost(id);
     const fleet = await core<number>({ op: "fleetNew" });
     const profile: Profile = { id, label: label || "amux", localHost, fleet, cancel: () => {} };
     this.profiles.set(id, profile);
@@ -203,20 +203,24 @@ export class Amux {
   /**
    * Sends a tab's review to its destination: creates the agent first when
    * it is a new one, stores each screenshot with the agent, then sends the
-   * words with the review and snippets after them. Answers the name it was
-   * sent to.
+   * words with a review of each page and the snippets after them. Answers
+   * the name it was sent to. `created` hears a new agent as soon as it
+   * exists, so a send that fails after it can be retried to that agent.
    */
   async send(
     destination: Destination,
     review: PendingReview,
     message: string,
     images: Map<string, Image>,
+    created: (agent: Destination) => void,
   ): Promise<string> {
     const profile = this.profiles.get(destination.profile);
     if (!profile) throw new Error("That profile is not open any more.");
     let host: string;
     let agent: string;
     if (destination.kind === "new") {
+      if (!profile.localHost) profile.localHost = await this.localHost(profile.id);
+      if (!profile.localHost) throw new Error("amux did not say which computer this is. Try again.");
       host = profile.localHost;
       agent = randomHex(16);
       const request = await core<string>({
@@ -227,36 +231,24 @@ export class Amux {
         cwd: destination.cwd,
       });
       await this.bridge.unary(profile.id, "/amux.v1.AgentService/CreateAgent", request);
+      created({ kind: "agent", profile: profile.id, host, agent });
       await this.until(profile, host, agent);
     } else {
       host = destination.host;
       agent = destination.agent;
     }
 
-    const comments = [];
-    for (const comment of review.comments) {
-      let image = null;
-      const shot = images.get(comment.id);
-      if (shot) {
-        const request = await core<string>({
-          op: "putBlob",
-          agent,
-          name: `region-${comments.length + 1}.png`,
-          mime: "image/png",
-          bytes: toBase64(shot.png),
-        });
-        const stored = await this.bridge.unary(profile.id, "/amux.v1.AgentService/PutBlob", request);
-        image = await core({ op: "blob", message: stored });
+    const pages = [];
+    for (const page of byPage(review.comments)) {
+      const comments = [];
+      for (const [index, comment] of page.comments.entries()) {
+        // Named by its pin's number on its page.
+        const name = `region-${index + 1}.png`;
+        comments.push(await this.anchored(profile.id, agent, comment, images.get(comment.id), name));
       }
-      comments.push({
-        text: comment.text,
-        element: comment.element,
-        quote: comment.quote,
-        image,
-      });
+      pages.push({ url: page.url, title: page.title, comments });
     }
-    const page = review.comments.length > 0 ? { url: review.url, title: review.title, comments } : null;
-    const placeholders = "￼".repeat((page ? 1 : 0) + review.snippets.length);
+    const placeholders = "￼".repeat(pages.length + review.snippets.length);
     const words = message.trim();
     const text = words ? `${words}\n\n${placeholders}` : placeholders;
     const request = await core<string>({
@@ -266,7 +258,7 @@ export class Amux {
       agent,
       inputId: randomHex(16),
       text,
-      page,
+      pages,
       texts: review.snippets.map(({ name, text }) => ({ name, text })),
     });
     const answer = await this.bridge.unary(profile.id, "/amux.v1.SessionService/SendInput", request);
@@ -279,6 +271,39 @@ export class Amux {
     }
     const choices = await this.agents();
     return choices.find((choice) => choice.agent === agent)?.name ?? "the agent";
+  }
+
+  /** A comment as the wire carries it, its screenshot stored with the agent first. */
+  private async anchored(
+    profile: string,
+    agent: string,
+    comment: PendingReview["comments"][number],
+    shot: Image | undefined,
+    name: string,
+  ) {
+    let image = null;
+    if (shot) {
+      const request = await core<string>({
+        op: "putBlob",
+        agent,
+        name,
+        mime: "image/png",
+        bytes: toBase64(shot.png),
+      });
+      const stored = await this.bridge.unary(profile, "/amux.v1.AgentService/PutBlob", request);
+      image = await core({ op: "blob", message: stored });
+    }
+    return { text: comment.text, element: comment.element, quote: comment.quote, image };
+  }
+
+  /** This machine's host id in a profile, or empty when amux does not say. */
+  private async localHost(profile: string): Promise<string> {
+    try {
+      const message = await this.bridge.unary(profile, "/amux.v1.ProfileAdminService/GetDeviceIdentity", "");
+      return (await core<{ hostId: string }>({ op: "deviceIdentity", message })).hostId;
+    } catch {
+      return "";
+    }
   }
 
   /** Waits for a new agent to appear in its profile's fleet. */

@@ -107,7 +107,7 @@ fn a_page_review_is_sent_in_the_agents_kind() {
         "agent": hex(&AGENT),
         "inputId": "00112233445566778899aabbccddeeff",
         "text": "Fix \u{FFFC}",
-        "page": serde_json::to_value(&page).unwrap(),
+        "pages": [serde_json::to_value(&page).unwrap()],
     }));
     let request =
         wire::SendInputRequest::decode(STANDARD.decode(body.as_str().unwrap()).unwrap().as_slice())

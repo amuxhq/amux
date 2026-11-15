@@ -62,7 +62,9 @@ them do, as with a diff review.
 The screenshots are stored with the agent (`PutBlob`) when Send is pressed,
 since a blob belongs to an agent and the agent is chosen then. A new agent is
 created first, with no prompt, so its screenshots can be stored before the
-review is sent to it.
+review is sent to it; a retry after a failed send goes to that agent rather
+than making another. Comments added while a send is under way stay for the
+next one.
 
 The model reads the review as an `<amux-attachment kind="page">` element
 ([Attachments](ATTACHMENTS.md#the-element)), and each screenshot as a native
@@ -109,19 +111,26 @@ unpacked alike.
 **Profiles** work as in the terminal and the Mac app: the profiles from the
 front door, each profile's fleet from its own inventory stream, and the
 picker grouped by profile. The fleets are kept only while a side panel is
-open; with none open the streams end and the service worker may sleep.
+open; with none open the streams end, and the native port closes once no call
+is open, since an open port keeps both the service worker and the bridge
+process running.
 
 **Permissions.** The extension asks for no access to sites. Its button, its
 shortcut and its menu grant it the current tab at that moment (`activeTab`),
-and only then does it inject the overlay. After a reload, pins come back at
-the next click. Local files need the browser's "Allow access to file URLs"
+and only then does it inject the overlay. A click inside the side panel grants
+nothing, so the panel's "Review this page" works only on a page already
+granted; elsewhere the panel says to use the button or the shortcut. After a
+reload, pins come back at the next click. Local files need the browser's "Allow access to file URLs"
 switch for the extension, which it cannot turn on itself; the panel says so
 and opens the extension's settings.
 
-**State.** Each tab's unsent comments live in the browser's session storage,
-and their screenshots in IndexedDB, because the service worker is stopped
-whenever it is idle and session storage has too little room for images. Both
-go when the tab closes or the review is sent.
+**State.** A tab's comments may span pages, as a person follows links while
+reviewing: each comment keeps the page it was made on, the page shows only its
+own as pins, and Send sends one page review per page. Each tab's unsent
+comments live in the browser's session storage, and their screenshots in
+IndexedDB, because the service worker is stopped whenever it is idle and
+session storage has too little room for images. Both go when the tab closes or
+the review is sent.
 
 ## The overlay and its hosts
 

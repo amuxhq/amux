@@ -74,8 +74,28 @@ export class Bridge {
   /** Why the last port closed, if it did. */
   unreachable: Unreachable | null = null;
   private listeners = new Set<() => void>();
+  /** Whether to keep the port open with no call open, while a panel watches. */
+  private held = false;
 
   constructor(private readonly host: string) {}
+
+  /**
+   * Keeps the port open between calls, or lets it close once no call is
+   * open: an open native port keeps the service worker and the bridge
+   * process running.
+   */
+  hold(held: boolean) {
+    this.held = held;
+    this.release();
+  }
+
+  private release() {
+    if (this.held || this.open.size > 0 || !this.port) return;
+    const port = this.port;
+    this.port = null;
+    this.version = null;
+    port.disconnect();
+  }
 
   /** Hears when reachability or the version changes. */
   onChange(listener: () => void): () => void {
@@ -118,6 +138,7 @@ export class Bridge {
     if ("end" in frame) {
       this.open.delete(frame.id);
       call.onEnd(frame.end);
+      this.release();
       return;
     }
     call.part.push(frame.message);
@@ -148,7 +169,10 @@ export class Bridge {
       onEnd({ code: UNAVAILABLE, message: String(error), details: "" });
     }
     return () => {
-      if (this.open.delete(id)) this.port?.postMessage({ id, cancel: true });
+      if (this.open.delete(id)) {
+        this.port?.postMessage({ id, cancel: true });
+        this.release();
+      }
     };
   }
 

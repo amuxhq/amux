@@ -24,6 +24,7 @@ import type {
   FromPanel,
   FromTab,
   PanelState,
+  PendingComment,
   PendingReview,
   Snippet,
   ToPanel,
@@ -37,6 +38,10 @@ const panels = new Map<chrome.runtime.Port, number | null>();
 const reviewing = new Set<number>();
 const outcomes = new Map<number, PanelState["outcome"]>();
 const sending = new Set<number>();
+/** Tabs where the panel's button was refused: the person has not granted the tab yet. */
+const needsGrant = new Set<number>();
+/** A new agent made for a tab's review whose send then failed, so a retry reuses it. */
+const made = new Map<number, { from: Destination; to: Destination }>();
 
 chrome.runtime.onInstalled.addListener(() => {
   void sweepImages();
@@ -59,6 +64,16 @@ async function fileAccessMissing(url: string | undefined): Promise<boolean> {
   return !!url?.startsWith("file:") && !(await chrome.extension.isAllowedFileSchemeAccess());
 }
 
+/** The pins a tab draws: its comments made on the page it shows. */
+function pins(review: PendingReview, url: string | undefined): PendingComment[] {
+  return review.comments.filter((comment) => comment.url === url);
+}
+
+async function tellPins(tabId: number, review: PendingReview) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  tell(tabId, { type: "comments", comments: pins(review, tab?.url) });
+}
+
 function tell(tabId: number, message: ToTab) {
   chrome.tabs.sendMessage(tabId, message).catch(() => {
     // No overlay in the tab: it was never started there, or the page went.
@@ -79,17 +94,31 @@ async function toggleReview(tab: chrome.tabs.Tab) {
   }
   try {
     await inject(tabId);
+    needsGrant.delete(tabId);
     tell(tabId, { type: "toggle" });
   } catch (error) {
     console.warn("amux: could not review this page", error);
   }
+  schedule();
 }
 
-async function startReview(tabId: number) {
+/**
+ * Starts review mode from the panel. The panel's own clicks grant nothing,
+ * so this works only on a tab the person already granted by the toolbar
+ * button, the shortcut or the menu; otherwise the panel says to use one.
+ */
+async function startReview(tabId: number): Promise<boolean> {
   const tab = await chrome.tabs.get(tabId);
-  if (blocked(tab.url) || (await fileAccessMissing(tab.url))) return;
-  await inject(tabId);
+  if (blocked(tab.url) || (await fileAccessMissing(tab.url))) return false;
+  try {
+    await inject(tabId);
+  } catch {
+    needsGrant.add(tabId);
+    return false;
+  }
+  needsGrant.delete(tabId);
   tell(tabId, { type: "start" });
+  return true;
 }
 
 chrome.action.onClicked.addListener((tab) => {
@@ -130,11 +159,16 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   reviewing.delete(tabId);
   outcomes.delete(tabId);
+  needsGrant.delete(tabId);
+  made.delete(tabId);
   void dropReview(tabId).then(schedule);
 });
 
 chrome.tabs.onUpdated.addListener((tabId, change) => {
-  if (change.status === "loading") reviewing.delete(tabId);
+  if (change.status === "loading") {
+    reviewing.delete(tabId);
+    needsGrant.delete(tabId);
+  }
   if (change.status || change.url || change.title) schedule();
 });
 
@@ -152,14 +186,12 @@ chrome.runtime.onMessage.addListener((message: FromTab, sender, respond) => {
     const review = await reviewFor(tab);
     switch (message.type) {
       case "hello":
-        respond({ comments: review.url === tab.url ? review.comments : [] });
+        respond({ comments: pins(review, tab.url) });
         return;
       case "added":
-        if (review.comments.length === 0) {
-          review.url = tab.url ?? review.url;
-          review.title = tab.title ?? review.title;
-        }
-        review.comments.push(message.comment);
+        review.url = tab.url ?? "";
+        review.title = tab.title ?? "";
+        review.comments.push({ ...message.comment, url: review.url, title: review.title });
         break;
       case "edited":
         for (const comment of review.comments) if (comment.id === message.id) comment.text = message.text;
@@ -187,7 +219,7 @@ chrome.runtime.onMessage.addListener((message: FromTab, sender, respond) => {
     await putReview(tabId, review);
     outcomes.delete(tabId);
     reviewing.add(tabId);
-    tell(tabId, { type: "comments", comments: review.comments });
+    tell(tabId, { type: "comments", comments: pins(review, tab.url) });
     schedule();
     respond(null);
   })();
@@ -212,8 +244,7 @@ async function fromPanel(port: chrome.runtime.Port, message: FromPanel) {
       await push(port, message.tabId);
       return;
     case "review":
-      await startReview(message.tabId).catch((error) => console.warn("amux:", error));
-      reviewing.add(message.tabId);
+      if (await startReview(message.tabId).catch(() => false)) reviewing.add(message.tabId);
       break;
     case "delete": {
       const review = await getReview(message.tabId);
@@ -221,7 +252,7 @@ async function fromPanel(port: chrome.runtime.Port, message: FromPanel) {
       review.comments = review.comments.filter((comment) => comment.id !== message.id);
       await dropImage(message.id);
       await putReview(message.tabId, review);
-      tell(message.tabId, { type: "comments", comments: review.comments });
+      await tellPins(message.tabId, review);
       break;
     }
     case "deleteSnippet": {
@@ -232,8 +263,7 @@ async function fromPanel(port: chrome.runtime.Port, message: FromPanel) {
       break;
     }
     case "focus":
-      await startReview(message.tabId).catch(() => {});
-      tell(message.tabId, { type: "focus", id: message.id });
+      if (await startReview(message.tabId).catch(() => false)) tell(message.tabId, { type: "focus", id: message.id });
       break;
     case "send":
       await send(message.tabId, message.destination, message.message);
@@ -245,19 +275,41 @@ async function fromPanel(port: chrome.runtime.Port, message: FromPanel) {
   schedule();
 }
 
-async function send(tabId: number, destination: Destination, message: string) {
+async function send(tabId: number, chosen: Destination, message: string) {
   const review = await getReview(tabId);
   if (!review || (review.comments.length === 0 && review.snippets.length === 0)) return;
+  // A retry after a failed send to a new agent goes to the agent it made.
+  const earlier = made.get(tabId);
+  const destination = earlier && JSON.stringify(earlier.from) === JSON.stringify(chosen) ? earlier.to : chosen;
   sending.add(tabId);
   schedule();
   try {
     const images = await reviewImages(review);
-    const name = await amux.send(destination, review, message, images);
-    await dropReview(tabId);
+    let reached = destination;
+    const name = await amux.send(destination, review, message, images, (agent) => {
+      reached = agent;
+      made.set(tabId, { from: chosen, to: agent });
+    });
+    made.delete(tabId);
+    // Comments added while it was sending stay for the next send.
+    const sent = new Set([...review.comments, ...review.snippets].map((item) => item.id));
+    const now = (await getReview(tabId)) ?? emptyReview();
+    const left: PendingReview = {
+      ...now,
+      comments: now.comments.filter((comment) => !sent.has(comment.id)),
+      snippets: now.snippets.filter((snippet) => !sent.has(snippet.id)),
+    };
+    for (const comment of review.comments) await dropImage(comment.id);
+    if (left.comments.length === 0 && left.snippets.length === 0) {
+      await dropReview(tabId);
+      tell(tabId, { type: "comments", comments: [] });
+      tell(tabId, { type: "stop" });
+    } else {
+      await putReview(tabId, left);
+      await tellPins(tabId, left);
+    }
     outcomes.set(tabId, { sent: name });
-    tell(tabId, { type: "comments", comments: [] });
-    tell(tabId, { type: "stop" });
-    await remember(review.url, destination);
+    await remember(review.url, reached);
   } catch (error) {
     outcomes.set(tabId, { failed: error instanceof Error ? error.message : String(error) });
   } finally {
@@ -316,6 +368,7 @@ async function state(tabId: number): Promise<PanelState> {
     tabId,
     blocked: kind === "unknown" ? null : kind ?? ((await fileAccessMissing(tab?.url)) ? "file-access" : null),
     reviewing: reviewing.has(tabId),
+    needsGrant: needsGrant.has(tabId),
     review,
     thumbnails,
     reach: amux.reach(),

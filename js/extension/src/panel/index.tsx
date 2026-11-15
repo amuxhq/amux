@@ -3,13 +3,15 @@
 
 import { render } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type {
-  AgentChoice,
-  Destination,
-  FromPanel,
-  PanelState,
-  Reach,
-  ToPanel,
+import {
+  byPage,
+  type AgentChoice,
+  type Destination,
+  type FromPanel,
+  type PanelState,
+  type PendingComment,
+  type Reach,
+  type ToPanel,
 } from "../shared/messages.ts";
 
 const port = chrome.runtime.connect({ name: "panel" });
@@ -72,6 +74,35 @@ function App() {
   const tabId = state.tabId;
   const { review } = state;
   const items = review.comments.length + review.snippets.length;
+  const pages = byPage(review.comments);
+  // Numbered as each page's pins are; a page heading only once there are several.
+  const comment = (comment: PendingComment, index: number) => (
+    <li key={comment.id}>
+      <button
+        type="button"
+        class="comment"
+        title="Show it on the page"
+        onClick={() => tabId !== null && post({ type: "focus", tabId, id: comment.id })}
+      >
+        <span class="number">{index + 1}</span>
+        <span class="body">
+          <span class="target">
+            {comment.quote ? `“${comment.quote}”` : comment.region ? "Box" : comment.element.text || comment.element.selector}
+          </span>
+          {comment.text ? <span class="text">{comment.text}</span> : <span class="text none">No comment</span>}
+          {state.thumbnails[comment.id] && <img class="thumbnail" src={state.thumbnails[comment.id]} alt="" />}
+        </span>
+      </button>
+      <button
+        type="button"
+        class="remove"
+        aria-label="Delete comment"
+        onClick={() => tabId !== null && post({ type: "delete", tabId, id: comment.id })}
+      >
+        ×
+      </button>
+    </li>
+  );
 
   return (
     <main class="panel">
@@ -85,33 +116,14 @@ function App() {
         <Empty state={state} />
       ) : (
         <ol class="comments">
-          {review.comments.map((comment, index) => (
-            <li key={comment.id}>
-              <button
-                type="button"
-                class="comment"
-                title="Show it on the page"
-                onClick={() => tabId !== null && post({ type: "focus", tabId, id: comment.id })}
-              >
-                <span class="number">{index + 1}</span>
-                <span class="body">
-                  <span class="target">
-                    {comment.quote ? `“${comment.quote}”` : comment.region ? "Box" : comment.element.text || comment.element.selector}
-                  </span>
-                  {comment.text ? <span class="text">{comment.text}</span> : <span class="text none">No comment</span>}
-                  {state.thumbnails[comment.id] && <img class="thumbnail" src={state.thumbnails[comment.id]} alt="" />}
-                </span>
-              </button>
-              <button
-                type="button"
-                class="remove"
-                aria-label="Delete comment"
-                onClick={() => tabId !== null && post({ type: "delete", tabId, id: comment.id })}
-              >
-                ×
-              </button>
-            </li>
-          ))}
+          {pages.length === 1
+            ? pages[0]!.comments.map(comment)
+            : pages.map((page) => [
+                <li key={page.url} class="page" title={page.url}>
+                  {page.title || page.url}
+                </li>,
+                ...page.comments.map(comment),
+              ])}
           {review.snippets.map((snippet) => (
             <li key={snippet.id}>
               <div class="comment">
@@ -133,10 +145,15 @@ function App() {
           ))}
         </ol>
       )}
-      {items > 0 && !state.reviewing && state.blocked === null && review.comments.length > 0 && (
+      {items > 0 && !state.reviewing && state.blocked === null && review.comments.length > 0 && !state.needsGrant && (
         <button type="button" class="link" onClick={() => tabId !== null && post({ type: "review", tabId })}>
           Add more on the page
         </button>
+      )}
+      {state.needsGrant && !state.reviewing && state.blocked === null && (
+        <p class="notice">
+          To review this page, click the amux button in the toolbar or press {shortcut} while you’re on it.
+        </p>
       )}
       <Composer
         state={state}
@@ -220,6 +237,7 @@ function Empty({ state }: { state: PanelState }) {
       </div>
     );
   }
+  if (state.needsGrant) return null;
   return (
     <div class="empty">
       <button

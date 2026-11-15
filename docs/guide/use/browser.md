@@ -30,7 +30,9 @@ Brave, Arc and Vivaldi. It needs amux on the same computer.
 ## Comment on a page
 
 Click the amux button, or press **⌘⇧.** (**Ctrl+Shift+.** on Windows and
-Linux). The side panel opens and the page enters review mode. Clicks no longer
+Linux). The side panel opens and the page enters review mode. On a page where
+you haven't used the button or the shortcut yet, the side panel can't start
+review mode by itself; it asks you to use one of them. Clicks no longer
 reach the page while review mode is on. Instead:
 
 - **Click** a block, such as a paragraph, heading, button, image or card, to
@@ -60,7 +62,9 @@ text, the phrase you selected and, where the page's development tools say,
 the source file and line that drew it. That way it can find the right code or
 the right sentence in its document.
 
-Your comments stay with the tab until you send them or close it.
+Your comments stay with the tab until you send them or close it. If you follow
+a link and comment on the next page too, the agent gets each page's comments
+with that page.
 
 You can also right-click a selection, a link or a page and choose **Send to an
 amux agent** to send it as text.

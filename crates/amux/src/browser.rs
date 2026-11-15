@@ -25,6 +25,8 @@
 //! {"id": 1, "end": {"code": 0, "message": "", "details": "<base64>"}}
 //! ```
 //!
+//! A cancelled call ends with gRPC's "cancelled" (1).
+//!
 //! A browser refuses a message to the extension over 1 MB, so a response
 //! message is sent in parts of at most [`PART`] bytes before encoding, and
 //! the extension joins them. A unary call is a stream of one message. Every
@@ -135,6 +137,7 @@ where
         if incoming.cancel {
             if let Some(call) = calls.remove(&id) {
                 call.abort();
+                let _ = frames.send(end(id, &tonic::Status::cancelled("cancelled")));
             }
             continue;
         }
@@ -175,7 +178,11 @@ async fn forward(
         .parse::<tonic::codegen::http::uri::PathAndQuery>()
         .map_err(|_| tonic::Status::invalid_argument("a call's method is not a path"))?;
     let channel = routes.channel(&call.target).await?;
-    let mut grpc = tonic::client::Grpc::new(channel);
+    // Sized as every other amux client is, so a blob up to the attachment
+    // limit arrives (in parts) rather than failing tonic's 4 MiB default.
+    let mut grpc = tonic::client::Grpc::new(channel)
+        .max_decoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
+        .max_encoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT);
     grpc.ready()
         .await
         .map_err(|error| tonic::Status::unavailable(error.to_string()))?;

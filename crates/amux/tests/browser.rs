@@ -157,9 +157,10 @@ async fn the_extension_sends_a_page_review_through_the_bridge() {
         .await;
     let profile = hex(&profiles.profiles[0].id);
 
-    // A screenshot larger than one frame, to come back in parts.
+    // A screenshot larger than gRPC's default 4 MiB message, to come back in
+    // parts.
     let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
-    png.extend((0..1_500_000u32).map(|n| (n % 251) as u8));
+    png.extend((0..5_000_000u32).map(|n| (n % 251) as u8));
     let stored: wire::PutBlobResponse = bridge
         .unary(
             &profile,
@@ -289,4 +290,16 @@ async fn the_extension_sends_a_page_review_through_the_bridge() {
     assert_eq!(first["id"], json!(id));
     assert!(first.get("message").is_some(), "the fleet streams: {first}");
     bridge.send(&json!({"id": id, "cancel": true})).await;
+    loop {
+        let frame = bridge.read().await;
+        assert_eq!(frame["id"], json!(id));
+        if let Some(end) = frame.get("end") {
+            assert_eq!(
+                end["code"],
+                json!(1),
+                "a cancelled stream ends cancelled: {frame}"
+            );
+            break;
+        }
+    }
 }

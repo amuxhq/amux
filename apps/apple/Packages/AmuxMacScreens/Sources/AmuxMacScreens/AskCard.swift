@@ -2,8 +2,8 @@ import AmuxValues
 import AmuxWords
 import SwiftUI
 
-/// What the agent waits on, above the composer: what it wants, in full,
-/// and the answers it offers.
+/// What the agent waits on, in the composer's place: what it wants, in
+/// full, and the answers it offers.
 struct AskCardView: View {
     let card: AskCard
     let chat: any ChatSurface
@@ -12,6 +12,11 @@ struct AskCardView: View {
     @State private var note = ""
     @State private var picks: [Set<UInt32>] = []
     @State private var others: [String] = []
+    /// Replying in the person's own words instead of answering, and what
+    /// they wrote: with the composer away while the ask is open, this is
+    /// where they say something else.
+    @State private var replying = false
+    @State private var reply = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -41,6 +46,8 @@ struct AskCardView: View {
     private func reset() {
         noting = nil
         note = ""
+        replying = false
+        reply = ""
         if case .question(let questions) = card.body {
             picks = questions.map { question in
                 Set(question.options.indices.filter { question.options[$0].recommended }.prefix(1).map(UInt32.init))
@@ -165,8 +172,46 @@ struct AskCardView: View {
         note = ""
     }
 
-    private func questionButtons(_ questions: [QuestionView]) -> some View {
+    private func responses(_ questions: [QuestionView]) -> [QuestionResponse] {
+        questions.indices.map { index in
+            let other = index < others.count && !others[index].isEmpty ? others[index] : nil
+            let picked = index < picks.count ? picks[index].sorted() : []
+            return QuestionResponse(note: nil, other: other, picked: picked.isEmpty ? nil : picked)
+        }
+    }
+
+    @ViewBuilder private func questionButtons(_ questions: [QuestionView]) -> some View {
+        if replying {
+            HStack(spacing: 8) {
+                TextField("Reply in your own words", text: $reply)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { sendReply(questions) }
+                Button("Cancel") { replying = false }
+                    .buttonStyle(PillButtonStyle())
+                Button("Reply") { sendReply(questions) }
+                    .buttonStyle(PillButtonStyle(prominent: true))
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        } else {
+            answerButtons(questions)
+        }
+    }
+
+    private func sendReply(_ questions: [QuestionView]) {
+        let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        chat.replyInstead(text, soFar: responses(questions))
+        replying = false
+        reply = ""
+    }
+
+    private func answerButtons(_ questions: [QuestionView]) -> some View {
         HStack(spacing: 8) {
+            if card.questionReply {
+                Button("Reply Instead") { replying = true }
+                    .buttonStyle(PillButtonStyle())
+            }
             Spacer()
             if card.questionSkip {
                 Button("Skip") {
@@ -175,12 +220,7 @@ struct AskCardView: View {
                 .buttonStyle(PillButtonStyle())
             }
             Button("Answer") {
-                chat.answer(
-                    responses: questions.indices.map { index in
-                        let other = index < others.count && !others[index].isEmpty ? others[index] : nil
-                        let picked = index < picks.count ? picks[index].sorted() : []
-                        return QuestionResponse(note: nil, other: other, picked: picked.isEmpty ? nil : picked)
-                    })
+                chat.answer(responses: responses(questions))
             }
             .buttonStyle(PillButtonStyle(prominent: true))
             .keyboardShortcut(.defaultAction)

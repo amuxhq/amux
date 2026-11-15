@@ -102,61 +102,28 @@ public struct NewAgentPage: View {
     }
 
     private var composer: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            TextField(
-                "Describe the work. Return starts it on \(hostName).",
-                text: Binding(get: { surface.prompt }, set: { surface.prompt = $0 }), axis: .vertical
-            )
-            .textFieldStyle(.plain)
-            .font(.ui(.prose))
-            .lineLimit(3...14)
-            .focused($focused)
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 8)
-            .onKeyPress(.return, phases: .down) { press in
-                if press.modifiers.contains(.shift) || press.modifiers.contains(.option) {
-                    surface.prompt += "\n"
-                    return .handled
-                }
-                if surface.ready { surface.start() }
-                return .handled
+        ComposerShell(
+            placeholder: "Describe the work. Return starts it on \(hostName).",
+            text: Binding(get: { surface.prompt }, set: { surface.prompt = $0 }), lines: 3...14,
+            focused: $focused, submit: { if surface.ready { surface.start() } }
+        ) {
+            EmptyView()
+        } controls: {
+            // In a narrow window the agent chip drops its provider and the
+            // permission its words, before any chip is cut short.
+            ViewThatFits(in: .horizontal) {
+                picks(compact: false)
+                picks(compact: true)
             }
-            HStack(spacing: 2) {
-                // In a narrow window the agent chip drops its provider and the
-                // permission its words, before any chip is cut short.
-                ViewThatFits(in: .horizontal) {
-                    picks(compact: false)
-                    picks(compact: true)
-                }
-                Spacer(minLength: 8)
-                Button {
-                    surface.start()
-                } label: {
-                    Group {
-                        if surface.starting {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Icon("arrow-up", size: 15)
-                                .foregroundStyle(
-                                    surface.ready ? Color(nsColor: .textBackgroundColor) : Color.secondary)
-                        }
-                    }
-                    .frame(width: Metrics.control, height: Metrics.control)
-                    .background(Circle().fill(surface.ready ? Color.primary : Color.primary.opacity(0.1)))
-                }
-                .buttonStyle(.plain)
-                .disabled(!surface.ready)
-                .help("Start on \(hostName) (Return)")
+            Spacer(minLength: 8)
+        } action: {
+            RoundButton(
+                face: surface.starting ? .starting : .send, enabled: surface.ready,
+                help: "Start on \(hostName) (Return)"
+            ) {
+                surface.start()
             }
-            .padding(.horizontal, 8)
-            .padding(.bottom, 8)
         }
-        .background(RoundedRectangle(cornerRadius: Radius.composer, style: .continuous).fill(Palette.raised))
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.composer, style: .continuous)
-                .strokeBorder(focused ? Color.primary.opacity(0.16) : Palette.line))
-        .elevation(.raised)
     }
 
     // MARK: - Where
@@ -190,7 +157,7 @@ public struct NewAgentPage: View {
                 .disabled(!HostWords.online(host))
             }
         } label: {
-            Pick(icon: chosenHost.map(HostWords.lucide) ?? "monitor",
+            ChipLabel(icon: chosenHost.map(HostWords.lucide) ?? "monitor",
                  text: chosenHost.map { $0.local ? "This Mac" : PlaceNames.host($0.name) } ?? "Choose a host")
         }
         .menuStyle(.button)
@@ -204,7 +171,7 @@ public struct NewAgentPage: View {
         Button {
             browsing = true
         } label: {
-            Pick(icon: "folder", text: folder)
+            ChipLabel(icon: "folder", text: folder)
         }
         .buttonStyle(HoverButtonStyle())
         .fixedSize()
@@ -268,7 +235,7 @@ public struct NewAgentPage: View {
             Divider()
             Toggle("New Worktree", isOn: Binding(get: { surface.newWorktree }, set: { surface.newWorktree = $0 }))
         } label: {
-            Pick(icon: nil, text: agentWords(compact: compact))
+            ChipLabel(icon: nil, text: agentWords(compact: compact))
         }
         .menuStyle(.button)
         .buttonStyle(HoverButtonStyle())
@@ -306,7 +273,7 @@ public struct NewAgentPage: View {
                     }
                 }
             } label: {
-                Pick(
+                ChipLabel(
                     icon: current.neverAsks ? "circle-alert" : "hand", text: compact ? nil : ChatWords.permission(current),
                     tint: current.neverAsks ? Palette.caution : .secondary)
             }
@@ -366,26 +333,6 @@ public struct NewAgentPage: View {
 
 extension String {
     fileprivate var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
-}
-
-/// A chip under the new-agent field: what it is set to, opening its menu.
-private struct Pick: View {
-    let icon: String?
-    let text: String?
-    var tint: Color = .secondary
-
-    var body: some View {
-        HStack(spacing: 5) {
-            if let icon { Icon(icon, size: 13) }
-            if let text { Text(text).lineLimit(1) }
-            Icon("chevron-down", size: 11).opacity(0.7)
-        }
-        .font(.ui(.callout))
-        .foregroundStyle(tint)
-        .padding(.horizontal, 8)
-        .frame(height: 28)
-        .contentShape(Rectangle())
-    }
 }
 
 /// The directories a host has to offer, searched as typed, and a field for

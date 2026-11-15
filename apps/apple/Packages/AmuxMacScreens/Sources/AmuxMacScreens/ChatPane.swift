@@ -256,7 +256,11 @@ private struct ActivityLine: View {
     }
 }
 
-/// Under the feed: the queue, the head ask and the composer.
+/// What stands under the feed, one thing at a time, as on the phone: an
+/// open ask takes the composer's place until it is answered; a chat that
+/// ended says so instead; otherwise the composer, with the prompts queued
+/// for the agent above it. An ask the agent exited with stays above the
+/// composer as a record. The draft outlives all of them.
 private struct Footer: View {
     let chat: any ChatSurface
     let row: FleetRow?
@@ -265,12 +269,6 @@ private struct Footer: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            if let frame = chat.frame, !frame.queue.isEmpty {
-                QueueList(chat: chat, queue: frame.queue)
-            }
-            if let ask = chat.ask {
-                AskCardView(card: ask, chat: chat)
-            }
             if let notice = chat.notice {
                 Text(notice).font(.ui(.meta)).foregroundStyle(Palette.failure)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -279,7 +277,15 @@ private struct Footer: View {
                 Text(ended).font(.ui(.callout)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 8)
+            } else if let ask = chat.ask, ask.state != .dismissed {
+                AskCardView(card: ask, chat: chat)
             } else {
+                if let ask = chat.ask {
+                    AskCardView(card: ask, chat: chat)
+                }
+                if let frame = chat.frame, !frame.queue.isEmpty {
+                    QueueList(chat: chat, queue: frame.queue)
+                }
                 Composer(chat: chat, name: row?.name ?? chat.frame?.name ?? "agent", host: host, reach: row?.hostReach)
             }
         }

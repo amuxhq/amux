@@ -18,7 +18,10 @@ struct Composer: View {
     @State private var dropping = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        ComposerShell(
+            placeholder: placeholder, text: draft, lines: 1...12, focused: $focused, highlighted: dropping,
+            submit: submit
+        ) {
             if !chat.slashMatches.isEmpty {
                 commands
             }
@@ -31,41 +34,7 @@ struct Composer: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 10)
             }
-            TextField(placeholder, text: draft, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.ui(.prose))
-                .lineLimit(1...12)
-                .focused($focused)
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 8)
-                .onKeyPress(.return, phases: .down) { press in
-                    if press.modifiers.contains(.shift) || press.modifiers.contains(.option) {
-                        chat.draft += "\n"
-                        return .handled
-                    }
-                    submit()
-                    return .handled
-                }
-            controls
-        }
-        .background(RoundedRectangle(cornerRadius: Radius.composer, style: .continuous).fill(Palette.raised))
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.composer, style: .continuous)
-                .strokeBorder(dropping ? Palette.accent : (focused ? Color.primary.opacity(0.14) : Palette.line)))
-        .elevation(.raised)
-        .onTapGesture { focused = true }
-        .onAppear { focused = true }
-        .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
-            Self.urls(from: providers) { chat.attach(files: $0) }
-            return true
-        }
-    }
-
-    // MARK: - Under the field
-
-    private var controls: some View {
-        HStack(spacing: 4) {
+        } controls: {
             Button(action: pickFiles) {
                 Icon("plus", size: 16)
                     .foregroundStyle(.secondary)
@@ -77,29 +46,17 @@ struct Composer: View {
             permission
             Spacer(minLength: 8)
             model
+        } action: {
             // One button where the references have one: Stop while the agent
             // works and nothing is typed, else Send (which queues while it
             // works). ⌘. stops either way.
             let stopping = working && !typed
-            Button {
+            RoundButton(
+                face: stopping ? .stop : (chat.canResume ? .resume : .send), enabled: stopping || ready,
+                help: stopping ? "Stop (⌘.)" : (chat.canResume ? "Resume" : (working ? "Queue (Return)" : "Send (Return)"))
+            ) {
                 if stopping { chat.interrupt() } else { submit() }
-            } label: {
-                Group {
-                    if stopping {
-                        RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                            .frame(width: 9, height: 9)
-                    } else {
-                        Icon(chat.canResume ? "play" : "arrow-up", size: 15)
-                    }
-                }
-                .foregroundStyle(stopping || ready ? Color(nsColor: .textBackgroundColor) : Color.secondary)
-                .frame(width: Metrics.control, height: Metrics.control)
-                .background(Circle().fill(stopping || ready ? Color.primary : Color.primary.opacity(0.1)))
-                .contentShape(Circle())
             }
-            .buttonStyle(.plain)
-            .disabled(!stopping && !ready)
-            .help(stopping ? "Stop (⌘.)" : (chat.canResume ? "Resume" : (working ? "Queue (Return)" : "Send (Return)")))
             .background {
                 Button("Stop") { chat.interrupt() }
                     .keyboardShortcut(".", modifiers: .command)
@@ -109,8 +66,12 @@ struct Composer: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.bottom, 8)
+        .onTapGesture { focused = true }
+        .onAppear { focused = true }
+        .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
+            Self.urls(from: providers) { chat.attach(files: $0) }
+            return true
+        }
     }
 
     /// The permission the agent works under: a menu where it can be picked
@@ -290,24 +251,115 @@ struct Composer: View {
     }
 }
 
-/// A control under the composer: words, perhaps an icon, and a chevron
-/// where it opens a menu.
-private struct ChipLabel: View {
+/// The composer's frame, the chat's and the New Agent page's alike: what
+/// goes with the message above the field, a field that grows as it is
+/// typed into (Return submits, Shift- or Option-Return starts a new line),
+/// and under it the controls, with the round button at the end. The
+/// controls set their own spacing up to the button.
+struct ComposerShell<Above: View, Controls: View, Action: View>: View {
+    let placeholder: String
+    @Binding var text: String
+    let lines: ClosedRange<Int>
+    var focused: FocusState<Bool>.Binding
+    /// Files are being dragged over it.
+    var highlighted = false
+    let submit: () -> Void
+    @ViewBuilder let above: Above
+    @ViewBuilder let controls: Controls
+    @ViewBuilder let action: Action
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            above
+            TextField(placeholder, text: $text, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.ui(.prose))
+                .lineLimit(lines)
+                .focused(focused)
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 8)
+                .onKeyPress(.return, phases: .down) { press in
+                    if press.modifiers.contains(.shift) || press.modifiers.contains(.option) {
+                        text += "\n"
+                        return .handled
+                    }
+                    submit()
+                    return .handled
+                }
+            HStack(spacing: 4) {
+                controls
+                action
+            }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
+        }
+        .background(RoundedRectangle(cornerRadius: Radius.composer, style: .continuous).fill(Palette.raised))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.composer, style: .continuous)
+                .strokeBorder(
+                    highlighted ? Palette.accent : (focused.wrappedValue ? Color.primary.opacity(0.14) : Palette.line)))
+        .elevation(.raised)
+    }
+}
+
+/// The round button at the composer's end: send, resume, stop, or a
+/// spinner while an agent starts.
+struct RoundButton: View {
+    enum Face {
+        case send
+        case resume
+        case stop
+        case starting
+    }
+
+    let face: Face
+    let enabled: Bool
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Group {
+                switch face {
+                case .stop:
+                    RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                        .frame(width: 9, height: 9)
+                case .starting:
+                    ProgressView().controlSize(.small)
+                case .send, .resume:
+                    Icon(face == .resume ? "play" : "arrow-up", size: 15)
+                }
+            }
+            .foregroundStyle(enabled ? Color(nsColor: .textBackgroundColor) : Color.secondary)
+            .frame(width: Metrics.control, height: Metrics.control)
+            .background(Circle().fill(enabled ? Color.primary : Color.primary.opacity(0.1)))
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .help(help)
+    }
+}
+
+/// A control under the composer: what it is set to, perhaps an icon, and
+/// a chevron where it opens a menu.
+struct ChipLabel: View {
     let icon: String?
-    let text: String
-    let tint: Color
-    let menu: Bool
+    let text: String?
+    var tint: Color = .secondary
+    var menu = true
 
     var body: some View {
         HStack(spacing: 5) {
             if let icon { Icon(icon, size: 13) }
-            Text(text).lineLimit(1)
+            if let text { Text(text).lineLimit(1) }
             if menu { Icon("chevron-down", size: 11).opacity(0.7) }
         }
         .font(.ui(.callout))
         .foregroundStyle(tint)
         .padding(.horizontal, 8)
-        .frame(height: 28)
+        .frame(height: Metrics.control)
         .contentShape(Rectangle())
     }
 }

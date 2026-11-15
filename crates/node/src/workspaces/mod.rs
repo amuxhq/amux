@@ -207,9 +207,9 @@ impl Workspaces {
 
     /// Every workspace this host made, of every kind.
     pub fn owned(&self) -> Vec<Key> {
-        let mut owned = self.git.owned();
+        let owned = self.git.owned();
         #[cfg(all(unix, not(target_os = "ios")))]
-        owned.extend(self.wt.owned());
+        let owned = owned.into_iter().chain(self.wt.owned()).collect();
         owned
     }
 
@@ -360,6 +360,7 @@ pub(crate) fn canonical_beyond(path: &Path) -> PathBuf {
 /// is not the repository's default branch, which a new branch instead
 /// takes as freshly fetched. A repository with no `origin` has no default
 /// to fetch, so a new branch starts from the folder's commit.
+#[cfg(all(unix, not(target_os = "ios")))]
 pub(crate) fn branch_start(folder: &Path) -> (Option<String>, Option<String>) {
     let branch = git(folder, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok();
     let default = git(

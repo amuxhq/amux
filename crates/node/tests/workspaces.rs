@@ -193,11 +193,13 @@ async fn gone(path: &Path) {
 }
 
 /// What the tree's hooks have recorded.
+#[cfg(unix)]
 fn ran(tree: &Path) -> String {
     std::fs::read_to_string(tree.join(".wt/ran")).unwrap_or_default()
 }
 
 /// Waits for the tree's hooks to have recorded `what` `times` times.
+#[cfg(unix)]
 async fn hook_ran(tree: &Path, what: &str, times: usize) {
     until(&format!("{what} to run {times} times"), || async {
         let ran = ran(tree);
@@ -291,6 +293,8 @@ async fn a_new_worktree_is_answered_first_marked_as_this_hosts_and_goes_with_its
     daemon.shutdown().await.unwrap();
 }
 
+// wt and its backend are Unix-only.
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_new_wt_tree_runs_its_agent_in_its_environment_and_its_hooks_with_its_agents() {
     let install = Install::new();

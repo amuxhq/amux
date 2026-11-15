@@ -171,6 +171,7 @@ browser's own recipes and CI job, never in `just premerge`.
 just browser              # browser-core as WebAssembly, then js/extension/dist
 just browser --dev        # js/extension/dist-dev, the copy a development tree loads
 just browser-test         # types, unit tests, and the end-to-end test
+just browser-tour         # screenshots of every surface, light and dark
 just browser-dev-host     # let dist-dev reach this tree's amux
 ```
 
@@ -190,8 +191,16 @@ a box, sends them from the side panel, and reads what the fake provider was
 given. Playwright cannot press a toolbar button, which is what grants the tab,
 so the copy under test is given access to every site instead; the side panel
 is opened as a page with `?tab=` naming the tab it shows. `AMUX_E2E_KEEP=1`
-keeps screenshots of the overlay, the comment box and the panel, and what the
-provider read, in `js/test-results`.
+keeps what the provider read in `js/test-results`.
+
+`just browser-tour` drives the same harness through every surface the extension
+draws, in light and dark, into `js/tour`: the overlay's hover, gestures,
+comment box and pins, and the side panel's states, including the one for a page
+the extension has not been let into (a browser without access to every site)
+and those for amux not installed and not running. It checks little; it is for
+looking at a change. The notices for the browser's own pages and for local
+files cannot be reached under Playwright, since the panel learns a tab's
+address only from the toolbar button's grant.
 
 The JavaScript is one npm workspace under `js/`, as the crates are one Cargo
 workspace: one lockfile, one base `tsconfig`, Vitest and Playwright. It needs

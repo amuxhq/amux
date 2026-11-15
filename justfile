@@ -148,11 +148,16 @@ browser *ARGS:
 
 # Check and test the overlay and the extension: types, unit tests, and the
 # end-to-end test in Chromium against this tree's amux and the fake
-# providers. AMUX_E2E_KEEP=1 keeps screenshots and what the provider read
-# in js/test-results.
+# providers. AMUX_E2E_KEEP=1 keeps what the provider read in js/test-results.
 browser-test: (browser "--dev")
     {{bounded}} 900 cargo build --locked -p amux -p provider-fakes --bins
     {{bounded}} 600 sh -c 'cd js && npm run check && npx vitest run && npx playwright install chromium >/dev/null && npx playwright test'
+
+# Screenshot every surface the extension draws, light and dark, into
+# js/tour: the overlay's modes and the side panel's states.
+browser-tour: (browser "--dev")
+    {{bounded}} 900 cargo build --locked -p amux -p provider-fakes --bins
+    {{bounded}} 600 sh -c 'cd js && rm -rf tour && npx playwright install chromium >/dev/null && AMUX_TOUR=1 npx playwright test tour'
 
 # Let this tree's development extension reach this tree's amux: registers
 # the `sh.amux.browser.dev` host with every installed Chromium browser,

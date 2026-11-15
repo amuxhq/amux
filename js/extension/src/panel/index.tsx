@@ -111,7 +111,18 @@ function App() {
         <h1>Page review</h1>
         <Status reach={state.reach} />
       </header>
+      <div class="scroll">
       <Problem state={state} />
+      {state.outcome && "sent" in state.outcome && (
+        <p class="outcome sent" role="status">
+          <span class="glyph">✓</span> Sent to {state.outcome.sent}
+        </p>
+      )}
+      {state.outcome && "failed" in state.outcome && (
+        <p class="outcome failed" role="alert">
+          <span class="glyph">!</span> Not sent: {state.outcome.failed}
+        </p>
+      )}
       {review.comments.length === 0 && review.snippets.length === 0 ? (
         <Empty state={state} />
       ) : (
@@ -150,11 +161,12 @@ function App() {
           Add more on the page
         </button>
       )}
-      {state.needsGrant && !state.reviewing && state.blocked === null && (
+      {state.needsGrant && !state.reviewing && state.blocked === null && items > 0 && (
         <p class="notice">
-          To review this page, click the amux button in the toolbar or press {shortcut} while you’re on it.
+          To add more, click the amux button in the toolbar or press <kbd>{shortcut}</kbd> while you’re on the page.
         </p>
       )}
+      </div>
       <Composer
         state={state}
         destination={destination}
@@ -170,8 +182,6 @@ function App() {
           setMessage("");
         }}
       />
-      {state.outcome && "sent" in state.outcome && <p class="outcome">Sent to {state.outcome.sent}.</p>}
-      {state.outcome && "failed" in state.outcome && <p class="outcome failed">Not sent: {state.outcome.failed}</p>}
     </main>
   );
 }
@@ -227,19 +237,93 @@ function Problem({ state }: { state: PanelState }) {
   return null;
 }
 
+const ICON = { width: 16, height: 16, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", "stroke-width": 1.5 };
+
+/** A block with a pointer on it. */
+const BlockIcon = () => (
+  <svg {...ICON} aria-hidden="true">
+    <rect x="1.75" y="3.25" width="12.5" height="7.5" rx="1.5" />
+    <path d="M9 8.5l4 5.5-1.6.2-.9 1.5z" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+/** Lines of text with one picked out. */
+const TextIcon = () => (
+  <svg {...ICON} aria-hidden="true" stroke-linecap="round">
+    <path d="M2 4h12M2 12h7" />
+    <rect x="1.5" y="6.25" width="9" height="3.5" rx="1" fill="currentColor" stroke="none" opacity="0.35" />
+    <path d="M3 8h6" />
+  </svg>
+);
+
+/** A dashed region. */
+const BoxIcon = () => (
+  <svg {...ICON} aria-hidden="true" stroke-dasharray="2.5 2">
+    <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+  </svg>
+);
+
+/** The three gestures, as the overlay's toolbar names them. */
+function Gestures() {
+  return (
+    <ul class="gestures">
+      <li>
+        <span class="gesture-glyph">
+          <BlockIcon />
+        </span>
+        <span>
+          <strong>Click a block</strong> to comment on all of it
+        </span>
+      </li>
+      <li>
+        <span class="gesture-glyph">
+          <TextIcon />
+        </span>
+        <span>
+          <strong>Select text</strong> to comment on a phrase
+        </span>
+      </li>
+      <li>
+        <span class="gesture-glyph">
+          <BoxIcon />
+        </span>
+        <span>
+          <strong>Drag a box</strong> to send a picture of a region
+        </span>
+      </li>
+    </ul>
+  );
+}
+
 function Empty({ state }: { state: PanelState }) {
   if (state.blocked !== null) return null;
   if (state.reviewing) {
     return (
       <div class="empty">
-        <p>Click a block, select text, or drag a box on the page.</p>
-        <p class="muted">Hold Shift to use the page normally. Esc when you’re done.</p>
+        <h2>Reviewing this page</h2>
+        <Gestures />
+        <p class="muted">
+          Hold <kbd>Shift</kbd> to use the page normally. Press <kbd>Esc</kbd> when you’re done.
+        </p>
       </div>
     );
   }
-  if (state.needsGrant) return null;
+  if (state.needsGrant) {
+    return (
+      <div class="empty">
+        <h2>Comment on this page</h2>
+        <p class="notice">
+          Click the amux button in the toolbar, or press <kbd>{shortcut}</kbd>, while you’re on this page. The panel
+          can’t start a review by itself on a page you haven’t opened amux on.
+        </p>
+        <Gestures />
+      </div>
+    );
+  }
   return (
     <div class="empty">
+      <h2>Comment on this page</h2>
+      <Gestures />
       <button
         type="button"
         class="primary"
@@ -248,8 +332,7 @@ function Empty({ state }: { state: PanelState }) {
         Review this page
       </button>
       <p class="muted">
-        Or press {shortcut}. Then click a block, select text, or drag a box, and write what you think. Send them all to
-        an agent together.
+        Or press <kbd>{shortcut}</kbd>. Your comments go to an agent together, like a review of its changes.
       </p>
     </div>
   );
@@ -346,9 +429,14 @@ function Composer({ state, destination, onDestination, message, onMessage, onSen
           }
         }}
       />
-      <button type="submit" class="primary" disabled={!destination || state.sending}>
-        {state.sending ? "Sending…" : label}
-      </button>
+      <div class="send-row">
+        <span class="muted">
+          <kbd>{isMac ? "⌘↩" : "Ctrl+↩"}</kbd>
+        </span>
+        <button type="submit" class="primary" disabled={!destination || state.sending}>
+          {state.sending ? "Sending…" : label}
+        </button>
+      </div>
     </form>
   );
 }

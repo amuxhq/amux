@@ -1213,7 +1213,7 @@ substituted = ["providers by the scripted fakes", "the toolbar button's grant of
 time = "real"
 capabilities = ["desktop", "Unix", "Node", "Playwright's Chromium"]
 lane = "system"
-evidence = "js/test-results with AMUX_E2E_KEEP=1: the overlay, comment box and panel as drawn, and what the provider read"
+evidence = "js/test-results with AMUX_E2E_KEEP=1: what the provider read; `just browser-tour` screenshots every surface into js/tour"
 update = ""
 cases = ["js/extension/test/e2e/review.spec.ts", "js/page-review/test/blocks.test.ts"]
 cargo = []

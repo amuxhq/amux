@@ -89,7 +89,7 @@ async function inject(tabId: number) {
 
 async function toggleReview(tab: chrome.tabs.Tab) {
   const tabId = tab.id;
-  if (tabId === undefined || blocked(tab.url) || (await fileAccessMissing(tab.url))) {
+  if (tabId === undefined || blocked(tab.url) === "browser-page" || (await fileAccessMissing(tab.url))) {
     schedule();
     return;
   }
@@ -110,7 +110,9 @@ async function toggleReview(tab: chrome.tabs.Tab) {
  */
 async function startReview(tabId: number): Promise<boolean> {
   const tab = await chrome.tabs.get(tabId);
-  if (blocked(tab.url) || (await fileAccessMissing(tab.url))) return false;
+  // An address the extension may not read is a page it has not been granted:
+  // trying is what tells.
+  if (blocked(tab.url) === "browser-page" || (await fileAccessMissing(tab.url))) return false;
   try {
     await inject(tabId);
   } catch {

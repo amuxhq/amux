@@ -6,7 +6,12 @@
   --line: rgba(0, 0, 0, 0.1);
   --hover: rgba(0, 0, 0, 0.04);
   --ground: #ffffff;
+  --raised: #f5f5f7;
   --notice: rgba(255, 159, 10, 0.12);
+  --good: rgba(48, 209, 88, 0.14);
+  --good-text: #1f8a3b;
+  --bad: rgba(255, 69, 58, 0.12);
+  --bad-text: #d70015;
   font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
@@ -16,32 +21,72 @@
     --line: rgba(255, 255, 255, 0.12);
     --hover: rgba(255, 255, 255, 0.06);
     --ground: #1e1e1f;
+    --raised: #2c2c2e;
+    --good-text: #30d158;
+    --bad-text: #ff6961;
   }
 }
 * { box-sizing: border-box; }
+html, body { height: 100%; }
 body { margin: 0; background: var(--ground); color: var(--text); }
-.panel { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
-header { display: flex; align-items: center; gap: 8px; }
+#app { height: 100%; }
+
+/* Header on top, the comments scrolling under it, the composer pinned below. */
+.panel { display: flex; flex-direction: column; height: 100%; }
+header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
 h1 { margin: 0; font-size: 13px; font-weight: 600; flex: 1; }
-.status { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; }
+.scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; }
+.status { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .status.ok .dot { background: #30d158; }
 .status.problem .dot { background: #ff9f0a; }
-.notice { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--notice); }
+
+.notice { margin: 0; padding: 9px 11px; border-radius: 9px; background: var(--notice); }
 .notice p { margin: 0 0 8px; }
 code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
-a { color: var(--accent); }
-.empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 4px 0; }
-.empty p { margin: 0; }
-.muted { color: var(--muted); }
-.comments { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.comments li { display: flex; align-items: flex-start; border-bottom: 1px solid var(--line); }
-.comments li.page { display: block; padding: 10px 4px 4px; color: var(--muted); font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.comment {
-  flex: 1; display: flex; gap: 8px; padding: 8px 4px; min-width: 0;
-  border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: 6px;
+kbd {
+  font: 11px -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  padding: 1px 5px; border-radius: 4px; background: var(--raised); border: 1px solid var(--line); color: var(--text);
+  white-space: nowrap;
 }
-button.comment:hover { background: var(--hover); }
+a { color: var(--accent); }
+.muted { color: var(--muted); }
+
+.outcome { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 9px 11px; border-radius: 9px; font-weight: 500; }
+.outcome.sent { background: var(--good); color: var(--good-text); }
+.outcome.failed { background: var(--bad); color: var(--bad-text); }
+.glyph {
+  flex: none; width: 18px; height: 18px; border-radius: 50%; background: currentColor;
+  display: inline-grid; place-items: center; font-size: 11px; font-weight: 700;
+}
+/* A disc in the banner's colour with the mark cut out in the ground's. */
+.outcome .glyph { -webkit-text-fill-color: var(--ground); }
+
+.empty { display: flex; flex-direction: column; align-items: stretch; gap: 14px; padding: 8px 0; }
+.empty h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.empty p { margin: 0; }
+.empty button.primary { align-self: flex-start; padding: 6px 14px; }
+.gestures { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.gestures li { display: flex; align-items: center; gap: 10px; }
+.gesture-glyph {
+  flex: none; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
+  background: rgba(10, 132, 255, 0.1); color: var(--accent); font-size: 14px;
+}
+
+.comments { list-style: none; margin: 0 -6px; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.comments li { display: flex; align-items: flex-start; border-radius: 8px; }
+.comments li:hover { background: var(--hover); }
+.comments li.page {
+  display: block; padding: 10px 6px 2px; color: var(--muted); font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.comments li.page:hover { background: none; }
+.comments li.page:first-child { padding-top: 0; }
+.comment {
+  flex: 1; display: flex; gap: 10px; padding: 8px 6px; min-width: 0;
+  border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: 8px;
+}
+.comment:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .number {
   flex: none; width: 20px; height: 20px; border-radius: 10px 10px 10px 2px;
   background: var(--accent); color: white; font-size: 11px; font-weight: 600; line-height: 20px; text-align: center;
@@ -51,27 +96,36 @@ button.comment:hover { background: var(--hover); }
 .target { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .text.none { color: var(--muted); font-style: italic; }
-.thumbnail { margin-top: 4px; max-width: 100%; max-height: 120px; border-radius: 4px; border: 1px solid var(--line); align-self: flex-start; }
-.remove {
-  flex: none; margin: 6px 0 0 4px; width: 22px; height: 22px; padding: 0;
-  border: 0; border-radius: 4px; background: none; color: var(--muted); font-size: 16px; cursor: pointer;
+.thumbnail {
+  margin-top: 6px; max-width: 100%; max-height: 96px; border-radius: 6px; align-self: flex-start;
+  box-shadow: 0 0 0 1px var(--line);
 }
+.remove {
+  flex: none; margin: 6px 4px 0 0; width: 22px; height: 22px; padding: 0;
+  border: 0; border-radius: 6px; background: none; color: var(--muted); font-size: 15px; cursor: pointer;
+  opacity: 0; transition: opacity 0.1s;
+}
+.comments li:hover .remove, .remove:focus-visible { opacity: 1; }
 .remove:hover { background: var(--hover); color: var(--text); }
-.composer { display: flex; flex-direction: column; gap: 8px; }
+
+.composer {
+  display: flex; flex-direction: column; gap: 8px; padding: 12px 14px 14px;
+  border-top: 1px solid var(--line); background: var(--ground);
+}
 .composer label { display: flex; align-items: center; gap: 8px; }
-.composer label span { color: var(--muted); }
+.composer label span { color: var(--muted); width: 18px; }
 select, textarea {
-  font: inherit; color: inherit; background: transparent;
-  border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px;
+  font: inherit; color: inherit; background: var(--ground);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px;
 }
 select { flex: 1; min-width: 0; }
-textarea { resize: vertical; width: 100%; }
-select:focus, textarea:focus { outline: none; border-color: var(--accent); }
-button { font: inherit; color: inherit; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; cursor: pointer; }
-button:hover { background: var(--hover); }
-button.primary { background: var(--accent); border-color: var(--accent); color: white; align-self: flex-end; }
-button.primary:disabled { opacity: 0.45; cursor: default; }
-.empty button.primary { align-self: flex-start; }
+textarea { resize: none; width: 100%; }
+textarea::placeholder { color: var(--muted); }
+select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.18); }
+.send-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+button { font: inherit; font-weight: 500; color: inherit; padding: 4px 11px; border: 0; border-radius: 7px; background: var(--raised); cursor: pointer; }
+button:hover { filter: brightness(0.97); }
+button.primary { background: var(--accent); color: white; }
+button.primary:hover { filter: brightness(1.08); }
+button.primary:disabled { opacity: 0.4; cursor: default; filter: none; }
 button.link { align-self: flex-start; border: 0; padding: 0; background: none; color: var(--accent); }
-.outcome { margin: 0; color: var(--muted); }
-.outcome.failed { color: #ff453a; }

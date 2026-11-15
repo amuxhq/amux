@@ -49,6 +49,20 @@ export function snap(target: Element): Element {
   return target;
 }
 
+/**
+ * Whether a block is one a person points at, rather than the page around
+ * everything: never the body, and nothing covering most of the window.
+ */
+export function pointable(block: Element): boolean {
+  if (block === document.body || block === document.documentElement) return false;
+  const box = block.getBoundingClientRect();
+  if (box.width === 0 && box.height === 0) return true;
+  const visible =
+    Math.max(0, Math.min(box.right, window.innerWidth) - Math.max(box.left, 0)) *
+    Math.max(0, Math.min(box.bottom, window.innerHeight) - Math.max(box.top, 0));
+  return visible < 0.7 * window.innerWidth * window.innerHeight;
+}
+
 /** The block around `block`: what "wider" moves to. */
 export function wider(block: Element): Element | null {
   const parent = block.parentElement;

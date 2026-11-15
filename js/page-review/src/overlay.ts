@@ -10,7 +10,7 @@
 // Gestures are built on pointer events, with no assumption of a mouse, so a
 // touch mode (which has no hover) can be added rather than written anew.
 
-import { anchorOf, blockAround, label, snap, wider } from "./blocks.ts";
+import { anchorOf, blockAround, label, pointable, snap, wider } from "./blocks.ts";
 import { STYLE } from "./style.ts";
 import type { Comment, Host, Overlay, Region } from "./types.ts";
 
@@ -39,16 +39,17 @@ export function createOverlay(host: Host): Overlay {
     <div class="pins"></div>
     <form class="editor" hidden>
       <div class="editor-target"></div>
-      <textarea rows="3" placeholder="Comment"></textarea>
+      <textarea rows="3" placeholder="Add a comment"></textarea>
       <div class="editor-row">
         <button type="button" class="wider" title="Comment on the block around it">Wider</button>
         <button type="button" class="delete">Delete</button>
         <span class="grow"></span>
         <button type="button" class="cancel">Cancel</button>
-        <button type="submit" class="save">Add</button>
+        <button type="submit" class="save" title="⌘↩">Add</button>
       </div>
     </form>
     <div class="toolbar" hidden>
+      <span class="mark" aria-hidden="true"></span>
       <span class="hint">Click a block, select text, or drag a box</span>
       <button type="button" class="tool-box" aria-pressed="false" title="Drag a box over anything, text included">Box</button>
       <span class="count"></span>
@@ -87,7 +88,7 @@ export function createOverlay(host: Host): Overlay {
   }
 
   function showHover(block: Element | null) {
-    if (!block || editing || passThrough) {
+    if (!block || !pointable(block) || editing || passThrough) {
       hover.hidden = true;
       return;
     }
@@ -124,11 +125,12 @@ export function createOverlay(host: Host): Overlay {
       case "quote":
         return `“${target.quote.length > 60 ? `${target.quote.slice(0, 59)}…` : target.quote}”`;
       case "region":
-        return `Box in ${label(target.block)}`;
+        return "Box";
     }
   }
 
-  function openEditor(next: Editing, rect: DOMRect) {
+  /** Opens the comment box below `rect`, outlining it when `outline` is set. */
+  function openEditor(next: Editing, rect: DOMRect, outline = next.target?.kind !== "quote") {
     editing = next;
     hover.hidden = true;
     editorTarget.textContent = next.target ? describe(next.target) : "";
@@ -145,17 +147,19 @@ export function createOverlay(host: Host): Overlay {
     const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
     editor.style.left = `${left}px`;
     editor.style.top = `${top}px`;
-    if (next.target?.kind === "block" || next.target?.kind === "region") {
-      place(box, targetRect(next.target));
+    if (outline && rect.width > 0) {
+      place(box, rect);
       box.hidden = false;
     }
     textarea.focus();
   }
 
   function closeEditor() {
+    const wasEditing = editing?.id ?? null;
     editing = null;
     editor.hidden = true;
     box.hidden = true;
+    if (wasEditing) drawPins();
   }
 
   async function save() {
@@ -240,7 +244,13 @@ export function createOverlay(host: Host): Overlay {
           }
           return;
         }
-        if (ours(event) || passThrough || pointer.shiftKey) {
+        if (ours(event)) {
+          // A pin outlines its own target while pointed at; the rest of ours hides the outline.
+          const onPin = event.composedPath().some((node) => node instanceof HTMLElement && node.classList.contains("pin"));
+          if (!onPin) hover.hidden = true;
+          return;
+        }
+        if (passThrough || pointer.shiftKey) {
           hover.hidden = true;
           return;
         }
@@ -290,8 +300,9 @@ export function createOverlay(host: Host): Overlay {
           }
         }
         const element = elementAt(pointer.clientX, pointer.clientY);
-        if (!element) return;
-        const target: Target = { kind: "block", block: snap(element) };
+        const block = element ? snap(element) : null;
+        if (!block || !pointable(block)) return;
+        const target: Target = { kind: "block", block };
         openEditor({ id: null, target, text: "" }, targetRect(target));
       },
     ],
@@ -365,6 +376,33 @@ export function createOverlay(host: Host): Overlay {
     return { x: comment.pin.x - window.scrollX, y: comment.pin.y - window.scrollY };
   }
 
+  /**
+   * What a comment is about, in the viewport now: its block, or its box. A
+   * phrase's block stands in for the phrase, whose range is not kept.
+   */
+  function anchorRect(comment: Comment): DOMRect {
+    const { x, y } = pinPlace(comment);
+    if (comment.region) return new DOMRect(x, y, comment.region.width, comment.region.height);
+    const found = (() => {
+      try {
+        return document.querySelector(comment.element.selector);
+      } catch {
+        return null;
+      }
+    })();
+    return found ? found.getBoundingClientRect() : new DOMRect(x, y, 0, 0);
+  }
+
+  function editComment(comment: Comment) {
+    const rect = anchorRect(comment);
+    openEditor({ id: comment.id, target: null, text: comment.text }, rect, true);
+    editorTarget.textContent = comment.quote
+      ? `“${comment.quote.length > 60 ? `${comment.quote.slice(0, 59)}…` : comment.quote}”`
+      : comment.region
+        ? "Box"
+        : comment.element.text || comment.element.selector;
+  }
+
   function drawPins() {
     pins.replaceChildren(
       ...comments.map((comment, index) => {
@@ -378,10 +416,23 @@ export function createOverlay(host: Host): Overlay {
         // above, so it never covers what it is about.
         pin.style.left = `${Math.min(Math.max(0, x), window.innerWidth - 24)}px`;
         pin.style.top = `${Math.max(0, y - 22)}px`;
+        if (editing?.id === comment.id) pin.classList.add("current");
         pin.addEventListener("click", (event) => {
           event.stopPropagation();
-          openEditor({ id: comment.id, target: null, text: comment.text }, pin.getBoundingClientRect());
-          editorTarget.textContent = comment.quote ? `“${comment.quote}”` : comment.element.text || comment.element.selector;
+          editComment(comment);
+          drawPins();
+        });
+        // Pointing at a pin outlines what it is about.
+        pin.addEventListener("pointerenter", () => {
+          if (editing) return;
+          const rect = anchorRect(comment);
+          if (rect.width === 0) return;
+          place(hover, rect);
+          hoverLabel.textContent = "";
+          hover.hidden = false;
+        });
+        pin.addEventListener("pointerleave", () => {
+          if (!editing) hover.hidden = true;
         });
         return pin;
       }),
@@ -464,8 +515,8 @@ export function createOverlay(host: Host): Overlay {
       if (!comment) return;
       window.scrollTo({ top: Math.max(0, comment.pin.y - window.innerHeight / 3), behavior: "smooth" });
       setTimeout(() => {
-        const { x, y } = pinPlace(comment);
-        openEditor({ id, target: null, text: comment.text }, new DOMRect(x, y, 0, 0));
+        editComment(comment);
+        drawPins();
       }, 300);
     },
     destroy() {

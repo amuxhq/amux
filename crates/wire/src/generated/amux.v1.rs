@@ -818,7 +818,7 @@ impl ::prost::Name for QueuedInput {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Attachment {
-    #[prost(oneof = "attachment::Of", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "attachment::Of", tags = "1, 2, 3, 4, 5")]
     pub of: ::core::option::Option<attachment::Of>,
 }
 /// Nested message and enum types in `Attachment`.
@@ -833,6 +833,9 @@ pub mod attachment {
         Text(super::InlineText),
         #[prost(message, tag = "4")]
         Review(super::Review),
+        /// Comments a person made on a web page, sent from the browser extension.
+        #[prost(message, tag = "5")]
+        Page(super::PageReview),
     }
 }
 impl ::prost::Name for Attachment {
@@ -1012,6 +1015,84 @@ impl ::prost::Name for ReviewComment {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.ReviewComment".into()
+    }
+}
+/// Comments a person made on a web page: an app the agent builds, a page it
+/// changed, a document it wrote. It says nothing of intent; the words sent
+/// with it say whether the comments mean "fix" or "revise".
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PageReview {
+    #[prost(string, tag = "1")]
+    pub url: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub title: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "3")]
+    pub comments: ::prost::alloc::vec::Vec<PageComment>,
+}
+impl ::prost::Name for PageReview {
+    const NAME: &'static str = "PageReview";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PageReview".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.PageReview".into()
+    }
+}
+/// One comment, anchored on the block of the page it was made on. Every
+/// gesture lands on a block: a click comments on the whole block, a text
+/// selection on a phrase within it, and a dragged box on a region, which the
+/// block is the smallest element containing.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PageComment {
+    #[prost(string, tag = "1")]
+    pub text: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub element: ::core::option::Option<PageElement>,
+    /// The selected phrase within the block's text; empty for the whole block.
+    #[prost(string, tag = "3")]
+    pub quote: ::prost::alloc::string::String,
+    /// The dragged region as a screenshot, a blob of the agent; unset for a
+    /// click or a selection.
+    #[prost(message, optional, tag = "4")]
+    pub image: ::core::option::Option<BlobRef>,
+}
+impl ::prost::Name for PageComment {
+    const NAME: &'static str = "PageComment";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PageComment".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.PageComment".into()
+    }
+}
+/// A block of a page, as the agent can search for it.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PageElement {
+    /// A CSS selector for the block when the comment was made.
+    #[prost(string, tag = "1")]
+    pub selector: ::prost::alloc::string::String,
+    /// The block's visible text, cut short.
+    #[prost(string, tag = "2")]
+    pub text: ::prost::alloc::string::String,
+    /// Where the page says the block was drawn from, as "path:line"; empty when
+    /// it does not say.
+    #[prost(string, tag = "3")]
+    pub source: ::prost::alloc::string::String,
+}
+impl ::prost::Name for PageElement {
+    const NAME: &'static str = "PageElement";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PageElement".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.PageElement".into()
     }
 }
 /// "You hold what the origin holds as of now", on every stream. On a session

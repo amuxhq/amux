@@ -108,6 +108,14 @@ pub async fn uninstall(
         println!("Removed the login item ({}).", login.file().display());
     }
     crate::server::stop(config).await?;
+    if let Some(hosts) = crate::browser_host::installed(own_config(config_path)) {
+        for file in hosts
+            .remove()
+            .context("removing the browser extension's host")?
+        {
+            println!("Removed {}.", file.display());
+        }
+    }
     // The data goes first: on Windows the binary running this command
     // cannot be deleted, only moved aside, and a failure there must not
     // leave the data behind.
@@ -187,7 +195,7 @@ const BINARY_NAMES: [&str; 3] = ["amux", "amux.staged", "amux.prev"];
 const BINARY_NAMES: [&str; 3] = ["amux.exe", "amux.staged.exe", "amux.prev.exe"];
 
 /// Where amux is installed: `~/.amux/bin`, on every platform.
-fn install_dir() -> Result<PathBuf> {
+pub(crate) fn install_dir() -> Result<PathBuf> {
     let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
         .context("the home directory is not set")?;
     Ok(PathBuf::from(home).join(".amux").join("bin"))

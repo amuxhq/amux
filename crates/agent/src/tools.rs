@@ -577,29 +577,20 @@ impl Server {
     /// over [`wire::ATTACHMENT_SIZE_LIMIT`], in the words a person's
     /// over-large file gets.
     fn within_limit(&self, attachment: &Attachment) -> Result<(), Refusal> {
-        use wire::attachment::Of;
-        let blob = match attachment.of.as_ref() {
-            Some(Of::Image(blob) | Of::File(blob)) => blob,
-            Some(Of::Review(review)) => {
-                match review.diff.as_ref().and_then(|diff| diff.patch.as_ref()) {
-                    Some(blob) => blob,
-                    None => return Ok(()),
-                }
+        for blob in attachments::blobs(attachment) {
+            let stored = self
+                .dir
+                .join(dir::BLOBS)
+                .join(interpret::to_hex(&blob.hash));
+            let size = std::fs::metadata(&stored).map_or(0, |meta| meta.len());
+            if size > wire::ATTACHMENT_SIZE_LIMIT as u64 {
+                let name = if blob.name.is_empty() {
+                    "the attachment"
+                } else {
+                    &blob.name
+                };
+                return Err(too_large_words(name).into());
             }
-            Some(Of::Text(_)) | None => return Ok(()),
-        };
-        let stored = self
-            .dir
-            .join(dir::BLOBS)
-            .join(interpret::to_hex(&blob.hash));
-        let size = std::fs::metadata(&stored).map_or(0, |meta| meta.len());
-        if size > wire::ATTACHMENT_SIZE_LIMIT as u64 {
-            let name = if blob.name.is_empty() {
-                "the attachment"
-            } else {
-                &blob.name
-            };
-            return Err(too_large_words(name).into());
         }
         Ok(())
     }

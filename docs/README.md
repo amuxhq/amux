@@ -17,6 +17,7 @@ people will notice updates the page that describes it.
   [What amux sends](guide/understand/what-amux-sends.md).
 - **Use:** [Terminal app](guide/use/terminal.md),
   [iPhone app](guide/use/iphone.md),
+  [Browser extension](guide/use/browser.md),
   [Agents working together](guide/use/agents-working-together.md),
   [Running amux on a server](guide/use/server.md),
   [Updates and channels](guide/use/updates.md),
@@ -62,6 +63,8 @@ paths to the `.md` files, so they work both here and on the site.
 - [Terminal client](TERMINAL.md) — screens, keys, the leader, raw attach and the CLI verbs.
 - [iPhone app](IOS.md) — packages, the chat and fleet, driving the app, snapshots and journeys.
 - [Mac app](MAC.md) — a client of the daemon: installing and attaching, sign-in, building and running.
+- [Browser extension](BROWSER.md) — commenting on web pages for an agent: the overlay and its hosts, the native
+  messaging bridge and its registration, the page review attachment, and WebAssembly as a convenience.
 - [Embedding](EMBEDDED.md) — app-runtime, app-embedded, app-ffi, the generated Swift types and the seams.
 - [iPhone copy](IOS_COPY.md) — the rules the app's words follow and the lint that holds them.
 - [Cloud](CLOUD.md) — what the app and daemon ask of amux.sh.

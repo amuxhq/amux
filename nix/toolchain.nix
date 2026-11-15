@@ -34,6 +34,8 @@ in
   pkgs.buf
   pkgs.python3
   pkgs.tmux
+  # The browser extension under js/: its build scripts, npm and its tests.
+  pkgs.nodejs_24
 ]
 # A C compiler for the crates that build C: ring, and SQLite where it is
 # bundled. Linux only. On macOS the iPhone bridge needs Apple's own toolchain

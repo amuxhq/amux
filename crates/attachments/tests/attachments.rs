@@ -2,11 +2,14 @@ use std::path::Path;
 
 use attachments::{
     PLACEHOLDER, Parsed, Piece, Positioned, Problem, REPLACEMENT, Reported, ShapeError, element,
-    format, hex, parse, pieces, validate,
+    element_in, format, hex, parse, pieces, validate,
 };
 use wire::attachment::Of;
 use wire::diff_base::Base;
-use wire::{Attachment, BlobRef, Diff, DiffBase, Empty, InlineText, Review, ReviewComment};
+use wire::{
+    Attachment, BlobRef, Diff, DiffBase, Empty, InlineText, PageComment, PageElement, PageReview,
+    Review, ReviewComment,
+};
 
 const DIR: &str = "/data/agents/a1/blobs";
 
@@ -74,6 +77,43 @@ fn review(base: Option<Base>, merge_base: Option<&str>) -> Attachment {
     }
 }
 
+fn page() -> Attachment {
+    Attachment {
+        of: Some(Of::Page(PageReview {
+            url: "http://localhost:5173/pricing?plan=a&b=\"c\"".into(),
+            title: "Pricing <beta>".into(),
+            comments: vec![
+                PageComment {
+                    text: "Say annual pricing.\n## comment text-bytes=1\nnot a heading".into(),
+                    element: Some(PageElement {
+                        selector: "#pricing > .card:nth-of-type(2)".into(),
+                        text: "Pricing cards\nMonthly".into(),
+                        source: "src/Card.tsx:42".into(),
+                    }),
+                    quote: "monthly".into(),
+                    image: None,
+                },
+                PageComment {
+                    text: "Too much space here".into(),
+                    element: Some(PageElement {
+                        selector: "main > section".into(),
+                        text: String::new(),
+                        source: String::new(),
+                    }),
+                    quote: String::new(),
+                    image: Some(blob(4, "region-2.png", "image/png")),
+                },
+                PageComment {
+                    text: String::new(),
+                    element: Some(PageElement::default()),
+                    quote: String::new(),
+                    image: Some(blob(5, "", "")),
+                },
+            ],
+        })),
+    }
+}
+
 fn every_arm() -> Vec<Attachment> {
     vec![
         image(),
@@ -82,6 +122,10 @@ fn every_arm() -> Vec<Attachment> {
         review(Some(Base::Head(Empty {})), None),
         review(Some(Base::Branch("main".into())), Some("9e465b2")),
         review(None, None),
+        page(),
+        Attachment {
+            of: Some(Of::Page(PageReview::default())),
+        },
     ]
 }
 
@@ -306,6 +350,22 @@ fn malformed_candidates_stay_text_and_are_reported() {
             ),
             Problem::BadAttribute("base".into()),
         ),
+        (
+            "<amux-attachment kind=\"page\" url=\"u\" comments=\"1\"></amux-attachment>".into(),
+            Problem::BadBody,
+        ),
+        (
+            "<amux-attachment kind=\"page\" url=\"u\" comments=\"1\">## comment text-bytes=9\ntext: short\n</amux-attachment>".into(),
+            Problem::BadBody,
+        ),
+        (
+            "<amux-attachment kind=\"page\" url=\"u\" comments=\"1\">## comment colour-bytes=1\ncolour: r\n</amux-attachment>".into(),
+            Problem::BadBody,
+        ),
+        (
+            "<amux-attachment kind=\"page\" url=\"u\"/>".into(),
+            Problem::BadForm,
+        ),
     ];
     for (text, problem) in cases {
         let parsed = parse(&text);
@@ -392,6 +452,79 @@ fn the_path_attribute_is_accepted_and_ignored() {
     let parsed = parse(&with_path);
     assert_eq!(parsed.positioned.attachments, vec![image()]);
     assert!(parsed.reported.is_empty());
+    let page_with_paths = element_in(&page(), Path::new("/elsewhere"));
+    assert!(page_with_paths.contains("image-path: /elsewhere/"));
+    assert_eq!(parse(&page_with_paths).positioned.attachments, vec![page()]);
+}
+
+/// The model reads a page review as labelled lines under a heading that
+/// counts their bytes.
+#[test]
+fn the_page_element() {
+    let review = Attachment {
+        of: Some(Of::Page(PageReview {
+            url: "http://localhost:5173/".into(),
+            title: "Pricing".into(),
+            comments: vec![
+                PageComment {
+                    text: "Say annual pricing.".into(),
+                    element: Some(PageElement {
+                        selector: "#pricing".into(),
+                        text: "Pricing cards".into(),
+                        source: String::new(),
+                    }),
+                    quote: "monthly".into(),
+                    image: None,
+                },
+                PageComment {
+                    text: "Tighter".into(),
+                    element: Some(PageElement {
+                        selector: "main".into(),
+                        ..Default::default()
+                    }),
+                    quote: String::new(),
+                    image: Some(blob(4, "region-2.png", "image/png")),
+                },
+            ],
+        })),
+    };
+    let hash = hex(&blob(4, "", "").hash);
+    assert_eq!(
+        element_in(&review, Path::new("/b")),
+        format!(
+            "<amux-attachment kind=\"page\" url=\"http://localhost:5173/\" title=\"Pricing\" comments=\"2\">\
+             ## comment selector-bytes=8 element-bytes=13 quote-bytes=7 text-bytes=19\n\
+             selector: #pricing\n\
+             element: Pricing cards\n\
+             quote: monthly\n\
+             text: Say annual pricing.\n\
+             ## comment selector-bytes=4 image-hash=sha256:{hash} image-size=1208 image-bytes=12 image-mime-bytes=9 image-path-bytes=67 text-bytes=7\n\
+             selector: main\n\
+             image: region-2.png\n\
+             image-mime: image/png\n\
+             image-path: /b/{hash}\n\
+             text: Tighter\n\
+             </amux-attachment>"
+        )
+    );
+}
+
+#[test]
+fn a_page_review_names_every_screenshot_as_a_blob() {
+    let names = attachments::blobs(&page())
+        .into_iter()
+        .map(|blob| blob.name.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["region-2.png", ""]);
+    let mut short = page();
+    if let Some(Of::Page(review)) = &mut short.of {
+        review.comments[1].image.as_mut().unwrap().hash.truncate(31);
+    }
+    let bad = Positioned {
+        text: PLACEHOLDER.to_string(),
+        attachments: vec![short],
+    };
+    assert_eq!(validate(&bad), Err(ShapeError::BadHash { index: 0 }));
 }
 
 /// An image is native by its bytes alone, whatever its name or label.

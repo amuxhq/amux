@@ -12,6 +12,7 @@
 //! <amux-attachment kind="file" hash="sha256:…" name="trace.json" mime="application/json" size="8192" path="/…"/>
 //! <amux-attachment kind="text" name="pasted-1">the pasted text…</amux-attachment>
 //! <amux-attachment kind="review" hash="sha256:…" name="review.diff" mime="text/x-diff" size="512" base="working-tree" head="4f2a9c1" comments="1" path="/…">…</amux-attachment>
+//! <amux-attachment kind="page" url="http://localhost:5173/" title="Pricing" comments="1">…</amux-attachment>
 //! ```
 //!
 //! `path` is where the bytes are on the host that formats the element; the
@@ -26,7 +27,10 @@ use std::path::{Path, PathBuf};
 
 use wire::attachment::Of;
 use wire::diff_base::Base;
-use wire::{Attachment, BlobRef, Diff, DiffBase, Empty, InlineText, Review, ReviewComment};
+use wire::{
+    Attachment, BlobRef, Diff, DiffBase, Empty, InlineText, PageComment, PageElement, PageReview,
+    Review, ReviewComment,
+};
 
 /// The type of an image both providers read natively (PNG, JPEG, GIF or
 /// WebP), judged by its bytes; None for anything else, which reaches the
@@ -135,19 +139,20 @@ pub fn validate(p: &Positioned) -> Result<(), ShapeError> {
         });
     }
     for (index, attachment) in p.attachments.iter().enumerate() {
-        let blob = match &attachment.of {
+        match &attachment.of {
             None => return Err(ShapeError::Empty { index }),
-            Some(Of::Image(blob) | Of::File(blob)) => Some(blob),
-            Some(Of::Review(review)) => Some(
-                review
+            Some(Of::Review(review))
+                if review
                     .diff
                     .as_ref()
                     .and_then(|diff| diff.patch.as_ref())
-                    .ok_or(ShapeError::BadHash { index })?,
-            ),
-            Some(Of::Text(_)) => None,
-        };
-        if blob.is_some_and(|blob| blob.hash.len() != 32) {
+                    .is_none() =>
+            {
+                return Err(ShapeError::BadHash { index });
+            }
+            Some(_) => {}
+        }
+        if blobs(attachment).iter().any(|blob| blob.hash.len() != 32) {
             return Err(ShapeError::BadHash { index });
         }
     }
@@ -178,7 +183,7 @@ pub fn pieces<'a>(p: &'a Positioned, dir: &Path) -> Vec<Piece<'a>> {
         {
             let path = blob_path(attachment, dir);
             pieces.push(Piece::Element {
-                element: element(attachment, path.as_deref()),
+                element: element_in(attachment, dir),
                 attachment,
                 path,
             });
@@ -208,16 +213,54 @@ pub fn blob_path(attachment: &Attachment, dir: &Path) -> Option<PathBuf> {
     blob_of(attachment).map(|blob| dir.join(hex(&blob.hash)))
 }
 
+/// The one blob an attachment is, for the kinds that are a single file: an
+/// image, a file, or a review's patch. A page review is none; its comments'
+/// screenshots are each a blob of their own (see [`blobs`]).
 fn blob_of(attachment: &Attachment) -> Option<&BlobRef> {
     match attachment.of.as_ref()? {
         Of::Image(blob) | Of::File(blob) => Some(blob),
         Of::Review(review) => review.diff.as_ref()?.patch.as_ref(),
-        Of::Text(_) => None,
+        Of::Text(_) | Of::Page(_) => None,
     }
 }
 
-/// One attachment's canonical element.
+/// Every blob an attachment names: what must be with an agent before the
+/// attachment can reach it.
+pub fn blobs(attachment: &Attachment) -> Vec<&BlobRef> {
+    match &attachment.of {
+        Some(Of::Page(page)) => page
+            .comments
+            .iter()
+            .filter_map(|comment| comment.image.as_ref())
+            .collect(),
+        _ => blob_of(attachment).into_iter().collect(),
+    }
+}
+
+/// The images an attachment shows the model: an image, or a page review's
+/// screenshots. A provider that takes images natively puts each one's bytes
+/// right after the attachment's element, which names them too.
+pub fn images(attachment: &Attachment) -> Vec<&BlobRef> {
+    match &attachment.of {
+        Some(Of::Image(blob)) => vec![blob],
+        Some(Of::Page(_)) => blobs(attachment),
+        _ => Vec::new(),
+    }
+}
+
+/// One attachment's canonical element, with the paths of its bytes under
+/// `dir`, the agent's blobs directory.
+pub fn element_in(attachment: &Attachment, dir: &Path) -> String {
+    written(attachment, blob_path(attachment, dir).as_deref(), Some(dir))
+}
+
+/// One attachment's canonical element, naming `path` as where its bytes
+/// are. A page review's screenshots are named only by [`element_in`].
 pub fn element(attachment: &Attachment, path: Option<&Path>) -> String {
+    written(attachment, path, None)
+}
+
+fn written(attachment: &Attachment, path: Option<&Path>, dir: Option<&Path>) -> String {
     let mut out = String::from(OPEN);
     match &attachment.of {
         None => return String::new(),
@@ -258,6 +301,16 @@ pub fn element(attachment: &Attachment, path: Option<&Path>) -> String {
             }
             out.push('>');
             out.push_str(&escape(&review_body(&review.comments), false));
+            out.push_str(CLOSE);
+            return out;
+        }
+        Some(Of::Page(page)) => {
+            attribute(&mut out, "kind", "page");
+            attribute(&mut out, "url", &page.url);
+            attribute(&mut out, "title", &page.title);
+            attribute(&mut out, "comments", &page.comments.len().to_string());
+            out.push('>');
+            out.push_str(&escape(&page_body(&page.comments, dir), false));
             out.push_str(CLOSE);
             return out;
         }
@@ -335,6 +388,139 @@ fn parse_review_body(body: &str) -> Option<Vec<ReviewComment>> {
     Some(comments)
 }
 
+/// A page review's comments. Each is a heading that names the byte count of
+/// every line it has, then those lines in a fixed order, each `label: value`,
+/// so the model reads labelled fields and no value can be mistaken for the
+/// next line or heading:
+///
+/// ```text
+/// ## comment selector-bytes=8 element-bytes=13 quote-bytes=7 text-bytes=19
+/// selector: #pricing
+/// element: Pricing cards
+/// quote: monthly
+/// text: Say annual pricing.
+/// ```
+///
+/// A line with an empty value is left out, heading and all. A screenshot
+/// adds `image-hash` and `image-size` to the heading and its name, mime type
+/// and, when the blobs directory is known, its path as lines.
+fn page_body(comments: &[PageComment], dir: Option<&Path>) -> String {
+    let mut body = String::new();
+    for comment in comments {
+        let element = comment.element.clone().unwrap_or_default();
+        let mut heading = String::from("## comment");
+        let mut lines = String::new();
+        let mut line = |heading: &mut String, label: &str, value: &str| {
+            if value.is_empty() {
+                return;
+            }
+            heading.push_str(&format!(" {label}-bytes={}", value.len()));
+            lines.push_str(&format!("{label}: {value}\n"));
+        };
+        line(&mut heading, "selector", &element.selector);
+        line(&mut heading, "element", &element.text);
+        line(&mut heading, "source", &element.source);
+        line(&mut heading, "quote", &comment.quote);
+        if let Some(image) = &comment.image {
+            heading.push_str(&format!(
+                " image-hash={HASH_PREFIX}{} image-size={}",
+                hex(&image.hash),
+                image.size
+            ));
+            line(&mut heading, "image", &image.name);
+            line(&mut heading, "image-mime", &image.mime);
+            if let Some(dir) = dir {
+                let path = dir.join(hex(&image.hash));
+                line(&mut heading, "image-path", &path.to_string_lossy());
+            }
+        }
+        line(&mut heading, "text", &comment.text);
+        body.push_str(&heading);
+        body.push('\n');
+        body.push_str(&lines);
+    }
+    body
+}
+
+/// The lines of a page comment, in the order [`page_body`] writes them.
+const PAGE_LINES: [&str; 8] = [
+    "selector",
+    "element",
+    "source",
+    "quote",
+    "image",
+    "image-mime",
+    "image-path",
+    "text",
+];
+
+fn parse_page_body(body: &str) -> Option<Vec<PageComment>> {
+    let mut comments = Vec::new();
+    let mut rest = body;
+    while !rest.is_empty() {
+        let (heading, after) = rest.strip_prefix("## comment")?.split_once('\n')?;
+        let mut counts = BTreeMap::new();
+        let mut image_hash = None;
+        let mut image_size = None;
+        for field in heading.split(' ').filter(|field| !field.is_empty()) {
+            let (name, value) = field.split_once('=')?;
+            match name {
+                "image-hash" if image_hash.is_none() => image_hash = Some(parse_hash(value)?),
+                "image-size" if image_size.is_none() => image_size = Some(value.parse().ok()?),
+                _ => {
+                    let label = name.strip_suffix("-bytes")?;
+                    if !PAGE_LINES.contains(&label)
+                        || counts.insert(label, value.parse::<usize>().ok()?).is_some()
+                    {
+                        return None;
+                    }
+                }
+            }
+        }
+        let mut values = BTreeMap::new();
+        let mut after = after;
+        for label in PAGE_LINES {
+            let Some(&count) = counts.get(label) else {
+                continue;
+            };
+            let value_start = after.strip_prefix(label)?.strip_prefix(": ")?;
+            let value = value_start.get(..count)?;
+            after = value_start[count..].strip_prefix('\n')?;
+            values.insert(label, value.to_owned());
+        }
+        rest = after;
+        let mut take = |label: &str| values.remove(label).unwrap_or_default();
+        let element = PageElement {
+            selector: take("selector"),
+            text: take("element"),
+            source: take("source"),
+        };
+        let quote = take("quote");
+        // The path is where the bytes were on the host that wrote the
+        // element; the hash names them.
+        take("image-path");
+        let image = match (image_hash, image_size) {
+            (Some(hash), size) => Some(BlobRef {
+                hash,
+                name: take("image"),
+                mime: take("image-mime"),
+                size: size.unwrap_or(0),
+            }),
+            (None, None) if !counts.contains_key("image") && !counts.contains_key("image-mime") => {
+                None
+            }
+            (None, _) => return None,
+        };
+        comments.push(PageComment {
+            text: take("text"),
+            element: Some(element),
+            quote,
+            image,
+        });
+    }
+    Some(comments)
+}
+
 /// Why a candidate element stayed text.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Problem {
@@ -342,7 +528,7 @@ pub enum Problem {
     Unterminated,
     /// Another element opens inside this one's body.
     Nested,
-    /// `kind` is missing or not image, file, text or review.
+    /// `kind` is missing or not image, file, text, review or page.
     UnknownKind,
     /// An image, file or review with no `hash`.
     MissingHash,
@@ -491,7 +677,24 @@ fn parse_element(text: &str, start: usize) -> Result<(Attachment, usize), Proble
                 comments,
             })
         }
-        ("image" | "file" | "text" | "review", _) => return Err(Problem::BadForm),
+        ("page", Some(body)) => {
+            let url = attributes.remove("url").unwrap_or_default();
+            let title = attributes.remove("title").unwrap_or_default();
+            let count: usize = attributes
+                .remove("comments")
+                .and_then(|count| count.parse().ok())
+                .ok_or_else(|| Problem::BadAttribute("comments".into()))?;
+            let comments = parse_page_body(&body).ok_or(Problem::BadBody)?;
+            if comments.len() != count {
+                return Err(Problem::BadBody);
+            }
+            Of::Page(PageReview {
+                url,
+                title,
+                comments,
+            })
+        }
+        ("image" | "file" | "text" | "review" | "page", _) => return Err(Problem::BadForm),
         _ => return Err(Problem::UnknownKind),
     };
     if let Some(name) = attributes.into_keys().next() {

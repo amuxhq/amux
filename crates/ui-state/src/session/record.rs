@@ -217,6 +217,17 @@ fn attachment(held: Attachment, hashes: &mut Hashes) -> Attachment {
                 }),
                 ..Default::default()
             }),
+            Of::Page(page) => Of::Page(wire::PageReview {
+                comments: page
+                    .comments
+                    .into_iter()
+                    .map(|comment| wire::PageComment {
+                        image: comment.image.map(&mut blob),
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            }),
         }),
     }
 }

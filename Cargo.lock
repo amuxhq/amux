@@ -552,6 +552,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "browser-core"
+version = "0.1.0"
+dependencies = [
+ "attachments",
+ "base64 0.22.1",
+ "prost",
+ "serde",
+ "serde_json",
+ "ui-state",
+ "ui-view",
+ "wire",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

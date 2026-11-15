@@ -2,12 +2,15 @@
 //! runs, and the hidden entries the rest of amux runs. Those are the
 //! service manager's (`supervise`, `daemon`, `relay`) and amux's own
 //! (`internal …`: the agent process, the tool server and hook command its
-//! provider launches, the provider catalogue, and both ends of an SSH
-//! link). Every hidden name is called by another amux build — an agent's
-//! provider started by the last one, the far host of an SSH pairing, a
-//! service unit — so it changes only with all of its callers.
+//! provider launches, the provider catalogue, both ends of an SSH link, and
+//! the bridge a browser starts for the amux extension). Every hidden name is
+//! called by another amux build — an agent's provider started by the last
+//! one, the far host of an SSH pairing, a service unit, a browser's host
+//! manifest — so it changes only with all of its callers.
 
 mod attach;
+mod browser;
+mod browser_host;
 mod config;
 mod connect;
 mod pairing;
@@ -303,6 +306,14 @@ enum Internal {
     SshPair,
     /// A peer's link over SSH, joined to the profile's link socket.
     SshLink,
+    /// The browser extension's calls, over native messaging on stdin and
+    /// stdout. A browser starts it, naming the extension's origin.
+    Browser {
+        /// What the browser passes: the extension's origin, and on
+        /// Windows its window handle. Ignored.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        from: Vec<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -516,6 +527,14 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                 let selected = connect::profile(&config, profile).await?;
                 pairing::logout(connect::admin_of(&selected).await?, &selected).await
             }
+            Command::Internal {
+                command: Internal::Browser { .. },
+            } => {
+                browser::run(browser::Sockets {
+                    front_door: config.front_door(),
+                })
+                .await
+            }
             #[cfg(unix)]
             Command::Internal {
                 command: Internal::SshPair,
@@ -676,6 +695,15 @@ mod tests {
             &["amux", "internal", "hook", "claude"],
             &["amux", "internal", "ssh-pair"],
             &["amux", "internal", "ssh-link"],
+            &["amux", "internal", "browser"],
+            &["amux", "internal", "browser", "chrome-extension://abc/"],
+            &[
+                "amux",
+                "internal",
+                "browser",
+                "chrome-extension://abc/",
+                "--parent-window=0",
+            ],
         ] {
             Cli::try_parse_from(args).unwrap_or_else(|error| panic!("{args:?}: {error}"));
         }
@@ -736,6 +764,14 @@ mod tests {
             &["amux", "internal", "hook", "claude"],
             &["amux", "internal", "ssh-pair"],
             &["amux", "internal", "ssh-link", "--profile", "abc"],
+            &["amux", "internal", "browser", "chrome-extension://abc/"],
+            &[
+                "amux",
+                "internal",
+                "browser",
+                "chrome-extension://abc/",
+                "--parent-window=0",
+            ],
             &[
                 "amux",
                 "internal",

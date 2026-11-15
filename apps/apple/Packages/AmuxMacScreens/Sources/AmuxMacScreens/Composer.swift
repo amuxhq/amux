@@ -223,6 +223,8 @@ struct Composer: View {
         case .image(let blob), .file(let blob): blob.name
         case .text(let name, _): name
         case .review(_, let comments): "Review · \(ChatWords.comments(comments.count))"
+        case .page(let page):
+            "\(page.title.isEmpty ? page.url : page.title) · \(ChatWords.comments(page.comments.count))"
         }
     }
 

@@ -7,6 +7,7 @@ mod support;
 
 mod agent_process;
 mod attach;
+mod browser;
 mod cli_words;
 mod codex_attach;
 mod overlap;

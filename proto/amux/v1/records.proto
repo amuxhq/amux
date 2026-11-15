@@ -422,6 +422,8 @@ message Attachment {
     BlobRef file = 2;
     InlineText text = 3;
     Review review = 4;
+    // Comments a person made on a web page, sent from the browser extension.
+    PageReview page = 5;
   }
 }
 
@@ -492,6 +494,40 @@ message ReviewComment {
   // Old-side line for a comment on a removed line.
   uint32 old_line = 3;
   string text = 4;
+}
+
+// Comments a person made on a web page: an app the agent builds, a page it
+// changed, a document it wrote. It says nothing of intent; the words sent
+// with it say whether the comments mean "fix" or "revise".
+message PageReview {
+  string url = 1;
+  string title = 2;
+  repeated PageComment comments = 3;
+}
+
+// One comment, anchored on the block of the page it was made on. Every
+// gesture lands on a block: a click comments on the whole block, a text
+// selection on a phrase within it, and a dragged box on a region, which the
+// block is the smallest element containing.
+message PageComment {
+  string text = 1;
+  PageElement element = 2;
+  // The selected phrase within the block's text; empty for the whole block.
+  string quote = 3;
+  // The dragged region as a screenshot, a blob of the agent; unset for a
+  // click or a selection.
+  BlobRef image = 4;
+}
+
+// A block of a page, as the agent can search for it.
+message PageElement {
+  // A CSS selector for the block when the comment was made.
+  string selector = 1;
+  // The block's visible text, cut short.
+  string text = 2;
+  // Where the page says the block was drawn from, as "path:line"; empty when
+  // it does not say.
+  string source = 3;
 }
 
 // "You hold what the origin holds as of now", on every stream. On a session

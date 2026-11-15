@@ -157,16 +157,6 @@ fn said(rejected: &Rejected) -> String {
     .to_owned()
 }
 
-/// The blob an attachment's bytes are, for the kinds that have one.
-fn blob_of(attachment: &wire::Attachment) -> Option<&wire::BlobRef> {
-    use wire::attachment::Of;
-    match attachment.of.as_ref()? {
-        Of::Image(blob) | Of::File(blob) => Some(blob),
-        Of::Review(review) => review.diff.as_ref()?.patch.as_ref(),
-        Of::Text(_) => None,
-    }
-}
-
 impl ProfileRuntime {
     /// An own agent's id from request bytes: not found, or on another host.
     async fn own_agent(&self, agent_id: &[u8]) -> Result<AgentId, RelayError> {
@@ -400,7 +390,7 @@ impl ProfileRuntime {
         let Some(envelope::Body::Message(message)) = &envelope.body else {
             return Ok(());
         };
-        for blob in message.attachments.iter().filter_map(blob_of) {
+        for blob in message.attachments.iter().flat_map(attachments::blobs) {
             let name = if blob.name.is_empty() {
                 crate::blobs::hex(&blob.hash)
             } else {

@@ -16,11 +16,15 @@ GitHub reads as a job's outputs:
               themselves, and a nightly run covers the rest.
   bridge      The pointer checks and the iOS target check: a crate the
               phone's bridge is built from.
+  browser     The browser extension's checks and its end-to-end test: its
+              TypeScript under js/, a crate its WebAssembly is built from,
+              or the amux binary, whose bridge it starts.
 
 The policy job is not here: it is a minute, holds the documentation check,
 and always runs.
 
-A file is documentation, the phone app, one crate's, or anything else.
+A file is documentation, the phone app, the browser extension's, one
+crate's, or anything else.
 Anything else (a manifest, a script, a workflow, a journey, a schema) can
 reach every job, so all of them run. Which crates a crate is built from is
 read from the manifests, not from cargo, so this needs no toolchain. When the
@@ -44,16 +48,18 @@ except ModuleNotFoundError:  # Apple's command-line tools still ship Python 3.9.
     from pip._vendor import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
-GROUPS = ["tests", "product", "models", "sanitizers", "bridge"]
+GROUPS = ["tests", "product", "models", "sanitizers", "bridge", "browser"]
 
 # Documentation: nothing built or tested reads it, but for READS.
 DOCS = ("docs/", "images/", "marketing/")
 # A file under DOCS that a crate's test reads, and that crate.
 READS = {"docs/guide/understand/what-amux-sends.md": "analytics"}
 PHONE = "apps/apple/"
+JS = "js/"
 
 MODELS = ["models"]
 BRIDGE = ["app-ffi"]
+BROWSER = ["browser-core"]
 
 
 def sanitized() -> list[str]:
@@ -108,7 +114,7 @@ def built_from(names: list[str], crates: dict[str, dict]) -> set[str]:
 def affected(files: list[str], crates: dict[str, dict], sanitizers: list[str]) -> dict[str, bool]:
     by_folder = {crate["folder"]: name for name, crate in crates.items()}
     changed: set[str] = set()
-    everything = phone = False
+    everything = phone = js = False
     for file in files:
         parts = file.split("/")
         if file in READS:
@@ -117,6 +123,8 @@ def affected(files: list[str], crates: dict[str, dict], sanitizers: list[str]) -
             continue
         elif file.startswith(PHONE):
             phone = True
+        elif file.startswith(JS):
+            js = True
         elif parts[0] == "crates" and len(parts) > 2 and parts[1] in by_folder:
             changed.add(by_folder[parts[1]])
         else:
@@ -132,6 +140,7 @@ def affected(files: list[str], crates: dict[str, dict], sanitizers: list[str]) -
         "models": reaches(MODELS),
         "sanitizers": everything or bool(changed & set(sanitizers)),
         "bridge": reaches(BRIDGE),
+        "browser": js or reaches(BROWSER) or "amux" in changed,
     }
 
 

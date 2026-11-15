@@ -1,6 +1,6 @@
 # Releasing amux
 
-*For maintainers cutting a release of the iPhone app, the Mac app or the `amux` binary, and developers working on how installed daemons find and verify new builds.*
+*For maintainers cutting a release of the iPhone app, the Mac app, the browser extension or the `amux` binary, and developers working on how installed daemons find and verify new builds.*
 
 Each product that ships from this repository has its own `just` module and
 the same two commands, on its own schedule:
@@ -15,6 +15,13 @@ the same two commands, on its own schedule:
 | The iPhone app | `just ios release`: archive, validate, upload to App Store Connect | `just ios deploy <version>`: submit it for review, or give it to TestFlight's external testers | `ios-v<version>-b<build>` |
 | The `amux` binary | `just amux release <version>`: the Release workflow builds the pushed tag | `just amux deploy <version>`: sign the channel manifest and publish it to amux.sh | `v<version>` |
 | The Mac app | `just mac release <version>`: build, sign with Developer ID, make the update zip and the disk image ([MAC](MAC.md#releases)) | `just mac deploy <version>`: sign the channel's Mac feed and publish it with the disk image | `mac-v<version>` |
+| The browser extension | `just browser`, then zip `js/extension/dist` with its `version` in `static/manifest.json` raised | upload the zip to the extension's Chrome Web Store listing, which reviews it and updates browsers on its own schedule | none yet |
+
+The extension's ID is fixed by the public key in its manifest, which the host
+manifests amux writes name; the listing must keep that key, so the store's ID
+and an unpacked copy's are the same. An extension version can meet an `amux`
+of any version, and needs nothing of it beyond `amux.v1` and the bridge
+([Browser extension](BROWSER.md#how-it-connects)).
 
 ## The iPhone app
 

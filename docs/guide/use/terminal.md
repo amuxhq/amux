@@ -241,6 +241,18 @@ Press `,` on home for settings:
   (`fix-2`) instead of failing. When you delete a worktree's last agent,
   amux removes the worktree, unless it holds changes you haven't committed.
 
+  With `suspension` on, an agent you started yourself that has sat idle
+  for 30 minutes closes its Claude or Codex to free the machine. It still
+  shows as idle, and starts again on its own when a message reaches it,
+  including a report from an agent it started, or when you open its
+  terminal. It doesn't suspend while it's working, waiting for agents it
+  started, running something in the background, holding a wake-up it
+  scheduled or a permission you gave it for the session, or while a
+  terminal is open on it. After the machine restarts, agents that were idle
+  stay that way until something reaches them, and one that was working
+  carries on where it left off; its chat marks where with "Resumed · after
+  the machine restarted".
+
 These settings belong to the machine, so your phone and every other terminal
 see a change at once. Copying when you select is the exception: it applies to
 every terminal on this machine and doesn't affect your phone.
@@ -254,6 +266,9 @@ theme = "terminal"    # terminal (your terminal's own colours), dark or light
 
 [experiments]
 enabled = ["workspaces"]   # the experiments switched on, by name
+
+[experiments.suspension]
+after = "1h"               # how long an agent sits idle before it suspends
 ```
 
 To go back to following Claude or Codex after picking in amux, forget the

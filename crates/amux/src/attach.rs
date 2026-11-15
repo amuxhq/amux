@@ -11,6 +11,10 @@
 //! model fed by it, so coming back repaints the same process where it was
 //! rather than starting a new view; picking another agent opens a second
 //! connection; the process ending closes them all.
+//!
+//! A suspended agent's row is live with no process, so its terminal has no
+//! socket yet: the attach asks the daemon to resume it, with no input, and
+//! dials once its process is up.
 
 use std::collections::HashMap;
 use std::io::{self, Read as _, Write as _};
@@ -37,6 +41,7 @@ pub enum Outcome {
 
 /// This process's raw attach connections, by agent id.
 pub struct Attacher {
+    profile: wire::Profile,
     agents: PathBuf,
     local_host: Vec<u8>,
     leader: LeaderKey,
@@ -52,6 +57,7 @@ impl Attacher {
         // A profile's host id is its id.
         Uuid::from_slice(&profile.id).context("the profile's id")?;
         Ok(Attacher {
+            profile: profile.clone(),
             agents: dir.join("agents"),
             local_host: profile.id.clone(),
             leader,
@@ -124,7 +130,12 @@ impl Attacher {
         if !returning {
             let uuid = Uuid::from_slice(&id).context("the agent's id")?;
             let dir = self.agents.join(uuid.to_string());
-            let attached = Attached::connect(&dir).await.with_context(|| {
+            let connected = if suspended(agent) {
+                self.wake(agent, &dir).await
+            } else {
+                Attached::connect(&dir).await
+            };
+            let attached = connected.with_context(|| {
                 format!(
                     "attaching to {}'s terminal at {}",
                     agent.name.clone(),
@@ -142,6 +153,52 @@ impl Attacher {
         }
         outcome
     }
+}
+
+impl Attacher {
+    /// Resumes the suspended agent with no input and dials its terminal
+    /// once its process is up. A resume refused because another got there
+    /// first still finds the process.
+    async fn wake(&self, agent: &Agent, dir: &Path) -> io::Result<Attached> {
+        match crate::connect::client_of(&self.profile).await {
+            Ok(mut client) => {
+                let resumed = client
+                    .agents
+                    .resume_agent(wire::ResumeAgentRequest {
+                        agent_id: agent.agent_id.clone(),
+                        initial_prompt: None,
+                    })
+                    .await;
+                if let Err(status) = resumed {
+                    tracing::debug!(%status, "resuming a suspended agent to attach to it");
+                }
+            }
+            Err(error) => tracing::debug!(%error, "reaching the daemon to resume an agent"),
+        }
+        // Answered once the process said Hello; its terminal may take a
+        // moment longer to listen.
+        let mut tries = 0;
+        loop {
+            match Attached::connect(dir).await {
+                Ok(attached) => return Ok(attached),
+                Err(_) if tries < WAKE_TRIES => {
+                    tries += 1;
+                    tokio::time::sleep(WAKE_RETRY).await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+}
+
+/// How often, and how long apart, an attach dials a suspended agent's
+/// terminal while it starts again.
+const WAKE_TRIES: u32 = 50;
+const WAKE_RETRY: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// Whether the agent is suspended: live, with no process until a resume.
+fn suspended(agent: &Agent) -> bool {
+    agent.lifecycle() == Lifecycle::Live && agent.exit_cause() == wire::ExitCause::Suspended
 }
 
 /// What the passthrough says on the way back to the shell.

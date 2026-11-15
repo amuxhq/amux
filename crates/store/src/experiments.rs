@@ -62,6 +62,9 @@ CREATE TABLE IF NOT EXISTS exp_workspaces_1_members (
 "#,
 };
 
+/// The table [`SUSPENSION_1`] keeps each own agent's run in.
+pub const SUSPENSION_1_RUNS: &str = "exp_suspension_1_runs";
+
 /// The incarnation each of this host's own agents began its current run
 /// at: a resume after a suspension or a restart continues the run, any
 /// other resume starts a new one.

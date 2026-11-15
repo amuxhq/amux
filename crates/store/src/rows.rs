@@ -11,7 +11,7 @@
 use prost::Message as _;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
-use crate::experiments::WORKSPACES_1_MEMBERS;
+use crate::experiments::{SUSPENSION_1_RUNS, WORKSPACES_1_MEMBERS};
 use crate::{
     AgentKey, AgentRow, Delivery, Item, Notification, Snapshot, StoreError, TrustedHost,
     decode_attachments, encode_attachments,
@@ -285,6 +285,9 @@ pub(crate) struct Rows<'a> {
     /// The `workspaces/1` experiment's table is there: a row read carries
     /// its entry, and a row removed takes its entry with it.
     pub(crate) workspaces_1: bool,
+    /// The `suspension/1` experiment's table is there: a row removed takes
+    /// its run with it.
+    pub(crate) suspension_1: bool,
 }
 
 impl Rows<'_> {
@@ -473,7 +476,46 @@ impl Rows<'_> {
         if self.workspaces_1 {
             self.put_workspaces_1(agent, None)?;
         }
+        if self.suspension_1 && self.is_own(agent) {
+            self.put_run_start(&agent.agent, None)?;
+        }
         self.remove_notifications(&agent.agent)
+    }
+
+    /// The incarnation an own agent's current run began at, from the
+    /// `suspension/1` table.
+    pub(crate) fn run_start(&self, agent: &[u8]) -> Result<Option<u32>, StoreError> {
+        Ok(self
+            .conn
+            .prepare_cached(&format!(
+                "SELECT incarnation FROM {SUSPENSION_1_RUNS} WHERE agent_id = ?1"
+            ))?
+            .query_row(params![agent], |row| row.get::<_, u32>(0))
+            .optional()?)
+    }
+
+    /// Writes an own agent's `suspension/1` run, or removes it.
+    pub(crate) fn put_run_start(
+        &self,
+        agent: &[u8],
+        incarnation: Option<u32>,
+    ) -> Result<(), StoreError> {
+        match incarnation {
+            Some(incarnation) => self
+                .conn
+                .prepare_cached(&format!(
+                    "INSERT INTO {SUSPENSION_1_RUNS} (agent_id, incarnation) VALUES (?1, ?2) \
+                     ON CONFLICT (agent_id) DO UPDATE SET incarnation = excluded.incarnation"
+                ))?
+                .execute(params![agent, incarnation])?,
+            None => self
+                .conn
+                .prepare_cached(&format!(
+                    "DELETE FROM {SUSPENSION_1_RUNS} WHERE agent_id = ?1"
+                ))?
+                .execute(params![agent])?,
+        };
+        Ok(())
     }
 
     /// Writes the agent's `workspaces/1` entry, or removes it.

@@ -151,6 +151,25 @@ impl Sqlite {
     /// equals `dump`. Faster than [`Sqlite::restore`] when a store is
     /// reused, since the schema is already read.
     pub fn load(&mut self, dump: &Dump) -> Result<(), StoreError> {
+        // The experiments' tables the dump holds, made here first, as the
+        // daemon that took it had them.
+        let held = |version: &str| {
+            let prefix = crate::experiments::prefix(version);
+            dump.tables
+                .iter()
+                .any(|table| table.name.starts_with(&prefix))
+        };
+        let workspaces = held(crate::experiments::WORKSPACES_1.version);
+        let suspension = held(crate::experiments::SUSPENSION_1.version);
+        if (workspaces, suspension) != (self.workspaces_1, self.suspension_1) {
+            let on: Vec<&str> = crate::experiments::EXPERIMENT_TABLES
+                .iter()
+                .map(|tables| tables.version)
+                .filter(|version| held(version))
+                .collect();
+            self.settle_experiments(&on)
+                .map_err(|error| StoreError::Corrupt(error.to_string()))?;
+        }
         let tx = self.conn.transaction()?;
         for table in &dump.tables {
             tx.execute(&format!("DELETE FROM \"{}\"", table.name), [])?;

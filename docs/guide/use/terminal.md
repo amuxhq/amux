@@ -234,6 +234,13 @@ Press `,` on home for settings:
   experiment may change or go in any release, and what it keeps may be lost
   when amux updates.
 
+  With `workspaces` on, a new worktree is a [wt](https://github.com/jordanwebster/wt)
+  tree when the repository uses wt, and its agent runs in the tree's
+  environment. The agent appears at once and starts when its worktree is
+  ready. A name the repository's branches already have gets a suffix
+  (`fix-2`) instead of failing. When you delete a worktree's last agent,
+  amux removes the worktree, unless it holds changes you haven't committed.
+
 These settings belong to the machine, so your phone and every other terminal
 see a change at once. Copying when you select is the exception: it applies to
 every terminal on this machine and doesn't affect your phone.

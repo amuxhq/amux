@@ -404,7 +404,8 @@ impl SimNet {
             cwd,
             given: Some(decl.name.clone()),
             branches: Default::default(),
-            new_worktree: false,
+            new_workspace: false,
+            workspace: None,
             recent: None,
             spec,
         };

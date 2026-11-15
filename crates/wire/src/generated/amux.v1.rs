@@ -7247,14 +7247,18 @@ pub struct CreateAgentRequest {
     /// the provider once it takes input.
     #[prost(message, optional, tag = "9")]
     pub initial_prompt: ::core::option::Option<PromptSubmission>,
-    /// Start the agent in a new git worktree of cwd's repository, on a new
-    /// branch named after the agent, made from whatever cwd has checked out.
-    /// The agent's host chooses where the worktree lives; the agent's cwd is
-    /// the worktree. Fails the call, making no agent, when cwd is not in a
-    /// repository or the branch exists. The name is valid as a branch, so it
-    /// is the branch as given.
+    /// Start the agent in a new workspace of cwd's repository: a wt tree when
+    /// wt is configured for it, else a git worktree. Either is on a new branch
+    /// named after the agent, made from whatever cwd has checked out. The
+    /// agent's host chooses where the workspace lives; the agent's cwd is the
+    /// workspace. Fails the call, making no agent, when cwd is not in a
+    /// repository. The name is valid as a branch, so it is the branch as
+    /// given, unless the host runs the workspaces experiment, which gives a
+    /// name whose branch or folder is taken the next free suffix, answers as
+    /// soon as the agent's row is written and makes the workspace after.
+    /// Named new_worktree until 0.9.1; the number and type are as they were.
     #[prost(bool, tag = "10")]
-    pub new_worktree: bool,
+    pub new_workspace: bool,
     /// The agent config's model and effort are a person's picks, so its host
     /// starts its later agents of this kind on them too.
     #[prost(bool, tag = "11")]

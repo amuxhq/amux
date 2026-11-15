@@ -73,6 +73,7 @@ impl FamilyState {
             if let Some(operation) = lane.current.as_mut() {
                 match &mut operation.doing {
                     Doing::Worktree { job, .. }
+                    | Doing::Planning { job, .. }
                     | Doing::AwaitUnlock { job, .. }
                     | Doing::AwaitSpec { job, .. }
                     | Doing::Removing { job }
@@ -80,7 +81,11 @@ impl FamilyState {
                         phase: Phase::Killing { job: Some(job) },
                         ..
                     } => *job = ids.jobs.get(*job),
-                    Doing::Starting | Doing::AwaitExit { .. } | Doing::Ending { .. } => {}
+                    Doing::Starting
+                    | Doing::Making { .. }
+                    | Doing::AwaitLaunch { .. }
+                    | Doing::AwaitExit { .. }
+                    | Doing::Ending { .. } => {}
                 }
             }
         }
@@ -95,6 +100,28 @@ impl FamilyState {
     /// Whether the start's sweep has reported every agent it found.
     pub(crate) fn swept(&self) -> bool {
         self.swept
+    }
+
+    /// Whether the agent's process is known to be gone.
+    pub(crate) fn ended(&self, agent: AgentId) -> bool {
+        self.processes
+            .get(&agent)
+            .is_some_and(|process| process.ended.is_some())
+    }
+
+    /// Whether the agent's process is still to start in a workspace being
+    /// made or claimed, or has started and not yet said Hello: a message
+    /// for it waits in its lane until it takes input.
+    pub(crate) fn launching(&self, agent: AgentId) -> bool {
+        self.lanes
+            .get(&agent)
+            .and_then(|lane| lane.current.as_ref())
+            .is_some_and(|operation| {
+                matches!(
+                    operation.doing,
+                    Doing::Making { .. } | Doing::AwaitLaunch { .. } | Doing::Starting
+                )
+            })
     }
 
     /// Whether the agent's process has a connection that said Hello.
@@ -153,15 +180,22 @@ pub enum Ended {
 pub struct Create {
     pub agent: AgentId,
     /// The working directory, a directory on this host; with
-    /// `new_worktree`, the repository the worktree is made from.
+    /// `new_workspace`, the folder of the repository the workspace is made
+    /// from.
     pub cwd: String,
     /// The name asked for, checked to be one an agent may have.
     pub given: Option<String>,
-    /// What an unnamed agent's name must not be: the repository's branches.
+    /// What the agent's name must not be: the repository's branches. Read
+    /// for an unnamed agent, and with `new_workspace` for a named one too.
     pub branches: BTreeSet<String>,
-    /// Start in a new worktree of the repository at `cwd`, named by the
-    /// agent's name.
-    pub new_worktree: bool,
+    /// Start in a new workspace of the repository at `cwd`, named by the
+    /// agent's name: a worktree, or with the workspaces experiment a wt tree
+    /// where wt is configured.
+    pub new_workspace: bool,
+    /// With the workspaces experiment and no new workspace, the workspace
+    /// `cwd` is in, as the shell resolved it.
+    #[serde(default)]
+    pub workspace: Option<crate::workspaces::Resolved>,
     /// `cwd` as the file system resolves it, kept among the profile's
     /// recent directories once the agent is made; `None` when it does not
     /// resolve.
@@ -234,6 +268,9 @@ pub(crate) enum Caller {
     Client(CallId),
     /// Nobody: a child following its parent.
     Family,
+    /// Nobody any more: a create in a new workspace answered its caller
+    /// once its row was written.
+    Answered,
     /// The agent's message lane: a parent's message resumes it.
     Lane,
 }
@@ -294,6 +331,26 @@ enum Doing {
         create: Box<Create>,
         name: String,
     },
+    /// A create in a new workspace waits for its plan, with the name it
+    /// chose and those found taken before it.
+    Planning {
+        job: JobId,
+        create: Box<Create>,
+        name: String,
+        taken: BTreeSet<String>,
+    },
+    /// A create's row is written and its caller answered; it waits for its
+    /// workspace to be made and claimed before its process starts.
+    Making {
+        create: Box<Create>,
+        name: String,
+        planned: Box<crate::workspaces::Planned>,
+    },
+    /// A process waits for its workspace's claim before it starts.
+    AwaitLaunch {
+        #[serde(with = "codec::boxed_message")]
+        spec: Box<AgentSpec>,
+    },
     /// The process was started: waiting for its Hello or its end.
     Starting,
     /// A resume waits for the process on its way out to end.
@@ -313,6 +370,7 @@ impl Doing {
     fn job(&self) -> Option<JobId> {
         match self {
             Doing::Worktree { job, .. }
+            | Doing::Planning { job, .. }
             | Doing::AwaitUnlock { job, .. }
             | Doing::AwaitSpec { job, .. }
             | Doing::Removing { job }
@@ -320,7 +378,11 @@ impl Doing {
                 phase: Phase::Killing { job: Some(job) },
                 ..
             } => Some(*job),
-            Doing::Starting | Doing::AwaitExit { .. } | Doing::Ending { .. } => None,
+            Doing::Starting
+            | Doing::Making { .. }
+            | Doing::AwaitLaunch { .. }
+            | Doing::AwaitExit { .. }
+            | Doing::Ending { .. } => None,
         }
     }
 }
@@ -493,6 +555,12 @@ impl Daemon {
                 return;
             }
             Caller::Lane => return self.lane_resumed(agent, outcome.map(|_| ()), out),
+            Caller::Answered => {
+                if let Err(refusal) = outcome {
+                    tracing::debug!(agent = %crate::hex(&agent.0), ?refusal, "a create in a new workspace did not start");
+                }
+                return;
+            }
         };
         match outcome {
             Ok(Some(agent)) => crate::serve::answered(call, Response::Agent(Box::new(agent)), out),
@@ -531,20 +599,23 @@ impl Daemon {
             return Err(Refusal::AlreadyExists);
         }
         self.parent_gate(&create)?;
-        // Names are unique on this host, counting exited agents, which stay
-        // addressable by name: a given name already taken gets the next
-        // free suffix, and the caller learns the name from the agent it
-        // gets back.
-        let names = self.own_names()?;
-        let name = match &create.given {
-            Some(name) => crate::names::free_suffix(name, &|candidate| names.contains(candidate)),
-            None => crate::names::assign_name(u128::from_be_bytes(create.agent.0), &|candidate| {
-                names.contains(candidate) || create.branches.contains(candidate)
-            }),
-        };
+        let name = self.choose_name(&create, &BTreeSet::new())?;
         let mut create = create;
         create.spec.created_at_ms = self.timers.now_ms as i64;
-        if create.new_worktree {
+        if create.new_workspace && self.workspaces_on() {
+            // The workspace is planned before the row, without touching the
+            // network: a folder it cannot be made in fails the create with
+            // no agent made, and a name whose folder or branch is taken
+            // gets the next free suffix.
+            let job = self.plan_workspace(&create.cwd, &name, out);
+            return Ok(Began::Waiting(Doing::Planning {
+                job,
+                create,
+                name,
+                taken: BTreeSet::new(),
+            }));
+        }
+        if create.new_workspace {
             // A worktree is made before the row: a folder it cannot be made
             // in fails the create with no agent made. Two unnamed creates
             // at once in one repository could pick the same pair; the
@@ -565,9 +636,210 @@ impl Daemon {
         let row = self.new_row(&create, &name, &cwd);
         self.put_own_row(&row, out)?;
         self.remember_directory(&create);
+        if self.workspaces_on()
+            && let Some(resolved) = &create.workspace
+        {
+            self.member_added(create.agent, resolved, out);
+        }
         Ok(Began::Waiting(
-            self.start_incarnation(create, name, cwd, None, out),
+            self.start_incarnation(create, name, cwd, None, out)?,
         ))
+    }
+
+    /// The new agent's name. Names are unique on this host, counting exited
+    /// agents, which stay addressable by name: a given name already taken
+    /// gets the next free suffix, and the caller learns the name from the
+    /// agent it gets back. An unnamed agent's, and with the workspaces
+    /// experiment a new workspace's, is no branch of the repository either,
+    /// nor any name `taken` holds: one whose workspace's folder or branch
+    /// turned out to be taken.
+    fn choose_name(&self, create: &Create, taken: &BTreeSet<String>) -> Result<String, StoreError> {
+        let names = self.own_names()?;
+        let branches = create.given.is_none() || (create.new_workspace && self.workspaces_on());
+        let taken = |candidate: &str| {
+            names.contains(candidate)
+                || taken.contains(candidate)
+                || (branches && create.branches.contains(candidate))
+        };
+        Ok(match &create.given {
+            Some(name) => crate::names::free_suffix(name, &taken),
+            None => crate::names::assign_name(u128::from_be_bytes(create.agent.0), &taken),
+        })
+    }
+
+    /// The new workspace a create waited for is planned, or could not be:
+    /// the row is written with the planned folder as its cwd, the caller is
+    /// answered with it, and the workspace is made, after which the process
+    /// starts. A name found taken is planned again with the next.
+    fn workspace_planned(
+        &mut self,
+        agent: AgentId,
+        create: Box<Create>,
+        name: String,
+        mut taken: BTreeSet<String>,
+        result: JobResult,
+        out: &mut Vec<Output>,
+    ) {
+        use crate::workspaces::{PlanRefusal, WorkspaceDone};
+        let planned = match result {
+            JobResult::Workspace(WorkspaceDone::Planned(Ok(planned))) => planned,
+            JobResult::Workspace(WorkspaceDone::Planned(Err(PlanRefusal::Taken(why)))) => {
+                return self.plan_again(agent, create, name, taken, why, out);
+            }
+            JobResult::Workspace(WorkspaceDone::Planned(Err(refusal))) => {
+                let refusal = crate::workspaces::could_not_plan(refusal);
+                return self.finish(agent, Err(refusal), out);
+            }
+            other => {
+                let error = wire::Error {
+                    code: wire::ErrorCode::Internal as i32,
+                    message: format!("starting in a new workspace: {other:?}"),
+                    details: Vec::new(),
+                };
+                return self.finish(agent, Err(Refusal::Worktree(error)), out);
+            }
+        };
+        // Judged again as the row is written, since the parent may have
+        // ended, and another create taken the name, while this one planned.
+        if let Err(refusal) = self.parent_gate(&create) {
+            return self.finish(agent, Err(refusal), out);
+        }
+        match self.own_names() {
+            Ok(names) if names.contains(&name) => {
+                taken.insert(name.clone());
+                let why = format!("another agent took the name {name}");
+                return self.plan_again(agent, create, name, taken, why, out);
+            }
+            Ok(_) => {}
+            Err(error) => return self.finish(agent, Err(error.into()), out),
+        }
+        let cwd = planned.workspace.id.clone();
+        let row = self.new_row(&create, &name, &cwd);
+        if let Err(error) = self.put_own_row(&row, out) {
+            return self.finish(agent, Err(error.into()), out);
+        }
+        self.remember_directory(&create);
+        // The caller hears of the agent now, its workspace still being made;
+        // whatever comes of the making is on the row.
+        let caller = self
+            .families
+            .lanes
+            .get_mut(&agent)
+            .and_then(|lane| lane.current.as_mut())
+            .map(|operation| std::mem::replace(&mut operation.call, Caller::Answered));
+        self.set_doing(
+            agent,
+            Doing::Making {
+                create,
+                name,
+                planned: Box::new(planned.clone()),
+            },
+        );
+        self.member_created(agent, &planned, out);
+        if let Some(caller) = caller {
+            let outcome = self.row_outcome(agent);
+            self.reply(agent, caller, outcome, out);
+        }
+    }
+
+    /// Plans the create's workspace again under the next free name, after
+    /// `name`'s folder or branch was found taken; gives up after a few.
+    fn plan_again(
+        &mut self,
+        agent: AgentId,
+        create: Box<Create>,
+        name: String,
+        mut taken: BTreeSet<String>,
+        why: String,
+        out: &mut Vec<Output>,
+    ) {
+        /// How many taken names a create walks past before it gives up: a
+        /// branch template that renders every name to one branch would
+        /// otherwise plan forever.
+        const TRIES: usize = 16;
+        taken.insert(name);
+        if taken.len() >= TRIES {
+            let refusal =
+                crate::workspaces::could_not_plan(crate::workspaces::PlanRefusal::Taken(why));
+            return self.finish(agent, Err(refusal), out);
+        }
+        let name = match self.choose_name(&create, &taken) {
+            Ok(name) => name,
+            Err(error) => return self.finish(agent, Err(error.into()), out),
+        };
+        let job = self.plan_workspace(&create.cwd, &name, out);
+        self.set_doing(
+            agent,
+            Doing::Planning {
+                job,
+                create,
+                name,
+                taken,
+            },
+        );
+    }
+
+    /// The workspace core lets the agent's process start: its workspace is
+    /// made, and claimed.
+    pub(crate) fn workspace_launched(&mut self, agent: AgentId, out: &mut Vec<Output>) {
+        let doing = match self.doing(agent).cloned() {
+            Some(Doing::Making {
+                create,
+                name,
+                planned,
+            }) => {
+                let base_branch = planned.base_branch.clone();
+                self.spawn_incarnation(create, name, planned.workspace.id, base_branch, out)
+            }
+            Some(Doing::AwaitLaunch { spec }) => self.spawn_process(agent, *spec, out),
+            // Nothing waits to launch it any more: it is not awake.
+            _ => return self.member_slept(agent, out),
+        };
+        self.set_doing(agent, doing);
+    }
+
+    /// The workspace core says the agent's process cannot start: its
+    /// workspace could not be made, or is gone. Its row exits as could not
+    /// start, saying why.
+    pub(crate) fn workspace_not_made(
+        &mut self,
+        agent: AgentId,
+        detail: String,
+        out: &mut Vec<Output>,
+    ) {
+        let doing = self.doing(agent).cloned();
+        if !matches!(
+            doing,
+            Some(Doing::Making { .. } | Doing::AwaitLaunch { .. })
+        ) {
+            return;
+        }
+        if let Err(error) = self.could_not_start(agent, &detail, out) {
+            tracing::warn!(agent = %crate::hex(&agent.0), %error, "marking an agent exited failed");
+        }
+        let outcome = match doing {
+            Some(Doing::Making { .. }) => self.row_outcome(agent),
+            _ => Err(Refusal::CouldNotStart(detail)),
+        };
+        self.finish(agent, outcome, out);
+    }
+
+    /// Marks an agent whose process never started exited as could not
+    /// start, with `detail`; a message waiting for it is judged again
+    /// against the exited row.
+    fn could_not_start(
+        &mut self,
+        agent: AgentId,
+        detail: &str,
+        out: &mut Vec<Output>,
+    ) -> Result<(), StoreError> {
+        let fallback = wire::IncarnationEnd {
+            cause: ExitCause::CouldNotStart as i32,
+            detail: Some(detail.to_owned()),
+        };
+        self.mark_exited(agent, fallback, false, out)?;
+        self.lane_exited(agent, out);
+        Ok(())
     }
 
     /// Whether a child may be written under the create's parent now: run
@@ -651,7 +923,7 @@ impl Daemon {
             return self.finish(agent, Err(error.into()), out);
         }
         self.remember_directory(&create);
-        let doing = self.start_incarnation(create, name, path, Some(base_branch), out);
+        let doing = self.spawn_incarnation(create, name, path, Some(base_branch), out);
         if let Some(lane) = self.families.lanes.get_mut(&agent)
             && let Some(operation) = lane.current.as_mut()
         {
@@ -659,7 +931,8 @@ impl Daemon {
         }
     }
 
-    /// Asks the driver for the agent's first process.
+    /// Asks the driver for the agent's first process, once its workspace
+    /// lets it launch.
     fn start_incarnation(
         &mut self,
         create: Box<Create>,
@@ -667,14 +940,46 @@ impl Daemon {
         cwd: String,
         base_branch: Option<String>,
         out: &mut Vec<Output>,
+    ) -> Result<Doing, Refusal> {
+        let agent = create.agent;
+        let spec = first_spec(create, name, cwd, base_branch);
+        self.launch(agent, spec, out)
+    }
+
+    /// Asks the driver for the agent's first process now: its workspace
+    /// already let it launch.
+    fn spawn_incarnation(
+        &mut self,
+        create: Box<Create>,
+        name: String,
+        cwd: String,
+        base_branch: Option<String>,
+        out: &mut Vec<Output>,
     ) -> Doing {
-        let mut spec = create.spec;
-        spec.name_given = create.given.is_some();
-        spec.name = name;
-        spec.cwd = cwd;
-        spec.incarnation = 1;
-        spec.base_branch = base_branch;
-        self.spawn_process(create.agent, spec, out)
+        let agent = create.agent;
+        let spec = first_spec(create, name, cwd, base_branch);
+        self.spawn_process(agent, spec, out)
+    }
+
+    /// Starts the agent's process once its workspace lets it: at once, or
+    /// once the workspace is claimed. One whose workspace is gone exits as
+    /// could not start.
+    fn launch(
+        &mut self,
+        agent: AgentId,
+        spec: AgentSpec,
+        out: &mut Vec<Output>,
+    ) -> Result<Doing, Refusal> {
+        match self.may_launch(agent, out) {
+            crate::workspaces::Verdict::Now => Ok(self.spawn_process(agent, spec, out)),
+            crate::workspaces::Verdict::Later => Ok(Doing::AwaitLaunch {
+                spec: Box::new(spec),
+            }),
+            crate::workspaces::Verdict::Never(detail) => {
+                self.could_not_start(agent, &detail, out)?;
+                Err(Refusal::CouldNotStart(detail))
+            }
+        }
     }
 
     /// Starts the agent's next incarnation: waits for a process on its way
@@ -772,7 +1077,7 @@ impl Daemon {
         self.put_own_row(&row, out)?;
         // The next CaughtUp comes from this incarnation's journal.
         self.store.set_marker(&key, None);
-        Ok(self.spawn_process(agent, spec, out))
+        self.launch(agent, spec, out)
     }
 
     fn spawn_process(&mut self, agent: AgentId, spec: AgentSpec, out: &mut Vec<Output>) -> Doing {
@@ -780,6 +1085,7 @@ impl Daemon {
         out.push(Output::SpawnAgent {
             dir: self.agent_dir(agent),
             spec: Box::new(spec),
+            workspace: self.workspace_of(agent),
         });
         out.push(Output::DialAgent { agent });
         self.arm_after(TimerId::Start(agent), self.settings.start_deadline_ms, out);
@@ -891,6 +1197,7 @@ impl Daemon {
             // Rows first: a crash between the two leaves a directory with
             // no row, which the next sweep removes.
             self.store.delete_agent(&key)?;
+            self.member_removed(agent, out);
             let removed = AgentRemoved {
                 host_id: key.host.clone(),
                 agent_id: key.agent.clone(),
@@ -1045,6 +1352,22 @@ impl Daemon {
                 false,
             ),
             Ended::Away => (ExitCause::EndedWhileAway, None, true),
+            // A create the daemon before was making a workspace for when it
+            // went: nothing of its process was ever written.
+            Ended::NoDirectory
+                if self
+                    .store
+                    .agent(&self.own_key(agent))
+                    .ok()
+                    .flatten()
+                    .is_some_and(|row| self.row_was_creating(&row)) =>
+            {
+                (
+                    ExitCause::CouldNotStart,
+                    Some("its workspace was being made when the daemon restarted".to_owned()),
+                    true,
+                )
+            }
             Ended::NoDirectory => (
                 ExitCause::DirectoryFailed,
                 Some("it is gone".to_owned()),
@@ -1059,6 +1382,7 @@ impl Daemon {
             tracing::warn!(agent = %crate::hex(&agent.0), %error, "marking an agent exited failed");
         }
         out.push(Output::ForgetAgent { agent });
+        self.member_slept(agent, out);
         self.lane_exited(agent, out);
         match self.doing(agent).cloned() {
             Some(Doing::Starting) => {
@@ -1095,6 +1419,9 @@ impl Daemon {
             }
             Some(
                 Doing::Worktree { .. }
+                | Doing::Planning { .. }
+                | Doing::Making { .. }
+                | Doing::AwaitLaunch { .. }
                 | Doing::AwaitUnlock { .. }
                 | Doing::AwaitSpec { .. }
                 | Doing::Removing { .. },
@@ -1172,6 +1499,7 @@ impl Daemon {
             let doing = &lane.current.as_ref()?.doing;
             let waits = match doing {
                 Doing::Worktree { job: waiting, .. }
+                | Doing::Planning { job: waiting, .. }
                 | Doing::AwaitUnlock { job: waiting, .. }
                 | Doing::AwaitSpec { job: waiting, .. }
                 | Doing::Removing { job: waiting } => *waiting == job,
@@ -1189,6 +1517,12 @@ impl Daemon {
             Doing::Worktree { create, name, .. } => {
                 self.worktree_made(agent, create, name, result, out)
             }
+            Doing::Planning {
+                create,
+                name,
+                taken,
+                ..
+            } => self.workspace_planned(agent, create, name, taken, result, out),
             Doing::AwaitUnlock { resume, .. } => match result {
                 JobResult::Done => match self.ask_spec(resume, out) {
                     Ok(doing) => self.set_doing(agent, doing),
@@ -1232,7 +1566,10 @@ impl Daemon {
                 };
                 self.finish(agent, outcome, out);
             }
-            Doing::Starting | Doing::AwaitExit { .. } => {}
+            Doing::Starting
+            | Doing::Making { .. }
+            | Doing::AwaitLaunch { .. }
+            | Doing::AwaitExit { .. } => {}
         }
         true
     }
@@ -1241,6 +1578,7 @@ impl Daemon {
     /// waiting to follow their parents do.
     pub(crate) fn swept(&mut self, out: &mut Vec<Output>) {
         self.families.swept = true;
+        self.resolve_members(out);
         for (child, says) in std::mem::take(&mut self.families.held) {
             self.follow(child, says, out);
         }
@@ -1607,6 +1945,22 @@ fn children_frame(children: &[(Vec<u8>, u32)]) -> CtlFrame {
     }
 }
 
+/// A create's first spec, with what the registry decided for it.
+fn first_spec(
+    create: Box<Create>,
+    name: String,
+    cwd: String,
+    base_branch: Option<String>,
+) -> AgentSpec {
+    let mut spec = create.spec;
+    spec.name_given = create.given.is_some();
+    spec.name = name;
+    spec.cwd = cwd;
+    spec.incarnation = 1;
+    spec.base_branch = base_branch;
+    spec
+}
+
 #[cfg(test)]
 mod tests {
     use store::Sqlite;
@@ -1679,7 +2033,8 @@ mod tests {
             cwd: "/src".into(),
             given: Some(name.into()),
             branches: BTreeSet::new(),
-            new_worktree: false,
+            new_workspace: false,
+            workspace: None,
             recent: None,
             spec: AgentSpec {
                 agent_id: agent.0.to_vec(),

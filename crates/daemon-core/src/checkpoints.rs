@@ -370,7 +370,8 @@ mod tests {
                 cwd: "/src".into(),
                 given: None,
                 branches: BTreeSet::new(),
-                new_worktree: false,
+                new_workspace: false,
+                workspace: None,
                 recent: None,
                 spec: wire::AgentSpec {
                     agent_id: agent.0.to_vec(),

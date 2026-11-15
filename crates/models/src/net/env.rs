@@ -2176,6 +2176,8 @@ impl Transition<'_> {
             })),
             Job::Compare { .. } => JobResult::CompareFailed(GitRefusal::NotARepository),
             Job::MakeWorktree { .. } => JobResult::Failed("no repository here".to_owned()),
+            // The net's hosts run no experiment.
+            Job::Workspace(_) => return None,
             // Nothing reads back what these write: the trust file, the
             // store's main file, blobs and drafts.
             Job::Fsync { .. }
@@ -2614,9 +2616,14 @@ fn rehome(output: Output, scratch: &Path, home: &Path) -> Output {
             id,
             op: Job::RemoveDir { path: moved(path) },
         },
-        Output::SpawnAgent { dir, spec } => Output::SpawnAgent {
+        Output::SpawnAgent {
+            dir,
+            spec,
+            workspace,
+        } => Output::SpawnAgent {
             dir: moved(dir),
             spec,
+            workspace,
         },
         // Nothing here reads the state back, so the net need not hold it.
         Output::Checkpoint { .. } => Output::Checkpoint { state: Vec::new() },
@@ -2646,7 +2653,8 @@ fn peer_create(request: wire::CreateAgentRequest, now_ms: u64) -> Option<ClientR
         cwd: request.cwd,
         given: request.name,
         branches: BTreeSet::new(),
-        new_worktree: request.new_worktree,
+        new_workspace: request.new_workspace,
+        workspace: None,
         recent: None,
         spec,
     })))
@@ -2815,6 +2823,7 @@ fn job_kind(job: &Job) -> &'static str {
         Job::RemoveDir { .. } => "RemoveDir",
         Job::Compare { .. } => "Compare",
         Job::MakeWorktree { .. } => "MakeWorktree",
+        Job::Workspace(_) => "Workspace",
     }
 }
 

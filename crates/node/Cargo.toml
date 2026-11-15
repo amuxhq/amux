@@ -61,6 +61,11 @@ zstd = { workspace = true }
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 
+# wt is Unix-only, and the phone's runtime hosts no agents, so it makes no
+# workspaces.
+[target.'cfg(all(unix, not(target_os = "ios")))'.dependencies]
+wt = { workspace = true }
+
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 if-addrs = { workspace = true }
 mdns-sd = "0.21"

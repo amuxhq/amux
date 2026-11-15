@@ -69,6 +69,7 @@ impl Daemon {
         self.notifications.jobs(&mut jobs);
         self.blobs.jobs(&mut jobs);
         self.checkpoints.jobs(&mut jobs);
+        self.workspaces.jobs(&mut jobs);
         let mut sessions = Vec::new();
         self.sources.sessions(&mut sessions);
         self.pending.peers.sessions(&mut sessions);
@@ -108,7 +109,10 @@ impl Daemon {
             &self.checkpoints.canonical(&ids),
             &self.notifications.canonical(&ids),
             &self.blobs.canonical(&ids),
-            &self.deliveries.canonical(),
+            (
+                &self.deliveries.canonical(),
+                &self.workspaces.canonical(&ids),
+            ),
             &self.timers,
             &pending,
             &self.settings,

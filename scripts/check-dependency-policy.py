@@ -99,7 +99,7 @@ ALLOWED_LOCAL = {
 # paths as the path machine does; the workspace lifecycle needs nothing, so
 # the daemon core composes it and its model drives it alone.
 CORES_ALLOWED_LOCAL = {
-    "daemon-core": {"core-ring", "journal", "store", "wire"},
+    "daemon-core": {"core-ring", "journal", "store", "wire", "workspace-core"},
     "relay-core": {"daemon-core"},
     "path-core": {"daemon-core"},
     "socket-core": {"path-core"},

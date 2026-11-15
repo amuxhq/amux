@@ -355,7 +355,8 @@ $TMPDIR/amux-<uid>/<hash>, <hash>.d
   supervisor.log, .1          the supervisor's log, when amux runs under one, capped the same
   reports/                    dumps and core reports, the newest 20 kept; .dump-* is one being written
   worktrees/<repository>/<agent name>/
-                              the git worktrees amux makes for new agents; never removed by amux
+                              the git worktrees amux makes for new agents; removed with
+                              their last agent only under the workspaces experiment
   tui/layout.json             the terminal client's folds, comparison and tool modes, shared by every
                               terminal on this installation; the 200 most recently changed chats kept
   profiles/<profile_id>/      one per profile; its id is its host id; built under a dotted name
@@ -645,7 +646,7 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`agent-core`](../crates/agent-core/README.md) | The agent process around its interpreter: incarnation, timers, queue and the open ask. |
 | [`core-ring`](../crates/core-ring/src/lib.rs) | The bounded ring of a core's inputs since its last checkpoint, in segments beside their checkpoints; the agent process's facts ring is one. |
 | [`supervisor-core`](../crates/supervisor-core/README.md) | The supervisor's update decisions: which binary to fetch, start, set aside, go with or roll back to. |
-| [`workspace-core`](../crates/workspace-core/README.md) | The workspace lifecycle: when a workspace is made, claimed, started, stopped and removed, and when a member may launch. Not yet composed into the daemon. |
+| [`workspace-core`](../crates/workspace-core/README.md) | The workspace lifecycle: when a workspace is made, claimed, started, stopped and removed, and when a member may launch. The daemon core composes it under the `workspaces/1` experiment. |
 
 **The UI library** — reaches the daemon only through `client`.
 
@@ -707,9 +708,11 @@ workspace crates, and ignores dev-dependencies. Its rules:
    the dependency graph cannot say: no core, and not the ring they record
    into, has tokio anywhere in its graph on any target, and none of their
    sources holds a lock, spawns a task or awaits.
-5. **Every dependency comes from crates.io, but rustls.** The sources
-   table in `deny.toml` holds it, and CI checks it: rustls alone may come from git, and only from the fork
-   that carries the patch below, at whatever commit the lockfile pins.
+5. **Every dependency comes from crates.io, but rustls and wt.** The sources
+   table in `deny.toml` holds it, and CI checks it: rustls may come from git
+   only from the fork that carries the patch below, and wt, whose library
+   makes, holds and stops wt's trees, only from its own repository, each at
+   whatever commit the lockfile pins.
 
 The allowed sets encode the layering above:
 

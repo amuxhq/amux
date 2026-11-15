@@ -258,6 +258,12 @@ pub enum Input {
     /// The device's network changed: a relay attempt waiting out its
     /// pause goes at once.
     NetworkChanged,
+    /// A launch of the agent read its workspace's environment, or it would
+    /// not load, as `problem` says; the agent launched without it.
+    WorkspaceEnvironment {
+        agent: AgentId,
+        problem: Option<String>,
+    },
 }
 
 impl Input {
@@ -315,6 +321,7 @@ impl Input {
             Input::Configure(_) => "Configure",
             Input::ShellSession { .. } => "ShellSession",
             Input::LinkCarried { .. } => "LinkCarried",
+            Input::WorkspaceEnvironment { .. } => "WorkspaceEnvironment",
         }
     }
 }
@@ -509,10 +516,14 @@ pub enum Output {
     },
     /// Write `spec` into the agent's directory `dir` and start its process
     /// from it; a process that cannot be started is gone, reported as
-    /// [`Input::ControlClosed`].
+    /// [`Input::ControlClosed`]. With the workspaces experiment, the
+    /// `workspace` it runs in: a wt tree's environment joins the spec's
+    /// provider environment, and whether it loaded is reported as
+    /// [`Input::WorkspaceEnvironment`].
     SpawnAgent {
         dir: PathBuf,
         spec: Box<AgentSpec>,
+        workspace: Option<crate::workspaces::Key>,
     },
     /// The agent's exit is recorded: let go of its process, close its
     /// tools socket and tell whoever waits on it.
@@ -723,6 +734,9 @@ pub enum Job {
     /// Make a worktree of the repository at `repo` named `name`, answered
     /// as [`JobResult::Worktree`] or [`JobResult::Refused`].
     MakeWorktree { repo: PathBuf, name: String },
+    /// The workspaces experiment's work, answered as
+    /// [`JobResult::Workspace`].
+    Workspace(crate::workspaces::WorkspaceJob),
 }
 
 #[cfg(test)]
@@ -931,7 +945,8 @@ mod tests {
                     cwd: "/src".into(),
                     given: None,
                     branches: ["main".to_owned()].into(),
-                    new_worktree: true,
+                    new_workspace: true,
+                    workspace: None,
                     recent: None,
                     spec: wire::AgentSpec {
                         name: "lead".into(),

@@ -940,8 +940,9 @@ hosts, an exact match first and then one ignoring case; no match is
 `NOT_FOUND` listing the known names, and several are `FAILED_PRECONDITION`
 saying how many answer.
 
-`CreateAgent` with `new_worktree` starts the agent in a new git worktree,
-made by the agent's host before the agent exists (`crates/node/src/worktree.rs`).
+`CreateAgent` with `new_workspace` (named `new_worktree` until 0.9.1, at the
+same number and type) starts the agent in a new git worktree, made by the
+agent's host before the agent exists (`crates/node/src/workspaces/git.rs`).
 The client says only yes: the host puts the worktree under its installation
 folder, `worktrees/<repository>/<agent name>`, on a new branch named after the
 agent, made from whatever the chosen folder has checked out, and records that
@@ -952,6 +953,39 @@ the name needs no translating, since every agent name is valid as a branch
 and a folder (lowercase letters, digits and hyphens, `wire::agent_name_problem`);
 either way no agent is made. Renaming the agent leaves its branch alone, and
 amux never removes a worktree or its branch.
+
+#### New workspaces
+
+Under the `workspaces/1` experiment a new workspace is a wt tree where wt is
+configured for the repository, and a git worktree otherwise, made after the
+agent's row rather than before it:
+
+- The host checks the name first, cheaply and without making anything: a
+  name whose branch or folder is taken gets the next free suffix, as a name
+  another agent holds does, and a folder outside a repository, or one wt
+  refuses, fails the call with no agent made.
+- It writes the row at the workspace's final folder and answers with it.
+  Its `Agent.experimental["workspaces/1"]` says `creating` until the
+  workspace is made.
+- It makes the workspace in the background, then launches the process.
+  Messages wait in the agent's lane meanwhile, as do a stop and a delete.
+  A workspace that cannot be made ends the agent as
+  `EXIT_CAUSE_COULD_NOT_START`, saying why, and so does a daemon restart
+  that finds it still being made.
+- The new branch starts from what the creating folder has checked out. A
+  wt tree created from the repository's default branch starts from
+  `origin`'s, fetched, instead.
+
+A git worktree made this way carries this host's id in
+`<repository>/.git/worktrees/<name>/amux-owner`, and a wt tree records the
+owner `amux:<host id>`. Each goes with its last agent: a clean one is
+removed, with its branch when that has no commits of its own. One with
+changes stays and stops being amux's. A wt tree is claimed while one of its
+agents runs, started before the first launches, and stopped once nothing
+holds it. A tree a person made with wt is only held and run in; amux never
+starts, stops or removes it. Every launch in a wt tree runs the provider in
+the tree's environment. One whose environment does not load launches
+without it and says so in the entry's `problem`.
 
 ### The client services on a link
 

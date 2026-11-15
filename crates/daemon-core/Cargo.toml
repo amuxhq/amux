@@ -19,6 +19,7 @@ store = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 wire = { workspace = true }
+workspace-core = { workspace = true }
 
 [dev-dependencies]
 journal = { workspace = true, features = ["synthetic"] }

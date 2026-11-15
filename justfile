@@ -247,7 +247,7 @@ dependency-policy:
 
 # Check every dependency against deny.toml with cargo-deny: no open security
 # advisory or yanked release, only the licences it lists, and only crates.io
-# and the rustls patch as sources. Fetches the advisory database. Needs
+# and the rustls patch and wt as sources. Fetches the advisory database. Needs
 # `cargo install --locked cargo-deny@0.20.2`.
 deny:
     {{bounded}} 600 cargo deny --locked check

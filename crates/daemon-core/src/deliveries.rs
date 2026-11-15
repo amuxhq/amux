@@ -52,7 +52,8 @@ use crate::payload::{
 use crate::peers::Waiting;
 use crate::{Daemon, codec};
 
-/// How long a message waits for its recipient's process to be connected.
+/// How long a message waits for its recipient's process to be connected,
+/// unless the process is still starting under the workspaces experiment.
 pub const CONNECT_PATIENCE_MS: u64 = 5_000;
 /// How long an accepted message waits for its acceptance item to commit.
 pub const ACCEPT_PATIENCE_MS: u64 = 60_000;
@@ -761,9 +762,15 @@ impl Daemon {
     }
 
     /// Writes the message to the recipient's process once it is connected.
+    /// With the workspaces experiment a process still to start, its
+    /// workspace being made or claimed, or started and not yet connected,
+    /// is waited for without a patience of its own: its start ends in a
+    /// connection or its exit, either of which moves the message on.
     fn offer(&mut self, agent: AgentId, message: &Message, out: &mut Vec<Output>) -> Stage {
         if !self.families.connected(agent) {
-            self.arm_after(TimerId::Lane(agent), CONNECT_PATIENCE_MS, out);
+            if !(self.workspaces_on() && self.families.launching(agent)) {
+                self.arm_after(TimerId::Lane(agent), CONNECT_PATIENCE_MS, out);
+            }
             return Stage::Connecting;
         }
         out.push(Output::WriteControl {

@@ -383,7 +383,10 @@ between. A restart keeps the agents' processes and loses the daemon's
 claims and its calls still waiting, and the restarted daemon adds every
 live agent from its folder, the running ones first, then sweeps the trees
 it owns. What must happen eventually (a workspace this host made, owed a
-stop and held by nothing, has stopped) is judged where the world rests. The
+stop and held by nothing, has stopped) is judged where the world rests;
+that a running member finds its workspace started is judged whenever the
+backend has nothing left to do, since a running member can always sleep and
+the world never rests with one. The
 wt tree this host makes is checked in CI in two worlds whose union is the
 whole: one without a pin or another host's hold, and one with every holder
 but no failures, edits or restarts. The whole world is checked nightly. The

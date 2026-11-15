@@ -474,11 +474,9 @@ fn a_restarted_daemon_retakes_claims_for_running_members_and_sweeps_memberless_w
         running: true,
     });
     assert_eq!(adopted, vec![take(Kind::Wt)]);
-    assert_eq!(
-        run.claimed(Kind::Wt),
-        vec![],
-        "already running: no launch, no start"
-    );
+    // Already running, so no launch; but the daemon before may have lost
+    // its start job, and the hook is safe to repeat.
+    assert_eq!(run.claimed(Kind::Wt), vec![start()]);
     let other = Key {
         kind: Kind::Git,
         id: "/trees/old".to_owned(),
@@ -494,6 +492,7 @@ fn a_restarted_daemon_retakes_claims_for_running_members_and_sweeps_memberless_w
         }],
         "only the one without members"
     );
+    assert_eq!(run.started(Ok(())), vec![]);
     assert_eq!(run.slept(1), vec![release(Kind::Wt), stop()]);
 }
 

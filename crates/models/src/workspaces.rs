@@ -103,7 +103,7 @@ pub struct WorkspaceLifecycle {
 
 impl WorkspaceLifecycle {
     /// Every part of the world once, beside two agents with two launches
-    /// after their first: 40,054,350 states in 55 s on the 12 threads of an
+    /// after their first: 55,695,455 states in 81 s on the 12 threads of an
     /// M-series Mac for the wt tree this host makes, and at most 59,940 for
     /// any other origin.
     pub const fn world(origin: Origin) -> Self {
@@ -127,8 +127,8 @@ impl WorkspaceLifecycle {
     /// for the hand-made tree, 59,940 for another host's, 74 for a folder,
     /// each well under a second). The wt tree this host makes explores its
     /// world in two halves, since the whole of it is nightly's: this one
-    /// leaves out the person's pin and another host's hold, 3,235,879 states
-    /// in 4.1 s on the Mac's 12 threads, and [`Self::holders`] has them.
+    /// leaves out the person's pin and another host's hold, 4,341,589 states
+    /// in 5.4 s on the Mac's 12 threads, and [`Self::holders`] has them.
     pub const fn ci(origin: Origin) -> Self {
         match origin {
             Origin::MadeWt => Self {
@@ -142,7 +142,7 @@ impl WorkspaceLifecycle {
 
     /// The wt tree this host makes, held by everything that can hold it (a
     /// shell, a pin, another host's daemon) and stopped by a person, with no
-    /// failures, edits or restarts: 1,509,558 states in 2.0 s on the Mac's
+    /// failures, edits or restarts: 1,851,118 states in 2.5 s on the Mac's
     /// 12 threads.
     pub const fn holders() -> Self {
         Self {
@@ -306,6 +306,8 @@ struct Tree {
     create_hook: Hook,
     /// Times it was removed.
     removed: u8,
+    /// A person's `wt stop` stopped it since its start hook last ran.
+    hard_stopped: bool,
 }
 
 /// amux's claim, as the backend counts it.
@@ -727,6 +729,7 @@ impl Machine for WorkspaceLifecycle {
                 other_hold: false,
                 create_hook: Hook::Idle,
                 removed: 0,
+                hard_stopped: false,
             },
             jobs: Jobs {
                 claim: Claim::None,
@@ -940,6 +943,7 @@ impl Machine for WorkspaceLifecycle {
             Action::HardStop => {
                 state.counts.hard_stops += 1;
                 state.tree.started = false;
+                state.tree.hard_stopped = true;
             }
             Action::OtherHolds => {
                 state.counts.other_holds += 1;
@@ -991,6 +995,7 @@ impl Machine for WorkspaceLifecycle {
                 // It counts as started after a failure.
                 if state.tree.exists {
                     state.tree.started = true;
+                    state.tree.hard_stopped = false;
                     if state.seen.our_stop_ended {
                         state.seen.started_after_stop = true;
                     }
@@ -1194,6 +1199,26 @@ impl Machine for WorkspaceLifecycle {
                         && !s.tree.pinned
                         && !s.tree.other_hold;
                     model.at_rest(s) && (!owed || !s.tree.started)
+                },
+            ),
+            Property::always(
+                "a member running in a workspace this host made finds it started whenever the \
+                 backend has nothing left to do, unless a person stopped it",
+                |model, s: &State| {
+                    let idle = !s.jobs.make
+                        && !s.jobs.start
+                        && s.jobs.waiter.is_none()
+                        && s.jobs.delete.is_none()
+                        && s.jobs.deleted.is_none()
+                        && s.jobs.claim != (Claim::Granted { answered: false })
+                        && s.tree.create_hook != Hook::Running;
+                    let unstarted = s.running() > 0
+                        && s.tree.exists
+                        && s.tree.owner == Owner::This
+                        && model.origin.kind().hooks()
+                        && !s.tree.hard_stopped
+                        && !s.tree.started;
+                    !(idle && unstarted)
                 },
             ),
             Property::sometimes("a member launches", |_, s: &State| s.seen.launched),

@@ -16,7 +16,8 @@
 //!   claim is taken when a member wakes and nothing else of amux's holds the
 //!   workspace, and released when its last awake member goes.
 //! - A workspace this host made is started (its start hook) each time the
-//!   claim is taken, and asked to stop once nothing holds it when its last
+//!   claim is taken, a restarted daemon's retaking it for a process it
+//!   adopts included, and asked to stop once nothing holds it when its last
 //!   awake member goes. Whether it is started is the backend's business; the
 //!   hooks are safe to repeat.
 //! - At most one stop-when-unheld call is outstanding per workspace, and none
@@ -819,22 +820,19 @@ impl Workspaces {
         // An awake member needs the claim, also while the workspace's delete
         // is outstanding: a member that joined it then keeps it, the backend
         // refusing the removal for amux's hold, and no stop call issued
-        // before can begin under it. A start follows the claim for a member
-        // about to launch, unless this host's start job is still
-        // outstanding, in which case nothing has stopped since that start was
-        // asked for; a process a restarted daemon adopts runs in a workspace
-        // already started.
+        // before can begin under it. A start follows every claim taken,
+        // unless this host's start job is still outstanding, in which case
+        // nothing has stopped since that start was asked for. That includes
+        // the claim a restarted daemon retakes for a process it adopts: the
+        // daemon before may have lost a start job it had asked for, or one
+        // it held off behind a stop call, and nothing records whether a
+        // start completed, so the start hook, safe to repeat, runs again.
         if workspace.claim == Claim::None
             && awake
             && matches!(workspace.phase, Phase::Ready | Phase::Deleting)
         {
-            let launching = workspace
-                .members
-                .values()
-                .any(|awake| *awake == Awake::Waiting);
             workspace.stop_owed = false;
-            workspace.start_owed =
-                workspace.made_here && kind.hooks() && !workspace.starting && launching;
+            workspace.start_owed = workspace.made_here && kind.hooks() && !workspace.starting;
             if kind.holds() {
                 out.push(Output::TakeClaim {
                     workspace: key.clone(),

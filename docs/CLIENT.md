@@ -419,6 +419,21 @@ set holds; `keep_open_runs` moves each hold to its run's current newest step, so
 arrive keeps a growing run open while the window trims it. What the client holds survives both merges and trims, and
 a hold whose step left the window opens the run again when it pages back in.
 
+`Turns { runs, turns }` reads each finished turn answer first, for a desktop: the turn's prompt carries the line over
+its work (`Worked`: how long, whether it failed), its work folds under that line, and the answer — the turn's last
+stretch of the agent's text — and the turn's end stay drawn, the end carrying the answer's rows and each file the turn
+changed once, its edits summed. An error, a boundary, a compaction and an unresolved failure stay in view whatever the
+fold. Every row of a finished turn carries `TurnPlace` (the turn's `end`, `open`, and its `part`), and `collapsed` is
+decided from it, so the client draws what it is handed. A turn is held open by its end's key in `turns`, which never
+moves; inside an opened turn and in the turn under way, runs fold as `Collapse` folds them. A turn draws unfolded
+until the window holds the prompt or steer that opened it, when a steer cut it short, and when it was stopped.
+
+A row's place in its turn depends on rows a change does not touch: a turn's end moves every row of the turn, a prompt
+paging in folds the turn after it, and a cut at the low edge unfolds the turn that lost its prompt. `turn_rows_moved`
+names those rows for a set of changed keys; the phone's runtime adds them to a chat's delta only while the chat folds
+turns (`amux_session_fold_turns`), so a client folding runs sends nothing extra. Folding turns on the phone and in the
+terminal was left for later: the line under each prompt reads well on a desktop's width first.
+
 Three guarantees follow, and any list technique, including the inverted list chat apps use, can rely on them:
 row ids never move; the window changes only at its two edges; appends touch only items still open.
 

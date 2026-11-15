@@ -66,14 +66,18 @@ screens made larger.
 - **The chat** fills the centre down a reading width. A finished turn reads
   answer first: the prompt, a "Worked for …" line summarising the steps,
   then the agent's final words, with the steps folded under the line; an
-  error stays in view. Under the answer sit copy and, when the turn changed
+  error, and a failed step the turn never fixed, stay in view. The fold is
+  the shared view's (`ToolRows::Turns`, docs/CLIENT.md), which the app turns
+  on as it opens a chat; the app draws the places it is handed. Under the answer sit copy and, when the turn changed
   files, their count, which opens the changes. The turn still running shows
   its steps as they happen, on one grid of glyph, verb, subject and meta.
-  Code blocks name their language and copy on hover. The queue, the head ask
-  and the composer sit under the feed. The ask card shows what is asked in
-  full with the provider's answers as buttons, the expected one drawn solid
-  and on Return; a question's options to pick; and a note for an answer that
-  takes one.
+  Code blocks name their language and copy on hover. Under the feed stands
+  one thing at a time, as on the phone: an open ask in the composer's place
+  until it is answered, the chat's ending once it ended, or the composer
+  with the queue above it. The ask card shows what is asked in full with the
+  provider's answers as buttons, the expected one drawn solid and on Return;
+  a question's options to pick, and Reply Instead where the agent takes a
+  reply; and a note for an answer that takes one.
 - **The composer** grows with the draft; Return sends, Shift-Return starts a
   line, ⌘. stops the turn, and a long paste becomes an attachment. Under it:
   + attaches files (dropping them on it does too), the permission the agent
@@ -113,6 +117,14 @@ person and nothing else, red for failure only, amber for a permission that
 never asks, and green and red otherwise only in diffs. Tile tints avoid all of
 those, so identity never reads as state. The palette is `Palette` in
 `Chrome.swift`.
+
+**Sizes** come from `Tokens.swift`: every text size is a step of `TextSize`
+(`Font.ui` and `Font.mono`; monospaced text takes the half steps, since it
+reads larger at the same size), every corner radius a `Radius`, and every
+shadow one of two `Elevation`s. The page gutter and a round control's size
+are in `Metrics`. Change how a kind of text or surface reads there, not where
+it is drawn. The chat's composer and the New Agent page share one frame,
+`ComposerShell`, with `RoundButton` and `ChipLabel` under the field.
 
 The icons are [Lucide](https://lucide.dev)'s, under the ISC licence, bundled
 as SVG in `AmuxMacScreens/Icons` with that licence beside them and drawn as

@@ -18,6 +18,7 @@ import {
   reviewImages,
   sweepImages,
 } from "./store.ts";
+import { pageOf } from "../shared/messages.ts";
 import type {
   AgentChoice,
   Destination,
@@ -66,7 +67,7 @@ async function fileAccessMissing(url: string | undefined): Promise<boolean> {
 
 /** The pins a tab draws: its comments made on the page it shows. */
 function pins(review: PendingReview, url: string | undefined): PendingComment[] {
-  return review.comments.filter((comment) => comment.url === url);
+  return review.comments.filter((comment) => comment.url === pageOf(url));
 }
 
 async function tellPins(tabId: number, review: PendingReview) {
@@ -189,7 +190,7 @@ chrome.runtime.onMessage.addListener((message: FromTab, sender, respond) => {
         respond({ comments: pins(review, tab.url) });
         return;
       case "added":
-        review.url = tab.url ?? "";
+        review.url = pageOf(tab.url);
         review.title = tab.title ?? "";
         review.comments.push({ ...message.comment, url: review.url, title: review.title });
         break;

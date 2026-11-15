@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byPage, type PendingComment } from "../src/shared/messages.ts";
+import { byPage, pageOf, type PendingComment } from "../src/shared/messages.ts";
 
 function comment(id: string, url: string): PendingComment {
   return {
@@ -21,5 +21,11 @@ describe("a tab's comments by page", () => {
       ["/one", ["a", "c"]],
       ["/two", ["b"]],
     ]);
+  });
+
+  it("takes a link within a document for the same page", () => {
+    expect(pageOf("file:///doc.html#section")).toBe("file:///doc.html");
+    expect(pageOf("http://localhost:5173/pricing")).toBe("http://localhost:5173/pricing");
+    expect(pageOf(undefined)).toBe("");
   });
 });

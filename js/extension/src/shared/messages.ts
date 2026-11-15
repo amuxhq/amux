@@ -33,6 +33,14 @@ export interface PendingReview {
   snippets: Snippet[];
 }
 
+/**
+ * The page an address names: without its fragment, so following a link
+ * within a document (`doc.html#section`) stays on the same page.
+ */
+export function pageOf(url: string | undefined): string {
+  return (url ?? "").split("#")[0]!;
+}
+
 /** A tab's comments by the page they were made on, in the order first made. */
 export function byPage(comments: readonly PendingComment[]): Array<{ url: string; title: string; comments: PendingComment[] }> {
   const pages = new Map<string, { url: string; title: string; comments: PendingComment[] }>();

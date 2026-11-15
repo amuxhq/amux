@@ -371,6 +371,20 @@ pub fn settings_page(signed_in: bool) -> SettingsScene {
             "/Users/jordan/src/amuxcloud".to_owned(),
         ],
         auto_reports: true,
+        experiments: vec![
+            wire::Experiment {
+                name: "workspaces".to_owned(),
+                version: "workspaces/1".to_owned(),
+                description: settings::experiments::WORKSPACES.description.to_owned(),
+                enabled: true,
+            },
+            wire::Experiment {
+                name: "suspension".to_owned(),
+                version: "suspension/1".to_owned(),
+                description: settings::experiments::SUSPENSION.description.to_owned(),
+                enabled: false,
+            },
+        ],
         ..settings()
     };
     let mut scene = SettingsScene {

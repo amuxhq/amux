@@ -42,6 +42,9 @@ enum Row {
     Telemetry,
     AutoReports,
     Account,
+    /// One experiment the host's build implements, by its place in the
+    /// settings' list.
+    Experiment(usize),
 }
 
 #[derive(Debug)]
@@ -73,6 +76,15 @@ fn plain(code: KeyCode) -> KeyEvent {
 
 fn on_off(on: bool) -> &'static str {
     if on { "on" } else { "off" }
+}
+
+/// An experiment's name as a row's label: "workspaces" as "Workspaces".
+fn capitalized(name: &str) -> String {
+    let mut letters = name.chars();
+    match letters.next() {
+        Some(first) => first.to_uppercase().chain(letters).collect(),
+        None => String::new(),
+    }
 }
 
 /// The plan the relay carries this machine's connections on, as a person
@@ -150,6 +162,7 @@ impl SettingsScreen {
             Row::AutoReports,
             Row::Account,
         ]);
+        rows.extend((0..self.settings.experiments.len()).map(Row::Experiment));
         rows
     }
 
@@ -329,6 +342,18 @@ impl SettingsScreen {
                 auto_reports: Some(!settings.auto_reports),
                 ..Default::default()
             },
+            Row::Experiment(at) => wire::UpdateSettingsRequest {
+                experiments: Some(wire::ExperimentList {
+                    names: settings
+                        .experiments
+                        .iter()
+                        .enumerate()
+                        .filter(|(each, experiment)| experiment.enabled != (*each == at))
+                        .map(|(_, experiment)| experiment.name.clone())
+                        .collect(),
+                }),
+                ..Default::default()
+            },
             Row::Account => {
                 if self.profile.as_ref().is_some_and(signed_in) {
                     return vec![SettingsEffect::SignOut];
@@ -385,6 +410,7 @@ impl SettingsScreen {
                 }
                 _ => "Not signed in".to_owned(),
             },
+            Row::Experiment(at) => capitalized(&self.settings.experiments[at].name),
         }
     }
 
@@ -402,6 +428,7 @@ impl SettingsScreen {
             Row::CopyOnSelect => on_off(self.copy_on_select).to_owned(),
             Row::Telemetry => on_off(settings.telemetry).to_owned(),
             Row::AutoReports => on_off(settings.auto_reports).to_owned(),
+            Row::Experiment(at) => on_off(settings.experiments[at].enabled).to_owned(),
             Row::Account => match &self.profile {
                 Some(profile) if signed_in(profile) => plan_words(profile),
                 _ => String::new(),
@@ -418,6 +445,7 @@ impl SettingsScreen {
             Row::ChatIn | Row::CopyOnSelect => "Chats",
             Row::Telemetry | Row::AutoReports => "Help improve amux",
             Row::Account => "Account",
+            Row::Experiment(_) => "Experiments",
         };
         (previous.map(section) != Some(section(row))).then(|| section(row))
     }
@@ -557,6 +585,16 @@ impl SettingsScreen {
                     theme.faint(),
                 )],
                 Row::Telemetry => vec![("Never your code or chats.".to_owned(), theme.faint())],
+                Row::Experiment(at) => {
+                    let mut said = vec![(
+                        self.settings.experiments[at].description.clone(),
+                        theme.faint(),
+                    )];
+                    if at + 1 == self.settings.experiments.len() {
+                        said.push(("Takes effect when amux restarts.".to_owned(), theme.faint()));
+                    }
+                    said
+                }
                 Row::Account => match &self.signing_in {
                     Some(Some((code, unopened))) => {
                         let mut said = vec![(

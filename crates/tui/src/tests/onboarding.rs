@@ -542,6 +542,11 @@ fn every_setting_changes_at_once() {
         "Send reports automatically",
         "Signed in as jordan@example.com",
         "Pro",
+        "Experiments",
+        "Workspaces",
+        "Suspension",
+        "Suspend idle agents",
+        "Takes effect when amux restarts.",
     ] {
         assert!(drawn.contains(words), "{words}: {drawn}");
     }
@@ -601,7 +606,24 @@ fn every_setting_changes_at_once() {
             ..Default::default()
         })]
     );
+    // An experiment switched on beside the one on already, and the one on
+    // switched off: the whole list goes each time.
     page.key(key(KeyCode::Char('G')));
+    let experiments = |names: &[&str]| {
+        update(wire::UpdateSettingsRequest {
+            experiments: Some(wire::ExperimentList {
+                names: names.iter().map(|name| (*name).to_owned()).collect(),
+            }),
+            ..Default::default()
+        })
+    };
+    assert_eq!(
+        page.key(key(KeyCode::Enter)),
+        [experiments(&["workspaces", "suspension"])]
+    );
+    page.key(key(KeyCode::Up));
+    assert_eq!(page.key(key(KeyCode::Enter)), [experiments(&[])]);
+    page.key(key(KeyCode::Up));
     assert_eq!(page.key(key(KeyCode::Enter)), [SettingsEffect::SignOut]);
     // The name, renamed in its field.
     page.key(key(KeyCode::Char('g')));

@@ -179,6 +179,16 @@ public enum Stories {
     private static let machineSettings = MachineSettings(
         hostName: machine, keepAwake: true,
         repositories: [home("/src/amux"), home("/src/website")], telemetry: true, autoReports: false,
+        experiments: [
+            ExperimentView(
+                name: "workspaces", version: "workspaces/1",
+                description: "Run each agent in a workspace that amux makes, starts and stops with its agents.",
+                enabled: true),
+            ExperimentView(
+                name: "suspension", version: "suspension/1",
+                description: "Suspend idle agents and resume them when a message arrives.",
+                enabled: false),
+        ],
         startAtLogin: true)
 
     private static let settings = [

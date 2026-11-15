@@ -707,6 +707,23 @@ pub struct MachineSettings {
     pub telemetry: bool,
     /// A report is sent on its own when something goes wrong.
     pub auto_reports: bool,
+    /// Every experiment the machine's build implements, in the order they
+    /// are listed. A switch takes effect when amux next starts.
+    pub experiments: Vec<ExperimentView>,
+}
+
+/// An experiment a machine's build implements: a feature still taking
+/// shape, which a person switches on for the whole machine.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExperimentView {
+    /// What it is switched by, e.g. "workspaces".
+    pub name: String,
+    /// The shape the build implements, e.g. "workspaces/1".
+    pub version: String,
+    /// One line to show beside the switch.
+    pub description: String,
+    /// Whether the machine's settings switch it on.
+    pub enabled: bool,
 }
 
 impl From<&wire::Settings> for MachineSettings {
@@ -718,6 +735,16 @@ impl From<&wire::Settings> for MachineSettings {
             repositories: settings.repositories.clone(),
             telemetry: settings.telemetry,
             auto_reports: settings.auto_reports,
+            experiments: settings
+                .experiments
+                .iter()
+                .map(|experiment| ExperimentView {
+                    name: experiment.name.clone(),
+                    version: experiment.version.clone(),
+                    description: experiment.description.clone(),
+                    enabled: experiment.enabled,
+                })
+                .collect(),
         }
     }
 }
@@ -740,6 +767,10 @@ pub struct SettingsChange {
     pub telemetry: Option<bool>,
     #[serde(default)]
     pub auto_reports: Option<bool>,
+    /// The names of the experiments to switch on, the whole new list;
+    /// every other one the build implements is switched off.
+    #[serde(default)]
+    pub experiments: Option<Vec<String>>,
 }
 
 impl From<SettingsChange> for wire::UpdateSettingsRequest {
@@ -753,6 +784,9 @@ impl From<SettingsChange> for wire::UpdateSettingsRequest {
                 .map(|paths| wire::RepositoryList { paths }),
             telemetry: change.telemetry,
             auto_reports: change.auto_reports,
+            experiments: change
+                .experiments
+                .map(|names| wire::ExperimentList { names }),
             ..wire::UpdateSettingsRequest::default()
         }
     }

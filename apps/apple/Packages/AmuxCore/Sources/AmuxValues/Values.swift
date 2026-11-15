@@ -2739,6 +2739,33 @@ public enum ExitCause: Codable, Hashable, Sendable {
     }
 }
 
+/// An experiment a machine's build implements: a feature still taking
+/// shape, which a person switches on for the whole machine.
+public struct ExperimentView: Codable, Hashable, Sendable {
+    /// What it is switched by, e.g. "workspaces".
+    public var name: String
+    /// The shape the build implements, e.g. "workspaces/1".
+    public var version: String
+    /// One line to show beside the switch.
+    public var description: String
+    /// Whether the machine's settings switch it on.
+    public var enabled: Bool
+
+    public init(name: String, version: String, description: String, enabled: Bool) {
+        self.name = name
+        self.version = version
+        self.description = description
+        self.enabled = enabled
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case version
+        case description
+        case enabled
+    }
+}
+
 public enum ExploreVerb: String, Codable, Hashable, Sendable, CaseIterable {
     case read = "Read"
     case search = "Search"
@@ -4131,16 +4158,20 @@ public struct MachineSettings: Codable, Hashable, Sendable {
     public var telemetry: Bool
     /// A report is sent on its own when something goes wrong.
     public var autoReports: Bool
+    /// Every experiment the machine's build implements, in the order they
+    /// are listed. A switch takes effect when amux next starts.
+    public var experiments: [ExperimentView]
     /// Whether amux starts at login; None on an install without a
     /// supervisor, which has nothing to start.
     public var startAtLogin: Bool?
 
-    public init(hostName: String, keepAwake: Bool, repositories: [String], telemetry: Bool, autoReports: Bool, startAtLogin: Bool?) {
+    public init(hostName: String, keepAwake: Bool, repositories: [String], telemetry: Bool, autoReports: Bool, experiments: [ExperimentView], startAtLogin: Bool?) {
         self.hostName = hostName
         self.keepAwake = keepAwake
         self.repositories = repositories
         self.telemetry = telemetry
         self.autoReports = autoReports
+        self.experiments = experiments
         self.startAtLogin = startAtLogin
     }
 
@@ -4150,6 +4181,7 @@ public struct MachineSettings: Codable, Hashable, Sendable {
         case repositories
         case telemetry
         case autoReports = "auto_reports"
+        case experiments
         case startAtLogin = "start_at_login"
     }
 }
@@ -6636,6 +6668,9 @@ public enum SettingChange: Codable, Hashable, Sendable {
 /// is.
 public struct SettingsChange: Codable, Hashable, Sendable {
     public var autoReports: Bool?
+    /// The names of the experiments to switch on, the whole new list;
+    /// every other one the build implements is switched off.
+    public var experiments: [String]?
     /// Empty returns to the machine's own name.
     public var hostName: String?
     public var keepAwake: Bool?
@@ -6644,8 +6679,9 @@ public struct SettingsChange: Codable, Hashable, Sendable {
     public var startAtLogin: Bool?
     public var telemetry: Bool?
 
-    public init(autoReports: Bool?, hostName: String?, keepAwake: Bool?, repositories: [String]?, startAtLogin: Bool?, telemetry: Bool?) {
+    public init(autoReports: Bool?, experiments: [String]?, hostName: String?, keepAwake: Bool?, repositories: [String]?, startAtLogin: Bool?, telemetry: Bool?) {
         self.autoReports = autoReports
+        self.experiments = experiments
         self.hostName = hostName
         self.keepAwake = keepAwake
         self.repositories = repositories
@@ -6655,6 +6691,7 @@ public struct SettingsChange: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case autoReports = "auto_reports"
+        case experiments
         case hostName = "host_name"
         case keepAwake = "keep_awake"
         case repositories

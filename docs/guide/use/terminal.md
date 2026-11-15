@@ -228,6 +228,11 @@ Press `,` on home for settings:
 - whether selecting text copies it; turned off, press **C** to copy
 - usage counts and automatic reports ([What amux sends](../understand/what-amux-sends.md))
 - your account: who's signed in, and on which plan
+- experiments: features still taking shape, which you can try before they
+  settle. Each is on or off for the whole machine, and a change takes effect
+  when amux restarts (`amux server stop`, then `amux server start`). An
+  experiment may change or go in any release, and what it keeps may be lost
+  when amux updates.
 
 These settings belong to the machine, so your phone and every other terminal
 see a change at once. Copying when you select is the exception: it applies to
@@ -239,6 +244,9 @@ A few more live only in the config file, `~/.config/amux/config.toml`.
 ```toml
 [ui]
 theme = "terminal"    # terminal (your terminal's own colours), dark or light
+
+[experiments]
+enabled = ["workspaces"]   # the experiments switched on, by name
 ```
 
 To go back to following Claude or Codex after picking in amux, forget the

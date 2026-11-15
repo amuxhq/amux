@@ -693,7 +693,9 @@ are the agent's own, written in its journal as the last step's
 `incarnation_end` (see [the agent process](AGENT_PROCESS.md#lifecycle)):
 `FINISHED` (a child's one-shot exit), `STOPPED` (a stop: its turn cancelled the
 provider's own way, then the exit), `PROVIDER_EXITED`,
-`DAEMON_LOST`, `ORPHANED`, `COULD_NOT_START` and `DIRECTORY_FAILED`. The
+`DAEMON_LOST`, `ORPHANED`, `COULD_NOT_START`, `DIRECTORY_FAILED` and
+`SUSPENDED` (an idle agent without a parent stopped its provider, under the
+`suspension` experiment; the next message resumes it). The
 daemon copies that onto the row when it ingests the step, reads the journal
 to its end before it marks the agent exited, and records its own cause only
 where the journal has none: `COULD_NOT_START` when the agent process cannot
@@ -705,7 +707,7 @@ agent's (a row still live can briefly hold the cause its journal ended with,
 until the daemon marks it exited, so a client reads the cause only on an
 exited row), and a cause a client does not know reads as an ordinary end,
 not a failure: clients draw `FINISHED` as finished,
-the stops and unknown causes as ended, and every other cause as a failure in
+the stops, `SUSPENDED` and unknown causes as ended, and every other cause as a failure in
 its words followed by its own. The `Boundary` that ends an incarnation in the
 journal carries the same cause and detail.
 

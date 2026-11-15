@@ -337,6 +337,10 @@ enum ExitCause {
   // The provider process ended on its own with a clean status, as it does
   // when a person quits it in its terminal.
   EXIT_CAUSE_QUIT = 11;
+  // The agent had nothing to do for long enough, so it stopped its provider
+  // process; the next message resumes it. Its row stays live, so a client
+  // or host that does not know this cause still sees an idle agent.
+  EXIT_CAUSE_SUSPENDED = 12;
 }
 
 // What a row says about the git repository an agent works in.

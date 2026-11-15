@@ -77,6 +77,7 @@ pub fn exit_words(cause: i32, detail: Option<&str>) -> String {
         Ok(ExitCause::CouldNotStart) => "could not start",
         Ok(ExitCause::DirectoryFailed) => "its directory failed",
         Ok(ExitCause::EndedUnexpectedly) => "ended unexpectedly",
+        Ok(ExitCause::Suspended) => "suspended",
     };
     match detail.filter(|detail| !detail.is_empty()) {
         Some(detail) if words.is_empty() => detail.to_owned(),

@@ -609,7 +609,13 @@ mod tests {
             .chain([".amux.dump.ClientSessionHistory".to_owned()])
             // Each experiment's values are encoded into an `experimental`
             // map entry.
-            .chain([".amux.experimental.AgentWorkspace".to_owned()])
+            .chain(
+                [
+                    ".amux.experimental.AgentWorkspace",
+                    ".amux.experimental.SuspensionSpec",
+                ]
+                .map(str::to_owned),
+            )
             .collect::<Vec<_>>();
         let mut reached = BTreeSet::new();
         while let Some(name) = pending.pop() {

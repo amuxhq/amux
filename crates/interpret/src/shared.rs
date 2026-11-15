@@ -1784,6 +1784,8 @@ fn ended_words(end: Option<&wire::IncarnationEnd>) -> String {
         Ok(ExitCause::CouldNotStart) => "could not start",
         Ok(ExitCause::DirectoryFailed) => "its directory failed",
         Ok(ExitCause::EndedUnexpectedly) => "ended unexpectedly",
+        // Only an agent without a parent suspends, so no parent reads this.
+        Ok(ExitCause::Suspended) => "suspended",
         Ok(ExitCause::Unspecified) | Err(_) => "ended",
     };
     match end

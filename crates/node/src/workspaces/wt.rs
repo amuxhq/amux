@@ -165,6 +165,12 @@ impl Maker for WtBackend {
             _ if !Path::new(&workspace.id).exists() => return Removal::Removed,
             _ => return Removal::Kept,
         };
+        // Only a tree this host made is its to remove or disown. Another
+        // profile's make of the same tree may have won, and the tree is
+        // then the winner's: this host leaves it as it is.
+        if tree.owner().as_deref() != Some(self.owner.as_str()) {
+            return Removal::Kept;
+        }
         let options = ::wt::Remove {
             ignore_dirty: discard,
             delete_empty_branch: true,

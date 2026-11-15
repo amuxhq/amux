@@ -386,6 +386,28 @@ stop = "echo stopped >> .wt/ran"
     }
 
     #[test]
+    fn a_tree_another_host_made_is_neither_removed_nor_disowned() {
+        // Two profiles that planned the same tree: the one whose make lost
+        // deletes what it would have made, and finds the winner's there.
+        let place = Place::new();
+        configured(&place);
+        let winner = place.backends(HOST);
+        let planned = winner.plan(&place.repo(), "shared").unwrap();
+        winner.make(&planned.workspace, &planned.plan).unwrap();
+        let tree = planned.workspace;
+        wait_for(&tree, "created");
+
+        let loser = place.backends(OTHER);
+        assert_eq!(loser.delete(&tree, false), Removal::Kept);
+        assert_eq!(loser.delete(&tree, true), Removal::Kept);
+        assert!(Path::new(&tree.id).is_dir(), "the winner's tree stays");
+        assert!(winner.resolve(&tree.id).made_here, "and stays the winner's");
+        assert_eq!(winner.owned(), vec![tree.clone()]);
+        // Its own host still removes it.
+        assert_eq!(winner.delete(&tree, false), Removal::Removed);
+    }
+
+    #[test]
     fn a_clean_tree_is_removed_and_a_dirty_one_kept_nobodys() {
         let place = Place::new();
         configured(&place);

@@ -651,6 +651,12 @@ of the same version. Versions are plain; there is no preview version,
 only a preview deployment, and a bad preview is fixed by cutting the next
 version.
 
+So every build carries every experiment it implements, dormant until a
+person switches it on ([the wire](WIRE.md#experiments)). Compiling
+experiments only into preview builds, behind a Cargo feature, was rejected:
+one version would exist as two binaries, and promoting preview to stable
+would ship a build preview never ran.
+
 `just release-check` builds the shipping binary under the `release` profile —
 `cargo build --release -p amux --bins`,
 whole-program optimised (fat LTO, one codegen unit) with line tables — and

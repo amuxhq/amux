@@ -1774,6 +1774,36 @@ mod tests {
         }
     }
 
+    /// A host that runs no experiment, or another version of one, reads
+    /// nothing of a peer's `experimental` entries: the replica row it keeps
+    /// and serves is the one it would keep had the peer sent none.
+    #[test]
+    fn a_peers_experiment_entries_leave_its_replica_rows_as_they_were() {
+        let plain = Agent {
+            name: "coder".into(),
+            ..listed(wire::Lifecycle::Live)
+        };
+        let mut with_entries = plain.clone();
+        with_entries
+            .experimental
+            .insert("workspaces/1".into(), vec![0x0a, 0x01, 0x2f]);
+        with_entries
+            .experimental
+            .insert("workspaces/2".into(), vec![0xff]);
+        assert_eq!(from_wire(&with_entries), from_wire(&plain));
+
+        let mut store = Sqlite::open_in_memory(OWN).expect("a store opens");
+        store.put_agent(&from_wire(&with_entries)).unwrap();
+        let held = store
+            .agent(&AgentKey::new(PEER.to_vec(), THEIRS.to_vec()))
+            .unwrap()
+            .expect("the replica row");
+        let served = crate::serve::to_wire(&held);
+        assert!(served.experimental.is_empty());
+        assert_eq!(served.name, "coder");
+        assert_eq!(served.cwd, plain.cwd);
+    }
+
     /// The calls the step made of `PEER`.
     fn calls(out: &[Output]) -> Vec<(CallId, PeerRequest)> {
         out.iter()

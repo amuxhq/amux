@@ -15,9 +15,17 @@ pub mod amux {
         #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
         include!("generated/amux.dump.rs");
     }
+
+    /// The shapes of experiments, carried as bytes in the `experimental`
+    /// maps of amux.v1 messages; outside the protocol's compatibility
+    /// promises, so they change freely.
+    pub mod experimental {
+        #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
+        include!("generated/amux.experimental.rs");
+    }
 }
 
-pub use amux::dump;
+pub use amux::{dump, experimental};
 
 /// gRPC's richer error model, from the vendored googleapis protos.
 pub mod google {
@@ -599,6 +607,9 @@ mod tests {
             )
             // A client encodes its session history into DumpRequest.sessions.
             .chain([".amux.dump.ClientSessionHistory".to_owned()])
+            // Each experiment's values are encoded into an `experimental`
+            // map entry.
+            .chain([".amux.experimental.AgentWorkspace".to_owned()])
             .collect::<Vec<_>>();
         let mut reached = BTreeSet::new();
         while let Some(name) = pending.pop() {
@@ -624,6 +635,65 @@ mod tests {
             unreached.is_empty(),
             "nothing carries these; delete them, or list a type code encodes on its own: {unreached:?}"
         );
+    }
+
+    /// What a build before the `experimental` maps decodes an `Agent` row
+    /// and an `AgentSpec` as: their first fields and nothing at 1000.
+    #[derive(Clone, PartialEq, prost::Message)]
+    struct Before {
+        #[prost(bytes = "vec", tag = "1")]
+        agent_id: Vec<u8>,
+        #[prost(string, tag = "4")]
+        name: String,
+    }
+
+    /// An `experimental` entry is field 1000 to a build that predates the
+    /// map, so 0.9 hosts and agent processes read a row or a spec carrying
+    /// one as they read it without, and an entry under a version a build
+    /// does not run is only bytes under a key it never asks for.
+    #[test]
+    fn a_build_without_the_experimental_maps_reads_past_them() {
+        let workspace = experimental::AgentWorkspace {
+            kind: experimental::WorkspaceKind::Wt as i32,
+            id: "/src/app".into(),
+            made_by_amux: true,
+            ..Default::default()
+        };
+        let mut agent = Agent {
+            agent_id: b"agent".to_vec(),
+            name: "coder".into(),
+            ..Default::default()
+        };
+        agent
+            .experimental
+            .insert("workspaces/1".into(), workspace.encode_to_vec());
+        agent
+            .experimental
+            .insert("workspaces/2".into(), b"another shape".to_vec());
+        let mut spec = AgentSpec {
+            agent_id: b"agent".to_vec(),
+            name: "coder".into(),
+            ..Default::default()
+        };
+        spec.experimental
+            .insert("suspension/1".into(), b"a delay".to_vec());
+        for bytes in [agent.encode_to_vec(), spec.encode_to_vec()] {
+            assert_eq!(
+                Before::decode(bytes.as_slice()).unwrap(),
+                Before {
+                    agent_id: b"agent".to_vec(),
+                    name: "coder".into(),
+                }
+            );
+        }
+        let read = Agent::decode(agent.encode_to_vec().as_slice()).unwrap();
+        assert_eq!(
+            experimental::AgentWorkspace::decode(read.experimental["workspaces/1"].as_slice())
+                .unwrap(),
+            workspace
+        );
+        // The map encodes in key order, so a row encodes the same each time.
+        assert_eq!(read.encode_to_vec(), agent.encode_to_vec());
     }
 
     /// Top-level enum values share one namespace in the package, so each

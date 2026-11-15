@@ -64,6 +64,7 @@ pub fn settings() -> wire::Settings {
         claude_kind: wire::Kind::Unspecified as i32,
         telemetry: true,
         auto_reports: false,
+        experiments: Vec::new(),
     }
 }
 

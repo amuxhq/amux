@@ -57,6 +57,12 @@ message AgentSpec {
   bool name_given = 15;
   // The inventory row's title when this incarnation was spawned.
   optional string title = 16;
+  // What experiments tell the agent process, each entry keyed by an
+  // experiment's version (e.g. "suspension/1") and holding an encoded
+  // amux.experimental message. A process reads only the entries of the
+  // versions it implements and ignores every other key. The map is
+  // promised; its entries are not. Empty outside experiments.
+  map<string, bytes> experimental = 1000;
 }
 
 message Bootstrap {

@@ -366,6 +366,9 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
         bootstrap: at.bootstrap,
         offered: at.offered,
         base_branch: at.base_branch,
+        // An experiment that tells the agent process something puts its
+        // entry here, under its version, while it is on.
+        experimental: Default::default(),
     }
 }
 

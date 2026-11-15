@@ -801,6 +801,8 @@ What a client writes into a dump is `amux.dump`, outside these promises:
 `DumpRequest.sessions` carries each session's record as bytes, and only the build that
 wrote it reads it back.
 
+Experiments are outside them too; see [experiments](#experiments).
+
 After any edit to a `.proto`, run `just protobuf` to regenerate the committed
 Rust; `just codegen-check`, which CI runs, fails on stale output.
 
@@ -835,6 +837,57 @@ Nothing else carries a version integer either:
   refuses a store for it: a build runs the ones a store lacks and opens a
   store that has had more as it is, because migrations only add (see
   [the journal and store](JOURNAL_AND_STORE.md#schema-and-migrations)).
+
+### Experiments
+
+An experiment is a feature shipped while its shape still moves, switched on
+per installation (`experiments.enabled`) and read by the daemon when it
+starts. Its wire shapes keep none of the promises above:
+
+- **Its messages are `amux.experimental`**, in
+  [`crates/wire/proto/amux/experimental/`](../crates/wire/proto/amux/experimental/).
+  Like `amux.dump`, the files sit outside the buf module, so buf neither
+  lints them nor checks them against a release, and they change freely.
+  `crates/xtask` compiles them with the rest (`INTERNAL_PROTO_FILES`), and
+  each type encoded into a map entry is a root of the reachability test in
+  `crates/wire/src/lib.rs`.
+- **They travel in an `experimental` map.** An amux.v1 message an
+  experiment extends carries, once and for good, `map<string, bytes>
+  experimental = 1000` (`Agent` and `AgentSpec` do now). Each entry is keyed
+  by an experiment's version and holds an encoded amux.experimental message:
+  `Agent.experimental["workspaces/1"]` is an `AgentWorkspace`. Its values
+  are bytes because a file in the buf module cannot import one outside it,
+  and bytes keep buf from seeing the experimental types at all. The map is
+  promised; its entries are not.
+- **A build reads and writes only the keys of the versions it implements
+  and has on** (`settings::experiments::Enabled::get` and `put`), and
+  ignores every other key, as an older build ignores field 1000. Hosts,
+  clients and agent processes running any mix of versions, or none, meet
+  without knowing what the others run, and nothing is announced. A replica
+  row is rebuilt from the store's columns, so a host does not pass on a
+  peer's entries it does not run.
+- **Enum values cannot be experimental**, since an enum lives in one
+  package. An experiment that needs a value on an amux.v1 enum adds it to
+  amux.v1 for good, and dropping it later reserves it.
+
+The switch itself is promised: `Settings.experiments` lists every
+experiment a build implements with its name, version, description and
+whether the config switches it on, and `UpdateSettingsRequest.experiments`
+replaces the list of names switched on, keeping any the build does not
+know. A change takes effect when the daemon next starts.
+
+To change an experiment's shape, edit its `.proto` and run `just protobuf`.
+A change a build at the same version could misread moves the experiment to
+its next version (`workspaces/2`, under a key of its own, in the registry
+in `crates/settings/src/experiments.rs`). To graduate one, design the
+settled shape in amux.v1 from first principles, as if the experiment had
+never existed, and delete the experiment's files; its entries simply stop
+being written, and nothing in amux.v1 changes.
+
+Rejected: a field number per version (`workspace_experimental = 1000`, then
+`workspace_experimental_2 = 1001`). Every version would edit amux.v1 and
+leave a reserved number behind at graduation, the trail experiments exist
+to avoid.
 
 ## Writing a client
 

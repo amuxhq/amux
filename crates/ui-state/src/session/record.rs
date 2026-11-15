@@ -358,6 +358,8 @@ fn agent(agent: Agent) -> Agent {
         background_jobs: agent.background_jobs,
         filing: agent.filing,
         filed_at_ms: agent.filed_at_ms,
+        // An experiment's entry may name folders; none is kept.
+        experimental: Default::default(),
     }
 }
 

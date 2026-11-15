@@ -63,3 +63,10 @@ against the latest release.
 
 What a client writes into a dump is `amux.dump` (`crates/wire/proto/amux/dump/session.proto`),
 read only by the build that wrote it and outside these promises.
+
+The shapes of experiments, features shipped while their shape still moves,
+are `amux.experimental` (`crates/wire/proto/amux/experimental/`), outside
+these promises too. They travel as bytes in the `experimental` maps that
+amux.v1 messages carry at field 1000, each entry keyed by the experiment's
+version (`workspaces/1`); the maps are promised, their entries are not. See
+[the wire](../../../docs/WIRE.md#experiments).

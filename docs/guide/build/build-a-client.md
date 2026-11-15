@@ -418,6 +418,7 @@ file first.
 | `chat_in` | Where the terminal client chats: amux's chat or each agent's own interface. |
 | `claude_kind` | Which Claude a new agent runs; unspecified follows `chat_in` (its own interface means terminal Claude). Every host publishes what this resolves to as `HostEntry.claude_kind`; create Claude agents of that kind. |
 | `telemetry`, `auto_reports` | Usage events and automatic reports. |
+| `experiments` | Every experiment the machine's build implements: its `name`, the `version` it implements, a one-line `description` and whether the settings switch it on. `UpdateSettings` takes the whole new list of names switched on. Unlike the rest, a switch takes effect when amux next starts, so say so beside it. An experiment's own data on the wire, in `experimental` map entries, may change in any release; a client that does not run an experiment ignores them. |
 
 How amux is deployed (the supervisor, updates, where releases and data
 live, discovery's scope, the agents' tunables) stays in the file and

@@ -295,7 +295,9 @@ pub enum PeerRequest {
     ListRepositories(#[serde(with = "codec::message")] wire::ListRepositoriesRequest),
 }
 
-/// A peer's whole reply to one of its unary calls.
+/// A peer's whole reply to one of its unary calls. An answer carries it
+/// boxed, so the row its largest variant holds costs nothing elsewhere.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PeerReply {
     Fetched(#[serde(with = "codec::message")] wire::ListItemsResponse),

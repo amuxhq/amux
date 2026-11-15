@@ -185,7 +185,7 @@ impl HostSettings {
         &self,
         request: &UpdateSettingsRequest,
     ) -> Result<InstallationConfig, SettingsError> {
-        let changes = changes(request, self.home())?;
+        let changes = changes(request, self.home(), &self.current())?;
         self.write(&changes, |held| {
             if let (Some(on), Some(login)) = (request.start_at_login, &self.login)
                 && (on != held.start_at_login || on != login.is_on())
@@ -303,13 +303,23 @@ pub(crate) fn to_wire(
         } as i32,
         telemetry: config.telemetry,
         auto_reports: config.auto_reports,
+        experiments: settings::experiments::EXPERIMENTS
+            .iter()
+            .map(|experiment| wire::Experiment {
+                name: experiment.name.to_owned(),
+                version: experiment.version.to_owned(),
+                description: experiment.description.to_owned(),
+                enabled: config.experiments.is_on(experiment),
+            })
+            .collect(),
     }
 }
 
-/// The file's keys a request changes.
+/// The file's keys a request changes, from the settings it changes.
 fn changes(
     request: &UpdateSettingsRequest,
     home: Option<&Path>,
+    current: &InstallationConfig,
 ) -> Result<Vec<Change<'static>>, SettingsError> {
     let mut changes: Vec<Change> = Vec::new();
     if let Some(name) = &request.host_name {
@@ -360,7 +370,42 @@ fn changes(
     if let Some(on) = request.auto_reports {
         changes.push(("auto_reports", Some(on.into())));
     }
+    if let Some(list) = &request.experiments {
+        changes.push((
+            "experiments.enabled",
+            Some(experiments(list, current)?.into()),
+        ));
+    }
     Ok(changes)
+}
+
+/// The names `experiments.enabled` takes for a list a client sent: each
+/// one this build implements, in the order sent, and after them the names
+/// the file held that this build does not know, which no client here can
+/// see to keep.
+fn experiments(
+    list: &wire::ExperimentList,
+    current: &InstallationConfig,
+) -> Result<toml_edit::Array, SettingsError> {
+    let mut names = toml_edit::Array::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for name in &list.names {
+        let name = name.trim();
+        if settings::experiments::named(name).is_none() {
+            return Err(SettingsError::Invalid(format!(
+                "this amux has no experiment named {name:?}"
+            )));
+        }
+        if seen.insert(name.to_owned()) {
+            names.push(name);
+        }
+    }
+    for name in current.experiments.unknown_names() {
+        if seen.insert(name.to_owned()) {
+            names.push(name);
+        }
+    }
+    Ok(names)
 }
 
 /// A repository as the file keeps it: absolute, and canonical where it
@@ -527,6 +572,96 @@ mod tests {
         ] {
             assert!(settings.update(&refused).is_err(), "{refused:?}");
         }
+    }
+
+    /// Switching an experiment writes `experiments.enabled` and keeps the
+    /// rest of the file, comments, another build's experiment and an
+    /// experiment's own table among it; the daemon runs what the file said
+    /// when it started, so the settings answer the switch, not what runs.
+    #[test]
+    fn switching_an_experiment_writes_the_names_and_keeps_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let text = "# mine\ntelemetry = false\n\n\
+                    [experiments]\n# what I try\nenabled = [\"teleport\"]\n\n\
+                    [experiments.suspension]\nafter = \"5m\" # quick\n";
+        std::fs::write(&path, text).unwrap();
+        let settings = HostSettings::new(SettingsOptions {
+            file: Some(path.clone()),
+            initial: InstallationConfig::from_file(&path).unwrap(),
+            login: None,
+            home: None,
+        });
+        let wire = to_wire(&settings.current(), "desk", false);
+        let listed: Vec<(&str, &str, bool)> = wire
+            .experiments
+            .iter()
+            .map(|experiment| {
+                (
+                    experiment.name.as_str(),
+                    experiment.version.as_str(),
+                    experiment.enabled,
+                )
+            })
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                ("workspaces", "workspaces/1", false),
+                ("suspension", "suspension/1", false)
+            ]
+        );
+        assert!(wire.experiments.iter().all(|e| !e.description.is_empty()));
+
+        let switch = |names: &[&str]| UpdateSettingsRequest {
+            experiments: Some(wire::ExperimentList {
+                names: names.iter().map(|name| (*name).to_owned()).collect(),
+            }),
+            ..request()
+        };
+        let config = settings
+            .update(&switch(&["suspension", "workspaces", "suspension"]))
+            .unwrap();
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            written.starts_with("# mine\ntelemetry = false\n"),
+            "{written}"
+        );
+        assert!(written.contains("# what I try\n"), "{written}");
+        assert!(written.contains("after = \"5m\" # quick"), "{written}");
+        assert!(
+            written.contains("enabled = [\"suspension\", \"workspaces\", \"teleport\"]"),
+            "{written}"
+        );
+        let read = InstallationConfig::from_file(&path).unwrap();
+        assert_eq!(read.experiments, config.experiments);
+        assert_eq!(
+            read.experiments.enabled().versions(),
+            ["workspaces/1", "suspension/1"]
+        );
+        assert!(
+            to_wire(&config, "desk", false)
+                .experiments
+                .iter()
+                .all(|experiment| experiment.enabled)
+        );
+
+        // Off again; the name this build does not know stays.
+        let config = settings.update(&switch(&[])).unwrap();
+        assert_eq!(config.experiments.enabled, ["teleport"]);
+        // Absent leaves the list alone.
+        let config = settings
+            .update(&UpdateSettingsRequest {
+                telemetry: Some(true),
+                ..request()
+            })
+            .unwrap();
+        assert_eq!(config.experiments.enabled, ["teleport"]);
+        let refused = settings.update(&switch(&["teleport"]));
+        assert!(
+            matches!(refused, Err(SettingsError::Invalid(_))),
+            "{refused:?}"
+        );
     }
 
     #[test]

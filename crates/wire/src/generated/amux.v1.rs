@@ -4261,7 +4261,8 @@ impl ::prost::Name for HostRemoved {
 /// The inventory row: lifecycle from the daemon; phase, working_on,
 /// phase_since_ms, git and background_jobs copied from the snapshot
 /// envelope, never a snapshot.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Eq, Hash)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Agent {
     #[prost(bytes = "vec", tag = "1")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
@@ -4328,6 +4329,16 @@ pub struct Agent {
     /// has stopped keeps no stream.
     #[prost(string, optional, tag = "21")]
     pub last_said: ::core::option::Option<::prost::alloc::string::String>,
+    /// What experiments say about the agent, each entry keyed by an
+    /// experiment's version (e.g. "workspaces/1") and holding an encoded
+    /// amux.experimental message. A build reads and writes only the entries of
+    /// the versions it implements and has on, and ignores every other key.
+    /// The map is promised; its entries are not. Empty outside experiments.
+    #[prost(btree_map = "string, bytes", tag = "1000")]
+    pub experimental: ::prost::alloc::collections::BTreeMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::vec::Vec<u8>,
+    >,
 }
 impl ::prost::Name for Agent {
     const NAME: &'static str = "Agent";
@@ -7198,7 +7209,7 @@ impl ::prost::Name for ResolveAgentRequest {
         "type.googleapis.com/amux.v1.ResolveAgentRequest".into()
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResolveAgentResponse {
     #[prost(message, optional, tag = "1")]
     pub agent: ::core::option::Option<Agent>,
@@ -7277,7 +7288,7 @@ impl ::prost::Name for CreateAgentRequest {
         "type.googleapis.com/amux.v1.CreateAgentRequest".into()
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateAgentResponse {
     #[prost(message, optional, tag = "1")]
     pub agent: ::core::option::Option<Agent>,
@@ -7311,7 +7322,7 @@ impl ::prost::Name for RenameAgentRequest {
         "type.googleapis.com/amux.v1.RenameAgentRequest".into()
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RenameAgentResponse {
     #[prost(message, optional, tag = "1")]
     pub agent: ::core::option::Option<Agent>,
@@ -7348,7 +7359,7 @@ impl ::prost::Name for FileAgentRequest {
         "type.googleapis.com/amux.v1.FileAgentRequest".into()
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FileAgentResponse {
     #[prost(message, optional, tag = "1")]
     pub agent: ::core::option::Option<Agent>,
@@ -7381,7 +7392,7 @@ impl ::prost::Name for ResumeAgentRequest {
         "type.googleapis.com/amux.v1.ResumeAgentRequest".into()
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResumeAgentResponse {
     #[prost(message, optional, tag = "1")]
     pub agent: ::core::option::Option<Agent>,
@@ -8961,7 +8972,7 @@ impl ::prost::Name for GetSettingsRequest {
         "type.googleapis.com/amux.v1.GetSettingsRequest".into()
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetSettingsResponse {
     #[prost(message, optional, tag = "1")]
     pub settings: ::core::option::Option<Settings>,
@@ -8976,7 +8987,7 @@ impl ::prost::Name for GetSettingsResponse {
         "type.googleapis.com/amux.v1.GetSettingsResponse".into()
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Settings {
     /// What paired hosts and phones call this machine; never empty.
     #[prost(string, tag = "1")]
@@ -9001,6 +9012,11 @@ pub struct Settings {
     pub telemetry: bool,
     #[prost(bool, tag = "8")]
     pub auto_reports: bool,
+    /// Every experiment this build implements, in the order a settings screen
+    /// lists them. Empty from a build that implements none, as from builds
+    /// before experiments.
+    #[prost(message, repeated, tag = "9")]
+    pub experiments: ::prost::alloc::vec::Vec<Experiment>,
 }
 impl ::prost::Name for Settings {
     const NAME: &'static str = "Settings";
@@ -9010,6 +9026,37 @@ impl ::prost::Name for Settings {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Settings".into()
+    }
+}
+/// A feature whose shape is still moving, shipped outside amux.v1's
+/// promises: its messages are amux.experimental's, its data sits in
+/// `experimental` map entries and in store tables of its own, and any of
+/// that may change or go in any release. Switched on per installation.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Experiment {
+    /// What a person switches on, e.g. "workspaces".
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// The shape this build implements, e.g. "workspaces/1": the key of its
+    /// entries in `experimental` maps.
+    #[prost(string, tag = "2")]
+    pub version: ::prost::alloc::string::String,
+    /// One line a settings screen shows beside the switch.
+    #[prost(string, tag = "3")]
+    pub description: ::prost::alloc::string::String,
+    /// Whether the config switches it on. The daemon reads the switch when it
+    /// starts, so a change takes effect at its next start.
+    #[prost(bool, tag = "4")]
+    pub enabled: bool,
+}
+impl ::prost::Name for Experiment {
+    const NAME: &'static str = "Experiment";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Experiment".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Experiment".into()
     }
 }
 /// Absent fields are left as they are.
@@ -9033,6 +9080,10 @@ pub struct UpdateSettingsRequest {
     pub telemetry: ::core::option::Option<bool>,
     #[prost(bool, optional, tag = "8")]
     pub auto_reports: ::core::option::Option<bool>,
+    /// The whole new list of experiments switched on; absent leaves it as it
+    /// is. Takes effect when the daemon next starts.
+    #[prost(message, optional, tag = "9")]
+    pub experiments: ::core::option::Option<ExperimentList>,
 }
 impl ::prost::Name for UpdateSettingsRequest {
     const NAME: &'static str = "UpdateSettingsRequest";
@@ -9044,7 +9095,7 @@ impl ::prost::Name for UpdateSettingsRequest {
         "type.googleapis.com/amux.v1.UpdateSettingsRequest".into()
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateSettingsResponse {
     #[prost(message, optional, tag = "1")]
     pub settings: ::core::option::Option<Settings>,
@@ -9072,6 +9123,24 @@ impl ::prost::Name for RepositoryList {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.RepositoryList".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ExperimentList {
+    /// The names of the experiments to switch on, each one this build
+    /// implements; every other one it implements is switched off. Names the
+    /// config holds that this build does not know are kept.
+    #[prost(string, repeated, tag = "1")]
+    pub names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+impl ::prost::Name for ExperimentList {
+    const NAME: &'static str = "ExperimentList";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ExperimentList".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.ExperimentList".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -14088,6 +14157,16 @@ pub struct AgentSpec {
     /// The inventory row's title when this incarnation was spawned.
     #[prost(string, optional, tag = "16")]
     pub title: ::core::option::Option<::prost::alloc::string::String>,
+    /// What experiments tell the agent process, each entry keyed by an
+    /// experiment's version (e.g. "suspension/1") and holding an encoded
+    /// amux.experimental message. A process reads only the entries of the
+    /// versions it implements and ignores every other key. The map is
+    /// promised; its entries are not. Empty outside experiments.
+    #[prost(btree_map = "string, bytes", tag = "1000")]
+    pub experimental: ::prost::alloc::collections::BTreeMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::vec::Vec<u8>,
+    >,
 }
 impl ::prost::Name for AgentSpec {
     const NAME: &'static str = "AgentSpec";
@@ -14549,14 +14628,14 @@ impl ::prost::Name for AgentAsk {
         "type.googleapis.com/amux.v1.AgentAsk".into()
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AgentAnswer {
     #[prost(oneof = "agent_answer::Of", tags = "1, 2")]
     pub of: ::core::option::Option<agent_answer::Of>,
 }
 /// Nested message and enum types in `AgentAnswer`.
 pub mod agent_answer {
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Of {
         /// The daemon made the child: its answer, as it gave it.
         #[prost(message, tag = "1")]

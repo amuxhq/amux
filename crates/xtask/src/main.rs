@@ -73,9 +73,14 @@ const PROTO_FILES: &[&str] = &[
     "google/rpc/error_details.proto",
 ];
 
-/// The proto files only amux reads, relative to `crates/wire/proto/`: what
-/// a client writes into a dump, outside the contract's promises.
-const INTERNAL_PROTO_FILES: &[&str] = &["amux/dump/session.proto"];
+/// The proto files outside the contract's promises, relative to
+/// `crates/wire/proto/`: what a client writes into a dump, read only by the
+/// build that wrote it, and the shapes of experiments, which may change in
+/// any release.
+const INTERNAL_PROTO_FILES: &[&str] = &[
+    "amux/dump/session.proto",
+    "amux/experimental/workspaces.proto",
+];
 
 /// Regenerates the committed protobuf code under
 /// `crates/wire/src/generated/` from `proto/` and `crates/wire/proto/`.
@@ -129,6 +134,15 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
     // prost never derives Eq for a message with a repeated message field,
     // though every field here is Eq; the views that hold a Diff compare it.
     config.type_attribute("amux.v1.Diff", "#[derive(Eq)]");
+    // An experimental map encodes in key order, so a row or a spec encodes
+    // to the same bytes every time.
+    config.btree_map([
+        ".amux.v1.Agent.experimental",
+        ".amux.v1.AgentSpec.experimental",
+    ]);
+    // prost derives neither for a message with a map, though a BTreeMap of
+    // strings and bytes is both; rows are compared and hashed.
+    config.type_attribute("amux.v1.Agent", "#[derive(Eq, Hash)]");
     tonic_prost_build::configure()
         // Keep generated clients, but omit tonic's `connect(uri)`
         // constructors: every client is built on a channel its caller dials

@@ -140,6 +140,9 @@ pub struct Launch {
     /// A change to the switch takes effect at the next start, so nothing
     /// changes this while the daemon runs.
     pub experiments: settings::experiments::Enabled,
+    /// The suspension experiment's settings, read while it is off too;
+    /// used only while it is on.
+    pub suspension: settings::experiments::suspension::Suspension,
 }
 
 /// The bytes of stored rows a profile keeps for the agents this host runs;
@@ -183,6 +186,7 @@ impl Default for Launch {
             dump_interval_ms: core_ring::DumpLimit::INTERVAL_MS,
             cores: None,
             experiments: settings::experiments::Enabled::none(),
+            suspension: Default::default(),
         }
     }
 }

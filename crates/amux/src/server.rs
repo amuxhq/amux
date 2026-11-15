@@ -65,16 +65,27 @@ pub(crate) fn log_to_stderr() {
 
 /// What agents start with: this binary as the canonical install path, the
 /// installation's agent settings, its repositories and which Claude it runs;
-/// and the experiments switched on, which the daemon runs until it stops.
+/// and the experiments switched on, with their own settings, which the
+/// daemon runs until it stops.
 fn launch(config: &InstallationConfig) -> Result<Launch> {
     let install_path = std::env::current_exe().context("finding the amux binary")?;
+    let experiments = config.experiments.enabled();
+    let (suspension, warnings) = settings::experiments::suspension::Suspension::read(
+        config.experiments.table(&settings::experiments::SUSPENSION),
+    );
+    if experiments.is_on(&settings::experiments::SUSPENSION) {
+        for warning in warnings {
+            tracing::warn!("{warning}");
+        }
+    }
     Ok(Launch {
         install_path,
         agent: config.agent,
         repositories: config.repositories(),
         claude_kind: node::claude_kind(config),
         new_agent: config.new_agent.clone(),
-        experiments: config.experiments.enabled(),
+        experiments,
+        suspension,
         ..Launch::default()
     })
 }

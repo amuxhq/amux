@@ -19,6 +19,8 @@
 //! The switch is read when the daemon starts; a change takes effect at the
 //! next start.
 
+pub mod suspension;
+
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};

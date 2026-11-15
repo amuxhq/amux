@@ -248,6 +248,20 @@ final class StoreBundleSessionTests: XCTestCase {
         XCTAssertEqual(try after.chat(agent).draft, "", "the deleted agent's draft came back")
     }
 
+    /// A delete keeps the uncommitted changes of a workspace that goes with
+    /// the agent unless the caller agreed to lose them.
+    func testADeleteDiscardsChangesOnlyWhenAsked() async {
+        let agent = Cards.key(2)
+        var acts: [AgentAct] = []
+        let stores = bundle(account: "discarding-\(UUID().uuidString)", acting: { act, _ in
+            acts.append(act)
+            return .success(Nothing())
+        })
+        _ = await stores.delete(agent)
+        _ = await stores.delete(agent, discardingChanges: true)
+        XCTAssertEqual(acts, [.delete, .deleteDiscardingChanges])
+    }
+
     /// A delete that fails leaves the agent, and its draft, as they were.
     func testAFailedDeleteKeepsTheDraft() async throws {
         let agent = Cards.key(2)

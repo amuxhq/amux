@@ -155,7 +155,7 @@ public enum Stories {
             name: name, handle: name, kind: .claudeSdk, attention: attention, cwd: "/src/amux", phaseSinceMs: 0,
             host: host, hostReach: .online(.direct), children: 0, familyAttention: attention, members: 1,
             descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, branch: "main",
-            exitCause: nil)
+            exitCause: nil, workspaceGoes: nil)
     }
 
     private static let agents = [

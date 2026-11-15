@@ -20,8 +20,12 @@ public enum HomeAction: Equatable, Sendable {
     /// Files it back as open: its pin taken away, or reopened without
     /// resuming it.
     case unfile(AgentKey)
-    /// Removes a closed agent for good, once the person has confirmed it.
+    /// Removes a closed agent for good, once the person has confirmed it,
+    /// keeping any uncommitted changes in a workspace that goes with it.
     case delete(AgentKey)
+    /// Removes a closed agent for good, agreeing to lose the uncommitted
+    /// changes its confirmation named.
+    case deleteDiscardingChanges(AgentKey)
     case rename(AgentKey, String)
     /// The closed agents, on a page of their own.
     case showClosed
@@ -231,11 +235,11 @@ public struct AgentsHome: View {
             titleVisibility: .visible, presenting: confirming
         ) { asked in
             switch asked {
-            case .close(let row, _):
-                Button(String(localized: "Settle"), role: .destructive) { actions(.close(row.id)) }
+            case .close:
+                Button(String(localized: "Settle"), role: .destructive) { actions(asked.confirmed) }
                     .identified("home.settle.confirm", label: String(localized: "Settle"))
-            case .delete(let row):
-                Button(String(localized: "Delete"), role: .destructive) { actions(.delete(row.id)) }
+            case .delete:
+                Button(String(localized: "Delete"), role: .destructive) { actions(asked.confirmed) }
                     .identified("home.delete.confirm", label: String(localized: "Delete"))
             }
             Button(String(localized: "Cancel"), role: .cancel) {}
@@ -1677,9 +1681,17 @@ enum Confirming: Identifiable {
         case .close(_, let cuts):
             String(localized: "\(cuts) Settling stops it now. Its chat and edits stay, and a message resumes it.")
         case .delete(let row):
-            row.card.descendants > 0
-                ? String(localized: "Its chat is deleted on every device, with its subagents. Its edits stay.")
-                : String(localized: "Its chat is deleted on every device. Its edits stay.")
+            DeleteWords.message(descendants: row.card.descendants, workspaceGoes: row.card.workspaceGoes)
+        }
+    }
+
+    /// What confirming asks for: a delete loses uncommitted changes only
+    /// when this message named them.
+    var confirmed: HomeAction {
+        switch self {
+        case .close(let row, _): .close(row.id)
+        case .delete(let row):
+            DeleteWords.discards(row.card.workspaceGoes) ? .deleteDiscardingChanges(row.id) : .delete(row.id)
         }
     }
 }

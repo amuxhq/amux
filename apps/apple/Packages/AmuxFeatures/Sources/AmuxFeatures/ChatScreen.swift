@@ -30,11 +30,14 @@ public struct ChatSubject: Equatable, Sendable {
     public let filing: Filing
     /// It has no parent, so it may be pinned.
     public let topLevel: Bool
+    /// The workspace that deleting it removes, as its fleet row says; nil
+    /// when the workspace stays.
+    public let workspaceGoes: WorkspaceGoes?
 
     public init(
         name: String, host: String, directory: String, branch: String? = nil, reach: Reach,
         connecting: Bool = false, descendants: Int = 0, backgroundJobs: Int = 0, closeHeld: Bool = false,
-        filing: Filing = .open, topLevel: Bool = true
+        filing: Filing = .open, topLevel: Bool = true, workspaceGoes: WorkspaceGoes? = nil
     ) {
         self.name = name
         self.host = host
@@ -47,6 +50,7 @@ public struct ChatSubject: Equatable, Sendable {
         self.closeHeld = closeHeld
         self.filing = filing
         self.topLevel = topLevel
+        self.workspaceGoes = workspaceGoes
     }
 
     public var reachable: Bool { reach.online }
@@ -86,7 +90,12 @@ public enum ChatAction: Equatable, Sendable {
     case unpin
     /// Back among the agents, without resuming it.
     case reopen
+    /// Deletes it, keeping any uncommitted changes in a workspace that goes
+    /// with it.
     case delete
+    /// Deletes it, agreeing to lose the uncommitted changes its confirmation
+    /// named.
+    case deleteDiscardingChanges
     case copyAddress
     /// A parent or child in this chat's family.
     case open(AgentKey)
@@ -96,6 +105,12 @@ public enum ChatAction: Equatable, Sendable {
     case dictate
     /// Dictation was refused: open the app's page in Settings.
     case dictationSettings
+
+    /// The delete a confirmation that said what goes with `workspaceGoes`
+    /// asks for: it loses uncommitted changes only when it named them.
+    static func deleting(_ workspaceGoes: WorkspaceGoes?) -> ChatAction {
+        DeleteWords.discards(workspaceGoes) ? .deleteDiscardingChanges : .delete
+    }
 }
 
 /// What the chat has open over itself; one at a time.
@@ -682,9 +697,12 @@ public struct ChatStanding: View {
                     actions(.close)
                 }
             case .delete?:
-                DeleteCard(name: subject.name, descendants: descendants, cancel: { showing = nil }) {
+                DeleteCard(
+                    name: subject.name, descendants: descendants, workspaceGoes: subject.workspaceGoes,
+                    cancel: { showing = nil }
+                ) {
                     showing = nil
-                    actions(.delete)
+                    actions(.deleting(subject.workspaceGoes))
                 }
             case .settings?:
                 if let settings = model.settings {
@@ -985,6 +1003,8 @@ private struct DeleteCard: View {
     @Environment(\.design) private var design
     let name: String
     let descendants: Int
+    /// The workspace that goes with it, when one does.
+    let workspaceGoes: WorkspaceGoes?
     let cancel: () -> Void
     let confirm: () -> Void
 
@@ -993,12 +1013,20 @@ private struct DeleteCard: View {
             Text(String(localized: "Delete \(name)?"))
                 .designFont(.screenTitle, design)
                 .foregroundStyle(design.ink.color)
-            Consequence("checkmark", kept: true, String(localized: "Its edits stay. Nothing is reverted."))
+            if workspaceGoes == nil {
+                Consequence("checkmark", kept: true, String(localized: "Its edits stay. Nothing is reverted."))
+            }
             Consequence("xmark", kept: false, String(localized: "The chat is deleted on every device."))
             if descendants == 1 {
                 Consequence("xmark", kept: false, String(localized: "Its subagent is deleted too."))
             } else if descendants > 1 {
                 Consequence("xmark", kept: false, String(localized: "Its \(descendants) subagents are deleted too."))
+            }
+            if let workspaceGoes {
+                Consequence("xmark", kept: false, DeleteWords.workspace(workspaceGoes))
+                if let branch = DeleteWords.branch(workspaceGoes) {
+                    Consequence("checkmark", kept: true, branch)
+                }
             }
             ButtonPair {
                 choiceButton(String(localized: "Cancel"), kind: .outline, id: "chat.delete.cancel", action: cancel)
@@ -1009,6 +1037,55 @@ private struct DeleteCard: View {
         .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
     }
 
+}
+
+/// What deleting an agent says goes with it, in the words the home's dialog
+/// and the chat's card both use, and whether confirming agrees to lose
+/// uncommitted changes.
+enum DeleteWords {
+    /// "Its worktree is removed too, with 3 uncommitted files (+42 −7).", or
+    /// "Its worktree is removed too." when nothing in it is uncommitted.
+    static func workspace(_ goes: WorkspaceGoes) -> String {
+        guard let uncommitted = goes.uncommitted else {
+            return String(localized: "Its worktree is removed too.")
+        }
+        let files = uncommitted.files
+        // Files can change with no line counted, a binary or a mode change,
+        // and then there are no counts to show.
+        let counts = ChatWords.counts(added: uncommitted.added, removed: uncommitted.removed)
+        switch (files == 1, counts.isEmpty) {
+        case (true, false): return String(localized: "Its worktree is removed too, with 1 uncommitted file (\(counts)).")
+        case (true, true): return String(localized: "Its worktree is removed too, with 1 uncommitted file.")
+        case (false, false):
+            return String(localized: "Its worktree is removed too, with \(files) uncommitted files (\(counts)).")
+        case (false, true): return String(localized: "Its worktree is removed too, with \(files) uncommitted files.")
+        }
+    }
+
+    /// "The branch fix-scroll keeps what was committed.", when the branch has
+    /// commits of its own.
+    static func branch(_ goes: WorkspaceGoes) -> String? {
+        goes.branch.map { String(localized: "The branch \($0) keeps what was committed.") }
+    }
+
+    /// The home's dialog under "Delete name?": the chat and its subagents,
+    /// then what happens to the workspace.
+    static func message(descendants: UInt32, workspaceGoes: WorkspaceGoes?) -> String {
+        guard let workspaceGoes else {
+            return descendants > 0
+                ? String(localized: "Its chat is deleted on every device, with its subagents. Its edits stay.")
+                : String(localized: "Its chat is deleted on every device. Its edits stay.")
+        }
+        let chat = descendants > 0
+            ? String(localized: "Its chat is deleted on every device, with its subagents.")
+            : String(localized: "Its chat is deleted on every device.")
+        return [chat, workspace(workspaceGoes), branch(workspaceGoes)].compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// Whether confirming agrees to lose uncommitted changes: only when the
+    /// confirmation named them. A delete without that consent keeps such a
+    /// workspace on disk.
+    static func discards(_ goes: WorkspaceGoes?) -> Bool { goes?.uncommitted != nil }
 }
 
 /// Lays its one subview out at its own height, never taller than `cap`.

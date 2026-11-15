@@ -476,8 +476,12 @@ public final class StoreBundle {
 
     /// Deletes an agent. Its draft goes with it: the daemon forgets it, and
     /// nothing typed into its chat while the page leaves is kept.
-    public func delete(_ agent: AgentKey) async -> Result<Nothing, RuntimeFailure> {
-        let outcome = await act(.delete, on: agent)
+    ///
+    /// A workspace that goes with the agent keeps its uncommitted changes on
+    /// disk unless `discardingChanges`, which only a confirmation that named
+    /// those changes asks for.
+    public func delete(_ agent: AgentKey, discardingChanges: Bool = false) async -> Result<Nothing, RuntimeFailure> {
+        let outcome = await act(discardingChanges ? .deleteDiscardingChanges : .delete, on: agent)
         if case .success = outcome {
             models[agent]?.model.keeping = nil
         }

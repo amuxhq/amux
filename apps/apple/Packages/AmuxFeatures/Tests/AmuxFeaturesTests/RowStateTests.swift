@@ -23,7 +23,7 @@ final class RowStateTests: XCTestCase {
                 agent: AgentKey(host: machine, agent: UUID()), name: "refactor-auth", handle: "refactor-auth",
                 kind: kind, attention: attention, cwd: "~/src/amux", phaseSinceMs: 0,
                 host: "Studio.local", hostReach: reach, children: 0,
-                familyAttention: attention, members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: filing, topLevel: true, branch: nil, exitCause: exitCause),
+                familyAttention: attention, members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: filing, topLevel: true, branch: nil, exitCause: exitCause, workspaceGoes: nil),
             depth: 0, expanded: false, secondLine: .blank, loud: nil)
     }
 

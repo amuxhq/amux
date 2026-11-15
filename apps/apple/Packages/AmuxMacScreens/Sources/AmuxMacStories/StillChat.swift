@@ -11,6 +11,8 @@ import Observation
 final class StillChat: ChatSurface {
     private var rows: [Row]
     private var open: Set<String> = []
+    /// The finished turns opened, by their ends.
+    private var openTurns: Set<String> = []
     var frame: ChatFrame?
     var ask: AskCard?
     var draft = ""
@@ -36,12 +38,26 @@ final class StillChat: ChatSurface {
     }
 
     var ids: [String] { rows.map(\.id) }
-    func row(_ id: String) -> Row? { rows.first { $0.id == id } }
+
+    func toggleTurn(_ turn: TurnPlace) {
+        if openTurns.remove(turn.end) == nil { openTurns.insert(turn.end) }
+    }
+    /// A row as the runtime hands it over: a story's turn placements are
+    /// authored closed, and its work folds until the turn is opened.
+    func row(_ id: String) -> Row? {
+        guard var row = rows.first(where: { $0.id == id }) else { return nil }
+        if let end = row.turn?.end {
+            let opened = openTurns.contains(end)
+            row.turn?.open = opened
+            if row.turn?.part == .work, !opened { row.collapsed = true }
+        }
+        return row
+    }
     func shows(_ row: Row) -> Bool { !row.collapsed || row.parent.map(open.contains) == true }
 
     func row(below id: String) -> Row? {
         guard let at = rows.firstIndex(where: { $0.id == id }) else { return nil }
-        return rows[(at + 1)...].first { row in
+        return rows[(at + 1)...].lazy.compactMap { self.row($0.id) }.first { row in
             if case .hidden = row.kind { return false }
             return shows(row)
         }

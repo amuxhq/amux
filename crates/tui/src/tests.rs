@@ -1814,6 +1814,7 @@ fn call_row(kind: ui_view::RowKind) -> ui_view::Row {
         decision: None,
         attention: false,
         parent: None,
+        turn: None,
     }
 }
 

@@ -143,7 +143,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         Row(
             id: id, order: order, atMs: 1_790_000_000_000 + Int64(order) * 1_000, kind: kind,
             collapsed: collapsed || parent != nil, attention: attention, decision: decision,
-            parent: parent, run: run)
+            parent: parent, run: run, turn: nil)
     }
 
     // MARK: - Changing it
@@ -379,6 +379,9 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
             pending.rows.append(contentsOf: ordered.filter { $0.run?.last == last }.map(\.id))
         }
     }
+    /// A script draws its turns unfolded, as the phone does.
+    public func foldTurns(_ on: Bool) {}
+    public func toggleTurn(_ end: String) {}
     public func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome? { .done }
     public func withdraw(_ input: [UInt8]) async -> ActOutcome? { .done }
     public func sendNow(_ input: [UInt8]) async -> ActOutcome? { .done }

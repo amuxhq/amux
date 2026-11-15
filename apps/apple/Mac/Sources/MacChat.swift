@@ -24,6 +24,8 @@ final class MacChat: ChatSurface {
     init(model: ChatModel, host: String) {
         self.model = model
         self.host = host
+        // A desktop reads each finished turn answer first.
+        model.foldTurns(true)
     }
 
     // MARK: The rows
@@ -39,6 +41,7 @@ final class MacChat: ChatSurface {
     func isExpanded(_ id: String) -> Bool { model.isExpanded(id) }
     func toggle(_ id: String) { model.toggle(id) }
     func toggleRun(_ run: Run) { model.toggleRun(run) }
+    func toggleTurn(_ turn: TurnPlace) { model.toggleTurn(turn) }
     func counts(of run: Run) -> RunCounts? { model.counts(of: run) }
     func bytes(of blob: BlobRef) -> Data? { model.bytes(of: blob) }
 

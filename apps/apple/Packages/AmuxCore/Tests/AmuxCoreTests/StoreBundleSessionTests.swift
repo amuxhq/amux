@@ -48,6 +48,8 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     func answer(_ ask: String, responses: [QuestionResponse]) async -> ActOutcome? { nil }
     func replyInstead(_ ask: String, text: String, soFar: [QuestionResponse]) async -> ActOutcome? { nil }
     func toggleRun(_ member: String) {}
+    func foldTurns(_ on: Bool) {}
+    func toggleTurn(_ end: String) {}
     func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome? { nil }
     func withdraw(_ input: [UInt8]) async -> ActOutcome? { nil }
     func sendNow(_ input: [UInt8]) async -> ActOutcome? { nil }

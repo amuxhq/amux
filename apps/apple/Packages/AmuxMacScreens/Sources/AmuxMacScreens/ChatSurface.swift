@@ -21,6 +21,8 @@ public protocol ChatSurface: AnyObject {
     func isExpanded(_ id: String) -> Bool
     func toggle(_ id: String)
     func toggleRun(_ run: Run)
+    /// Opens or closes a finished turn's work.
+    func toggleTurn(_ turn: TurnPlace)
     func counts(of run: Run) -> RunCounts?
     /// An attachment's bytes, once they have landed.
     func bytes(of blob: BlobRef) -> Data?

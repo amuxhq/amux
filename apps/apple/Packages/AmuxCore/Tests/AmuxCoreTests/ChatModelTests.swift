@@ -207,6 +207,8 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         responded.append(soFar)
         return .done
     }
+    func foldTurns(_ on: Bool) {}
+    func toggleTurn(_ end: String) {}
     /// Opens or closes a run as the runtime does: every row of it says so
     /// from then on, handed over by the next delta.
     func toggleRun(_ member: String) {
@@ -298,7 +300,7 @@ private func row(_ id: String, _ order: UInt64, _ text: String = "", run: Run? =
     Row(
         id: id, order: order, atMs: 0,
         kind: .prose(text: [.text(text.isEmpty ? id : text)], streaming: false, workingNote: false),
-        collapsed: false, attention: false, decision: nil, parent: nil, run: run)
+        collapsed: false, attention: false, decision: nil, parent: nil, run: run, turn: nil)
 }
 
 private func frame(

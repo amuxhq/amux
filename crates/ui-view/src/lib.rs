@@ -21,6 +21,7 @@ mod run;
 mod segments;
 mod settings;
 mod text;
+mod turn;
 
 pub use ask::{
     Answer, AskBody, AskCard, CardState, Choice, ChoiceOutcome, OptionView, QuestionResponse,
@@ -57,6 +58,7 @@ pub use rows::{
     PlanVerdict, Resolution, Row, RowKind, ToolRows, chat_rows_for, patch_head,
 };
 pub use run::{Run, RunCounts, keep_open_runs, run_is_open, toggle_run};
+pub use turn::{TurnPart, TurnPlace, Worked, turn_keys, turn_rows_moved};
 pub use segments::{AttachmentView, Segment, THUMBNAIL_SIZE_LIMIT, segments};
 pub use settings::{
     Changeability, Changeable, ClientCommand, CommandView, ControlsSummary, EffortChoice,

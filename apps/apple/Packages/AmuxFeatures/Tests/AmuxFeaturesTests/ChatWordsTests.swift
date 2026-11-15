@@ -8,7 +8,7 @@ final class ChatWordsTests: XCTestCase {
     private func row(_ kind: RowKind, attention: Bool = false, decision: Decision? = nil) -> Row {
         Row(
             id: "k", order: 1, atMs: 0, kind: kind, collapsed: false, attention: attention,
-            decision: decision, parent: nil, run: nil)
+            decision: decision, parent: nil, run: nil, turn: nil)
     }
 
     func testDurationsAndCountsReadTheWayTheVocabularyWritesThem() {

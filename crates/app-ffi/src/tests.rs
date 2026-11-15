@@ -1410,6 +1410,10 @@ fn null_handles_read_as_nothing_and_null_results_free_as_nothing() {
     // SAFETY: a null chat or fleet ignores what it is told.
     unsafe { amux_session_toggle_run(std::ptr::null(), c"k".as_ptr()) };
     // SAFETY: as above.
+    unsafe { amux_session_toggle_turn(std::ptr::null(), c"k".as_ptr()) };
+    // SAFETY: as above.
+    unsafe { amux_session_fold_turns(std::ptr::null(), true) };
+    // SAFETY: as above.
     unsafe { amux_fleet_toggle_family(std::ptr::null(), c"[1]".as_ptr()) };
     // SAFETY: as above.
     let blob = unsafe { amux_session_blob(std::ptr::null(), c"[1]".as_ptr()) };

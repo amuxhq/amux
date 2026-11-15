@@ -328,19 +328,23 @@ public enum Stories {
 
     private static var nowMs: Int64 { Int64(Date.now.timeIntervalSince1970 * 1000) }
 
+    /// A row; `turn` is its part in the finished turn `end` closes, as the
+    /// runtime places it for a client folding turns.
     private static func r(
-        _ id: String, _ kind: RowKind, run: Run? = nil, collapsed: Bool = false, attention: Bool = false
+        _ id: String, _ kind: RowKind, run: Run? = nil, collapsed: Bool = false, attention: Bool = false,
+        turn: TurnPart? = nil, end: String = "r9"
     ) -> Row {
         Row(
             id: id, order: UInt64(id.dropFirst()) ?? 0, atMs: nowMs, kind: kind, collapsed: collapsed,
-            attention: attention, decision: nil, parent: nil, run: run)
+            attention: attention, decision: nil, parent: nil, run: run,
+            turn: turn.map { TurnPlace(end: end, open: false, part: $0) })
     }
 
     private static func command(
         _ text: String, _ state: CallPhase, output: [String] = [], ms: Int64? = 1_200, exit: Int32? = 0
     ) -> RowKind {
         .command(
-            command: text, state: state, outputHead: output, moreLines: 0, outputTrimmed: false, outputTail: [],
+            command: text, description: "", state: state, outputHead: output, moreLines: 0, outputTrimmed: false, outputTail: [],
             durationMs: state == .running ? nil : ms, exitCode: state == .running ? nil : exit)
     }
 
@@ -367,18 +371,20 @@ public enum Stories {
     }
 
     private static let conversationRows: [Row] = [
-        r("r1", .prompt(text: text("The relay test fails about one run in twenty on CI. Can you find out why?"), steered: false)),
-        r("r2", .prose(text: text("I'll start with the test and the last few CI logs."), streaming: false, workingNote: true)),
+        r("r1", .prompt(text: text("The relay test fails about one run in twenty on CI. Can you find out why?"), steered: false),
+          turn: .prompt(worked: Worked(failed: false, durationMs: 194_000))),
+        r("r2", .prose(text: text("I'll start with the test and the last few CI logs."), streaming: false, workingNote: true),
+          turn: .work),
         r("r3", command("cargo nextest run -p relay reconnect", .succeeded),
-          run: Run(first: "r3", last: "r5", steps: 3, live: false, openBelow: false, unresolvedFailure: false,
-                   open: false, counts: nil, recent: 2), collapsed: true),
+          run: Run(first: "r3", last: "r5", steps: 3, live: false, openBelow: false, liveShown: false, unresolvedFailure: false,
+                   open: false, counts: nil, hidden: nil, recent: 2), collapsed: true, turn: .work),
         r("r4", .explore(verb: .read, subject: "crates/relay/tests/reconnect.rs", state: .succeeded, result: ""),
-          run: Run(first: "r3", last: "r5", steps: 3, live: false, openBelow: false, unresolvedFailure: false,
-                   open: false, counts: nil, recent: 1), collapsed: true),
+          run: Run(first: "r3", last: "r5", steps: 3, live: false, openBelow: false, liveShown: false, unresolvedFailure: false,
+                   open: false, counts: nil, hidden: nil, recent: 1), collapsed: true, turn: .work),
         r("r5", .explore(verb: .search, subject: "sleep(", state: .succeeded, result: ""),
-          run: Run(first: "r3", last: "r5", steps: 3, live: false, openBelow: false, unresolvedFailure: false,
-                   open: false, counts: RunCounts(commands: 1, edits: 0, reads: 1, searches: 1, subagents: 0, other: 0),
-                   recent: 0)),
+          run: Run(first: "r3", last: "r5", steps: 3, live: false, openBelow: false, liveShown: false, unresolvedFailure: false,
+                   open: false, counts: RunCounts(commands: 1, edits: 0, reads: 1, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil,
+                   recent: 0), turn: .work),
         r("r6", .prose(text: text("""
             Found it. The test cuts the link **before the relay has acknowledged the hello**, so on a slow \
             runner the reconnect races the first handshake.
@@ -392,35 +398,49 @@ public enum Stories {
             link.settled().await;
             relay.cut(&link);
             ```
-            """), streaming: false, workingNote: false)),
-        r("r7", .fileChange(
-            files: [FileRow(path: "crates/relay/tests/reconnect.rs", change: .edited, added: 6, removed: 3, line: 41)],
-            state: .succeeded)),
+            """), streaming: false, workingNote: false), turn: .answer),
+        r("r7", .fileChange(files: [reconnectEdit], state: .succeeded), turn: .work),
         r("r8", command("cargo nextest run -p relay reconnect --retries 0", .succeeded,
-                        output: ["    Starting 4 tests across 1 binary", "        PASS [   0.412s] relay::reconnect", "     Summary [   1.204s] 4 tests run: 4 passed"])),
-        r("r9", .turnEnd(failed: false, durationMs: 194_000)),
+                        output: ["    Starting 4 tests across 1 binary", "        PASS [   0.412s] relay::reconnect", "     Summary [   1.204s] 4 tests run: 4 passed"]),
+          turn: .work),
+        r("r9", .turnEnd(failed: false, durationMs: 194_000), turn: .end(answer: ["r6"], files: [reconnectEdit])),
     ]
+
+    private static let reconnectEdit = FileRow(
+        path: "crates/relay/tests/reconnect.rs", change: .edited, added: 6, removed: 3, line: 41)
 
     private static let workingRows: [Row] = [
         r("r1", .prompt(text: text("Draft the release notes for 0.9.0 from the changelog."), steered: false)),
         r("r2", .explore(verb: .read, subject: "CHANGELOG.md", state: .succeeded, result: ""),
-          run: Run(first: "r2", last: "r5", steps: 5, live: true, openBelow: false, unresolvedFailure: false,
-                   open: false, counts: nil, recent: 3), collapsed: true),
+          run: liveRun(recent: 3), collapsed: true),
         r("r3", .explore(verb: .read, subject: "docs/guide/README.md", state: .succeeded, result: ""),
-          run: Run(first: "r2", last: "r5", steps: 5, live: true, openBelow: false, unresolvedFailure: false,
-                   open: false, counts: nil, recent: 2)),
+          run: liveRun(recent: 2), collapsed: true),
         r("r4", .explore(verb: .search, subject: "BREAKING", state: .succeeded, result: ""),
-          run: Run(first: "r2", last: "r5", steps: 5, live: true, openBelow: false, unresolvedFailure: false,
-                   open: false, counts: nil, recent: 1)),
+          run: liveRun(recent: 1), collapsed: true),
         r("r5", command("git log --oneline v0.8.7..HEAD", .running),
-          run: Run(first: "r2", last: "r5", steps: 5, live: true, openBelow: false, unresolvedFailure: false,
-                   open: false, counts: nil, recent: 0)),
+          run: liveRun(
+              recent: 0, shown: true,
+              hidden: RunCounts(
+                  commands: 0, edits: 0, reads: 2, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 0))),
     ]
+
+    /// A step of the run under way in `workingRows`: its newest step shows,
+    /// under what the steps before it did.
+    private static func liveRun(recent: UInt32, shown: Bool = false, hidden: RunCounts? = nil) -> Run {
+        Run(
+            first: "r2", last: "r5", steps: 4, live: true, openBelow: false, liveShown: shown,
+            unresolvedFailure: false, open: false, counts: nil, hidden: hidden, recent: recent)
+    }
 
     private static var flaky: FleetRow { needsYou.rows[0] }
     private static var notes: FleetRow { live.rows[0] }
 
-    private static let askRows: [Row] = Array(conversationRows.prefix(6)) + [
+    /// The same turn before it ended: nothing in it is placed in a turn yet.
+    private static let askRows: [Row] = conversationRows.prefix(6).map { row in
+        var row = row
+        row.turn = nil
+        return row
+    } + [
         r("r7", command("cargo test -p relay -- --test-threads 1", .asking), attention: true),
     ]
 

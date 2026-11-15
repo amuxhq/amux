@@ -15,6 +15,7 @@ use wire::{
 use crate::ask::{QuestionView, Scope, lift_rule, lifted, question, scope_of};
 use crate::review::LineKind;
 use crate::run::Run;
+use crate::turn::{TurnPart, TurnPlace, Turns};
 use crate::segments::{Segment, segments};
 use crate::text::{terminal_text, within, without_direction_controls};
 
@@ -40,6 +41,10 @@ pub struct Row {
     /// A subagent's own step: collapsed under the subagent's row, which
     /// opens to it.
     pub parent: Option<Key>,
+    /// Where it stands in its finished turn, when the client folds turns
+    /// ([`ToolRows::Turns`]); None in the turn under way and for every
+    /// other fold.
+    pub turn: Option<TurnPlace>,
 }
 
 /// Whether tool steps show, hide, or fold into their runs.
@@ -54,6 +59,14 @@ pub enum ToolRows<'a> {
     /// step (see [`crate::run_is_open`]).
     Collapse {
         open: &'a HashSet<Key>,
+    },
+    /// Each finished turn folds to its prompt, the line over its work, and
+    /// its answer, keeping in view what the reader must see; one `turns`
+    /// holds the end of shows its work, each run folded as `Collapse`
+    /// folds it. The turn under way folds as `Collapse` does.
+    Turns {
+        runs: &'a HashSet<Key>,
+        turns: &'a HashSet<Key>,
     },
 }
 
@@ -455,32 +468,57 @@ pub fn chat_rows_for(state: &SessionState, keys: &[Key], tools: ToolRows) -> Vec
     let mut held: Vec<&Held> = keys.iter().filter_map(|key| transcript.get(key)).collect();
     held.sort_by_key(|held| held.item.order);
     held.dedup_by_key(|held| held.item.order);
+    let mut turns = Turns::default();
     held.into_iter()
-        .map(|held| row(state, held, tools))
+        .map(|held| row(state, held, tools, &mut turns))
         .collect()
 }
 
-fn row(state: &SessionState, held: &Held, tools: ToolRows) -> Row {
+fn row(state: &SessionState, held: &Held, tools: ToolRows, turns: &mut Turns) -> Row {
     let item = &held.item;
     let (kind, decision, failed) = kind_of(state, held);
     let mut run = crate::run::run_of(state, held, &kind, failed);
-    if let (ToolRows::Collapse { open }, Some(run)) = (tools, run.as_mut()) {
+    if let (ToolRows::Collapse { open } | ToolRows::Turns { runs: open, .. }, Some(run)) =
+        (tools, run.as_mut())
+    {
         run.open = crate::run::run_is_open(state, item.order, open);
     }
     let step = held.class.fold() == Fold::Step;
     let kept = run.as_ref().is_some_and(|run| run.unresolved_failure);
+    let run_folded = || {
+        run.as_ref().is_some_and(|run| {
+            let shown = if run.live {
+                run.live_shown
+            } else {
+                run.is_last() || kept
+            };
+            !shown && !run.open
+        })
+    };
+    let turn = match tools {
+        ToolRows::Turns { turns: open, .. } => turns.place(state, held, &kind, kept, open),
+        _ => None,
+    };
     let collapsed = matches!(kind, RowKind::Hidden)
         || match tools {
             ToolRows::ShowAll => false,
             ToolRows::Hide => step && !kept,
-            ToolRows::Collapse { .. } => run.as_ref().is_some_and(|run| {
-                let shown = if run.live {
-                    run.live_shown
-                } else {
-                    run.is_last() || kept
-                };
-                !shown && !run.open
-            }),
+            ToolRows::Collapse { .. } => run_folded(),
+            ToolRows::Turns { .. } => match &turn {
+                Some(TurnPlace {
+                    open: false,
+                    part: TurnPart::Work,
+                    ..
+                }) => true,
+                // Closed, a turn keeps its failure in view without the
+                // run that held it.
+                Some(TurnPlace {
+                    open: false,
+                    part: TurnPart::Kept,
+                    ..
+                }) => false,
+                _ => run_folded(),
+            },
         };
     let asked = asked(state, held);
     let parent = parent_of(held);
@@ -495,6 +533,7 @@ fn row(state: &SessionState, held: &Held, tools: ToolRows) -> Row {
         decision,
         attention: asked || failed,
         parent,
+        turn,
     }
 }
 

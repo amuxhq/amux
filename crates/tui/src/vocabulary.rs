@@ -704,6 +704,7 @@ fn row(kind: RowKind) -> Row {
         decision: None,
         attention: false,
         parent: None,
+        turn: None,
     }
 }
 

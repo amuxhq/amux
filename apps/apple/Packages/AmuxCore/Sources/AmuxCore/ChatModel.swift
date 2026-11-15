@@ -300,6 +300,9 @@ public final class ChatModel {
     /// part of the run's work, not things to read.
     public func shows(_ row: Row) -> Bool {
         if row.run != nil, row.kind.passesThroughRuns { return false }
+        // A closed turn's work stays folded, a subagent's steps with it,
+        // however its subagent was left.
+        if let turn = row.turn, !turn.open, turn.part == .work { return false }
         return !row.collapsed || row.parent.map(expanded.contains) == true
     }
 

@@ -52,7 +52,9 @@ extension Font {
 enum Radius {
     /// A sidebar row, a small button's hover fill.
     static let row: CGFloat = 6
-    /// The rail's tiles and a hover button.
+    /// A hover button's fill.
+    static let control: CGFloat = 7
+    /// The rail's tiles.
     static let tile: CGFloat = 7.5
     /// Wells inside a card: output, code, a field.
     static let well: CGFloat = 8

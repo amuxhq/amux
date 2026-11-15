@@ -53,7 +53,10 @@ final class StillChat: ChatSurface {
         }
         return row
     }
-    func shows(_ row: Row) -> Bool { !row.collapsed || row.parent.map(open.contains) == true }
+    func shows(_ row: Row) -> Bool {
+        if let turn = row.turn, !turn.open, turn.part == .work { return false }
+        return !row.collapsed || row.parent.map(open.contains) == true
+    }
 
     func row(below id: String) -> Row? {
         guard let at = rows.firstIndex(where: { $0.id == id }) else { return nil }

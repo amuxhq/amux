@@ -274,6 +274,10 @@ private struct Footer: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if let ended = chat.frame?.ended {
+                // The ask the agent ended with stays as a record above it.
+                if let ask = chat.ask {
+                    AskCardView(card: ask, chat: chat)
+                }
                 Text(ended).font(.ui(.callout)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 8)

@@ -322,10 +322,10 @@ struct PillButtonStyle: ButtonStyle {
             .padding(.horizontal, small ? 10 : 12)
             .frame(height: small ? 24 : 28)
             .background(
-                RoundedRectangle(cornerRadius: small ? Radius.row : Radius.tile, style: .continuous)
+                RoundedRectangle(cornerRadius: small ? Radius.row : Radius.control, style: .continuous)
                     .fill(prominent ? Color.primary : Color.primary.opacity(hovering ? 0.1 : 0.065)))
             .opacity(configuration.isPressed ? 0.75 : (enabled ? 1 : 0.45))
-            .contentShape(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
             .onHover { hovering = $0 }
     }
 }

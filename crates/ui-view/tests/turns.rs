@@ -324,3 +324,18 @@ fn the_turn_at_the_low_edge_folds_once_its_prompt_pages_in_and_unfolds_when_cut(
     }
     assert!(part(&capped, 4).is_none(), "its prompt was cut");
 }
+
+/// A turn longer than the window holds no prompt, so nothing in it has a
+/// place to move: each streamed row names only itself.
+#[test]
+fn a_row_streamed_into_a_turn_whose_prompt_is_not_held_moves_nothing_else() {
+    let mut steps = vec![It::Prompt("go")];
+    steps.extend((0..30).map(|_| It::Read("a.rs")));
+    let mut state = session_from(1, 10, &steps);
+    assert!(
+        state.transcript().oldest_held().unwrap() > 1,
+        "the prompt was cut"
+    );
+    let outcome = state.update(event(session_event::Of::Item(item(32, &It::Read("b.rs")))));
+    assert_eq!(turn_rows_moved(&state, &outcome.changed), Vec::<Key>::new());
+}

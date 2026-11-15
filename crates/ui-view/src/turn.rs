@@ -323,22 +323,18 @@ pub fn turn_rows_moved(state: &SessionState, changed: &[Key]) -> Vec<Key> {
     };
     let bound_after =
         |order: u64| between(transcript, order + 1, head).find(|held| bounds_turn(&held.class));
-    // Rows below the window's first bound sit in the turn at its low edge.
-    let first_bound = transcript
-        .range(oldest..=head)
-        .find(|held| bounds_turn(&held.class))
-        .map(|held| held.item.order);
-    let mut low_edge = false;
+    // A cut at the low edge unfolds the finished turn it took the prompt
+    // of: the rows up to the window's first bound, when that bound is a
+    // turn's end. Rows before a prompt or a steer were in no folded turn,
+    // and with no bound held no turn's end is held either. A page needs no
+    // such rule: a prompt it brings in is a bound, placed below.
+    let mut cut = false;
     for key in changed {
         let Some(held) = transcript.get(key) else {
-            // Dropped by a cut at the low edge.
-            low_edge = true;
+            cut = true;
             continue;
         };
         let order = held.item.order;
-        if first_bound.is_none_or(|first| order <= first) {
-            low_edge = true;
-        }
         if bounds_turn(&held.class) {
             add(bound_before(order).unwrap_or(oldest)..=order);
             if let Some(after) = bound_after(order) {
@@ -350,8 +346,13 @@ pub fn turn_rows_moved(state: &SessionState, changed: &[Key]) -> Vec<Key> {
             add(after.item.order..=after.item.order);
         }
     }
-    if low_edge {
-        add(oldest..=first_bound.unwrap_or(head));
+    if cut
+        && let Some(first) = transcript
+            .range(oldest..=head)
+            .find(|held| bounds_turn(&held.class))
+        && first.class == ItemClass::Turn
+    {
+        add(oldest..=first.item.order);
     }
     let changed: HashSet<&Key> = changed.iter().collect();
     let mut seen: HashSet<&Key> = HashSet::new();

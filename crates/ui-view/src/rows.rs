@@ -15,9 +15,9 @@ use wire::{
 use crate::ask::{QuestionView, Scope, lift_rule, lifted, question, scope_of};
 use crate::review::LineKind;
 use crate::run::Run;
-use crate::turn::{TurnPart, TurnPlace, Turns};
 use crate::segments::{Segment, segments};
 use crate::text::{terminal_text, within, without_direction_controls};
+use crate::turn::{TurnPart, TurnPlace, Turns};
 
 /// How many lines of a command's output a row carries.
 pub const OUTPUT_HEAD_LINES: usize = 3;

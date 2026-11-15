@@ -58,7 +58,6 @@ pub use rows::{
     PlanVerdict, Resolution, Row, RowKind, ToolRows, chat_rows_for, patch_head,
 };
 pub use run::{Run, RunCounts, keep_open_runs, run_is_open, toggle_run};
-pub use turn::{TurnPart, TurnPlace, Worked, turn_keys, turn_rows_moved};
 pub use segments::{AttachmentView, Segment, THUMBNAIL_SIZE_LIMIT, segments};
 pub use settings::{
     Changeability, Changeable, ClientCommand, CommandView, ControlsSummary, EffortChoice,
@@ -66,6 +65,7 @@ pub use settings::{
     SettingsView, Slash, controls, new_agent_pick, new_agent_settings, setting_input, settings,
     slash, typed_setting,
 };
+pub use turn::{TurnPart, TurnPlace, Worked, turn_keys, turn_rows_moved};
 /// Why an input was refused, which every client words.
 pub use ui_state::Refusal;
 /// The most an attachment may hold, which every client checks before it

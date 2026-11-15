@@ -205,7 +205,11 @@ fn reading(held: &Held) -> Reading {
 }
 
 /// Reads the turn over `span`; None for a turn that was stopped.
-fn finished(state: &SessionState, span: RangeInclusive<u64>, open: &HashSet<Key>) -> Option<Finished> {
+fn finished(
+    state: &SessionState,
+    span: RangeInclusive<u64>,
+    open: &HashSet<Key>,
+) -> Option<Finished> {
     let transcript = state.transcript();
     let end = transcript.at(*span.end())?;
     let (duration_ms, failed) = match kind_of(state, end).0 {

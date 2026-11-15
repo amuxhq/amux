@@ -276,16 +276,17 @@ impl Chat {
         // Folding turns, a change moves the place in its turn of rows it
         // does not touch itself.
         let widened: Vec<Key>;
-        let changed = if self.folds_turns.load(Ordering::Relaxed) && !reloaded && !changed.is_empty() {
-            widened = changed
-                .iter()
-                .cloned()
-                .chain(ui_view::turn_rows_moved(&state, changed))
-                .collect();
-            &widened[..]
-        } else {
-            changed
-        };
+        let changed =
+            if self.folds_turns.load(Ordering::Relaxed) && !reloaded && !changed.is_empty() {
+                widened = changed
+                    .iter()
+                    .cloned()
+                    .chain(ui_view::turn_rows_moved(&state, changed))
+                    .collect();
+                &widened[..]
+            } else {
+                changed
+            };
         let (keys, wanted) = sent.keys_moved(state.transcript(), reloaded, changed);
         let turns = self.open_turns.lock().unwrap();
         let rows = ui_view::chat_rows_for(&state, &wanted, self.tools(&open, &turns));

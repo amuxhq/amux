@@ -6,7 +6,9 @@
 use std::collections::{BTreeMap, HashSet};
 
 use ui_state::{Key, Msg, SessionState};
-use ui_view::{Row, ToolRows, TurnPart, TurnPlace, Worked, chat_rows_for, turn_keys, turn_rows_moved};
+use ui_view::{
+    Row, ToolRows, TurnPart, TurnPlace, Worked, chat_rows_for, turn_keys, turn_rows_moved,
+};
 use wire::session_event;
 
 use crate::runs::{It, event, item, session, session_from};
@@ -77,7 +79,11 @@ fn a_finished_turn_folds_its_work_under_the_prompt_and_reads_its_answer() {
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].path, "a.rs");
     assert_eq!((files[0].added, files[0].removed), (2, 2));
-    assert_ne!(drawn[3].1, Some(end(vec!["k7", "k8"])), "it carries the file");
+    assert_ne!(
+        drawn[3].1,
+        Some(end(vec!["k7", "k8"])),
+        "it carries the file"
+    );
 
     // Every row of the turn names it by its end; the work says it is work.
     for order in 2..=6 {
@@ -105,7 +111,11 @@ fn an_opened_turn_draws_its_work_as_the_run_fold_does() {
         vec![1, 4, 5, 6],
         "the run folds to its newest step inside the opened turn"
     );
-    assert!(turn_rows(&state, &open).iter().all(|row| row.turn.as_ref().unwrap().open));
+    assert!(
+        turn_rows(&state, &open)
+            .iter()
+            .all(|row| row.turn.as_ref().unwrap().open)
+    );
     assert_eq!(
         turn_keys(&state, &"k6".to_owned()),
         (1..=6).map(|order| format!("k{order}")).collect::<Vec<_>>()
@@ -161,11 +171,19 @@ fn a_turn_that_only_answered_has_no_line() {
 #[test]
 fn the_turn_under_way_and_one_whose_prompt_is_not_held_do_not_fold() {
     let live = session(&[It::Prompt("go"), It::Read("a.rs"), It::Say("reading")]);
-    assert!(turn_rows(&live, &HashSet::new()).iter().all(|row| row.turn.is_none()));
+    assert!(
+        turn_rows(&live, &HashSet::new())
+            .iter()
+            .all(|row| row.turn.is_none())
+    );
 
     // The window starts inside the turn: older history holds its prompt.
     let cut = session_from(40, 200, &[It::Read("a.rs"), It::Say("done"), It::Turn]);
-    assert!(turn_rows(&cut, &HashSet::new()).iter().all(|row| row.turn.is_none()));
+    assert!(
+        turn_rows(&cut, &HashSet::new())
+            .iter()
+            .all(|row| row.turn.is_none())
+    );
 }
 
 /// The client's copy of the rows, as a host keeps them: read whole once,
@@ -203,7 +221,11 @@ impl Client {
         let held: HashSet<Key> = state.transcript().keys().cloned().collect();
         self.rows.retain(|key, _| held.contains(key));
         // A row new at an edge is read when it is drawn.
-        keys.extend(held.iter().filter(|key| !self.rows.contains_key(*key)).cloned());
+        keys.extend(
+            held.iter()
+                .filter(|key| !self.rows.contains_key(*key))
+                .cloned(),
+        );
         for row in Self::read(state, open, &keys) {
             self.rows.insert(row.id.clone(), row);
         }
@@ -243,7 +265,11 @@ fn each_change_names_every_row_whose_turn_place_moves() {
     ];
     for (index, it) in turns.iter().enumerate() {
         let order = index as u64 + 1;
-        client.update(&mut state, &open, event(session_event::Of::Item(item(order, it))));
+        client.update(
+            &mut state,
+            &open,
+            event(session_event::Of::Item(item(order, it))),
+        );
         client.agrees(&state, &open, &format!("item {order}"));
     }
 }
@@ -289,7 +315,11 @@ fn the_turn_at_the_low_edge_folds_once_its_prompt_pages_in_and_unfolds_when_cut(
     assert_eq!(part(&capped, 4).unwrap().part, TurnPart::Answer);
     for (index, it) in items[5..].iter().enumerate() {
         let order = index as u64 + 6;
-        client.update(&mut capped, &open, event(session_event::Of::Item(item(order, it))));
+        client.update(
+            &mut capped,
+            &open,
+            event(session_event::Of::Item(item(order, it))),
+        );
         client.agrees(&capped, &open, &format!("item {order}"));
     }
     assert!(part(&capped, 4).is_none(), "its prompt was cut");

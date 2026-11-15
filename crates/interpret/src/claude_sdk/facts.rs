@@ -546,30 +546,42 @@ impl State {
     }
 
     /// A wake-up fired, as its command's `wakeup_source` says: the
-    /// one-shot it was leaves the set; a recurring cron stays. A
-    /// ScheduleWakeup's firing names its time, so the one-shot scheduled
-    /// for it goes; a cron's does not name its id, so the one-shot cron
-    /// due first goes.
+    /// one-shot it was leaves the set, but only when the firing is surely
+    /// its, since a one-shot dropped by mistake is cancelled by the next
+    /// suspension. A ScheduleWakeup's firing names its time, which must be
+    /// a one-shot's exactly. A cron's names nothing: it is the one-shot
+    /// cron due by now only when that is the only one due and no recurring
+    /// cron, which could be the one firing, is pending. A recurring cron
+    /// stays either way.
     fn woke(&mut self, source: &str, scheduled_for: Option<i64>) {
-        let prefix = match source {
-            "loop_wakeup" => LOOP_WAKEUP,
-            "schedule_wakeup" => CRON_WAKEUP,
-            _ => return,
+        let wakeups = self.shared.wakeups();
+        let fired = match source {
+            "loop_wakeup" => scheduled_for.and_then(|at| {
+                wakeups
+                    .iter()
+                    .find(|(id, wakeup)| {
+                        id.starts_with(LOOP_WAKEUP) && !wakeup.recurring && wakeup.at_ms == Some(at)
+                    })
+                    .map(|(id, _)| id.clone())
+            }),
+            "schedule_wakeup" => {
+                let now = self.shared.now_ms();
+                let crons = || wakeups.iter().filter(|(id, _)| id.starts_with(CRON_WAKEUP));
+                let due = crons()
+                    .filter(|(_, wakeup)| {
+                        !wakeup.recurring && wakeup.at_ms.is_none_or(|at| at <= now)
+                    })
+                    .map(|(id, _)| id.clone())
+                    .collect::<Vec<_>>();
+                let recurring = crons().any(|(_, wakeup)| wakeup.recurring);
+                match due.as_slice() {
+                    [one] if !recurring => Some(one.clone()),
+                    _ => None,
+                }
+            }
+            _ => None,
         };
-        let one_shots = self
-            .shared
-            .wakeups()
-            .iter()
-            .filter(|(id, wakeup)| id.starts_with(prefix) && !wakeup.recurring)
-            .map(|(id, wakeup)| (id.clone(), wakeup.at_ms));
-        let fired = match scheduled_for {
-            Some(at) => one_shots
-                .clone()
-                .find(|(_, at_ms)| *at_ms == Some(at))
-                .or_else(|| one_shots.min_by_key(|(_, at_ms)| at_ms.unwrap_or(i64::MAX))),
-            None => one_shots.min_by_key(|(_, at_ms)| at_ms.unwrap_or(i64::MAX)),
-        };
-        if let Some((id, _)) = fired {
+        if let Some(id) = fired {
             self.shared.wakeup_gone(&id);
         }
     }

@@ -2495,3 +2495,76 @@ impl CloneViaCheckpoint for State {
         interpret::decode_checkpoint(&interpret::encode_checkpoint(self)).unwrap()
     }
 }
+
+/// A recurring cron's tick names no time, so it cannot be the one-shot
+/// cron that is also pending: the one-shot stays held through the tick and
+/// after the recurring one is deleted.
+#[test]
+fn a_recurring_crons_tick_leaves_a_pending_one_shot_held() {
+    let mut state = started();
+    let created = |call: &str, id: &str, recurring: bool, at: f64| {
+        [
+            json!({"type": "assistant", "uuid": format!("a-{call}"), "session_id": "s", "message": {
+                "id": format!("msg-{call}"), "role": "assistant", "content": [{
+                    "type": "tool_use", "id": call, "name": "CronCreate",
+                    "input": {"cron": "* * * * *", "prompt": "say tick", "recurring": recurring}}]}}),
+            json!({"type": "user", "uuid": format!("u-{call}"), "session_id": "s", "message": {"role": "user",
+                "content": [{"tool_use_id": call, "type": "tool_result", "content": "Scheduled."}]},
+                "tool_use_result": {"id": id, "humanSchedule": "Every minute", "recurring": recurring,
+                    "durable": false, "nextFireAt": at}}),
+        ]
+    };
+    ClaudeSdk::step(
+        &mut state,
+        Event::Tick {
+            at_ms: 1_794_772_700_000,
+        },
+    );
+    let pending = holds_after(
+        &mut state,
+        created("toolu_once", "0nce0001", false, 1_794_776_400_000.0)
+            .into_iter()
+            .chain(created(
+                "toolu_tick",
+                "07a89516",
+                true,
+                1_794_772_740_897.48,
+            ))
+            .chain([turn_result()]),
+    );
+    assert_eq!(pending.wakeups, 2, "{pending:?}");
+    ClaudeSdk::step(
+        &mut state,
+        Event::Tick {
+            at_ms: 1_794_772_741_000,
+        },
+    );
+    let ticked = holds_after(
+        &mut state,
+        [
+            json!({"type": "command_lifecycle", "command_uuid": "392bfcee-d328-4f87-a573-b082dcaf615c",
+                "state": "started", "wakeup_source": "schedule_wakeup"}),
+            turn_result(),
+        ],
+    );
+    assert_eq!(
+        ticked.wakeups, 2,
+        "the tick is the recurring cron's: {ticked:?}"
+    );
+    let deleted = holds_after(
+        &mut state,
+        [
+            json!({"type": "assistant", "uuid": "a-del", "session_id": "s", "message": {
+                "id": "msg-del", "role": "assistant", "content": [{
+                    "type": "tool_use", "id": "toolu_del", "name": "CronDelete", "input": {"id": "07a89516"}}]}}),
+            json!({"type": "user", "uuid": "u-del", "session_id": "s", "message": {"role": "user",
+                "content": [{"tool_use_id": "toolu_del", "type": "tool_result", "content": "Cancelled job 07a89516."}]},
+                "tool_use_result": {"id": "07a89516"}}),
+            turn_result(),
+        ],
+    );
+    assert_eq!(
+        deleted.wakeups, 1,
+        "the one-shot is still pending: {deleted:?}"
+    );
+}

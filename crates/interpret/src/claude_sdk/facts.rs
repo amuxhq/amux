@@ -221,6 +221,7 @@ impl State {
                             tokens_before: Some(metadata.pre_tokens),
                             tokens_after: after,
                             automatic: metadata.trigger == CompactTrigger::Auto,
+                            idle: self.idle_compaction.is_some(),
                         })),
                         complete: true,
                         ..Default::default()
@@ -423,6 +424,7 @@ impl State {
         self.jobs.clear();
         self.exited = true;
         self.unanswered.clear();
+        self.idle_compaction = None;
         self.early_boundary = None;
         // A message Claude died streaming ends as far as it got.
         if let Some(message) = self.stream.take() {
@@ -690,6 +692,7 @@ impl State {
             StreamEvent::MessageStart { message, .. } => {
                 self.stream = written(&message.id);
                 self.streaming_calls.clear();
+                self.last_request_ms = Some(self.shared.now_ms());
                 self.usage_seen(&message.usage);
                 self.shared.turn_started();
             }
@@ -861,6 +864,15 @@ impl State {
             usage.cache_creation_input_tokens,
             usage.cache_read_input_tokens,
         );
+        // Only a request that wrote to the cache says how long it lives;
+        // one that only read it leaves what the last write said.
+        if let Some(created) = &usage.cache_creation {
+            let hour = created.ephemeral_1h_input_tokens.unwrap_or(0);
+            let minutes = created.ephemeral_5m_input_tokens.unwrap_or(0);
+            if hour + minutes > 0 {
+                self.cache_hour = Some(hour > 0);
+            }
+        }
     }
 
     /// The tokens a request sent: what the context holds now.
@@ -1216,6 +1228,11 @@ impl State {
         {
             self.context_window = Some(window);
         }
+        if let Some(common) = common
+            && self.idle_compaction_over(common)
+        {
+            return;
+        }
         if common.is_some_and(|common| self.foreign(common)) {
             return;
         }
@@ -1289,6 +1306,27 @@ impl State {
             .collect();
         self.tools.retain(|id, _| open.contains(id));
         self.blocks.clear();
+    }
+
+    /// Whether `result` answers the `/compact` amux sent while the agent
+    /// sat idle, however it went: it was nobody's turn, so it ends none,
+    /// and the queue moves again.
+    fn idle_compaction_over(&mut self, common: &ResultCommon) -> bool {
+        let Some(uuid) = self.idle_compaction.as_ref().map(|sent| sent.uuid.as_str()) else {
+            return false;
+        };
+        let answers = common.user_message_uuid.as_deref() == Some(uuid)
+            || common
+                .user_message_uuids
+                .iter()
+                .flatten()
+                .any(|named| named == uuid);
+        if answers {
+            self.unanswered.remove(uuid);
+            self.idle_compaction = None;
+            self.shared.housekeeping_ended();
+        }
+        answers
     }
 
     /// Whether `result` ends work of Claude's own while a message amux

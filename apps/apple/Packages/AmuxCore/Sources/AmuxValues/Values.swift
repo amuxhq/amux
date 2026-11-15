@@ -5735,7 +5735,7 @@ public enum RowKind: Codable, Hashable, Sendable {
     /// An ask that is the work: resolves in place.
     case ask(AskRow)
     case turnEnd(failed: Bool, durationMs: Int64?)
-    case compaction(automatic: Bool, tokensAfter: UInt64?, tokensBefore: UInt64?)
+    case compaction(automatic: Bool, idle: Bool, tokensAfter: UInt64?, tokensBefore: UInt64?)
     case error(errorKind: String, message: String, attempts: UInt32, gaveUp: Bool)
     case modelSwitch(to: String, reason: String)
     case boundary(kind: BoundaryKind, cause: String)
@@ -5864,6 +5864,7 @@ public enum RowKind: Codable, Hashable, Sendable {
 
     private enum CompactionKeys: String, CodingKey {
         case automatic
+        case idle
         case tokensAfter = "tokens_after"
         case tokensBefore = "tokens_before"
     }
@@ -6039,6 +6040,7 @@ public enum RowKind: Codable, Hashable, Sendable {
                 keyedBy: CompactionKeys.self, forKey: .compaction)
             self = .compaction(
                 automatic: try _fields.decode(Bool.self, forKey: .automatic),
+                idle: try _fields.decode(Bool.self, forKey: .idle),
                 tokensAfter: try _fields.decodeIfPresent(UInt64.self, forKey: .tokensAfter),
                 tokensBefore: try _fields.decodeIfPresent(UInt64.self, forKey: .tokensBefore))
         case .error:
@@ -6188,10 +6190,11 @@ public enum RowKind: Codable, Hashable, Sendable {
             var _fields = _container.nestedContainer(keyedBy: TurnEndKeys.self, forKey: .turnEnd)
             try _fields.encode(failed, forKey: .failed)
             try _fields.encodeIfPresent(durationMs, forKey: .durationMs)
-        case .compaction(let automatic, let tokensAfter, let tokensBefore):
+        case .compaction(let automatic, let idle, let tokensAfter, let tokensBefore):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: CompactionKeys.self, forKey: .compaction)
             try _fields.encode(automatic, forKey: .automatic)
+            try _fields.encode(idle, forKey: .idle)
             try _fields.encodeIfPresent(tokensAfter, forKey: .tokensAfter)
             try _fields.encodeIfPresent(tokensBefore, forKey: .tokensBefore)
         case .error(let errorKind, let message, let attempts, let gaveUp):

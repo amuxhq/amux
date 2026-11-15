@@ -1652,6 +1652,7 @@ pub(crate) fn boundary_item(key: String, kind: BoundaryKind, exit: IncarnationEn
             kind: kind as i32,
             cause: exit.cause,
             cause_detail: exit.detail,
+            idle: false,
         })),
         complete: true,
         ..Default::default()

@@ -258,6 +258,10 @@ message Boundary {
   // For EXITED: why, and the cause's own words.
   ExitCause cause = 2;
   optional string cause_detail = 3;
+  // For COMPACTED: amux compacted the conversation on its own while the
+  // agent sat idle, before the provider's prompt cache expired. False for a
+  // compaction somebody asked for or the provider started, as before.
+  bool idle = 4;
 }
 
 enum BoundaryKind {
@@ -319,6 +323,10 @@ message Compaction {
   optional uint64 tokens_before = 1;
   optional uint64 tokens_after = 2;
   bool automatic = 3;
+  // amux compacted the conversation on its own while the agent sat idle,
+  // before the provider's prompt cache expired. False for a compaction
+  // somebody asked for or the provider started, as before.
+  bool idle = 4;
 }
 
 message ApiError {

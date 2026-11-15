@@ -262,6 +262,31 @@ enum Titling {
     Over,
 }
 
+/// An idle compaction under way: asked for, then running as a turn of
+/// Codex's own that is nobody's turn.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+enum IdleCompaction {
+    Requested { at_ms: i64 },
+    Running { turn: String },
+}
+
+/// How long Codex sits idle before amux compacts it: inside the half hour
+/// OpenAI's prompt cache keeps a conversation by default, so the summary is
+/// written from the cache and the next prompt sends the summary rather than
+/// the whole thread uncached.
+const IDLE_COMPACT_AFTER_MS: i64 = 25 * 60 * 1000;
+/// How long the cache is sure to last past the last request; later, the
+/// conversation would be read uncached, which saves nothing.
+const CACHE_LIFETIME_MS: i64 = 30 * 60 * 1000;
+/// The smallest thread worth compacting while idle: below this the next
+/// prompt costs little either way, and Codex compacts on its own near the
+/// top of its window.
+const IDLE_COMPACT_MIN_TOKENS: u64 = 100_000;
+/// How long an accepted idle compaction may go without Codex starting the
+/// turn it runs in before amux stops waiting for it: the queue waits on it,
+/// and a Codex that compacted some other way would hold it forever.
+const IDLE_COMPACT_START_MS: i64 = 2 * 60 * 1000;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 enum Request {
     /// `turn/start`. Agent messages that leave the pending set at its
@@ -278,6 +303,8 @@ enum Request {
     },
     Interrupt,
     Compact,
+    /// `thread/compact/start` amux sent while the agent sat idle.
+    IdleCompact,
     /// `thread/start` for `/clear`.
     Clear,
     /// `thread/unarchive` for the thread a resume found archived.
@@ -655,6 +682,14 @@ pub struct State {
     cwd: String,
     /// How many times `/clear` started a thread, which names each request.
     clears: u32,
+    /// The compaction amux asked for while the agent sat idle, until the
+    /// turn Codex runs it in completes.
+    #[serde(default)]
+    idle_compaction: Option<IdleCompaction>,
+    /// When Codex last reported a request's tokens, which keeps the
+    /// thread's cache alive from then.
+    #[serde(default)]
+    last_request_ms: Option<i64>,
 }
 
 fn item_body(kind: codex_item::Kind) -> Vec<u8> {
@@ -731,6 +766,8 @@ impl State {
             proposed: None,
             cwd: spec.cwd.clone(),
             clears: 0,
+            idle_compaction: None,
+            last_request_ms: None,
         }
     }
 
@@ -969,6 +1006,19 @@ impl State {
     /// Cancels the running turn; one still starting is cancelled as soon
     /// as Codex names it.
     fn interrupt(&mut self, emit: &mut Emit) {
+        // A stop cancels an idle compaction's turn too; its completion ends
+        // it, and no turn of anybody's was interrupted.
+        if let Some(IdleCompaction::Running { turn }) = self.idle_compaction.clone() {
+            return self.request(
+                emit,
+                ClientRequest::TurnInterrupt(TurnInterruptParams {
+                    thread_id: self.thread(),
+                    turn_id: turn,
+                    extra: Default::default(),
+                }),
+                Request::Interrupt,
+            );
+        }
         if self.shared.is_busy() {
             self.interrupted_here = true;
         }
@@ -988,20 +1038,78 @@ impl State {
     }
 
     fn boundary(&mut self, emit: &mut Emit, kind: wire::BoundaryKind, exit: wire::IncarnationEnd) {
+        self.boundary_item(
+            emit,
+            wire::Boundary {
+                kind: kind as i32,
+                cause: exit.cause,
+                cause_detail: exit.detail,
+                idle: false,
+            },
+        );
+    }
+
+    fn boundary_item(&mut self, emit: &mut Emit, boundary: wire::Boundary) {
         self.next_boundary += 1;
         self.emit_item(
             emit,
             ItemDraft {
                 key: format!("boundary:{}", self.next_boundary),
-                body: item_body(codex_item::Kind::Boundary(wire::Boundary {
-                    kind: kind as i32,
-                    cause: exit.cause,
-                    cause_detail: exit.detail,
-                })),
+                body: item_body(codex_item::Kind::Boundary(boundary)),
                 complete: true,
                 ..Default::default()
             },
         );
+    }
+
+    /// When an idle compaction falls due: the thread is big enough and the
+    /// agent has done nothing since its last turn. None once the cache has
+    /// run out.
+    fn idle_compact_at(&self) -> Option<i64> {
+        if let Some(IdleCompaction::Requested { at_ms }) = &self.idle_compaction {
+            return Some(at_ms + IDLE_COMPACT_START_MS);
+        }
+        let big = self
+            .context_tokens
+            .is_some_and(|tokens| tokens >= IDLE_COMPACT_MIN_TOKENS);
+        if !big || self.thread_id.is_none() || !self.held.is_empty() {
+            return None;
+        }
+        let last = self.last_request_ms?;
+        let at = self.shared.idle_wake(last, IDLE_COMPACT_AFTER_MS)?;
+        (self.shared.now_ms() < last + CACHE_LIFETIME_MS).then_some(at)
+    }
+
+    /// Asks Codex to compact when an idle compaction is due. Nobody asked
+    /// for it: nothing draws a prompt, and the turn Codex runs it in starts
+    /// and ends none of the agent's.
+    fn compact_if_idle(&mut self, emit: &mut Emit) {
+        let now = self.shared.now_ms();
+        if self.idle_compact_at().is_none_or(|at| at > now) {
+            return;
+        }
+        if self.idle_compaction.is_some() {
+            // Asked for and never started: stop waiting for it.
+            return self.idle_compaction_over(emit);
+        }
+        self.shared.housekeeping_started();
+        self.idle_compaction = Some(IdleCompaction::Requested { at_ms: now });
+        self.request(
+            emit,
+            ClientRequest::ThreadCompactStart(ThreadIdParams {
+                thread_id: self.thread(),
+                extra: Default::default(),
+            }),
+            Request::IdleCompact,
+        );
+    }
+
+    /// The idle compaction is over, however it ended: what waited for it
+    /// goes on.
+    fn idle_compaction_over(&mut self, emit: &mut Emit) {
+        self.idle_compaction = None;
+        self.shared.housekeeping_ended();
+        self.release_held(emit);
     }
 
     // --- inputs ----------------------------------------------------------
@@ -1369,7 +1477,9 @@ impl State {
                 ..Default::default()
             },
         );
-        if !self.shared.is_started() {
+        // An idle compaction runs as a turn of Codex's own, which nothing
+        // should join: the message waits for it to end.
+        if !self.shared.is_started() || self.shared.is_housekeeping() {
             self.held.push(envelope);
             return self.shared.accept(emit, &id, true);
         }
@@ -1909,7 +2019,10 @@ impl Interpreter for Codex {
     fn step(state: &mut State, event: Event) -> Stepped {
         let mut emit = Emit::default();
         match event {
-            Event::Tick { at_ms } => state.shared.tick(at_ms),
+            Event::Tick { at_ms } => {
+                state.shared.tick(at_ms);
+                state.compact_if_idle(&mut emit);
+            }
             Event::Fact(fact) => state.fact(&mut emit, fact),
             Event::Input(input) => state.input(&mut emit, input),
             Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
@@ -1941,6 +2054,10 @@ impl Interpreter for Codex {
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {
         state.shared.pending_messages().iter().cloned().collect()
+    }
+
+    fn wake_at(state: &Self::State) -> Option<i64> {
+        state.idle_compact_at()
     }
 
     fn typed_unrecorded(state: &Self::State) -> bool {

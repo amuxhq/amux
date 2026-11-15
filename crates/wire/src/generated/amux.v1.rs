@@ -2190,6 +2190,11 @@ pub struct Boundary {
     pub cause: i32,
     #[prost(string, optional, tag = "3")]
     pub cause_detail: ::core::option::Option<::prost::alloc::string::String>,
+    /// For COMPACTED: amux compacted the conversation on its own while the
+    /// agent sat idle, before the provider's prompt cache expired. False for a
+    /// compaction somebody asked for or the provider started, as before.
+    #[prost(bool, tag = "4")]
+    pub idle: bool,
 }
 impl ::prost::Name for Boundary {
     const NAME: &'static str = "Boundary";
@@ -2259,6 +2264,11 @@ pub struct Compaction {
     pub tokens_after: ::core::option::Option<u64>,
     #[prost(bool, tag = "3")]
     pub automatic: bool,
+    /// amux compacted the conversation on its own while the agent sat idle,
+    /// before the provider's prompt cache expired. False for a compaction
+    /// somebody asked for or the provider started, as before.
+    #[prost(bool, tag = "4")]
+    pub idle: bool,
 }
 impl ::prost::Name for Compaction {
     const NAME: &'static str = "Compaction";

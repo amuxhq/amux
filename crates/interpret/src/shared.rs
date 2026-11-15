@@ -422,6 +422,19 @@ pub struct Shared<A: OpenAsk> {
     /// there stays for the next incarnation rather than going to a
     /// provider about to be closed.
     leaving: bool,
+    /// When the agent last finished a turn and went idle; None before its
+    /// first, and while a turn runs. A checkpoint from before this field
+    /// existed reads it as never.
+    #[serde(default)]
+    idle_since_ms: Option<i64>,
+    /// Housekeeping amux started on its own while the agent was idle is
+    /// under way: no turn of anybody's, but the provider is busy with it,
+    /// so the queue waits and the agent reads as working.
+    #[serde(default)]
+    housekeeping: bool,
+    /// Housekeeping already ran in this idle stretch; the next turn ends it.
+    #[serde(default)]
+    housekept: bool,
     /// What the checks after every step watch.
     watch: Watch,
 }
@@ -462,6 +475,9 @@ impl<A: OpenAsk> Shared<A> {
             turn_on_reflection: false,
             stopping: false,
             leaving: false,
+            idle_since_ms: None,
+            housekeeping: false,
+            housekept: false,
             watch: Watch::default(),
         };
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) {
@@ -669,7 +685,7 @@ impl<A: OpenAsk> Shared<A> {
             Phase::NeedsYou
         } else if !self.started {
             Phase::Starting
-        } else if self.busy {
+        } else if self.busy || self.housekeeping {
             Phase::Working
         } else {
             Phase::Idle
@@ -856,6 +872,7 @@ impl<A: OpenAsk> Shared<A> {
         self.started
             && !self.leaving
             && !self.busy
+            && !self.housekeeping
             && self.asks.is_empty()
             && !self.queue.has_steered()
             && !self.typed_unrecorded()
@@ -1239,6 +1256,8 @@ impl<A: OpenAsk> Shared<A> {
     pub fn turn_started(&mut self) -> u64 {
         self.busy = true;
         self.trouble = None;
+        self.idle_since_ms = None;
+        self.housekept = false;
         self.turn.begin(self.now_ms)
     }
 
@@ -1267,6 +1286,9 @@ impl<A: OpenAsk> Shared<A> {
     /// carries TurnEnd, and the ended turn is returned for the kind's Turn
     /// item. None when no turn was running.
     pub fn turn_ended(&mut self, emit: &mut Emit, outcome: wire::TurnOutcome) -> Option<OpenTurn> {
+        if self.busy {
+            self.idle_since_ms = Some(self.now_ms);
+        }
         self.busy = false;
         let stopping = std::mem::take(&mut self.stopping);
         let outcome = match outcome {
@@ -1311,6 +1333,41 @@ impl<A: OpenAsk> Shared<A> {
         self.turn.end();
     }
 
+    /// When housekeeping may start, `after_ms` past `from_ms` (the kind's
+    /// own clock for it, such as its last request): the agent finished a
+    /// turn and nothing has happened since, nobody waits on it, nothing is
+    /// queued or in flight, and no housekeeping ran in this stretch yet.
+    /// None while any of that is not so.
+    pub fn idle_wake(&self, from_ms: i64, after_ms: i64) -> Option<i64> {
+        let idle = self.started
+            && !self.leaving
+            && !self.busy
+            && !self.housekeeping
+            && !self.housekept
+            && self.asks.is_empty()
+            && self.queue.is_empty()
+            && self.opening.is_none()
+            && !self.typed_unrecorded()
+            && self.pending_messages.is_empty();
+        self.idle_since_ms.filter(|_| idle)?;
+        Some(from_ms.saturating_add(after_ms))
+    }
+
+    /// Housekeeping starts: the queue waits until it ends.
+    pub fn housekeeping_started(&mut self) {
+        self.housekeeping = true;
+        self.housekept = true;
+    }
+
+    /// The housekeeping under way is over, however it ended.
+    pub fn housekeeping_ended(&mut self) {
+        self.housekeeping = false;
+    }
+
+    pub fn is_housekeeping(&self) -> bool {
+        self.housekeeping
+    }
+
     /// The provider is gone: no turn runs and nothing is submitted. A turn
     /// cut short has no TurnEnd; the daemon reports the incarnation failed.
     pub fn provider_exited(&mut self) -> Option<OpenTurn> {
@@ -1320,6 +1377,8 @@ impl<A: OpenAsk> Shared<A> {
         // them, but nothing reports on them any more either way.
         self.set_jobs(Vec::new());
         self.busy = false;
+        self.housekeeping = false;
+        self.idle_since_ms = None;
         self.submitted.clear();
         self.queue.drop_steered();
         self.turn.end()
@@ -1330,6 +1389,7 @@ impl<A: OpenAsk> Shared<A> {
     /// be consumed.
     pub fn quiescent(&self) -> bool {
         !self.busy
+            && !self.housekeeping
             && self.queue.is_empty()
             && self.opening.is_none()
             && !self.typed_unrecorded()

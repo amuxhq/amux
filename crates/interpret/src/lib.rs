@@ -86,6 +86,14 @@ pub trait Interpreter {
     /// nothing is queued, so a one-shot agent waits for it too.
     fn typed_unrecorded(state: &Self::State) -> bool;
 
+    /// When the interpreter next wants a [`Event::Tick`] that no other
+    /// event would bring: the agent process arms a timer for it and feeds
+    /// the tick when it fires. None asks for nothing.
+    fn wake_at(state: &Self::State) -> Option<i64> {
+        let _ = state;
+        None
+    }
+
     /// Reads an item body for goldens and invariants.
     fn describe_item(body: &[u8]) -> ItemView;
 
@@ -149,7 +157,8 @@ pub enum Event {
         name: String,
     },
     /// The clock, as a fact: the agent process sends one before each event
-    /// whose time matters and on a timer while a quiet period is watched.
+    /// whose time matters, and when the time [`Interpreter::wake_at`] asked
+    /// for comes.
     Tick {
         at_ms: i64,
     },

@@ -124,8 +124,20 @@ fn entry(agent: &wire::Agent) -> Option<AgentWorkspace> {
         .map(|bytes| AgentWorkspace::decode(bytes.as_slice()).unwrap())
 }
 
+/// The agent's first spec. The daemon writes it as it launches the
+/// process, which may be just after the agent is listed live.
 fn spec(install: &Install, agent: &wire::Agent) -> AgentSpec {
-    let bytes = std::fs::read(install.agent_dir(id_of(agent)).join("spec.1")).unwrap();
+    let path = install.agent_dir(id_of(agent)).join("spec.1");
+    let deadline = std::time::Instant::now() + PATIENCE;
+    let bytes = loop {
+        match std::fs::read(&path) {
+            Ok(bytes) => break bytes,
+            Err(error) if std::time::Instant::now() >= deadline => {
+                panic!("{} was never written: {error}", path.display())
+            }
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(20)),
+        }
+    };
     AgentSpec::decode(bytes.as_slice()).unwrap()
 }
 

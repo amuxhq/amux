@@ -2322,6 +2322,7 @@ dependencies = [
  "ui-state",
  "uuid",
  "wire",
+ "workspace-core",
 ]
 
 [[package]]

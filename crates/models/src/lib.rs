@@ -26,6 +26,7 @@ pub mod replication;
 pub mod single_daemon;
 pub mod socket;
 pub mod supervisor;
+pub mod workspaces;
 pub use client::ClientModel;
 pub use family::FamilyDeliveries;
 pub use lifecycle::AgentLifecycle;
@@ -37,6 +38,7 @@ pub use replication::Replication;
 pub use single_daemon::SingleDaemon;
 pub use socket::SocketModel;
 pub use supervisor::SupervisorUpdate;
+pub use workspaces::WorkspaceLifecycle;
 
 /// How many threads a model's test explores with: every core. The verdict
 /// is the same on any number of threads; only which counterexample is

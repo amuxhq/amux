@@ -38,7 +38,7 @@
      7 prompt:7034 Prompt { text: [Text("Try again.")], steered: false }
      8 turn:3 Stopped
      9 prompt:7035 Prompt { text: [Text("/compact")], steered: false }
-    10 boundary:2 Compaction { tokens_before: None, tokens_after: None, automatic: false }
+    10 boundary:2 Compaction { tokens_before: None, tokens_after: None, automatic: false, idle: false }
     11 turn:4 TurnEnd { duration_ms: Some(0), failed: false }
     12 boundary:3 Hidden collapsed
     13 agent-message:6539 AgentMessage { from: "lead", kind: Message, text: [Text("Status?")], to: "", sent: Unspecified, rejection: "" }

@@ -632,3 +632,56 @@ fn the_lifecycles_summary_holds_states_and_counts() {
     let text = summary.to_string();
     assert!(!text.contains("p1") && !text.contains("hello"), "{text}");
 }
+
+fn journaled_keys(out: &[Output]) -> Vec<String> {
+    out.iter()
+        .filter_map(|output| match output {
+            Output::AppendJournal(step) => Some(step),
+            _ => None,
+        })
+        .flat_map(|step| step.items.iter().map(|item| item.key.clone()))
+        .collect()
+}
+
+#[test]
+fn the_interpreter_is_woken_when_it_asked_and_never_again_for_a_time_it_heard() {
+    let mut run = Run::start(&spec(false, None));
+    run.on(Input::DaemonDials { connection: DAEMON });
+    let out = run.fact(json!({"type": "wake", "at": 5_000}));
+    assert!(out.contains(&Output::ArmTimer {
+        id: TimerId::Wake,
+        at_ms: 5_000,
+    }));
+    // The timer's fire is the tick it asked for, and nothing is armed
+    // after it.
+    let out = run.at(5_000, Input::Timer(TimerId::Wake));
+    assert_eq!(journaled_keys(&out), vec!["woke:5000".to_owned()]);
+    let arms_wake = |out: &[Output]| {
+        out.iter().any(|output| {
+            matches!(
+                output,
+                Output::ArmTimer {
+                    id: TimerId::Wake,
+                    ..
+                }
+            )
+        })
+    };
+    assert!(!arms_wake(&out));
+    // A time the interpreter's last tick already passed is never armed,
+    // which would fire at once and without end; the next event's tick
+    // reaches it.
+    let out = run.fact(json!({"type": "wake", "at": 4_000}));
+    assert!(!arms_wake(&out));
+    let out = run.fact(json!({"type": "model", "model": "m"}));
+    assert_eq!(journaled_keys(&out), vec![format!("woke:{}", run.now_ms)]);
+}
+
+#[test]
+fn a_draining_agent_is_not_woken() {
+    let mut run = Run::start(&spec(false, None));
+    run.on(Input::DaemonDials { connection: DAEMON });
+    run.fact(json!({"type": "wake", "at": 50_000}));
+    let out = run.frame(ctl_frame::Of::Stop(wire::Stop { kill: false }));
+    assert!(out.contains(&Output::CancelTimer { id: TimerId::Wake }));
+}

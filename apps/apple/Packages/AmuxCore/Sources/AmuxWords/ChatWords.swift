@@ -272,11 +272,14 @@ public enum ChatWords {
         return cause.isEmpty ? word : "\(word) · \(cause)"
     }
 
-    /// "Compacted · 148k → 22k".
-    public static func compaction(before: UInt64?, after: UInt64?, automatic: Bool) -> String {
-        var words = String(localized: "Compacted")
+    /// "Compacted · 148k → 22k"; "Compacted while idle · 248k → 31k" for one
+    /// amux ran while the agent sat idle.
+    public static func compaction(
+        before: UInt64?, after: UInt64?, automatic: Bool, idle: Bool = false
+    ) -> String {
+        var words = idle ? String(localized: "Compacted while idle") : String(localized: "Compacted")
         if let before, let after { words += " · \(tokens(before)) → \(tokens(after))" }
-        if automatic { words += " · " + String(localized: "automatic") }
+        if automatic && !idle { words += " · " + String(localized: "automatic") }
         return words
     }
 

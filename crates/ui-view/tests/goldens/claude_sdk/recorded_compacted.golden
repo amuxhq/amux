@@ -28,7 +28,7 @@
      9 turn:2 TurnEnd { duration_ms: Some(2888), failed: false }
     10 fad30551-c133-43d0-997e-3361cbcbde86 Prompt { text: [Text("/compact")], steered: false }
     11 0f824bf4-6639-415d-bacc-1515a418fa59 Hidden collapsed
-    12 343f2fc0-3b5d-49e9-af38-8578cd8d5255 Compaction { tokens_before: Some(21378), tokens_after: Some(4266), automatic: false }
+    12 343f2fc0-3b5d-49e9-af38-8578cd8d5255 Compaction { tokens_before: Some(21378), tokens_after: Some(4266), automatic: false, idle: false }
     13 boundary:2 Hidden collapsed
     14 40a7f95c-c764-499e-845c-c1ab7bcf5f52 SlashOutput { command: "/compact", args: "", output: "Compacted" }
     15 turn:3 TurnEnd { duration_ms: Some(17494), failed: false }

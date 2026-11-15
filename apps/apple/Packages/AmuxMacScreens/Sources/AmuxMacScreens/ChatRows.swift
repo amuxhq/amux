@@ -165,8 +165,10 @@ struct ChatRow: View {
                 .padding(.bottom, 18)
         case .stopped:
             GridLine(glyph: "circle-stop", rail: rail, verb: "You stopped it", quiet: true)
-        case .compaction(let automatic, let after, let before):
-            Rule(label: ChatWords.compaction(before: before, after: after, automatic: automatic))
+        case .compaction(let automatic, let idle, let after, let before):
+            Rule(
+                label: ChatWords.compaction(
+                    before: before, after: after, automatic: automatic, idle: idle))
         case .error(let errorKind, let message, let attempts, let gaveUp):
             let detailed = !errorKind.isEmpty && !message.isEmpty
             GridLine(

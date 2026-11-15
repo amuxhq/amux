@@ -59,6 +59,17 @@ again where it left off, with that message as its next prompt. An agent that
 was waiting on a question for you when amux disappeared asks the question
 again when you resume it.
 
+An agent left idle with a long conversation is compacted before its
+provider's prompt cache runs out, so the next message you send carries a
+summary rather than the whole conversation read afresh. Claude in a
+terminal does this itself; amux does it for headless Claude after about 55
+minutes, when the conversation holds 200,000 tokens or more and Claude
+keeps its cache for an hour, and for Codex after about 25 minutes, when the
+thread holds 100,000 tokens or more. The chat marks it
+**Compacted while idle**. Nothing is compacted once the cache has gone,
+when it would save nothing, and a message you send meanwhile waits for it
+to finish.
+
 Short of that, an agent never stops on its own. The Stop button in a chat
 interrupts the current turn and leaves the agent ready for the next prompt.
 Only settling or deleting the agent, or the agent's own program exiting, ends

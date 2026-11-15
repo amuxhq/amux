@@ -213,10 +213,11 @@ public struct ChatRowView: View {
             GridRow(
                 kind: "stopped", glyph: "stop", rail: rail,
                 verb: String(localized: "You stopped it"), quiet: true)
-        case .compaction(let automatic, let after, let before):
+        case .compaction(let automatic, let idle, let after, let before):
             FeedRule(
                 kind: "compaction",
-                label: ChatWords.compaction(before: before, after: after, automatic: automatic))
+                label: ChatWords.compaction(
+                    before: before, after: after, automatic: automatic, idle: idle))
         case .error(let errorKind, let message, let attempts, let gaveUp):
             let detailed = !errorKind.isEmpty && !message.isEmpty
             GridRow(

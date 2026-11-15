@@ -240,6 +240,45 @@ pub struct State {
     synthetic: Option<(String, String)>,
     /// An interrupt was sent in the running turn.
     interrupted: bool,
+    /// The main conversation's prompt cache lives an hour, as the newest
+    /// request that wrote to it said; None before one has.
+    #[serde(default)]
+    cache_hour: Option<bool>,
+    /// The `/compact` amux sent while the agent sat idle, until its result.
+    #[serde(default)]
+    idle_compaction: Option<IdleCompaction>,
+    /// How many idle compactions this agent has sent, which names the next.
+    #[serde(default)]
+    idle_compactions: u64,
+    /// When the main conversation last sent Claude a request, which keeps
+    /// its cache alive for the hour from then.
+    #[serde(default)]
+    last_request_ms: Option<i64>,
+}
+
+/// How long headless Claude sits idle before amux compacts it, as Claude's
+/// own terminal does: just inside the hour its prompt cache lives, so the
+/// summary is written from the cache and the next prompt sends the summary
+/// rather than the whole conversation uncached. Headless Claude does not do
+/// this itself.
+const IDLE_COMPACT_AFTER_MS: i64 = 55 * 60 * 1000;
+/// How long the cache lives past the last request: an idle compaction
+/// later than this would read the conversation uncached, which saves
+/// nothing.
+const CACHE_HOUR_MS: i64 = 60 * 60 * 1000;
+/// The smallest conversation Claude's terminal compacts while idle.
+const IDLE_COMPACT_MIN_TOKENS: u64 = 200_000;
+/// How long an idle compaction may hold the queue without its result
+/// before amux stops waiting for it: a result that named no message would
+/// otherwise hold it forever.
+const IDLE_COMPACT_WAIT_MS: i64 = 10 * 60 * 1000;
+
+/// The `/compact` amux sent while the agent sat idle: its uuid, which
+/// Claude's result names, and when it was sent.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct IdleCompaction {
+    uuid: String,
+    at_ms: i64,
 }
 
 /// A line for Claude's stdin.
@@ -323,7 +362,60 @@ impl State {
             synthetic: None,
             ambient: Default::default(),
             interrupted: false,
+            cache_hour: None,
+            idle_compaction: None,
+            idle_compactions: 0,
+            last_request_ms: None,
         }
+    }
+
+    /// When an idle compaction falls due: the conversation is big enough,
+    /// on the hour-long cache, and the agent has done nothing since its
+    /// last turn. None once the cache has run out.
+    fn idle_compact_at(&self) -> Option<i64> {
+        if let Some(sent) = &self.idle_compaction {
+            return self
+                .shared
+                .is_housekeeping()
+                .then_some(sent.at_ms + IDLE_COMPACT_WAIT_MS);
+        }
+        let big = self
+            .context_tokens
+            .is_some_and(|tokens| tokens >= IDLE_COMPACT_MIN_TOKENS);
+        if !big || self.cache_hour != Some(true) || self.session.is_none() {
+            return None;
+        }
+        let last = self.last_request_ms?;
+        let at = self.shared.idle_wake(last, IDLE_COMPACT_AFTER_MS)?;
+        (self.shared.now_ms() < last + CACHE_HOUR_MS).then_some(at)
+    }
+
+    /// Sends `/compact` when an idle compaction is due. It is no person's
+    /// prompt: nothing draws it, and no turn starts or ends for it.
+    fn compact_if_idle(&mut self, emit: &mut Emit) {
+        let now = self.shared.now_ms();
+        if self.idle_compact_at().is_none_or(|at| at > now) {
+            return;
+        }
+        if let Some(sent) = self.idle_compaction.take() {
+            // No result yet: the queue stops waiting, and a result that
+            // comes later answers nothing of anybody's.
+            self.unanswered.remove(&sent.uuid);
+            return self.shared.housekeeping_ended();
+        }
+        self.shared.housekeeping_started();
+        self.idle_compactions += 1;
+        let uuid = client_uuid(format!("idle-compact:{}", self.idle_compactions).as_bytes());
+        self.unanswered.insert(uuid.clone());
+        self.idle_compaction = Some(IdleCompaction {
+            uuid: uuid.clone(),
+            at_ms: now,
+        });
+        emit.effect(Effect::UserMessage {
+            uuid,
+            text: "/compact".into(),
+            attachments: Vec::new(),
+        });
     }
 
     /// Whether Claude takes auto mode on this session's model. Claude lists
@@ -646,6 +738,15 @@ impl State {
 
     /// Cancels the running turn, which also drops an open ask's tool call.
     fn interrupt(&mut self, emit: &mut Emit) {
+        // A stop cancels an idle compaction too; its result ends it, and no
+        // turn of anybody's was interrupted.
+        if self.shared.is_housekeeping() {
+            return self.control_request(
+                emit,
+                Request::Interrupt,
+                ControlRequestBody::Interrupt(InterruptRequest::default()),
+            );
+        }
         if self.shared.is_busy() || !self.shared.asks().is_empty() {
             self.interrupted = true;
             self.control_request(
@@ -1060,7 +1161,10 @@ impl Interpreter for ClaudeSdk {
     fn step(state: &mut State, event: Event) -> Stepped {
         let mut emit = Emit::default();
         match event {
-            Event::Tick { at_ms } => state.shared.tick(at_ms),
+            Event::Tick { at_ms } => {
+                state.shared.tick(at_ms);
+                state.compact_if_idle(&mut emit);
+            }
             Event::Fact(fact) => state.fact(&mut emit, fact),
             Event::Input(input) => state.input(&mut emit, input),
             Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
@@ -1092,6 +1196,10 @@ impl Interpreter for ClaudeSdk {
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {
         state.shared.pending_messages().iter().cloned().collect()
+    }
+
+    fn wake_at(state: &Self::State) -> Option<i64> {
+        state.idle_compact_at()
     }
 
     fn typed_unrecorded(state: &Self::State) -> bool {

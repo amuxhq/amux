@@ -56,6 +56,7 @@ no ids (they arrive on inputs and facts) and does no I/O. It implements
 | `redact(target)` | Removes secrets from a body, a facts-ring entry, a checkpoint, a spec, a step or an inventory row, keeping its structure |
 | `unknown_snapshot()` | The snapshot body with every field unknown |
 | `pending_messages(state)` | Agent messages the provider accepted and has not consumed yet; a one-shot agent waits for this to be empty |
+| `wake_at(state)` | When it next wants a `Tick` that no event would bring; the agent process arms a timer for it. None by default |
 | `typed_unrecorded(state)` | A prompt typed that the provider has not recorded yet, where the record starts the turn (terminal Claude); a one-shot agent waits for it too |
 | `describe_item`, `describe_snapshot`, `fixture_input`, `recording` | What the golden harness needs to render bodies, build authored inputs and read recorded corpora |
 
@@ -74,6 +75,37 @@ headless user message (`UserMessage`), follow a transcript file
 (`FollowTranscript`), send a Codex turn whose input carries attachments
 (`CodexTurnInput`), write a blob an item refers to (`WriteBlob`), or end the
 process (`Exit`).
+
+## Idle compaction
+
+Claude's own terminal compacts a long conversation left idle just before its
+hour-long prompt cache expires, so the summary is written from the cache and
+the next prompt sends the summary instead of the whole conversation
+uncached. Headless Claude and Codex do not, so their interpreters do it:
+each asks `wake_at` for the moment the agent has been idle long enough, and
+the tick that reaches it starts a compaction.
+
+| Kind | Idle for | Only if | Cache it beats |
+|---|---|---|---|
+| `claude_sdk` | 55 minutes | 200k tokens or more, and the newest request that wrote to the cache wrote its hour-long kind | The hour Claude's subscription cache lives |
+| `codex` | 25 minutes | 100k tokens or more | The half hour OpenAI's cache keeps a thread by default |
+
+Idle means a turn ended and nothing has happened since: no ask, nothing
+queued or in flight, no message waiting, one compaction per idle stretch.
+None starts once the cache's lifetime has passed (a machine that slept
+through it), when it would save nothing.
+
+The compaction is nobody's turn (`Shared::housekeeping_started`): no prompt
+is drawn and no `TurnEnd` is written, so no parent hears a report and no
+one-shot rule fires; the phase reads working and the queue waits until it
+ends. Headless Claude's is a `/compact` user message under a uuid of
+amux's, whose result ends it; Codex's is `thread/compact/start`, whose turn
+is recognised by id and swallowed, with agent messages held until it
+completes. Neither holds the queue for ever: one with no result after ten
+minutes (headless Claude), or no turn started after two (Codex), stops
+holding it. The row says so: `Compaction.idle` for headless Claude,
+`Boundary.idle` on Codex's compacted boundary. Terminal Claude compacts on
+its own, and its transcript is not known to mark an idle compaction apart.
 
 ## Notices
 

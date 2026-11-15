@@ -219,6 +219,10 @@ enum Overlay {
         agent: AgentKey,
         name: String,
         delete: bool,
+        /// What a delete removes with the agent, read once as the
+        /// confirmation opens: it draws from this, and confirming agrees to
+        /// exactly what it showed, however the fleet changes meanwhile.
+        goes: Option<ui_state::WorkspaceGoes>,
         /// The button Enter presses; the arrows and Tab move it.
         focus: Confirmed,
     },
@@ -685,9 +689,13 @@ impl Home {
         if !delete && close_cuts(fleet, &agent).is_none() {
             return vec![FleetEffect::Close(agent)];
         }
+        let goes = delete
+            .then(|| fleet.delete_removes_workspace(&agent))
+            .flatten();
         self.overlay = Some(Overlay::Confirm {
             name: entry.name.clone(),
             delete,
+            goes,
             agent,
             focus: Confirmed::Yes,
         });
@@ -747,7 +755,7 @@ impl Home {
             return self.draft_key(fleet, key);
         }
         if let Some(overlay) = self.overlay.take() {
-            return self.overlay_key(fleet, overlay, key);
+            return self.overlay_key(overlay, key);
         }
         let targets = self.targets_of(fleet);
         if self.filtering {
@@ -870,12 +878,7 @@ impl Home {
         }
     }
 
-    fn overlay_key(
-        &mut self,
-        fleet: &FleetState,
-        overlay: Overlay,
-        key: KeyEvent,
-    ) -> Vec<FleetEffect> {
+    fn overlay_key(&mut self, overlay: Overlay, key: KeyEvent) -> Vec<FleetEffect> {
         match overlay {
             Overlay::Hosts => {
                 if !matches!(
@@ -909,11 +912,11 @@ impl Home {
                 agent,
                 name,
                 delete,
+                goes,
                 focus,
             } => match key.code {
                 KeyCode::Enter if focus == Confirmed::Yes && delete => {
-                    let discard = discards(fleet, &agent);
-                    vec![FleetEffect::Delete(agent, discard)]
+                    vec![FleetEffect::Delete(agent, discards(goes.as_ref()))]
                 }
                 KeyCode::Enter if focus == Confirmed::Yes => vec![FleetEffect::Close(agent)],
                 KeyCode::Enter | KeyCode::Esc => vec![],
@@ -929,6 +932,7 @@ impl Home {
                         agent,
                         name,
                         delete,
+                        goes,
                         focus,
                     });
                     vec![]
@@ -1091,7 +1095,13 @@ impl Home {
         let listing = self.overlay.is_none() && !self.draft.open;
         // A modal asking before a settle or delete: its buttons act; the rest
         // of home under it does nothing.
-        if let Some(Overlay::Confirm { agent, delete, .. }) = &self.overlay {
+        if let Some(Overlay::Confirm {
+            agent,
+            delete,
+            goes,
+            ..
+        }) = &self.overlay
+        {
             let answer = match event.kind {
                 MouseEventKind::Down(MouseButton::Left) => self
                     .overlay_spots
@@ -1102,7 +1112,7 @@ impl Home {
             };
             let effect = match answer {
                 Some(Confirmed::Yes) if *delete => {
-                    vec![FleetEffect::Delete(agent.clone(), discards(fleet, agent))]
+                    vec![FleetEffect::Delete(agent.clone(), discards(goes.as_ref()))]
                 }
                 Some(Confirmed::Yes) => vec![FleetEffect::Close(agent.clone())],
                 _ => vec![],
@@ -1368,10 +1378,11 @@ impl Home {
                 agent,
                 name,
                 delete,
+                goes,
                 focus,
             }) => {
                 let (sentences, verb) = if *delete {
-                    (delete_sentences(fleet, agent, name), "Delete")
+                    (delete_sentences(name, goes.as_ref()), "Delete")
                 } else {
                     (vec![close_sentence(fleet, agent, name)], "Settle")
                 };
@@ -2114,9 +2125,9 @@ fn close_cuts(fleet: &FleetState, agent: &AgentKey) -> Option<String> {
 /// workspace goes with it, that the worktree goes with any uncommitted
 /// changes its row last reported, and the branch that keeps what was
 /// committed.
-fn delete_sentences(fleet: &FleetState, agent: &AgentKey, name: &str) -> Vec<String> {
+fn delete_sentences(name: &str, goes: Option<&ui_state::WorkspaceGoes>) -> Vec<String> {
     let mut sentences = vec![format!("Delete {name} and its history?")];
-    let Some(goes) = fleet.delete_removes_workspace(agent) else {
+    let Some(goes) = goes else {
         return sentences;
     };
     sentences.push(match goes.uncommitted {
@@ -2129,19 +2140,17 @@ fn delete_sentences(fleet: &FleetState, agent: &AgentKey, name: &str) -> Vec<Str
         ),
         None => "Its worktree goes too.".to_owned(),
     });
-    if let Some(branch) = goes.branch {
+    if let Some(branch) = &goes.branch {
         sentences.push(format!("The branch {branch} keeps what was committed."));
     }
     sentences
 }
 
 /// Whether confirming a delete agrees to lose uncommitted changes: only
-/// when the warning named them. Changes the row has not reported yet are
-/// kept, by the host's own check when it removes the workspace.
-fn discards(fleet: &FleetState, agent: &AgentKey) -> bool {
-    fleet
-        .delete_removes_workspace(agent)
-        .is_some_and(|goes| goes.uncommitted.is_some())
+/// when the warning shown named them. Changes the row has not reported yet
+/// are kept, by the host's own check when it removes the workspace.
+fn discards(goes: Option<&ui_state::WorkspaceGoes>) -> bool {
+    goes.is_some_and(|goes| goes.uncommitted.is_some())
 }
 
 fn close_sentence(fleet: &FleetState, agent: &AgentKey, name: &str) -> String {

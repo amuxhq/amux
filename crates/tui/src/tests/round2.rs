@@ -509,6 +509,91 @@ fn deleting_the_last_agent_in_a_worktree_warns_what_goes_and_confirming_discards
     );
 }
 
+/// Decided: confirming a delete agrees to exactly what its window said. A
+/// worktree another agent shared when the window opened is not warned
+/// about; if that agent is deleted elsewhere before the person confirms,
+/// the delete still keeps the worktree's changes, by key or by click.
+#[test]
+fn confirming_a_delete_sends_what_its_window_showed_however_the_fleet_changed() {
+    let dirty = wire::Git {
+        branch: Some("fix-scroll".into()),
+        uncommitted: Some(wire::ChangeTotals {
+            files: 3,
+            added: 42,
+            removed: 7,
+        }),
+        ..Default::default()
+    };
+    let mut shared = archive_in_worktree(dirty);
+    let entry = shared
+        .agent(&ui_state::AgentKey {
+            host: b"a".to_vec(),
+            agent: b"old".to_vec(),
+        })
+        .unwrap()
+        .experimental
+        .clone();
+    let beta = ui_state::AgentKey {
+        host: b"a".to_vec(),
+        agent: b"w2".to_vec(),
+    };
+    let mut mate = shared.agent(&beta).unwrap().clone();
+    mate.experimental = entry;
+    inventory(&mut shared, wire::inventory_event::Of::Agent(mate));
+    let alone = |fleet: &mut FleetState| {
+        inventory(
+            fleet,
+            wire::inventory_event::Of::AgentRemoved(wire::AgentRemoved {
+                host_id: beta.host.clone(),
+                agent_id: beta.agent.clone(),
+            }),
+        );
+    };
+
+    // By key.
+    let mut fleet = shared.clone();
+    let mut home = new_home();
+    home_at(&mut home, &fleet, W, H);
+    focus(&mut home, &fleet, "archive");
+    home.key(&fleet, key(KeyCode::Char('x')));
+    let screen = home_at(&mut home, &fleet, W, H);
+    assert!(!screen.contains("worktree"), "beta shares it:\n{screen}");
+    alone(&mut fleet);
+    let effects = home.key(&fleet, key(KeyCode::Enter));
+    assert!(
+        matches!(effects.as_slice(), [FleetEffect::Delete(agent, false)] if agent.agent == b"old"),
+        "{effects:?}"
+    );
+
+    // By click on [Delete].
+    let mut fleet = shared;
+    let mut home = new_home();
+    home_at(&mut home, &fleet, W, H);
+    focus(&mut home, &fleet, "archive");
+    home.key(&fleet, key(KeyCode::Char('x')));
+    let screen = home_at(&mut home, &fleet, W, H);
+    let (row, column) = screen
+        .lines()
+        .enumerate()
+        .find_map(|(row, line)| {
+            let at = line.find("[Delete]")?;
+            Some((row, line[..at].chars().count()))
+        })
+        .expect("the window's buttons");
+    alone(&mut fleet);
+    let click = crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        column: column as u16 + 2,
+        row: row as u16,
+        modifiers: KeyModifiers::NONE,
+    };
+    let effects = home.mouse(&fleet, click);
+    assert!(
+        matches!(effects.as_slice(), [FleetEffect::Delete(agent, false)] if agent.agent == b"old"),
+        "{effects:?}"
+    );
+}
+
 /// A settle its host could not take is held: the row says it waits for the
 /// host and `x` takes it back instead of settling again.
 #[test]

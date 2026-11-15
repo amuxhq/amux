@@ -498,6 +498,31 @@ fn a_restarted_daemon_retakes_claims_for_running_members_and_sweeps_memberless_w
 }
 
 #[test]
+fn a_member_waking_as_its_tree_is_removed_is_told_it_cannot_launch() {
+    let mut run = Run::made_wt_running();
+    run.slept(1);
+    run.stopped();
+    run.removed(1, false);
+    run.added(2, Kind::Wt, true);
+    // It wakes after the backend removed the tree, before the answer came.
+    assert_eq!(run.launching(2), vec![take(Kind::Wt)]);
+    let removed = run.deleted(Kind::Wt, Removal::Removed);
+    assert!(
+        matches!(removed.as_slice(), [Output::NotMade { member: m, .. }] if *m == member(2)),
+        "{removed:?}"
+    );
+    assert_eq!(
+        run.claimed(Kind::Wt),
+        vec![release(Kind::Wt)],
+        "the claim asked for meanwhile goes as its answer comes"
+    );
+    assert!(matches!(
+        run.launching(2).as_slice(),
+        [Output::NotMade { .. }]
+    ));
+}
+
+#[test]
 fn a_dormant_workspace_after_a_restart_gets_nothing_until_a_member_wakes_and_sleeps() {
     let mut run = Run::new();
     assert_eq!(run.added(1, Kind::Wt, true), vec![]);

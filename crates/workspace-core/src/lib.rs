@@ -276,7 +276,8 @@ pub const HOOKS_WITHOUT_HOOKS: Check = Check {
 };
 pub const CLAIMED_ABSENT: Check = Check {
     id: "workspace.claimed_absent",
-    sentence: "a workspace being made or gone holds no claim",
+    sentence: "a workspace being made holds no claim, and one gone holds none beyond a claim \
+               asked for before it went",
 };
 pub const IDLE_ENTRY: Check = Check {
     id: "workspace.idle_entry",
@@ -508,7 +509,8 @@ impl Workspaces {
     ///   is taking it, and a held claim has an awake member;
     /// - no stop-when-unheld call is outstanding beside this host's start
     ///   job, and either is outstanding only on a kind with hooks;
-    /// - a workspace being made or gone holds no claim;
+    /// - a workspace being made holds no claim, and one gone holds none
+    ///   beyond a claim asked for before it went, whose answer releases it;
     /// - a workspace without members is kept only while a job of the core's
     ///   is outstanding on it;
     /// - each member is in exactly the workspace the index names.
@@ -537,9 +539,12 @@ impl Workspaces {
             if (workspace.waiter || workspace.starting) && !key.kind.hooks() {
                 return Err(broken(HOOKS_WITHOUT_HOOKS, key, workspace));
             }
-            if matches!(workspace.phase, Phase::Creating | Phase::Absent)
-                && workspace.claim != Claim::None
-            {
+            let claimed = match workspace.phase {
+                Phase::Creating => workspace.claim != Claim::None,
+                Phase::Absent => workspace.claim == Claim::Held,
+                Phase::Ready | Phase::Deleting => false,
+            };
+            if claimed {
                 return Err(broken(CLAIMED_ABSENT, key, workspace));
             }
             if workspace.members.is_empty()
@@ -749,6 +754,9 @@ impl Workspaces {
                 entry.consent = false;
                 entry.start_owed = false;
                 match removal {
+                    // The removal happened whatever claim was asked for since:
+                    // a member that woke meanwhile cannot launch, and a claim
+                    // still being taken is released once its answer comes.
                     Removal::Removed => {
                         entry.phase = Phase::Absent;
                         // The removal ran the stop hook itself.

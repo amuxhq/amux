@@ -378,7 +378,8 @@ granted behind a stop hook that already runs. A stop-when-unheld call
 begins only once nothing holds the tree, and does nothing if the tree is
 pinned. A removal is refused, keeping the tree and clearing its owner, if
 anything holds or pins it, or if it is dirty and the delete does not
-discard. A restart keeps the agents' processes and loses the daemon's
+discard, and its answer reaches the core after it ran, so an agent may wake
+between. A restart keeps the agents' processes and loses the daemon's
 claims and its calls still waiting, and the restarted daemon adds every
 live agent from its folder, the running ones first, then sweeps the trees
 it owns. What must happen eventually (a workspace this host made, owed a

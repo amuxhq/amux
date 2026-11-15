@@ -12,7 +12,9 @@
 //! hard `wt stop` and edits its files; another host's daemon holds the tree
 //! and lets it go, and stops a tree it made. The create hook finishes or
 //! fails; a start, stop or delete succeeds or fails (a timeout is a failure
-//! with a detail, so the core sees it as one); the daemon restarts.
+//! with a detail, so the core sees it as one), and a delete's answer reaches
+//! the core after the backend has run it, so an agent may wake between; the
+//! daemon restarts.
 //!
 //! The backend's holds are modelled by their meaning. A claim the core
 //! takes counts at once. It is granted at once unless a stop hook runs, in
@@ -101,7 +103,7 @@ pub struct WorkspaceLifecycle {
 
 impl WorkspaceLifecycle {
     /// Every part of the world once, beside two agents with two launches
-    /// after their first: 28,912,609 states in 54 s on the 12 threads of an
+    /// after their first: 40,054,350 states in 55 s on the 12 threads of an
     /// M-series Mac for the wt tree this host makes, and at most 59,940 for
     /// any other origin.
     pub const fn world(origin: Origin) -> Self {
@@ -121,12 +123,12 @@ impl WorkspaceLifecycle {
     }
 
     /// The bounds `just test` explores exhaustively. Every origin but one
-    /// explores its whole world (1,937 states for the git worktree, 29,970
+    /// explores its whole world (2,665 states for the git worktree, 29,970
     /// for the hand-made tree, 59,940 for another host's, 74 for a folder,
     /// each well under a second). The wt tree this host makes explores its
     /// world in two halves, since the whole of it is nightly's: this one
-    /// leaves out the person's pin and another host's hold, 2,242,005 states
-    /// in 3.2 s on the Mac's 12 threads, and [`Self::holders`] has them.
+    /// leaves out the person's pin and another host's hold, 3,235,879 states
+    /// in 4.1 s on the Mac's 12 threads, and [`Self::holders`] has them.
     pub const fn ci(origin: Origin) -> Self {
         match origin {
             Origin::MadeWt => Self {
@@ -140,7 +142,7 @@ impl WorkspaceLifecycle {
 
     /// The wt tree this host makes, held by everything that can hold it (a
     /// shell, a pin, another host's daemon) and stopped by a person, with no
-    /// failures, edits or restarts: 1,106,386 states in 1.5 s on the Mac's
+    /// failures, edits or restarts: 1,509,558 states in 2.0 s on the Mac's
     /// 12 threads.
     pub const fn holders() -> Self {
         Self {
@@ -153,7 +155,7 @@ impl WorkspaceLifecycle {
 
     /// The bounds a nightly run explores: the whole world for the wt tree
     /// this host makes, and larger bounds for every other origin (at most
-    /// 2,927,232 states, another host's tree, in 9 s on the Mac's 12
+    /// 2,927,232 states, another host's tree, in 7 s on the Mac's 12
     /// threads).
     pub const fn nightly(origin: Origin) -> Self {
         if matches!(origin, Origin::MadeWt) {
@@ -266,6 +268,8 @@ pub enum Action {
     ClaimAnswered,
     /// The backend runs a delete.
     DeleteRuns,
+    /// The delete's answer reaches the core.
+    DeleteAnswered,
     Restart,
 }
 
@@ -335,6 +339,8 @@ struct Jobs {
     waiter: Option<Waiter>,
     /// A delete, and whether it discards.
     delete: Option<bool>,
+    /// A delete the backend ran, whose answer is on the way.
+    deleted: Option<Removal>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -406,6 +412,7 @@ struct Seen {
     consent_stuck: bool,
     stop_waited_for_start: bool,
     adopted_claim: bool,
+    woke_into_removed: bool,
 }
 
 /// The core, the tree, the backend's jobs and the agents.
@@ -528,6 +535,7 @@ impl WorkspaceLifecycle {
                 self.touch(state);
                 // A claim of amux's own would make the backend refuse it.
                 if state.jobs.delete.is_some()
+                    || state.jobs.deleted.is_some()
                     || state.live() > 0
                     || state.jobs.claim != Claim::None
                     || (discard && !state.seen.consent)
@@ -570,6 +578,9 @@ impl WorkspaceLifecycle {
                         awake, startable, ..
                     } = &mut state.agents[usize::from(index)]
                 {
+                    if *awake == Awake::Launching && state.tree.removed > 0 && !state.tree.exists {
+                        state.seen.woke_into_removed = true;
+                    }
                     *awake = Awake::Asleep;
                     *startable = false;
                 }
@@ -626,6 +637,16 @@ impl WorkspaceLifecycle {
             state.tree.started = false;
         }
         state.jobs.delete = None;
+        state.jobs.deleted = None;
+        // A restarted daemon finds a removed tree's folder gone: its agents'
+        // launches would fail.
+        if !state.tree.exists {
+            for agent in &mut state.agents {
+                if let Agent::Live { startable, .. } = agent {
+                    *startable = false;
+                }
+            }
+        }
         // A make in flight leaves a half-made tree, and its agent a row with
         // no process the restarted daemon marks could-not-start.
         if std::mem::take(&mut state.jobs.make) {
@@ -713,6 +734,7 @@ impl Machine for WorkspaceLifecycle {
                 start: false,
                 waiter: None,
                 delete: None,
+                deleted: None,
             },
             agents: vec![Agent::Unborn; usize::from(self.agents)],
             counts: Counts::default(),
@@ -828,6 +850,9 @@ impl Machine for WorkspaceLifecycle {
         }
         if s.jobs.delete.is_some() {
             out.push(Action::DeleteRuns);
+        }
+        if s.jobs.deleted.is_some() {
+            out.push(Action::DeleteAnswered);
         }
         if s.counts.restarts < self.restarts {
             out.push(Action::Restart);
@@ -1078,14 +1103,12 @@ impl Machine for WorkspaceLifecycle {
                     tree.started = false;
                     tree.create_hook = Hook::Idle;
                     tree.removed += 1;
-                    // An agent whose folder is gone can no longer start.
-                    for agent in &mut state.agents {
-                        if let Agent::Live { startable, .. } = agent {
-                            *startable = false;
-                        }
-                    }
                     Removal::Removed
                 };
+                state.jobs.deleted = Some(removal);
+            }
+            Action::DeleteAnswered => {
+                let removal = state.jobs.deleted.take()?;
                 self.feed(
                     &mut state,
                     Input::Deleted {
@@ -1093,6 +1116,15 @@ impl Machine for WorkspaceLifecycle {
                         removal,
                     },
                 );
+                // Its agents' folder is gone, which the daemon now knows: a
+                // launch of one would fail.
+                if removal == Removal::Removed {
+                    for agent in &mut state.agents {
+                        if let Agent::Live { startable, .. } = agent {
+                            *startable = false;
+                        }
+                    }
+                }
             }
             Action::Restart => self.restart(&mut state),
         }
@@ -1165,6 +1197,10 @@ impl Machine for WorkspaceLifecycle {
                 },
             ),
             Property::sometimes("a member launches", |_, s: &State| s.seen.launched),
+            Property::sometimes(
+                "a member that wakes as its tree is removed is told it cannot launch",
+                |model, s: &State| !model.origin.made_here() || s.seen.woke_into_removed,
+            ),
             Property::sometimes(
                 "a workspace stops once its last member sleeps and starts again when one wakes, as \
                  a finished child's does on a follow-up",

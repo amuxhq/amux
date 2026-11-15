@@ -46,8 +46,8 @@ fn every_workspace_promise_holds_for_a_plain_folder_at_ci_bounds() {
     holds("folder", &WorkspaceLifecycle::ci(Origin::Folder));
 }
 
-/// The nightly bounds, run by hand or by the nightly recipe: 33 million
-/// states in about 70 s on the enrolled Mac's cores, nearly all of them the
+/// The nightly bounds, run by hand or by the nightly recipe: 44 million
+/// states in about 65 s on the enrolled Mac's cores, nearly all of them the
 /// wt tree this host makes.
 #[test]
 #[ignore = "nightly bounds: minutes on every core"]

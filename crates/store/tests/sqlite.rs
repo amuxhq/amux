@@ -587,3 +587,80 @@ fn a_redacted_copy_carries_no_experiment_tables() {
     assert!(experiment_tables(&path).is_empty());
     assert!(tables(&path).iter().any(|(name, _)| name == "agents"));
 }
+
+/// A row read while an experiment's table is there carries the agent's
+/// entry from it, keyed by the version; a row written does not touch it,
+/// and a row removed, by a delete or by retention, takes it along. A store
+/// without the table writes and reads nothing of it.
+#[test]
+fn an_experiments_entry_rides_on_the_row_and_goes_with_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.sqlite");
+    let mut store = Sqlite::open_with(&path, OWN, &["workspaces/1"]).unwrap();
+    let own = AgentKey::new(OWN, b"agent".to_vec());
+    let replica = AgentKey::new(b"far-host".to_vec(), b"theirs".to_vec());
+    for key in [&own, &replica] {
+        store
+            .put_agent(&AgentRow::new(key.clone(), wire::Kind::Codex, "/src"))
+            .unwrap();
+    }
+    assert!(store.agent(&own).unwrap().unwrap().experimental.is_empty());
+
+    store
+        .put_experimental(&own, "workspaces/1", Some(&[1, 2, 3]))
+        .unwrap();
+    store
+        .put_experimental(&replica, "workspaces/1", Some(&[4]))
+        .unwrap();
+    // A version the store keeps no table for is not written.
+    store
+        .put_experimental(&own, "workspaces/2", Some(&[9]))
+        .unwrap();
+    let held = store.agent(&own).unwrap().unwrap();
+    assert_eq!(
+        held.experimental,
+        [("workspaces/1".to_owned(), vec![1, 2, 3])].into()
+    );
+    let by_id = store.agent_by_id(b"theirs").unwrap().unwrap();
+    assert_eq!(
+        by_id.experimental,
+        [("workspaces/1".to_owned(), vec![4])].into()
+    );
+    assert_eq!(
+        store
+            .agents()
+            .unwrap()
+            .iter()
+            .filter(|row| !row.experimental.is_empty())
+            .count(),
+        2
+    );
+
+    // Writing the row again leaves its entry.
+    let mut renamed = held.clone();
+    renamed.name = "renamed".into();
+    renamed.experimental.clear();
+    store.put_agent(&renamed).unwrap();
+    assert_eq!(
+        store.agent(&own).unwrap().unwrap().experimental,
+        held.experimental
+    );
+    store.put_experimental(&own, "workspaces/1", None).unwrap();
+    assert!(store.agent(&own).unwrap().unwrap().experimental.is_empty());
+
+    store.delete_agent(&replica).unwrap();
+    let left: i64 = store
+        .connection()
+        .query_row("SELECT count(*) FROM exp_workspaces_1_members", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(left, 0, "the entry went with its row");
+    drop(store);
+
+    let mut plain = Sqlite::open(&path, OWN).unwrap();
+    plain
+        .put_experimental(&own, "workspaces/1", Some(&[1]))
+        .unwrap();
+    assert!(plain.agent(&own).unwrap().unwrap().experimental.is_empty());
+}

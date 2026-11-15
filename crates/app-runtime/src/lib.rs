@@ -316,7 +316,7 @@ impl AppRuntime {
                 name: Some(agent.name.clone()).filter(|name| !name.is_empty()),
                 cwd: agent.cwd.clone(),
                 agent: config,
-                new_worktree: agent.new_worktree,
+                new_workspace: agent.new_worktree,
                 // A value is present here only because the person picked it.
                 remember_model: agent.model.is_some(),
                 remember_effort: agent.effort.is_some(),

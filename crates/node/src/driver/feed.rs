@@ -39,6 +39,13 @@ impl Feed {
         sent
     }
 
+    /// Sends from a thread outside the runtime, waiting for room.
+    pub(crate) fn blocking_send(&self, fed: Fed) -> Result<(), SendError<Fed>> {
+        let sent = self.inputs.blocking_send(fed);
+        self.ring();
+        sent
+    }
+
     pub(crate) fn try_send(&self, fed: Fed) -> Result<(), TrySendError<Fed>> {
         let sent = self.inputs.try_send(fed);
         self.ring();

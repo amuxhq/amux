@@ -536,6 +536,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "blake3"
+version = "1.8.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d9e454fc11f76977dc803893aff6304ed33d6a26efae8696573bea74baa27ae"
+dependencies = [
+ "arrayvec",
+ "cc",
+ "cfg-if",
+ "constant_time_eq",
+ "cpufeatures 0.3.1",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -843,6 +856,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "constant_time_eq"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
+
+[[package]]
 name = "convert_case"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1029,6 +1048,7 @@ dependencies = [
  "tracing",
  "uuid",
  "wire",
+ "workspace-core",
 ]
 
 [[package]]
@@ -2415,6 +2435,7 @@ dependencies = [
  "webpki-roots",
  "windows-sys 0.61.2",
  "wire",
+ "wt",
  "zstd",
 ]
 
@@ -5401,6 +5422,20 @@ name = "writeable"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
+
+[[package]]
+name = "wt"
+version = "0.6.0-dev"
+source = "git+https://github.com/jordanwebster/wt?rev=0fc3c76e3fd222f79c3dfd40bea86d208591b43d#0fc3c76e3fd222f79c3dfd40bea86d208591b43d"
+dependencies = [
+ "blake3",
+ "clap",
+ "libc",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "toml",
+]
 
 [[package]]
 name = "wyz"

@@ -663,7 +663,8 @@ fn create(agent: AgentId, name: &str, parent: Option<(HostId, AgentId)>) -> Crea
         cwd: "/src".into(),
         given: Some(name.into()),
         branches: BTreeSet::new(),
-        new_worktree: false,
+        new_workspace: false,
+        workspace: None,
         recent: None,
         spec: wire::AgentSpec {
             agent_id: agent.0.to_vec(),

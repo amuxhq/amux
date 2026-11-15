@@ -11,6 +11,7 @@
 use prost::Message as _;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
+use crate::experiments::WORKSPACES_1_MEMBERS;
 use crate::{
     AgentKey, AgentRow, Delivery, Item, Notification, Snapshot, StoreError, TrustedHost,
     decode_attachments, encode_attachments,
@@ -149,7 +150,17 @@ pub(crate) fn registry_update(own: bool) -> String {
 /// An agents row with its snapshot and git columns still encoded.
 type RawAgent = (AgentRow, Option<Vec<u8>>, Option<Vec<u8>>);
 
+/// The column after the agents table's own that carries an experiment's
+/// entry, when one is joined: `workspaces/1`'s encoded `AgentWorkspace`.
+const WORKSPACES_1_COLUMN: usize = 31;
+
 fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
+    let mut experimental = std::collections::BTreeMap::new();
+    if row.as_ref().column_count() > WORKSPACES_1_COLUMN
+        && let Some(entry) = row.get::<_, Option<Vec<u8>>>(WORKSPACES_1_COLUMN)?
+    {
+        experimental.insert(crate::experiments::WORKSPACES_1.version.to_owned(), entry);
+    }
     let parent_host: Option<Vec<u8>> = row.get(5)?;
     let parent_id: Option<Vec<u8>> = row.get(6)?;
     Ok((
@@ -183,6 +194,7 @@ fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
             title: row.get(28)?,
             name_given: row.get(29)?,
             last_said: row.get(30)?,
+            experimental,
         },
         row.get(14)?,
         row.get(13)?,
@@ -270,11 +282,27 @@ fn signed(value: u64) -> i64 {
 pub(crate) struct Rows<'a> {
     pub(crate) conn: &'a Connection,
     pub(crate) own_host: &'a [u8],
+    /// The `workspaces/1` experiment's table is there: a row read carries
+    /// its entry, and a row removed takes its entry with it.
+    pub(crate) workspaces_1: bool,
 }
 
 impl Rows<'_> {
     pub(crate) fn is_own(&self, agent: &AgentKey) -> bool {
         agent.host == self.own_host
+    }
+
+    /// The columns a read of agents rows selects: the table's own, then
+    /// each experiment's entry whose table is there.
+    fn agent_columns(&self) -> String {
+        if self.workspaces_1 {
+            format!(
+                "{AGENT_COLUMNS}, (SELECT entry.workspace FROM {WORKSPACES_1_MEMBERS} entry \
+                 WHERE entry.origin_host = agents.origin_host AND entry.agent_id = agents.agent_id)"
+            )
+        } else {
+            AGENT_COLUMNS.to_owned()
+        }
     }
 
     fn agents_where(
@@ -283,7 +311,8 @@ impl Rows<'_> {
         params: impl rusqlite::Params,
     ) -> Result<Vec<AgentRow>, StoreError> {
         let mut statement = self.conn.prepare_cached(&format!(
-            "SELECT {AGENT_COLUMNS} FROM agents WHERE {condition} ORDER BY origin_host, agent_id"
+            "SELECT {} FROM agents WHERE {condition} ORDER BY origin_host, agent_id",
+            self.agent_columns()
         ))?;
         let rows = statement
             .query_map(params, agent_row)?
@@ -307,8 +336,9 @@ impl Rows<'_> {
     /// The row an agent id names, this host's own first.
     pub(crate) fn agent_by_id(&self, agent_id: &[u8]) -> Result<Option<AgentRow>, StoreError> {
         let mut statement = self.conn.prepare_cached(&format!(
-            "SELECT {AGENT_COLUMNS} FROM agents WHERE agent_id = ?1 \
-             ORDER BY origin_host = ?2 DESC, origin_host LIMIT 1"
+            "SELECT {} FROM agents WHERE agent_id = ?1 \
+             ORDER BY origin_host = ?2 DESC, origin_host LIMIT 1",
+            self.agent_columns()
         ))?;
         statement
             .query_row(params![agent_id, self.own_host], agent_row)
@@ -440,7 +470,35 @@ impl Rows<'_> {
             "DELETE FROM deliveries WHERE child_id = ?1",
             params![agent.agent],
         )?;
+        if self.workspaces_1 {
+            self.put_workspaces_1(agent, None)?;
+        }
         self.remove_notifications(&agent.agent)
+    }
+
+    /// Writes the agent's `workspaces/1` entry, or removes it.
+    pub(crate) fn put_workspaces_1(
+        &self,
+        agent: &AgentKey,
+        entry: Option<&[u8]>,
+    ) -> Result<(), StoreError> {
+        match entry {
+            Some(entry) => self
+                .conn
+                .prepare_cached(&format!(
+                    "INSERT INTO {WORKSPACES_1_MEMBERS} (origin_host, agent_id, workspace) \
+                     VALUES (?1, ?2, ?3) ON CONFLICT (origin_host, agent_id) \
+                     DO UPDATE SET workspace = excluded.workspace"
+                ))?
+                .execute(params![agent.host, agent.agent, entry])?,
+            None => self
+                .conn
+                .prepare_cached(&format!(
+                    "DELETE FROM {WORKSPACES_1_MEMBERS} WHERE origin_host = ?1 AND agent_id = ?2"
+                ))?
+                .execute(params![agent.host, agent.agent])?,
+        };
+        Ok(())
     }
 
     fn items_where(

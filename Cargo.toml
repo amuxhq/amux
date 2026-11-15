@@ -96,6 +96,10 @@ redaction = { path = "crates/redaction" }
 replay-support = { path = "crates/replay-support" }
 
 # Shared
+# wt's library makes, holds, starts and stops the wt trees of the workspaces
+# experiment. From git until wt publishes a release with holds, owners and
+# planning (0.6.0); deny.toml allows this source alone beside rustls.
+wt = { git = "https://github.com/jordanwebster/wt", rev = "0fc3c76e3fd222f79c3dfd40bea86d208591b43d" }
 portable-pty = "0.9"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "sync", "time", "process", "fs", "signal", "test-util"] }
 tokio-util = { version = "0.7", features = ["compat"] }

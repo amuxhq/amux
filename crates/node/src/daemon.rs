@@ -278,12 +278,18 @@ impl Installation {
                 profile,
                 error: error.into(),
             })?;
+        let launch = self.launch.lock().unwrap().clone();
+        let workspaces = std::sync::Arc::new(crate::workspaces::Workspaces::new(
+            profile,
+            self.data_dir.join(crate::workspaces::WORKTREES),
+            launch.wt_home.clone(),
+        ));
         Ok(ProfileRuntime::open(Profile {
             profile,
             generation: self.generation,
             dir,
             store,
-            launch: self.launch.lock().unwrap().clone(),
+            launch,
             clock: self.clock.clone(),
             push: self.push.clone(),
             reports: self.data_dir.join(REPORTS),
@@ -294,9 +300,7 @@ impl Installation {
                 None => analytics::Analytics::off(),
             },
             auto_reports: self.auto_reports.clone(),
-            worktrees: crate::worktree::GitWorktrees::new(
-                self.data_dir.join(crate::worktree::WORKTREES),
-            ),
+            workspaces,
             onboarding: self.onboarding.clone(),
             remember_pick: self.pick_keeper.get().cloned().unwrap_or_default(),
         }))

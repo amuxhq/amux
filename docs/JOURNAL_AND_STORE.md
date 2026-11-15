@@ -493,7 +493,8 @@ experiment has tables of its own, declared in
 [`crates/store/src/experiments.rs`](../crates/store/src/experiments.rs)
 rather than in `MIGRATIONS`, each named with its version's prefix:
 `exp_workspaces_1_members` (an agent's key to its encoded
-`amux.experimental.AgentWorkspace`, for own rows and replicas) and
+`amux.experimental.AgentWorkspace`, for own rows and replicas, read joined
+onto the agent's row as its `experimental` entry and deleted with the row) and
 `exp_suspension_1_runs` (one of this host's own agents to the incarnation its
 current run began at). They have real columns and indexes, and are `STRICT`
 like every other table.

@@ -44,6 +44,7 @@ pub mod retention;
 pub mod serve;
 pub mod sources;
 pub mod trust;
+pub mod workspaces;
 
 pub use blobs::Blobs;
 pub use checkpoints::Checkpoints;
@@ -91,6 +92,8 @@ pub struct Daemon {
     notifications: Notifications,
     blobs: Blobs,
     deliveries: Deliveries,
+    /// The workspaces experiment's lifecycle, idle when it is off.
+    workspaces: workspaces::WorkspaceState,
     timers: Timers,
     pending: Pending,
     settings: Settings,
@@ -120,6 +123,10 @@ pub struct StartOptions {
     pub replicas: PathBuf,
     /// How long one step may take before it is reported with a dump.
     pub budget: StepBudget,
+    /// The daemon runs the workspaces experiment (`workspaces/1`), switched
+    /// on as it started: each own agent is a member of the workspace its
+    /// folder is in, and a create in a new workspace writes its row first.
+    pub workspaces: bool,
 }
 
 impl Daemon {
@@ -143,6 +150,7 @@ impl Daemon {
             notifications: Notifications::default(),
             blobs: Blobs::default(),
             deliveries: Deliveries::default(),
+            workspaces: workspaces::WorkspaceState::default(),
             timers: Timers::default(),
             pending: Pending::default(),
             settings: Settings::default(),
@@ -209,9 +217,15 @@ impl Daemon {
                 self.checkpoint_done(result, out)
             }
             Input::JobDone { job, result } => {
-                if !self.push_done(job, &result, out) && !self.blob_done(job, &result, out) {
+                if !self.push_done(job, &result, out)
+                    && !self.blob_done(job, &result, out)
+                    && !self.workspace_job_done(job, &result, out)
+                {
                     self.registry_job(job, result, out);
                 }
+            }
+            Input::WorkspaceEnvironment { agent, problem } => {
+                self.workspace_environment(agent, problem.map_or(Ok(()), Err), out)
             }
             Input::Nudge { agent } => self.ingest(agent, out),
             Input::AgentHello { agent } => {
@@ -460,6 +474,15 @@ impl Daemon {
                 ),
             });
         }
+        if let Some(broken) = &self.touched.workspace_broken {
+            return Err(Violation {
+                invariant: Check {
+                    id: broken.check.id,
+                    sentence: broken.check.sentence,
+                },
+                detail: broken.detail.clone(),
+            });
+        }
         if self.touched.committed_while_held {
             return Err(Violation {
                 invariant: NO_COMMIT_WHILE_HELD,
@@ -489,7 +512,7 @@ impl Daemon {
             &self.checkpoints,
             &self.notifications,
             &self.blobs,
-            &self.deliveries,
+            (&self.deliveries, &self.workspaces),
             &self.timers,
             &self.pending,
             &self.settings,
@@ -517,7 +540,7 @@ impl Daemon {
             checkpoints,
             notifications,
             blobs,
-            deliveries,
+            (deliveries, workspaces),
             timers,
             pending,
             settings,
@@ -539,6 +562,7 @@ impl Daemon {
             notifications,
             blobs,
             deliveries,
+            workspaces,
             timers,
             pending,
             settings,
@@ -683,6 +707,9 @@ struct Touched {
     /// How long the step waited on the drive for a synced write, which its
     /// budget leaves out.
     synced_micros: u64,
+    /// The workspace core's own check that failed after an input the step
+    /// fed it.
+    workspace_broken: Option<workspace_core::Broken>,
 }
 
 impl Touched {
@@ -749,7 +776,7 @@ type Parts = (
     Checkpoints,
     Notifications,
     Blobs,
-    Deliveries,
+    (Deliveries, workspaces::WorkspaceState),
     Timers,
     Pending,
     Settings,

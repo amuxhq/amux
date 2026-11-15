@@ -247,7 +247,7 @@ dependency-policy:
 
 # Check every dependency against deny.toml with cargo-deny: no open security
 # advisory or yanked release, only the licences it lists, and only crates.io
-# and the rustls patch as sources. Fetches the advisory database. Needs
+# and the rustls patch and wt as sources. Fetches the advisory database. Needs
 # `cargo install --locked cargo-deny@0.20.2`.
 deny:
     {{bounded}} 600 cargo deny --locked check
@@ -258,6 +258,15 @@ deny:
 # `cargo install --locked cargo-shear@1.14.0`.
 shear:
     {{bounded}} 300 cargo shear --locked --deny-warnings
+
+# A tree's wt stop hook runs this once nothing holds the tree: a tree starts
+# with a copy of the main checkout's target/, and each toolchain or
+# dependency change leaves the old output behind, while what any build read
+# in the last week stays. Needs `cargo install --locked cargo-sweep@0.8.0`;
+# without it, sweeps nothing.
+# Delete the build output in target/ that no build has used for a week.
+sweep:
+    @command -v cargo-sweep >/dev/null || { echo "cargo-sweep is not installed; nothing swept"; exit 0; }; {{bounded}} 120 cargo sweep --time 7
 
 # `just suite desktop-cli-system` runs exactly the Cargo tests that suite of
 # tests/catalog.toml lists, on `just test`'s build; anything after the

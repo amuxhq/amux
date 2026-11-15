@@ -56,7 +56,7 @@ fn repository(install: &Install) -> PathBuf {
 fn in_worktree(cwd: &Path, name: Option<&str>) -> CreateAgentRequest {
     CreateAgentRequest {
         name: name.map(str::to_owned),
-        new_worktree: true,
+        new_workspace: true,
         ..create(cwd, "", None)
     }
 }

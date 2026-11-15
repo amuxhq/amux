@@ -143,6 +143,9 @@ pub struct Launch {
     /// The suspension experiment's settings, read while it is off too;
     /// used only while it is on.
     pub suspension: settings::experiments::suspension::Suspension,
+    /// wt's home for the workspaces experiment's wt trees; none for wt's own
+    /// default, `$WT_HOME` or else `~/.wt`. Read when a profile opens.
+    pub wt_home: Option<PathBuf>,
 }
 
 /// The bytes of stored rows a profile keeps for the agents this host runs;
@@ -187,6 +190,7 @@ impl Default for Launch {
             cores: None,
             experiments: settings::experiments::Enabled::none(),
             suspension: Default::default(),
+            wt_home: None,
         }
     }
 }
@@ -413,7 +417,10 @@ pub struct ProfileRuntime {
     pub(crate) daemon_log: Option<PathBuf>,
     pub(crate) supervisor_log: Option<PathBuf>,
     pub(crate) auto_reports: crate::reports::AutoReports,
-    worktrees: crate::worktree::GitWorktrees,
+    /// The workspaces agents run in: the backends that make, hold, start,
+    /// stop and remove them, and the worktrees made without the
+    /// workspaces experiment.
+    workspaces: Arc<crate::workspaces::Workspaces>,
     pub(crate) me: Weak<ProfileRuntime>,
     /// The network edge, once the profile is in service.
     edge: std::sync::OnceLock<Arc<crate::edge::Edge>>,
@@ -644,8 +651,9 @@ pub struct Profile {
     pub analytics: analytics::Analytics,
     /// Whether the dumps a check asks for are sent to the account service.
     pub auto_reports: crate::reports::AutoReports,
-    /// What makes the worktree an agent asked to start in one starts in.
-    pub worktrees: crate::worktree::GitWorktrees,
+    /// The workspaces agents run in, and what makes the worktree an agent
+    /// asked to start in a new one starts in.
+    pub(crate) workspaces: Arc<crate::workspaces::Workspaces>,
     /// The installation's onboarding state.
     pub(crate) onboarding: Arc<crate::onboarding::Onboarding>,
     /// Where a person's model and effort picks are kept.
@@ -669,7 +677,7 @@ impl ProfileRuntime {
             supervisor_log,
             analytics,
             auto_reports,
-            worktrees,
+            workspaces,
             onboarding,
             remember_pick,
         } = profile;
@@ -679,6 +687,7 @@ impl ProfileRuntime {
             agents: dir.join(AGENTS),
             replicas: dir.join(crate::install::REPLICAS),
             budget: launch.step_budget,
+            workspaces: launch.experiments.is_on(&settings::experiments::WORKSPACES),
         };
         let mut core = None;
         let runtime = Arc::new_cyclic(|me| Self {
@@ -711,7 +720,7 @@ impl ProfileRuntime {
             daemon_log,
             supervisor_log,
             auto_reports,
-            worktrees,
+            workspaces,
             me: me.clone(),
             edge: std::sync::OnceLock::new(),
             replicas: Mutex::new(crate::replicas::Replicas::default()),
@@ -808,6 +817,19 @@ impl ProfileRuntime {
     }
 
     /// The profile's core, from the shell's side.
+    /// Whether this daemon runs the workspaces experiment: switched on as
+    /// it started.
+    pub(crate) fn workspaces_on(&self) -> bool {
+        self.launch()
+            .experiments
+            .is_on(&settings::experiments::WORKSPACES)
+    }
+
+    /// The backends of the workspaces agents run in.
+    pub(crate) fn workspaces(&self) -> &Arc<crate::workspaces::Workspaces> {
+        &self.workspaces
+    }
+
     pub(crate) fn driver(&self) -> &crate::driver::Driver {
         &self.driver
     }
@@ -1017,9 +1039,22 @@ impl ProfileRuntime {
         if let Some(problem) = given.as_deref().and_then(wire::agent_name_problem) {
             return Err(RegistryError::BadName(problem));
         }
+        let workspaces = self.workspaces_on();
+        // A new workspace's name, given or not, is no branch the repository
+        // has, with the workspaces experiment; the plan checks the rest.
         let branches = match given {
-            Some(_) => Default::default(),
-            None => crate::names::branch_names(Path::new(&request.cwd)).await,
+            Some(_) if !(workspaces && request.new_workspace) => Default::default(),
+            _ => crate::names::branch_names(Path::new(&request.cwd)).await,
+        };
+        // The workspace an agent in an existing folder joins.
+        let workspace = if workspaces && !request.new_workspace {
+            let backends = self.workspaces.clone();
+            let folder = request.cwd.clone();
+            tokio::task::spawn_blocking(move || backends.resolve(&folder))
+                .await
+                .ok()
+        } else {
+            None
         };
 
         let launch = self.launch();
@@ -1048,7 +1083,8 @@ impl ProfileRuntime {
             cwd: request.cwd,
             given,
             branches: branches.into_iter().collect(),
-            new_worktree: request.new_worktree,
+            new_workspace: request.new_workspace,
+            workspace,
             recent,
             spec,
         };
@@ -1267,7 +1303,12 @@ impl ProfileRuntime {
     /// core's next outputs find it, and the spec, tools socket and process
     /// on a task of their own. A process that cannot be started leaves its
     /// handle unlocked and not running, which its watcher reports as gone.
-    pub(crate) fn spawn_process(&self, dir: PathBuf, spec: AgentSpec) {
+    pub(crate) fn spawn_process(
+        &self,
+        dir: PathBuf,
+        spec: AgentSpec,
+        workspace: Option<daemon_core::workspaces::Key>,
+    ) {
         let Ok(id) = Uuid::from_slice(&spec.agent_id) else {
             return;
         };
@@ -1281,7 +1322,7 @@ impl ProfileRuntime {
             let Some(me) = runtime.upgrade() else {
                 return;
             };
-            if let Err(error) = me.start_process(id, &dir, spec, &starting).await {
+            if let Err(error) = me.start_process(id, &dir, spec, workspace, &starting).await {
                 *starting.failure.lock().unwrap() = Some(error.to_string());
                 starting.running.send_replace(false);
             }
@@ -1291,16 +1332,45 @@ impl ProfileRuntime {
 
     /// Writes the spec, binds the tools socket and spawns `amux agent
     /// <dir>`. A terminal Claude spec takes what the host's Claude offers
-    /// in the folder the agent works in.
+    /// in the folder the agent works in. An agent in a wt tree runs in the
+    /// tree's environment, joined to its provider's; one that does not load
+    /// is left out, so the agent that would fix it still runs, and its
+    /// workspace shows why.
     async fn start_process(
         &self,
         id: AgentId,
         dir: &Path,
         mut spec: AgentSpec,
+        workspace: Option<daemon_core::workspaces::Key>,
         handle: &Arc<AgentHandle>,
     ) -> io::Result<()> {
         if spec.offered.is_none() {
             spec.offered = self.offered_to(spec.kind(), &spec.cwd).await;
+        }
+        if let Some(workspace) = workspace
+            && workspace.kind == daemon_core::workspaces::Kind::Wt
+        {
+            let backends = self.workspaces.clone();
+            let environment = tokio::task::spawn_blocking(move || backends.environment(&workspace))
+                .await
+                .unwrap_or_else(|error| Err(error.to_string()));
+            let problem = match environment {
+                Ok(environment) => {
+                    if let Some(environment) = environment {
+                        environment.apply(&mut spec.provider_env);
+                    }
+                    None
+                }
+                Err(error) => {
+                    tracing::warn!(agent = %id, %error, "an agent's workspace environment did not load");
+                    Some(format!("its environment did not load: {error}"))
+                }
+            };
+            self.driver()
+                .post(daemon_core::Input::WorkspaceEnvironment {
+                    agent: core_agent(id),
+                    problem,
+                });
         }
         private_dir(dir)?;
         spec::write(dir, &spec)?;
@@ -1409,7 +1479,7 @@ impl ProfileRuntime {
         name: &str,
     ) -> daemon_core::payload::JobResult {
         use daemon_core::payload::JobResult;
-        match self.worktrees.make(repo, name).await {
+        match self.workspaces.worktrees().make_for(repo, name).await {
             Ok(made) => JobResult::Worktree {
                 path: made.path.to_string_lossy().into_owned(),
                 base_branch: made.base_branch,

@@ -27,7 +27,10 @@ scope = "{{name}}"
 [lifecycle]
 create = "just build"
 start = "amux server start"
-stop = "amux server stop"
+# Stopping also sweeps target/ of build output unused for a week (`just
+# sweep`): well under a second with nothing to clean, a second or two when
+# a few gigabytes go.
+stop = "amux server stop && just sweep"
 
 # The pinned iPhones this Mac owns. A recipe leases one and gets it clean;
 # a tree prefers the one it used last, so a series of recipes reuses a booted

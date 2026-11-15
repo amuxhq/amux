@@ -21,3 +21,13 @@ breaking:
     - ENUM_VALUE_NO_DELETE
   ignore:
     - proto/google
+  # One rename, CreateAgentRequest.new_worktree to new_workspace, keeping
+  # its number and type: protobuf sends numbers, the Swift apps reach the
+  # daemon through the FFI's own JSON values, and amux has no third-party
+  # clients, so only Rust callers changed. Remove this after the next
+  # release tag, which carries the new name.
+  ignore_only:
+    FIELD_SAME_NAME:
+      - proto/amux/v1/agent_service.proto
+    FIELD_SAME_JSON_NAME:
+      - proto/amux/v1/agent_service.proto

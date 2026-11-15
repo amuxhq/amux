@@ -904,7 +904,11 @@ impl Daemon {
         self.parent_changed(key, ParentSays::Deleted, out)
     }
 
-    fn put_replica_row(&mut self, agent: &Agent, out: &mut Vec<Output>) -> Result<(), StoreError> {
+    pub(crate) fn put_replica_row(
+        &mut self,
+        agent: &Agent,
+        out: &mut Vec<Output>,
+    ) -> Result<(), StoreError> {
         let row = from_wire(agent);
         if row.lifecycle != wire::Lifecycle::Exited as i32 {
             let key = Key::from(&row.agent);
@@ -912,6 +916,17 @@ impl Daemon {
             self.sources.settling.remove(&key);
         }
         self.store.put_agent(&row)?;
+        // The row's experiment entries, as its origin says them, for the
+        // experiments this host runs: none of another version, and none
+        // when the origin no longer sends one.
+        if self.workspaces_on() {
+            let entry = agent.experimental.get(crate::workspaces::VERSION);
+            self.store.put_experimental(
+                &row.agent,
+                crate::workspaces::VERSION,
+                entry.map(Vec::as_slice),
+            )?;
+        }
         self.publish_row(&row.agent, out)?;
         self.recount_from(row.parent, out)
     }
@@ -1956,13 +1971,14 @@ mod tests {
         (inventory, source)
     }
 
-    fn far_child(new_worktree: bool) -> ClientRequest {
+    fn far_child(new_workspace: bool) -> ClientRequest {
         ClientRequest::CreateAgent(Box::new(crate::Create {
             agent: FAR_CHILD,
             cwd: "/src".into(),
             given: Some("child".into()),
             branches: BTreeSet::new(),
-            new_worktree,
+            new_workspace,
+            workspace: None,
             recent: None,
             spec: wire::AgentSpec {
                 agent_id: FAR_CHILD.0.to_vec(),

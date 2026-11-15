@@ -44,7 +44,7 @@ use serde::de::DeserializeOwned;
 pub use serde_pb::{from_hex, to_hex};
 pub use shared::{
     AMUX_TOOL_SERVER, Asks, Emit, ItemDraft, OUTPUT_CAP, OpenAsk, OpenTurn, Output, Queue,
-    SEND_TOOL, STATUS_TOOL, SendOutcome, Shared, TurnCounter, agent_message_body,
+    SEND_TOOL, STATUS_TOOL, SendOutcome, Shared, TurnCounter, Wakeup, agent_message_body,
     agent_message_key, human, is_attach_tool, is_send_tool, is_status_tool, output_cut,
     sent_message, status_working_on, without_terminal_codes,
 };
@@ -86,6 +86,10 @@ pub trait Interpreter {
     /// nothing is queued, so a one-shot agent waits for it too.
     fn typed_unrecorded(state: &Self::State) -> bool;
 
+    /// What the provider process holds that ending it now would lose or
+    /// cut short: an agent suspends only while it holds nothing.
+    fn holds(state: &Self::State) -> Holds;
+
     /// Reads an item body for goldens and invariants.
     fn describe_item(body: &[u8]) -> ItemView;
 
@@ -126,6 +130,31 @@ pub trait Interpreter {
             "{:?} has no reader for recordings in format {format:?}",
             Self::KIND
         ))
+    }
+}
+
+/// What a provider process holds that ending it would lose or cut short,
+/// as its interpreter last tracked it: what keeps an idle agent from
+/// suspending.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Holds {
+    /// Jobs it runs in the background, which a kill would end or orphan.
+    pub background_jobs: usize,
+    /// A background job ended between turns, and the provider reports it
+    /// in a turn of its own that has not started yet.
+    pub turn_owed: bool,
+    /// Wake-ups it scheduled and has not run, which live only in the
+    /// process.
+    pub wakeups: usize,
+    /// amux granted it something for the rest of its session, which no
+    /// resume restores.
+    pub session_grant: bool,
+}
+
+impl Holds {
+    /// Nothing that ending the process would lose or cut short.
+    pub fn nothing(&self) -> bool {
+        *self == Holds::default()
     }
 }
 

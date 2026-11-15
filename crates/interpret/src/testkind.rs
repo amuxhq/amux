@@ -4,11 +4,16 @@
 //! Facts arrive on the stream channel as `{"type": …}`: `ready`, `user`
 //! (a prompt's reflection, or `envelope` for an injected message's),
 //! `text`/`text_done` (a streamed message), `tool`/`tool_result`,
-//! `ask`/`ask_closed`, `turn_start`, `turn_end` and `model`. It writes
+//! `ask`/`ask_closed`, `turn_start`, `turn_end` and `model`; and what the
+//! provider holds: `job_started`/`job_ended` (a background job by `id`,
+//! whose end `reported` in a turn of its own when it says so) and
+//! `wakeup`/`wakeup_fired`/`wakeup_cancelled` (a scheduled wake-up by
+//! `id`, `recurring` or not, whose firing starts a turn). It writes
 //! `user`, `answer` and, on a stop while a turn runs or an ask is open,
-//! `interrupt`. Bodies are the SDK's messages under the kind tag `test`.
+//! `interrupt`; an answer allowing with a scope grants for the session.
+//! Bodies are the SDK's messages under the kind tag `test`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use prost::Message as _;
 use serde::{Deserialize, Serialize};
@@ -35,6 +40,9 @@ pub struct State<const FORGET: bool> {
     tools: BTreeMap<String, String>,
     /// A stop interrupted the turn running: its end reads as cut short.
     interrupted: bool,
+    /// The background jobs running, by id.
+    #[serde(default)]
+    jobs: BTreeSet<String>,
 }
 
 impl<const FORGET: bool> State<FORGET> {
@@ -197,6 +205,44 @@ impl<const FORGET: bool> TestKind<FORGET> {
             "ask_closed" => {
                 shared.close_ask(&id);
             }
+            "job_started" | "job_ended" => {
+                if text_of(&value, "type") == "job_started" {
+                    state.jobs.insert(id);
+                } else if state.jobs.remove(&id)
+                    && value.get("reported").and_then(Value::as_bool) == Some(true)
+                {
+                    shared.turn_owed();
+                }
+                shared.set_jobs(
+                    state
+                        .jobs
+                        .iter()
+                        .map(|id| wire::BackgroundJob {
+                            key: id.clone(),
+                            item_key: id.clone(),
+                            ..Default::default()
+                        })
+                        .collect(),
+                );
+            }
+            "wakeup" => shared.wakeup_scheduled(
+                id,
+                crate::Wakeup {
+                    recurring: value.get("recurring").and_then(Value::as_bool) == Some(true),
+                    at_ms: None,
+                },
+            ),
+            "wakeup_fired" => {
+                if shared
+                    .wakeups()
+                    .get(&id)
+                    .is_some_and(|wakeup| !wakeup.recurring)
+                {
+                    shared.wakeup_gone(&id);
+                }
+                shared.turn_started();
+            }
+            "wakeup_cancelled" => shared.wakeup_gone(&id),
             "turn_end" => {
                 // Only a stop interrupts this kind's turns, so an
                 // interrupted turn reads as stopped, as the step's TurnEnd
@@ -279,7 +325,20 @@ impl<const FORGET: bool> TestKind<FORGET> {
                 shared.accept(emit, &id, false);
             }
             claude_sdk_input::Of::Answer(answer) => {
+                let for_session = matches!(
+                    &answer.of,
+                    Some(wire::claude_answer::Of::Permission(
+                        wire::PermissionAnswer {
+                            of: Some(wire::permission_answer::Of::Allow(wire::PermissionAllow {
+                                scope: Some(_),
+                            })),
+                        }
+                    ))
+                );
                 if let Some(ask) = shared.answer(emit, &id, &answer.ask_key) {
+                    if for_session {
+                        shared.granted_for_session();
+                    }
                     emit.effect(Effect::ProviderWrite(
                         format!(r#"{{"type":"answer","ask":"{}"}}"#, ask.key).into_bytes(),
                     ));
@@ -307,6 +366,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
             model: None,
             tools: BTreeMap::new(),
             interrupted: false,
+            jobs: BTreeSet::new(),
         };
         let step = state.shared.initial_step(Self::unknown_snapshot());
         (state, step)
@@ -314,6 +374,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
 
     fn reincarnate(mut state: Self::State, spec: &AgentSpec) -> (Self::State, Step) {
         state.shared.reincarnate(spec);
+        state.jobs.clear();
         state.resume()
     }
 
@@ -332,11 +393,13 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
                 // A session end closes every open ask, outcome unknown.
                 state.shared.close_all_asks();
                 state.shared.provider_exited();
+                state.jobs.clear();
                 emit.end_incarnation(crate::provider_exit(code));
             }
             Event::Exiting(end) => {
                 state.shared.close_all_asks();
                 state.shared.provider_exited();
+                state.jobs.clear();
                 emit.end_incarnation(end);
             }
             Event::DaemonLost => state.shared.leaving(),
@@ -365,6 +428,10 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
 
     fn typed_unrecorded(state: &Self::State) -> bool {
         state.shared.typed_unrecorded()
+    }
+
+    fn holds(state: &Self::State) -> crate::Holds {
+        state.shared.holds()
     }
 
     fn input_shape(input: &wire::Input) -> crate::shape::InputShape {

@@ -372,6 +372,19 @@ impl State {
                     );
                     self.shared.set_jobs(jobs);
                 }
+                // Claude's word on its wake-ups at each turn's end, which
+                // stands until the next.
+                if let Some(crons) = &stop.session_crons {
+                    self.shared.wakeups_listed(crons.iter().map(|cron| {
+                        (
+                            cron.id.clone(),
+                            crate::Wakeup {
+                                recurring: cron.recurring,
+                                at_ms: None,
+                            },
+                        )
+                    }));
+                }
                 self.running.clear();
                 self.close_main_threads_asks(emit);
             }
@@ -383,6 +396,9 @@ impl State {
                 };
                 if let Some(jobs) = self.jobs.ended(&agent) {
                     self.shared.set_jobs(jobs);
+                    // One that ran in the background between turns is
+                    // reported in a turn Claude starts itself.
+                    self.shared.turn_owed();
                 }
                 for key in self.open_ask_keys() {
                     if self.asks.get(&key).and_then(|meta| meta.agent.as_ref()) == Some(&agent) {

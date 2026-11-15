@@ -828,10 +828,13 @@ impl State {
     }
 
     /// Answers the server request an ask key names.
-    fn respond(&self, emit: &mut Emit, key: &str, response: Result<ClientResponse, RpcError>) {
+    fn respond(&mut self, emit: &mut Emit, key: &str, response: Result<ClientResponse, RpcError>) {
         let Ok(id) = serde_json::from_str::<RequestId>(key) else {
             return;
         };
+        if response.as_ref().is_ok_and(for_session) {
+            self.shared.granted_for_session();
+        }
         emit.effect(Effect::ProviderWrite(codex_protocol::encode(
             &ClientMessage::Response {
                 id,
@@ -1947,6 +1950,10 @@ impl Interpreter for Codex {
         state.shared.typed_unrecorded()
     }
 
+    fn holds(state: &Self::State) -> crate::Holds {
+        state.shared.holds()
+    }
+
     fn input_shape(input: &Input) -> crate::shape::InputShape {
         crate::shape::codex_input(&input.body)
     }
@@ -2169,6 +2176,28 @@ fn describe_item(body: &[u8]) -> ItemView {
         arm: arm.into(),
         complete,
         text,
+    }
+}
+
+/// Whether an answer allows something for the rest of Codex's session: a
+/// command or file change accepted for the session, permissions granted
+/// for it, or a tool server's form accepted to persist for it. Codex keeps
+/// these only in its process, and nothing re-applies them after a resume,
+/// so an agent holding one must not be suspended.
+fn for_session(response: &ClientResponse) -> bool {
+    match response {
+        ClientResponse::CommandApproval(answer) => matches!(
+            answer.decision,
+            CommandDecision::Plain(codex_protocol::server::Decision::AcceptForSession)
+        ),
+        ClientResponse::PermissionsApproval(answer) => {
+            answer.scope == Some(codex_protocol::client::GrantScope::Session)
+        }
+        ClientResponse::Elicitation(answer) => answer
+            .meta
+            .as_ref()
+            .is_some_and(|meta| meta.persist.as_deref() == Some("session")),
+        ClientResponse::UserInput(_) => false,
     }
 }
 

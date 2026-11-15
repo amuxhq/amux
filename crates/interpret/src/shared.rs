@@ -422,8 +422,38 @@ pub struct Shared<A: OpenAsk> {
     /// there stays for the next incarnation rather than going to a
     /// provider about to be closed.
     leaving: bool,
+    /// What the provider process holds that ending it would lose: its
+    /// scheduled wake-ups, a grant for its session, and a turn it owes.
+    /// Absent from a checkpoint an earlier build wrote.
+    #[serde(default)]
+    held: Held,
     /// What the checks after every step watch.
     watch: Watch,
+}
+
+/// What a provider process holds that a kill and resume would lose or cut
+/// short, beyond its background jobs. Each process starts holding nothing.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+struct Held {
+    /// A background job ended between turns, and the provider reports it
+    /// in a turn of its own that has not started yet.
+    turn_owed: bool,
+    /// The wake-ups it has scheduled and not yet run, by the provider's id
+    /// for each, or one amux gives it.
+    wakeups: BTreeMap<String, Wakeup>,
+    /// amux answered an ask with a grant that lasts for the provider's
+    /// session, which no resume restores.
+    session_grant: bool,
+}
+
+/// A wake-up a provider scheduled for itself.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Wakeup {
+    /// It runs again after each firing until it is cancelled.
+    pub recurring: bool,
+    /// When it fires next, as the provider said; none when it did not.
+    pub at_ms: Option<i64>,
 }
 
 impl<A: OpenAsk> Shared<A> {
@@ -462,6 +492,7 @@ impl<A: OpenAsk> Shared<A> {
             turn_on_reflection: false,
             stopping: false,
             leaving: false,
+            held: Held::default(),
             watch: Watch::default(),
         };
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) {
@@ -485,8 +516,10 @@ impl<A: OpenAsk> Shared<A> {
         // has changed.
         self.title.clone_from(&spec.title);
         self.provider_titles = !spec.name_given;
-        // A new provider process runs nothing in the background yet.
+        // A new provider process runs nothing in the background yet, and
+        // holds nothing the last one did.
         self.set_jobs(Vec::new());
+        self.held = Held::default();
         self.now_ms = self.now_ms.max(spec.created_at_ms);
         self.fresh = false;
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap)
@@ -712,6 +745,55 @@ impl<A: OpenAsk> Shared<A> {
     /// interpreter has set them.
     pub fn jobs(&self) -> wire::BackgroundJobs {
         self.jobs.clone().unwrap_or_default()
+    }
+
+    // --- what the provider holds -------------------------------------------
+
+    /// What the provider process holds that ending it would lose or cut
+    /// short. Jobs not yet known count as none.
+    pub fn holds(&self) -> crate::Holds {
+        crate::Holds {
+            background_jobs: self.jobs.as_ref().map_or(0, |jobs| jobs.jobs.len()),
+            turn_owed: self.held.turn_owed,
+            wakeups: self.held.wakeups.len(),
+            session_grant: self.held.session_grant,
+        }
+    }
+
+    /// A background job ended while no turn ran, and the provider reports
+    /// its end in a turn it starts itself, as both Claudes do: until that
+    /// turn starts the agent is not idle. Nothing while a turn runs, which
+    /// takes the report into itself.
+    pub fn turn_owed(&mut self) {
+        if !self.busy {
+            self.held.turn_owed = true;
+        }
+    }
+
+    /// The provider scheduled a wake-up for itself, under `id`.
+    pub fn wakeup_scheduled(&mut self, id: String, wakeup: Wakeup) {
+        self.held.wakeups.insert(id, wakeup);
+    }
+
+    /// A wake-up ran for the last time or was cancelled.
+    pub fn wakeup_gone(&mut self, id: &str) {
+        self.held.wakeups.remove(id);
+    }
+
+    /// The provider said which wake-ups it has: they replace those known.
+    pub fn wakeups_listed(&mut self, wakeups: impl IntoIterator<Item = (String, Wakeup)>) {
+        self.held.wakeups = wakeups.into_iter().collect();
+    }
+
+    /// The wake-ups known to be pending, by id.
+    pub fn wakeups(&self) -> &BTreeMap<String, Wakeup> {
+        &self.held.wakeups
+    }
+
+    /// amux sent the provider a grant that lasts for its session: it is
+    /// held until the process ends.
+    pub fn granted_for_session(&mut self) {
+        self.held.session_grant = true;
     }
 
     // --- clock -----------------------------------------------------------
@@ -989,6 +1071,8 @@ impl<A: OpenAsk> Shared<A> {
         self.submitted.push(input_id.to_vec());
         if !self.turn_on_reflection {
             self.busy = true;
+            // Any turn takes the report of a job that ended before it.
+            self.held.turn_owed = false;
             self.turn.begin(self.now_ms);
             // A turn that never reaches the model, as a local command's
             // doesn't, starts no provider turn to clear this.
@@ -1239,6 +1323,7 @@ impl<A: OpenAsk> Shared<A> {
     pub fn turn_started(&mut self) -> u64 {
         self.busy = true;
         self.trouble = None;
+        self.held.turn_owed = false;
         self.turn.begin(self.now_ms)
     }
 
@@ -1317,8 +1402,10 @@ impl<A: OpenAsk> Shared<A> {
         self.watch.exited = true;
         self.started = false;
         // A clean exit stops its jobs; a provider killed alone may orphan
-        // them, but nothing reports on them any more either way.
+        // them, but nothing reports on them any more either way. What else
+        // it held ends with it.
         self.set_jobs(Vec::new());
+        self.held = Held::default();
         self.busy = false;
         self.submitted.clear();
         self.queue.drop_steered();

@@ -57,6 +57,7 @@ no ids (they arrive on inputs and facts) and does no I/O. It implements
 | `unknown_snapshot()` | The snapshot body with every field unknown |
 | `pending_messages(state)` | Agent messages the provider accepted and has not consumed yet; a one-shot agent waits for this to be empty |
 | `typed_unrecorded(state)` | A prompt typed that the provider has not recorded yet, where the record starts the turn (terminal Claude); a one-shot agent waits for it too |
+| `holds(state)` | What the provider process holds that ending it would lose or cut short: its background jobs, a turn it owes for a job that ended between turns (both Claudes report one in a turn they start themselves), its scheduled wake-ups (terminal Claude's Stop `session_crons`; headless Claude's kept from ScheduleWakeup, CronCreate and CronDelete), and a grant amux sent for the session. An agent suspends only while it holds nothing; each new process starts holding nothing |
 | `describe_item`, `describe_snapshot`, `fixture_input`, `recording` | What the golden harness needs to render bodies, build authored inputs and read recorded corpora |
 
 An `Event` is a provider `Fact`, a person's `Input`, an agent message with

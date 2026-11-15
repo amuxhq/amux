@@ -29,9 +29,53 @@ use crate::claude_common::{
     tool_result_text,
 };
 use crate::shared::{json_as_written, without_terminal_codes};
-use crate::{Channel, Effect, Emit, Fact, ItemDraft, ask_item, is_status_tool, status_working_on};
+use crate::{
+    Channel, Effect, Emit, Fact, ItemDraft, Wakeup, ask_item, is_status_tool, status_working_on,
+};
 
 const INTERRUPTED: &str = "[Request interrupted by user";
+
+/// Claude's own tools that schedule a wake-up and cancel one.
+const SCHEDULE_WAKEUP_TOOL: &str = "ScheduleWakeup";
+const CRON_CREATE_TOOL: &str = "CronCreate";
+const CRON_DELETE_TOOL: &str = "CronDelete";
+/// The prefixes of the ids a wake-up is kept under: a ScheduleWakeup's by
+/// its fire time, a cron's by its id.
+const LOOP_WAKEUP: &str = "loop:";
+const CRON_WAKEUP: &str = "cron:";
+
+/// ScheduleWakeup's input, as far as amux reads it: `stop` ends the loop.
+#[derive(Deserialize)]
+struct ScheduleWakeupInput {
+    #[serde(default)]
+    stop: bool,
+}
+
+/// ScheduleWakeup's result: when the wake-up fires, in ms since the epoch.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WakeupScheduled {
+    scheduled_for: i64,
+}
+
+/// CronCreate's result.
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CronCreated {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    recurring: Option<bool>,
+    /// In fractional milliseconds since the epoch.
+    #[serde(default)]
+    next_fire_at: Option<f64>,
+}
+
+/// The cron CronDelete names, in its input and its result.
+#[derive(Deserialize)]
+struct CronNamed {
+    id: String,
+}
 
 /// Text Claude wrote, when it wrote any.
 fn written(text: &str) -> Option<String> {
@@ -138,6 +182,12 @@ impl State {
             Message::SessionTitleChanged(changed) => self.shared.person_titled(&changed.title),
             Message::CommandLifecycle(lifecycle) => {
                 if lifecycle.state == "started" {
+                    // A wake-up Claude scheduled for itself fires: a turn
+                    // it starts with nothing from amux.
+                    if let Some(source) = lifecycle.wakeup_source.as_deref() {
+                        self.woke(source, lifecycle.scheduled_for);
+                        self.shared.turn_started();
+                    }
                     self.taken(&lifecycle.command_uuid);
                 }
             }
@@ -441,6 +491,98 @@ impl State {
             .collect()
     }
 
+    /// What a scheduling tool's result did to the wake-ups Claude holds.
+    /// Headless Claude says nothing of them otherwise, so the interpreter
+    /// keeps the set: ScheduleWakeup's result gives the time it fires
+    /// (`scheduledFor`), CronCreate's the cron's id, whether it recurs and
+    /// its next fire time, CronDelete names the id it removed, and a
+    /// ScheduleWakeup with `stop` ends the loop.
+    fn scheduled(&mut self, call: &str, name: &str, input: &str, result: Option<&Value>) {
+        let result = result.unwrap_or(&Value::Null);
+        match name {
+            SCHEDULE_WAKEUP_TOOL => {
+                let stop = serde_json::from_str::<ScheduleWakeupInput>(input)
+                    .is_ok_and(|input| input.stop);
+                if stop {
+                    let loops = self.wakeup_ids(LOOP_WAKEUP);
+                    for id in loops {
+                        self.shared.wakeup_gone(&id);
+                    }
+                } else if let Ok(scheduled) = WakeupScheduled::deserialize(result) {
+                    let at_ms = scheduled.scheduled_for;
+                    self.shared.wakeup_scheduled(
+                        format!("{LOOP_WAKEUP}{at_ms}"),
+                        Wakeup {
+                            recurring: false,
+                            at_ms: Some(at_ms),
+                        },
+                    );
+                }
+            }
+            CRON_CREATE_TOOL => {
+                // A cron whose result does not name it is still pending:
+                // kept under its call's id, it only keeps the agent awake.
+                let created = CronCreated::deserialize(result).unwrap_or_default();
+                let id = created.id.unwrap_or_else(|| call.to_owned());
+                self.shared.wakeup_scheduled(
+                    format!("{CRON_WAKEUP}{id}"),
+                    Wakeup {
+                        recurring: created.recurring.unwrap_or(true),
+                        // Claude gives it in fractional milliseconds.
+                        at_ms: created.next_fire_at.map(|at| at as i64),
+                    },
+                );
+            }
+            CRON_DELETE_TOOL => {
+                let named = CronNamed::deserialize(result)
+                    .or_else(|_| serde_json::from_str::<CronNamed>(input));
+                if let Ok(named) = named {
+                    self.shared
+                        .wakeup_gone(&format!("{CRON_WAKEUP}{}", named.id));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// A wake-up fired, as its command's `wakeup_source` says: the
+    /// one-shot it was leaves the set; a recurring cron stays. A
+    /// ScheduleWakeup's firing names its time, so the one-shot scheduled
+    /// for it goes; a cron's does not name its id, so the one-shot cron
+    /// due first goes.
+    fn woke(&mut self, source: &str, scheduled_for: Option<i64>) {
+        let prefix = match source {
+            "loop_wakeup" => LOOP_WAKEUP,
+            "schedule_wakeup" => CRON_WAKEUP,
+            _ => return,
+        };
+        let one_shots = self
+            .shared
+            .wakeups()
+            .iter()
+            .filter(|(id, wakeup)| id.starts_with(prefix) && !wakeup.recurring)
+            .map(|(id, wakeup)| (id.clone(), wakeup.at_ms));
+        let fired = match scheduled_for {
+            Some(at) => one_shots
+                .clone()
+                .find(|(_, at_ms)| *at_ms == Some(at))
+                .or_else(|| one_shots.min_by_key(|(_, at_ms)| at_ms.unwrap_or(i64::MAX))),
+            None => one_shots.min_by_key(|(_, at_ms)| at_ms.unwrap_or(i64::MAX)),
+        };
+        if let Some((id, _)) = fired {
+            self.shared.wakeup_gone(&id);
+        }
+    }
+
+    fn wakeup_ids(&self, prefix: &str) -> Vec<String> {
+        self.shared
+            .wakeups()
+            .keys()
+            .filter(|id| id.starts_with(prefix))
+            .cloned()
+            .collect()
+    }
+
     /// Claude took the message with this uuid: an agent message is
     /// consumed.
     fn taken(&mut self, uuid: &str) {
@@ -612,6 +754,14 @@ impl State {
             self.task_asks_over(emit, &id, &key);
             if let Some(jobs) = self.jobs.ended(&id) {
                 self.shared.set_jobs(jobs);
+                // A job that ran to its end between turns is reported in a
+                // turn Claude starts itself. One stopped is not, as far as
+                // the recordings show.
+                let ran_out = wire.state == WireTaskState::Completed as i32
+                    || wire.state == WireTaskState::Failed as i32;
+                if ran_out {
+                    self.shared.turn_owed();
+                }
             }
         }
         // A task of a call this interpreter showed is progress on that call,
@@ -1118,6 +1268,13 @@ impl State {
         let now = self.shared.now_ms();
         let Some(tool) = self.tools.get_mut(id) else {
             self.shared.result_without_call("a user message");
+            return;
+        };
+        if tool.server.is_empty() && !is_error {
+            let (name, input) = (tool.name.clone(), tool.input.clone());
+            self.scheduled(id, &name, &input, result);
+        }
+        let Some(tool) = self.tools.get_mut(id) else {
             return;
         };
         let denied = tool

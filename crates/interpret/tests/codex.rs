@@ -2536,3 +2536,114 @@ fn a_first_prompt_is_drawn_while_codex_starts_and_sent_once() {
         ran.step.items
     );
 }
+
+// --- what Codex holds, for suspension ---------------------------------------
+//
+// Cut from live recordings of codex-cli 0.166.0 (2026-11-15).
+
+/// A command Codex runs on after its turn ends is a background job until
+/// Codex sends its `item/completed`, under the turn that already ended,
+/// with nothing else: no thread status and no turn.
+#[test]
+fn a_background_command_completing_after_its_turn_leaves_nothing_held() {
+    let mut state = idle_codex();
+    let command = |status: &str| {
+        json!({"type": "commandExecution", "id": "exec-c6ace9d4-eb50-4554-9a73-be25e5ae6d3d",
+            "command": "/bin/zsh -lc 'sleep 25; echo bgdone'", "cwd": "/tmp/amux-rec-codex",
+            "processId": "83446", "source": "unifiedExecStartup", "status": status,
+            "commandActions": [], "aggregatedOutput": null, "exitCode": null, "durationMs": null})
+    };
+    let turn = "01a1e0b0-f03a-7242-85d9-2287ddae601d";
+    let mut written = Vec::new();
+    for event in [
+        prompt(b"p1", "run it in the background"),
+        rpc(
+            json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": turn, "status": "inProgress"}}}),
+        ),
+        rpc(
+            json!({"method": "item/started", "params": {"threadId": "t1", "turnId": turn, "item": command("inProgress")}}),
+        ),
+        rpc(
+            json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": turn, "items": [], "status": "completed", "error": null}}}),
+        ),
+    ] {
+        written.extend(writes(&Codex::step(&mut state, event).effects));
+    }
+    let list = written
+        .iter()
+        .find(|write| write["method"] == "thread/backgroundTerminals/list")
+        .expect("Codex is asked what runs on");
+    Codex::step(
+        &mut state,
+        rpc(json!({"id": list["id"], "result": {"data": [{
+            "itemId": "exec-c6ace9d4-eb50-4554-9a73-be25e5ae6d3d", "processId": "83446",
+            "command": "sleep 25; echo bgdone", "cwd": "/tmp/amux-rec-codex",
+            "osPid": null, "cpuPercent": null, "rssKb": null}], "nextCursor": null}})),
+    );
+    assert_eq!(Codex::holds(&state).background_jobs, 1);
+    assert!(!state.shared().is_busy());
+
+    let mut done = command("completed");
+    done["exitCode"] = json!(0);
+    done["aggregatedOutput"] = json!("bgdone\n");
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": turn, "item": done}}),
+        ),
+    );
+    assert!(Codex::holds(&state).nothing(), "{:?}", Codex::holds(&state));
+    assert!(!state.shared().is_busy(), "no turn runs for it");
+}
+
+/// Accepting a command for the session (which Codex takes even when it does
+/// not offer it) holds until the process ends: nothing re-applies it after
+/// a resume. Accepting it once holds nothing.
+#[test]
+fn a_command_accepted_for_the_session_is_held() {
+    for (decision, held) in [
+        (wire::Decision::ApproveSession, true),
+        (wire::Decision::Approve, false),
+    ] {
+        let mut state = idle_codex();
+        Codex::step(&mut state, prompt(b"p1", "touch it"));
+        Codex::step(
+            &mut state,
+            rpc(
+                json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "inProgress"}}}),
+            ),
+        );
+        Codex::step(
+            &mut state,
+            rpc(
+                json!({"id": 7, "method": "item/commandExecution/requestApproval", "params": {
+                "threadId": "t1", "turnId": "turn-1", "itemId": "call-1", "command": "touch b1.txt",
+                "cwd": "/tmp", "reason": "write outside the sandbox",
+                "availableDecisions": ["accept", "acceptForSession", "cancel"]}}),
+            ),
+        );
+        let ask = state.shared().asks().open_asks()[0].key.clone();
+        let stepped = Codex::step(
+            &mut state,
+            Event::Input(wire::Input::new(
+                b"a1".to_vec(),
+                wire::CodexInput {
+                    of: Some(wire::codex_input::Of::Answer(wire::CodexAnswer {
+                        ask_key: ask,
+                        of: Some(wire::codex_answer::Of::Approve(decision as i32)),
+                    })),
+                },
+            )),
+        );
+        assert!(
+            writes(&stepped.effects)
+                .iter()
+                .any(|write| write["id"] == 7),
+            "{decision:?} is sent: {:?}",
+            stepped.effects
+        );
+        assert_eq!(Codex::holds(&state).session_grant, held, "{decision:?}");
+        Codex::step(&mut state, Event::ProviderExit { code: Some(0) });
+        assert!(Codex::holds(&state).nothing());
+    }
+}

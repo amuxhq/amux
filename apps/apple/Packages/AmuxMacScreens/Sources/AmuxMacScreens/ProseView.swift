@@ -16,7 +16,7 @@ struct ProseView: View {
                 Block(block: block)
             }
         }
-        .font(.system(size: 14))
+        .font(.ui(.prose))
         .lineSpacing(4.5)
         .foregroundStyle(quiet ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
         .textSelection(.enabled)
@@ -48,7 +48,7 @@ private struct Block: View {
         switch block {
         case .heading(let level, let text):
             Text(Inline.styled(text))
-                .font(.system(size: level <= 1 ? 18 : level == 2 ? 15.5 : 14, weight: .semibold))
+                .font(.ui(level <= 1 ? .proseHeading : level == 2 ? .proseSubheading : .prose, weight: .semibold))
                 .padding(.top, 4)
         case .paragraph(let text):
             Text(Inline.styled(text)).fixedSize(horizontal: false, vertical: true)
@@ -88,7 +88,7 @@ private struct Block: View {
                     }
                 }
             }
-            .font(.system(size: 12.5))
+            .font(.ui(.callout))
         case .rule:
             Divider()
         }
@@ -102,7 +102,7 @@ enum Inline {
     static func styled(_ text: AttributedString) -> AttributedString {
         var text = text
         for run in text.runs where run.inlinePresentationIntent?.contains(.code) == true {
-            text[run.range].font = .system(size: 12.5, design: .monospaced)
+            text[run.range].font = .mono(.callout)
             text[run.range].backgroundColor = Palette.well
         }
         return text
@@ -121,7 +121,7 @@ private struct CodeBlock: View {
         VStack(alignment: .leading, spacing: 0) {
             if let language, !language.isEmpty {
                 HStack {
-                    Text(language).font(.system(size: 11.5)).foregroundStyle(.tertiary)
+                    Text(language).font(.ui(.small)).foregroundStyle(.tertiary)
                     Spacer()
                     copy.opacity(hovering ? 1 : 0)
                 }
@@ -132,7 +132,7 @@ private struct CodeBlock: View {
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(text)
-                    .font(.system(size: 12.5, design: .monospaced))
+                    .font(.mono(.callout))
                     .lineSpacing(3)
                     .fixedSize()
                     .padding(.horizontal, 14)
@@ -145,8 +145,8 @@ private struct CodeBlock: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.well))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Palette.line))
+        .background(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).fill(Palette.well))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(Palette.line))
         .onHover { inside in
             hovering = inside
             if !inside { copied = false }

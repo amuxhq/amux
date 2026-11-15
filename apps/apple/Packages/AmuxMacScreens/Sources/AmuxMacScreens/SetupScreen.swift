@@ -159,13 +159,13 @@ public struct SetupScreen: View {
         VStack(spacing: 0) {
             VStack(spacing: 10) {
                 Image(systemName: symbol(step))
-                    .font(.system(size: 46, weight: .light))
+                    .font(.ui(.hero, weight: .light))
                     .foregroundStyle(.tint)
                     .symbolRenderingMode(.hierarchical)
                     .frame(height: 56)
                     .padding(.bottom, 6)
                 Text(title(step))
-                    .font(.system(size: 26, weight: .bold))
+                    .font(.ui(.display, weight: .bold))
                     .multilineTextAlignment(.center)
             }
             .padding(.top, 44)
@@ -350,7 +350,7 @@ private struct PairPhone: View {
                 .frame(width: 196, height: 196)
                 .accessibilityLabel("A code that opens amux on your iPhone, or the App Store")
         } else {
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: Radius.sheet)
                 .fill(.quaternary)
                 .frame(width: 196, height: 196)
                 .overlay { ProgressView() }
@@ -420,8 +420,8 @@ private struct QRCode: View {
                 .resizable()
                 .scaledToFit()
                 .padding(12)
-                .background(.white, in: RoundedRectangle(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.separator))
+                .background(.white, in: RoundedRectangle(cornerRadius: Radius.sheet))
+                .overlay(RoundedRectangle(cornerRadius: Radius.sheet).strokeBorder(.separator))
         }
     }
 

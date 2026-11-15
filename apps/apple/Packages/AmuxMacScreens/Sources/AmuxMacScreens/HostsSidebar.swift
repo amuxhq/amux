@@ -57,11 +57,11 @@ struct HostRow: View {
                 }
             VStack(alignment: .leading, spacing: 2) {
                 Text(PlaceNames.host(host.name))
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.ui(.body, weight: .medium))
                     .foregroundStyle(host.local || HostWords.online(host) ? .primary : .secondary)
                     .lineLimit(1)
                 Text(HostWords.reach(host))
-                    .font(.system(size: 12))
+                    .font(.ui(.meta))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -70,7 +70,7 @@ struct HostRow: View {
         .padding(.horizontal, 8)
         .frame(height: 48)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.well, style: .continuous)
                 .fill(selected ? Palette.selection : (hovering ? Palette.hover : .clear)))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }

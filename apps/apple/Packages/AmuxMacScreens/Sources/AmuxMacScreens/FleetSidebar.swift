@@ -213,7 +213,7 @@ struct FleetSidebar: View {
                 Icon("chevron-left", size: 14)
                     .foregroundStyle(.secondary)
                     .frame(width: 18)
-                Text("Settled").font(.system(size: 13, weight: .semibold))
+                Text("Settled").font(.ui(.body, weight: .semibold))
                 Spacer()
             }
             .padding(.horizontal, 8)
@@ -289,7 +289,7 @@ struct FleetRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(row.name)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.ui(.body, weight: .medium))
                         .foregroundStyle(dimmed ? .secondary : .primary)
                         .lineLimit(1)
                     Spacer(minLength: 4)
@@ -298,7 +298,7 @@ struct FleetRowView: View {
                 .frame(height: 17)
                 HStack(spacing: 4) {
                     Text(second.text)
-                        .font(.system(size: 12))
+                        .font(.ui(.meta))
                         .foregroundStyle(second.color)
                         .lineLimit(1)
                     Spacer(minLength: 0)
@@ -313,7 +313,7 @@ struct FleetRowView: View {
         .padding(.trailing, 8)
         .frame(height: 48)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.well, style: .continuous)
                 .fill(selected ? Palette.selection : (hovering ? Palette.hover : .clear)))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -349,7 +349,7 @@ struct FleetRowView: View {
             }
         } else {
             Text(row.age(at: now))
-                .font(.system(size: 11.5))
+                .font(.ui(.small))
                 .foregroundStyle(.tertiary)
                 .monospacedDigit()
         }
@@ -364,7 +364,7 @@ struct FleetRowView: View {
                     Text("\(row.children)").monospacedDigit()
                     Icon(row.expanded ? "chevron-down" : "chevron-right", size: 10)
                 }
-                .font(.system(size: 11))
+                .font(.ui(.caption))
                 .foregroundStyle(.tertiary)
                 .padding(.horizontal, 4)
                 .frame(height: 15)
@@ -453,7 +453,7 @@ private struct SettledFoot: View {
                     Icon("chevron-right", size: 12)
                         .foregroundStyle(.tertiary)
                 }
-                .font(.system(size: 13))
+                .font(.ui(.body))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
                 .frame(height: 30)
@@ -482,7 +482,7 @@ struct SearchField: View {
                 .frame(width: 18)
             field
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(.ui(.body))
                 .onExitCommand { text = "" }
             if !text.isEmpty {
                 Button {
@@ -493,13 +493,13 @@ struct SearchField: View {
                 .buttonStyle(.plain)
                 .help("Clear")
             } else if !isFocused {
-                Text("⌘F").font(.system(size: 11.5)).foregroundStyle(.tertiary)
+                Text("⌘F").font(.ui(.small)).foregroundStyle(.tertiary)
             }
         }
         .padding(.horizontal, 8)
         .frame(height: 28)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.row, style: .continuous)
                 .fill(isFocused || !text.isEmpty ? Palette.well : (hovering ? Palette.hover : .clear)))
         .onHover { hovering = $0 }
     }
@@ -534,10 +534,10 @@ private struct FinishSettingUp: View {
             .buttonStyle(.borderless)
             .help("Dismiss")
         }
-        .font(.system(size: 12))
+        .font(.ui(.meta))
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.well))
+        .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.well))
         .padding(.horizontal, 10)
         .padding(.bottom, 6)
     }

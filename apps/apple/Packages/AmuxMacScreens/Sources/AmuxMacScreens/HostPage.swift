@@ -35,7 +35,7 @@ public struct HostPage: View {
                 HStack(spacing: 14) {
                     HostTile(host: host, size: 52)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(PlaceNames.host(host.name)).font(.system(size: 22, weight: .semibold))
+                        Text(PlaceNames.host(host.name)).font(.ui(.heading, weight: .semibold))
                         Text(HostWords.reach(host)).foregroundStyle(.secondary)
                     }
                 }
@@ -64,7 +64,7 @@ public struct HostPage: View {
                     group("Network") {
                         ForEach(host.addrs, id: \.self) { address in
                             Text(address)
-                                .font(.system(size: 12.5, design: .monospaced))
+                                .font(.mono(.callout))
                                 .textSelection(.enabled)
                                 .padding(.horizontal, 14)
                                 .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
@@ -99,9 +99,9 @@ public struct HostPage: View {
                         }
                 }
             }
-            .font(.system(size: 13))
+            .font(.ui(.body))
             .frame(maxWidth: 620, alignment: .leading)
-            .padding(.horizontal, 32)
+            .padding(.horizontal, Metrics.gutter)
             .padding(.vertical, 28)
             .frame(maxWidth: .infinity)
         }
@@ -121,11 +121,11 @@ public struct HostPage: View {
     /// desktop settings pane groups them.
     private func group(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).padding(.leading, 2)
+            Text(title).font(.ui(.meta, weight: .medium)).foregroundStyle(.secondary).padding(.leading, 2)
             Separated { content() }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.well))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Palette.line))
+                .background(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).fill(Palette.well))
+                .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(Palette.line))
         }
     }
 }

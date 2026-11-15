@@ -14,6 +14,10 @@ enum Metrics {
     static let windowButtons: CGFloat = 78
     /// The chat and composer's widest line, as the references read.
     static let reading: CGFloat = 760
+    /// The room either side of a page's column.
+    static let gutter: CGFloat = 32
+    /// A round button's side: send, stop, attach.
+    static let control: CGFloat = 28
 }
 
 /// The window's colours, one philosophy taken from amux's icon: its
@@ -162,7 +166,7 @@ struct HoverButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.row, style: .continuous)
                     .fill(
                         configuration.isPressed
                             ? Palette.pressed : (hovering || active ? Palette.hover : .clear)))
@@ -214,10 +218,10 @@ struct SidebarAction: View {
                 Icon(symbol, size: 15)
                     .foregroundStyle(.secondary)
                     .frame(width: 18)
-                Text(title).font(.system(size: 13))
+                Text(title).font(.ui(.body))
                 Spacer(minLength: 4)
                 if let shortcut {
-                    Text(shortcut).font(.system(size: 11.5)).foregroundStyle(.tertiary)
+                    Text(shortcut).font(.ui(.small)).foregroundStyle(.tertiary)
                 }
             }
             .padding(.horizontal, 8)
@@ -234,7 +238,7 @@ struct SectionTitle: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 12))
+            .font(.ui(.meta))
             .foregroundStyle(.secondary)
             .padding(.leading, 8)
             .padding(.top, 14)
@@ -311,17 +315,17 @@ struct PillButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: small ? 12 : 13, weight: prominent ? .medium : .regular))
+            .font(.ui(small ? .meta : .body, weight: prominent ? .medium : .regular))
             .lineLimit(1)
             .foregroundStyle(
                 prominent ? Color(nsColor: .textBackgroundColor) : (destructive ? Palette.failure : Color.primary))
             .padding(.horizontal, small ? 10 : 12)
             .frame(height: small ? 24 : 28)
             .background(
-                RoundedRectangle(cornerRadius: small ? 6 : 7, style: .continuous)
+                RoundedRectangle(cornerRadius: small ? Radius.row : Radius.tile, style: .continuous)
                     .fill(prominent ? Color.primary : Color.primary.opacity(hovering ? 0.1 : 0.065)))
             .opacity(configuration.isPressed ? 0.75 : (enabled ? 1 : 0.45))
-            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
             .onHover { hovering = $0 }
     }
 }

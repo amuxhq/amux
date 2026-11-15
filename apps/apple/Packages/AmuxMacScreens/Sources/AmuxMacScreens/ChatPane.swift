@@ -102,7 +102,7 @@ private struct Feed: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if let older = chat.olderNotice {
-                    Text(older).font(.system(size: 12)).foregroundStyle(.tertiary)
+                    Text(older).font(.ui(.meta)).foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity)
                         .padding(.bottom, 12)
                 }
@@ -120,7 +120,7 @@ private struct Feed: View {
                     VStack(alignment: .trailing, spacing: 2) {
                         PromptBubble(text: ChatWords.text(of: prompt.text), steered: false)
                         Text(ChatWords.underway(prompt.underway, host: host))
-                            .font(.system(size: 11))
+                            .font(.ui(.caption))
                             .foregroundStyle(.tertiary)
                     }
                     .padding(.bottom, 12)
@@ -128,7 +128,7 @@ private struct Feed: View {
                 ActivityLine(chat: chat)
             }
             .frame(maxWidth: Metrics.reading)
-            .padding(.horizontal, 32)
+            .padding(.horizontal, Metrics.gutter)
             .padding(.top, roomAbove ? 52 : 24)
             .padding(.bottom, 12)
             .frame(maxWidth: .infinity)
@@ -158,12 +158,12 @@ private struct Feed: View {
                         Icon("arrow-down", size: 12)
                         Text(chat.frame?.arrivalsHeld == true ? "New activity" : "Latest")
                     }
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.ui(.meta, weight: .medium))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Capsule().fill(Palette.raised))
                         .overlay(Capsule().strokeBorder(Palette.line))
-                        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                        .elevation(.raised)
                 }
                 .buttonStyle(.plain)
                 .padding(.bottom, 10)
@@ -177,7 +177,7 @@ private struct Feed: View {
                 ProgressView().controlSize(.small)
                 Text("Loading this chat from \(host)…").foregroundStyle(.secondary)
             }
-            .font(.system(size: 13))
+            .font(.ui(.body))
             .frame(maxWidth: .infinity)
             .padding(.top, 40)
         }
@@ -242,13 +242,13 @@ private struct ActivityLine: View {
                     Working(size: 11)
                     Text(parts.words).foregroundStyle(.secondary)
                     if let subject = parts.subject {
-                        Text(subject).font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
+                        Text(subject).font(.mono(.meta)).foregroundStyle(.secondary)
                     }
                     if let time = parts.time {
                         Text(time).foregroundStyle(.tertiary).monospacedDigit()
                     }
                 }
-                .font(.system(size: 12.5))
+                .font(.ui(.callout))
                 .padding(.top, 2)
                 .padding(.bottom, 8)
             }
@@ -272,11 +272,11 @@ private struct Footer: View {
                 AskCardView(card: ask, chat: chat)
             }
             if let notice = chat.notice {
-                Text(notice).font(.system(size: 12)).foregroundStyle(Palette.failure)
+                Text(notice).font(.ui(.meta)).foregroundStyle(Palette.failure)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if let ended = chat.frame?.ended {
-                Text(ended).font(.system(size: 12.5)).foregroundStyle(.secondary)
+                Text(ended).font(.ui(.callout)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 8)
             } else {
@@ -284,7 +284,7 @@ private struct Footer: View {
             }
         }
         .frame(maxWidth: Metrics.reading)
-        .padding(.horizontal, 32)
+        .padding(.horizontal, Metrics.gutter)
         .padding(.bottom, 18)
         .frame(maxWidth: .infinity)
         .padding(.trailing, trailing)
@@ -311,12 +311,12 @@ private struct QueueList: View {
                         Button("Take Back") { chat.withdraw(queued) }.buttonStyle(.link)
                     }
                 }
-                .font(.system(size: 12))
+                .font(.ui(.meta))
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.well))
+        .background(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).fill(Palette.well))
     }
 }
 
@@ -337,7 +337,7 @@ private struct WorkedLine: View {
                     Icon(open ? "chevron-down" : "chevron-right", size: 12)
                         .foregroundStyle(.tertiary)
                 }
-                .font(.system(size: 13))
+                .font(.ui(.body))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -384,7 +384,7 @@ private struct AnswerFoot: View {
                             Text("+\(files.reduce(0) { $0 + $1.added })").foregroundStyle(Palette.added)
                             Text("−\(files.reduce(0) { $0 + $1.removed })").foregroundStyle(Palette.removed)
                         }
-                        .font(.system(size: 12))
+                        .font(.ui(.meta))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                         .padding(.horizontal, 6)

@@ -71,7 +71,7 @@ struct FloatingCard: View {
                 Divider().padding(.horizontal, 10)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Lineage")
-                        .font(.system(size: 11.5))
+                        .font(.ui(.small))
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 16)
                         .padding(.top, 8)
@@ -107,11 +107,11 @@ struct FloatingCard: View {
                 }
             }
         }
-        .font(.system(size: 12.5))
+        .font(.ui(.callout))
         .frame(width: Self.width)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.raised))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.line))
-        .shadow(color: .black.opacity(0.1), radius: 14, y: 6)
+        .background(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).fill(Palette.raised))
+        .overlay(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).strokeBorder(Palette.line))
+        .elevation(.floating)
     }
 
     private func group(@ViewBuilder _ content: () -> some View) -> some View {
@@ -163,12 +163,12 @@ struct FloatingPill: View {
                 Icon("diff", size: 13).foregroundStyle(.secondary)
                 ChangeCounts(changes: changes)
             }
-            .font(.system(size: 12))
+            .font(.ui(.meta))
             .padding(.horizontal, 10)
             .frame(height: 28)
             .background(Capsule().fill(Palette.raised))
             .overlay(Capsule().strokeBorder(Palette.line))
-            .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+            .elevation(.raised)
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)

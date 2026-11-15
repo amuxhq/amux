@@ -146,7 +146,7 @@ struct ChatRow: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxWidth: 420, maxHeight: 320, alignment: .leading)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.well, style: .continuous))
                         .padding(.leading, GridLine.text)
                         .padding(.bottom, 10)
                 }
@@ -160,7 +160,7 @@ struct ChatRow: View {
             askRow(ask)
         case .turnEnd(let failed, let durationMs):
             Text(ChatWords.turnEnd(durationMs: durationMs, failed: failed))
-                .font(.system(size: 12))
+                .font(.ui(.meta))
                 .foregroundStyle(failed ? AnyShapeStyle(Palette.failure) : AnyShapeStyle(.tertiary))
                 .padding(.bottom, 18)
         case .stopped:
@@ -242,7 +242,7 @@ struct ChatRow: View {
                     note: note)
                 ProseView(source: body, streaming: writing, quiet: false)
                     .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.well))
+                    .background(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).fill(Palette.well))
                     .padding(.leading, GridLine.text)
                     .padding(.bottom, 12)
             }
@@ -370,11 +370,11 @@ struct GridLine: View {
             VStack(alignment: .leading, spacing: 4) {
                 line
                 if let note {
-                    Text(note).font(.system(size: 12, design: codeNote ? .monospaced : .default))
+                    Text(note).font(codeNote ? .mono(.meta) : .ui(.meta))
                         .foregroundStyle(.secondary).lineLimit(3)
                 }
                 if let quote {
-                    Text("“\(quote)”").font(.system(size: 12)).italic().foregroundStyle(.secondary)
+                    Text("“\(quote)”").font(.ui(.meta)).italic().foregroundStyle(.secondary)
                 }
                 if !output.isEmpty { outputBlock }
                 if let detail { detailBlock(detail) }
@@ -419,7 +419,7 @@ struct GridLine: View {
             }
             if !subject.isEmpty {
                 Text(subject)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.mono(.meta))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(headTruncation ? .head : .tail)
@@ -436,21 +436,21 @@ struct GridLine: View {
                     .foregroundStyle(hovering ? .secondary : .tertiary)
             }
         }
-        .font(.system(size: 13))
+        .font(.ui(.body))
         .frame(minHeight: 18)
     }
 
     private var outputBlock: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(output.joined(separator: "\n"))
-                .font(.system(size: 11.5, design: .monospaced))
+                .font(.mono(.small))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .lineLimit(nil)
                 .fixedSize(horizontal: false, vertical: true)
             if more > 0 || trimmed {
                 Text(more > 0 ? "… \(more) more lines" : "…")
-                    .font(.system(size: 11))
+                    .font(.ui(.caption))
                     .foregroundStyle(.tertiary)
                     .padding(.top, 2)
             }
@@ -458,26 +458,26 @@ struct GridLine: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.well))
+        .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.well))
     }
 
     @ViewBuilder private func detailBlock(_ text: String) -> some View {
         if prose {
             Text(text)
-                .font(.system(size: 13))
+                .font(.ui(.body))
                 .foregroundStyle(.secondary)
                 .lineLimit(detailLines)
                 .textSelection(.enabled)
         } else {
             Text(text)
-                .font(.system(size: 11.5, design: .monospaced))
+                .font(.mono(.small))
                 .foregroundStyle(.secondary)
                 .lineLimit(detailLines)
                 .textSelection(.enabled)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.well))
+                .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.well))
         }
     }
 }
@@ -492,15 +492,15 @@ struct PromptBubble: View {
             Spacer(minLength: 80)
             VStack(alignment: .trailing, spacing: 4) {
                 Text(text)
-                    .font(.system(size: 13.5))
+                    .font(.ui(.bubble))
                     .textSelection(.enabled)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
-                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.raised))
+                    .background(RoundedRectangle(cornerRadius: Radius.composer, style: .continuous).fill(Palette.raised))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Palette.line.opacity(0.5)))
+                        RoundedRectangle(cornerRadius: Radius.composer, style: .continuous).strokeBorder(Palette.line.opacity(0.5)))
                 if steered {
-                    Text("steered").font(.system(size: 11)).foregroundStyle(.tertiary)
+                    Text("steered").font(.ui(.caption)).foregroundStyle(.tertiary)
                 }
             }
         }
@@ -515,7 +515,7 @@ struct Rule: View {
     var body: some View {
         HStack(spacing: 10) {
             Rectangle().fill(Palette.line).frame(height: 1)
-            Text(label).font(.system(size: 11)).foregroundStyle(.tertiary).fixedSize()
+            Text(label).font(.ui(.caption)).foregroundStyle(.tertiary).fixedSize()
             Rectangle().fill(Palette.line).frame(height: 1)
         }
         .padding(.vertical, 12)

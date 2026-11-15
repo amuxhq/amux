@@ -238,7 +238,7 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
                 if content.updateReady {
                     Button("Restart to Update") { actions.restartToUpdate() }
                         .buttonStyle(.borderless)
-                        .font(.system(size: 12))
+                        .font(.ui(.meta))
                         .foregroundStyle(.secondary)
                 }
                 if place.surface == .agents, let agent = place.agent {
@@ -293,10 +293,10 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
             }
-            .font(.system(size: 13))
+            .font(.ui(.body))
             .help("\(PlaceNames.host(row.hostName)) · \(PlaceNames.path(row.workingDirectory))")
         } else if place.surface == .agents, place.agent == nil {
-            Text("New Agent").font(.system(size: 13, weight: .medium))
+            Text("New Agent").font(.ui(.body, weight: .medium))
         }
     }
 

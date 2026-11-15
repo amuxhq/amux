@@ -20,7 +20,7 @@ public struct ChangesPane: View {
             TopBar(height: bar) {
                 comparison
                 Spacer(minLength: 6)
-                ChangeCounts(changes: chat.changes).font(.system(size: 12))
+                ChangeCounts(changes: chat.changes).font(.ui(.meta))
                 BarButton(symbol: "refresh-cw", help: "Read the changes again", size: 12) {
                     chat.loadReview(keepingComments: false)
                 }
@@ -47,7 +47,7 @@ public struct ChangesPane: View {
         let label = HStack(spacing: 5) {
             Icon("git-branch", size: 13).foregroundStyle(.secondary)
             Text(Self.compared(chat.comparison, base: chat.base))
-                .font(.system(size: 13, weight: .medium))
+                .font(.ui(.body, weight: .medium))
                 .lineLimit(1)
         }
         if chat.comparisons.count > 1 {
@@ -135,7 +135,7 @@ private struct ReviewView: View {
                     Button(ChatWords.attachReview(review.count), action: attach)
                         .buttonStyle(PillButtonStyle(prominent: true, small: true))
                 }
-                .font(.system(size: 12))
+                .font(.ui(.meta))
                 .padding(10)
             }
         }
@@ -144,12 +144,12 @@ private struct ReviewView: View {
     @ViewBuilder private func hunks(_ file: ReviewFile, _ index: Int) -> some View {
         ForEach(file.comments, id: \.self) { comment in Comment(text: comment) }
         if file.binary {
-            Text("Binary file").font(.system(size: 12)).foregroundStyle(.tertiary).padding(12)
+            Text("Binary file").font(.ui(.meta)).foregroundStyle(.tertiary).padding(12)
         }
         ForEach(Array(file.hunks.enumerated()), id: \.offset) { hunkIndex, hunk in
             if hunk.skips || !hunk.scope.isEmpty {
                 Text(hunk.scope.isEmpty ? "⋯" : hunk.scope)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.mono(.caption))
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .padding(.horizontal, 10)
@@ -203,7 +203,7 @@ private struct FileHeader: View {
                 Text("+\(file.added)").foregroundStyle(Palette.added).monospacedDigit()
                 Text("−\(file.removed)").foregroundStyle(Palette.removed).monospacedDigit()
             }
-            .font(.system(size: 11.5))
+            .font(.ui(.small))
             .padding(.horizontal, 10)
             .frame(height: 30)
             .background(Palette.content)
@@ -226,7 +226,7 @@ private struct FileName: View {
         (Text(from.map { "\($0) → " } ?? "").foregroundStyle(.tertiary)
             + Text(folder.isEmpty ? "" : folder + "/").foregroundStyle(.secondary)
             + Text(name).foregroundStyle(.primary).fontWeight(.medium))
-            .font(.system(size: 12))
+            .font(.ui(.meta))
             .lineLimit(1)
             .truncationMode(.head)
     }
@@ -249,7 +249,7 @@ private struct DiffLineView: View {
                 .padding(.trailing, 6)
             PatchText(kind: line.kind, text: line.text)
         }
-        .font(.system(size: 11, design: .monospaced))
+        .font(.mono(.caption))
         .background(selected ? Palette.selection : (hovering ? Palette.hover : .clear))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -266,10 +266,10 @@ private struct Comment: View {
             Text(text).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-        .font(.system(size: 12))
+        .font(.ui(.meta))
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.raised))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.line))
+        .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.raised))
+        .overlay(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).strokeBorder(Palette.line))
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
     }
@@ -298,10 +298,10 @@ private struct Writer: View {
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .font(.system(size: 12))
+        .font(.ui(.meta))
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.raised))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.accent.opacity(0.5)))
+        .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.raised))
+        .overlay(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).strokeBorder(Palette.accent.opacity(0.5)))
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .onAppear { focused = true }

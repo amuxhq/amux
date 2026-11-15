@@ -33,7 +33,7 @@ struct Composer: View {
             }
             TextField(placeholder, text: draft, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 14))
+                .font(.ui(.prose))
                 .lineLimit(1...12)
                 .focused($focused)
                 .padding(.horizontal, 16)
@@ -49,11 +49,11 @@ struct Composer: View {
                 }
             controls
         }
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.raised))
+        .background(RoundedRectangle(cornerRadius: Radius.composer, style: .continuous).fill(Palette.raised))
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.composer, style: .continuous)
                 .strokeBorder(dropping ? Palette.accent : (focused ? Color.primary.opacity(0.14) : Palette.line)))
-        .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
+        .elevation(.raised)
         .onTapGesture { focused = true }
         .onAppear { focused = true }
         .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
@@ -69,7 +69,7 @@ struct Composer: View {
             Button(action: pickFiles) {
                 Icon("plus", size: 16)
                     .foregroundStyle(.secondary)
-                    .frame(width: 28, height: 28)
+                    .frame(width: Metrics.control, height: Metrics.control)
                     .contentShape(Rectangle())
             }
             .buttonStyle(HoverButtonStyle())
@@ -93,7 +93,7 @@ struct Composer: View {
                     }
                 }
                 .foregroundStyle(stopping || ready ? Color(nsColor: .textBackgroundColor) : Color.secondary)
-                .frame(width: 28, height: 28)
+                .frame(width: Metrics.control, height: Metrics.control)
                 .background(Circle().fill(stopping || ready ? Color.primary : Color.primary.opacity(0.1)))
                 .contentShape(Circle())
             }
@@ -273,8 +273,8 @@ struct Composer: View {
                     chat.pick(match)
                 } label: {
                     HStack(spacing: 8) {
-                        Text(ChatWords.command(match.command)).font(.system(size: 12.5, design: .monospaced))
-                        Text(match.command.description).font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text(ChatWords.command(match.command)).font(.mono(.callout))
+                        Text(match.command.description).font(.ui(.meta)).foregroundStyle(.secondary)
                             .lineLimit(1)
                         Spacer()
                     }
@@ -304,7 +304,7 @@ private struct ChipLabel: View {
             Text(text).lineLimit(1)
             if menu { Icon("chevron-down", size: 11).opacity(0.7) }
         }
-        .font(.system(size: 12.5))
+        .font(.ui(.callout))
         .foregroundStyle(tint)
         .padding(.horizontal, 8)
         .frame(height: 28)
@@ -327,9 +327,9 @@ private struct Chip: View {
             .buttonStyle(.plain)
             .help("Remove")
         }
-        .font(.system(size: 12))
+        .font(.ui(.meta))
         .padding(.horizontal, 8)
         .frame(height: 24)
-        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Palette.well))
+        .background(RoundedRectangle(cornerRadius: Radius.row, style: .continuous).fill(Palette.well))
     }
 }

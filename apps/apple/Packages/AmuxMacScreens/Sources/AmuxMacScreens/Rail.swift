@@ -48,9 +48,9 @@ private struct Mark: View {
         Image(nsImage: Self.image)
             .resizable()
             .interpolation(.high)
-            .frame(width: 28, height: 28)
-            .clipShape(RoundedRectangle(cornerRadius: 7.5, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 7.5, style: .continuous).strokeBorder(Color.white.opacity(0.08)))
+            .frame(width: Metrics.control, height: Metrics.control)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous).strokeBorder(Color.white.opacity(0.08)))
             .accessibilityHidden(true)
     }
 
@@ -73,17 +73,17 @@ private struct RailButton: View {
                 .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                 .frame(width: 38, height: 38)
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
                         .fill(selected ? Palette.raised : (hovering ? Palette.hover : .clear))
                         .shadow(color: .black.opacity(selected ? 0.18 : 0), radius: 2, y: 1))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
                         .strokeBorder(selected ? Palette.line : .clear))
                 .contentShape(Rectangle())
                 .overlay(alignment: .topTrailing) {
                     if badge > 0 {
                         Text("\(badge)")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.ui(.badge, weight: .bold))
                             .monospacedDigit()
                             .foregroundStyle(.white)
                             .padding(.horizontal, 4.5)

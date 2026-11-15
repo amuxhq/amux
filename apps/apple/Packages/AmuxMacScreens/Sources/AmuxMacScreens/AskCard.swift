@@ -20,10 +20,10 @@ struct AskCardView: View {
                 Text(ChatWords.headline(card)).fontWeight(.semibold)
                 Spacer()
                 if let position = ChatWords.position(card) {
-                    Text(position).foregroundStyle(.tertiary).font(.system(size: 12))
+                    Text(position).foregroundStyle(.tertiary).font(.ui(.meta))
                 }
             }
-            .font(.system(size: 13))
+            .font(.ui(.body))
             content
             state
             if case .question(let questions) = card.body {
@@ -33,8 +33,8 @@ struct AskCardView: View {
             }
         }
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.raised))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.you.opacity(0.5)))
+        .background(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).fill(Palette.raised))
+        .overlay(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).strokeBorder(Palette.you.opacity(0.5)))
         .onChange(of: card.key, initial: true) { _, _ in reset() }
     }
 
@@ -59,16 +59,16 @@ struct AskCardView: View {
             }
             Mono(text: command)
             if !cwd.isEmpty {
-                Text("in \(PlaceNames.path(cwd))").font(.system(size: 11)).foregroundStyle(.tertiary)
+                Text("in \(PlaceNames.path(cwd))").font(.ui(.caption)).foregroundStyle(.tertiary)
             }
         case .edit(let path, _, let added, let removed, let lines, let reason, _, _):
             if !reason.isEmpty { Text(reason).foregroundStyle(.secondary) }
             HStack(spacing: 6) {
-                Text(path).font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.head)
+                Text(path).font(.mono(.meta)).lineLimit(1).truncationMode(.head)
                 Text("+\(added)").foregroundStyle(Palette.added)
                 Text("−\(removed)").foregroundStyle(Palette.removed)
             }
-            .font(.system(size: 12))
+            .font(.ui(.meta))
             Patch(lines: lines)
         case .tool(_, _, let arguments):
             if !arguments.isEmpty { Mono(text: arguments, lines: 12) }
@@ -86,7 +86,7 @@ struct AskCardView: View {
         case .plan(let body, let title):
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    if let title { Text(title).font(.system(size: 15, weight: .semibold)) }
+                    if let title { Text(title).font(.ui(.title, weight: .semibold)) }
                     ProseView(source: body, streaming: false, quiet: false)
                 }
                 .padding(.trailing, 8)
@@ -94,10 +94,10 @@ struct AskCardView: View {
             .frame(maxHeight: 280)
         case .form(_, let message, let fields):
             Text(message).foregroundStyle(.secondary)
-            Text(fields.map(\.title).joined(separator: ", ")).font(.system(size: 12)).foregroundStyle(.tertiary)
+            Text(fields.map(\.title).joined(separator: ", ")).font(.ui(.meta)).foregroundStyle(.tertiary)
         case .link(_, let message, let url, _):
             Text(message).foregroundStyle(.secondary)
-            if let link = URL(string: url) { Link(url, destination: link).font(.system(size: 12)) }
+            if let link = URL(string: url) { Link(url, destination: link).font(.ui(.meta)) }
         case .access(let reason, let read, let write, let network, let hosts):
             if !reason.isEmpty { Text(reason).foregroundStyle(.secondary) }
             VStack(alignment: .leading, spacing: 2) {
@@ -105,11 +105,11 @@ struct AskCardView: View {
                 if !write.isEmpty { Text("Write \(write.joined(separator: ", "))") }
                 if network { Text(hosts.isEmpty ? "Network" : "Network to \(hosts.joined(separator: ", "))") }
             }
-            .font(.system(size: 12, design: .monospaced))
+            .font(.mono(.meta))
         case .unanswerable(let reason):
             Text(reason).foregroundStyle(.secondary)
             Text("Answer it in the agent's own terminal, or stop it.")
-                .font(.system(size: 12))
+                .font(.ui(.meta))
                 .foregroundStyle(.tertiary)
         }
     }
@@ -121,11 +121,11 @@ struct AskCardView: View {
                 ProgressView().controlSize(.mini)
                 Text("Sending…").foregroundStyle(.secondary)
             }
-            .font(.system(size: 12))
+            .font(.ui(.meta))
         case .rejected(let refusal):
-            Text(refusal.detail ?? "The answer was refused").font(.system(size: 12)).foregroundStyle(Palette.failure)
+            Text(refusal.detail ?? "The answer was refused").font(.ui(.meta)).foregroundStyle(Palette.failure)
         case .notConfirmed:
-            Text("The answer may not have arrived").font(.system(size: 12)).foregroundStyle(Palette.caution)
+            Text("The answer may not have arrived").font(.ui(.meta)).foregroundStyle(Palette.caution)
         case .open, .dismissed:
             EmptyView()
         }
@@ -213,7 +213,7 @@ private struct Question: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(option.label)
                             if !option.description.isEmpty {
-                                Text(option.description).font(.system(size: 12)).foregroundStyle(.secondary)
+                                Text(option.description).font(.ui(.meta)).foregroundStyle(.secondary)
                             }
                         }
                         Spacer(minLength: 0)
@@ -226,7 +226,7 @@ private struct Question: View {
                 TextField("Something else", text: $other).textFieldStyle(.roundedBorder)
             }
         }
-        .font(.system(size: 13))
+        .font(.ui(.body))
     }
 
     private func mark(_ number: UInt32) -> String {
@@ -243,13 +243,13 @@ private struct Mono: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 12, design: .monospaced))
+            .font(.mono(.meta))
             .lineLimit(lines)
             .textSelection(.enabled)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.well))
+            .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.well))
     }
 }
 
@@ -263,7 +263,7 @@ private struct Patch: View {
                 ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                     switch line {
                     case .file(let file):
-                        Text(file.path).font(.system(size: 11, weight: .semibold)).padding(.vertical, 4)
+                        Text(file.path).font(.ui(.caption, weight: .semibold)).padding(.vertical, 4)
                     case .hunk:
                         Rectangle().fill(Palette.line).frame(height: 1).padding(.vertical, 4)
                     case .line(let patch):
@@ -274,7 +274,7 @@ private struct Patch: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxHeight: 220)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.well))
+        .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.well))
     }
 }
 
@@ -289,7 +289,7 @@ struct PatchText: View {
             Text(text).lineLimit(1)
             Spacer(minLength: 0)
         }
-        .font(.system(size: 11.5, design: .monospaced))
+        .font(.mono(.small))
         .padding(.vertical, 1)
         .background(tint)
     }

@@ -77,7 +77,7 @@ public struct NewAgentPage: View {
         VStack(spacing: 0) {
             Spacer(minLength: 40)
             Text(heading)
-                .font(.system(size: 22, weight: .medium))
+                .font(.ui(.heading, weight: .medium))
                 .multilineTextAlignment(.center)
                 .padding(.bottom, 22)
             composer
@@ -88,7 +88,7 @@ public struct NewAgentPage: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: Metrics.reading)
-        .padding(.horizontal, 32)
+        .padding(.horizontal, Metrics.gutter)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { focused = true }
         .onChange(of: chosenHost.map(HostWords.online), initial: true) { _, online in
@@ -108,7 +108,7 @@ public struct NewAgentPage: View {
                 text: Binding(get: { surface.prompt }, set: { surface.prompt = $0 }), axis: .vertical
             )
             .textFieldStyle(.plain)
-            .font(.system(size: 14))
+            .font(.ui(.prose))
             .lineLimit(3...14)
             .focused($focused)
             .padding(.horizontal, 16)
@@ -142,7 +142,7 @@ public struct NewAgentPage: View {
                                     surface.ready ? Color(nsColor: .textBackgroundColor) : Color.secondary)
                         }
                     }
-                    .frame(width: 28, height: 28)
+                    .frame(width: Metrics.control, height: Metrics.control)
                     .background(Circle().fill(surface.ready ? Color.primary : Color.primary.opacity(0.1)))
                 }
                 .buttonStyle(.plain)
@@ -152,11 +152,11 @@ public struct NewAgentPage: View {
             .padding(.horizontal, 8)
             .padding(.bottom, 8)
         }
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.raised))
+        .background(RoundedRectangle(cornerRadius: Radius.composer, style: .continuous).fill(Palette.raised))
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.composer, style: .continuous)
                 .strokeBorder(focused ? Color.primary.opacity(0.16) : Palette.line))
-        .shadow(color: .black.opacity(0.06), radius: 10, y: 3)
+        .elevation(.raised)
     }
 
     // MARK: - Where
@@ -353,7 +353,7 @@ public struct NewAgentPage: View {
                 }
             }
         }
-        .font(.system(size: 12))
+        .font(.ui(.meta))
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -380,7 +380,7 @@ private struct Pick: View {
             if let text { Text(text).lineLimit(1) }
             Icon("chevron-down", size: 11).opacity(0.7)
         }
-        .font(.system(size: 12.5))
+        .font(.ui(.callout))
         .foregroundStyle(tint)
         .padding(.horizontal, 8)
         .frame(height: 28)
@@ -417,7 +417,7 @@ public struct DirectoryChooser: View {
             HStack(spacing: 8) {
                 TextField("Or a path: ~/somewhere/else", text: Binding(get: { surface.typed }, set: { surface.typed = $0 }))
                     .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.mono(.meta))
                     .onSubmit(useTyped)
                 Button("Use", action: useTyped)
                     .disabled(typedPath.isEmpty)
@@ -473,9 +473,9 @@ public struct DirectoryChooser: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 16)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(directory.name).font(.system(size: 13))
+                    Text(directory.name).font(.ui(.body))
                     Text(PlaceNames.path(directory.path))
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.mono(.caption))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.head)
@@ -494,7 +494,7 @@ public struct DirectoryChooser: View {
 
     private func message(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12))
+            .font(.ui(.meta))
             .foregroundStyle(.secondary)
             .padding(10)
     }
@@ -504,12 +504,12 @@ public struct DirectoryChooser: View {
 private struct ChipStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 12))
+            .font(.ui(.meta))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
             .frame(height: 22)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.row, style: .continuous)
                     .fill(configuration.isPressed ? Palette.selection : Palette.well))
             .contentShape(Rectangle())
     }

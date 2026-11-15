@@ -38,6 +38,7 @@ members = [
     "crates/socket-core",
     "crates/store",
     "crates/supervisor-core",
+    "crates/workspace-core",
     "crates/testnet",
     "crates/tui",
     "crates/ui-runtime",
@@ -63,6 +64,7 @@ relay-core = { path = "crates/relay-core" }
 path-core = { path = "crates/path-core" }
 socket-core = { path = "crates/socket-core" }
 supervisor-core = { path = "crates/supervisor-core" }
+workspace-core = { path = "crates/workspace-core" }
 agent-dir = { path = "crates/agent-dir" }
 analytics = { path = "crates/analytics" }
 app-embedded = { path = "crates/app-embedded" }

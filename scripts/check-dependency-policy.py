@@ -96,7 +96,8 @@ ALLOWED_LOCAL = {
 # manifests and version stamps and shares the cores' step budget and dump
 # reasons from the ring's crate; the path machine names links and reports
 # dumps as the daemon's does; the link socket's routing core names links and
-# paths as the path machine does.
+# paths as the path machine does; the workspace lifecycle needs nothing, so
+# the daemon core composes it and its model drives it alone.
 CORES_ALLOWED_LOCAL = {
     "daemon-core": {"core-ring", "journal", "store", "wire"},
     "relay-core": {"daemon-core"},
@@ -104,6 +105,7 @@ CORES_ALLOWED_LOCAL = {
     "socket-core": {"path-core"},
     "agent-core": {"core-ring", "interpret", "journal", "wire"},
     "supervisor-core": {"core-ring", "release"},
+    "workspace-core": set(),
 }
 # The UI library and the clients built on it reach the daemon only through
 # the client seam: none of them may link, directly or through another crate,

@@ -664,6 +664,20 @@ mod tests {
         );
     }
 
+    /// The store keeps tables by version and knows no registry; each
+    /// version it declares tables for is one this build implements, with
+    /// the prefix the registry gives it.
+    #[test]
+    fn every_experiments_store_tables_belong_to_a_registered_version() {
+        for tables in store::experiments::EXPERIMENT_TABLES {
+            let experiment = settings::experiments::EXPERIMENTS
+                .iter()
+                .find(|experiment| experiment.version == tables.version)
+                .unwrap_or_else(|| panic!("{} is in no registry entry", tables.version));
+            assert_eq!(experiment.table_prefix(), tables.prefix());
+        }
+    }
+
     #[test]
     fn a_change_made_beside_the_daemon_is_noticed() {
         let dir = tempfile::tempdir().unwrap();

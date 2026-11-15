@@ -136,6 +136,10 @@ pub struct Launch {
     /// Where the profile's core is stepped by its caller; none gives it a
     /// thread of its own.
     pub cores: Option<crate::Cores>,
+    /// The experiments this daemon runs: those switched on when it started.
+    /// A change to the switch takes effect at the next start, so nothing
+    /// changes this while the daemon runs.
+    pub experiments: settings::experiments::Enabled,
 }
 
 /// The bytes of stored rows a profile keeps for the agents this host runs;
@@ -178,6 +182,7 @@ impl Default for Launch {
             agent_step_budget_micros: 0,
             dump_interval_ms: core_ring::DumpLimit::INTERVAL_MS,
             cores: None,
+            experiments: settings::experiments::Enabled::none(),
         }
     }
 }

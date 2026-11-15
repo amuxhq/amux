@@ -399,3 +399,191 @@ fn recent_directories_keep_the_latest_use_and_the_newest_two_hundred() {
     assert_eq!(kept.len(), store::RECENT_DIRECTORIES);
     assert!(kept.iter().all(|(path, _)| path.starts_with("/many/")));
 }
+
+/// Every table in the file, by name, with whether it has rows.
+fn tables(path: &std::path::Path) -> Vec<(String, bool)> {
+    let conn = Connection::open(path).unwrap();
+    let names = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    names
+        .into_iter()
+        .map(|name| {
+            let rows: i64 = conn
+                .query_row(&format!("SELECT count(*) FROM \"{name}\""), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            (name, rows > 0)
+        })
+        .collect()
+}
+
+fn experiment_tables(path: &std::path::Path) -> Vec<String> {
+    tables(path)
+        .into_iter()
+        .map(|(name, _)| name)
+        .filter(|name| name.starts_with("exp_"))
+        .collect()
+}
+
+/// Opening a store for the experiments a daemon runs makes their tables and
+/// drops those of an experiment switched off or at another version, data
+/// and all, and leaves every other table as it was. A plain open, which
+/// every tool but the store's owner uses, touches none of them.
+#[test]
+fn opening_keeps_the_tables_of_the_experiments_on_and_drops_the_rest() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.sqlite");
+    let mut store = Sqlite::open_with(&path, OWN, &["workspaces/1", "suspension/1"]).unwrap();
+    store
+        .put_agent(&AgentRow::new(
+            AgentKey::new(OWN, b"agent".to_vec()),
+            wire::Kind::Codex,
+            "/",
+        ))
+        .unwrap();
+    store.put_draft(b"agent", b"draft").unwrap();
+    drop(store);
+    assert_eq!(
+        experiment_tables(&path),
+        ["exp_suspension_1_runs", "exp_workspaces_1_members"]
+    );
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute(
+            "INSERT INTO exp_suspension_1_runs (agent_id, incarnation) VALUES (?1, 3)",
+            params![b"agent".to_vec()],
+        )
+        .unwrap();
+        // What an earlier version of workspaces, or another build's
+        // experiment, left behind.
+        conn.execute_batch(
+            "CREATE TABLE exp_workspaces_0_members (id INTEGER PRIMARY KEY) STRICT;
+             CREATE INDEX exp_workspaces_0_by_id ON exp_workspaces_0_members (id);
+             CREATE TABLE exp_teleport_1_jumps (id INTEGER PRIMARY KEY) STRICT;
+             INSERT INTO exp_teleport_1_jumps (id) VALUES (1);",
+        )
+        .unwrap();
+    }
+    let before: Vec<_> = tables(&path)
+        .into_iter()
+        .filter(|(name, _)| !name.starts_with("exp_"))
+        .collect();
+
+    drop(Sqlite::open(&path, OWN).unwrap());
+    assert_eq!(
+        experiment_tables(&path).len(),
+        4,
+        "a plain open drops nothing"
+    );
+
+    drop(Sqlite::open_with(&path, OWN, &["suspension/1"]).unwrap());
+    assert_eq!(experiment_tables(&path), ["exp_suspension_1_runs"]);
+    assert!(
+        tables(&path).contains(&("exp_suspension_1_runs".to_owned(), true)),
+        "the rows of an experiment still on stay"
+    );
+    let after: Vec<_> = tables(&path)
+        .into_iter()
+        .filter(|(name, _)| !name.starts_with("exp_"))
+        .collect();
+    assert_eq!(after, before, "every other table is untouched");
+    assert!(after.contains(&("agents".to_owned(), true)));
+    assert!(after.contains(&("drafts".to_owned(), true)));
+
+    // Switched off, then on again: its data went with it.
+    drop(Sqlite::open_with(&path, OWN, &[]).unwrap());
+    assert!(experiment_tables(&path).is_empty());
+    drop(Sqlite::open_with(&path, OWN, &["suspension/1"]).unwrap());
+    assert_eq!(
+        tables(&path)
+            .into_iter()
+            .find(|(name, _)| name == "exp_suspension_1_runs"),
+        Some(("exp_suspension_1_runs".to_owned(), false))
+    );
+    let conn = Connection::open(&path).unwrap();
+    let indexes: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name LIKE 'exp%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(indexes, 0, "a dropped table's indexes go with it");
+}
+
+/// Each experiment version's tables and indexes carry its prefix, are
+/// strict, and are made again harmlessly; no promised migration names an
+/// experiment's table.
+#[test]
+fn experiment_tables_are_named_by_their_version_and_kept_out_of_the_migrations() {
+    use store::experiments::{EXPERIMENT_TABLES, prefix};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.sqlite");
+    for tables in EXPERIMENT_TABLES {
+        assert_eq!(tables.prefix(), prefix(tables.version));
+        drop(Sqlite::open_with(&path, OWN, &[tables.version]).unwrap());
+        drop(Sqlite::open_with(&path, OWN, &[tables.version]).unwrap());
+        let made = experiment_tables(&path);
+        assert!(!made.is_empty(), "{} declares no table", tables.version);
+        let conn = Connection::open(&path).unwrap();
+        let named = conn
+            .prepare("SELECT name, sql FROM sqlite_master WHERE name LIKE 'exp%' AND sql NOT NULL")
+            .unwrap()
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        for (name, sql) in named {
+            assert!(
+                name.starts_with(&tables.prefix()),
+                "{name} in {}",
+                tables.version
+            );
+            if sql.starts_with("CREATE TABLE") {
+                assert!(sql.trim_end().ends_with("STRICT"), "{name} is not STRICT");
+            }
+        }
+    }
+    let schema =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/schema.rs")).unwrap();
+    assert!(
+        !schema.contains("exp_"),
+        "a migration names an experiment's table"
+    );
+}
+
+/// No experiment says how its rows redact, so a dump's copy of the store
+/// carries none of them.
+#[test]
+fn a_redacted_copy_carries_no_experiment_tables() {
+    struct Blank;
+    impl store::redact::Redactor for Blank {
+        fn text(&self, _: &str, _: &str, text: &str) -> String {
+            "x".repeat(text.len())
+        }
+        fn message(&self, _: &str, bytes: &[u8]) -> Vec<u8> {
+            bytes.to_vec()
+        }
+        fn content(&self, bytes: &[u8]) -> Vec<u8> {
+            vec![0; bytes.len()]
+        }
+        fn hash(&self, bytes: &[u8]) -> Vec<u8> {
+            bytes.to_vec()
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.sqlite");
+    drop(Sqlite::open_with(&path, OWN, &["workspaces/1"]).unwrap());
+    assert_eq!(experiment_tables(&path), ["exp_workspaces_1_members"]);
+    store::redact::redact_file(&path, &Blank).unwrap();
+    assert!(experiment_tables(&path).is_empty());
+    assert!(tables(&path).iter().any(|(name, _)| name == "agents"));
+}

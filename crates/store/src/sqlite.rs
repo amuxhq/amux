@@ -78,6 +78,22 @@ impl Sqlite {
         Self::with_connection(conn, &path.display().to_string(), own_host.into())
     }
 
+    /// Opens or creates the profile store at `path` as [`Sqlite::open`]
+    /// does, for a daemon running the experiment versions in `experiments`
+    /// (`workspaces/1`): their tables are made, and every other
+    /// experiment's dropped, with its data (see [`crate::experiments`]).
+    /// Only the store's owner opens it so; a tool that opens a copy leaves
+    /// experiment tables as they are.
+    pub fn open_with(
+        path: &Path,
+        own_host: impl Into<Vec<u8>>,
+        experiments: &[&str],
+    ) -> Result<Self, OpenError> {
+        let mut store = Self::open(path, own_host)?;
+        crate::experiments::settle(&mut store.conn, experiments)?;
+        Ok(store)
+    }
+
     /// A store with the same schema that lives only in memory: gone when
     /// it is dropped, for exploring the store's own transitions.
     pub fn open_in_memory(own_host: impl Into<Vec<u8>>) -> Result<Self, OpenError> {

@@ -132,6 +132,84 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
     daemon.shutdown().await.unwrap();
 }
 
+/// The experiment tables in the profile's store, by name.
+fn experiment_tables(install: &Install) -> Vec<String> {
+    let store = install.store();
+    let mut read = store
+        .connection()
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'exp%' ORDER BY name")
+        .unwrap();
+    read.query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+}
+
+/// A daemon runs the experiments switched on when it started: their store
+/// tables are made as it opens a profile, and a switch while it runs is
+/// written and served but changes nothing until the next start, which
+/// drops the tables of an experiment switched off.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_experiment_switched_takes_effect_at_the_next_start() {
+    let desk = Install::new();
+    let file = desk.path("config.toml");
+    std::fs::write(&file, "[experiments]\nenabled = [\"suspension\"]\n").unwrap();
+    let start = |boot: &'static str| {
+        let config = settings::InstallationConfig::from_file(&file).unwrap();
+        // As the amux binary starts its daemon: the switch, read once.
+        let launch = node::Launch {
+            experiments: config.experiments.enabled(),
+            ..quiet_launch()
+        };
+        let mut options = desk.options(boot, launch);
+        options.settings = node::SettingsOptions {
+            file: Some(file.clone()),
+            initial: config,
+            login: None,
+            home: None,
+        };
+        async move { node::start(options, None).await.unwrap() }
+    };
+
+    let daemon = start("boot-1").await;
+    assert_eq!(experiment_tables(&desk), ["exp_suspension_1_runs"]);
+    let door = daemon.front_door();
+    let changed = door
+        .update_settings(Request::new(UpdateSettingsRequest {
+            experiments: Some(wire::ExperimentList {
+                names: vec!["workspaces".into()],
+            }),
+            ..UpdateSettingsRequest::default()
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .settings
+        .unwrap();
+    let on: Vec<_> = changed
+        .experiments
+        .iter()
+        .filter(|experiment| experiment.enabled)
+        .map(|experiment| experiment.version.as_str())
+        .collect();
+    assert_eq!(on, ["workspaces/1"], "the settings answer the switch");
+    assert_eq!(
+        runtime(&daemon, &desk).launch().experiments.versions(),
+        ["suspension/1"],
+        "what runs waits for the next start"
+    );
+    assert_eq!(experiment_tables(&desk), ["exp_suspension_1_runs"]);
+    daemon.shutdown().await.unwrap();
+
+    let daemon = start("boot-1").await;
+    assert_eq!(experiment_tables(&desk), ["exp_workspaces_1_members"]);
+    assert_eq!(
+        runtime(&daemon, &desk).launch().experiments.versions(),
+        ["workspaces/1"]
+    );
+    daemon.shutdown().await.unwrap();
+}
+
 /// A change made to the file beside the daemon, as `amux config` makes one,
 /// is in force within moments: setting the interface moves the Claude kind
 /// that follows it.

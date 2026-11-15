@@ -485,6 +485,40 @@ A change that cannot be made by adding, such as a column whose meaning must
 change, gets a new column or table that the code fills as it goes, and the old
 one is left in place unread.
 
+### Experiment tables
+
+An experiment's data is outside both rules: its shape may change in any
+release, and losing it is the price of shipping it early. Each version of an
+experiment has tables of its own, declared in
+[`crates/store/src/experiments.rs`](../crates/store/src/experiments.rs)
+rather than in `MIGRATIONS`, each named with its version's prefix:
+`exp_workspaces_1_members` (an agent's key to its encoded
+`amux.experimental.AgentWorkspace`, for own rows and replicas) and
+`exp_suspension_1_runs` (one of this host's own agents to the incarnation its
+current run began at). They have real columns and indexes, and are `STRICT`
+like every other table.
+
+When the daemon opens a profile's store (`Sqlite::open_with`), it creates the
+tables of the experiments it runs and drops every `exp_` table that does not
+belong to one of them at the version this build implements, rows and indexes
+with it. So a new version never reads an old version's rows, switching an
+experiment off frees its space, and a build from before experiments leaves
+the tables alone, as it does any table it does not know. Every other opener
+(`Sqlite::open`, which the dump and replay tools use) touches no `exp_`
+table, and a dump's redacted copy drops them all, since no experiment says
+how its rows redact. No migration may name an `exp_` table; `just
+store-check` reads only `MIGRATIONS`, and a store test fails on one that
+does.
+
+Graduating an experiment converts none of its rows: the settled design gets
+a migration of its own, written as if the experiment had never existed, and
+the experiment's tables are dropped the next time a store opens.
+
+Rejected: one generic table of encoded records for every experiment. Tables
+of their own cost a create and drop when the store opens, and in return an
+experiment gets queries, indexes and joins, tables `sqlite3` reads, and a
+graduation whose table can become the real migration.
+
 ### Own rows and replica rows
 
 One table and one `origin_host` column hold both, with two write paths and two

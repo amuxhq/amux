@@ -263,8 +263,12 @@ impl Installation {
         let dir = profiles::profile_dir(&self.data_dir, profile);
         // The profile's id is its host id, the one its peers know it by.
         let host = profile;
-        let store = store::Sqlite::open(&dir.join(STORE), host.as_bytes().to_vec())
-            .map_err(|error| StartError::Store { profile, error })?;
+        // The experiments the daemon started with keep their tables; every
+        // other experiment's are dropped.
+        let experiments = self.launch.lock().unwrap().experiments.versions();
+        let store =
+            store::Sqlite::open_with(&dir.join(STORE), host.as_bytes().to_vec(), &experiments)
+                .map_err(|error| StartError::Store { profile, error })?;
         // Every write is the core's, which holds its commits while its
         // checkpoint's WAL job runs; that job and the clean shutdown's
         // flush are the only checkpoints.

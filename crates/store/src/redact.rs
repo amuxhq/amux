@@ -46,7 +46,7 @@ fn redacted<M: prost::Message + prost::Name + Default>(redactor: &dyn Redactor, 
 /// rows' names, directories, texts, details, snapshots, git states, item
 /// bodies and attachments, the owed reports' and notifications' texts, the
 /// paired hosts' names and SSH destinations, the drafts and the recent
-/// directories.
+/// directories. Experiments' tables are dropped.
 /// The file is left in rollback mode, with no WAL beside it. Returns each
 /// row's agent with its ingest cursor, the journal offset its commits
 /// reach.
@@ -93,6 +93,9 @@ pub fn redact_file(
         }
     }
     hosts_drafts_and_directories(&tx, redactor)?;
+    // No experiment says how its rows redact, and none is promised to
+    // survive, so a dump carries none.
+    crate::experiments::drop_tables(&tx, &[])?;
     tx.commit()?;
     conn.execute_batch("VACUUM")?;
     let mut read = conn.prepare("SELECT origin_host, agent_id, ingest_cursor FROM agents")?;

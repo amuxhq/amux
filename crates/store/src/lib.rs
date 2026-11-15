@@ -20,6 +20,7 @@ mod schema;
 mod sqlite;
 
 mod blobs;
+pub mod experiments;
 #[cfg(feature = "explore")]
 mod explore;
 pub mod redact;

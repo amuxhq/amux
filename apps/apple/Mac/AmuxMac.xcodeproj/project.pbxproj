@@ -18,6 +18,7 @@
 		4579F28F51468255CED4809A /* MacNewAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDF30FE89C87A5A6106AFD47 /* MacNewAgent.swift */; };
 		4B2CDB27BE213B97988EF311 /* SettingsWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2562BD49C150F71B56CD979B /* SettingsWindow.swift */; };
 		4E6FFBCE4B0040245C2042FA /* AmuxMacScreens in Frameworks */ = {isa = PBXBuildFile; productRef = BFD9FAA1300DAA573A2CAFE4 /* AmuxMacScreens */; };
+		6872F646FB2966C77288017A /* SubagentChanges.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFA88938A05A26C081E71780 /* SubagentChanges.swift */; };
 		748BF46B286856646B0449F8 /* SetupWalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7C00CABFF413D47B11818BC /* SetupWalk.swift */; };
 		882195E368B9D757F25FE602 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35ACFC26A1D58966C680CFB4 /* MainWindow.swift */; };
 		8B3E1B675CE87AB02FD5AD6A /* Setup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 010C7AFBB1A5638DA828D47A /* Setup.swift */; };
@@ -55,6 +56,7 @@
 		AA7C9EEC1ABEC000EEAB795C /* AmuxMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmuxMacApp.swift; sourceTree = "<group>"; };
 		C2B49A41F366B23EA3C5BE8A /* AmuxMacScreens */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AmuxMacScreens; path = ../Packages/AmuxMacScreens; sourceTree = SOURCE_ROOT; };
 		C6361E231B9F50C6C65E2E69 /* Storybook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Storybook.swift; sourceTree = "<group>"; };
+		CFA88938A05A26C081E71780 /* SubagentChanges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubagentChanges.swift; sourceTree = "<group>"; };
 		D7C00CABFF413D47B11818BC /* SetupWalk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupWalk.swift; sourceTree = "<group>"; };
 		E1D266B60D21AF474C2CDE0A /* MacChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacChat.swift; sourceTree = "<group>"; };
 		EDF30FE89C87A5A6106AFD47 /* MacNewAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacNewAgent.swift; sourceTree = "<group>"; };
@@ -115,6 +117,7 @@
 			children = (
 				D7C00CABFF413D47B11818BC /* SetupWalk.swift */,
 				823B6AB1C3DAE4F5B02FBFF6 /* StoryList.swift */,
+				CFA88938A05A26C081E71780 /* SubagentChanges.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -286,6 +289,7 @@
 				E769F0244255E2ECDF2B38EF /* Setup.swift in Sources */,
 				748BF46B286856646B0449F8 /* SetupWalk.swift in Sources */,
 				9086C8CAD17CB7FE5E2200DC /* StoryList.swift in Sources */,
+				6872F646FB2966C77288017A /* SubagentChanges.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

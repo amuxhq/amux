@@ -260,6 +260,12 @@ final class AppModel {
         starting = MacNewAgent(stores: stores)
     }
 
+    /// Whether the changes pane shows for the agent open now: a provider
+    /// subagent has none of its own.
+    var changesShown: Bool {
+        place.showsChanges(native: place.agent.flatMap { stores?.fleet.row($0) }?.native == true)
+    }
+
     /// Opens an agent's chat from elsewhere: the host page, a relative on
     /// the card, or the new-agent page once its agent started.
     func openChat(_ agent: AgentKey) {

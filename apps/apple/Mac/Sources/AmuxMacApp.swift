@@ -93,7 +93,7 @@ private struct AppCommands: Commands {
         CommandGroup(before: .toolbar) {
             Button(model.place.sidebar ? "Hide Sidebar" : "Show Sidebar") { model.place.sidebar.toggle() }
                 .keyboardShortcut("s", modifiers: [.control, .command])
-            Button(model.place.changes ? "Hide Changes" : "Show Changes") { model.place.changes.toggle() }
+            Button(model.changesShown ? "Hide Changes" : "Show Changes") { model.place.changes.toggle() }
                 .keyboardShortcut("i", modifiers: [.option, .command])
                 .disabled(!ready || model.place.agent.flatMap { model.stores?.fleet.row($0) }.map { $0.native } ?? true)
             Divider()

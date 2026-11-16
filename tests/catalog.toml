@@ -898,11 +898,11 @@ cargo = [
 
 [[suite]]
 name = "view-goldens"
-contract = "Each view is a pure function of the session state; row ids are item keys and never move, run membership is an attribute, a run of tool steps names only the failures its ended turn left unresolved, a finished turn folded to its answer keeps those failures in view and names every row a change moves, attachments keep their positions, and every choice an ask card offers reaches the interpreter as an input it accepts."
+contract = "Each view is a pure function of the session state; row ids are item keys and never move, run membership is an attribute, a run of tool steps names only the failures its ended turn left unresolved, a finished turn folded to its answer keeps those failures in view and names every row a change moves, a call that opens an agent names it, reads its state from the fleet and folds with its turn's other such calls into one row, a provider subagent's composer has no text box, attachments keep their positions, and every choice an ask card offers reaches the interpreter as an input it accepts."
 paths = ["crates/ui-view/tests"]
 recipe = "just suite view-goldens"
 boundary = "Views"
-oracle = "Reviewed view data goldens replayed from every interpreter fixture of all three kinds, authored goldens for inputs and composer states, row invariants over random windows, and the interpreter accepting each card's answers."
+oracle = "Reviewed view data goldens replayed from every interpreter fixture of all three kinds, each provider subagent's part committed under its own agent and fleet row, authored goldens for inputs and composer states, row invariants over random windows, and the interpreter accepting each card's answers."
 real = ["interpreter"]
 substituted = ["network", "store", "provider", "wall clock"]
 time = "none"
@@ -912,7 +912,7 @@ evidence = ""
 update = "Rerun with UI_VIEW_UPDATE_GOLDENS=1 and review the golden diff."
 cargo = [
   { package = "ui-view", kind = "lib", targets = ["ui_view"], features = [] },
-  { package = "ui-view", modules = ["answers", "goldens", "runs", "turns", "views"], features = [] },
+  { package = "ui-view", modules = ["answers", "goldens", "runs", "subagents", "turns", "views"], features = [] },
 ]
 
 [[suite]]

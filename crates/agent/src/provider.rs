@@ -33,6 +33,7 @@ use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, oneshot};
 use wire::{AgentSpec, Attachment};
 
+use crate::tail::{Tail, Watch};
 use crate::terminal::{self, KeyStep};
 use crate::{dir, tree};
 
@@ -56,8 +57,6 @@ const CODEX_LISTEN_WAIT: Duration = Duration::from_secs(30);
 const CODEX_WRITER_WAIT: Duration = Duration::from_secs(30);
 /// The pause before asking again for a thread another server holds.
 const CODEX_WRITER_RETRY: Duration = Duration::from_millis(250);
-/// How often a followed transcript is read for new rows.
-pub(crate) const TRANSCRIPT_POLL: Duration = Duration::from_millis(25);
 
 /// What the provider did.
 #[derive(Debug)]
@@ -992,36 +991,13 @@ impl Provider {
     /// start. The position is kept in private/ after every row.
     fn follow(&mut self, path: PathBuf) {
         let file = self.dir.join(dir::PRIVATE).join(dir::TRANSCRIPT_CURSOR);
-        let cursor = Cursor::new(file.clone(), saved_cursor(&file, &path), path);
-        let events = self.events.clone();
-        let reading = cursor.clone();
-        let task = tokio::spawn(async move {
-            loop {
-                for row in reading.new_rows() {
-                    let length = row.len() + 1;
-                    if row.is_empty() {
-                        if !reading.advance(&events, length).await {
-                            return;
-                        }
-                        continue;
-                    }
-                    let fact = Fact {
-                        channel: Channel::Transcript,
-                        payload: row,
-                    };
-                    // Sending is where an abort lands; the row counts as read
-                    // only once it is sent.
-                    if events.send(ProviderEvent::Fact(fact)).await.is_err() {
-                        return;
-                    }
-                    if !reading.advance(&events, length).await {
-                        return;
-                    }
-                }
-                tokio::time::sleep(TRANSCRIPT_POLL).await;
-            }
-        });
-        self.followers.push(Follower { cursor, task });
+        let tail = Tail::new(file, path);
+        let task = tokio::spawn(follow_transcript(
+            tail.clone(),
+            tail.watch(),
+            self.events.clone(),
+        ));
+        self.followers.push(Follower { tail, task });
     }
 
     /// Stops following and returns the rows the followers had not read,
@@ -1033,8 +1009,10 @@ impl Provider {
         for follower in std::mem::take(&mut self.followers) {
             follower.task.abort();
             let _ = follower.task.await;
-            for row in follower.cursor.new_rows() {
-                follower.cursor.advance(&self.events, row.len() + 1).await;
+            // A file that cannot be read on has no rows to add; its
+            // follower said why when it ended.
+            for row in follower.tail.unread().unwrap_or_default() {
+                follower.tail.advance(&self.events, row.len() + 1).await;
                 if row.is_empty() {
                     continue;
                 }
@@ -1215,131 +1193,42 @@ fn codex_turn_input(
 
 /// A followed transcript and the task reading it.
 struct Follower {
-    cursor: Cursor,
+    tail: Tail,
     task: tokio::task::JoinHandle<()>,
 }
 
-/// How far a transcript has been read, kept in private/ as it moves.
-#[derive(Clone)]
-pub(crate) struct Cursor {
-    path: PathBuf,
-    file: PathBuf,
-    offset: Arc<std::sync::Mutex<usize>>,
-}
-
-impl Cursor {
-    /// The cursor kept in `file` for the transcript `path`, read to
-    /// `offset`.
-    pub(crate) fn new(file: PathBuf, offset: usize, path: PathBuf) -> Self {
-        Self {
-            path,
-            file,
-            offset: Arc::new(std::sync::Mutex::new(offset)),
-        }
-    }
-
-    /// The whole rows written past the cursor, as [`Cursor::new_rows`]
-    /// reads them, or why the file cannot be read on: an error reading it,
-    /// or a file gone or shorter than what was read already, which Claude
-    /// never does to a transcript it writes. A file not written yet has no
-    /// rows.
-    ///
-    /// It is polled for as long as the agent runs, finished subagents'
-    /// files included, so a file no longer than what was read is not
-    /// opened, and one that grew is read only past the cursor.
-    pub(crate) fn unread(&self) -> Result<Vec<Vec<u8>>, String> {
-        use std::io::{Read as _, Seek as _};
-        let offset = *self.offset.lock().expect("cursor lock");
-        let length = match std::fs::metadata(&self.path) {
-            Ok(metadata) => metadata.len() as usize,
-            Err(error) if error.kind() == io::ErrorKind::NotFound && offset == 0 => {
-                return Ok(Vec::new());
+/// Sends a transcript's rows as `watch` says it grew, until the agent
+/// stops reading or the file cannot be read on.
+async fn follow_transcript(tail: Tail, mut watch: Watch, events: mpsc::Sender<ProviderEvent>) {
+    loop {
+        let rows = match tail.unread() {
+            Ok(rows) => rows,
+            Err(error) => {
+                eprintln!(
+                    "amux agent: following {} no further: {error}",
+                    tail.path().display()
+                );
+                return;
             }
-            Err(error) => return Err(error.to_string()),
         };
-        if length < offset {
-            return Err(format!(
-                "the file is {length} bytes, shorter than the {offset} already read"
-            ));
+        for row in rows {
+            let length = row.len() + 1;
+            if !row.is_empty() {
+                let fact = Fact {
+                    channel: Channel::Transcript,
+                    payload: row,
+                };
+                // Sending is where an abort lands; the row counts as read
+                // only once it is sent.
+                if events.send(ProviderEvent::Fact(fact)).await.is_err() {
+                    return;
+                }
+            }
+            if !tail.advance(&events, length).await {
+                return;
+            }
         }
-        if length == offset {
-            return Ok(Vec::new());
-        }
-        let mut bytes = Vec::with_capacity(length - offset);
-        std::fs::File::open(&self.path)
-            .and_then(|mut file| {
-                file.seek(io::SeekFrom::Start(offset as u64))?;
-                file.read_to_end(&mut bytes)
-            })
-            .map_err(|error| error.to_string())?;
-        Ok(whole_rows(&bytes))
-    }
-
-    /// The whole rows written past the cursor; a row still being written
-    /// waits for the next read.
-    fn new_rows(&self) -> Vec<Vec<u8>> {
-        let offset = *self.offset.lock().expect("cursor lock");
-        let Ok(bytes) = std::fs::read(&self.path) else {
-            return Vec::new();
-        };
-        let Some(unread) = bytes.get(offset..) else {
-            return Vec::new();
-        };
-        whole_rows(unread)
-    }
-
-    /// Moves past one row and its newline; an empty row is skipped the
-    /// same way, and never sent. The position is the state a resumed
-    /// session reads on from, so a position that cannot be kept ends the
-    /// incarnation; false says it could not be.
-    pub(crate) async fn advance(
-        &self,
-        events: &mpsc::Sender<ProviderEvent>,
-        length: usize,
-    ) -> bool {
-        let saved = {
-            let mut offset = self.offset.lock().expect("cursor lock");
-            *offset += length;
-            format!("{offset}\n{}", self.path.display())
-        };
-        if let Err(error) = std::fs::write(&self.file, saved) {
-            let _ = events
-                .send(ProviderEvent::WriteFailed {
-                    path: self.file.clone(),
-                    error,
-                })
-                .await;
-            return false;
-        }
-        true
-    }
-}
-
-/// The rows of `unread` its last newline ends; what follows it is still
-/// being written.
-fn whole_rows(unread: &[u8]) -> Vec<Vec<u8>> {
-    let Some(end) = unread.iter().rposition(|byte| *byte == b'\n') else {
-        return Vec::new();
-    };
-    unread[..end]
-        .split(|byte| *byte == b'\n')
-        .map(<[u8]>::to_vec)
-        .collect()
-}
-
-/// Where an earlier follower of `path` stopped; the start for any other
-/// file, or one that is shorter now.
-pub(crate) fn saved_cursor(cursor: &Path, path: &Path) -> usize {
-    let Ok(saved) = std::fs::read_to_string(cursor) else {
-        return 0;
-    };
-    let Some((offset, saved_path)) = saved.split_once('\n') else {
-        return 0;
-    };
-    let length = std::fs::metadata(path).map_or(0, |metadata| metadata.len() as usize);
-    match offset.parse::<usize>() {
-        Ok(offset) if Path::new(saved_path) == path && offset <= length => offset,
-        _ => 0,
+        watch.changed().await;
     }
 }
 
@@ -1676,6 +1565,58 @@ fn environment(command: &mut tokio::process::Command, spec: &AgentSpec) {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+    use std::time::Duration;
+
+    use interpret::Channel;
+    use tokio::sync::mpsc;
+
+    use crate::provider::ProviderEvent;
+    use crate::tail::{Tail, Watch};
+
+    /// A transcript made after following began, in a folder that did not
+    /// exist either, is read as it appears and as it grows, each row once,
+    /// whole and in order however its writes split it, on the watcher's
+    /// reports alone: the fallback is an hour.
+    #[tokio::test]
+    async fn a_transcript_made_after_following_began_is_read_as_it_is_written() {
+        use std::io::Write as _;
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("project").join("s1.jsonl");
+        let tail = Tail::new(root.path().join("cursor"), path.clone());
+        let watch = Watch::with_fallback(path.clone(), Duration::from_secs(3600));
+        let (events, mut sent) = mpsc::channel(4);
+        let follower = tokio::spawn(super::follow_transcript(tail, watch, events));
+        let append = |text: &str| {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .unwrap()
+                .write_all(text.as_bytes())
+                .unwrap();
+        };
+        let mut next = async || match tokio::time::timeout(patience::PATIENCE, sent.recv())
+            .await
+            .expect("a row in time")
+            .expect("the follower running")
+        {
+            ProviderEvent::Fact(fact) => {
+                assert_eq!(fact.channel, Channel::Transcript);
+                String::from_utf8(fact.payload).unwrap()
+            }
+            other => panic!("not a row: {other:?}"),
+        };
+
+        std::fs::create_dir(root.path().join("project")).unwrap();
+        append("{\"a\":");
+        append("1}\n");
+        assert_eq!(next().await, "{\"a\":1}");
+        append("{\"b\":2}\n\n{\"c\"");
+        assert_eq!(next().await, "{\"b\":2}", "an empty row is not sent");
+        append(":3}\n");
+        assert_eq!(next().await, "{\"c\":3}");
+        follower.abort();
+    }
 
     /// amux's line joins a prompt the agent's own arguments append, in
     /// either spelling of the flag, and stands alone otherwise.
@@ -1997,26 +1938,5 @@ mod tests {
                 "/d/agents/a/blobs"
             );
         }
-    }
-
-    /// A transcript is polled for as long as the agent runs: one read to
-    /// its end is not read again until it grows, and then only past the
-    /// cursor. A file this process cannot open shows it: unchanged, it has
-    /// no rows rather than an error.
-    #[cfg(unix)]
-    #[test]
-    fn a_cursor_at_the_end_does_not_read_the_file_again() {
-        use std::os::unix::fs::PermissionsExt as _;
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("agent-a1.jsonl");
-        std::fs::write(&path, "one\n").unwrap();
-        let cursor = crate::provider::Cursor::new(root.path().join("cursor"), 4, path.clone());
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
-        assert_eq!(cursor.unread(), Ok(Vec::new()), "the file was read again");
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
-        std::fs::write(&path, "one\ntwo\nthr").unwrap();
-        assert_eq!(cursor.unread(), Ok(vec![b"two".to_vec()]));
-        std::fs::write(&path, "on").unwrap();
-        assert!(cursor.unread().unwrap_err().contains("shorter"));
     }
 }

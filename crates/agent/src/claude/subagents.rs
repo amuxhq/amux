@@ -14,12 +14,13 @@
 //! writing.
 //!
 //! A follower runs until Claude exits, finished subagents' included, since
-//! Claude's model may continue any of them. One whose file stops growing
-//! polls it less and less often, up to once every [`IDLE_POLL_CEILING`],
-//! and is back at [`TRANSCRIPT_POLL`] as soon as the file grows or it is
-//! asked anything: a drain, or a follow again when a SubagentStart names
-//! its subagent once more. A follower that ended, on a file it could no
-//! longer read, is started anew by the next follow.
+//! Claude's model may continue any of them. It reads its file when the
+//! file's watch reports a change (see the tail module), and at once when it
+//! is asked anything: a drain, or a follow again when a SubagentStart names
+//! its subagent once more. Once drained it lets its watch and its open file
+//! go, leaving the watch's once-a-second fallback, until it is asked again.
+//! A follower that ended, on a file it could no longer read, is started
+//! anew by the next follow.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -30,7 +31,8 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use crate::dir;
-use crate::provider::{Cursor, ProviderEvent, TRANSCRIPT_POLL, saved_cursor};
+use crate::provider::ProviderEvent;
+use crate::tail::{Tail, Watch};
 
 /// Where each subagent's cursor is kept, under private/.
 const CURSORS: &str = "subagent-cursors";
@@ -42,12 +44,6 @@ const META_WAIT: Duration = Duration::from_millis(500);
 /// Claude may write just after it tells the agent the subagent finished.
 /// The interpreter gives up on its own after the same time.
 const DRAIN_WAIT: Duration = Duration::from_millis(2000);
-/// The longest a follower whose file does not grow waits between reads. A
-/// long session can follow a hundred finished subagents; at this ceiling
-/// they cost a hundred cheap file-size checks a second rather than four
-/// thousand, and a continued subagent is picked up at once by the follow
-/// its start asks for.
-const IDLE_POLL_CEILING: Duration = Duration::from_secs(1);
 
 /// The followed subagent files, by Claude's id for each subagent.
 #[derive(Default)]
@@ -56,7 +52,7 @@ pub struct Followers {
 }
 
 struct Follower {
-    cursor: Cursor,
+    tail: Tail,
     task: tokio::task::JoinHandle<()>,
     asks: mpsc::UnboundedSender<Ask>,
 }
@@ -66,7 +62,7 @@ enum Ask {
     /// Drain the file, waiting for this reply if there is one.
     Drain(Option<String>),
     /// Its subagent was named again, as it is when Claude's model
-    /// continues it: read at once and poll at the quick rate again.
+    /// continues it: read at once, whether or not a change was reported.
     Wake,
 }
 
@@ -108,18 +104,17 @@ impl Followers {
             });
             return;
         }
-        let file = cursors.join(agent_id);
-        let cursor = Cursor::new(file.clone(), saved_cursor(&file, &rows), rows);
+        let tail = Tail::new(cursors.join(agent_id), rows);
         let (asks, asked) = mpsc::unbounded_channel();
         let task = tokio::spawn(read(
             agent_id.to_owned(),
-            cursor.clone(),
+            tail.clone(),
             meta,
             events.clone(),
             asked,
         ));
         self.followed
-            .insert(agent_id.to_owned(), Follower { cursor, task, asks });
+            .insert(agent_id.to_owned(), Follower { tail, task, asks });
     }
 
     /// Asks for the subagent `agent_id`'s file to be read to its end,
@@ -150,11 +145,11 @@ impl Followers {
         for (_, follower) in std::mem::take(&mut self.followed) {
             follower.task.abort();
             let _ = follower.task.await;
-            let Ok(rows) = follower.cursor.unread() else {
+            let Ok(rows) = follower.tail.unread() else {
                 continue;
             };
             for row in rows {
-                if !follower.cursor.advance(events, row.len() + 1).await {
+                if !follower.tail.advance(events, row.len() + 1).await {
                     break;
                 }
                 if interpret::claude_pty::subagent_row_kept(&row) {
@@ -201,7 +196,7 @@ fn read_meta(path: &Path) -> Option<serde_json::Value> {
 /// longer read is reported once, and followed no further.
 async fn read(
     agent_id: String,
-    cursor: Cursor,
+    tail: Tail,
     meta_path: PathBuf,
     events: mpsc::Sender<ProviderEvent>,
     mut asked: mpsc::UnboundedReceiver<Ask>,
@@ -210,20 +205,24 @@ async fn read(
         let events = events.clone();
         async move { events.send(ProviderEvent::Fact(fact)).await.is_ok() }
     };
-    let begun = Instant::now();
+    let mut rows_changed = tail.watch();
+    // The meta is watched until it is read or no longer waited for.
+    let mut meta_changed = Some(Watch::new(meta_path.clone()));
+    let meta_by = Instant::now() + META_WAIT;
     let mut met = false;
     let mut draining: Option<Instant> = None;
     let mut ask: Option<Ask> = None;
-    let mut poll = TRANSCRIPT_POLL;
     loop {
         if !met && let Some(meta) = read_meta(&meta_path) {
             met = true;
+            meta_changed = None;
             let fact = agent_fact(interpret::claude_pty::subagent_meta_fact(&agent_id, meta));
             if !send(fact).await {
                 return;
             }
         }
         while let Some(next) = ask.take().or_else(|| asked.try_recv().ok()) {
+            rows_changed.resume();
             let Ask::Drain(reply) = next else {
                 continue;
             };
@@ -235,9 +234,13 @@ async fn read(
             let by = Instant::now() + wait;
             draining = Some(draining.map_or(by, |earlier| earlier.max(by)));
         }
-        let mut grew = false;
-        if met || draining.is_some() || begun.elapsed() >= META_WAIT {
-            let rows = match cursor.unread() {
+        let awaiting_meta = !met && Instant::now() < meta_by;
+        if !awaiting_meta {
+            // A meta that came late is still read with the rows.
+            meta_changed = None;
+        }
+        if !awaiting_meta || draining.is_some() {
+            let rows = match tail.unread() {
                 Ok(rows) => rows,
                 Err(error) => {
                     let fact = agent_fact(interpret::claude_pty::subagent_unreadable_fact(
@@ -250,7 +253,6 @@ async fn read(
                     return;
                 }
             };
-            grew = !rows.is_empty();
             for row in rows {
                 if interpret::claude_pty::subagent_row_kept(&row) {
                     let fact = Fact {
@@ -263,7 +265,7 @@ async fn read(
                         return;
                     }
                 }
-                if !cursor.advance(&events, row.len() + 1).await {
+                if !tail.advance(&events, row.len() + 1).await {
                     return;
                 }
             }
@@ -272,25 +274,41 @@ async fn read(
                 if !send(drained(&agent_id)).await {
                     return;
                 }
+                // Its subagent is done with until it is asked about again,
+                // so its file is looked at only by the watch's fallback.
+                rows_changed.pause();
+                tail.close();
             }
         }
-        // A file that grew, a drain under way or a meta still awaited is
-        // read again soon; a file left alone, less and less often.
-        let awaiting_meta = !met && begun.elapsed() < META_WAIT;
-        poll = if grew || draining.is_some() || awaiting_meta {
-            TRANSCRIPT_POLL
-        } else {
-            (poll * 2).min(IDLE_POLL_CEILING)
-        };
-        match tokio::time::timeout(poll, asked.recv()).await {
-            Ok(Some(next)) => {
-                ask = Some(next);
-                poll = TRANSCRIPT_POLL;
-            }
-            // The followers let it go: nothing reads its facts any more.
-            Ok(None) => return,
-            Err(_) => {}
+        // Read again when the file or its awaited meta changes, when asked,
+        // or at the next deadline: a drain's end, or the meta's.
+        let deadline = draining.or(awaiting_meta.then_some(meta_by));
+        tokio::select! {
+            () = rows_changed.changed() => {}
+            () = changed(&mut meta_changed) => {}
+            next = asked.recv() => match next {
+                Some(next) => ask = Some(next),
+                // The followers let it go: nothing reads its facts any more.
+                None => return,
+            },
+            () = until(deadline) => {}
         }
+    }
+}
+
+/// Waits until `watch` reports a change, or forever when there is none.
+async fn changed(watch: &mut Option<Watch>) {
+    match watch {
+        Some(watch) => watch.changed().await,
+        None => std::future::pending().await,
+    }
+}
+
+/// Waits until `deadline`, or forever when there is none.
+async fn until(deadline: Option<Instant>) {
+    match deadline {
+        Some(deadline) => tokio::time::sleep_until(deadline).await,
+        None => std::future::pending().await,
     }
 }
 
@@ -313,7 +331,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_subagents_file_is_followed_meta_first_drained_and_reported_once_it_shrinks() {
         let root = tempfile::tempdir().unwrap();
         let agent_dir = root.path().join("agent");
@@ -406,6 +424,7 @@ mod tests {
     fn append(path: &Path, text: &str) {
         use std::io::Write as _;
         std::fs::OpenOptions::new()
+            .create(true)
             .append(true)
             .open(path)
             .unwrap()
@@ -449,12 +468,12 @@ mod tests {
         assert_eq!(next_row(&mut events).await["uuid"], "u2");
     }
 
-    /// A file left alone is polled less and less often, up to the ceiling,
-    /// and a follow asked again, as a continued subagent's start asks,
-    /// reads it at once. The clock is tokio's paused one, which moves only
-    /// when every task waits on it.
+    /// A file left alone is read again when it grows, at the latest by the
+    /// fallback look, and a follow asked again, as a continued subagent's
+    /// start asks, reads it at once. The clock is tokio's paused one, which
+    /// moves only when every task waits on it.
     #[tokio::test(start_paused = true)]
-    async fn a_follower_backs_off_an_idle_file_and_a_follow_again_reads_it_at_once() {
+    async fn an_idle_file_is_read_when_it_grows_and_a_follow_again_reads_it_at_once() {
         let at = folder();
         let (sender, mut events) = mpsc::channel(16);
         let mut followers = Followers::default();
@@ -467,8 +486,8 @@ mod tests {
         assert_eq!(next_row(&mut events).await["uuid"], "u2");
         let waited = written.elapsed();
         assert!(
-            waited > TRANSCRIPT_POLL && waited <= IDLE_POLL_CEILING,
-            "an idle file polled every {waited:?}"
+            waited <= crate::tail::FALLBACK_POLL,
+            "an idle file read {waited:?} after it grew"
         );
 
         tokio::time::sleep(Duration::from_secs(10)).await;
@@ -479,7 +498,33 @@ mod tests {
         assert_eq!(
             written.elapsed(),
             Duration::ZERO,
-            "a follow again waits on no poll"
+            "a follow again waits on nothing"
         );
+    }
+
+    /// A subagent followed before Claude made its folder, its file or its
+    /// meta is read once they appear, meta first.
+    #[tokio::test]
+    async fn a_subagent_followed_before_its_files_exist_is_read_once_they_do() {
+        let root = tempfile::tempdir().unwrap();
+        let agent_dir = root.path().join("agent");
+        std::fs::create_dir_all(agent_dir.join(dir::PRIVATE)).unwrap();
+        let transcript = root.path().join("s1.jsonl");
+        let (sender, mut events) = mpsc::channel(16);
+        let mut followers = Followers::default();
+        followers.follow(&agent_dir, &transcript, "a1", &sender);
+
+        let folder = root.path().join("s1").join("subagents");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join("agent-a1.meta.json"),
+            r#"{"toolUseId":"toolu_1","description":"Look"}"#,
+        )
+        .unwrap();
+        append(&folder.join("agent-a1.jsonl"), &row("u1"));
+        let (channel, meta) = next(&mut events).await;
+        assert_eq!(channel, Channel::Agent);
+        assert_eq!(meta["meta"]["toolUseId"], "toolu_1");
+        assert_eq!(next_row(&mut events).await["uuid"], "u1");
     }
 }

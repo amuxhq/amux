@@ -112,7 +112,10 @@ pub(crate) fn agent_row(frame: &str, agent: &str) -> Option<usize> {
         let Some(after) = rest.strip_prefix(agent) else {
             return false;
         };
-        after.is_empty() || after.starts_with("  ") || after.starts_with(" ▸")
+        after.is_empty()
+            || after.starts_with("  ")
+            || after.starts_with(" ▸")
+            || after.starts_with(" ▾")
     })
 }
 

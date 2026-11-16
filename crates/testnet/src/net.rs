@@ -1556,23 +1556,32 @@ impl Net {
     }
 
     fn write_script(&self, name: &str, mut script: Script) -> Result<PathBuf, NetError> {
-        let gates = self.gates();
-        let resolve = |path: &mut PathBuf| {
-            if path.is_relative() {
-                *path = gates.join(&*path);
-            }
-        };
-        for step in &mut script.steps {
-            match step {
-                Step::WaitFor { path } => resolve(path),
-                Step::Tool(tool) => {
-                    if let Some(path) = tool.wait_for.as_mut() {
-                        resolve(path);
-                    }
+        // A relative gate is one of this net's, at any depth: a subagent's
+        // steps wait on gates as the turn's own do.
+        fn resolve(gates: &Path, steps: &mut [Step]) {
+            let gate = |path: &mut PathBuf| {
+                if path.is_relative() {
+                    *path = gates.join(&*path);
                 }
-                _ => {}
+            };
+            for step in steps {
+                match step {
+                    Step::WaitFor { path } => gate(path),
+                    Step::Tool(tool) => {
+                        if let Some(path) = tool.wait_for.as_mut() {
+                            gate(path);
+                        }
+                    }
+                    Step::Subagents { agents } => {
+                        for agent in agents {
+                            resolve(gates, &mut agent.steps);
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
+        resolve(&self.gates(), &mut script.steps);
         let path = self
             .root
             .path()

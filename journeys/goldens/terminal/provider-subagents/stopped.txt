@@ -1,0 +1,34 @@
+
+  Read the store's migrations │ /tmp/journey/aj-xxxxxxxx/net/desk/work · desk               stopped │ [Home]
+  ↑ lead
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    Read the store's migrations and list any that rewrite a table.                                   hh:mm
+
+
+  ▸ Read 2 files, searched once
+  │ Dump the store's schema · <t> · cancelled
+  │   $ sqlite3 store.db .schema
+
+  stopped ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ Claude runs this subagent · it takes no messages                                                       │
+  ╰─────────────────────────────────────────────────────────────────────────────────────────────── Fake 1 ─╯
+
+  ctrl+a more

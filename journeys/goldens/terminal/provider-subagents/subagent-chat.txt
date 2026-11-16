@@ -1,0 +1,34 @@
+
+  Survey the redraw paths │ /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                   settled │ [Home]
+  ↑ lead · 1 needs you
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    Find every path that redraws the terminal client's screen, and say which events trigger each.    hh:mm
+
+
+  ▸ Searched once
+
+    Two paths redraw the screen: the 30 ms tick while anything animates, and every inventory event from the
+    daemon.
+
+  settled ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ Claude runs this subagent · it takes no messages                                                       │
+  ╰─────────────────────────────────────────────────────────────────────────────────────────────── Fake 1 ─╯
+
+  ctrl+a more

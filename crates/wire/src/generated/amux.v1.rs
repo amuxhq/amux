@@ -7391,6 +7391,12 @@ pub struct ResumeAgentRequest {
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(message, optional, tag = "2")]
     pub initial_prompt: ::core::option::Option<PromptSubmission>,
+    /// Resume it only if it is suspended (live with no process), as when a
+    /// client acts on a row it holds that may be out of date: an agent stopped
+    /// since is refused with FAILED_PRECONDITION rather than started again.
+    /// False, as from builds before it, resumes any agent that is not running.
+    #[prost(bool, tag = "3")]
+    pub if_suspended: bool,
 }
 impl ::prost::Name for ResumeAgentRequest {
     const NAME: &'static str = "ResumeAgentRequest";

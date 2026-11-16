@@ -225,11 +225,14 @@ impl AgentService for PeerApi {
             .map(crate::spec::prompt_bootstrap)
             .transpose()
             .map_err(|error| status(error.to_wire()))?;
-        runtime
-            .resume(agent_id(&request.agent_id)?, bootstrap)
-            .await
-            .map(|agent| Response::new(ResumeAgentResponse { agent: Some(agent) }))
-            .map_err(|error| status(error.to_wire()))
+        let id = agent_id(&request.agent_id)?;
+        if request.if_suspended {
+            runtime.wake(id, bootstrap).await
+        } else {
+            runtime.resume(id, bootstrap).await
+        }
+        .map(|agent| Response::new(ResumeAgentResponse { agent: Some(agent) }))
+        .map_err(|error| status(error.to_wire()))
     }
 
     async fn delete_agent(

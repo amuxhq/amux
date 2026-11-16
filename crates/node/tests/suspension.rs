@@ -337,3 +337,68 @@ async fn a_persons_input_met_by_a_suspension_wakes_the_agent_with_it() {
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }
+
+/// A client acting on a row it holds asks for a wake, as `amux attach` does
+/// for an agent its row says is suspended: the agent is resumed only if it
+/// still is, and one stopped since is refused, never started again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_resume_asked_only_if_suspended_starts_no_stopped_agent() {
+    use wire::agent_service_server::AgentService as _;
+    let install = Install::new();
+    let napper = SyntheticAgent::new(&install, "napper", SEGMENTS);
+    napper.write_spec();
+    let mut row = napper.row(&install);
+    row.exit_cause = ExitCause::Suspended as i32;
+    install.store().put_agent(&row).unwrap();
+    let stopped = SyntheticAgent::new(&install, "stopped", SEGMENTS);
+    stopped.write_spec();
+    let mut row = stopped.row(&install);
+    row.lifecycle = Lifecycle::Exited as i32;
+    row.exit_cause = ExitCause::Stopped as i32;
+    install.store().put_agent(&row).unwrap();
+    let daemon = install
+        .start(
+            "boot-1",
+            install.launch(
+                "resumed",
+                vec![
+                    support::text("awake"),
+                    provider_fakes::script::Step::TurnEnd,
+                ],
+            ),
+        )
+        .await;
+    let runtime = runtime(&daemon, &install);
+    let client = node::ClientApi::new(&runtime, None);
+    let wake = |agent: &SyntheticAgent| {
+        tonic::Request::new(wire::ResumeAgentRequest {
+            agent_id: agent.id.as_bytes().to_vec(),
+            initial_prompt: None,
+            if_suspended: true,
+        })
+    };
+
+    let refused = client
+        .resume_agent(wake(&stopped))
+        .await
+        .expect_err("a stopped agent is not woken");
+    assert_eq!(
+        refused.code(),
+        tonic::Code::FailedPrecondition,
+        "{refused:?}"
+    );
+    assert_eq!(runtime.agent(stopped.id).await.unwrap().incarnation, 1);
+    assert!(!stopped.dir.join("spec.2").exists());
+
+    let woken = client
+        .resume_agent(wake(&napper))
+        .await
+        .expect("a suspended agent is woken")
+        .into_inner()
+        .agent
+        .unwrap();
+    assert_eq!((woken.lifecycle(), woken.incarnation), (Lifecycle::Live, 2));
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}

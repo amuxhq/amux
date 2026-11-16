@@ -267,6 +267,7 @@ async fn replica_agent_is_refused_on_every_read_and_input() {
                 .resume_agent(ResumeAgentRequest {
                     agent_id: coder.clone(),
                     initial_prompt: None,
+                    if_suspended: false,
                 })
                 .await
                 .err(),

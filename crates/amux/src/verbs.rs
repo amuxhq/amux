@@ -460,6 +460,7 @@ pub async fn resume(client: &mut Client, reference: &str, text: Option<&str>) ->
         .resume_agent(ResumeAgentRequest {
             agent_id: agent.agent_id.clone(),
             initial_prompt: text.map(submission),
+            if_suspended: false,
         })
         .await
         .map_err(crate::plain)?

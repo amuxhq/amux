@@ -306,7 +306,9 @@ suspensions:
   close), and its children follow as for any exit; deleting it removes it;
 - it is no awake member of its workspace while it has no process, and a
   resume takes the workspace's claim before it launches;
-- `amux attach` resumes it, with no input, before it dials the terminal.
+- `amux attach` wakes it, with no input, before it dials the terminal: it
+  asks the resume only of a suspended agent (`if_suspended`), since the row
+  it goes by may be out of date, and an agent stopped since stays stopped.
 
 A child's report is for one incarnation of its parent. Under the experiment
 the parent's host keeps, in `exp_suspension_1_runs`, the incarnation each of

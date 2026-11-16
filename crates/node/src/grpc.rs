@@ -445,10 +445,13 @@ impl AgentService for ClientApi {
             .map(crate::spec::prompt_bootstrap)
             .transpose()
             .map_err(|error| status(error.to_wire()))?;
-        let resumed = runtime
-            .resume(agent_id(&request.agent_id)?, bootstrap)
-            .await
-            .map_err(|error| status(error.to_wire()))?;
+        let id = agent_id(&request.agent_id)?;
+        let resumed = if request.if_suspended {
+            runtime.wake(id, bootstrap).await
+        } else {
+            runtime.resume(id, bootstrap).await
+        }
+        .map_err(|error| status(error.to_wire()))?;
         self.record_input(&runtime, first, analytics::On::ThisHost, Some(false));
         Ok(Response::new(ResumeAgentResponse {
             agent: Some(resumed),

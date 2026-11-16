@@ -156,9 +156,11 @@ impl Attacher {
 }
 
 impl Attacher {
-    /// Resumes the suspended agent with no input and dials its terminal
-    /// once its process is up. A resume refused because another got there
-    /// first still finds the process.
+    /// Wakes the suspended agent with no input and dials its terminal once
+    /// its process is up. The row it goes by may be out of date, so this is
+    /// a wake, which the daemon refuses for an agent stopped since: then it
+    /// says so. A wake refused because another got there first still finds
+    /// the process.
     async fn wake(&self, agent: &Agent, dir: &Path) -> io::Result<Attached> {
         match crate::connect::client_of(&self.profile).await {
             Ok(mut client) => {
@@ -167,10 +169,23 @@ impl Attacher {
                     .resume_agent(wire::ResumeAgentRequest {
                         agent_id: agent.agent_id.clone(),
                         initial_prompt: None,
+                        if_suspended: true,
                     })
                     .await;
                 if let Err(status) = resumed {
-                    tracing::debug!(%status, "resuming a suspended agent to attach to it");
+                    tracing::debug!(%status, "waking a suspended agent to attach to it");
+                    let now = match Uuid::from_slice(&agent.agent_id) {
+                        Ok(id) => crate::verbs::resolve(&mut client, &id.to_string())
+                            .await
+                            .ok(),
+                        Err(_) => None,
+                    };
+                    if let Some(now) = now
+                        && now.lifecycle() == Lifecycle::Exited
+                        && let Some(why) = self.refusal(&now)
+                    {
+                        return Err(io::Error::other(why));
+                    }
                 }
             }
             Err(error) => tracing::debug!(%error, "reaching the daemon to resume an agent"),

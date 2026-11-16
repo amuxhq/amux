@@ -857,6 +857,7 @@ impl Session {
         let request = ResumeAgentRequest {
             agent_id: self.inner.agent_id.clone(),
             initial_prompt: None,
+            if_suspended: false,
         };
         let agent = self.inner.client.resume_agent(request).await?;
         self.inner.apply(Msg::Entry(agent.clone()));
@@ -878,6 +879,7 @@ impl Session {
         let request = ResumeAgentRequest {
             agent_id: self.inner.agent_id.clone(),
             initial_prompt: Some(draft),
+            if_suspended: false,
         };
         match self.inner.client.resume_agent(request).await {
             Ok(agent) => {

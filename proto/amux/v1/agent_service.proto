@@ -144,6 +144,11 @@ message FileAgentResponse {
 message ResumeAgentRequest {
   bytes agent_id = 1;
   optional PromptSubmission initial_prompt = 2;
+  // Resume it only if it is suspended (live with no process), as when a
+  // client acts on a row it holds that may be out of date: an agent stopped
+  // since is refused with FAILED_PRECONDITION rather than started again.
+  // False, as from builds before it, resumes any agent that is not running.
+  bool if_suspended = 3;
 }
 
 message ResumeAgentResponse {

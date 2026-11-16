@@ -1234,6 +1234,7 @@ impl Net {
                 .resume_agent(wire::ResumeAgentRequest {
                     agent_id: agent.id.as_bytes().to_vec(),
                     initial_prompt: submission,
+                    if_suspended: false,
                 })
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?

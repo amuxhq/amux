@@ -91,6 +91,10 @@ pub(super) struct Child {
     /// that shows it: its chat's first item once it starts.
     #[serde(default)]
     pub(super) prompt: Option<(String, String)>,
+    /// The text of the prompt its call drew, until Codex echoes it as the
+    /// child's own message, which then draws nothing more.
+    #[serde(default)]
+    pub(super) prompt_drawn: Option<String>,
     pub(super) model: Option<String>,
     pub(super) effort: Option<String>,
     /// When it last started or was continued: when its own job began.
@@ -230,6 +234,9 @@ impl State {
         };
         self.shared.subagent(emit, thread).start(start);
         if let Some((key, text)) = prompt {
+            if let Some(child) = self.children.get_mut(thread) {
+                child.prompt_drawn = Some(text.clone());
+            }
             self.as_child(thread, |state| {
                 state.emit_item(
                     emit,

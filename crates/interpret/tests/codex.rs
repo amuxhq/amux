@@ -2464,6 +2464,40 @@ fn a_collab_calls_prompt_is_the_childs_first_item() {
     );
 }
 
+/// Codex 0.166 says the prompt on the spawn call and then echoes it as the
+/// child thread's own first message (seen live with `gpt-5.6-luna`): the
+/// child's chat shows it once.
+#[test]
+fn a_childs_echo_of_its_spawn_prompt_draws_it_once() {
+    let mut agent = Driven::started();
+    agent.rpc(
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+    );
+    agent.rpc(
+        json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1",
+        "item": {"type": "collabAgentToolCall", "id": "spawn-1", "tool": "spawnAgent",
+            "status": "completed", "senderThreadId": "t1", "receiverThreadIds": ["child"],
+            "prompt": "Count the files.", "agentsStates": {}}}}),
+    );
+    agent.rpc(
+        json!({"id": "amux-read-1", "result": {"thread": {"id": "child", "agentNickname": "Ada"}}}),
+    );
+    agent.rpc(json!({"method": "turn/started", "params": {"threadId": "child", "turn": {"id": "child-turn"}}}));
+    for method in ["item/started", "item/completed"] {
+        let echoed = agent.rpc(json!({"method": method, "params": {"threadId": "child",
+            "turnId": "child-turn", "item": {"type": "userMessage", "id": "u1",
+                "content": [{"type": "text", "text": "Count the files.", "text_elements": []}]}}}));
+        assert!(echoed.broken.is_none(), "{:?}", echoed.broken);
+    }
+    let keys: Vec<&str> = agent
+        .sub("child")
+        .items
+        .iter()
+        .map(|item| item.key.as_str())
+        .collect();
+    assert_eq!(keys, ["prompt:spawn-1"], "the prompt is drawn twice");
+}
+
 /// A child's items are its own chat's: none reach the parent's, and the
 /// subagent ends at its own turn end, finished.
 #[test]

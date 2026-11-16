@@ -2324,8 +2324,9 @@ impl State {
         content: &[UserInput],
     ) {
         // A subagent's task comes from its parent's model, never a person:
-        // drawn as the prompt it is, with nothing to match against.
-        if self.speaking.is_some() {
+        // drawn as the prompt it is, unless it is the echo of the prompt
+        // its parent's call already drew in its chat.
+        if let Some(thread) = self.speaking.clone() {
             let text = content
                 .iter()
                 .filter_map(|part| match part {
@@ -2334,6 +2335,12 @@ impl State {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
+            if let Some(child) = self.children.get_mut(&thread)
+                && child.prompt_drawn.as_deref() == Some(text.as_str())
+            {
+                child.prompt_drawn = None;
+                return;
+            }
             return self.emit_item(
                 emit,
                 ItemDraft {

@@ -26,6 +26,7 @@ mod narrow;
 mod onboarding;
 mod round2;
 mod selection;
+mod subagents;
 mod text_layout;
 
 fn theme() -> Theme {

@@ -16,7 +16,7 @@ use ui_state::{Fold, ItemClass, Key, SessionState};
 use ui_view::{Row, RunCounts, ToolRows, chat_rows_for};
 
 use super::feed::{self, Header, LineHits, Placement};
-use super::rows::{RowFacts, RowState, row_lines};
+use super::rows::{GroupLine, RowFacts, RowState, row_lines};
 use super::selection::{FeedSelection, LineText, Piece, joined};
 use crate::theme::Theme;
 
@@ -73,6 +73,8 @@ pub enum Toggle {
     Run(Key),
     /// A step's detail.
     Step(Key),
+    /// A group of subagents, by one of its calls.
+    Group(Key),
 }
 
 /// Rows fetched per page, and the tail a chat opens with.
@@ -112,6 +114,8 @@ pub struct Block {
     /// How each line reads when copied.
     pub text: Vec<LineText>,
     pub toggle: Toggle,
+    /// The agent the row's call started, which the leader's Enter opens.
+    pub opens: Option<ui_state::AgentKey>,
 }
 
 /// What a frame's layout produced.
@@ -156,9 +160,45 @@ pub struct Frame<'a> {
     pub tail: &'a [Line<'static>],
     /// This terminal draws images, so images leave room for thumbnails.
     pub thumbnails: bool,
+    /// How the agents the held rows open stand, from the fleet: the rows
+    /// carry only which agent, so they change only with their items.
+    pub agents: &'a ui_view::ChatAgents,
 }
 
 impl Frame<'_> {
+    /// The agent `id` as the fleet has it.
+    fn opened(&self, id: &[u8]) -> Option<ui_view::OpenedAgent> {
+        self.agents
+            .agents
+            .iter()
+            .find(|opened| opened.agent.agent == id)
+            .cloned()
+    }
+
+    /// Where a group's agents stand; none of them known when the fleet
+    /// lists none yet.
+    fn group_state(&self, group: &ui_view::SubagentGroup) -> ui_view::GroupState {
+        self.agents
+            .groups
+            .iter()
+            .find(|view| view.first == group.first)
+            .map(|view| view.state.clone())
+            .unwrap_or_else(|| ui_view::GroupState {
+                agents: group.agents.len() as u32,
+                unknown: group.agents.len() as u32,
+                ..ui_view::GroupState::default()
+            })
+    }
+
+    /// Whether the next row drawn after `order` is a call of the same open
+    /// group, so the two sit together as a run's steps do.
+    fn group_continues(&self, state: &SessionState, order: u64, first: &Key) -> bool {
+        after(state, order)
+            .find_map(|held| self.shown(state, held.item.order))
+            .and_then(|(row, _)| row.group)
+            .is_some_and(|group| &group.first == first)
+    }
+
     fn options(&self) -> ToolRows<'_> {
         self.tools.rows(self.open_runs)
     }
@@ -211,6 +251,7 @@ impl Frame<'_> {
             hits,
             text,
             toggle: Toggle::Row,
+            opens: None,
         })
     }
 
@@ -304,8 +345,24 @@ impl Frame<'_> {
                     // Errors, boundaries and the rest draw as rows.
                     return self.row_block(state, order);
                 }
-                let toggle = Toggle::Step(row.id.clone());
-                (Placement::Plain, row, toggle)
+                if row.opens.is_some() || row.group.is_some() {
+                    // A call that started an agent: drawn on its own, or
+                    // as its group, which draws at its first call.
+                    let heads = row.group.as_ref().filter(|group| {
+                        group.first == row.id && (!group.open || self.tools == ToolSteps::Collapse)
+                    });
+                    let joined = row.group.as_ref().is_some_and(|group| {
+                        group.open && self.group_continues(state, order, &group.first)
+                    });
+                    let toggle = match heads {
+                        Some(_) => Toggle::Group(row.id.clone()),
+                        None => Toggle::Step(row.id.clone()),
+                    };
+                    (Placement::Call { joined }, row, toggle)
+                } else {
+                    let toggle = Toggle::Step(row.id.clone());
+                    (Placement::Plain, row, toggle)
+                }
             }
         };
         let expanded = self.expanded.contains(&row.id);
@@ -318,6 +375,23 @@ impl Frame<'_> {
             // Opened, an edit shows its whole patch.
             facts.patch = ui_view::patch_head(state, &row.id, usize::MAX);
         }
+        if matches!(placement, Placement::Call { .. }) {
+            facts.opened = row.opens.as_deref().and_then(|id| self.opened(id));
+            facts.group = row
+                .group
+                .as_ref()
+                .filter(|_| matches!(toggle, Toggle::Group(_)))
+                .map(|group| GroupLine {
+                    state: self.group_state(group),
+                    open: group.open,
+                });
+        }
+        // A folded group stands for several agents, so it opens none.
+        let opens = facts
+            .opened
+            .as_ref()
+            .filter(|_| facts.group.as_ref().is_none_or(|group| group.open))
+            .map(|opened| opened.agent.clone());
         let drawn = feed::row_lines(&row, &placement, expanded, &facts, self.width, self.theme)?;
         let text = drawn.line_text();
         let mut lines = drawn.lines;
@@ -340,6 +414,7 @@ impl Frame<'_> {
             hits: drawn.hits,
             text,
             toggle,
+            opens,
         })
     }
 

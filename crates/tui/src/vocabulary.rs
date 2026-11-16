@@ -26,7 +26,7 @@ use crate::chat::ask::AskUi;
 use crate::chat::composer::{QueueEntry, edge_row};
 use crate::chat::review::ReviewPage;
 use crate::chat::rows::{RowFacts, RowState, row_lines};
-use crate::chat::{composer_lines, feed, sign_in_composer_lines};
+use crate::chat::{composer_lines, feed, native_composer_lines, sign_in_composer_lines};
 use crate::editor::Editor;
 use crate::theme::Theme;
 
@@ -162,6 +162,23 @@ pub fn components(theme: Theme) -> Vec<Component> {
             theme,
         ),
     );
+    for (name, shows, kind, stop) in native_composers() {
+        add(
+            name,
+            shows,
+            native_composer_lines(
+                kind,
+                &stop,
+                if kind == wire::Kind::Codex {
+                    "GPT-5.5"
+                } else {
+                    "Sonnet 5"
+                },
+                w,
+                theme,
+            ),
+        );
+    }
     for (name, shows, buffer) in chat_surroundings(theme)
         .into_iter()
         .chain(chat_controls(theme))
@@ -202,14 +219,20 @@ fn feed_lines(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Lin
     if !feeds {
         return row_lines(row, state, width, theme);
     }
-    let Some(drawn) = feed::row_lines(
-        row,
-        &feed::Placement::Plain,
-        state.expanded,
-        &facts(row),
-        width,
-        theme,
-    ) else {
+    // A call that started an agent draws as the layout places it: on its
+    // own, or as its group; an open group's calls sit together.
+    let placement = if row.opens.is_some() || row.group.is_some() {
+        feed::Placement::Call {
+            joined: row
+                .group
+                .as_ref()
+                .is_some_and(|group| group.open && row.id != "call-4"),
+        }
+    } else {
+        feed::Placement::Plain
+    };
+    let Some(drawn) = feed::row_lines(row, &placement, state.expanded, &facts(row), width, theme)
+    else {
         return Vec::new();
     };
     let mut lines = drawn.lines;
@@ -710,6 +733,74 @@ fn row(kind: RowKind) -> Row {
     }
 }
 
+/// The descriptions of the authored group's four calls.
+const GROUP_TASKS: [&str; 4] = [
+    "Survey the redraw paths",
+    "Check the journal's retention",
+    "Read the store's migrations",
+    "Look for stale fixtures",
+];
+
+/// An Agent call starting authored subagent `n`, which the fleet holds as
+/// [`authored_agent`] says; its answer once it returned one.
+fn subagent_call(n: usize, description: &str, answer: Option<&str>) -> Row {
+    let mut call = row(RowKind::Subagent {
+        description: description.into(),
+        continued: false,
+        state: if answer.is_some() {
+            CallPhase::Succeeded
+        } else {
+            CallPhase::Running
+        },
+        answer: answer.unwrap_or_default().into(),
+        duration_ms: answer.map(|_| 95_000),
+    });
+    call.opens = Some(format!("sub-{n}").into_bytes());
+    call
+}
+
+/// The authored group: its first call, its four agents, and whether the
+/// reader opened it.
+fn group_of(open: bool) -> ui_view::SubagentGroup {
+    ui_view::SubagentGroup {
+        first: "call-1".into(),
+        agents: (1..=4).map(|n| format!("sub-{n}").into_bytes()).collect(),
+        open,
+    }
+}
+
+/// How the fleet holds authored subagent `n`: at work, waiting on you,
+/// done, stopped, failed.
+fn authored_agent(id: &[u8]) -> Option<ui_view::OpenedAgent> {
+    let n: usize = std::str::from_utf8(id)
+        .ok()?
+        .strip_prefix("sub-")?
+        .parse()
+        .ok()?;
+    let phase = match n {
+        1 => ui_state::PhaseView::Working,
+        2 => ui_state::PhaseView::NeedsYou,
+        3 => ui_state::PhaseView::Exited {
+            cause: ui_view::ExitCause::Finished,
+        },
+        4 => ui_state::PhaseView::Exited {
+            cause: ui_view::ExitCause::Ended,
+        },
+        _ => ui_state::PhaseView::Exited {
+            cause: ui_view::ExitCause::Failed("the provider ended it".into()),
+        },
+    };
+    Some(ui_view::OpenedAgent {
+        agent: ui_state::AgentKey {
+            host: b"host".to_vec(),
+            agent: id.to_vec(),
+        },
+        name: format!("sub-{n:08}"),
+        kind: wire::Kind::ClaudeSdk,
+        phase,
+    })
+}
+
 /// When every row was written: 14:07, which the crate's tests read in UTC.
 fn written_at() -> i64 {
     use chrono::TimeZone;
@@ -739,7 +830,25 @@ const FOCUSED: RowState = RowState {
 /// What the layout would look up for an authored row: the first edit's
 /// landed patch.
 fn facts(row: &Row) -> RowFacts {
-    let mut facts = RowFacts::default();
+    let mut facts = RowFacts {
+        opened: row.opens.as_deref().and_then(authored_agent),
+        group: row
+            .group
+            .as_ref()
+            .filter(|group| group.first == row.id)
+            .map(|group| crate::chat::rows::GroupLine {
+                state: ui_view::GroupState {
+                    agents: 4,
+                    running: 1,
+                    needs_you: 1,
+                    finished: 1,
+                    ended: 1,
+                    ..ui_view::GroupState::default()
+                },
+                open: group.open,
+            }),
+        ..RowFacts::default()
+    };
     if let RowKind::FileChange { files, state } = &row.kind
         && *state == CallPhase::Succeeded
         && files
@@ -1209,29 +1318,50 @@ fn row_sets() -> Vec<RowSet> {
         ),
         (
             "row_subagent",
-            "A subagent at work, then one finished with its answer, opened.",
+            "Calls that started subagents, each as its subagent stands in the fleet: one at work, one waiting on you for an ask in its own chat, one done with its answer opened, one stopped, one that failed; then a call from before subagents had chats of their own, reading its own state.",
             vec![
+                (subagent_call(1, "Survey the redraw paths", None), CLOSED),
+                (subagent_call(2, "Check the journal's retention", None), CLOSED),
                 (
-                    row(RowKind::Subagent {
-                        description: "Survey the redraw paths".into(),
-                        continued: false,
-                        state: CallPhase::Running,
-                        answer: String::new(),
-                        duration_ms: None,
-                    }),
-                    CLOSED,
+                    subagent_call(
+                        3,
+                        "Read the store's migrations",
+                        Some("Two paths redraw: the tick and inventory events."),
+                    ),
+                    OPEN,
                 ),
+                (subagent_call(4, "Look for stale fixtures", None), CLOSED),
+                (subagent_call(5, "Profile the first frame", None), CLOSED),
                 (
                     row(RowKind::Subagent {
                         description: "Survey the redraw paths".into(),
                         continued: false,
                         state: CallPhase::Succeeded,
-                        answer: "Two paths redraw: the tick and inventory events.".into(),
+                        answer: String::new(),
                         duration_ms: Some(95_000),
                     }),
-                    OPEN,
+                    CLOSED,
                 ),
             ],
+        ),
+        (
+            "row_subagent_group",
+            "Four subagents started in one turn, folded into one row with where they stand, one waiting on you; then the same group opened, each call on its own line under the row that folds it again.",
+            {
+                let mut folded = subagent_call(1, "Survey the redraw paths", None);
+                folded.id = "call-1".into();
+                folded.group = Some(group_of(false));
+                let mut open: Vec<(Row, RowState)> = (1..=4)
+                    .map(|n| {
+                        let mut call = subagent_call(n, GROUP_TASKS[n - 1], None);
+                        call.id = format!("call-{n}");
+                        call.group = Some(group_of(true));
+                        (call, CLOSED)
+                    })
+                    .collect();
+                open.insert(0, (folded, CLOSED));
+                open
+            },
         ),
         (
             "row_background",
@@ -2153,6 +2283,42 @@ fn edge_rows() -> Vec<(&'static str, &'static str, ui_view::Overview, usize)> {
         },
         2,
     )]
+}
+
+/// A provider subagent's composer in each way its stop can stand.
+fn native_composers() -> Vec<(&'static str, &'static str, wire::Kind, ui_state::JobStop)> {
+    use ui_state::JobStop;
+    vec![
+        (
+            "composer_native",
+            "A headless Claude subagent's composer: no field, only that Claude runs it and it takes no messages, and Ctrl+X to stop it.",
+            wire::Kind::ClaudeSdk,
+            JobStop::Offered {
+                key: "task-1".into(),
+            },
+        ),
+        (
+            "composer_native_stopping",
+            "A subagent's composer once its stop went: stopping, and no Stop to press again.",
+            wire::Kind::Codex,
+            JobStop::Stopping,
+        ),
+        (
+            "composer_native_refused",
+            "A subagent's composer after its provider refused the stop: the provider's words in red, and Stop offered again.",
+            wire::Kind::ClaudeSdk,
+            JobStop::Refused {
+                key: "task-1".into(),
+                error: "no running task with that id".into(),
+            },
+        ),
+        (
+            "composer_native_terminal",
+            "A terminal Claude subagent's composer, or one that ended: no field and no Stop, since terminal Claude stops no single subagent.",
+            wire::Kind::ClaudePty,
+            JobStop::Unavailable,
+        ),
+    ]
 }
 
 fn composers() -> Vec<(&'static str, &'static str, Composer, Reach, &'static str)> {

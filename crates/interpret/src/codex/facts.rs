@@ -830,13 +830,13 @@ impl State {
         };
         // Codex keeps a thread loaded, with its tool servers, while a client
         // is subscribed: the agent leaves the old thread and the children it
-        // still runs, as Codex's own app does when it switches threads. Their
-        // subagents end here, since nothing more will be heard of them. A
-        // child that ended earlier is no longer known here, so it is not
-        // left.
-        let live: Vec<String> = self.children.keys().cloned().collect();
+        // spawned in this incarnation, running or ended, as Codex's own app
+        // does when it switches threads. Those still running end here, since
+        // nothing more will be heard of them.
+        let mut children: BTreeSet<String> = self.children.keys().cloned().collect();
         self.leave_children(emit);
-        let left: Vec<String> = self.thread_id.take().into_iter().chain(live).collect();
+        children.append(&mut self.ended_children);
+        let left: Vec<String> = self.thread_id.take().into_iter().chain(children).collect();
         self.left.extend(left.iter().cloned());
         for thread_id in left {
             let bytes = self.request_as(

@@ -2955,11 +2955,12 @@ fn a_follow_up_continues_the_subagent_under_its_own_call() {
     );
 }
 
-/// Nothing of a child thread stays in the checkpoint once its subagent
-/// ended, so a long-lived agent's checkpoint does not grow with every child
-/// it ran.
+/// Of a child thread whose subagent ended, the checkpoint keeps only its
+/// thread id, and only for the incarnation whose connection subscribed to
+/// it, so a long-lived agent's checkpoint does not grow with what every
+/// child it ran held.
 #[test]
-fn a_finished_child_leaves_nothing_in_the_checkpoint() {
+fn a_finished_child_leaves_only_its_thread_id_in_the_checkpoint() {
     let mut agent = with_a_child();
     let running = serde_json::to_value(&agent.state).unwrap();
     assert!(running["children"].get("child").is_some(), "{running:#}");
@@ -2967,6 +2968,50 @@ fn a_finished_child_leaves_nothing_in_the_checkpoint() {
     assert!(agent.sub("child").end.is_some());
     let ended = serde_json::to_value(&agent.state).unwrap();
     assert!(ended.get("children").is_none(), "{:#}", ended["children"]);
+    assert_eq!(ended["ended_children"], json!(["child"]));
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 2,
+        ..Default::default()
+    };
+    let (next, _) = Codex::reincarnate(agent.state.clone(), &spec);
+    let next = serde_json::to_value(&next).unwrap();
+    assert!(next.get("ended_children").is_none(), "{next:#}");
+}
+
+/// `/clear` unsubscribes from the old thread and from every child it spawned
+/// in this incarnation, an ended one included: Codex keeps a child loaded
+/// with its tool servers while a client is subscribed to it, and amux stays
+/// subscribed past a child's end so that a follow-up's turn on it reaches
+/// amux.
+#[test]
+fn a_clear_unsubscribes_a_child_that_already_ended() {
+    let mut agent = with_a_child();
+    let ended = writes(&child_turn_ends(&mut agent, "completed").effects);
+    assert!(
+        ended
+            .iter()
+            .all(|write| write["method"] != "thread/unsubscribe"),
+        "{ended:?}"
+    );
+    turn_ends(&mut agent);
+    let cleared = agent.prompt(b"p1", "/clear");
+    let start = cleared
+        .iter()
+        .find(|write| write["method"] == "thread/start")
+        .expect("a new thread")
+        .clone();
+    let answered = agent.rpc(json!({"id": start["id"], "result": {
+        "thread": {"id": "t2", "cliVersion": "0.163.0", "turns": []}, "model": "m"}}));
+    let mut unsubscribed: Vec<String> = writes(&answered.effects)
+        .iter()
+        .filter(|write| write["method"] == "thread/unsubscribe")
+        .map(|write| write["params"]["threadId"].as_str().unwrap().to_owned())
+        .collect();
+    unsubscribed.sort();
+    assert_eq!(unsubscribed, ["child", "t1"]);
+    let state = serde_json::to_value(&agent.state).unwrap();
+    assert!(state.get("ended_children").is_none(), "{state:#}");
 }
 
 /// The note telling the parent a person stopped its child is sent again as

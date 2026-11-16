@@ -18,8 +18,10 @@
 //! `subAgentActivity completed`), unless commands it started still run in
 //! the background: an interrupt leaves them running, as it does the
 //! agent's own, so the child stays, listing them, until the last ends.
-//! Nothing of a child is kept past its end, so a long-lived agent's
-//! checkpoint does not grow with every child it ran. A follow-up starts it
+//! Nothing of a child is kept past its end but its thread id, until the
+//! agent leaves its thread (see `ended_children`), so a long-lived agent's
+//! checkpoint does not grow with what every child it ran held. A follow-up
+//! starts it
 //! again as the same agent (its id comes from the thread's), afresh: under
 //! the follow-up's call, in the chat of the thread that sent it, its
 //! nickname read again as a first start's is.
@@ -346,6 +348,7 @@ impl State {
         continued: bool,
     ) {
         let now = self.shared.now_ms();
+        self.ended_children.remove(thread);
         self.children.insert(
             thread.to_owned(),
             Child {
@@ -695,8 +698,10 @@ impl State {
         self.child_snapshot(emit, thread, true);
         self.shared.subagent(emit, thread).end(end);
         // Nothing more is read of it but a follow-up, which starts it
-        // afresh.
+        // afresh. Its thread stays subscribed, for a follow-up's turn to
+        // reach this client, until the agent leaves it.
         self.children.remove(thread);
+        self.ended_children.insert(thread.to_owned());
     }
 
     /// Every running subagent ends for `end`: the provider process that ran
@@ -748,6 +753,7 @@ impl State {
             );
         }
         self.children.clear();
+        self.ended_children.clear();
     }
 
     // --- snapshots -----------------------------------------------------

@@ -290,7 +290,8 @@ agent's own items.
 **Nothing of a finished subagent is kept.** An interpreter lets go of its
 record of a subagent once its end is journaled and nothing more can arrive
 that needs it, so a long-lived agent's checkpoint does not grow with every
-subagent it ran. A continuation after that starts it afresh: the same
+subagent it ran. (Codex keeps an ended child's thread id, until `/clear`
+or the next incarnation, to unsubscribe from it.) A continuation after that starts it afresh: the same
 agent, as its id is derived, under the call that continued it, which the
 daemon reads as a continuation of the row that ended. Whatever else
 arrives later for it (a late frame, a stop, an answer, a notice) is treated
@@ -984,7 +985,7 @@ answer.
   | Command | What amux sends |
   |---|---|
   | `/compact` | `thread/compact/start`, which runs as a turn of its own |
-  | `/clear` | `thread/start` (ids `amux-clear-<n>`) in the agent's folder with the model and permission in force; the thread it answers becomes the agent's conversation, marked by a cleared boundary, named, and recorded for the next incarnation to resume. The agent then unsubscribes from the old thread and the child threads still running (`thread/unsubscribe`), which Codex otherwise keeps loaded with their tool servers; a child that ended earlier is no longer known to the interpreter. The new thread's first turn carries the mode and effort the agent ran with |
+  | `/clear` | `thread/start` (ids `amux-clear-<n>`) in the agent's folder with the model and permission in force; the thread it answers becomes the agent's conversation, marked by a cleared boundary, named, and recorded for the next incarnation to resume. The agent then unsubscribes from the old thread and the child threads it spawned in this incarnation, running or ended (`thread/unsubscribe`), which Codex otherwise keeps loaded with their tool servers. Of an ended child the interpreter keeps only its thread id, for this: unsubscribing a child at its end would free nothing while its parent is loaded, and a follow-up's turn on it would then reach amux only by subscribing again in time, which races the child's first events. The new thread's first turn carries the mode and effort the agent ran with |
   | `/review [instructions]` | `review/start` on the thread: the uncommitted changes, or the instructions given. The review runs as a turn |
   | `/init` | A turn with the prompt Codex's own `/init` sends (as Codex 0.161 words it), which writes an `AGENTS.md` unless one exists |
   | `/plan [prompt]` | Plan mode from the next turn, as choosing the mode does; the words after it, if any, are that turn's prompt |

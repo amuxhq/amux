@@ -81,7 +81,20 @@ pub(super) struct Sub {
     pub(super) followed: bool,
     /// Its parent learned it ended, and its file is being read to its end.
     pub(super) ending: Option<Ending>,
+    /// How its latest run ended, as its parent's notice said: what a call
+    /// that continued it hands back when Claude's result of that call is
+    /// read only after the notice. None while a run has had no notice.
+    #[serde(default)]
+    pub(super) outcome: Option<Outcome>,
     pub(super) conversation: Conversation,
+}
+
+/// How a subagent's run ended, for the call that ran it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub(super) struct Outcome {
+    /// The call's `ToolState`.
+    pub(super) state: i32,
+    pub(super) text: String,
 }
 
 /// A subagent's end its parent reported, waiting for its last rows.
@@ -368,6 +381,7 @@ impl State {
         }
         sub.phase = Phase::Running;
         sub.ending = None;
+        sub.outcome = None;
         let call_agent_id = match &sub.parent {
             Some(parent) => self.shared.subagent_id(parent),
             None => self.shared.agent_id().to_vec(),
@@ -517,6 +531,12 @@ impl State {
         let end = end_cause(notified.status, notified.summary);
         let state = call_state(notified.status);
         let detail = notified.result.unwrap_or(notified.summary).to_owned();
+        if let Some(sub) = self.subagents.get_mut(&task) {
+            sub.outcome = Some(Outcome {
+                state: state as i32,
+                text: detail.clone(),
+            });
+        }
         self.finish_calls(emit, &task, notified.call, state, &detail);
         // Claude answers the notice with a turn of its own, there at once
         // when the agent is idle, and its queued copy can land before the
@@ -942,6 +962,7 @@ impl State {
             sub.followed = false;
             sub.phase = Phase::Ended;
             sub.ending = None;
+            sub.outcome = None;
         }
         self.owned_tasks.clear();
     }

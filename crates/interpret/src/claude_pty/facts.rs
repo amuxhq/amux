@@ -514,8 +514,9 @@ impl State {
     /// Whether the call `id` is a SendMessage whose result says only that it
     /// resumed the subagent it opens in the background. Then the call stays
     /// running, as a background Agent call does, until the subagent's end
-    /// finishes it with what the subagent said; one whose subagent already
-    /// ended finishes now with its last words.
+    /// finishes it with what the subagent said; one whose run's end was read
+    /// first (the notice can come before Claude's result) finishes now, as
+    /// that run ended.
     fn continuation_launched(&mut self, id: &str, result: Option<&Value>, output: &str) -> bool {
         if !resumed_in_background(result, output) {
             return false;
@@ -531,18 +532,17 @@ impl State {
         let ended = self
             .subagents
             .get(&child)
-            .filter(|sub| sub.phase == super::subagents::Phase::Ended)
-            .map(|sub| sub.conversation.last_said.clone());
+            .and_then(|sub| sub.outcome.clone());
         let now = self.shared.now_ms();
         let Some(tool) = self.tools.get_mut(id) else {
             return false;
         };
         tool.background = true;
         match ended {
-            Some(said) => {
+            Some(outcome) => {
                 tool.of.finished = true;
-                tool.state = ToolState::Succeeded as i32;
-                tool.outcome_text = said;
+                tool.state = outcome.state;
+                tool.outcome_text = outcome.text;
                 tool.ended_at_ms.get_or_insert(now);
             }
             None => {

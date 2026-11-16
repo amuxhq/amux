@@ -2283,3 +2283,150 @@ fn a_continuation_hands_back_the_subagents_reply_not_claudes_json() {
         "{rows:#?}"
     );
 }
+
+/// A continued subagent's end can be read before the parent's transcript
+/// row with Claude's result of the SendMessage that resumed it, its file
+/// read to its end by then or not yet. The call then ends as that run did,
+/// with what its notice says, not as the run before it did, and does not
+/// wait for a notice already read: here the first run answered "ONE TWO
+/// THREE" and the continuation failed without a word.
+#[test]
+fn a_continuation_that_failed_before_its_result_is_read_hands_back_its_failure() {
+    const SEND: &str = "toolu_send";
+    let with = |extra: serde_json::Value| {
+        let mut value = serde_json::json!({
+            "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl",
+            "cwd": "/w", "prompt_id": "p1", "permission_mode": "default",
+        });
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        hook(value)
+    };
+    let subagent_row = |row: serde_json::Value| {
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::SubagentTranscript,
+            payload: row.to_string().into_bytes(),
+        })
+    };
+    let assistant = |uuid: &str, call: &str, name: &str, input: serde_json::Value| {
+        transcript_row(serde_json::json!({
+            "type": "assistant", "uuid": uuid, "timestamp": "2026-10-12T08:00:01.000Z",
+            "sessionId": "s1", "isSidechain": false, "userType": "external",
+            "message": {
+                "id": format!("msg_{uuid}"), "type": "message", "role": "assistant",
+                "model": "claude-haiku-5-5",
+                "content": [{"type": "tool_use", "id": call, "name": name, "input": input}],
+                "stop_reason": "tool_use", "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        }))
+    };
+    let result = |uuid: &str, call: &str, content: &str, result: serde_json::Value| {
+        transcript_row(user_row(
+            uuid,
+            "",
+            serde_json::json!({
+                "message": {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": call, "content": content}]},
+                "toolUseResult": result,
+            }),
+        ))
+    };
+    let notice = |uuid: &str, status: &str, body: &str| {
+        transcript_row(user_row(
+            uuid,
+            &format!(
+                "<task-notification><task-id>a1</task-id><status>{status}</status>{body}</task-notification>"
+            ),
+            serde_json::json!({"origin": {"kind": "task-notification"}}),
+        ))
+    };
+    let drained = || {
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::subagent_drained_fact("a1"),
+        })
+    };
+    let resumed = serde_json::json!({
+        "success": true, "message": "Resuming agent a1", "resumedAgentId": "a1",
+    });
+    for drained_first in [true, false] {
+        let (mut state, _) = started_claude();
+        let (before, after) = if drained_first {
+            (Some(drained()), None)
+        } else {
+            (None, Some(drained()))
+        };
+        let mut rows = Vec::new();
+        for event in [
+        with(
+            serde_json::json!({"hook_event_name": "SubagentStart", "agent_id": "a1", "agent_type": "counter"}),
+        ),
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::subagent_meta_fact(
+                "a1",
+                serde_json::json!({"toolUseId": "toolu_agent", "description": "Count"}),
+            ),
+        }),
+        assistant(
+            "a1",
+            "toolu_agent",
+            "Agent",
+            serde_json::json!({"description": "Count", "prompt": "Count.", "subagent_type": "counter"}),
+        ),
+        result(
+            "r1",
+            "toolu_agent",
+            "Async agent launched successfully.",
+            serde_json::json!({"isAsync": true, "status": "async_launched", "agentId": "a1"}),
+        ),
+        subagent_row(serde_json::json!({
+            "type": "assistant", "uuid": "sa1", "timestamp": "2026-10-12T08:00:02.000Z",
+            "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+            "message": {"id": "msg_s1", "role": "assistant", "model": "claude-haiku-5-5",
+                "content": [{"type": "text", "text": "ONE TWO THREE"}]},
+        })),
+        notice(
+            "n1",
+            "completed",
+            "<tool-use-id>toolu_agent</tool-use-id><summary>done</summary><result>ONE TWO THREE</result>",
+        ),
+        // The parent's model continues it; the subagent fails at once, and
+        // its end is read before Claude's result of the SendMessage.
+        assistant(
+            "a2",
+            SEND,
+            "SendMessage",
+            serde_json::json!({"to": "a1", "message": "Please go on."}),
+        ),
+        with(
+            serde_json::json!({"hook_event_name": "SubagentStart", "agent_id": "a1", "agent_type": "counter"}),
+        ),
+        notice(
+            "n2",
+            "failed",
+            "<tool-use-id>toolu_agent</tool-use-id><summary>API Error: overloaded</summary>",
+        ),
+    ]
+    .into_iter()
+    .chain(before)
+    .chain([result("r2", SEND, &resumed.to_string(), resumed.clone())])
+    .chain(after)
+    {
+        let stepped = ClaudePty::step(&mut state, event);
+        rows.extend(
+            own_calls(&stepped.step)
+                .into_iter()
+                .filter(|(key, _, _)| key == SEND)
+                .map(|(_, state, answer)| (state, answer)),
+        );
+    }
+        assert_eq!(
+            rows.last(),
+            Some(&(wire::ToolState::Failed, "API Error: overloaded".to_owned())),
+            "drained before the result: {drained_first}; {rows:#?}"
+        );
+    }
+}

@@ -378,7 +378,10 @@ task's answer, which Claude does not frame. A SendMessage that resumes a
 stopped subagent returns at once with JSON for the model (`{"success":true,
 "message":"Resuming agent …","resumedAgentId":…}`): the call stays running,
 as a background Agent call does, and the subagent's end finishes it with
-what the subagent said. No call that opens a subagent hands back a JSON
+what the subagent said. When the notice of that end is read before the
+result, the call finishes as soon as the result is read, as that run ended
+(failed or stopped as well as completed), never with an earlier run's
+answer. No call that opens a subagent hands back a JSON
 object; it hands back nothing instead.
 
 A tool server's form goes to the one agent, of the host and its subagents,

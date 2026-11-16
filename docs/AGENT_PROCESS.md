@@ -181,6 +181,7 @@ provider's process group at once and writes nothing.
 | `Draining` | The turn ends, or no turn is running | A turn end is marked `last`; `exit` with `DAEMON_LOST` or `STOPPED`; a one-shot agent whose turn ends quiescent while it drains for a lost daemon exits `FINISHED`, as its parent hears it |
 | `Draining` after the daemon was lost | An ask is open (phase needs you) | A drain deadline is armed; when it passes, `exit` with `ORPHANED` |
 | `Running`, the agent has a parent | A turn ends with nothing running, nothing queued, no accepted agent message still unconsumed, no typed prompt the provider has yet to record, no child it asked for still unsettled, and the last report of every child incarnation it made or was told is live already taken | The turn end is marked `last`; `exit` with `FINISHED` (the one-shot rule) |
+| `Running`, the agent has no parent and its spec carries the suspension delay | It has been idle for the delay without a break (see below) | `exit` with `SUSPENDED` |
 | `Running`, the agent has a parent and sits idle | A child it asked for is settled as never made, and nothing else is waited for: a later daemon's `children` frame leaves out a spawn its predecessor never answered, or a refusal arrives after a turn cut short has ended | `exit` with `FINISHED`; no turn end was marked `last`, so the daemon reports the exit to the parent |
 | Any | The interpreter asks to exit (`Effect::Exit`) | `exit` with `ENDED_UNEXPECTEDLY` and the interpreter's words |
 | Any | A write to the directory fails (in practice, a full disk): a journal frame, a blob, or the provider's own state in `private/` that the next incarnation resumes from (Codex's thread id, the transcript position) | `exit` with `DIRECTORY_FAILED` and the failed write as the detail; if even that cannot be written, the provider is killed. The cause is then not in the journal either, so the row says `ENDED_UNEXPECTEDLY` (or `ENDED_WHILE_AWAY`) |
@@ -258,6 +259,77 @@ The one-shot rule is what having a parent means: there is no flag. An input
 that arrives while such an agent is exiting is answered `REFUSAL_EXITING`,
 and the daemon then treats it as exited and resumes it if the sender is its
 parent. See [agent tools](AGENT_TOOLS.md) for families.
+
+An agent without a parent ends itself only under the `suspension`
+experiment, whose daemon writes a delay into its spec
+(`AgentSpec.experimental["suspension/1"]`, from `[experiments.suspension]
+after`, 30 minutes unless set). The core arms a suspension timer for that
+delay the moment the agent is idle, and cancels it the moment it is not:
+idle is `Running` with no turn, nothing queued or pending, every child's last
+report taken, no terminal client attached (the driver feeds the attached
+count as an input), and nothing the interpreter says the provider holds
+(`Interpreter::holds`: background jobs, a turn the provider owes for a job
+that ended between turns, a scheduled wake-up, or a permission amux granted
+for the session, none of which survive a kill and resume). A turn that
+begins and ends between two steps arms it afresh. When it fires the exit is
+the ordinary graceful one with cause `SUSPENDED`: there is no turn to cut
+short and nothing running in the background. A message arriving as it exits
+is refused `REFUSAL_EXITING`, as for a one-shot agent.
+
+### A suspended agent on its host
+
+The daemon leaves a suspended agent's row **live**, phase idle, with
+`SUSPENDED` on it, so a paired host or client of any build sees an idle agent:
+none stops its children, and none holds its reports as owed to an exited
+parent. Only the agent's own host knows it has no process, and handles it so
+whether or not the experiment is on, since switching it off stops only new
+suspensions:
+
+- the start's sweep leaves such a row as it is;
+- any message resumes it, with the message as the new incarnation's first
+  input: the person's, another agent's, or a child's report, which never
+  resumes an exited agent. A report the agent refuses as exiting waits for
+  the exit and begins again against the row;
+- stopping or closing it marks it exited with cause `STOPPED` (closed, for a
+  close), and its children follow as for any exit; deleting it removes it;
+- it is no awake member of its workspace while it has no process, and a
+  resume takes the workspace's claim before it launches;
+- `amux attach` resumes it, with no input, before it dials the terminal.
+
+A child's report is for one incarnation of its parent. Under the experiment
+the parent's host keeps, in `exp_suspension_1_runs`, the incarnation each of
+its agents' current run began at: a resume of a suspended agent continues
+the run, any other resume starts a new one, and a report for the run's first
+incarnation or a later one counts. Without an entry only the current
+incarnation's report counts. The child's host drops a report itself only
+for a parent row that is gone or exited under another incarnation, or a host
+no longer paired; a live parent under another incarnation may have been
+suspended rather than stopped, so the report goes to its host, which answers
+that the incarnation is gone when its run is.
+
+### A restart of the machine
+
+Nothing is written at shutdown, so a clean shutdown, a power cut and a crash
+are the same; the next start decides, from each agent's journal, under the
+experiment. When its sweep finds an agent's process gone, its journal giving
+no cause, and the machine booted since the daemon before (the boot id in
+`<data_dir>/generation`):
+
+- an agent the person closed was on its way out, and is marked exited as
+  stopped;
+- an idle one, or one waiting on its children, is left suspended;
+- one in its turn is suspended and resumed at once with *"The machine
+  restarted while you were working; carry on where you left off."*, which
+  continues its run; the provider finds the cut-off turn in its own
+  transcript, and a question it was asking is asked again by the retried
+  tool call.
+
+A process found gone on the same boot is a fault, marked exited as before.
+So that a shutdown never publishes an exit a paired host would stop
+children for, an end whose journal gives no cause is recorded only after a
+grace of three seconds (`CAUSELESS_GRACE_MS`), and once the daemon is asked
+to stop (a signal, a client, its supervisor handing over) it records no
+exit at all.
 
 ## The control socket
 
@@ -756,6 +828,7 @@ terminal. `amux agent` exits 0 whatever the cause; 1 means it could not start
 |---|---|---|
 | Grace after the daemon leaves | 5 minutes | `agent.grace_secs` in settings, copied into the spec's `grace_ms`; 5 minutes if the spec leaves it unset |
 | Drain deadline for an orphaned ask | 5 minutes | `agent.drain_secs`, copied into `drain_ms`; the same 5 minutes if the spec leaves it unset |
+| Idle before an agent without a parent suspends | 30 minutes, while the `suspension` experiment is on | `[experiments.suspension] after`, copied into the spec's `experimental["suspension/1"]`; never without that entry |
 | Facts ring size, across its two segments | 4 MiB | `agent.facts_ring_mib`, copied into `facts_ring_bytes` |
 | A step of the agent's core, before it asks for a dump | 10 ms | the spec's `step_budget_micros` (`Launch.agent_step_budget_micros`, not a configuration key); `StepBudget::AGENT` in `agent-core` if the spec leaves it zero |
 | Journal segment size | 1 MiB | `JOURNAL_SEGMENT_BYTES` in `lib.rs` |

@@ -693,7 +693,11 @@ are the agent's own, written in its journal as the last step's
 `incarnation_end` (see [the agent process](AGENT_PROCESS.md#lifecycle)):
 `FINISHED` (a child's one-shot exit), `STOPPED` (a stop: its turn cancelled the
 provider's own way, then the exit), `PROVIDER_EXITED`,
-`DAEMON_LOST`, `ORPHANED`, `COULD_NOT_START` and `DIRECTORY_FAILED`. The
+`DAEMON_LOST`, `ORPHANED`, `COULD_NOT_START`, `DIRECTORY_FAILED` and
+`SUSPENDED` (an idle agent without a parent stopped its provider, under the
+`suspension` experiment; the next message resumes it). A suspended agent's
+row stays live, with `SUSPENDED` on it and phase idle, so every build reads
+it as an idle agent; only its own host knows it has no process. The
 daemon copies that onto the row when it ingests the step, reads the journal
 to its end before it marks the agent exited, and records its own cause only
 where the journal has none: `COULD_NOT_START` when the agent process cannot
@@ -705,9 +709,16 @@ agent's (a row still live can briefly hold the cause its journal ended with,
 until the daemon marks it exited, so a client reads the cause only on an
 exited row), and a cause a client does not know reads as an ordinary end,
 not a failure: clients draw `FINISHED` as finished,
-the stops and unknown causes as ended, and every other cause as a failure in
+the stops, `SUSPENDED` and unknown causes as ended, and every other cause as a failure in
 its words followed by its own. The `Boundary` that ends an incarnation in the
 journal carries the same cause and detail.
+
+An agent the machine restarted under in its turn is resumed, under the
+`suspension` experiment, with a prompt saying so, which nobody sent: its
+input id begins with the eight bytes `amux-con` (`wire::continued_input_id`,
+`wire::is_continued_input`). A client that knows draws that prompt's item as
+a line saying the agent carried on after the restart, and leaves it out of
+the queue; an older one draws the prompt's own words.
 
 `HostEntry` carries the host's own word (its `Host`: name, version, platform,
 capabilities and whether it is signed in), its `generation`, which changes

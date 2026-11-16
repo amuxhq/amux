@@ -79,6 +79,7 @@ const PROTO_FILES: &[&str] = &[
 /// any release.
 const INTERNAL_PROTO_FILES: &[&str] = &[
     "amux/dump/session.proto",
+    "amux/experimental/suspension.proto",
     "amux/experimental/workspaces.proto",
 ];
 

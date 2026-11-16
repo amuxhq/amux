@@ -1418,6 +1418,10 @@ impl State {
         if let Some(meta) = self.asks.get_mut(&key) {
             meta.hook = None;
         }
+        if matches!(&decision, claude_answers::Answer::Permission(result) if claude_answers::for_session(result))
+        {
+            self.shared.granted_for_session();
+        }
         emit.effect(Effect::HookAnswer {
             id: hook,
             answer: hook_output(decision),
@@ -1581,6 +1585,10 @@ impl Interpreter for ClaudePty {
 
     fn typed_unrecorded(state: &Self::State) -> bool {
         state.shared.typed_unrecorded()
+    }
+
+    fn holds(state: &Self::State) -> crate::Holds {
+        state.shared.holds()
     }
 
     fn input_shape(input: &Input) -> crate::shape::InputShape {

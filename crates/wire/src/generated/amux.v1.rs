@@ -1109,6 +1109,10 @@ pub enum ExitCause {
     /// The provider process ended on its own with a clean status, as it does
     /// when a person quits it in its terminal.
     Quit = 11,
+    /// The agent had nothing to do for long enough, so it stopped its provider
+    /// process; the next message resumes it. Its row stays live, so a client
+    /// or host that does not know this cause still sees an idle agent.
+    Suspended = 12,
 }
 impl ExitCause {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1129,6 +1133,7 @@ impl ExitCause {
             Self::EndedWhileAway => "EXIT_CAUSE_ENDED_WHILE_AWAY",
             Self::EndedUnexpectedly => "EXIT_CAUSE_ENDED_UNEXPECTEDLY",
             Self::Quit => "EXIT_CAUSE_QUIT",
+            Self::Suspended => "EXIT_CAUSE_SUSPENDED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1146,6 +1151,7 @@ impl ExitCause {
             "EXIT_CAUSE_ENDED_WHILE_AWAY" => Some(Self::EndedWhileAway),
             "EXIT_CAUSE_ENDED_UNEXPECTEDLY" => Some(Self::EndedUnexpectedly),
             "EXIT_CAUSE_QUIT" => Some(Self::Quit),
+            "EXIT_CAUSE_SUSPENDED" => Some(Self::Suspended),
             _ => None,
         }
     }

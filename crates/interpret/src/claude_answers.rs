@@ -91,6 +91,20 @@ pub(crate) enum Answer {
     Elicitation(ElicitationResult),
 }
 
+/// Whether an allowance changes Claude's permissions for the rest of its
+/// session (a rule, a directory or a mode with destination `session`):
+/// Claude keeps it only in its process, and no resume restores it, so an
+/// agent holding one must not be suspended.
+pub(crate) fn for_session(result: &PermissionResult) -> bool {
+    matches!(
+        result,
+        PermissionResult::Allow {
+            updated_permissions: Some(updates),
+            ..
+        } if updates.iter().any(|update| update.destination() == Some("session"))
+    )
+}
+
 /// Claude's own words for a tool use the person rejected.
 pub(crate) const REJECTED: &str = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file).";
 

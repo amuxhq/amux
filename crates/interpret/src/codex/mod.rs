@@ -645,6 +645,11 @@ pub struct State {
     final_error: Option<String>,
     /// Commands still running after the turn that started them ended.
     background: Option<BTreeSet<String>>,
+    /// The other threads on this agent's server, its native subagents, by
+    /// thread id: whether each still runs. One that ended is kept, so a
+    /// late report of its spawn does not bring it back.
+    #[serde(default)]
+    threads: BTreeMap<String, bool>,
     /// How many times Codex was asked for its background jobs, which
     /// names each ask.
     jobs_asked: u32,
@@ -726,6 +731,7 @@ impl State {
             reviewed: BTreeMap::new(),
             final_error: None,
             background: None,
+            threads: BTreeMap::new(),
             jobs_asked: 0,
             plan: None,
             proposed: None,
@@ -828,10 +834,13 @@ impl State {
     }
 
     /// Answers the server request an ask key names.
-    fn respond(&self, emit: &mut Emit, key: &str, response: Result<ClientResponse, RpcError>) {
+    fn respond(&mut self, emit: &mut Emit, key: &str, response: Result<ClientResponse, RpcError>) {
         let Ok(id) = serde_json::from_str::<RequestId>(key) else {
             return;
         };
+        if response.as_ref().is_ok_and(for_session) {
+            self.shared.granted_for_session();
+        }
         emit.effect(Effect::ProviderWrite(codex_protocol::encode(
             &ClientMessage::Response {
                 id,
@@ -1901,8 +1910,11 @@ impl Interpreter for Codex {
         state.shared.reincarnate(spec);
         state.incarnation = spec.incarnation;
         state.name = spec.name.clone();
-        // A hidden thread goes with the process that held it.
+        // A hidden thread goes with the process that held it, and so do
+        // its commands and subagents.
         state.titling = Titling::Unasked;
+        state.background = None;
+        state.threads.clear();
         state.resume()
     }
 
@@ -1945,6 +1957,25 @@ impl Interpreter for Codex {
 
     fn typed_unrecorded(state: &Self::State) -> bool {
         state.shared.typed_unrecorded()
+    }
+
+    /// The shared holds, with two more of Codex's own: a command known to
+    /// run on past its turn counts until its own `item/completed`, even
+    /// before Codex lists its background terminals or if that fails, and
+    /// every subagent thread still running.
+    fn holds(state: &Self::State) -> crate::Holds {
+        let mut holds = state.shared.holds();
+        let mut running: BTreeSet<String> = state
+            .shared
+            .jobs()
+            .jobs
+            .into_iter()
+            .map(|job| job.item_key)
+            .collect();
+        running.extend(state.background.iter().flatten().cloned());
+        holds.background_jobs = running.len();
+        holds.subagents = state.threads.values().filter(|running| **running).count();
+        holds
     }
 
     fn input_shape(input: &Input) -> crate::shape::InputShape {
@@ -2169,6 +2200,28 @@ fn describe_item(body: &[u8]) -> ItemView {
         arm: arm.into(),
         complete,
         text,
+    }
+}
+
+/// Whether an answer allows something for the rest of Codex's session: a
+/// command or file change accepted for the session, permissions granted
+/// for it, or a tool server's form accepted to persist for it. Codex keeps
+/// these only in its process, and nothing re-applies them after a resume,
+/// so an agent holding one must not be suspended.
+fn for_session(response: &ClientResponse) -> bool {
+    match response {
+        ClientResponse::CommandApproval(answer) => matches!(
+            answer.decision,
+            CommandDecision::Plain(codex_protocol::server::Decision::AcceptForSession)
+        ),
+        ClientResponse::PermissionsApproval(answer) => {
+            answer.scope == Some(codex_protocol::client::GrantScope::Session)
+        }
+        ClientResponse::Elicitation(answer) => answer
+            .meta
+            .as_ref()
+            .is_some_and(|meta| meta.persist.as_deref() == Some("session")),
+        ClientResponse::UserInput(_) => false,
     }
 }
 

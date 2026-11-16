@@ -37,12 +37,14 @@ pub mod google {
 
 pub use google::rpc;
 
+mod continued;
 mod error;
 mod host_name;
 #[cfg(test)]
 mod pinned;
 mod said;
 pub use amux::v1::*;
+pub use continued::{continued_input_id, is_continued_input};
 pub use host_name::{HostName, HostNameError, MAX_HOST_NAME_CHARS};
 /// An error's code, gRPC's own.
 pub use rpc::Code as ErrorCode;
@@ -609,7 +611,13 @@ mod tests {
             .chain([".amux.dump.ClientSessionHistory".to_owned()])
             // Each experiment's values are encoded into an `experimental`
             // map entry.
-            .chain([".amux.experimental.AgentWorkspace".to_owned()])
+            .chain(
+                [
+                    ".amux.experimental.AgentWorkspace",
+                    ".amux.experimental.SuspensionSpec",
+                ]
+                .map(str::to_owned),
+            )
             .collect::<Vec<_>>();
         let mut reached = BTreeSet::new();
         while let Some(name) = pending.pop() {

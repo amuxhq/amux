@@ -2536,3 +2536,242 @@ fn a_first_prompt_is_drawn_while_codex_starts_and_sent_once() {
         ran.step.items
     );
 }
+
+// --- what Codex holds, for suspension ---------------------------------------
+//
+// Cut from live recordings of codex-cli 0.166.0 (2026-11-15).
+
+/// A command Codex runs on after its turn ends is a background job until
+/// Codex sends its `item/completed`, under the turn that already ended,
+/// with nothing else: no thread status and no turn.
+#[test]
+fn a_background_command_completing_after_its_turn_leaves_nothing_held() {
+    let mut state = idle_codex();
+    let command = |status: &str| {
+        json!({"type": "commandExecution", "id": "exec-c6ace9d4-eb50-4554-9a73-be25e5ae6d3d",
+            "command": "/bin/zsh -lc 'sleep 25; echo bgdone'", "cwd": "/tmp/amux-rec-codex",
+            "processId": "83446", "source": "unifiedExecStartup", "status": status,
+            "commandActions": [], "aggregatedOutput": null, "exitCode": null, "durationMs": null})
+    };
+    let turn = "01a1e0b0-f03a-7242-85d9-2287ddae601d";
+    let mut written = Vec::new();
+    for event in [
+        prompt(b"p1", "run it in the background"),
+        rpc(
+            json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": turn, "status": "inProgress"}}}),
+        ),
+        rpc(
+            json!({"method": "item/started", "params": {"threadId": "t1", "turnId": turn, "item": command("inProgress")}}),
+        ),
+        rpc(
+            json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": turn, "items": [], "status": "completed", "error": null}}}),
+        ),
+    ] {
+        written.extend(writes(&Codex::step(&mut state, event).effects));
+    }
+    let list = written
+        .iter()
+        .find(|write| write["method"] == "thread/backgroundTerminals/list")
+        .expect("Codex is asked what runs on");
+    Codex::step(
+        &mut state,
+        rpc(json!({"id": list["id"], "result": {"data": [{
+            "itemId": "exec-c6ace9d4-eb50-4554-9a73-be25e5ae6d3d", "processId": "83446",
+            "command": "sleep 25; echo bgdone", "cwd": "/tmp/amux-rec-codex",
+            "osPid": null, "cpuPercent": null, "rssKb": null}], "nextCursor": null}})),
+    );
+    assert_eq!(Codex::holds(&state).background_jobs, 1);
+    assert!(!state.shared().is_busy());
+
+    let mut done = command("completed");
+    done["exitCode"] = json!(0);
+    done["aggregatedOutput"] = json!("bgdone\n");
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": turn, "item": done}}),
+        ),
+    );
+    assert!(Codex::holds(&state).nothing(), "{:?}", Codex::holds(&state));
+    assert!(!state.shared().is_busy(), "no turn runs for it");
+}
+
+/// Accepting a command for the session (which Codex takes even when it does
+/// not offer it) holds until the process ends: nothing re-applies it after
+/// a resume. Accepting it once holds nothing.
+#[test]
+fn a_command_accepted_for_the_session_is_held() {
+    for (decision, held) in [
+        (wire::Decision::ApproveSession, true),
+        (wire::Decision::Approve, false),
+    ] {
+        let mut state = idle_codex();
+        Codex::step(&mut state, prompt(b"p1", "touch it"));
+        Codex::step(
+            &mut state,
+            rpc(
+                json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "inProgress"}}}),
+            ),
+        );
+        Codex::step(
+            &mut state,
+            rpc(
+                json!({"id": 7, "method": "item/commandExecution/requestApproval", "params": {
+                "threadId": "t1", "turnId": "turn-1", "itemId": "call-1", "command": "touch b1.txt",
+                "cwd": "/tmp", "reason": "write outside the sandbox",
+                "availableDecisions": ["accept", "acceptForSession", "cancel"]}}),
+            ),
+        );
+        let ask = state.shared().asks().open_asks()[0].key.clone();
+        let stepped = Codex::step(
+            &mut state,
+            Event::Input(wire::Input::new(
+                b"a1".to_vec(),
+                wire::CodexInput {
+                    of: Some(wire::codex_input::Of::Answer(wire::CodexAnswer {
+                        ask_key: ask,
+                        of: Some(wire::codex_answer::Of::Approve(decision as i32)),
+                    })),
+                },
+            )),
+        );
+        assert!(
+            writes(&stepped.effects)
+                .iter()
+                .any(|write| write["id"] == 7),
+            "{decision:?} is sent: {:?}",
+            stepped.effects
+        );
+        assert_eq!(Codex::holds(&state).session_grant, held, "{decision:?}");
+        Codex::step(&mut state, Event::ProviderExit { code: Some(0) });
+        assert!(Codex::holds(&state).nothing());
+    }
+}
+
+/// A command still running when its turn ends is held from that moment,
+/// before Codex has answered the request for its background terminals,
+/// and whatever that answer says, until its own `item/completed`.
+#[test]
+fn a_command_running_on_past_its_turn_is_held_before_codex_lists_it() {
+    let mut state = idle_codex();
+    let command = |status: &str| {
+        json!({"type": "commandExecution", "id": "exec-1", "command": "sleep 25",
+            "cwd": "/w", "processId": "83446", "source": "unifiedExecStartup", "status": status,
+            "commandActions": [], "aggregatedOutput": null, "exitCode": null, "durationMs": null})
+    };
+    let mut written = Vec::new();
+    for event in [
+        prompt(b"p1", "run it in the background"),
+        rpc(
+            json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "inProgress"}}}),
+        ),
+        rpc(
+            json!({"method": "item/started", "params": {"threadId": "t1", "turnId": "turn-1", "item": command("inProgress")}}),
+        ),
+        rpc(
+            json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-1", "items": [], "status": "completed", "error": null}}}),
+        ),
+    ] {
+        written.extend(writes(&Codex::step(&mut state, event).effects));
+    }
+    assert_eq!(
+        Codex::holds(&state).background_jobs,
+        1,
+        "held while the listing is unanswered"
+    );
+    let list = written
+        .iter()
+        .find(|write| write["method"] == "thread/backgroundTerminals/list")
+        .expect("Codex is asked what runs on");
+    // The listing fails: the command is still known to run.
+    Codex::step(
+        &mut state,
+        rpc(json!({"id": list["id"], "error": {"code": -32603, "message": "busy"}})),
+    );
+    assert_eq!(
+        Codex::holds(&state).background_jobs,
+        1,
+        "held past a failed listing"
+    );
+    let mut done = command("completed");
+    done["exitCode"] = json!(0);
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1", "item": done}}),
+        ),
+    );
+    assert!(Codex::holds(&state).nothing(), "{:?}", Codex::holds(&state));
+}
+
+/// A native Codex subagent's thread runs on the same server: from the
+/// parent's `spawnAgent` call, or from its own thread going active, until
+/// it goes idle, it is held, though the parent's turn ended.
+#[test]
+fn a_native_subagent_thread_is_held_until_it_goes_idle() {
+    let child = "019a275e-4100-7000-8000-000000000041";
+    let status = |kind: &str| {
+        rpc(
+            json!({"method": "thread/status/changed", "params": {"threadId": child, "status": {"type": kind, "activeFlags": []}}}),
+        )
+    };
+    let spawn = |status: &str| {
+        json!({"type": "collabAgentToolCall", "id": "call-spawn", "tool": "spawnAgent",
+            "status": status, "receiverThreadIds": [child], "prompt": "count the files"})
+    };
+    let parent_turn = || {
+        vec![
+            prompt(b"p1", "spawn a subagent and end your turn"),
+            rpc(
+                json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "inProgress"}}}),
+            ),
+        ]
+    };
+    let parent_done = || {
+        rpc(
+            json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-1", "items": [], "status": "completed", "error": null}}}),
+        )
+    };
+
+    // Known from the spawn call alone.
+    let mut state = idle_codex();
+    for event in parent_turn().into_iter().chain([
+        rpc(json!({"method": "item/started", "params": {"threadId": "t1", "turnId": "turn-1", "item": spawn("inProgress")}})),
+        rpc(json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1", "item": spawn("completed")}})),
+        parent_done(),
+    ]) {
+        Codex::step(&mut state, event);
+    }
+    assert!(!state.shared().is_busy());
+    assert!(!Codex::holds(&state).nothing(), "the subagent runs on");
+    Codex::step(&mut state, status("idle"));
+    assert!(Codex::holds(&state).nothing(), "{:?}", Codex::holds(&state));
+
+    // Known from the child's own thread, as the recording shows it.
+    let mut state = idle_codex();
+    for event in parent_turn().into_iter().chain([
+        status("active"),
+        rpc(json!({"method": "turn/started", "params": {"threadId": child, "turn": {"id": "turn-c", "status": "inProgress"}}})),
+        parent_done(),
+    ]) {
+        Codex::step(&mut state, event);
+    }
+    assert!(!Codex::holds(&state).nothing(), "the subagent runs on");
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "turn/completed", "params": {"threadId": child, "turn": {"id": "turn-c", "items": [], "status": "completed", "error": null}}}),
+        ),
+    );
+    Codex::step(&mut state, status("idle"));
+    assert!(Codex::holds(&state).nothing(), "{:?}", Codex::holds(&state));
+    // A spawn call reported after its thread already went idle does not
+    // bring it back.
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1", "item": spawn("completed")}}),
+        ),
+    );
+    assert!(Codex::holds(&state).nothing(), "{:?}", Codex::holds(&state));
+}

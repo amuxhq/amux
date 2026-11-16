@@ -54,6 +54,9 @@ pub struct Sqlite {
     /// The `workspaces/1` experiment's table is there: rows read carry its
     /// entries.
     pub(crate) workspaces_1: bool,
+    /// The `suspension/1` experiment's table is there: each own agent's
+    /// run is kept in it.
+    pub(crate) suspension_1: bool,
     /// How many resets each replica row has absorbed since the store
     /// opened: what a replica that was told to forget its block went
     /// through, for the checks that judge it.
@@ -103,6 +106,7 @@ impl Sqlite {
     pub fn settle_experiments(&mut self, experiments: &[&str]) -> Result<(), OpenError> {
         crate::experiments::settle(&mut self.conn, experiments)?;
         self.workspaces_1 = experiments.contains(&crate::experiments::WORKSPACES_1.version);
+        self.suspension_1 = experiments.contains(&crate::experiments::SUSPENSION_1.version);
         Ok(())
     }
 
@@ -119,6 +123,28 @@ impl Sqlite {
             return Ok(());
         }
         self.write(|rows| rows.put_workspaces_1(agent, entry))
+    }
+
+    /// The incarnation the own agent's current run began at, under the
+    /// `suspension/1` experiment; none without an entry or the table.
+    pub fn run_start(&self, agent: &[u8]) -> Result<Option<u32>, StoreError> {
+        if !self.suspension_1 {
+            return Ok(None);
+        }
+        self.read(|rows| rows.run_start(agent))
+    }
+
+    /// Records the incarnation the own agent's current run began at, or
+    /// forgets it. Does nothing without the experiment's table.
+    pub fn put_run_start(
+        &mut self,
+        agent: &[u8],
+        incarnation: Option<u32>,
+    ) -> Result<(), StoreError> {
+        if !self.suspension_1 {
+            return Ok(());
+        }
+        self.write(|rows| rows.put_run_start(agent, incarnation))
     }
 
     /// A store with the same schema that lives only in memory: gone when
@@ -144,6 +170,7 @@ impl Sqlite {
             own_host,
             markers: HashMap::new(),
             workspaces_1: false,
+            suspension_1: false,
             #[cfg(feature = "explore")]
             resets: HashMap::new(),
         })
@@ -356,6 +383,7 @@ impl Sqlite {
             conn: &tx,
             own_host: &self.own_host,
             workspaces_1: self.workspaces_1,
+            suspension_1: self.suspension_1,
         });
         tx.finish()?;
         result
@@ -400,6 +428,7 @@ impl Sqlite {
             conn: &tx,
             own_host: &self.own_host,
             workspaces_1: self.workspaces_1,
+            suspension_1: self.suspension_1,
         })?;
         tx.commit()?;
         Ok(result)
@@ -581,6 +610,29 @@ impl Sqlite {
             };
             row.descendants = count;
             rows.upsert_agent(&row, &rows::update_of(&["descendants"]))?;
+            Ok(true)
+        })
+    }
+
+    /// Writes an own row's phase and when it began, which otherwise only a
+    /// committed snapshot sets: the daemon's word for a process that is
+    /// gone and left its row live. False when there is no such row.
+    pub fn set_phase(
+        &mut self,
+        agent: &AgentKey,
+        phase: wire::Phase,
+        since_ms: i64,
+    ) -> Result<bool, StoreError> {
+        if !self.is_own(agent) {
+            return Err(StoreError::NotOwn);
+        }
+        self.write(|rows| {
+            let Some(mut row) = rows.agent(agent)? else {
+                return Ok(false);
+            };
+            row.phase = phase as i32;
+            row.phase_since_ms = Some(since_ms);
+            rows.upsert_agent(&row, &rows::update_of(&["phase", "phase_since_ms"]))?;
             Ok(true)
         })
     }

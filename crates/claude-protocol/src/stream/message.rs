@@ -317,8 +317,15 @@ wire_struct!(PermissionDeniedMessage {
     #[serde(default)] pub decision_reason:Option<String>,
     pub message:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
 });
-// Where a queued prompt is in its life, named by the sender's uuid.
-wire_struct!(CommandLifecycleMessage { pub command_uuid:String,pub state:String,#[serde(default="crate::absent::uuid")] pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
+// Where a queued prompt is in its life, named by the sender's uuid. A
+// turn Claude starts itself for a scheduled wake-up is a command too: its
+// `started` frame carries `wakeup_source` ("loop_wakeup" for ScheduleWakeup,
+// "schedule_wakeup" for a CronCreate tick) and, for ScheduleWakeup, the
+// `scheduled_for` time its result gave, in ms since the epoch.
+wire_struct!(CommandLifecycleMessage { pub command_uuid:String,pub state:String,
+    #[serde(default)] pub wakeup_source:Option<String>,
+    #[serde(default)] pub scheduled_for:Option<i64>,
+    #[serde(default="crate::absent::uuid")] pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
 // The session's title, as set by the caller's `title` option or changed since.
 wire_struct!(ConversationResetMessage { pub new_conversation_id:String,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String, });
 

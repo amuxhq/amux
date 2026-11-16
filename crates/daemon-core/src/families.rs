@@ -37,6 +37,17 @@ pub const KILL_ASK_PATIENCE_MS: u64 = 2_000;
 /// How long a stop waits after killing the process group before it gives up
 /// on seeing the process end.
 pub const KILL_PATIENCE_MS: u64 = 5_000;
+/// Under the suspension experiment, how long an agent whose process ended
+/// without its journal saying why waits before its exit is recorded. At a
+/// shutdown the system signals agents and the daemon in no promised order,
+/// and an exit recorded and published in between would have paired hosts
+/// stop the agent's children; a daemon about to be signalled records
+/// nothing within this.
+pub const CAUSELESS_GRACE_MS: u64 = 3_000;
+/// What an agent resumed after the machine restarted under its turn is
+/// told first.
+pub const CONTINUE_AFTER_RESTART: &str =
+    "The machine restarted while you were working; carry on where you left off.";
 
 /// What the registry remembers: the processes this run knows of, the
 /// operation under way on each agent, and the children waiting to follow
@@ -54,6 +65,10 @@ pub struct FamilyState {
     swept: bool,
     /// Children waiting for the sweep to follow their parents.
     held: Vec<(AgentId, ParentSays)>,
+    /// The daemon has been asked to stop, under the suspension experiment:
+    /// it records no more exits.
+    #[serde(default)]
+    stopping: bool,
 }
 
 impl FamilyState {
@@ -150,6 +165,29 @@ struct Process {
     /// It is gone, and how the driver knows; its exit is recorded once its
     /// journal has been read to the end.
     ended: Option<Ended>,
+    /// It ended without its journal saying why, under the suspension
+    /// experiment: false while the grace runs, true once it is up.
+    #[serde(default)]
+    grace: Option<bool>,
+}
+
+/// What a gone process leaves its row as.
+enum Gone {
+    /// Live, with no process: it suspended, or the machine restarted
+    /// under it while it was idle.
+    Suspended,
+    /// Suspended, then resumed at once: the machine restarted under its
+    /// turn.
+    Continued,
+    /// Exited as stopped: the person closed it and it was on its way out
+    /// when its process went.
+    Stopped,
+    /// Exited, with the daemon's own cause should its journal give none,
+    /// unless it already says exited when `if_live`.
+    Exited {
+        fallback: wire::IncarnationEnd,
+        if_live: bool,
+    },
 }
 
 /// How the daemon is ending an agent's process.
@@ -1068,6 +1106,15 @@ impl Daemon {
         // the resume waited.
         let mut row = self.store.agent(&key)?.ok_or(Refusal::NotFound)?;
         let mut spec = spec.ok_or(Refusal::NoSpec)?;
+        // A resume of a suspended agent continues its run; any other
+        // starts a new one. A run kept since before the table held it
+        // began no later than the incarnation it continues.
+        let run = if self.suspended(agent, &row) {
+            self.store.run_start(&key.agent)?.unwrap_or(row.incarnation)
+        } else {
+            spec.incarnation
+        };
+        self.store.put_run_start(&key.agent, Some(run))?;
         // The name it has now: a rename while it was not running reaches
         // the agent this way.
         spec.name = row.name.clone();
@@ -1108,7 +1155,8 @@ impl Daemon {
     /// provider's own way and the agent exits, resumable; a stop that
     /// overruns the stop deadline kills. A kill asks the agent to kill its
     /// provider's group and exit, and only if it does not is its process
-    /// killed from outside. An agent with no process is left as it is.
+    /// killed from outside. An agent with no process is left as it is,
+    /// unless it is suspended: then it is marked exited as stopped.
     fn begin_ending(
         &mut self,
         agent: AgentId,
@@ -1118,7 +1166,10 @@ impl Daemon {
     ) -> Result<Began, Refusal> {
         if !self.families.processes.contains_key(&agent) {
             return match then {
-                Then::Answer => Ok(Began::Finished(Box::new(self.row_outcome(agent)))),
+                Then::Answer => {
+                    self.stop_suspended(agent, out)?;
+                    Ok(Began::Finished(Box::new(self.row_outcome(agent))))
+                }
                 Then::Delete { discard } => {
                     self.remove_agent(agent, discard, out).map(Began::Waiting)
                 }
@@ -1361,9 +1412,194 @@ impl Daemon {
         else {
             return;
         };
+        // On its way out the daemon records nothing: the next start's
+        // sweep decides, as for an agent that ended while it was away.
+        if self.families.stopping {
+            return;
+        }
+        let row = self.store.agent(&self.own_key(agent)).ok().flatten();
+        if self.awaits_grace(agent, &ended, row.as_ref(), out) {
+            return;
+        }
         let process = self.families.processes.remove(&agent).unwrap_or_default();
+        let gone = self.gone(&ended, &process, row.as_ref());
+        let continued = matches!(gone, Gone::Continued);
+        let marked = match gone {
+            Gone::Suspended | Gone::Continued => self.mark_suspended(agent, out),
+            Gone::Stopped => self.mark_stopped(agent, out),
+            Gone::Exited { fallback, if_live } => self.mark_exited(agent, fallback, if_live, out),
+        };
+        if let Err(error) = marked {
+            tracing::warn!(agent = %crate::hex(&agent.0), %error, "marking an agent's end failed");
+        }
+        out.push(Output::ForgetAgent { agent });
+        self.member_slept(agent, out);
+        // The operation that waited on the process is done first: a stop
+        // that met a suspension leaves the row exited before a message
+        // waiting out the exit is judged against it again, so it resumes
+        // nothing the person stopped.
+        self.after_gone(agent, ended, out);
+        self.lane_exited(agent, out);
+        if continued && let Some(row) = &row {
+            let resume = Resume {
+                agent,
+                bootstrap: Some(continue_after_restart(row)),
+            };
+            self.registry_call(Caller::Family, agent, Op::Resume(Box::new(resume)), out);
+        }
+    }
+
+    /// Leaves the gone process's row live with no process: cause suspended,
+    /// phase idle, since a provider's exit can leave it starting, and
+    /// caught up, since nothing more comes until it is resumed.
+    fn mark_suspended(&mut self, agent: AgentId, out: &mut Vec<Output>) -> Result<(), StoreError> {
+        let key = self.own_key(agent);
+        let Some(mut row) = self.store.agent(&key)? else {
+            return Ok(());
+        };
+        if row.phase != wire::Phase::Idle as i32 {
+            self.store
+                .set_phase(&key, wire::Phase::Idle, self.timers.now_ms as i64)?;
+        }
+        if row.exit_cause != ExitCause::Suspended as i32 {
+            row.exit_cause = ExitCause::Suspended as i32;
+            row.exit_detail = None;
+            self.put_own_row(&row, out)?;
+        } else {
+            self.publish_row(&key, out)?;
+        }
+        self.journal_readers.remove(&agent);
+        if self.store.markers().get(&key) == Some(&Marker::CaughtUp) {
+            return Ok(());
+        }
+        self.announce_caught_up(&key, out)
+    }
+
+    /// Marks the gone process's row exited as stopped, whatever cause its
+    /// journal ended with, and caught up.
+    fn mark_stopped(&mut self, agent: AgentId, out: &mut Vec<Output>) -> Result<(), StoreError> {
+        let key = self.own_key(agent);
+        let Some(mut row) = self.store.agent(&key)? else {
+            return Ok(());
+        };
+        row.exit_cause = ExitCause::Stopped as i32;
+        row.exit_detail = None;
+        let stopped = wire::IncarnationEnd {
+            cause: ExitCause::Stopped as i32,
+            detail: None,
+        };
+        self.record_exit(row, stopped, out)?;
+        self.journal_readers.remove(&agent);
+        if self.store.markers().get(&key) == Some(&Marker::CaughtUp) {
+            return Ok(());
+        }
+        self.announce_caught_up(&key, out)
+    }
+
+    /// Whether the agent's row is live with no process: suspended, or left
+    /// so by a restart of the machine. A message resumes it, and a stop
+    /// marks it exited.
+    pub(crate) fn suspended(&self, agent: AgentId, row: &AgentRow) -> bool {
+        row.lifecycle == Lifecycle::Live as i32
+            && row.exit_cause == ExitCause::Suspended as i32
+            && !self.families.processes.contains_key(&agent)
+    }
+
+    /// Marks a suspended agent exited as stopped: it has no process to stop.
+    /// Its children follow it as they follow any exit.
+    fn stop_suspended(&mut self, agent: AgentId, out: &mut Vec<Output>) -> Result<(), StoreError> {
+        let Some(mut row) = self.store.agent(&self.own_key(agent))? else {
+            return Ok(());
+        };
+        if !self.suspended(agent, &row) {
+            return Ok(());
+        }
+        row.exit_cause = ExitCause::Stopped as i32;
+        row.exit_detail = None;
+        let stopped = wire::IncarnationEnd {
+            cause: ExitCause::Stopped as i32,
+            detail: None,
+        };
+        self.record_exit(row, stopped, out)
+    }
+
+    /// The daemon has been asked to stop: under the suspension experiment
+    /// it records no more exits from here on.
+    pub(crate) fn daemon_stopping(&mut self) {
+        if self.options.suspension {
+            self.families.stopping = true;
+        }
+    }
+
+    /// Whether the agent's causeless end waits out its grace first; arms it
+    /// when it begins.
+    fn awaits_grace(
+        &mut self,
+        agent: AgentId,
+        ended: &Ended,
+        row: Option<&AgentRow>,
+        out: &mut Vec<Output>,
+    ) -> bool {
+        let starting = self.doing(agent) == Some(&Doing::Starting);
+        let suspension = self.options.suspension;
+        let Some(process) = self.families.processes.get_mut(&agent) else {
+            return false;
+        };
+        if let Some(over) = process.grace {
+            return !over;
+        }
+        let causeless = row.is_some_and(|row| {
+            row.lifecycle == Lifecycle::Live as i32
+                && row.exit_cause == ExitCause::Unspecified as i32
+        });
+        // A stop the daemon asked for, or a start that failed, is no news
+        // a shutdown could get ahead of.
+        if !suspension
+            || *ended != Ended::Exited
+            || process.stopping.is_some()
+            || starting
+            || !causeless
+        {
+            return false;
+        }
+        process.grace = Some(false);
+        self.arm_after(TimerId::Grace(agent), CAUSELESS_GRACE_MS, out);
+        true
+    }
+
+    /// What the gone process leaves its row as. A row its journal left
+    /// suspended stays so, with the experiment on or not. After a restart
+    /// of the machine, under the experiment, an agent whose journal gives
+    /// no cause ended with the machine: idle, it is suspended; in a turn,
+    /// it is continued.
+    fn gone(&self, ended: &Ended, process: &Process, row: Option<&AgentRow>) -> Gone {
+        let live = row.filter(|row| row.lifecycle == Lifecycle::Live as i32);
+        let restarted = *ended == Ended::Away && self.options.suspension && self.options.rebooted;
+        // One the person closed was on its way out; it has no turn to carry
+        // on and nothing may wake it: a restart that came between the close
+        // and the end of a suspension it met leaves it so.
+        if let Some(row) = live
+            && row.is_closed()
+            && (row.exit_cause == ExitCause::Suspended as i32
+                || restarted && row.exit_cause == ExitCause::Unspecified as i32)
+        {
+            return Gone::Stopped;
+        }
+        if live.is_some_and(|row| row.exit_cause == ExitCause::Suspended as i32) {
+            return Gone::Suspended;
+        }
+        if restarted
+            && let Some(row) = live
+            && row.exit_cause == ExitCause::Unspecified as i32
+        {
+            return if row.phase == wire::Phase::Idle as i32 {
+                Gone::Suspended
+            } else {
+                Gone::Continued
+            };
+        }
         // Unless the journal, now read to its end, said why.
-        let (cause, detail, if_live) = match &ended {
+        let (cause, detail, if_live) = match ended {
             Ended::Exited if process.stopping == Some(Stopping::Kill) => {
                 (ExitCause::Killed, None, false)
             }
@@ -1376,36 +1612,28 @@ impl Daemon {
             Ended::Away => (ExitCause::EndedWhileAway, None, true),
             // A create the daemon before was making a workspace for when it
             // went: nothing of its process was ever written.
-            Ended::NoDirectory
-                if self
-                    .store
-                    .agent(&self.own_key(agent))
-                    .ok()
-                    .flatten()
-                    .is_some_and(|row| self.row_was_creating(&row)) =>
-            {
-                (
-                    ExitCause::CouldNotStart,
-                    Some("its workspace was being made when the daemon restarted".to_owned()),
-                    true,
-                )
-            }
+            Ended::NoDirectory if row.is_some_and(|row| self.row_was_creating(row)) => (
+                ExitCause::CouldNotStart,
+                Some("its workspace was being made when the daemon restarted".to_owned()),
+                true,
+            ),
             Ended::NoDirectory => (
                 ExitCause::DirectoryFailed,
                 Some("it is gone".to_owned()),
                 true,
             ),
         };
-        let fallback = wire::IncarnationEnd {
-            cause: cause as i32,
-            detail,
-        };
-        if let Err(error) = self.mark_exited(agent, fallback, if_live, out) {
-            tracing::warn!(agent = %crate::hex(&agent.0), %error, "marking an agent exited failed");
+        Gone::Exited {
+            fallback: wire::IncarnationEnd {
+                cause: cause as i32,
+                detail,
+            },
+            if_live,
         }
-        out.push(Output::ForgetAgent { agent });
-        self.member_slept(agent, out);
-        self.lane_exited(agent, out);
+    }
+
+    /// The operation that waited on the gone process goes on.
+    fn after_gone(&mut self, agent: AgentId, ended: Ended, out: &mut Vec<Output>) {
         match self.doing(agent).cloned() {
             Some(Doing::Starting) => {
                 out.push(Output::CancelTimer {
@@ -1430,6 +1658,11 @@ impl Daemon {
                 });
                 match then {
                     Then::Answer => {
+                        // A stop asked of a process that went its own way,
+                        // suspending as it was asked, still stops it.
+                        if let Err(error) = self.stop_suspended(agent, out) {
+                            tracing::warn!(agent = %crate::hex(&agent.0), %error, "marking a suspended agent stopped failed");
+                        }
                         let outcome = self.row_outcome(agent);
                         self.finish(agent, outcome, out);
                     }
@@ -1498,6 +1731,14 @@ impl Daemon {
                 Some(Doing::AwaitExit { .. }) => self.finish(agent, Err(Refusal::StillLocked), out),
                 _ => {}
             },
+            TimerId::Grace(agent) => {
+                if let Some(process) = self.families.processes.get_mut(&agent)
+                    && process.grace == Some(false)
+                {
+                    process.grace = Some(true);
+                    self.journal_read(agent, out);
+                }
+            }
             _ => {}
         }
     }
@@ -1946,6 +2187,21 @@ impl Daemon {
     }
 }
 
+/// What an agent the machine restarted under in its turn is resumed with:
+/// a prompt saying so, whose input id marks the resume as a continuation
+/// for the interpreter to draw as one rather than as a person's message.
+fn continue_after_restart(row: &AgentRow) -> wire::Bootstrap {
+    wire::Bootstrap {
+        of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+            input_id: wire::continued_input_id(&row.agent.agent, row.incarnation + 1),
+            prompt: Some(wire::PromptInput {
+                text: CONTINUE_AFTER_RESTART.to_owned(),
+                ..Default::default()
+            }),
+        })),
+    }
+}
+
 /// A Stop frame: a kill ends the provider's group at once.
 fn stop(kill: bool) -> CtlFrame {
     CtlFrame {
@@ -2047,6 +2303,81 @@ mod tests {
             assert!(out.contains(&Output::DialAgent { agent }), "{out:?}");
             let out = self.step(Input::AgentHello { agent });
             assert!(answer_of(&out, call).is_some(), "{out:?}");
+        }
+    }
+
+    /// A rig whose daemon runs the suspension experiment, its store holding
+    /// the experiment's table, with `rebooted` as the start found it; the
+    /// sweep not yet reported.
+    fn suspension_rig(rebooted: bool) -> Rig {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut store = Sqlite::open_in_memory(OWN).expect("a store opens");
+        store
+            .settle_experiments(&["suspension/1"])
+            .expect("the experiment's tables are made");
+        let daemon = Daemon::new(
+            store,
+            StartOptions {
+                generation: 1,
+                agents: dir.path().to_path_buf(),
+                suspension: true,
+                rebooted,
+                ..StartOptions::default()
+            },
+        );
+        Rig {
+            daemon,
+            next_call: 0,
+            _dir: dir,
+        }
+    }
+
+    impl Rig {
+        /// The agent's process exits as suspended: its journal's last step
+        /// put the cause on the row, as a commit does, then it is gone.
+        fn suspend(&mut self, agent: AgentId) -> Vec<Output> {
+            let mut row = self.row(agent).unwrap();
+            row.exit_cause = ExitCause::Suspended as i32;
+            row.phase = wire::Phase::Starting as i32;
+            self.daemon.store.put_agent(&row).unwrap();
+            self.step(Input::ControlClosed {
+                agent,
+                ended: Ended::Exited,
+            })
+        }
+
+        /// An own row as a store left it: no process, nothing under way.
+        fn left(&mut self, agent: AgentId, phase: wire::Phase, cause: ExitCause) {
+            let mut row = AgentRow::new(self.daemon.own_key(agent), wire::Kind::Codex, "/src");
+            row.incarnation = 1;
+            row.phase = phase as i32;
+            row.exit_cause = cause as i32;
+            self.daemon.store.put_agent(&row).unwrap();
+        }
+
+        /// Runs a resume the outputs began through its jobs, to the start of
+        /// `incarnation`; returns the bootstrap the spec was asked with.
+        fn resume_through(&mut self, out: &[Output], incarnation: u32) -> Option<wire::Bootstrap> {
+            let Some((unlock, Job::AwaitUnlocked { agent, .. })) = job_of(out) else {
+                panic!("the resume waits for the directory: {out:?}");
+            };
+            let unlocked = self.step(Input::JobDone {
+                job: unlock,
+                result: JobResult::Done,
+            });
+            let Some((spec, Job::NextSpec { bootstrap, .. })) = job_of(&unlocked) else {
+                panic!("the spec is asked for: {unlocked:?}");
+            };
+            self.step(Input::JobDone {
+                job: spec,
+                result: JobResult::Spec(Some(Box::new(AgentSpec {
+                    agent_id: agent.0.to_vec(),
+                    kind: wire::Kind::Codex as i32,
+                    incarnation,
+                    ..AgentSpec::default()
+                }))),
+            });
+            bootstrap
         }
     }
 
@@ -2495,5 +2826,306 @@ mod tests {
                 .any(|output| matches!(output, Output::Dump { .. })),
             "an answer about an agent the step went on to delete was committed: {gone:?}"
         );
+    }
+
+    #[test]
+    fn a_suspended_exit_leaves_the_row_live_and_idle_and_stops_no_child() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        rig.live(CHILD, "scout", Some(PARENT));
+        let out = rig.suspend(PARENT);
+        let row = rig.row(PARENT).unwrap();
+        assert_eq!(
+            (row.lifecycle, row.exit_cause, row.phase),
+            (
+                Lifecycle::Live as i32,
+                ExitCause::Suspended as i32,
+                wire::Phase::Idle as i32
+            ),
+            "{out:?}"
+        );
+        assert!(stops(&out, CHILD).is_empty(), "{out:?}");
+        assert_eq!(rig.row(CHILD).unwrap().lifecycle, Lifecycle::Live as i32);
+        assert!(out.contains(&Output::ForgetAgent { agent: PARENT }));
+    }
+
+    #[test]
+    fn stopping_a_suspended_agent_marks_it_exited_as_stopped_and_its_children_follow() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        rig.live(CHILD, "scout", Some(PARENT));
+        rig.suspend(PARENT);
+        let (call, out) = rig.call(ClientRequest::KillAgent { agent: PARENT });
+        let answered = answer_of(&out, call).expect("answered at once");
+        assert_eq!(answered.lifecycle, Lifecycle::Exited as i32);
+        assert_eq!(answered.exit_cause, ExitCause::Stopped as i32);
+        assert_eq!(stops(&out, CHILD), [false], "{out:?}");
+    }
+
+    #[test]
+    fn closing_a_suspended_agent_closes_it_and_marks_it_exited() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        rig.suspend(PARENT);
+        let (call, out) = rig.call(ClientRequest::FileAgent {
+            agent: PARENT,
+            filing: Filing::Closed,
+        });
+        let answered = answer_of(&out, call).expect("answered at once");
+        assert_eq!(
+            (answered.lifecycle, answered.exit_cause),
+            (Lifecycle::Exited as i32, ExitCause::Stopped as i32)
+        );
+        assert!(rig.row(PARENT).unwrap().is_closed());
+    }
+
+    #[test]
+    fn deleting_a_suspended_agent_removes_it_without_a_stop() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        rig.suspend(PARENT);
+        let (_, out) = rig.call(ClientRequest::DeleteAgent {
+            agent: PARENT,
+            discard: false,
+        });
+        assert!(stops(&out, PARENT).is_empty(), "{out:?}");
+        assert!(rig.row(PARENT).is_none(), "{out:?}");
+        assert!(
+            matches!(job_of(&out), Some((_, Job::RemoveDir { .. }))),
+            "{out:?}"
+        );
+    }
+
+    #[test]
+    fn a_stop_that_meets_a_suspension_still_leaves_the_agent_stopped() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        let (call, _) = rig.call(ClientRequest::KillAgent { agent: PARENT });
+        let out = rig.suspend(PARENT);
+        let answered = answer_of(&out, call).expect("answered once it ends");
+        assert_eq!(
+            (answered.lifecycle, answered.exit_cause),
+            (Lifecycle::Exited as i32, ExitCause::Stopped as i32)
+        );
+    }
+
+    /// Switched off or on, the start's sweep finds a suspended agent's
+    /// directory unlocked, as it is, and leaves its row as it was.
+    #[test]
+    fn the_sweep_leaves_a_suspended_row_alone_with_the_experiment_on_or_off() {
+        for mut rig in [suspension_rig(true), {
+            let mut rig = rig();
+            rig.daemon.families.swept = false;
+            rig
+        }] {
+            rig.left(PARENT, wire::Phase::Idle, ExitCause::Suspended);
+            rig.step(Input::ControlClosed {
+                agent: PARENT,
+                ended: Ended::Away,
+            });
+            rig.step(Input::Swept);
+            let row = rig.row(PARENT).unwrap();
+            assert_eq!(
+                (row.lifecycle, row.exit_cause),
+                (Lifecycle::Live as i32, ExitCause::Suspended as i32)
+            );
+            // And a stop still marks it exited.
+            let (call, out) = rig.call(ClientRequest::KillAgent { agent: PARENT });
+            assert_eq!(
+                answer_of(&out, call).map(|agent| agent.exit_cause),
+                Some(ExitCause::Stopped as i32)
+            );
+        }
+    }
+
+    #[test]
+    fn after_a_reboot_an_idle_agent_is_suspended_one_in_a_turn_continued_and_one_ended_exited() {
+        const BUSY: AgentId = AgentId(*b"busy-00000000000");
+        const ASKING: AgentId = AgentId(*b"asking-000000000");
+        const DONE: AgentId = AgentId(*b"done-00000000000");
+        let mut rig = suspension_rig(true);
+        rig.left(PARENT, wire::Phase::Idle, ExitCause::Unspecified);
+        rig.left(BUSY, wire::Phase::Working, ExitCause::Unspecified);
+        rig.left(ASKING, wire::Phase::NeedsYou, ExitCause::Unspecified);
+        rig.left(DONE, wire::Phase::Idle, ExitCause::Finished);
+        let mut resumes = Vec::new();
+        for agent in [PARENT, BUSY, ASKING, DONE] {
+            let out = rig.step(Input::ControlClosed {
+                agent,
+                ended: Ended::Away,
+            });
+            if job_of(&out).is_some() {
+                resumes.push((agent, out));
+            }
+        }
+        rig.step(Input::Swept);
+
+        let row = rig.row(PARENT).unwrap();
+        assert_eq!(
+            (row.lifecycle, row.exit_cause),
+            (Lifecycle::Live as i32, ExitCause::Suspended as i32),
+            "idle: suspended"
+        );
+        assert_eq!(rig.row(DONE).unwrap().lifecycle, Lifecycle::Exited as i32);
+        assert_eq!(
+            resumes.iter().map(|(agent, _)| *agent).collect::<Vec<_>>(),
+            [BUSY, ASKING],
+            "in a turn: continued at once"
+        );
+        for (agent, out) in resumes {
+            let bootstrap = rig.resume_through(&out, 2).expect("resumed with a prompt");
+            let Some(wire::bootstrap::Of::Prompt(prompt)) = bootstrap.of else {
+                panic!("a prompt: {bootstrap:?}");
+            };
+            assert!(wire::is_continued_input(&prompt.input_id));
+            assert_eq!(prompt.prompt.unwrap().text, CONTINUE_AFTER_RESTART);
+            let row = rig.row(agent).unwrap();
+            assert_eq!(
+                (row.lifecycle, row.incarnation),
+                (Lifecycle::Live as i32, 2)
+            );
+            assert_eq!(
+                rig.daemon.store.run_start(&agent.0).unwrap(),
+                Some(1),
+                "the continue keeps the run"
+            );
+        }
+    }
+
+    #[test]
+    fn without_a_reboot_or_the_experiment_an_agent_found_gone_ended_while_away() {
+        let mut quiet = suspension_rig(false);
+        let mut off = rig();
+        off.daemon.families.swept = false;
+        off.daemon.options.rebooted = true;
+        for rig in [&mut quiet, &mut off] {
+            rig.left(PARENT, wire::Phase::Working, ExitCause::Unspecified);
+            let out = rig.step(Input::ControlClosed {
+                agent: PARENT,
+                ended: Ended::Away,
+            });
+            assert!(job_of(&out).is_none(), "nothing resumed: {out:?}");
+            let row = rig.row(PARENT).unwrap();
+            assert_eq!(
+                (row.lifecycle, row.exit_cause),
+                (Lifecycle::Exited as i32, ExitCause::EndedWhileAway as i32)
+            );
+        }
+    }
+
+    #[test]
+    fn an_end_its_journal_gives_no_cause_for_is_recorded_after_a_grace() {
+        let mut rig = suspension_rig(false);
+        rig.step(Input::Swept);
+        rig.live(PARENT, "lead", None);
+        rig.live(CHILD, "scout", Some(PARENT));
+        let out = rig.step(Input::ControlClosed {
+            agent: PARENT,
+            ended: Ended::Exited,
+        });
+        assert!(
+            out.iter().any(|output| matches!(
+                output,
+                Output::ArmTimer { id: TimerId::Grace(PARENT), at_ms } if *at_ms == CAUSELESS_GRACE_MS
+            )),
+            "{out:?}"
+        );
+        assert_eq!(rig.row(PARENT).unwrap().lifecycle, Lifecycle::Live as i32);
+        assert!(stops(&out, CHILD).is_empty());
+        let out = rig.step(Input::Timer {
+            id: TimerId::Grace(PARENT),
+        });
+        let row = rig.row(PARENT).unwrap();
+        assert_eq!(
+            (row.lifecycle, row.exit_cause),
+            (
+                Lifecycle::Exited as i32,
+                ExitCause::EndedUnexpectedly as i32
+            )
+        );
+        assert_eq!(stops(&out, CHILD), [false], "{out:?}");
+    }
+
+    #[test]
+    fn a_daemon_asked_to_stop_records_no_more_exits() {
+        let mut rig = suspension_rig(false);
+        rig.step(Input::Swept);
+        rig.live(PARENT, "lead", None);
+        rig.live(CHILD, "scout", Some(PARENT));
+        rig.step(Input::ControlClosed {
+            agent: PARENT,
+            ended: Ended::Exited,
+        });
+        rig.step(Input::Stopping);
+        let out = rig.step(Input::Timer {
+            id: TimerId::Grace(PARENT),
+        });
+        let out_too = rig.step(Input::ControlClosed {
+            agent: CHILD,
+            ended: Ended::Exited,
+        });
+        for agent in [PARENT, CHILD] {
+            assert_eq!(rig.row(agent).unwrap().lifecycle, Lifecycle::Live as i32);
+        }
+        assert!(stops(&out, CHILD).is_empty() && stops(&out_too, CHILD).is_empty());
+    }
+
+    #[test]
+    fn a_resume_after_a_suspension_keeps_the_run_and_any_other_starts_a_new_one() {
+        let mut rig = suspension_rig(false);
+        rig.step(Input::Swept);
+        rig.live(PARENT, "lead", None);
+        rig.suspend(PARENT);
+        let (_, out) = rig.call(ClientRequest::ResumeAgent(Box::new(Resume {
+            agent: PARENT,
+            bootstrap: None,
+        })));
+        rig.resume_through(&out, 2);
+        assert_eq!(rig.daemon.store.run_start(&PARENT.0).unwrap(), Some(1));
+        rig.step(Input::AgentHello { agent: PARENT });
+
+        rig.call(ClientRequest::KillAgent { agent: PARENT });
+        rig.step(Input::ControlClosed {
+            agent: PARENT,
+            ended: Ended::Exited,
+        });
+        assert_eq!(
+            rig.row(PARENT).unwrap().exit_cause,
+            ExitCause::Killed as i32
+        );
+        let (_, out) = rig.call(ClientRequest::ResumeAgent(Box::new(Resume {
+            agent: PARENT,
+            bootstrap: None,
+        })));
+        rig.resume_through(&out, 3);
+        assert_eq!(rig.daemon.store.run_start(&PARENT.0).unwrap(), Some(3));
+    }
+
+    /// A restart caught a close after its filing was stored and before the
+    /// suspension it met was finished: the row is live, closed and
+    /// suspended. The start marks it exited as stopped, so nothing resumes
+    /// it and undoes the close, with the experiment on or off.
+    #[test]
+    fn a_closed_row_left_suspended_is_marked_stopped_at_start() {
+        for mut rig in [suspension_rig(true), suspension_rig(false), {
+            let mut rig = rig();
+            rig.daemon.families.swept = false;
+            rig
+        }] {
+            rig.left(PARENT, wire::Phase::Idle, ExitCause::Suspended);
+            let mut row = rig.row(PARENT).unwrap();
+            row.filing = wire::Filing::Closed as i32;
+            rig.daemon.store.put_agent(&row).unwrap();
+            rig.step(Input::ControlClosed {
+                agent: PARENT,
+                ended: Ended::Away,
+            });
+            let row = rig.row(PARENT).unwrap();
+            assert_eq!(
+                (row.lifecycle, row.exit_cause),
+                (Lifecycle::Exited as i32, ExitCause::Stopped as i32)
+            );
+            assert!(row.is_closed());
+        }
     }
 }

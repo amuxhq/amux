@@ -740,6 +740,24 @@ impl State {
         }
     }
 
+    /// Another thread on the server ran or stopped: a subagent, or a thread
+    /// nothing here can place, which counts as running too, so suspension
+    /// never ends it.
+    fn other_thread(&mut self, thread: &str, notification: &ServerNotification) {
+        let running = match notification {
+            ServerNotification::ThreadStatusChanged(changed) => changed
+                .status
+                .as_ref()
+                .map(|status| status.kind == "active"),
+            ServerNotification::TurnStarted(_) => Some(true),
+            ServerNotification::TurnCompleted(_) => Some(false),
+            _ => None,
+        };
+        if let Some(running) = running {
+            self.threads.insert(thread.to_owned(), running);
+        }
+    }
+
     /// The child threads the agent's thread spawned, from its subagent
     /// calls.
     fn spawned_threads(&self) -> Vec<String> {
@@ -1539,6 +1557,8 @@ impl State {
         if let (Some(ours), Some(theirs)) = (self.thread_id.as_deref(), about_thread(&notification))
             && ours != theirs
         {
+            let theirs = theirs.to_owned();
+            self.other_thread(&theirs, &notification);
             if let ServerNotification::ItemStarted(started)
             | ServerNotification::ItemCompleted(started) = &notification
                 && let ThreadItem::FileChange(change) = &started.item
@@ -1944,6 +1964,15 @@ impl State {
         completed: bool,
     ) {
         let id = item.id().to_owned();
+        // A subagent runs from its spawn until its own thread says it is
+        // idle; a thread already seen to end stays ended.
+        if let ThreadItem::CollabAgentToolCall(call) = item
+            && call.tool == codex_protocol::items::CollabAgentTool::SpawnAgent
+        {
+            for thread in &call.receiver_thread_ids {
+                self.threads.entry(thread.clone()).or_insert(true);
+            }
+        }
         match item {
             ThreadItem::UserMessage(message) => {
                 if completed {
@@ -2745,7 +2774,8 @@ impl State {
             }
         }
         self.background = None;
-        self.shared.provider_exited();
+        self.threads.clear();
+        self.shared.provider_exited_as(&exit);
         self.active_turn = None;
         self.interrupt_pending = false;
         self.boundary(emit, wire::BoundaryKind::Exited, exit);

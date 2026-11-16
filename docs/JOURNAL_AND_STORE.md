@@ -496,7 +496,8 @@ rather than in `MIGRATIONS`, each named with its version's prefix:
 `amux.experimental.AgentWorkspace`, for own rows and replicas, read joined
 onto the agent's row as its `experimental` entry and deleted with the row) and
 `exp_suspension_1_runs` (one of this host's own agents to the incarnation its
-current run began at). They have real columns and indexes, and are `STRICT`
+current run began at, against which a child's report is judged; see
+[the agent process](AGENT_PROCESS.md#a-suspended-agent-on-its-host)). They have real columns and indexes, and are `STRICT`
 like every other table.
 
 When the daemon opens a profile's store (`Sqlite::open_with`), it creates the

@@ -16,6 +16,15 @@
 //! again until the journal records it taken, as the daemon's message lane
 //! does. Time moves only when a timer the core
 //! armed fires.
+//!
+//! An agent without a parent whose spec carries the suspension delay
+//! suspends itself once it has been idle that long. For it the world also
+//! attaches and detaches terminal clients, and its provider runs background
+//! jobs in a turn (each one's end reported in a turn the provider then
+//! starts itself), schedules a wake-up in a turn (which later fires as a
+//! turn of its own), and is granted a permission for its session when the
+//! daemon answers an ask. The daemon resumes a suspended agent with a
+//! message: one it refused as it suspended, or a new one.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::hash::{Hash, Hasher};
@@ -36,6 +45,9 @@ type Kind = TestKind;
 const START_MS: u64 = 1_000;
 const GRACE_MS: u64 = 60_000;
 const DRAIN_MS: u64 = 30_000;
+/// The suspension delay, apart from the other timers' so a property can
+/// tell them apart.
+const SUSPEND_AFTER_MS: u64 = 90_000;
 /// The one-shot child's spawn prompt.
 const SPAWN: &[u8] = b"spawn";
 
@@ -57,11 +69,22 @@ pub struct AgentLifecycle {
     pub provider_exits: u8,
     /// Stops and kills the daemon asks for, all told.
     pub stops: u8,
+    /// The spec carries the suspension delay: an agent without a parent
+    /// suspends once idle that long.
+    pub suspends: bool,
+    /// Terminal clients that attach, all told; each may leave.
+    pub attaches: u8,
+    /// Background jobs the provider starts in a turn, all told.
+    pub jobs: u8,
+    /// Wake-ups the provider schedules in a turn, all told.
+    pub wakeups: u8,
+    /// Asks the daemon answers with a grant for the session, all told.
+    pub grants: u8,
 }
 
 impl AgentLifecycle {
     /// The one-shot child at the bounds `just test` explores exhaustively:
-    /// 1,296,718 states in 16 s on 4 threads of an M-series Mac.
+    /// 2,106,869 states, in about 5 s on an M-series Mac's cores.
     pub const fn ci() -> Self {
         Self {
             one_shot: true,
@@ -71,12 +94,38 @@ impl AgentLifecycle {
             asks: 2,
             provider_exits: 1,
             stops: 2,
+            suspends: false,
+            attaches: 0,
+            jobs: 0,
+            wakeups: 0,
+            grants: 0,
+        }
+    }
+
+    /// An agent without a parent that suspends, with every input to its
+    /// idleness once: a terminal client, a background job, a wake-up and
+    /// a grant for the session, at bounds that keep `just test` quick:
+    /// 1,819,692 states, in about 5 s on an M-series Mac's cores.
+    pub const fn suspending() -> Self {
+        Self {
+            one_shot: false,
+            dials: 2,
+            inputs: 1,
+            messages: 2,
+            asks: 1,
+            provider_exits: 1,
+            stops: 1,
+            suspends: true,
+            attaches: 1,
+            jobs: 1,
+            wakeups: 1,
+            grants: 1,
         }
     }
 
     /// An agent with no parent at the same bounds: it stays after its
     /// turns, and leaves only when it is stopped or killed, its daemon is
-    /// lost or its provider exits. 71,250 states in about a second.
+    /// lost or its provider exits. 148,634 states in about a second.
     pub const fn parentless() -> Self {
         Self {
             one_shot: false,
@@ -94,11 +143,39 @@ impl AgentLifecycle {
             asks: 2,
             provider_exits: 2,
             stops: 2,
+            suspends: false,
+            attaches: 0,
+            jobs: 0,
+            wakeups: 0,
+            grants: 0,
+        }
+    }
+
+    /// The suspending agent at the larger bounds a nightly run explores:
+    /// 32,945,447 states in about four minutes on an M-series Mac's cores.
+    pub const fn nightly_suspending() -> Self {
+        Self {
+            dials: 3,
+            stops: 2,
+            jobs: 2,
+            ..Self::suspending()
         }
     }
 
     fn spec(&self, incarnation: u32, bootstrap: Option<Bootstrap>) -> AgentSpec {
+        use prost::Message as _;
+        let mut experimental = std::collections::BTreeMap::new();
+        if self.suspends && !self.one_shot {
+            experimental.insert(
+                agent_core::SUSPENSION.to_owned(),
+                wire::experimental::SuspensionSpec {
+                    after_ms: SUSPEND_AFTER_MS,
+                }
+                .encode_to_vec(),
+            );
+        }
         AgentSpec {
+            experimental,
             agent_id: b"agent".to_vec(),
             incarnation,
             parent: self.one_shot.then(AgentRef::default),
@@ -148,8 +225,28 @@ pub enum Action {
     DrainExpires,
     /// The provider's process exits: asked to finish, or on its own.
     Exit,
-    /// The daemon resumes the exited agent with the message it refused.
+    /// The daemon resumes the exited agent with the message it refused, or
+    /// a suspended one with a new message.
     Resume,
+    /// A terminal client attaches to the agent's terminal.
+    Attach,
+    /// A terminal client leaves.
+    Leave,
+    /// The provider starts background job `n` in the turn it runs.
+    JobStart(u8),
+    /// Background job `n` ends; between turns, the provider owes a turn
+    /// reporting it.
+    JobEnd(u8),
+    /// The provider starts the turn it owes for a job's end.
+    ProviderTurn,
+    /// The provider schedules wake-up `n` in the turn it runs.
+    Schedule(u8),
+    /// Wake-up `n` fires between turns, starting a turn of its own.
+    WakeupFires(u8),
+    /// The daemon answers the open ask with a grant for the session.
+    Grant,
+    /// The suspension timer fires.
+    SuspendExpires,
 }
 
 /// The provider, as the world sees it.
@@ -165,6 +262,14 @@ struct Provider {
     /// The daemon stopped the agent, which cancels the turn the
     /// provider's way: the turn may end with its ask still open.
     cancelled: bool,
+    /// The background jobs it runs, by number.
+    jobs: BTreeSet<u8>,
+    /// A job ended between turns: it starts a turn reporting it.
+    owes_turn: bool,
+    /// The wake-ups it has scheduled and not run, by number.
+    wakeups: BTreeSet<u8>,
+    /// It holds a grant for its session.
+    granted: bool,
 }
 
 impl Provider {
@@ -174,7 +279,23 @@ impl Provider {
         asking: false,
         asked_to_close: false,
         cancelled: false,
+        jobs: BTreeSet::new(),
+        owes_turn: false,
+        wakeups: BTreeSet::new(),
+        granted: false,
     };
+
+    /// Nothing runs, nothing is asked, and it holds nothing that ending it
+    /// would lose or cut short.
+    fn quiet(&self) -> bool {
+        self.alive
+            && !self.turn
+            && !self.asking
+            && self.jobs.is_empty()
+            && !self.owes_turn
+            && self.wakeups.is_empty()
+            && !self.granted
+    }
 }
 
 /// The daemon, as the world sees it.
@@ -200,6 +321,9 @@ struct Decided {
     by: Action,
     /// The provider ran a turn when the action happened.
     turn_running: bool,
+    /// How long the world had been quiet, as the model sees it, when the
+    /// action happened; none when it was not.
+    quiet_for: Option<u64>,
 }
 
 /// What the properties judge, as it happened.
@@ -228,6 +352,23 @@ struct Seen {
     stops: u8,
     /// An incarnation after the first started.
     resumed: bool,
+    /// Since when the world has been quiet without a break, as the model
+    /// sees it: the provider alive, running and holding nothing, nobody at
+    /// the terminal, and every input and message accepted taken.
+    quiet_since: Option<u64>,
+    /// Messages the daemon resumed a suspended agent with that it had not
+    /// refused, in any incarnation.
+    woke_with: BTreeSet<Vec<u8>>,
+    /// Incarnations that suspended.
+    suspensions: u8,
+    /// A suspended incarnation was resumed by a message.
+    resumed_from_suspension: bool,
+    /// The provider was interrupted while its agent was exiting suspended.
+    interrupted_suspending: bool,
+    attaches: u8,
+    jobs: u8,
+    wakeups: u8,
+    grants: u8,
     /// A resume found the facts ring replaying to another interpreter than
     /// the one that recorded it.
     ring_diverged: bool,
@@ -276,12 +417,31 @@ pub struct State {
     timers: BTreeMap<TimerId, u64>,
     provider: Provider,
     daemon: Daemon,
+    /// Terminal clients attached to this incarnation's terminal.
+    attached: u8,
     seen: Seen,
 }
 
 impl State {
     fn exited(&self) -> bool {
         self.seen.exited.is_some()
+    }
+
+    /// The incarnation's journal records it ending suspended.
+    fn suspending(&self) -> bool {
+        self.seen
+            .last_end
+            .as_ref()
+            .is_some_and(|(cause, _)| *cause == wire::ExitCause::Suspended as i32)
+    }
+
+    /// The world is quiet, as the model sees it, independent of the core.
+    fn quiet(&self) -> bool {
+        !self.exited()
+            && self.provider.quiet()
+            && self.attached == 0
+            && self.seen.queued.is_empty()
+            && self.seen.accepted.is_subset(&self.seen.taken)
     }
 
     fn connected(&self) -> Option<ConnId> {
@@ -293,9 +453,10 @@ impl State {
 
 /// The lifecycle's promises the composed net judges too, each with the
 /// predicate both judge it by.
-pub(crate) const EXITS_AT_TURN_END: &str = "an agent exits only at a turn end or a drain deadline: the \
-     lifecycle decides to end an incarnation only as a turn ends, while no turn runs, or as its drain \
-     deadline passes";
+pub(crate) const EXITS_AT_TURN_END: &str = "an agent exits only at a turn end, a drain deadline or its \
+     suspension deadline: the lifecycle decides to end an incarnation only as a turn ends, while no turn \
+     runs, or as its drain deadline passes, and suspends it only as its suspension deadline passes with \
+     no turn running";
 pub(crate) const EXIT_CAUSE_LAST_STEP: &str = "the exit cause is the journal's last step: an incarnation \
      that exits having written its end records its cause on its newest step";
 
@@ -306,12 +467,18 @@ pub const RESUME_CONTINUES: &str = "a resume continues where the last incarnatio
 /// Whether a decision to end an incarnation for `cause` came in its time:
 /// as a turn ended or the drain deadline passed (`at_turn_end_or_deadline`),
 /// or while no turn ran, unless it was not the lifecycle's to make.
+/// A suspension, decided only by the lifecycle, comes only as its own
+/// deadline passes, with no turn running.
 pub(crate) fn decided_in_its_time(
     cause: &ExitCause,
     at_turn_end_or_deadline: bool,
+    at_suspension_deadline: bool,
     turn_running: bool,
 ) -> bool {
-    !decided_by_the_lifecycle(cause) || at_turn_end_or_deadline || !turn_running
+    match cause {
+        ExitCause::Suspended => at_suspension_deadline && !turn_running,
+        cause => !cause.decided_by_the_lifecycle() || at_turn_end_or_deadline || !turn_running,
+    }
 }
 
 /// Whether an incarnation that exited for `cause` recorded it on its
@@ -328,15 +495,6 @@ pub(crate) fn cause_on_last_step(
             last_end == Some(&(end.cause, end.detail))
         }
     }
-}
-
-/// Decided by the lifecycle itself, rather than something that happened to
-/// the agent.
-fn decided_by_the_lifecycle(cause: &ExitCause) -> bool {
-    matches!(
-        cause,
-        ExitCause::DaemonLost | ExitCause::Orphaned | ExitCause::Stopped | ExitCause::Finished
-    )
 }
 
 fn fact(value: serde_json::Value) -> Input {
@@ -429,6 +587,12 @@ impl AgentLifecycle {
             }
             Output::WriteProvider(effect) => {
                 if state.provider.alive {
+                    if state.suspending()
+                        && matches!(&effect, Effect::ProviderWrite(bytes)
+                            if bytes.windows(9).any(|window| window == b"interrupt"))
+                    {
+                        state.seen.interrupted_suspending = true;
+                    }
                     self.provider_takes(state, effect, fed);
                 }
             }
@@ -438,13 +602,17 @@ impl AgentLifecycle {
                 }
                 if let Some(ctl_frame::Of::Reply(verdict)) = frame.of {
                     match verdict.verdict.and_then(|verdict| verdict.of) {
-                        Some(wire::send_input_response::Of::Accepted(_)) => {
+                        // An answer is no input the provider takes; it closes
+                        // its ask.
+                        Some(wire::send_input_response::Of::Accepted(_))
+                            if !verdict.id.starts_with(b"g") =>
+                        {
                             state.seen.ever_accepted.insert(verdict.id.clone());
                             state.seen.accepted.insert(verdict.id);
                         }
                         Some(wire::send_input_response::Of::Rejected(rejected))
                             if rejected.refusal() == wire::Refusal::Exiting
-                                && self.one_shot
+                                && (self.one_shot || state.suspending())
                                 && verdict.id.starts_with(b"m") =>
                         {
                             state.seen.refused_exiting.insert(verdict.id.clone());
@@ -495,6 +663,15 @@ impl AgentLifecycle {
                 let Ok(written) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
                     return;
                 };
+                // An answer to the open ask, which the provider closes.
+                if written["type"] == "answer" {
+                    if state.provider.asking {
+                        state.provider.asking = false;
+                        state.provider.granted = true;
+                        fed.push_back(fact(json!({"type": "ask_closed", "id": written["ask"]})));
+                    }
+                    return;
+                }
                 if written["type"] != "user" {
                     return;
                 }
@@ -503,6 +680,8 @@ impl AgentLifecycle {
                     json!({"type": "user", "id": format!("user:{text}"), "text": text}),
                 ));
                 state.provider.turn = true;
+                // Any turn reports a job that ended before it.
+                state.provider.owes_turn = false;
             }
             Effect::Inject { id, .. } => {
                 let envelope = String::from_utf8_lossy(&id).into_owned();
@@ -510,6 +689,7 @@ impl AgentLifecycle {
                 if !state.provider.turn {
                     fed.push_back(fact(json!({"type": "turn_start"})));
                     state.provider.turn = true;
+                    state.provider.owes_turn = false;
                 }
             }
             _ => {}
@@ -540,18 +720,50 @@ impl Machine for AgentLifecycle {
             timers: BTreeMap::new(),
             provider: Provider::STARTED,
             daemon: Daemon::default(),
+            attached: 0,
             seen: Seen::default(),
         };
         self.started(&mut state, agent, out);
+        state.seen.quiet_since = (self.suspends && state.quiet()).then_some(state.now_ms);
         state
     }
 
     fn actions(&self, s: &State, out: &mut Vec<Action>) {
         if s.exited() {
-            if s.daemon.held.is_some() {
+            let woken =
+                s.seen.exited == Some(ExitCause::Suspended) && s.daemon.messages < self.messages;
+            if s.daemon.held.is_some() || woken {
                 out.push(Action::Resume);
             }
             return;
+        }
+        if s.seen.attaches < self.attaches {
+            out.push(Action::Attach);
+        }
+        if s.attached > 0 {
+            out.push(Action::Leave);
+        }
+        if s.timers.contains_key(&TimerId::Suspend) {
+            out.push(Action::SuspendExpires);
+        }
+        let provider = &s.provider;
+        if provider.alive {
+            if provider.turn && s.seen.jobs < self.jobs {
+                out.push(Action::JobStart(s.seen.jobs + 1));
+            }
+            out.extend(provider.jobs.iter().copied().map(Action::JobEnd));
+            if !provider.turn && provider.owes_turn {
+                out.push(Action::ProviderTurn);
+            }
+            if provider.turn && s.seen.wakeups < self.wakeups {
+                out.push(Action::Schedule(s.seen.wakeups + 1));
+            }
+            if !provider.turn {
+                out.extend(provider.wakeups.iter().copied().map(Action::WakeupFires));
+            }
+            if provider.asking && s.seen.grants < self.grants && s.connected().is_some() {
+                out.push(Action::Grant);
+            }
         }
         if s.daemon.dialled < self.dials {
             out.push(Action::DaemonDials);
@@ -592,9 +804,39 @@ impl Machine for AgentLifecycle {
     }
 
     fn next(&self, s: &State, action: &Action) -> Option<State> {
+        let mut state = self.step(s, action)?;
+        // Quiet is unbroken only while it holds after every action.
+        state.seen.quiet_since = match (self.suspends && state.quiet(), s.seen.quiet_since) {
+            (false, _) => None,
+            (true, Some(since)) if *action != Action::Resume => Some(since),
+            (true, _) => Some(state.now_ms),
+        };
+        Some(state)
+    }
+
+    fn properties(&self) -> Vec<Property<Self>> {
+        self.promises()
+    }
+}
+
+impl AgentLifecycle {
+    fn step(&self, s: &State, action: &Action) -> Option<State> {
         let mut state = s.clone();
         if *action == Action::Resume {
-            let held = state.daemon.held.clone()?;
+            // The message it refused as it exited, or, for a suspended
+            // agent, a new one, which the daemon starts it with.
+            let held = match state.daemon.held.clone() {
+                Some(held) => held,
+                None => {
+                    state.daemon.messages += 1;
+                    let id = format!("m{}", state.daemon.messages).into_bytes();
+                    state.seen.woke_with.insert(id.clone());
+                    id
+                }
+            };
+            if s.seen.exited == Some(ExitCause::Suspended) {
+                state.seen.resumed_from_suspension = true;
+            }
             let agent = Agent::<Kind>::from_value(&s.agent).expect("the value restores");
             if interpret::encode_checkpoint(&s.ring.replayed()) != agent.checkpoint() {
                 state.seen.ring_diverged = true;
@@ -610,6 +852,7 @@ impl Machine for AgentLifecycle {
                 }),
             );
             state.provider = Provider::STARTED;
+            state.attached = 0;
             state.seen.accepted.clear();
             state.seen.decided = None;
             state.seen.exited = None;
@@ -624,6 +867,74 @@ impl Machine for AgentLifecycle {
         let deciding = agent.exiting().is_none();
         let turn_running = s.provider.turn;
         let fed = match action {
+            Action::Attach | Action::Leave => {
+                if *action == Action::Attach {
+                    state.seen.attaches += 1;
+                    state.attached += 1;
+                } else {
+                    state.attached -= 1;
+                }
+                VecDeque::from([Input::Attached {
+                    clients: u32::from(state.attached),
+                }])
+            }
+            Action::JobStart(n) => {
+                state.seen.jobs += 1;
+                state.provider.jobs.insert(*n);
+                VecDeque::from([fact(json!({"type": "job_started", "id": format!("j{n}")}))])
+            }
+            Action::JobEnd(n) => {
+                state.provider.jobs.remove(n);
+                state.provider.owes_turn |= !state.provider.turn;
+                VecDeque::from([fact(
+                    json!({"type": "job_ended", "id": format!("j{n}"), "reported": true}),
+                )])
+            }
+            Action::ProviderTurn => {
+                state.provider.owes_turn = false;
+                state.provider.turn = true;
+                VecDeque::from([fact(json!({"type": "turn_start"}))])
+            }
+            Action::Schedule(n) => {
+                state.seen.wakeups += 1;
+                state.provider.wakeups.insert(*n);
+                VecDeque::from([fact(json!({"type": "wakeup", "id": format!("w{n}")}))])
+            }
+            Action::WakeupFires(n) => {
+                state.provider.wakeups.remove(n);
+                state.provider.turn = true;
+                state.provider.owes_turn = false;
+                VecDeque::from([fact(json!({"type": "wakeup_fired", "id": format!("w{n}")}))])
+            }
+            Action::Grant => {
+                state.seen.grants += 1;
+                let answer = wire::Input::new(
+                    format!("g{}", state.seen.grants).into_bytes(),
+                    wire::ClaudeSdkInput {
+                        of: Some(wire::claude_sdk_input::Of::Answer(wire::ClaudeAnswer {
+                            ask_key: format!("a{}", state.seen.asks),
+                            of: Some(wire::claude_answer::Of::Permission(
+                                wire::PermissionAnswer {
+                                    of: Some(wire::permission_answer::Of::Allow(
+                                        wire::PermissionAllow { scope: Some(0) },
+                                    )),
+                                },
+                            )),
+                        })),
+                    },
+                );
+                VecDeque::from([Input::Control {
+                    connection: state.connected()?,
+                    frame: CtlFrame {
+                        of: Some(ctl_frame::Of::Input(answer)),
+                    },
+                }])
+            }
+            Action::SuspendExpires => {
+                let at_ms = state.timers.remove(&TimerId::Suspend)?;
+                state.now_ms = state.now_ms.max(at_ms);
+                VecDeque::from([Input::Timer(TimerId::Suspend)])
+            }
             Action::DaemonDials => {
                 state.daemon.dialled += 1;
                 let connection = ConnId(u64::from(state.daemon.dialled));
@@ -713,23 +1024,31 @@ impl Machine for AgentLifecycle {
                     alive: false,
                     ..Provider::STARTED
                 };
+                state.attached = 0;
                 VecDeque::from([Input::ProviderExited { code: Some(0) }])
             }
             Action::Resume => unreachable!("taken above"),
         };
         self.drive(&mut state, &mut agent, fed);
         if deciding && let Some(cause) = agent.exiting() {
+            if *cause == ExitCause::Suspended {
+                state.seen.suspensions += 1;
+            }
             state.seen.decided = Some(Decided {
                 cause: cause.clone(),
                 by: action.clone(),
                 turn_running,
+                quiet_for: s
+                    .seen
+                    .quiet_since
+                    .map(|since| state.now_ms.saturating_sub(since)),
             });
         }
         state.agent = agent.value();
         Some(state)
     }
 
-    fn properties(&self) -> Vec<Property<Self>> {
+    fn promises(&self) -> Vec<Property<Self>> {
         vec![
             Property::always("the agent core never asks for a dump", |_, s: &State| {
                 s.seen.dumped.is_none()
@@ -740,6 +1059,7 @@ impl Machine for AgentLifecycle {
                     decided_in_its_time(
                         &decided.cause,
                         matches!(decided.by, Action::TurnEnd | Action::DrainExpires),
+                        decided.by == Action::SuspendExpires,
                         decided.turn_running,
                     )
                 })
@@ -762,10 +1082,42 @@ impl Machine for AgentLifecycle {
             }),
             Property::eventually(
                 "a message after the exit decision resumes: once the world rests, every message \
-                 from its parent the agent refused as exiting has been taken by a later incarnation",
+                 the agent refused as exiting (its parent's, or any as it suspended) has been taken \
+                 by a later incarnation",
                 |model, s: &State| {
                     model.at_rest(s) && s.seen.refused_exiting.is_subset(&s.seen.taken)
                 },
+            ),
+            Property::always(
+                "an agent suspends only after unbroken quiet: when it decides to suspend, the world \
+                 has had no turn, nothing queued or pending, no background job, no turn owed, no \
+                 wake-up, no grant for the session and no terminal attached for the whole delay",
+                |_, s: &State| {
+                    s.seen.decided.as_ref().is_none_or(|decided| {
+                        decided.cause != ExitCause::Suspended
+                            || decided
+                                .quiet_for
+                                .is_some_and(|quiet| quiet >= SUSPEND_AFTER_MS)
+                    })
+                },
+            ),
+            Property::always(
+                "a suspension never ends a turn and never interrupts the provider",
+                |_, s: &State| {
+                    !s.seen.interrupted_suspending
+                        && s.seen.decided.as_ref().is_none_or(|decided| {
+                            decided.cause != ExitCause::Suspended || !decided.turn_running
+                        })
+                },
+            ),
+            Property::always(
+                "only an agent without a parent whose spec carries the delay suspends",
+                |model, s: &State| s.seen.suspensions == 0 || (model.suspends && !model.one_shot),
+            ),
+            Property::eventually(
+                "a message that resumes a suspended agent is taken: once the world rests, every \
+                 message the daemon resumed it with has been taken",
+                |model, s: &State| model.at_rest(s) && s.seen.woke_with.is_subset(&s.seen.taken),
             ),
             Property::eventually(
                 "an accepted input is never lost: once the world rests, every input and message an \
@@ -790,6 +1142,29 @@ impl Machine for AgentLifecycle {
             Property::sometimes(
                 "a one-shot child sometimes resumes with a message it refused as exiting",
                 |model, s: &State| !model.one_shot || s.seen.resumed,
+            ),
+            Property::sometimes(
+                "an agent that suspends sometimes does",
+                |model, s: &State| !model.suspends || s.seen.suspensions > 0,
+            ),
+            Property::sometimes(
+                "a suspended agent is sometimes resumed by a message and takes it",
+                |model, s: &State| {
+                    !model.suspends
+                        || (s.seen.resumed_from_suspension
+                            && !s.seen.woke_with.is_empty()
+                            && s.seen.woke_with.is_subset(&s.seen.taken))
+                },
+            ),
+            Property::sometimes(
+                "a suspending agent sometimes takes a message it refused as it suspended",
+                |model, s: &State| {
+                    !model.suspends
+                        || s.seen
+                            .refused_exiting
+                            .iter()
+                            .any(|id| s.seen.taken.contains(id))
+                },
             ),
         ]
     }

@@ -3,9 +3,14 @@
 //! A deliveries row is written in the transaction that commits a child's
 //! turn end, or when a child's incarnation exits without one. A drain pass
 //! hands each row to its parent and deletes it once the parent has
-//! accepted; a row whose parent has moved to another incarnation is
-//! dropped, because a resumed parent is not waiting for anything, and so is
-//! a row for a parent on a host this one is no longer paired with. A
+//! accepted; a row whose parent was stopped since it was written (its row
+//! exited under another incarnation, or its own host answers that the
+//! incarnation is gone) is dropped, because a resumed parent is not waiting
+//! for anything, and so is a row for a parent on a host this one is no
+//! longer paired with. A parent's host judges a report against the run the
+//! parent is in: under the suspension experiment a run carries on across
+//! the resumes that follow a suspension or a restart, so a report for any
+//! incarnation of it counts; without it, only the current incarnation's. A
 //! parent that is only out of reach keeps its rows waiting, and once one of
 //! its rows finds it unreachable the rest of its rows wait for the next
 //! pass rather than each waiting out a full patience. A pass that kept
@@ -25,7 +30,9 @@
 //! once per incarnation. A message to an exited agent resumes it, with the
 //! message as the new incarnation's first input: one from the person or the
 //! agent's own parent always, one from another agent unless the
-//! recipient is closed, and a child's report never. A parent on
+//! recipient is closed, and a child's report never. A suspended agent's
+//! row is live with no process, and any message resumes it, a child's
+//! report included. A parent on
 //! another host is sent the report as a message from the child, and that
 //! host's daemon makes the same checks where the parent lives.
 //!
@@ -412,14 +419,19 @@ impl Daemon {
             row.parent_incarnation = parent.incarnation;
             self.store.put_delivery(&row)?;
         }
-        if parent.incarnation != row.parent_incarnation {
-            self.remove_delivery(&row, Removal::Stale)?;
-            return Ok(Judged::Counted(Outcome::Stale { there: false }));
-        }
         if parent.lifecycle == Lifecycle::Exited as i32 {
+            // Stopped since the report was written: nothing waits for it.
+            if parent.incarnation != row.parent_incarnation {
+                self.remove_delivery(&row, Removal::Stale)?;
+                return Ok(Judged::Counted(Outcome::Stale { there: false }));
+            }
             // Not waiting now; a resume makes the row stale.
             return Ok(Judged::Counted(Outcome::Kept { unreachable: false }));
         }
+        // A live parent under another incarnation may have been suspended
+        // or restarted, not stopped, and only its own host knows which: the
+        // report goes to it, and it answers that the incarnation is gone
+        // when its run is.
         let child = self
             .store
             .agent(&AgentKey::new(self.store.own_host(), row.child_id.clone()))?;
@@ -746,9 +758,8 @@ impl Daemon {
             .ok_or(MessageRefusal::NoAgent)?;
         // Checked here rather than as it arrived: a message ahead of it in
         // the lane may have resumed the recipient.
-        if message
-            .incarnation
-            .is_some_and(|incarnation| incarnation != row.incarnation)
+        if let Some(incarnation) = message.incarnation
+            && !self.of_current_run(&row, incarnation).map_err(store)?
         {
             return Err(MessageRefusal::Stale);
         }
@@ -758,7 +769,22 @@ impl Daemon {
                 Err(refusal) => Err(MessageRefusal::Rejected(refused(refusal))),
             };
         }
+        // Live with no process: any message resumes it, a child's report
+        // included, since nobody stopped it.
+        if self.suspended(agent, &row) {
+            return Ok(Some(Stage::Resuming));
+        }
         Ok(Some(self.offer(agent, message, out)))
+    }
+
+    /// Whether a child's report for the recipient's `incarnation` is for
+    /// its current run: the incarnation the run began at or a later one,
+    /// as the suspension experiment keeps it, else exactly the current one.
+    fn of_current_run(&self, row: &store::AgentRow, incarnation: u32) -> Result<bool, StoreError> {
+        Ok(match self.store.run_start(&row.agent.agent)? {
+            Some(start) => (start..=row.incarnation).contains(&incarnation),
+            None => incarnation == row.incarnation,
+        })
     }
 
     /// Writes the message to the recipient's process once it is connected.
@@ -978,6 +1004,17 @@ impl Daemon {
                 if rejected.refusal() == Refused::Exiting =>
             {
                 self.exiting(agent);
+                out.push(Output::CancelTimer {
+                    id: TimerId::Lane(agent),
+                });
+                // A child's report resumes only a recipient that suspended,
+                // which its row says once its exit is read: it waits for
+                // that, and begins again against the row.
+                if wakes == Wakes::Never {
+                    self.set_stage(agent, Stage::Connecting);
+                    self.arm_after(TimerId::Lane(agent), self.settings.stop_deadline_ms, out);
+                    return;
+                }
                 let judged = match self.store.agent(&self.own_key(agent)) {
                     Ok(Some(row)) => wakes.judge(&row),
                     _ => Err(Refused::Exited),
@@ -989,9 +1026,6 @@ impl Daemon {
                         out,
                     );
                 }
-                out.push(Output::CancelTimer {
-                    id: TimerId::Lane(agent),
-                });
                 self.set_stage(agent, Stage::Resuming);
                 self.resume_with(agent, &envelope, out);
             }
@@ -1050,6 +1084,16 @@ impl Daemon {
         }
         match outcome {
             Ok(()) => self.await_acceptance(agent, out),
+            // Another resume got there first: the message begins again
+            // against the live row.
+            Err(Refusal::Live) => {
+                if let Some(lane) = self.deliveries.lanes.get_mut(&agent)
+                    && let Some(current) = lane.current.take()
+                {
+                    lane.queued.push_front(current.message);
+                }
+                self.lane_next(agent, out);
+            }
             Err(refusal) => self.conclude(agent, Err(MessageRefusal::Resume(refusal)), out),
         }
     }
@@ -1442,5 +1486,264 @@ mod tests {
             },
         );
         assert_eq!(violations(&out), vec![crate::REPORT_HANDED_TWICE]);
+    }
+
+    /// A daemon running the suspension experiment, its store holding the
+    /// experiment's table.
+    fn suspension_daemon(dir: &tempfile::TempDir) -> Daemon {
+        let mut store = Sqlite::open_in_memory(OWN).expect("a store opens");
+        store.settle_experiments(&["suspension/1"]).unwrap();
+        Daemon::new(
+            store,
+            StartOptions {
+                generation: 1,
+                agents: dir.path().to_path_buf(),
+                suspension: true,
+                ..StartOptions::default()
+            },
+        )
+    }
+
+    fn resumed(out: &[Output], agent: AgentId) -> bool {
+        out.iter().any(|output| {
+            matches!(
+                output,
+                Output::Job {
+                    op: crate::Job::AwaitUnlocked { agent: to, .. },
+                    ..
+                } if *to == agent
+            )
+        })
+    }
+
+    #[test]
+    fn a_childs_report_resumes_a_suspended_parent_with_the_experiment_on_or_off() {
+        for on in [true, false] {
+            let dir = tempfile::tempdir().expect("a temporary directory");
+            let mut daemon = if on {
+                suspension_daemon(&dir)
+            } else {
+                daemon(&dir)
+            };
+            let mut parent = AgentRow::new(daemon.own_key(PARENT), 1, "/src");
+            parent.incarnation = 1;
+            parent.exit_cause = wire::ExitCause::Suspended as i32;
+            daemon.store.put_agent(&parent).unwrap();
+            let key = daemon.own_key(PARENT);
+            owe_report(&mut daemon, key);
+            let out = step(&mut daemon, Input::Swept);
+            assert!(resumed(&out, PARENT), "{out:?}");
+            assert_eq!(violations(&out), Vec::<crate::Check>::new());
+        }
+    }
+
+    #[test]
+    fn a_report_for_an_earlier_incarnation_of_the_parents_run_is_taken_and_one_from_before_is_stale()
+     {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut daemon = suspension_daemon(&dir);
+        let mut parent = AgentRow::new(daemon.own_key(PARENT), 1, "/src");
+        parent.incarnation = 3;
+        daemon.store.put_agent(&parent).unwrap();
+        daemon.store.put_run_start(&PARENT.0, Some(2)).unwrap();
+        step(&mut daemon, Input::Swept);
+        step(&mut daemon, Input::AgentHello { agent: PARENT });
+        let parent = daemon.own_key(PARENT);
+        let report = |incarnation: u32| Message {
+            envelope: Envelope {
+                id: vec![incarnation as u8; 16],
+                ..Envelope::default()
+            },
+            wakes: Wakes::Never,
+            incarnation: Some(incarnation),
+            whose: Whose::Report,
+        };
+        for (incarnation, taken) in [(2, true), (3, true), (1, false)] {
+            let mut out = Vec::new();
+            let begun = daemon.begin_message(PARENT, &report(incarnation), &mut out);
+            assert_eq!(
+                begun.is_ok(),
+                taken,
+                "a report for incarnation {incarnation}: {begun:?}"
+            );
+        }
+        // Without an entry, only the current incarnation's counts.
+        daemon.store.put_run_start(&parent.agent, None).unwrap();
+        let mut out = Vec::new();
+        assert_eq!(
+            daemon.begin_message(PARENT, &report(2), &mut out),
+            Err(MessageRefusal::Stale)
+        );
+    }
+
+    #[test]
+    fn the_childs_host_hands_a_live_parents_report_over_under_another_incarnation_and_drops_an_exited_ones()
+     {
+        for (lifecycle, handed) in [
+            (wire::Lifecycle::Live, true),
+            (wire::Lifecycle::Exited, false),
+        ] {
+            let dir = tempfile::tempdir().expect("a temporary directory");
+            let mut daemon = daemon(&dir);
+            let parent = AgentKey::new(FAR.0.to_vec(), PARENT.0.to_vec());
+            let mut row = AgentRow::new(parent.clone(), 1, "/src");
+            row.incarnation = 2;
+            row.lifecycle = lifecycle as i32;
+            daemon.store.put_agent(&row).unwrap();
+            owe_report(&mut daemon, parent);
+            daemon.trust_for_test(crate::trust::TrustStore::of_hosts(vec![FAR]));
+            step(&mut daemon, Input::Started);
+            let out = step(&mut daemon, Input::Swept);
+            let sent = out.iter().any(|output| {
+                matches!(
+                    output,
+                    Output::Call {
+                        host: FAR,
+                        request: PeerRequest::SendMessage(_),
+                        ..
+                    }
+                )
+            });
+            assert_eq!(sent, handed, "{lifecycle:?}: {out:?}");
+            assert_eq!(
+                daemon.store.deliveries().unwrap().len(),
+                usize::from(handed)
+            );
+            assert_eq!(violations(&out), Vec::<crate::Check>::new());
+        }
+    }
+
+    #[test]
+    fn a_report_refused_as_exiting_waits_for_the_exit_and_resumes_a_parent_that_suspended() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut daemon = suspension_daemon(&dir);
+        let mut parent = AgentRow::new(daemon.own_key(PARENT), 1, "/src");
+        parent.incarnation = 1;
+        daemon.store.put_agent(&parent).unwrap();
+        step(&mut daemon, Input::Adopted { agent: PARENT });
+        step(&mut daemon, Input::AgentHello { agent: PARENT });
+        let key = daemon.own_key(PARENT);
+        owe_report(&mut daemon, key);
+        let out = step(&mut daemon, Input::Swept);
+        let Some(id) = out.iter().find_map(|output| match output {
+            Output::WriteControl {
+                agent: PARENT,
+                frame:
+                    wire::CtlFrame {
+                        of: Some(ctl_frame::Of::AgentMessage(envelope)),
+                    },
+            } => Some(envelope.id.clone()),
+            _ => None,
+        }) else {
+            panic!("the report is written to the parent: {out:?}");
+        };
+        let exiting = SendInputResponse {
+            of: Some(send_input_response::Of::Rejected(refused(Refused::Exiting))),
+        };
+        let out = step(
+            &mut daemon,
+            Input::Verdict {
+                agent: PARENT,
+                input_id: id,
+                verdict: Some(exiting),
+            },
+        );
+        assert!(!resumed(&out, PARENT), "it waits for the exit: {out:?}");
+        assert_eq!(daemon.store.deliveries().unwrap().len(), 1);
+
+        parent.exit_cause = wire::ExitCause::Suspended as i32;
+        daemon.store.put_agent(&parent).unwrap();
+        let out = step(
+            &mut daemon,
+            Input::ControlClosed {
+                agent: PARENT,
+                ended: crate::Ended::Exited,
+            },
+        );
+        assert!(resumed(&out, PARENT), "{out:?}");
+        assert_eq!(violations(&out), Vec::<crate::Check>::new());
+    }
+
+    /// The person stops a parent while it is suspending and a child's
+    /// report it refused as exiting waits for the exit: the stop is done
+    /// before the report is judged again, so the report finds the parent
+    /// stopped and resumes nothing.
+    #[test]
+    fn a_report_waiting_out_a_suspension_the_person_stopped_resumes_nothing() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut daemon = suspension_daemon(&dir);
+        let mut parent = AgentRow::new(daemon.own_key(PARENT), 1, "/src");
+        parent.incarnation = 1;
+        daemon.store.put_agent(&parent).unwrap();
+        step(&mut daemon, Input::Adopted { agent: PARENT });
+        step(&mut daemon, Input::AgentHello { agent: PARENT });
+        let key = daemon.own_key(PARENT);
+        owe_report(&mut daemon, key);
+        let out = step(&mut daemon, Input::Swept);
+        let Some(id) = out.iter().find_map(|output| match output {
+            Output::WriteControl {
+                agent: PARENT,
+                frame:
+                    wire::CtlFrame {
+                        of: Some(ctl_frame::Of::AgentMessage(envelope)),
+                    },
+            } => Some(envelope.id.clone()),
+            _ => None,
+        }) else {
+            panic!("the report is written to the parent: {out:?}");
+        };
+        step(
+            &mut daemon,
+            Input::ClientCall {
+                call: CallId(7),
+                request: ClientRequest::KillAgent { agent: PARENT },
+            },
+        );
+        let exiting = SendInputResponse {
+            of: Some(send_input_response::Of::Rejected(refused(Refused::Exiting))),
+        };
+        step(
+            &mut daemon,
+            Input::Verdict {
+                agent: PARENT,
+                input_id: id,
+                verdict: Some(exiting),
+            },
+        );
+        let mut row = daemon
+            .store
+            .agent(&daemon.own_key(PARENT))
+            .unwrap()
+            .unwrap();
+        row.exit_cause = wire::ExitCause::Suspended as i32;
+        daemon.store.put_agent(&row).unwrap();
+        let out = step(
+            &mut daemon,
+            Input::ControlClosed {
+                agent: PARENT,
+                ended: crate::Ended::Exited,
+            },
+        );
+        assert!(
+            !resumed(&out, PARENT),
+            "a stopped parent is not resumed: {out:?}"
+        );
+        let row = daemon
+            .store
+            .agent(&daemon.own_key(PARENT))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (row.lifecycle, row.exit_cause),
+            (
+                wire::Lifecycle::Exited as i32,
+                wire::ExitCause::Stopped as i32
+            )
+        );
+        assert_eq!(
+            daemon.store.deliveries().unwrap().len(),
+            1,
+            "the report is kept"
+        );
     }
 }

@@ -2257,6 +2257,10 @@ impl Transition<'_> {
             matches!(&input, agent_core::Input::Provider(fact) if is_turn_end(&fact.payload));
         let at_turn_end_or_deadline =
             at_turn_end || matches!(input, agent_core::Input::Timer(agent_core::TimerId::Drain));
+        let at_suspension_deadline = matches!(
+            input,
+            agent_core::Input::Timer(agent_core::TimerId::Suspend)
+        );
         // The provider has said what it says by now: a turn end it just
         // said ends a turn that ran until this input.
         let turn_running = at_turn_end || process.provider.turn_running();
@@ -2267,7 +2271,13 @@ impl Transition<'_> {
         let early = core
             .exiting()
             .filter(|cause| {
-                deciding && !decided_in_its_time(cause, at_turn_end_or_deadline, turn_running)
+                deciding
+                    && !decided_in_its_time(
+                        cause,
+                        at_turn_end_or_deadline,
+                        at_suspension_deadline,
+                        turn_running,
+                    )
             })
             .map(|cause| format!("decided to exit {cause:?} on {kind} while a turn ran"));
         process.core = Some(Core(core.value()));
@@ -2779,6 +2789,7 @@ fn timer_kind(id: &TimerId) -> &'static str {
         TimerId::Source(..) => "Source",
         TimerId::Start(_) => "Start",
         TimerId::Exit(_) => "Exit",
+        TimerId::Grace(_) => "Grace",
         TimerId::PairWindow => "PairWindow",
         TimerId::Pairing(_) => "Pairing",
         TimerId::Attempt(_) => "Attempt",
@@ -2795,6 +2806,7 @@ fn agent_input(input: &agent_core::Input) -> &'static str {
         In::ProviderExited { .. } => "ProviderExited",
         In::DaemonDials { .. } => "DaemonDials",
         In::DaemonGone { .. } => "DaemonGone",
+        In::Attached { .. } => "Attached",
         In::Control { frame, .. } => match &frame.of {
             Some(ctl_frame::Of::Children(_)) => "Control Children",
             Some(ctl_frame::Of::AgentMessage(_)) => "Control AgentMessage",

@@ -20,6 +20,11 @@ fn every_lifecycle_promise_holds_for_an_agent_without_a_parent_at_ci_bounds() {
     holds("parentless agent", &AgentLifecycle::parentless());
 }
 
+#[test]
+fn every_lifecycle_promise_holds_for_an_agent_that_suspends_at_ci_bounds() {
+    holds("suspending agent", &AgentLifecycle::suspending());
+}
+
 /// The nightly bounds, run by hand or by the nightly recipe: twelve million
 /// states for the one-shot child, under a minute and a half on the enrolled
 /// Mac's cores.
@@ -34,4 +39,17 @@ fn every_lifecycle_promise_holds_at_nightly_bounds() {
         println!("one_shot={one_shot}: {verdict}");
         verdict.assert_holds();
     }
+}
+
+/// The suspending agent at its nightly bounds, run by hand or by the
+/// nightly recipe.
+#[test]
+#[ignore = "nightly bounds: minutes on every core"]
+fn every_lifecycle_promise_holds_for_an_agent_that_suspends_at_nightly_bounds() {
+    let verdict = check(
+        &AgentLifecycle::nightly_suspending(),
+        Bounds::exhaustive().threads(models::threads()),
+    );
+    println!("suspending: {verdict}");
+    verdict.assert_holds();
 }

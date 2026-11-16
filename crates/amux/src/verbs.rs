@@ -100,6 +100,7 @@ fn exit_words(agent: &Agent) -> Option<String> {
         ExitCause::CouldNotStart => "could not start",
         ExitCause::DirectoryFailed => "its directory failed",
         ExitCause::EndedUnexpectedly => "ended unexpectedly",
+        ExitCause::Suspended => "suspended",
     };
     match agent
         .exit_detail

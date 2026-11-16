@@ -517,6 +517,32 @@ fn opening_keeps_the_tables_of_the_experiments_on_and_drops_the_rest() {
     assert_eq!(indexes, 0, "a dropped table's indexes go with it");
 }
 
+/// Under `suspension/1` each own agent's run is kept, rewritten in place
+/// and removed with its row; with the experiment off nothing is held, so
+/// every reader falls back to the incarnation alone.
+#[test]
+fn an_agents_run_is_kept_under_suspension_and_goes_with_its_row() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.sqlite");
+    let key = AgentKey::new(OWN, b"agent".to_vec());
+    let mut store = Sqlite::open_with(&path, OWN, &["suspension/1"]).unwrap();
+    store
+        .put_agent(&AgentRow::new(key.clone(), wire::Kind::Codex, "/"))
+        .unwrap();
+    assert_eq!(store.run_start(b"agent").unwrap(), None);
+    store.put_run_start(b"agent", Some(2)).unwrap();
+    store.put_run_start(b"agent", Some(5)).unwrap();
+    assert_eq!(store.run_start(b"agent").unwrap(), Some(5));
+    store.delete_agent(&key).unwrap();
+    assert_eq!(store.run_start(b"agent").unwrap(), None);
+    store.put_run_start(b"agent", Some(1)).unwrap();
+    drop(store);
+
+    let mut store = Sqlite::open_with(&path, OWN, &[]).unwrap();
+    store.put_run_start(b"agent", Some(3)).unwrap();
+    assert_eq!(store.run_start(b"agent").unwrap(), None);
+}
+
 /// Each experiment version's tables and indexes carry its prefix, are
 /// strict, and are made again harmlessly; no promised migration names an
 /// experiment's table.

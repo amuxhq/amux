@@ -164,8 +164,9 @@ pub enum Output {
         hash: Vec<u8>,
         bytes: Vec<u8>,
     },
-    /// Append the step to the journal.
-    AppendJournal(Step),
+    /// Append the step to the journal. Boxed: a step is several times the
+    /// size of every other output, which would otherwise all take its room.
+    AppendJournal(Box<Step>),
     /// Hand the provider what the interpreter asked of it: bytes, keys, an
     /// injected message, a transcript to follow. Never a reply, a blob or
     /// an exit, which are outputs of their own.
@@ -1151,7 +1152,7 @@ impl<I: Interpreter> Agent<I> {
         // The journal skips an empty step, and an empty step tells the
         // daemon nothing.
         if step != Step::default() {
-            out.push(Output::AppendJournal(step));
+            out.push(Output::AppendJournal(Box::new(step)));
             self.send(ctl_frame::Of::Nudge(Nudge {}), out);
         }
         if turn_ended {

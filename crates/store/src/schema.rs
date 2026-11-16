@@ -148,4 +148,15 @@ CREATE UNIQUE INDEX items_by_position ON items (origin_host, agent_id, position)
 CREATE INDEX items_by_revision ON items (origin_host, agent_id, revision);
 CREATE INDEX items_by_input ON items (origin_host, agent_id, input_id) WHERE input_id IS NOT NULL;
 "#,
+    // 2: provider subagents, the agents Claude's Agent tool and Codex's child
+    // threads start inside their parent's provider process. A row says it is
+    // one in `native`. They multiply the rows, so the lookups that walked the
+    // whole table (a family by its parent, an agent by its id alone, a name
+    // on its host) get indexes.
+    r#"
+ALTER TABLE agents ADD COLUMN native BLOB; -- amux.v1.NativeChild: set on a provider subagent; NULL on an agent amux started
+CREATE INDEX agents_by_parent ON agents (parent_host, parent_id);
+CREATE INDEX agents_by_id ON agents (agent_id);
+CREATE INDEX agents_by_name ON agents (origin_host, name);
+"#,
 ];

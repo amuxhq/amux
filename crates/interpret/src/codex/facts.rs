@@ -2339,6 +2339,7 @@ impl State {
                     tool: call.tool.as_str().to_owned(),
                     thread_ids: call.receiver_thread_ids.clone(),
                     prompt: call.prompt.clone().unwrap_or_default(),
+                    agent_ids: Vec::new(),
                 }),
                 ToolClass::Consequential,
             ),
@@ -2856,6 +2857,7 @@ fn mcp_work(call: &McpToolCallItem) -> wire::McpToolCall {
             .map(|error| error.message.clone())
             .unwrap_or_default(),
         subject: crate::shared::first_string(&call.arguments),
+        child_agent_id: Vec::new(),
     }
 }
 

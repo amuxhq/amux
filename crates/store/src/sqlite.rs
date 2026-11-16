@@ -955,6 +955,8 @@ fn absorb(rows: &Rows<'_>, agent: &AgentKey, what: Absorb) -> Result<Absorbed, S
 
 #[cfg(test)]
 mod tests {
+    use rusqlite::params;
+
     use super::*;
 
     const FIRST: &str = "CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL) STRICT;
@@ -1064,5 +1066,43 @@ mod tests {
             )
             .unwrap();
         assert_eq!(tables, 0);
+    }
+
+    /// A row the first release's schema held, as that release wrote it,
+    /// reads as an agent amux started: the column marking a provider
+    /// subagent is NULL on it. The indexes the subagents' rows need are
+    /// made beside it.
+    #[test]
+    fn a_row_from_before_provider_subagents_reads_as_no_subagent() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn, "store", &MIGRATIONS[..1]).unwrap();
+        conn.execute(
+            "INSERT INTO agents (origin_host, agent_id, kind, name, cwd, lifecycle, phase, \
+             created_at_ms, incarnation) VALUES (?1, ?2, 2, 'old', '/', 1, 1, 0, 1)",
+            params![b"own".as_slice(), b"agent".as_slice()],
+        )
+        .unwrap();
+
+        let store = Sqlite::with_connection(conn, "store", b"own".to_vec()).unwrap();
+
+        let key = AgentKey::new(b"own".to_vec(), b"agent".to_vec());
+        let row = store.agent(&key).unwrap().expect("the old row is held");
+        assert_eq!(row.name, "old");
+        assert_eq!(row.native, None);
+        let indexes: Vec<String> = store
+            .connection()
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'agents' \
+                 AND sql IS NOT NULL ORDER BY name",
+            )
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            indexes,
+            ["agents_by_id", "agents_by_name", "agents_by_parent"]
+        );
     }
 }

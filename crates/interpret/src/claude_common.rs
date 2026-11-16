@@ -1865,6 +1865,7 @@ impl<T> Tool<T> {
                 line: step.line,
                 started_at_ms: self.started_at_ms,
                 patch: step.patch,
+                child_agent_id: Vec::new(),
             }))
         };
         if body == self.emitted {

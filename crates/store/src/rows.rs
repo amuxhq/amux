@@ -20,7 +20,7 @@ const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, name, cwd, parent_host
     lifecycle, exit_cause, exit_detail, phase, working_on, phase_since_ms, git, snapshot, \
     ingest_cursor, next_revision, source_cursor, source_generation, \
     complete_from_order, exhausted, owes_report, created_at_ms, incarnation, background_jobs, \
-    descendants, filing, filed_at_ms, title, name_given, last_said";
+    descendants, filing, filed_at_ms, title, name_given, last_said, native";
 
 const ITEM_COLUMNS: &str =
     "key, position, revision, at_ms, input_id, text, kind, attachments, body";
@@ -48,6 +48,7 @@ const REGISTRY: &[&str] = &[
     "filed_at_ms",
     "title",
     "name_given",
+    "native",
 ];
 
 /// What a replica's inventory row carries of its newest snapshot. Not its
@@ -146,8 +147,8 @@ pub(crate) fn registry_update(own: bool) -> String {
     }
 }
 
-/// An agents row with its snapshot and git columns still encoded.
-type RawAgent = (AgentRow, Option<Vec<u8>>, Option<Vec<u8>>);
+/// An agents row with its snapshot, git and native columns still encoded.
+type RawAgent = (AgentRow, Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
 
 fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
     let parent_host: Option<Vec<u8>> = row.get(5)?;
@@ -183,14 +184,16 @@ fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
             title: row.get(28)?,
             name_given: row.get(29)?,
             last_said: row.get(30)?,
+            native: None,
         },
         row.get(14)?,
         row.get(13)?,
+        row.get(31)?,
     ))
 }
 
 /// Decodes the message columns `agent_row` leaves as bytes.
-fn finish_agent((mut row, snapshot, git): RawAgent) -> Result<AgentRow, StoreError> {
+fn finish_agent((mut row, snapshot, git, native): RawAgent) -> Result<AgentRow, StoreError> {
     let corrupt = |error: prost::DecodeError| StoreError::Corrupt(error.to_string());
     row.snapshot = snapshot
         .map(|bytes| Snapshot::decode(bytes.as_slice()))
@@ -198,6 +201,10 @@ fn finish_agent((mut row, snapshot, git): RawAgent) -> Result<AgentRow, StoreErr
         .map_err(corrupt)?;
     row.git = git
         .map(|bytes| wire::Git::decode(bytes.as_slice()))
+        .transpose()
+        .map_err(corrupt)?;
+    row.native = native
+        .map(|bytes| wire::NativeChild::decode(bytes.as_slice()))
         .transpose()
         .map_err(corrupt)?;
     Ok(row)
@@ -346,7 +353,7 @@ impl Rows<'_> {
             .prepare_cached(&format!(
                 "INSERT INTO agents ({AGENT_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, \
                  ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, \
-                 ?25, ?26, ?27, ?28, ?29, ?30, ?31) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
+                 ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
             ))?
             .execute(params![
                 row.agent.host,
@@ -382,6 +389,7 @@ impl Rows<'_> {
                 row.title,
                 row.name_given,
                 row.last_said,
+                row.native.as_ref().map(|native| native.encode_to_vec()),
             ])?;
         Ok(())
     }

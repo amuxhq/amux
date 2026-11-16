@@ -286,6 +286,16 @@ pub struct Step {
     /// cause.
     #[prost(message, optional, tag = "5")]
     pub incarnation_end: ::core::option::Option<IncarnationEnd>,
+    /// The parts of this step that belong to provider subagents: the ones
+    /// Claude's Agent tool or Codex's child threads start inside this agent's
+    /// own provider process, each an agent of its own with no process. One per
+    /// subagent the step touched. They share this frame with the agent's own
+    /// part, rather than taking frames of their own, because one step often
+    /// touches two agents (a subagent's start and its parent's call row) and
+    /// the frame is what survives a crash whole. Empty in every step of an
+    /// agent whose provider started no subagent.
+    #[prost(message, repeated, tag = "6")]
+    pub agents: ::prost::alloc::vec::Vec<AgentStep>,
 }
 impl ::prost::Name for Step {
     const NAME: &'static str = "Step";
@@ -295,6 +305,73 @@ impl ::prost::Name for Step {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Step".into()
+    }
+}
+/// One provider subagent's part of a step, filed under the subagent's own
+/// row. It has no turn end: a subagent's answer goes back to its parent
+/// through the provider, so the subagent owes nobody a report.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AgentStep {
+    /// The subagent's agent id, derived from its host's id and the provider's
+    /// id for it, so it is the same across restarts, replays and
+    /// continuations.
+    #[prost(bytes = "vec", tag = "1")]
+    pub agent_id: ::prost::alloc::vec::Vec<u8>,
+    /// Set on the step where the subagent starts, and again where its parent's
+    /// model continues it; absent on every other step.
+    #[prost(message, optional, tag = "2")]
+    pub start: ::core::option::Option<NativeStart>,
+    /// The subagent's items, appends and snapshot, as the agent's own part of
+    /// a step carries its own.
+    #[prost(message, repeated, tag = "3")]
+    pub items: ::prost::alloc::vec::Vec<Item>,
+    #[prost(message, repeated, tag = "4")]
+    pub appends: ::prost::alloc::vec::Vec<Append>,
+    #[prost(message, optional, tag = "5")]
+    pub snapshot: ::core::option::Option<Snapshot>,
+    /// Set on the subagent's last step: why it ended. Absent while it runs.
+    #[prost(message, optional, tag = "6")]
+    pub end: ::core::option::Option<IncarnationEnd>,
+}
+impl ::prost::Name for AgentStep {
+    const NAME: &'static str = "AgentStep";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AgentStep".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.AgentStep".into()
+    }
+}
+/// What a provider subagent's row is made from, when the provider starts or
+/// continues it.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct NativeStart {
+    /// The provider's own id for the subagent: Claude's agent id, Codex's
+    /// thread id.
+    #[prost(string, tag = "1")]
+    pub provider_child_id: ::prost::alloc::string::String,
+    /// The agent whose chat holds the call that started the subagent: the
+    /// host, or a provider subagent that started a nested one.
+    #[prost(bytes = "vec", tag = "2")]
+    pub call_agent_id: ::prost::alloc::vec::Vec<u8>,
+    /// That call's item key. A continuation names the original call, not the
+    /// one that continued it.
+    #[prost(string, tag = "3")]
+    pub call_key: ::prost::alloc::string::String,
+    /// The provider's description of the subagent, which becomes the row's
+    /// title; empty when the provider gave none.
+    #[prost(string, tag = "4")]
+    pub title: ::prost::alloc::string::String,
+}
+impl ::prost::Name for NativeStart {
+    const NAME: &'static str = "NativeStart";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.NativeStart".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.NativeStart".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1874,6 +1951,12 @@ pub struct ToolCall {
     /// A file edit or write that finished: the hunks Claude says it changed.
     #[prost(message, repeated, tag = "17")]
     pub patch: ::prost::alloc::vec::Vec<PatchHunk>,
+    /// The agent this call started or continues, whose chat the call's row
+    /// opens: a provider subagent on Claude's Agent call and on a later
+    /// SendMessage call to the same subagent, or the child amux's own spawn
+    /// made. Empty on any other call, and on a call from before amux knew it.
+    #[prost(bytes = "vec", tag = "18")]
+    pub child_agent_id: ::prost::alloc::vec::Vec<u8>,
 }
 impl ::prost::Name for ToolCall {
     const NAME: &'static str = "ToolCall";
@@ -4344,6 +4427,13 @@ pub struct Agent {
     /// has stopped keeps no stream.
     #[prost(string, optional, tag = "21")]
     pub last_said: ::core::option::Option<::prost::alloc::string::String>,
+    /// Set on a provider subagent: an agent that Claude's Agent tool or a Codex
+    /// child thread started inside its parent's provider process. It has no
+    /// process, directory or composer of its own, its parent is always the
+    /// agent whose process runs it, and it takes no messages. Absent on every
+    /// agent amux started itself.
+    #[prost(message, optional, tag = "22")]
+    pub native: ::core::option::Option<NativeChild>,
 }
 impl ::prost::Name for Agent {
     const NAME: &'static str = "Agent";
@@ -4353,6 +4443,23 @@ impl ::prost::Name for Agent {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Agent".into()
+    }
+}
+/// What marks a provider subagent's row.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct NativeChild {
+    /// The provider's own id for it: Claude's agent id, Codex's thread id.
+    #[prost(string, tag = "1")]
+    pub provider_child_id: ::prost::alloc::string::String,
+}
+impl ::prost::Name for NativeChild {
+    const NAME: &'static str = "NativeChild";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.NativeChild".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.NativeChild".into()
     }
 }
 /// The row left this daemon's view, which is not always deletion at the
@@ -5461,6 +5568,10 @@ pub struct McpToolCall {
     /// The call's first string argument, the one fact its row shows.
     #[prost(string, tag = "6")]
     pub subject: ::prost::alloc::string::String,
+    /// On amux's own spawn: the child it made, whose chat the call's row
+    /// opens. Empty on any other call, and before the spawn answered.
+    #[prost(bytes = "vec", tag = "7")]
+    pub child_agent_id: ::prost::alloc::vec::Vec<u8>,
 }
 impl ::prost::Name for McpToolCall {
     const NAME: &'static str = "McpToolCall";
@@ -5522,6 +5633,11 @@ pub struct CollabWork {
     pub thread_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, tag = "3")]
     pub prompt: ::prost::alloc::string::String,
+    /// The amux agent each child thread is, in the order of `thread_ids`, so
+    /// the row opens the child's chat. Empty on work from before child threads
+    /// were agents of their own.
+    #[prost(bytes = "vec", repeated, tag = "4")]
+    pub agent_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
 impl ::prost::Name for CollabWork {
     const NAME: &'static str = "CollabWork";
@@ -14212,7 +14328,7 @@ impl ::prost::Name for EffectiveConfig {
 /// EOF in either direction means the peer is gone.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CtlFrame {
-    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11")]
+    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12")]
     pub of: ::core::option::Option<ctl_frame::Of>,
 }
 /// Nested message and enum types in `CtlFrame`.
@@ -14263,6 +14379,13 @@ pub mod ctl_frame {
         /// writes a bundle of the agent, after a limit of its own.
         #[prost(message, tag = "11")]
         DumpAsked(super::DumpAsked),
+        /// Daemon to agent: a person's input to one of the provider subagents
+        /// this agent's provider runs, such as the answer to its ask. Answered by
+        /// `reply` keyed by the input's id, as `input` is. Stopping a subagent is
+        /// not one: a running subagent is one of this agent's background jobs,
+        /// stopped by the agent's own `input` carrying a job stop.
+        #[prost(message, tag = "12")]
+        ChildInput(super::ChildInput),
     }
 }
 impl ::prost::Name for CtlFrame {
@@ -14273,6 +14396,28 @@ impl ::prost::Name for CtlFrame {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.CtlFrame".into()
+    }
+}
+/// A person's input addressed to a provider subagent, which has no process
+/// of its own: its host's interpreter answers the provider for it.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ChildInput {
+    /// The subagent's agent id, as its row and its AgentStep parts name it.
+    #[prost(bytes = "vec", tag = "1")]
+    pub agent_id: ::prost::alloc::vec::Vec<u8>,
+    /// The input as the client sent it to the subagent, of the subagent's kind,
+    /// which is its host's.
+    #[prost(message, optional, tag = "2")]
+    pub input: ::core::option::Option<Input>,
+}
+impl ::prost::Name for ChildInput {
+    const NAME: &'static str = "ChildInput";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ChildInput".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.ChildInput".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

@@ -358,6 +358,7 @@ fn agent(agent: Agent) -> Agent {
         background_jobs: agent.background_jobs,
         filing: agent.filing,
         filed_at_ms: agent.filed_at_ms,
+        native: agent.native,
     }
 }
 

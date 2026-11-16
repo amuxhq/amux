@@ -213,6 +213,12 @@ pub struct Fact {
 pub enum Channel {
     /// A row of Claude's transcript file.
     Transcript,
+    /// A row of one of terminal Claude's subagent transcript files, one per
+    /// subagent its Agent tool started. Each row names its subagent
+    /// (`agentId`), so the fact needs no more than the row. Apart from
+    /// `Transcript` because the rows are a subagent's conversation, not the
+    /// agent's own. A facts ring from before this channel has none.
+    SubagentTranscript,
     /// A hook payload on private/hooks.sock.
     Hook,
     /// A line of stream-JSON from headless Claude's stdout.

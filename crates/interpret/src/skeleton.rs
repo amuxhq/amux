@@ -1419,7 +1419,8 @@ impl Skeleton {
             (wire::Kind::ClaudeSdk, Some(Channel::Stream)) => {
                 claude_protocol::stream::fields(payload)
             }
-            (wire::Kind::ClaudePty, Some(Channel::Transcript)) => {
+            // A subagent's transcript rows have the main transcript's shape.
+            (wire::Kind::ClaudePty, Some(Channel::Transcript | Channel::SubagentTranscript)) => {
                 claude_protocol::transcript::fields(payload)
             }
             (wire::Kind::ClaudePty, Some(Channel::Hook)) => claude_protocol::hooks::fields(payload),

@@ -399,3 +399,32 @@ fn recent_directories_keep_the_latest_use_and_the_newest_two_hundred() {
     assert_eq!(kept.len(), store::RECENT_DIRECTORIES);
     assert!(kept.iter().all(|(path, _)| path.starts_with("/many/")));
 }
+
+/// A provider subagent's row keeps what marks it through a reopen, and a
+/// commit, which does not own the column, leaves it as it was.
+#[test]
+fn a_provider_subagents_row_reads_back_marked() {
+    let dir = tempfile::tempdir().unwrap();
+    let key = AgentKey::new(OWN, b"subagent".to_vec());
+    let native = wire::NativeChild {
+        provider_child_id: "a1795690345bfafb1".into(),
+    };
+    {
+        let mut store = open(&dir);
+        let mut row = AgentRow::new(key.clone(), wire::Kind::ClaudeSdk, "/");
+        row.name = "sub-1a2b3c4d".into();
+        row.parent = Some(AgentKey::new(OWN, b"host".to_vec()));
+        row.native = Some(native.clone());
+        store.put_agent(&row).unwrap();
+        store.commit(&key, &[(10, step(&["a"]))], CLOCK).unwrap();
+    }
+    let store = open(&dir);
+    let row = store.agent(&key).unwrap().expect("the row is held");
+    assert_eq!(row.native, Some(native));
+    let unmarked = AgentKey::new(OWN, b"started-by-amux".to_vec());
+    let mut store = store;
+    store
+        .put_agent(&AgentRow::new(unmarked.clone(), wire::Kind::Codex, "/"))
+        .unwrap();
+    assert_eq!(store.agent(&unmarked).unwrap().unwrap().native, None);
+}

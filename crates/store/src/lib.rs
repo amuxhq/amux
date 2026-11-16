@@ -138,6 +138,11 @@ pub struct AgentRow {
     /// A person or a parent chose the name, so the provider does not title
     /// the agent.
     pub name_given: bool,
+    /// Set on a provider subagent, an agent its parent's provider started
+    /// inside the parent's own process; None on an agent amux started, and
+    /// on every row written before the column existed. The registry owns
+    /// it; a replica copies its origin's.
+    pub native: Option<wire::NativeChild>,
 }
 
 impl AgentRow {
@@ -187,6 +192,7 @@ impl AgentRow {
             title: None,
             last_said: None,
             name_given: false,
+            native: None,
         }
     }
 }

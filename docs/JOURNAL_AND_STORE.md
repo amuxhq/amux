@@ -75,6 +75,13 @@ produced:
 | `snapshot` | The agent's snapshot, when this step changed it |
 | `turn_end` | Set when the step ended a turn: the turn id, the key of the turn's last message, and how the turn ended (a `TurnOutcome`) |
 | `incarnation_end` | Set on the last step of an incarnation: why it ended (an `ExitCause`) and the cause's own words. The daemon copies it onto the row when it commits the step |
+| `agents` | The parts of the step that belong to provider subagents, the agents Claude's Agent tool or Codex's child threads start inside this agent's provider process: one `AgentStep` per subagent the step touched, each naming the subagent's agent id and carrying its own items, appends, snapshot and end, and a `NativeStart` where the subagent starts or is continued. An `AgentStep` has no turn end, since a subagent owes nobody a report |
+
+A subagent's parts share its host's frame rather than taking frames of their
+own, because one step often touches two agents (a subagent's start and the
+call row in its parent's chat) and the frame is the unit that survives a crash
+whole. A journal from before subagents were agents has no `agents` parts and
+reads as it did.
 
 The snapshot rides in the same frame because it costs nothing, but nothing
 depends on it being there: after a restart the interpreter re-derives and
@@ -391,6 +398,7 @@ The schema is the text in
 | `exhausted` | No older history exists: the origin said so, or retention trimmed it |
 | `owes_report` | Own rows: the incarnation has not yet sent its parent its last report, from its start until a turn end marked `last` (and again should a later turn start). An incarnation that exits still owing one, its turn open or ended idle, tells its parent it failed. |
 | `created_at_ms`, `incarnation` | Creation time and the `spec.<n>` it is running |
+| `native` | An encoded `amux.v1.NativeChild` on a provider subagent, the provider's id for it; NULL on an agent amux started, which is every row written before the column existed. Owned by the registry; a replica copies its origin's |
 
 Kind, lifecycle, exit cause and phase are stored as their wire integers, so a value from
 a newer peer is stored and served rather than refused.
@@ -408,6 +416,11 @@ a newer peer is stored and served rather than refused.
 | `kind` | The envelope's `Kind`, as its wire integer: which per-kind body this is |
 | `attachments` | The envelope's attachment list, encoded |
 | `body` | The per-kind body, never decoded or re-encoded by the store |
+
+Three indexes sit on `agents` beside its key, because provider subagents
+multiply its rows: `agents_by_parent` (a family, by `parent_host` and
+`parent_id`), `agents_by_id` (an agent by its id alone, which is unique
+across hosts) and `agents_by_name` (a name on its host).
 
 Three indexes sit on `items`: `items_by_position` (unique: one key per order),
 `items_by_revision` (what `after` reads) and `items_by_input` (partial, where

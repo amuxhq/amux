@@ -168,7 +168,9 @@ impl State {
                     self.agent_fact(emit, fact);
                 }
             }
-            Channel::Stream | Channel::Rpc => {}
+            // The interpreter does not yet build a subagent's items from
+            // its own transcript, so its rows change nothing here.
+            Channel::SubagentTranscript | Channel::Stream | Channel::Rpc => {}
         }
     }
 

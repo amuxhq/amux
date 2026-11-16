@@ -167,6 +167,10 @@ mod tests {
                 channel: Channel::Stream,
                 payload: vec![0xff, 0x00],
             }),
+            Event::Fact(Fact {
+                channel: Channel::SubagentTranscript,
+                payload: br#"{"agentId":"a1","type":"user"}"#.to_vec(),
+            }),
             Event::Input(wire::Input {
                 input_id: b"i1".to_vec(),
                 ..Default::default()
@@ -194,6 +198,31 @@ mod tests {
             let entry: Entry = serde_json::from_slice(&line).unwrap();
             assert_eq!(entry.event(), Some(event));
         }
+    }
+
+    /// The channel names a ring line carries are part of the facts file
+    /// on disk: a line an earlier build wrote reads as it did, and a
+    /// subagent's transcript row is written under a name of its own.
+    #[test]
+    fn channel_names_on_disk_hold() {
+        let line = br#"{"event":"fact","channel":"transcript","text":"{}"}"#;
+        let entry: Entry = serde_json::from_slice(line).unwrap();
+        assert_eq!(
+            entry.event(),
+            Some(Event::Fact(Fact {
+                channel: Channel::Transcript,
+                payload: b"{}".to_vec(),
+            }))
+        );
+        let written = serde_json::to_string(&Entry::of(&Event::Fact(Fact {
+            channel: Channel::SubagentTranscript,
+            payload: b"{}".to_vec(),
+        })))
+        .unwrap();
+        assert_eq!(
+            written,
+            r#"{"event":"fact","channel":"subagent_transcript","text":"{}"}"#
+        );
     }
 
     /// Entries this build cannot read are skipped and named; every other

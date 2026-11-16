@@ -138,7 +138,23 @@ message CtlFrame {
     // Agent to daemon: the agent's core asked for a dump. The daemon
     // writes a bundle of the agent, after a limit of its own.
     DumpAsked dump_asked = 11;
+    // Daemon to agent: a person's input to one of the provider subagents
+    // this agent's provider runs, such as the answer to its ask. Answered by
+    // `reply` keyed by the input's id, as `input` is. Stopping a subagent is
+    // not one: a running subagent is one of this agent's background jobs,
+    // stopped by the agent's own `input` carrying a job stop.
+    ChildInput child_input = 12;
   }
+}
+
+// A person's input addressed to a provider subagent, which has no process
+// of its own: its host's interpreter answers the provider for it.
+message ChildInput {
+  // The subagent's agent id, as its row and its AgentStep parts name it.
+  bytes agent_id = 1;
+  // The input as the client sent it to the subagent, of the subagent's kind,
+  // which is its host's.
+  Input input = 2;
 }
 
 message AgentDumpRequest {

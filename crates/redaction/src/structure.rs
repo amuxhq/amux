@@ -95,6 +95,9 @@ const TEXT: &[(&str, Text)] = &[
     ("item_key", Text::Kept),
     ("ask_key", Text::Kept),
     ("parent_key", Text::Kept),
+    ("call_key", Text::Kept),
+    // A provider's id for a subagent, from which its agent id is derived.
+    ("provider_child_id", Text::Kept),
     ("last_message_key", Text::Kept),
     ("check", Text::Kept),
     // The network's addresses, which the core parses and dials.

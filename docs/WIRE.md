@@ -332,6 +332,15 @@ is listed with that kind, and its items carry it. The item vocabulary itself is
 described in [the chat vocabulary](CHAT_VOCABULARY.md) and
 [interpreters](INTERPRETERS.md).
 
+A `Step` also carries `agents`: one `AgentStep` per provider subagent the
+step touched, each naming the subagent's agent id and holding its items,
+appends, snapshot and end, with a `NativeStart` where the subagent starts or
+is continued. The daemon files each part under the subagent's own row, so a
+subagent's records reach clients on its own session like any agent's. An
+`AgentStep` has no turn end: the provider hands a subagent's answer back to
+its parent itself. How the frame holds them is in [the journal and
+store](JOURNAL_AND_STORE.md#frames).
+
 A snapshot is sufficient on its own. Phase, open asks, queue, model and mode
 live in it, so a client holding a snapshot and no items still renders the agent
 correctly, and every change to that state arrives as a later snapshot on the
@@ -686,6 +695,13 @@ replica row carries its origin's count. It never carries a snapshot: a client
 reads an agent's conversation from the agent's own session, which the client
 library keeps open for every live agent (see [the client
 library](CLIENT.md#the-fleet)), so the row stays small.
+
+`native` is set on a provider subagent: an agent that Claude's Agent tool or a
+Codex child thread started inside its parent's provider process, carrying the
+provider's id for it (`NativeChild.provider_child_id`). Such an agent has no
+process, directory or composer of its own, its `parent` is always the agent
+whose process runs it, and it takes no messages. Absent on every agent amux
+started, which is every row from a host that predates it.
 
 `exit_cause` is an `ExitCause`, and `exit_detail` the cause's own words when it
 has any (a provider's exit code, why a provider could not start). Most causes

@@ -10,8 +10,8 @@
 //! A subagent's end is a fact in the agent's own transcript, which can land
 //! before the subagent's last rows: the interpreter then asks for its file
 //! to be drained, and the follower reports when it has read it to its end,
-//! having waited a bounded moment for a final reply Claude is still
-//! writing.
+//! and for a completed subagent once it has read the final reply Claude may
+//! still be writing, or after a bounded moment without it.
 //!
 //! A follower runs until Claude exits, finished subagents' included, since
 //! Claude's model may continue any of them. It reads its file when the
@@ -42,9 +42,10 @@ const CURSORS: &str = "subagent-cursors";
 /// subagent. Claude writes the meta when it launches the subagent, so this
 /// only matters for a Claude that writes none.
 const META_WAIT: Duration = Duration::from_millis(500);
-/// How long a drain waits for a completed subagent's final reply, which
-/// Claude may write just after it tells the agent the subagent finished.
-/// The interpreter gives up on its own after the same time.
+/// The longest a drain waits for a completed subagent's final reply, which
+/// Claude may write just after it tells the agent the subagent finished;
+/// the drain is reported as soon as that reply is read. The interpreter
+/// gives up on its own after the same time.
 const DRAIN_WAIT: Duration = Duration::from_millis(2000);
 
 /// The followed subagent files, by Claude's id for each subagent.
@@ -215,6 +216,10 @@ async fn read(
     let meta_by = Instant::now() + META_WAIT;
     let mut met = false;
     let mut draining: Option<Instant> = None;
+    // The final reply a drain waits for, and what the subagent last said,
+    // as the interpreter matches the two.
+    let mut awaited: Option<String> = None;
+    let mut said = String::new();
     let mut ask: Option<Ask> = None;
     loop {
         if !met && let Some(meta) = read_meta(&meta_path) {
@@ -232,13 +237,18 @@ async fn read(
             let Ask::Drain(reply) = next else {
                 continue;
             };
-            let wait = if reply.is_some() {
+            let owed =
+                reply.filter(|reply| !interpret::claude_pty::subagent_said_is_reply(&said, reply));
+            let wait = if owed.is_some() {
                 DRAIN_WAIT
             } else {
                 Duration::ZERO
             };
             let by = Instant::now() + wait;
             draining = Some(draining.map_or(by, |earlier| earlier.max(by)));
+            if owed.is_some() {
+                awaited = owed;
+            }
         }
         let awaiting_meta = !met && Instant::now() < meta_by;
         if !awaiting_meta {
@@ -260,6 +270,9 @@ async fn read(
                 }
             };
             for row in rows {
+                if let Some(words) = interpret::claude_pty::subagent_row_said(&row) {
+                    said = words;
+                }
                 if interpret::claude_pty::subagent_row_kept(&row) {
                     let fact = Fact {
                         channel: Channel::SubagentTranscript,
@@ -275,8 +288,12 @@ async fn read(
                     return;
                 }
             }
-            if draining.is_some_and(|by| Instant::now() >= by) {
+            let replied = awaited
+                .as_deref()
+                .is_some_and(|reply| interpret::claude_pty::subagent_said_is_reply(&said, reply));
+            if draining.is_some_and(|by| replied || Instant::now() >= by) {
                 draining = None;
+                awaited = None;
                 if !send(drained(&agent_id)).await {
                     return;
                 }
@@ -526,6 +543,77 @@ mod tests {
             Duration::ZERO,
             "a follow again waits on nothing"
         );
+    }
+
+    /// An assistant row of the subagent's that says `text`.
+    fn reply_row(text: &str) -> String {
+        serde_json::json!({
+            "type": "assistant",
+            "uuid": format!("r-{text}"),
+            "agentId": "a1",
+            "message": {
+                "id": format!("msg-{text}"),
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-haiku",
+                "content": [{"type": "text", "text": text}],
+            },
+        })
+        .to_string()
+            + "\n"
+    }
+
+    /// A drain waiting for a completed subagent's final reply is reported
+    /// as soon as the row saying it is read, written after the drain was
+    /// asked, rather than at the end of the wait. The clock is tokio's
+    /// paused one, which moves only when every task waits on it.
+    #[tokio::test(start_paused = true)]
+    async fn a_drain_is_reported_once_the_final_reply_it_waits_for_is_read() {
+        let at = folder();
+        let (sender, mut events) = mpsc::channel(16);
+        let mut followers = Followers::default();
+        followers.follow(&at.agent_dir, &at.transcript, "a1", &sender);
+        assert_eq!(next_row(&mut events).await["uuid"], "u1");
+
+        let asked = Instant::now();
+        followers.drain("a1", Some(" DONE\n".to_owned()), &sender);
+        // The follower takes the ask and finds nothing to read yet.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        append(&at.rows, &reply_row("DONE"));
+        assert_eq!(next_row(&mut events).await["uuid"], "r-DONE");
+        let (_, drained) = next(&mut events).await;
+        assert_eq!(drained["type"], "subagent_drained");
+        let waited = asked.elapsed();
+        assert!(
+            waited < DRAIN_WAIT / 2,
+            "drained {waited:?} after it was asked"
+        );
+    }
+
+    /// A drain whose final reply never comes is reported when the wait is
+    /// over, and one whose reply was read before it was asked at once.
+    #[tokio::test(start_paused = true)]
+    async fn a_drain_gives_up_on_a_reply_that_never_comes_and_waits_for_none_already_read() {
+        let at = folder();
+        let (sender, mut events) = mpsc::channel(16);
+        let mut followers = Followers::default();
+        followers.follow(&at.agent_dir, &at.transcript, "a1", &sender);
+        assert_eq!(next_row(&mut events).await["uuid"], "u1");
+
+        let asked = Instant::now();
+        followers.drain("a1", Some("NEVER".to_owned()), &sender);
+        let (_, drained) = next(&mut events).await;
+        assert_eq!(drained["type"], "subagent_drained");
+        assert_eq!(asked.elapsed(), DRAIN_WAIT);
+
+        append(&at.rows, &reply_row("SAID"));
+        followers.follow(&at.agent_dir, &at.transcript, "a1", &sender);
+        assert_eq!(next_row(&mut events).await["uuid"], "r-SAID");
+        let asked = Instant::now();
+        followers.drain("a1", Some("SAID".to_owned()), &sender);
+        let (_, drained) = next(&mut events).await;
+        assert_eq!(drained["type"], "subagent_drained");
+        assert_eq!(asked.elapsed(), Duration::ZERO);
     }
 
     /// A subagent followed before Claude made its folder, its file or its

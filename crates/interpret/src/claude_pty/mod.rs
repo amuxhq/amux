@@ -270,6 +270,19 @@ pub fn subagent_row_kept(row: &[u8]) -> bool {
         .is_ok_and(|row| matches!(row.r#type, "user" | "assistant" | "system"))
 }
 
+/// What a row of a subagent's own transcript says, as the interpreter
+/// takes it for the subagent's last words; None for a row that says nothing.
+pub fn subagent_row_said(row: &[u8]) -> Option<String> {
+    subagents::row_said(row)
+}
+
+/// Whether `said`, from [`subagent_row_said`], is the last reply `reply`
+/// that a [`crate::Effect::DrainSubagent`] waits for, as the interpreter
+/// matches the two.
+pub fn subagent_said_is_reply(said: &str, reply: &str) -> bool {
+    subagents::is_last_reply(said, reply)
+}
+
 /// The fact that the subagent `agent_id`'s `meta.json` reads `meta`.
 pub fn subagent_meta_fact(agent_id: &str, meta: serde_json::Value) -> Vec<u8> {
     AgentFact::SubagentMeta {

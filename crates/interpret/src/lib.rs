@@ -312,9 +312,9 @@ pub enum Effect {
     /// if the file cannot be read.
     FollowSubagent { agent_id: String },
     /// Claude in a terminal: the subagent's parent learned it ended. The
-    /// agent process reads its file to its end, waiting a bounded moment
-    /// for a row whose reply is `last_reply` when a completed subagent
-    /// still owes it, and then says it has.
+    /// agent process reads its file to its end and says it has: at once
+    /// with no `last_reply`, else once it has read the row that says it,
+    /// or after a bounded moment without it.
     DrainSubagent {
         agent_id: String,
         last_reply: Option<String>,

@@ -650,8 +650,9 @@ subagent: that wakes a follower to read at once, or
 starts anew, from the saved position, one that ended. Claude
 can tell the agent a subagent finished before writing its last rows, so the
 interpreter asks for the file to be drained (`DrainSubagent`): the follower
-reads it to its end, waits up to two seconds for a completed subagent's
-final reply, and reports it drained.
+reads it to its end and reports it drained: at once, or for a completed
+subagent as soon as it reads the final reply the interpreter names, giving
+up on it after two seconds.
 
 An agent message for terminal Claude goes onto Claude's messaging socket,
 which queues it the way Claude queues a peer's message. When the socket is
@@ -818,7 +819,7 @@ terminal. `amux agent` exits 0 whatever the cause; 1 means it could not start
 | Provider asked to finish, then killed | 10 s | `PROVIDER_STOP_MS` in `agent-core` |
 | Output collected after a child exits | 300 ms | `TRAILING_OUTPUT` in `provider.rs` |
 | A followed transcript is looked at with no change reported | 1 s | `FALLBACK_POLL` in `tail.rs` |
-| A subagent's rows wait for its meta; a drain waits for its final reply | 500 ms; 2 s | `META_WAIT`, `DRAIN_WAIT` in `claude/subagents.rs` |
+| A subagent's rows wait for its meta; a drain waits at most for its final reply | 500 ms; 2 s | `META_WAIT`, `DRAIN_WAIT` in `claude/subagents.rs` |
 | Terminal Claude's first screen: quiet, cap | 100 ms, 500 ms | `FIRST_SCREEN_QUIET`, `FIRST_SCREEN_WAIT` in `provider.rs` |
 | Codex view asked to end, then killed | 2 s | `VIEW_STOP` in `attach.rs` |
 | Tool server retry window | 5 s | `RETRY_WINDOW` in `tools.rs` |

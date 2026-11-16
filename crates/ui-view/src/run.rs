@@ -194,7 +194,11 @@ pub fn toggle_run(state: &SessionState, member: &Key, open: &mut HashSet<Key>) {
 /// Moves each hold on an open run to the run's newest step, so a window
 /// that trims the run's oldest steps while it grows never drops the hold.
 /// A key no longer held stays: its run opens again when it pages back in.
+/// The set holds open groups of subagent calls too, which no run holds
+/// (a call that opens an agent ends a run): each moves to its group's
+/// newest call the same way.
 pub fn keep_open_runs(state: &SessionState, open: &mut HashSet<Key>) {
+    crate::subagents::keep_open_groups(state, open);
     let transcript = state.transcript();
     let moved: Vec<(Key, Key)> = open
         .iter()

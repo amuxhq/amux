@@ -126,6 +126,12 @@
       "clients": ["phone", "terminal", "mac"]
     },
     {
+      "name": "fleet.subagents",
+      "shows": "A family opened to its subagents: Claude's subagents listed under the parent that runs them, by the titles Claude gave them, one waiting on the person.",
+      "clients": ["phone"],
+      "why": "The Mac's sidebar lists them under their parent in chat.subagents; the terminal's storybook does not draw it yet."
+    },
+    {
       "name": "fleet.filter",
       "shows": "The agent list narrowed to the agents whose names match a word.",
       "clients": ["phone", "terminal"]
@@ -305,6 +311,16 @@
     {
       "name": "chat.asking",
       "shows": "A chat whose agent is asking: the ask stands in the composer's place.",
+      "clients": ["phone", "terminal", "mac"]
+    },
+    {
+      "name": "chat.subagents",
+      "shows": "A parent whose turn started several subagents at once: one row saying how many and where they stand (2 running · 1 waiting on you · 1 done), opening to each call, and each call opening its subagent's chat.",
+      "clients": ["phone", "terminal", "mac"]
+    },
+    {
+      "name": "chat.subagent",
+      "shows": "A subagent's own chat: the task its parent gave it, its steps and answer, and in the composer's place what runs it, that it takes no messages, and its Stop.",
       "clients": ["phone", "terminal", "mac"]
     },
     {

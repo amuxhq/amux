@@ -61,11 +61,15 @@ struct FloatingCard: View {
                 if let branch {
                     Line(symbol: "git-branch", text: branch)
                 }
-                Button(action: actions.openChanges) {
-                    Line(symbol: "diff", text: "Changes") { ChangeCounts(changes: changes) }
+                // A provider subagent works in its parent's folder and has
+                // no changes, terminal or folder of its own to open.
+                if !row.native {
+                    Button(action: actions.openChanges) {
+                        Line(symbol: "diff", text: "Changes") { ChangeCounts(changes: changes) }
+                    }
+                    .buttonStyle(HoverButtonStyle())
+                    .help("Show the changes (⌥⌘I)")
                 }
-                .buttonStyle(HoverButtonStyle())
-                .help("Show the changes (⌥⌘I)")
             }
             if let family, family.parent != nil || !family.children.isEmpty {
                 Divider().padding(.horizontal, 10)
@@ -86,8 +90,21 @@ struct FloatingCard: View {
                     }
                 }
             }
-            Divider().padding(.horizontal, 10)
-            group {
+            if !row.native {
+                Divider().padding(.horizontal, 10)
+                group { openElsewhere }
+            }
+        }
+        .font(.ui(.callout))
+        .frame(width: Self.width)
+        .background(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).fill(Palette.raised))
+        .overlay(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).strokeBorder(Palette.line))
+        .elevation(.floating)
+    }
+
+    /// The agent's folder in the editor and Finder, and its own interface
+    /// in Terminal.
+    @ViewBuilder private var openElsewhere: some View {
                 if let openEditor = actions.openEditor {
                     Button(action: openEditor) {
                         Line(app: actions.editorIcon, symbol: "code", text: "Open in \(actions.editor)")
@@ -105,13 +122,6 @@ struct FloatingCard: View {
                     }
                     .buttonStyle(HoverButtonStyle())
                 }
-            }
-        }
-        .font(.ui(.callout))
-        .frame(width: Self.width)
-        .background(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).fill(Palette.raised))
-        .overlay(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).strokeBorder(Palette.line))
-        .elevation(.floating)
     }
 
     private func group(@ViewBuilder _ content: () -> some View) -> some View {

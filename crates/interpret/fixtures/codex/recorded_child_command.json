@@ -1,0 +1,10 @@
+{
+  "about": "Codex spawns a child thread that runs a command, and waits for it: amux reads the child's nickname, which titles its subagent, and the child's command and answer arrive on the parent's connection naming its thread and go to the subagent's chat, while this chat shows the spawn and the parent's wait.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "recording": {
+    "path": "live/child_command/io.jsonl",
+    "format": "codex_io"
+  }
+}

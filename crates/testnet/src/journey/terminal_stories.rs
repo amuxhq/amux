@@ -56,6 +56,7 @@ const STORIES: &[(&str, Tell)] = &[
     ("new-agent-worktree", new_agent_worktree),
     ("report-a-problem", report_a_problem),
     ("first-run", first_run),
+    ("provider-subagents", provider_subagents),
 ];
 
 /// The bound one story runs under.
@@ -2399,6 +2400,246 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
         "an agent the other machine started on the desk landed home selected, with `There it is`".to_owned(),
         "the desk keeps sign-in, repositories, improve and first agent done, pairing an iPhone skipped, reports on".to_owned(),
     ])
+}
+
+/// The subagents the lead starts, by the description its calls give them.
+const SURVEY: &str = "Survey the redraw paths";
+const RETENTION: &str = "Check the journal's retention";
+const MIGRATIONS: &str = "Read the store's migrations";
+const FIXTURES: &str = "Look for stale fixtures";
+
+/// Back in the lead's chat with its turn's subagents listed, focusing the
+/// call `back` rows up from the newest: the leader then `o` opens the
+/// group, the leader then `k` walks up its calls.
+fn lead_with_call_focused(
+    journey: &mut TerminalJourney,
+    pane: &str,
+    call: &str,
+    back: usize,
+) -> Result<String, String> {
+    journey.home(pane)?;
+    journey.open_chat(pane, "lead")?;
+    journey.wait_terms(pane, &["▸ 4 subagents"])?;
+    journey.keys(pane, &["C-a", "o"])?;
+    journey.wait_terms(pane, &["▾ 4 subagents", MIGRATIONS])?;
+    for _ in 0..back {
+        journey.keys(pane, &["C-a", "k"])?;
+    }
+    journey.wait(
+        pane,
+        |frame| {
+            frame
+                .lines()
+                .any(|line| line.starts_with('▌') && line.contains(call))
+        },
+        &format!("{call}'s call focused"),
+    )
+}
+
+/// The provider's own id for the subagent the lead's call `title` started,
+/// from the desk's inventory.
+fn task_of(agents: &[Value], title: &str) -> Option<String> {
+    agents
+        .iter()
+        .find(|agent| agent["title"] == title)
+        .and_then(|agent| agent["native_child"].as_str())
+        .map(str::to_owned)
+}
+
+/// Claude was sent a stop of the task `task`, and of no other.
+fn stopped_task(sent: &[Value], task: &str) -> Result<(), String> {
+    let stops: Vec<&Value> = sent
+        .iter()
+        .filter(|line| {
+            line["type"] == "control_request" && line["request"]["subtype"] == "stop_task"
+        })
+        .collect();
+    match stops.as_slice() {
+        [stop] if stop["request"]["task_id"] == task => Ok(()),
+        _ => Err(format!(
+            "Claude was sent the stops {stops:?}, not one of {task}"
+        )),
+    }
+}
+
+/// Claude was answered one permission, allowing the command `command`.
+fn allowed_once(decisions: &[Value], command: &str) -> Result<(), String> {
+    match decisions {
+        [decision]
+            if decision["behavior"] == "allow"
+                && decision["updatedInput"]["command"] == command =>
+        {
+            Ok(())
+        }
+        _ => Err(format!("Claude was answered {decisions:?}")),
+    }
+}
+
+fn provider_subagents(journey: &mut TerminalJourney) -> Proved {
+    const MEASURE: &str = "du -sh ~/.local/share/amux/journal";
+    let pane = journey.launch("terminal", "laptop", &[])?;
+    journey.open_chat(&pane, "lead")?;
+    // An earlier turn, which the subagents' work must not push out.
+    journey.type_text(&pane, "Look over the journal module.")?;
+    journey.keys(&pane, &["Enter"])?;
+    journey.wait(
+        &pane,
+        |frame| at_rest(frame, &["rotates it at 64 MB"]),
+        "the first turn's reply",
+    )?;
+    journey.type_text(&pane, "Survey the four areas in parallel.")?;
+    journey.keys(&pane, &["Enter"])?;
+    // Two finished, one waits on its ask, the last runs.
+    journey.wait_terms(
+        &pane,
+        &[
+            "▸ 4 subagents · 1 running · 1 waiting on you · 2 done",
+            "rotates it at 64 MB",
+        ],
+    )?;
+    journey.frame(&pane, "grouped")?;
+    journey.keys(&pane, &["C-a", "o"])?;
+    journey.wait_terms(
+        &pane,
+        &[
+            "▾ 4 subagents",
+            &format!("Ran subagent {SURVEY}"),
+            &format!("Ran subagent {FIXTURES}"),
+            &format!("Running subagent {RETENTION} · waiting on you"),
+            &format!("Running subagent {MIGRATIONS}"),
+        ],
+    )?;
+    journey.frame(&pane, "group-open")?;
+
+    // The finished subagent's own chat: its prompt, steps and answer.
+    for _ in 0..4 {
+        journey.keys(&pane, &["C-a", "k"])?;
+    }
+    journey.wait(
+        &pane,
+        |frame| {
+            frame
+                .lines()
+                .any(|line| line.starts_with('▌') && line.contains(SURVEY))
+        },
+        "the finished call focused",
+    )?;
+    journey.keys(&pane, &["C-a", "Enter"])?;
+    journey.wait_terms(
+        &pane,
+        &[
+            "Find every path that redraws the terminal client's screen",
+            "Two paths redraw the screen",
+            "Claude runs this subagent · it takes no messages",
+        ],
+    )?;
+    journey.frame(&pane, "subagent-chat")?;
+
+    // Home lists the two still live under the lead, by what each was
+    // asked; the finished ones are settled, as any finished child is.
+    journey.home(&pane)?;
+    journey.select_agent(&pane, "lead")?;
+    journey.keys(&pane, &["Right"])?;
+    let fleet = journey.wait_terms(
+        &pane,
+        &[
+            RETENTION,
+            "wants to run du -sh ~/.local/share/amux/journal",
+            MIGRATIONS,
+        ],
+    )?;
+    // A subagent's own job is the subagent: its row counts none.
+    if fleet.contains("background job") {
+        return Err(format!("home counts a subagent's own job:\n{fleet}"));
+    }
+    journey.frame(&pane, "fleet")?;
+
+    // The asking subagent, reached from its call, which reads waiting on
+    // you; its permission is answered in its own chat.
+    lead_with_call_focused(journey, &pane, RETENTION, 2)?;
+    journey.frame(&pane, "parent-waiting")?;
+    journey.keys(&pane, &["C-a", "Enter"])?;
+    journey.read_ask(&pane, &["Wants to run", MEASURE, "ctrl+x stop"])?;
+    journey.frame(&pane, "subagent-ask")?;
+    journey.keys(&pane, &["1"])?;
+    journey.wait(
+        &pane,
+        |frame| !frame.contains("Wants to run") && frame.contains("Claude runs this subagent"),
+        "the ask answered",
+    )?;
+
+    // Another subagent, stopped from its chat once it is at its command.
+    lead_with_call_focused(journey, &pane, MIGRATIONS, 1)?;
+    journey.keys(&pane, &["C-a", "Enter"])?;
+    journey.wait_terms(
+        &pane,
+        &[
+            "Read the store's migrations and list any",
+            "Dump the store's schema",
+            "ctrl+x stop",
+        ],
+    )?;
+    journey.frame(&pane, "stop-offered")?;
+    journey.keys(&pane, &["C-x"])?;
+    journey.wait_terms(
+        &pane,
+        &[&format!("Stop {MIGRATIONS}? Its parent carries on.")],
+    )?;
+    journey.frame(&pane, "stop-confirm")?;
+    journey.keys(&pane, &["Enter"])?;
+    journey.wait(
+        &pane,
+        |frame| frame.contains("Claude runs this subagent") && !frame.contains("ctrl+x stop"),
+        "the subagent stopped",
+    )?;
+    journey.frame(&pane, "stopped")?;
+
+    // The lead's turn goes on to its reply, the group saying how it ended.
+    journey.home(&pane)?;
+    journey.open_chat(&pane, "lead")?;
+    journey.wait(
+        &pane,
+        |frame| {
+            at_rest(
+                frame,
+                &[
+                    "▸ 4 subagents · 3 done · 1 stopped",
+                    "The migrations survey was stopped.",
+                ],
+            )
+        },
+        "the lead's reply",
+    )?;
+    journey.frame(&pane, "lead-done")?;
+
+    let agents = journey.inventory("desk", Some("subagents"))?;
+    let task = task_of(&agents, MIGRATIONS)
+        .ok_or_else(|| format!("the desk lists no {MIGRATIONS}: {agents:?}"))?;
+    let other = task_of(&agents, FIXTURES).unwrap_or_default();
+    let input = journey.provider_input("lead", "sent")?;
+    let sent: Vec<Value> = input
+        .iter()
+        .map(|line| serde_json::from_str(line).map_err(|error| format!("{line}: {error}")))
+        .collect::<Result<_, _>>()?;
+    stopped_task(&sent, &task)?;
+    let decisions = control_responses(&input)?;
+    allowed_once(&decisions, MEASURE)?;
+    let controls = [
+        negative_control(stopped_task(&sent, &other))?,
+        negative_control(allowed_once(&decisions, "rm -rf ~/.local/share/amux"))?,
+    ];
+    journey.quit_client(&pane)?;
+    let mut proved = lines(&[
+        "the lead's earlier turn stayed in view while four subagents worked",
+        "the four calls folded into one row reading 1 running, 1 waiting on you and 2 done, and opened to each call's own state",
+        "the leader then Enter on a call opened its subagent's chat, with its own prompt, steps and answer and a composer taking no messages",
+        "home listed the live subagents under the lead by their titles, counting no job of their own",
+        "the asking subagent's call read waiting on you, and its permission answered in its own chat reached Claude once, allowing its command",
+        "Stop in another subagent's chat asked first, then reached Claude as a stop of that subagent's task alone, and its group row ended reading 1 stopped",
+    ]);
+    proved.extend(controls);
+    proved.push("the client exited 0".to_owned());
+    Ok(proved)
 }
 
 #[cfg(test)]

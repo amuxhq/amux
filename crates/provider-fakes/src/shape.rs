@@ -147,6 +147,17 @@ fn content_kind(message: &Value) -> String {
 }
 
 fn sdk_group(requests: &BTreeMap<String, String>, frame: &Value) -> String {
+    let group = session_sdk_group(requests, frame);
+    // What headless Claude forwards of a subagent's names it: shaped as the
+    // session's own frames are, apart from them.
+    if frame["agent_id"].is_string() || frame["request"]["agent_id"].is_string() {
+        format!("subagent/{group}")
+    } else {
+        group
+    }
+}
+
+fn session_sdk_group(requests: &BTreeMap<String, String>, frame: &Value) -> String {
     let kind = text(&frame["type"]);
     match kind {
         "system" | "result" => format!("{kind}/{}", text(&frame["subtype"])),
@@ -191,14 +202,31 @@ fn codex_group(requests: &BTreeMap<String, String>, frame: &Value) -> String {
     }
 }
 
+/// The group of what terminal Claude wrote for a subagent, from the
+/// recorder's line: its rows grouped as the session's own are, apart from
+/// them, and its `meta.json`.
+pub fn subagent_group(line: &Value) -> Option<String> {
+    if line.get("meta").is_some() {
+        return Some("subagent/meta".into());
+    }
+    Some(format!("subagent/{}", pty_group(line.get("row")?)))
+}
+
 fn pty_group(frame: &Value) -> String {
     if let Some(event) = frame.get("hook_event_name").and_then(Value::as_str) {
-        return format!("hook/{event}");
+        // A hook a subagent raised names it, and the main thread's never do.
+        let within = !text(&frame["agent_id"]).is_empty();
+        return format!("hook/{event}{}", if within { "/subagent" } else { "" });
     }
     let kind = text(&frame["type"]);
     match kind {
         "assistant" | "user" => format!("row/{kind}/{}", content_kind(&frame["message"])),
         "system" => format!("row/system/{}", text(&frame["subtype"])),
+        // A queued prompt and a queued task notification are written apart.
+        "attachment" if frame["attachment"]["type"] == "queued_command" => format!(
+            "row/attachment/queued_command/{}",
+            text(&frame["attachment"]["commandMode"])
+        ),
         "attachment" => format!("row/attachment/{}", text(&frame["attachment"]["type"])),
         "queue-operation" => format!("row/queue-operation/{}", text(&frame["operation"])),
         other => format!("row/{other}"),
@@ -248,14 +276,27 @@ impl Corpus {
         for process in playback::load(dir).map_err(|error| error.to_string())? {
             let mut classifier = Classifier::default();
             for event in &process.events {
-                let Ok(frame) = serde_json::from_slice::<Value>(&event.bytes) else {
+                let Ok(mut frame) = serde_json::from_slice::<Value>(&event.bytes) else {
                     continue;
                 };
                 match event.channel {
                     Channel::Input => classifier.host(kind, &frame),
                     Channel::Exit => {}
-                    Channel::Output | Channel::Transcript | Channel::Hook => {
-                        let group = classifier.provider(kind, &frame);
+                    Channel::Output | Channel::Transcript | Channel::Hook | Channel::Subagent => {
+                        let group = if event.channel == Channel::Subagent {
+                            let Some(group) = subagent_group(&frame) else {
+                                continue;
+                            };
+                            let key = if frame.get("meta").is_some() {
+                                "meta"
+                            } else {
+                                "row"
+                            };
+                            frame = frame[key].take();
+                            group
+                        } else {
+                            classifier.provider(kind, &frame)
+                        };
                         let signature = signature(kind, &frame);
                         let entry = self.groups.entry(group).or_default();
                         entry.allowed.extend(signature.iter().cloned());

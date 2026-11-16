@@ -9,9 +9,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ui_state::{AgentKey, Connection, InputState, Key, PhaseView, Refusal};
 use ui_view::{
-    AskCard, ComposerView, ContextView, ControlsSummary, FleetView, FormValue, OnboardingView,
-    Overview, PLACEHOLDER, QuestionResponse, QueuedRow, Reach, RefusedPrompt, Row, SentPrompt,
-    SettingChange, SettingsView, SetupStep, SignInView,
+    AskCard, ChatAgents, ComposerView, ContextView, ControlsSummary, FleetView, FormValue,
+    OnboardingView, Overview, PLACEHOLDER, QuestionResponse, QueuedRow, Reach, RefusedPrompt, Row,
+    SentPrompt, SettingChange, SettingsView, SetupStep, SignInView,
 };
 use wire::{BlobRef, Kind, Platform, RouteKind};
 
@@ -151,6 +151,10 @@ pub struct ChatDelta {
     pub ask: Option<AskMoved>,
     pub overview: Option<Overview>,
     pub settings: Option<SettingsView>,
+    /// How each agent the held rows open stands, from the fleet, and what
+    /// each group of them comes to: a row that opens an agent draws its
+    /// state from here, since the fleet moving changes no row.
+    pub agents: Option<ChatAgents>,
 }
 
 /// How the window's keys moved. Row ids are item keys and never move, so
@@ -591,7 +595,9 @@ pub enum ChatAct {
     Resend(Vec<u8>),
     /// Stops the agent's turn; the agent stays.
     Interrupt,
-    /// Stops one background job by the key its `JobStop` gives.
+    /// Stops one background job by the key its `JobStop` gives: a job in
+    /// the overview, or a provider subagent's own, which its composer's
+    /// `Native` mode offers.
     StopJob(String),
     /// Takes terminal Claude's own view back to the agent's conversation
     /// after it switched to another.

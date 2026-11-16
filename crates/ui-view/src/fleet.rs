@@ -13,6 +13,7 @@ use ui_state::{
 use wire::{Agent, Filing, HostEntry, Kind, Lifecycle, RouteKind, Said, Wants, trusted};
 
 use crate::repository::Repository;
+use crate::subagents::GroupState;
 use crate::text::{within, without_direction_controls};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
@@ -54,6 +55,11 @@ pub struct FleetCard {
     pub filing: Filing,
     /// It has no parent, so it may be pinned.
     pub top_level: bool,
+    /// A subagent its parent's provider runs: it goes with its parent and
+    /// has no folder, terminal, settings or composer of its own, so it is
+    /// never offered a resume, a delete, a pin or a terminal of its own.
+    /// It is listed under its parent as any child is, by its title.
+    pub native: bool,
 }
 
 /// Home's sections, computed once for every client. Empty sections are
@@ -141,6 +147,14 @@ pub enum SecondLine {
 pub struct ActivityLine {
     pub activity: Activity,
     pub step: Option<String>,
+    /// While the agent waits on its subagents: how those its chat opened
+    /// that are still at work or waiting on the person stand, by their
+    /// fleet rows, as the chat's activity line reads them
+    /// (`ChatAgents::live`). Only the fleet knows of a subagent's ask, so
+    /// the fleet's view fills it, not the session; while one of them waits
+    /// on the person each client says this, in the group row's words,
+    /// rather than that they all work.
+    pub subagents: Option<GroupState>,
 }
 
 /// What one agent's session knows for its row. Read from the session alone,
@@ -151,15 +165,28 @@ pub struct SessionLine {
     pub said: Option<Said>,
     pub step: Option<ActivityLine>,
     pub last_said: Option<String>,
+    /// While it waits on its subagents, the agents its held rows open, once
+    /// each: what [`fleet_view`] reads the step's `subagents` from.
+    pub opens: Vec<Vec<u8>>,
 }
 
 pub fn session_line(state: &SessionState, now_ms: i64) -> SessionLine {
+    let step = activity(state, now_ms).map(|activity| ActivityLine {
+        step: step_subject(state, &activity),
+        activity,
+        subagents: None,
+    });
+    let waits_on_subagents = step
+        .as_ref()
+        .is_some_and(|line| matches!(line.activity.kind, ActivityKind::Subagents { .. }));
     SessionLine {
         said: said(state),
-        step: activity(state, now_ms).map(|activity| ActivityLine {
-            step: step_subject(state, &activity),
-            activity,
-        }),
+        opens: if waits_on_subagents {
+            crate::subagents::opened_agents(state)
+        } else {
+            Vec::new()
+        },
+        step,
         last_said: last_said(state),
     }
 }
@@ -294,7 +321,15 @@ fn second_line(
     };
     let said = match attention {
         Attention::NeedsYou => line.said.clone().map(SecondLine::Said),
-        Attention::Working => line.step.clone().map(SecondLine::Step),
+        Attention::Working => line.step.clone().map(|mut step| {
+            if matches!(step.activity.kind, ActivityKind::Subagents { .. }) {
+                step.subagents = Some(crate::subagents::live_state(
+                    fleet,
+                    line.opens.iter().map(Vec::as_slice),
+                ));
+            }
+            SecondLine::Step(step)
+        }),
         Attention::Idle => line.said.clone().map(SecondLine::Said).or_else(|| {
             line.last_said
                 .clone()
@@ -360,6 +395,7 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
             filing => filing,
         },
         top_level: agent.parent.is_none(),
+        native: agent.native.is_some(),
         agent: at,
     }
 }

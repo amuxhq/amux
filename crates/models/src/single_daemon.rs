@@ -1172,10 +1172,12 @@ pub fn judge_step(daemon: &Daemon, out: &[Output]) -> Option<Broken> {
         });
     }
 
-    answered_unheld(daemon, out).map(|row| Broken {
-        promise: COMMIT_BEFORE_BROADCAST,
-        detail: format!("answered {row} before the store held it"),
-    })
+    answered_unheld(daemon, out)
+        .map(|row| Broken {
+            promise: COMMIT_BEFORE_BROADCAST,
+            detail: format!("answered {row} before the store held it"),
+        })
+        .or_else(|| crate::subagents::judge(daemon, out))
 }
 
 /// The first row `out` answers on a session that the daemon's store does

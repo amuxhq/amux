@@ -54,6 +54,15 @@ goldens! {
     recorded_task_list => "recorded_task_list",
     recorded_background_shell => "recorded_background_shell",
     recorded_subagent_task => "recorded_subagent_task",
+    recorded_subagents_parallel => "recorded_subagents_parallel",
+    recorded_subagent_nested => "recorded_subagent_nested",
+    recorded_subagent_ask => "recorded_subagent_ask",
+    recorded_subagent_stopped => "recorded_subagent_stopped",
+    recorded_subagent_stopped_foreground => "recorded_subagent_stopped_foreground",
+    recorded_subagent_continued => "recorded_subagent_continued",
+    recorded_subagent_resumed => "recorded_subagent_resumed",
+    recorded_subagent_amux_tools => "recorded_subagent_amux_tools",
+    recorded_subagent_elicitation => "recorded_subagent_elicitation",
     recorded_image => "recorded_image",
     recorded_sign_in_problem => "recorded_sign_in_problem",
     recorded_steer_folded => "recorded_steer_folded",
@@ -76,7 +85,7 @@ goldens! {
     answers_through_amux_become_hook_decisions => "answers",
     semantic_inputs_become_effects => "inputs",
     send_now_steers_a_queued_prompt_into_the_running_turn => "steering",
-    background_subagent_answers_on_its_agent_row => "subagent_notification",
+    a_background_subagent_completes_with_its_notification => "subagent_notification",
     boundaries_carry_the_provider_session_and_version => "boundaries",
     rows_no_recording_shows => "rows",
     a_tool_servers_form_or_link_is_answered_through_its_hook => "elicitation",
@@ -797,8 +806,9 @@ fn a_model_switch_shows_before_the_next_turn() {
 /// then the main agent's turn stops with that subagent still running, as QA
 /// recorded on 2.1.296 (hook order: the subagent's PermissionRequest, then
 /// the main Stop listing it under background_tasks). Claude's own view
-/// keeps the subagent's dialog open; amux keeps the ask open too, so a
-/// person can answer it, and does not call the agent idle.
+/// keeps the subagent's dialog open; amux keeps the ask open in the
+/// subagent's own chat, which needs the person, while the agent itself
+/// holds no ask.
 #[test]
 fn a_background_subagents_ask_stays_open_past_the_main_turns_stop() {
     use prost::Message as _;
@@ -827,7 +837,8 @@ fn a_background_subagents_ask_stays_open_past_the_main_turns_stop() {
     let (mut state, _) = ClaudePty::initial(&spec);
     let command = serde_json::json!({"command": "python3 -c 'import time; time.sleep(60)'", "description": "Sleep"});
     let mut last = None;
-    let mut seen = Vec::new();
+    let mut host_asks = 0;
+    let mut ended = false;
     for event in [
         with(
             serde_json::json!({"hook_event_name": "SessionStart", "source": "startup", "model": "claude-haiku-5-5"}),
@@ -859,17 +870,28 @@ fn a_background_subagents_ask_stays_open_past_the_main_turns_stop() {
             "background_tasks": [{"id": "a7aebc", "type": "subagent", "status": "running", "description": "Run a 60-second sleep", "agent_type": "general-purpose"}]}),
         ),
     ] {
-        if let Some(snapshot) = ClaudePty::step(&mut state, event).step.snapshot {
-            let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
-            last = Some((snapshot.phase(), body.asks.len()));
-            seen.push(last.unwrap());
+        let step = ClaudePty::step(&mut state, event).step;
+        if let Some(snapshot) = &step.snapshot {
+            host_asks = wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
+                .unwrap()
+                .asks
+                .len();
+        }
+        for part in &step.agents {
+            ended |= part.end.is_some();
+            if let Some(snapshot) = &part.snapshot {
+                let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
+                last = Some((snapshot.phase(), body.asks.len()));
+            }
         }
     }
-    let (phase, asks) = last.expect("a snapshot");
-    assert!(
-        asks > 0 && phase != wire::Phase::Idle,
-        "the subagent's ask is not open once the main turn stops: phase {phase:?}, {asks} asks; every snapshot (phase, asks): {seen:?}"
+    assert_eq!(
+        last,
+        Some((wire::Phase::NeedsYou, 1)),
+        "the subagent's ask is not open in its chat once the main turn stops"
     );
+    assert!(!ended, "the main turn's stop ends the subagent");
+    assert_eq!(host_asks, 0, "the agent holds its subagent's ask");
 }
 
 // --- terminal Claude's turn, permission, effort and conversation follow its
@@ -1105,11 +1127,13 @@ fn a_prompt_is_refused_while_claude_shows_a_conversation_that_is_not_this_agents
     );
 }
 
-/// A subagent Claude ran in the background is listed at the main turn's
-/// Stop; when it finishes, Claude's SubagentStop hook names it, and the
-/// background list drops it then rather than at some later turn's end.
+/// A subagent Claude lists at the main turn's Stop is an agent of its own,
+/// not one of the agent's background jobs, and terminal Claude offers no
+/// way to stop it. Its SubagentStop hook is not its end either: Claude
+/// fires it when the subagent's turn stops, and a continued subagent runs
+/// again under the same id.
 #[test]
-fn a_finished_background_subagent_leaves_the_background_list() {
+fn a_subagent_is_no_background_job_and_its_stop_hook_does_not_end_it() {
     let (mut state, _) = started_claude();
     let common = |extra: serde_json::Value| {
         let mut value = serde_json::json!({
@@ -1123,7 +1147,14 @@ fn a_finished_background_subagent_leaves_the_background_list() {
         hook(value)
     };
     let mut listed = Vec::new();
+    let mut ended = false;
     for event in [
+        common(serde_json::json!({"hook_event_name": "SubagentStart",
+            "agent_id": "a7aebc", "agent_type": "general-purpose"})),
+        common(
+            serde_json::json!({"hook_event_name": "PermissionRequest", "agent_id": "a7aebc",
+            "agent_type": "general-purpose", "tool_name": "Bash", "tool_input": {"command": "sleep 60"}}),
+        ),
         common(
             serde_json::json!({"hook_event_name": "Stop", "stop_hook_active": false,
             "last_assistant_message": "Started a subagent.",
@@ -1137,20 +1168,21 @@ fn a_finished_background_subagent_leaves_the_background_list() {
             "last_assistant_message": "Slept."}),
         ),
     ] {
-        if let Some((_, snapshot)) = decoded(&ClaudePty::step(&mut state, event)) {
-            listed.push(snapshot.background_jobs.unwrap_or_default().jobs.len());
+        let stepped = ClaudePty::step(&mut state, event);
+        if let Some((_, snapshot)) = decoded(&stepped) {
+            listed.extend(snapshot.background_jobs.unwrap_or_default().jobs);
+        }
+        for part in &stepped.step.agents {
+            ended |= part.end.is_some();
+            if let Some(snapshot) = &part.snapshot {
+                use prost::Message as _;
+                let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
+                listed.extend(body.background_jobs.unwrap_or_default().jobs);
+            }
         }
     }
-    assert_eq!(
-        listed.first().copied(),
-        Some(1),
-        "the Stop hook lists the subagent: {listed:?}"
-    );
-    assert_eq!(
-        listed.last().copied(),
-        Some(0),
-        "the finished subagent stays in the background list: {listed:?}"
-    );
+    assert!(listed.is_empty(), "a job lists the subagent: {listed:?}");
+    assert!(!ended, "the SubagentStop hook ends the subagent");
 }
 
 /// A command that waited a minute for the person's approval and then ran
@@ -1614,17 +1646,22 @@ fn user_row(uuid: &str, content: &str, extra: serde_json::Value) -> serde_json::
 /// Four facts end the main thread's work in the terminal: its turn's
 /// duration row, another task's notification, an interruption and a
 /// prompt typed outside amux. None of them ends a subagent still running
-/// in the background, so none closes the ask it raised; its own stop does.
+/// in the background, so none closes the ask it raised; its own end does.
 #[test]
 fn a_background_subagents_ask_survives_every_end_of_the_main_threads_work() {
     use prost::Message as _;
     let open_asks = |stepped: &interpret::Stepped| {
-        stepped.step.snapshot.as_ref().map(|snapshot| {
-            wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
-                .unwrap()
-                .asks
-                .len()
-        })
+        stepped
+            .step
+            .agents
+            .iter()
+            .find_map(|part| part.snapshot.as_ref())
+            .map(|snapshot| {
+                wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
+                    .unwrap()
+                    .asks
+                    .len()
+            })
     };
     let notified = user_row(
         "n1",
@@ -1655,15 +1692,25 @@ fn a_background_subagents_ask_survives_every_end_of_the_main_threads_work() {
         "these closed the subagent's ask: {closing:?}"
     );
     let mut state = a_background_subagents_open_ask();
-    let stopped = ClaudePty::step(
-        &mut state,
-        hook(serde_json::json!({
-            "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
-            "hook_event_name": "SubagentStop", "agent_id": "a7aebc", "agent_type": "general-purpose",
-            "stop_hook_active": false,
-        })),
+    let killed = user_row(
+        "n2",
+        "<task-notification><task-id>a7aebc</task-id><tool-use-id>toolu_agent</tool-use-id><status>killed</status><summary>stopped</summary></task-notification>",
+        serde_json::json!({"origin": {"kind": "task-notification"}}),
     );
-    assert_eq!(open_asks(&stopped), Some(0), "its own stop closes it");
+    ClaudePty::step(&mut state, transcript_row(killed));
+    let drained = ClaudePty::step(
+        &mut state,
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::subagent_drained_fact("a7aebc"),
+        }),
+    );
+    assert_eq!(open_asks(&drained), Some(0), "its own end closes it");
+    let end = drained.step.agents[0]
+        .end
+        .clone()
+        .expect("the subagent ends");
+    assert_eq!(end.cause(), wire::ExitCause::Stopped);
 }
 
 /// The notice that an organization's policy withholds amux's tools holds
@@ -1925,4 +1972,461 @@ fn a_first_prompt_is_drawn_while_terminal_claude_starts_and_typed_once() {
         recorded.step.items
     );
     assert!(!Kind::typed_unrecorded(&state), "the prompt was reflected");
+}
+
+/// A subagent's ask can come before any row of its file: it opens in the
+/// subagent's own chat with no item, as the agent's own ask does before
+/// its call's row lands, and points at the call once the subagent's row
+/// for it is read. The agent itself holds no ask.
+#[test]
+fn a_subagents_ask_before_its_rows_opens_in_its_chat_and_binds_to_the_row() {
+    use prost::Message as _;
+    let (mut state, _) = started_claude();
+    let with = |extra: serde_json::Value| {
+        let mut value = serde_json::json!({
+            "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl",
+            "cwd": "/w", "prompt_id": "p1", "permission_mode": "default",
+        });
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        hook(value)
+    };
+    let subagent_row = |row: serde_json::Value| {
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::SubagentTranscript,
+            payload: row.to_string().into_bytes(),
+        })
+    };
+    let asks = |stepped: &interpret::Stepped| {
+        stepped
+            .step
+            .agents
+            .iter()
+            .find_map(|part| part.snapshot.as_ref())
+            .map(|snapshot| {
+                let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
+                let asks: Vec<String> = body.asks.iter().map(|ask| ask.item_key.clone()).collect();
+                (snapshot.phase(), asks)
+            })
+    };
+    let command = serde_json::json!({"command": "touch done.txt"});
+    for event in [
+        with(
+            serde_json::json!({"hook_event_name": "SubagentStart", "agent_id": "a1", "agent_type": "toucher"}),
+        ),
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::subagent_meta_fact(
+                "a1",
+                serde_json::json!({"toolUseId": "toolu_agent", "description": "Touch"}),
+            ),
+        }),
+        with(
+            serde_json::json!({"hook_event_name": "PreToolUse", "agent_id": "a1", "agent_type": "toucher",
+            "tool_name": "Bash", "tool_use_id": "toolu_sub", "tool_input": command}),
+        ),
+    ] {
+        ClaudePty::step(&mut state, event);
+    }
+    let asked = ClaudePty::step(
+        &mut state,
+        with(
+            serde_json::json!({"hook_event_name": "PermissionRequest", "agent_id": "a1",
+            "agent_type": "toucher", "tool_name": "Bash", "tool_input": command}),
+        ),
+    );
+    assert_eq!(
+        asks(&asked),
+        Some((wire::Phase::NeedsYou, vec![String::new()])),
+        "the subagent's ask, with no item yet, is not open in its chat"
+    );
+    if let Some((_, host)) = decoded(&asked) {
+        assert!(host.asks.is_empty(), "the agent holds its subagent's ask");
+    }
+    ClaudePty::step(
+        &mut state,
+        subagent_row(serde_json::json!({
+            "type": "user", "uuid": "su1", "timestamp": "2026-10-12T08:00:01.000Z",
+            "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+            "message": {"role": "user", "content": "Touch done.txt."},
+        })),
+    );
+    let drawn = ClaudePty::step(
+        &mut state,
+        subagent_row(serde_json::json!({
+            "type": "assistant", "uuid": "sa1", "timestamp": "2026-10-12T08:00:02.000Z",
+            "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+            "message": {"id": "msg_1", "role": "assistant", "model": "claude-haiku-5-5",
+                "content": [{"type": "tool_use", "id": "toolu_sub", "name": "Bash", "input": command}]},
+        })),
+    );
+    assert_eq!(
+        asks(&drawn),
+        Some((wire::Phase::NeedsYou, vec!["toolu_sub".to_owned()])),
+        "the ask does not point at its call once the call's row is read"
+    );
+}
+
+/// Claude keeps one task list for a host and its subagents: a task a
+/// terminal subagent creates, read from its own file, shows in the agent's
+/// own task list.
+#[test]
+fn a_terminal_subagents_task_is_in_the_sessions_task_list() {
+    let (mut state, _) = started_claude();
+    let subagent_row = |row: serde_json::Value| {
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::SubagentTranscript,
+            payload: row.to_string().into_bytes(),
+        })
+    };
+    for event in [
+        hook(serde_json::json!({
+            "hook_event_name": "SubagentStart", "agent_id": "a1", "agent_type": "planner",
+            "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
+        })),
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::subagent_meta_fact(
+                "a1",
+                serde_json::json!({"toolUseId": "toolu_agent", "description": "Plan"}),
+            ),
+        }),
+        subagent_row(serde_json::json!({
+            "type": "assistant", "uuid": "sa1", "timestamp": "2026-10-12T08:00:02.000Z",
+            "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+            "message": {"id": "msg_1", "role": "assistant", "model": "claude-haiku-5-5",
+                "content": [{"type": "tool_use", "id": "toolu_task", "name": "TaskCreate",
+                    "input": {"subject": "probe from subagent", "description": "x"}}]},
+        })),
+    ] {
+        ClaudePty::step(&mut state, event);
+    }
+    let created = ClaudePty::step(
+        &mut state,
+        subagent_row(serde_json::json!({
+            "type": "user", "uuid": "su1", "timestamp": "2026-10-12T08:00:03.000Z",
+            "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+            "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_task",
+                "content": "Task #1 created successfully: probe from subagent"}]},
+            "toolUseResult": {"task": {"id": "1", "subject": "probe from subagent"}},
+        })),
+    );
+    let (_, host) = decoded(&created).expect("the agent's snapshot");
+    let entries: Vec<(String, String)> = host
+        .tasks
+        .iter()
+        .flat_map(|list| &list.entries)
+        .map(|entry| (entry.id.clone(), entry.subject.clone()))
+        .collect();
+    assert_eq!(
+        entries,
+        [("1".to_owned(), "probe from subagent".to_owned())],
+        "the subagent's task is not in the session's task list"
+    );
+}
+
+/// Auto mode refuses a terminal subagent's call: the refusal is that
+/// call's, in the subagent's chat, with the rule Claude names, whether the
+/// hook comes before the call's row is read or after.
+#[test]
+fn auto_modes_refusal_of_a_subagents_call_is_drawn_in_its_chat() {
+    use prost::Message as _;
+    let (mut state, _) = started_claude();
+    let with = |extra: serde_json::Value| {
+        let mut value = serde_json::json!({
+            "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl",
+            "cwd": "/w", "permission_mode": "auto",
+        });
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        hook(value)
+    };
+    let subagent_row = |row: serde_json::Value| {
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::SubagentTranscript,
+            payload: row.to_string().into_bytes(),
+        })
+    };
+    let denied = |id: &str| {
+        with(
+            serde_json::json!({"hook_event_name": "PermissionDenied", "agent_id": "a1",
+            "agent_type": "runner", "tool_name": "Bash", "tool_input": {"command": "rm -rf x"},
+            "tool_use_id": id, "reason": "deletes files"}),
+        )
+    };
+    let call = |uuid: &str, id: &str| {
+        subagent_row(serde_json::json!({
+            "type": "assistant", "uuid": uuid, "timestamp": "2026-10-12T08:00:02.000Z",
+            "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+            "message": {"id": format!("msg_{uuid}"), "role": "assistant", "model": "claude-haiku-5-5",
+                "content": [{"type": "tool_use", "id": id, "name": "Bash", "input": {"command": "rm -rf x"}}]},
+        }))
+    };
+    let result = |uuid: &str, id: &str| {
+        subagent_row(serde_json::json!({
+            "type": "user", "uuid": uuid, "timestamp": "2026-10-12T08:00:03.000Z",
+            "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+            "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": id,
+                "is_error": true, "content": "Permission to use Bash has been denied."}]},
+        }))
+    };
+    let mut events = vec![
+        with(
+            serde_json::json!({"hook_event_name": "SubagentStart", "agent_id": "a1", "agent_type": "runner"}),
+        ),
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::subagent_meta_fact(
+                "a1",
+                serde_json::json!({"toolUseId": "toolu_agent", "description": "Run"}),
+            ),
+        }),
+    ];
+    // The first call is refused before its row is read; the second after.
+    events.extend([
+        denied("toolu_early"),
+        call("sa1", "toolu_early"),
+        result("su1", "toolu_early"),
+    ]);
+    events.extend([
+        call("sa2", "toolu_late"),
+        denied("toolu_late"),
+        result("su2", "toolu_late"),
+    ]);
+    let mut calls = std::collections::BTreeMap::new();
+    for event in events {
+        let stepped = ClaudePty::step(&mut state, event);
+        for item in &stepped.step.items {
+            assert!(
+                !item.key.starts_with("toolu_early") && !item.key.starts_with("toolu_late"),
+                "the subagent's call is in the agent's own chat"
+            );
+        }
+        for item in stepped.step.agents.iter().flat_map(|part| &part.items) {
+            if let Ok(wire::ClaudeItem {
+                kind: Some(wire::claude_item::Kind::Tool(tool)),
+            }) = wire::ClaudeItem::decode(item.body.as_slice())
+            {
+                calls.insert(item.key.clone(), tool);
+            }
+        }
+    }
+    for id in ["toolu_early", "toolu_late"] {
+        let tool = &calls[id];
+        assert_eq!(
+            tool.state(),
+            wire::ToolState::Denied,
+            "{id} is not drawn refused"
+        );
+        let decision = tool.decision.as_ref().expect("the refusal's decision");
+        assert_eq!(decision.outcome(), wire::DecisionOutcome::Denied, "{id}");
+        assert_eq!(
+            decision.note, "deletes files",
+            "{id} does not name the rule"
+        );
+    }
+}
+
+/// Every call row of the agent's own, by key, in one step: its state and
+/// what it handed back.
+fn own_calls(step: &wire::Step) -> Vec<(String, wire::ToolState, String)> {
+    use prost::Message as _;
+    step.items
+        .iter()
+        .filter_map(
+            |item| match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_item::Kind::Tool(tool) => {
+                    Some((item.key.clone(), tool.state(), tool.outcome_text))
+                }
+                _ => None,
+            },
+        )
+        .collect()
+}
+
+/// A SendMessage that resumes a subagent in the background is that
+/// subagent's continued call: Claude's result says only that it resumed
+/// (`{"success":true,"message":"Resuming agent …"}`, for the model), so the
+/// row runs on with no answer until the subagent's end, and then hands
+/// back what the subagent said.
+#[test]
+fn a_continuation_hands_back_the_subagents_reply_not_claudes_json() {
+    const CALL: &str = "toolu_01FToX5ZAtVt7pWXpZtBpjTu";
+    let frames =
+        interpret::replay::<ClaudePty>(&fixtures().join("recorded_subagent_continued.json"))
+            .unwrap();
+    let rows: Vec<(wire::ToolState, String)> = frames
+        .iter()
+        .flat_map(|frame| own_calls(&frame.step))
+        .filter(|(key, _, _)| key == CALL)
+        .map(|(_, state, answer)| (state, answer))
+        .collect();
+    assert!(
+        rows.iter()
+            .all(|(_, answer)| !answer.contains("Resuming agent")),
+        "{rows:#?}"
+    );
+    assert_eq!(
+        rows.last(),
+        Some(&(wire::ToolState::Succeeded, "FOUR FIVE SIX".to_owned())),
+        "{rows:#?}"
+    );
+    // Between Claude's result and the subagent's end it runs, with nothing
+    // to hand back yet.
+    assert_eq!(
+        rows[rows.len() - 2],
+        (wire::ToolState::Running, String::new()),
+        "{rows:#?}"
+    );
+}
+
+/// A continued subagent's end can be read before the parent's transcript
+/// row with Claude's result of the SendMessage that resumed it, its file
+/// read to its end by then or not yet. The call then ends as that run did,
+/// with what its notice says, not as the run before it did, and does not
+/// wait for a notice already read: here the first run answered "ONE TWO
+/// THREE" and the continuation failed without a word.
+#[test]
+fn a_continuation_that_failed_before_its_result_is_read_hands_back_its_failure() {
+    const SEND: &str = "toolu_send";
+    let with = |extra: serde_json::Value| {
+        let mut value = serde_json::json!({
+            "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl",
+            "cwd": "/w", "prompt_id": "p1", "permission_mode": "default",
+        });
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        hook(value)
+    };
+    let subagent_row = |row: serde_json::Value| {
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::SubagentTranscript,
+            payload: row.to_string().into_bytes(),
+        })
+    };
+    let assistant = |uuid: &str, call: &str, name: &str, input: serde_json::Value| {
+        transcript_row(serde_json::json!({
+            "type": "assistant", "uuid": uuid, "timestamp": "2026-10-12T08:00:01.000Z",
+            "sessionId": "s1", "isSidechain": false, "userType": "external",
+            "message": {
+                "id": format!("msg_{uuid}"), "type": "message", "role": "assistant",
+                "model": "claude-haiku-5-5",
+                "content": [{"type": "tool_use", "id": call, "name": name, "input": input}],
+                "stop_reason": "tool_use", "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        }))
+    };
+    let result = |uuid: &str, call: &str, content: &str, result: serde_json::Value| {
+        transcript_row(user_row(
+            uuid,
+            "",
+            serde_json::json!({
+                "message": {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": call, "content": content}]},
+                "toolUseResult": result,
+            }),
+        ))
+    };
+    let notice = |uuid: &str, status: &str, body: &str| {
+        transcript_row(user_row(
+            uuid,
+            &format!(
+                "<task-notification><task-id>a1</task-id><status>{status}</status>{body}</task-notification>"
+            ),
+            serde_json::json!({"origin": {"kind": "task-notification"}}),
+        ))
+    };
+    let drained = || {
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::subagent_drained_fact("a1"),
+        })
+    };
+    let resumed = serde_json::json!({
+        "success": true, "message": "Resuming agent a1", "resumedAgentId": "a1",
+    });
+    for drained_first in [true, false] {
+        let (mut state, _) = started_claude();
+        let (before, after) = if drained_first {
+            (Some(drained()), None)
+        } else {
+            (None, Some(drained()))
+        };
+        let mut rows = Vec::new();
+        for event in [
+        with(
+            serde_json::json!({"hook_event_name": "SubagentStart", "agent_id": "a1", "agent_type": "counter"}),
+        ),
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::subagent_meta_fact(
+                "a1",
+                serde_json::json!({"toolUseId": "toolu_agent", "description": "Count"}),
+            ),
+        }),
+        assistant(
+            "a1",
+            "toolu_agent",
+            "Agent",
+            serde_json::json!({"description": "Count", "prompt": "Count.", "subagent_type": "counter"}),
+        ),
+        result(
+            "r1",
+            "toolu_agent",
+            "Async agent launched successfully.",
+            serde_json::json!({"isAsync": true, "status": "async_launched", "agentId": "a1"}),
+        ),
+        subagent_row(serde_json::json!({
+            "type": "assistant", "uuid": "sa1", "timestamp": "2026-10-12T08:00:02.000Z",
+            "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+            "message": {"id": "msg_s1", "role": "assistant", "model": "claude-haiku-5-5",
+                "content": [{"type": "text", "text": "ONE TWO THREE"}]},
+        })),
+        notice(
+            "n1",
+            "completed",
+            "<tool-use-id>toolu_agent</tool-use-id><summary>done</summary><result>ONE TWO THREE</result>",
+        ),
+        // The parent's model continues it; the subagent fails at once, and
+        // its end is read before Claude's result of the SendMessage.
+        assistant(
+            "a2",
+            SEND,
+            "SendMessage",
+            serde_json::json!({"to": "a1", "message": "Please go on."}),
+        ),
+        with(
+            serde_json::json!({"hook_event_name": "SubagentStart", "agent_id": "a1", "agent_type": "counter"}),
+        ),
+        notice(
+            "n2",
+            "failed",
+            "<tool-use-id>toolu_agent</tool-use-id><summary>API Error: overloaded</summary>",
+        ),
+    ]
+    .into_iter()
+    .chain(before)
+    .chain([result("r2", SEND, &resumed.to_string(), resumed.clone())])
+    .chain(after)
+    {
+        let stepped = ClaudePty::step(&mut state, event);
+        rows.extend(
+            own_calls(&stepped.step)
+                .into_iter()
+                .filter(|(key, _, _)| key == SEND)
+                .map(|(_, state, answer)| (state, answer)),
+        );
+    }
+        assert_eq!(
+            rows.last(),
+            Some(&(wire::ToolState::Failed, "API Error: overloaded".to_owned())),
+            "drained before the result: {drained_first}; {rows:#?}"
+        );
+    }
 }

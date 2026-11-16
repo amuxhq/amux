@@ -1,0 +1,34 @@
+
+  lead │ /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                                   1 │ [Diff] │ [Home]
+  1 subagent
+
+
+
+
+
+
+
+    Look over the journal module.                                                                    hh:mm
+
+
+    The journal module keeps one file per agent and rotates it at 64 MB. Retention, redraws, migrations and
+    fixtures each need a closer look.
+
+    Worked <t>
+
+
+    Survey the four areas in parallel.                                                               hh:mm
+
+
+  ▸ 4 subagents · 3 done · 1 stopped
+
+    Three of the four reported: redraws come from the tick and inventory events, settled journals stay 30
+    days, and one fixture is stale. The migrations survey was stopped.
+
+    Worked <t>
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ › Message lead                                                                                         │
+  ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
+
+  shift+tab permission   ctrl+a more

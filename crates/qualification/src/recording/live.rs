@@ -183,13 +183,26 @@ pub const ASK_TOOL: &str = "ask_the_operator";
 /// A stdio MCP server, named `server` at initialize, with one tool: called
 /// with a word it asks the person, through an elicitation, to confirm that
 /// word with a form, or, for the word `LINK`, with a link to a page.
+/// With `AMUX_LIVE_TOOL_LOG` set to a path, it appends each request it is
+/// sent there as a line, so a scenario can read what the provider told it
+/// about the caller (a call's `_meta`).
 pub fn serve_ask_tool(server: &str) {
     const PROTOCOL_VERSION: &str = "2025-11-25";
     let stdin = io::stdin();
     let mut lines = stdin.lock().lines();
     let mut stdout = io::stdout();
     let mut outgoing_id = 1000i64;
+    let mut log = std::env::var_os("AMUX_LIVE_TOOL_LOG").and_then(|path| {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .ok()
+    });
     while let Some(Ok(line)) = lines.next() {
+        if let Some(log) = &mut log {
+            let _ = writeln!(log, "{}", line.trim());
+        }
         let Ok(message) = serde_json::from_str::<Value>(line.trim()) else {
             continue;
         };

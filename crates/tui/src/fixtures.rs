@@ -148,3 +148,159 @@ impl Named {
         draw(&mut view, &state, at, 120, 40, theme).0
     }
 }
+
+/// A provider subagent as a replay holds it: its own session, and its row
+/// in the fleet under the agent that started it.
+#[derive(Clone)]
+pub struct Sub {
+    pub state: SessionState,
+    pub row: wire::Agent,
+    committer: Committer,
+}
+
+/// One frame of a family's replay: the agent's chat, each subagent's in
+/// the order they started, and the fleet holding all of them.
+#[derive(Clone)]
+pub struct Family {
+    pub label: String,
+    pub state: SessionState,
+    pub subs: Vec<Sub>,
+    pub fleet: ui_state::FleetState,
+    pub at: i64,
+}
+
+impl Family {
+    /// The subagent `n`th to start.
+    pub fn sub(&self, n: usize) -> &Sub {
+        &self.subs[n]
+    }
+}
+
+fn listed(agent: &wire::Agent) -> ui_state::FleetMsg {
+    ui_state::FleetMsg::Event(Box::new(wire::InventoryEvent {
+        of: Some(wire::inventory_event::Of::Agent(agent.clone())),
+    }))
+}
+
+/// A fixture's frames as a family: the agent's own part of each step
+/// filed under it, and each provider subagent's part filed under the
+/// subagent, whose fleet row is made at its start, follows its snapshots'
+/// phases and ends with it, as the daemon files them.
+pub fn family_frames(kind: Kind, name: &str) -> Vec<Family> {
+    let dir = match kind {
+        Kind::ClaudePty => "claude_pty",
+        Kind::ClaudeSdk => "claude_sdk",
+        _ => "codex",
+    };
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../interpret/fixtures")
+        .join(dir)
+        .join(format!("{name}.json"));
+    let replayed: Vec<Replayed> = match kind {
+        Kind::ClaudePty => replay::<ClaudePty>(&path),
+        Kind::ClaudeSdk => replay::<ClaudeSdk>(&path),
+        _ => replay::<Codex>(&path),
+    }
+    .unwrap_or_else(|error| panic!("{dir}/{name}: {error}"));
+    let host = agent(kind);
+    let mut state = SessionState::new(host.clone(), crate::chat::layout::CAP as usize);
+    state.update(Msg::Connection(ui_state::Connection::Live));
+    let mut committer = Committer::default();
+    let mut fleet = ui_state::FleetState::new();
+    fleet.update(listed(&host));
+    let mut subs: Vec<Sub> = Vec::new();
+    let mut out = Vec::new();
+    let mut at = 0;
+    for (index, frame) in replayed.iter().enumerate() {
+        if let Some(input) = &frame.input {
+            state.update(Msg::Send(input.clone()));
+        }
+        for (id, verdict) in &frame.replies {
+            state.update(Msg::Sent(id.clone(), InputOutcome::Reply(verdict.clone())));
+        }
+        for event in committer.commit(&frame.step) {
+            state.update(Msg::Event(event));
+        }
+        if index == 0 {
+            state.update(caught_up(committer.revision));
+        }
+        for part in &frame.step.agents {
+            let known = subs
+                .iter()
+                .position(|sub| sub.row.agent_id == part.agent_id);
+            let at_sub = match (known, &part.start) {
+                (Some(at), _) => at,
+                (None, Some(start)) => {
+                    let hex = interpret::to_hex(&part.agent_id);
+                    let row = wire::Agent {
+                        agent_id: part.agent_id.clone(),
+                        host_id: host.host_id.clone(),
+                        kind: kind as i32,
+                        name: format!("sub-{}", &hex[..hex.len().min(8)]),
+                        title: Some(start.title.clone()).filter(|title| !title.is_empty()),
+                        lifecycle: wire::Lifecycle::Live as i32,
+                        phase: wire::Phase::Working as i32,
+                        incarnation: 1,
+                        parent: Some(wire::AgentRef {
+                            host_id: host.host_id.clone(),
+                            agent_id: host.agent_id.clone(),
+                        }),
+                        native: Some(wire::NativeChild {
+                            provider_child_id: start.provider_child_id.clone(),
+                        }),
+                        ..wire::Agent::default()
+                    };
+                    let mut state =
+                        SessionState::new(row.clone(), crate::chat::layout::CAP as usize);
+                    state.update(Msg::Connection(ui_state::Connection::Live));
+                    state.update(caught_up(0));
+                    subs.push(Sub {
+                        state,
+                        row,
+                        committer: Committer::default(),
+                    });
+                    subs.len() - 1
+                }
+                // A part for a subagent whose start was never seen.
+                (None, None) => continue,
+            };
+            let sub = &mut subs[at_sub];
+            if part.start.is_some() && sub.row.lifecycle == wire::Lifecycle::Exited as i32 {
+                sub.row.lifecycle = wire::Lifecycle::Live as i32;
+                sub.row.phase = wire::Phase::Working as i32;
+                sub.row.exit_cause = 0;
+                sub.row.exit_detail = None;
+            }
+            for event in sub.committer.commit_agent(part) {
+                sub.state.update(Msg::Event(event));
+            }
+            if let Some(snapshot) = &part.snapshot {
+                sub.row.phase = snapshot.phase;
+            }
+            if let Some(end) = &part.end {
+                sub.row.lifecycle = wire::Lifecycle::Exited as i32;
+                sub.row.exit_cause = end.cause;
+                sub.row.exit_detail = end.detail.clone();
+            }
+            sub.state.update(Msg::Entry(sub.row.clone()));
+            fleet.update(listed(&sub.row));
+        }
+        at = frame
+            .step
+            .items
+            .iter()
+            .chain(frame.step.agents.iter().flat_map(|part| &part.items))
+            .map(|item| item.at_ms)
+            .max()
+            .unwrap_or(at)
+            .max(at);
+        out.push(Family {
+            label: frame.label.clone(),
+            state: state.clone(),
+            subs: subs.clone(),
+            fleet: fleet.clone(),
+            at,
+        });
+    }
+    out
+}

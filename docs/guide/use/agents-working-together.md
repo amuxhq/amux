@@ -64,6 +64,16 @@ machine. If it doesn't know one, it asks you.
 Claude subagents always run in amux's chat, even if you usually chat in Claude
 Code's own interface, so you can read them from any device.
 
+## Claude's and Codex's own subagents
+
+Claude and Codex can also start helpers of their own inside a conversation,
+such as Claude's Agent tool. amux shows each one as a subagent with its own
+chat, under the agent that started it, so you can watch what it does and
+answer its questions from any device. These are run by Claude or Codex, not by
+amux: you can't message them or resume them, and they work in their parent's
+folder. Where Claude or Codex allows it, you can stop one from its chat, and
+the agent that started it carries on without it.
+
 ## Settling and deleting
 
 Settling or deleting an agent does the same to its subagents, and to their

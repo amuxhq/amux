@@ -86,6 +86,17 @@ enum ComponentCatalog {
         }
     }
 
+    /// One row of a call that opens an agent, with what the fleet says of
+    /// the agent or of its group.
+    private static func opening(
+        _ id: String, height: CGFloat = 110, _ row: Row, opened: OpenedAgent? = nil, group: GroupState? = nil
+    ) -> ComponentExample {
+        ComponentExample(id: "row.\(id)", family: .rows, canvas: CGSize(width: 390, height: height)) {
+            ChatRowView(row: row, expanded: false, opened: opened, groupState: group)
+                .environment(\.attachmentAccess, CatalogFixtures.access)
+        }
+    }
+
     private static let rows: [ComponentExample] = {
         typealias F = CatalogFixtures
         func r(
@@ -166,13 +177,26 @@ enum ComponentCatalog {
                 run: Run(first: "e0", last: "e2", steps: 6, live: false, openBelow: false, liveShown: false, unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil, recent: nil))),
             row("run-open-below", r("e3", 19, .explore(verb: .read, subject: "src/lib.rs", state: .succeeded, result: ""),
                 run: Run(first: "e0", last: "e3", steps: 40, live: false, openBelow: true, liveShown: false, unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil, recent: nil))),
+            // A call from history, which names no agent: what the call came
+            // to is all there is to say.
             row("subagent-running", r("a1", 20, .subagent(
-                description: "Find every INVALID_PIN reader", running: true, toolCount: 12,
-                lastTool: "Read wire/src/codes.rs", answer: "", durationMs: 48_000))),
+                description: "Find every INVALID_PIN reader", continued: false, state: .running,
+                answer: "", durationMs: nil))),
             row("subagent-done", height: 150, r("a2", 21, .subagent(
-                description: "Find every INVALID_PIN reader", running: false, toolCount: 12, lastTool: "",
+                description: "Find every INVALID_PIN reader", continued: false, state: .succeeded,
                 answer: "Three readers: pairing.rs, codes.rs and the pairing spec. All read the same string.",
                 durationMs: 51_000))),
+            // A call naming its subagent: how it stands is the fleet's, and
+            // a tap opens its chat.
+            opening("subagent-opens-running", F.call("a6", 41, "Survey the relay’s retry path", agent: 21),
+                    opened: F.opened(21, "Survey the relay’s retry path", .working)),
+            opening("subagent-opens-waiting", F.call("a7", 42, "Check the Windows build", agent: 22),
+                    opened: F.opened(22, "Check the Windows build", .needsYou)),
+            opening("subagent-opens-done", height: 150, F.call(
+                "a8", 43, "Find every INVALID_PIN reader", agent: 23,
+                answer: "Three readers: pairing.rs, codes.rs and the pairing spec. All read the same string."),
+                    opened: F.opened(23, "Find every INVALID_PIN reader", .exited(cause: .finished))),
+            opening("subagent-group", F.delegating.first { $0.id == "d04" }!, group: F.delegatedState),
             row("background", r("b1", 22, .background(command: "npm run dev", description: "", running: true, durationMs: nil))),
             row("image", height: 230, r("i1", 23, .image(path: "host-list-mock.png", generated: true, image: F.photo))),
             row("slash-output", height: 150, r("o1", 24, .slashOutput(
@@ -197,8 +221,8 @@ enum ComponentCatalog {
             row("unrecognized", r("u1", 34, .unrecognized(what: "rate_limit_event", summary: "an event this build cannot read"))),
             row("subagent-steps", height: 200, expanded: true,
                 r("a3", 35, .subagent(
-                    description: "Explore the pairing code", running: true, toolCount: 2,
-                    lastTool: "Grep INVALID_PIN", answer: "", durationMs: 9_000)),
+                    description: "Explore the pairing code", continued: false, state: .running,
+                    answer: "", durationMs: nil)),
                 r("a4", 36, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: ""), parent: "a3"),
                 r("a5", 37, .explore(verb: .read, subject: "wire/src/codes.rs", state: .succeeded, result: ""), parent: "a3")),
             row("ask-question", height: 130, r("q1", 38, .ask(.questions(
@@ -453,6 +477,16 @@ enum ComponentCatalog {
                     SentPrompt(inputId: [6], text: [.text("Run the focused tests.")], lands: .queue, underway: .sending(waiting: false)),
                     SentPrompt(inputId: [7], text: [.text("Then the Windows check.")], lands: .queue, underway: .sending(waiting: true)),
                 ])),
+            // A provider subagent's chat: no field, what runs it, and its
+            // own Stop while the provider offers one.
+            composer("native", height: 200, frame: F.nativeFrame(.offered(key: "toolu_02")),
+                     subject: F.nativeSubject),
+            composer("native-stopping", height: 200, frame: F.nativeFrame(.stopping), subject: F.nativeSubject),
+            composer("native-refused", height: 230, frame: F.nativeFrame(
+                .refused(key: "toolu_02", error: "Claude could not stop the task: it already finished.")),
+                     subject: F.nativeSubject),
+            composer("native-ended", height: 160, frame: F.nativeFrame(.unavailable, phase: .exited(cause: .finished)),
+                     subject: F.nativeSubject),
             composer("resume", height: 200, frame: ScriptedChat.frame(phase: .exited(cause: .failed("code 1")), mode: .resume),
                      draft: "Rerun the failing tests."),
             composer("detached", height: 180, frame: ScriptedChat.frame(mode: .waiting(.detached), caughtUp: false),
@@ -629,6 +663,17 @@ enum ComponentCatalog {
             chat("detached", chat: {
                 ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(mode: .waiting(.detached), caughtUp: false))
             }),
+            // Four subagents started in one turn: one row with what they
+            // come to, one of them waiting on the person.
+            chat("subagents", chat: { F.delegatingChat() }),
+            chat("subagents-open", chat: { F.delegatingChat() }) { model, source in
+                if let group = model.cell(for: "d04").row?.group { model.toggleGroup(group) }
+                source.deliver(to: model)
+            },
+            // A subagent's own chat: its prompt, its work and no field.
+            chat("subagent", chat: {
+                ScriptedChat(rows: F.subagentWork, frame: F.nativeFrame(.offered(key: "toolu_02"), phase: .working))
+            }, subject: F.nativeSubject, family: F.nativeFamily),
             chat("loading", readiness: ("chat.loading", "shown"), chat: {
                 ScriptedChat(rows: [], frame: ScriptedChat.frame(mode: .waiting(.catchingUp), caughtUp: false))
             }),
@@ -1307,18 +1352,18 @@ enum CatalogFixtures {
         agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 5, count: 16)),
         name: "docs-sweep", handle: "docs-sweep", kind: .claudeSdk, attention: .exited, cwd: "", phaseSinceMs: 0,
         host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .exited,
-        members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: .finished, repository: nil)
+        members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: .finished, repository: nil)
 
     static let family = FamilyHeader(
         children: [
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 3, count: 16)),
                       name: "worker-2", handle: "worker-2", kind: .claudeSdk, attention: .needsYou, cwd: "", phaseSinceMs: 0,
                       host: "Laptop", hostReach: .online(.direct), children: 0, familyAttention: .needsYou,
-                      members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: nil, repository: nil),
+                      members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: nil, repository: nil),
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 4, count: 16)),
                       name: "worker-3", handle: "worker-3", kind: .codex, attention: .working, cwd: "", phaseSinceMs: 0,
                       host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .working,
-                      members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: nil, repository: nil),
+                      members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: nil, repository: nil),
         ],
         attention: .needsYou, needYou: 1, parent: nil)
 }
@@ -1961,4 +2006,107 @@ extension CatalogFixtures {
     static func fingerprint(_ seed: UInt8) -> String {
         (0..<32).map { String(format: "%02x", UInt8(truncatingIfNeeded: Int(seed) &* 37 &+ $0 &* 11)) }.joined()
     }
+}
+
+// MARK: - Subagents
+
+extension CatalogFixtures {
+    /// An agent its parent's provider runs, as the fleet keys it on Studio.
+    static func subagent(_ index: UInt8) -> AgentKey {
+        AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: index, count: 16))
+    }
+
+    static func opened(_ index: UInt8, _ title: String, _ phase: PhaseView) -> OpenedAgent {
+        OpenedAgent(agent: subagent(index), name: title, kind: .claudeSdk, phase: phase)
+    }
+
+    /// The Agent call that started subagent `agent`.
+    static func call(
+        _ id: String, _ order: UInt64, _ description: String, agent: UInt8, state: CallPhase = .succeeded,
+        answer: String = ""
+    ) -> Row {
+        ScriptedChat.row(
+            id, order, .subagent(description: description, continued: false, state: state, answer: answer, durationMs: nil),
+            opens: subagent(agent).agent)
+    }
+
+    /// The four subagents the delegating turn starts, by where each stands.
+    static let delegated: [(UInt8, String, PhaseView)] = [
+        (21, "Survey the relay’s retry path", .working),
+        (22, "Check the Windows build", .needsYou),
+        (23, "Find every INVALID_PIN reader", .exited(cause: .finished)),
+        (24, "Read the pairing spec", .working),
+    ]
+
+    static let delegatedState = GroupState(
+        agents: 4, running: 2, needsYou: 1, idle: 0, finished: 1, ended: 0, failed: 0, unknown: 0)
+
+    /// A turn that hands its work to four subagents at once, its calls
+    /// folded into one group as the shared view folds them.
+    static let delegating: [Row] = {
+        func r(_ id: String, _ order: UInt64, _ kind: RowKind) -> Row { ScriptedChat.row(id, order, kind) }
+        return conversation + [
+            r("d01", 30, .prompt(text: [.text("Split the pairing audit four ways and report back.")], steered: false)),
+            r("d02", 31, .thinking(text: "", open: false, durationMs: 3_000)),
+            r("d03", 32, .prose(text: [.text("Starting four subagents, one per area.")], streaming: false, workingNote: false)),
+        ] + ScriptedChat.group(delegated.enumerated().map { index, agent in
+            call("d0\(index + 4)", 33 + UInt64(index), agent.1, agent: agent.0, state: .running)
+        })
+    }()
+
+    /// The parent while its subagents work: what the fleet says of them
+    /// comes with the chat.
+    static func delegatingChat() -> ScriptedChat {
+        ScriptedChat(
+            rows: delegating,
+            frame: ScriptedChat.frame(
+                phase: .working,
+                activity: Activity(kind: .subagents(count: 3), sinceMs: 0, elapsedMs: 41_000, turnElapsedMs: 41_000)),
+            strip: ScriptedChat.strip(model: "opus 4.6"),
+            agents: ChatAgents(
+                agents: delegated.map { opened($0.0, $0.1, $0.2) },
+                groups: [GroupView(first: "d04", state: delegatedState)],
+                live: GroupState(
+                    agents: 3, running: 2, needsYou: 1, idle: 0, finished: 0, ended: 0, failed: 0, unknown: 0)))
+    }
+
+    /// Subagent 21's own chat: the task its parent gave it, its thinking,
+    /// the tools it ran and its answer so far.
+    static let subagentWork: [Row] = {
+        func r(_ id: String, _ order: UInt64, _ kind: RowKind) -> Row { ScriptedChat.row(id, order, kind) }
+        return [
+            r("s01", 1, .prompt(text: [.text("Survey the relay’s retry path: where a dropped link is retried, and what bounds it.")], steered: false)),
+            r("s02", 2, .thinking(text: "The retry lives in the link layer, so start at the dialler.", open: false, durationMs: 2_000)),
+        ] + ScriptedChat.run([
+            r("s03", 3, .explore(verb: .search, subject: "retry_after", state: .succeeded, result: "")),
+            r("s04", 4, .explore(verb: .read, subject: "crates/relay-core/src/dial.rs", state: .succeeded, result: "")),
+            r("s05", 5, .command(command: "cargo test -p relay-core retry", description: "", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: 6_100, exitCode: 0)),
+        ]) + [
+            r("s06", 6, .prose(text: [.text("The dialler retries a dropped link with backoff capped at 30 s, and gives up after the link’s deadline. The cap is `MAX_BACKOFF` in dial.rs.")], streaming: false, workingNote: false)),
+            r("s07", 7, .explore(verb: .read, subject: "crates/relay-core/src/link.rs", state: .running, result: "")),
+        ]
+    }()
+
+    static func nativeFrame(_ stop: JobStop, phase: PhaseView = .working) -> ChatFrame {
+        let working = phase == .working
+        return ScriptedChat.frame(
+            name: "sub-3f9a01c2", kind: .claudeSdk, phase: phase, mode: .native(stop: stop),
+            activity: working
+                ? Activity(kind: .running(key: "s07"), sinceMs: 0, elapsedMs: 19_000, turnElapsedMs: 19_000) : nil)
+    }
+
+    static let nativeSubject = ChatSubject(
+        name: "Survey the relay’s retry path", host: "Studio", directory: "", reach: .online(.direct),
+        topLevel: false, native: true)
+
+    /// The parent the subagent's chat leads back to.
+    static let nativeFamily = FamilyHeader(
+        children: [], attention: .working, needYou: 0,
+        parent: FleetCard(
+            agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 2, count: 16)),
+            name: "pairing-audit", handle: "pairing-audit", kind: .claudeSdk, attention: .working,
+            cwd: "/Users/ada/src/amux", phaseSinceMs: 0, host: "Studio", hostReach: .online(.direct),
+            children: 4, familyAttention: .needsYou, members: 5, descendants: 4, backgroundJobs: 0,
+            closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: nil,
+            repository: nil))
 }

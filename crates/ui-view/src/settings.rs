@@ -506,6 +506,9 @@ pub fn settings(state: &SessionState) -> SettingsView {
         }))
         .collect();
     let changeable = match kind {
+        // A provider subagent runs on its parent's settings and takes no
+        // input that would change them, nor a typed command.
+        _ if state.native() => Changeability::default(),
         // Terminal Claude lists no models or efforts and takes no model,
         // effort or permission input: it runs its own commands, typed as
         // any prompt, and steps its permission with its own cycle key.
@@ -530,7 +533,8 @@ pub fn settings(state: &SessionState) -> SettingsView {
         permissions,
         modes,
         changeable,
-        commands,
+        // Nothing types into a provider subagent's chat.
+        commands: if state.native() { Vec::new() } else { commands },
     }
 }
 

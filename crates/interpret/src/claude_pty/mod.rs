@@ -14,7 +14,8 @@
 //! amux's decision, PermissionDenied says why auto mode refused a call,
 //! MessageDisplay draws a reply as Claude writes it, PostModelSwitch names
 //! the model Claude moved to, Stop closes what the turn left open, and
-//! SubagentStop ends a background subagent. PreToolUse and PostToolUse
+//! SubagentStart names a subagent, whose own file amux then follows (see the
+//! subagents module). PreToolUse and PostToolUse
 //! mark a call running, for the activity line while its row is on the way,
 //! and PreToolUse names the call an ask that follows is raised for; they
 //! make no row but a plan's. PostToolUse's duration says when the call
@@ -42,14 +43,13 @@
 //!   end, a session change, the provider exiting, or a row from a later
 //!   assistant message (outcome unknown, drawn dismissed, until the call's
 //!   result says how it went). Nothing else closes one; a tick never does.
-//! - A subagent's calls reach the hooks socket carrying its agent id and
-//!   never reach the followed transcript; they are its steps, counted on
-//!   the Agent row that started it, never rows of their own. An ask a
-//!   subagent raises points at that Agent row and closes on the subagent's
-//!   own PostToolUse for the call. A subagent Claude runs in the background
-//!   answers the Agent call at once with launch metadata; its row stays
-//!   running, across the end of the turn that launched it, until a user row
-//!   of task-notification origin carries its result.
+//! - A subagent's hooks carry its agent id, and its rows are in a file of
+//!   its own, not the followed transcript: its calls and asks are its own
+//!   chat's, and an ask it raises closes on its own PostToolUse for the
+//!   call. A subagent Claude runs in the background answers the Agent call
+//!   at once with launch metadata; that row stays running, across the end
+//!   of the turn that launched it, until a user row of task-notification
+//!   origin carries its result.
 //! - A tool server's form or link reaches amux on the Elicitation hook,
 //!   which Claude waits on before drawing its own dialog. It opens an ask
 //!   with an item of its own, pointing at the call that was running (a tool
@@ -106,6 +106,7 @@
 
 mod facts;
 mod recording;
+mod subagents;
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
@@ -115,8 +116,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
     AgentSpec, Ask, AskClosed, Attachment, BoundaryKind, ClaudeAnswer, ClaudeGrant, ClaudeSnapshot,
-    DecisionOutcome, Envelope, Input, KindInput, Refusal, RunningCall, Step, SubagentProgress,
-    ToolDecision, claude_answer, claude_item, claude_pty_input, tool_decision,
+    DecisionOutcome, Envelope, Input, KindInput, Refusal, RunningCall, Step, ToolDecision,
+    claude_answer, claude_item, claude_pty_input, tool_decision,
 };
 
 use crate::claude_answers::{self, AnswerShape, Decided};
@@ -208,6 +209,18 @@ pub(crate) enum AgentFact {
     /// organization's managed MCP config forbids. Headless Claude's
     /// interpreter reads this one too.
     ToolsWithheld,
+    /// A subagent's `meta.json`, which Claude writes before the subagent's
+    /// first row, as the agent process read it.
+    SubagentMeta {
+        agent_id: String,
+        meta: serde_json::Value,
+    },
+    /// The agent process read a subagent's file to its end, as a drain
+    /// asked.
+    SubagentDrained { agent_id: String },
+    /// The agent process cannot read a subagent's file, or found it cut
+    /// short.
+    SubagentUnreadable { agent_id: String, error: String },
 }
 
 impl AgentFact {
@@ -241,6 +254,46 @@ pub fn watched_fact(watched: bool) -> Vec<u8> {
 /// amux's tool server because the organization manages its MCP servers.
 pub fn tools_withheld_fact() -> Vec<u8> {
     AgentFact::ToolsWithheld.encode()
+}
+
+/// Whether a row of a subagent's own transcript enters the facts ring.
+/// Claude's copies of each API request and its other attachments (most of
+/// the file) say nothing of the conversation, so only the conversation's
+/// own rows are kept.
+pub fn subagent_row_kept(row: &[u8]) -> bool {
+    #[derive(Deserialize)]
+    struct Typed<'a> {
+        #[serde(borrow, default)]
+        r#type: &'a str,
+    }
+    serde_json::from_slice::<Typed>(row)
+        .is_ok_and(|row| matches!(row.r#type, "user" | "assistant" | "system"))
+}
+
+/// The fact that the subagent `agent_id`'s `meta.json` reads `meta`.
+pub fn subagent_meta_fact(agent_id: &str, meta: serde_json::Value) -> Vec<u8> {
+    AgentFact::SubagentMeta {
+        agent_id: agent_id.to_owned(),
+        meta,
+    }
+    .encode()
+}
+
+/// The fact that the subagent `agent_id`'s file was read to its end.
+pub fn subagent_drained_fact(agent_id: &str) -> Vec<u8> {
+    AgentFact::SubagentDrained {
+        agent_id: agent_id.to_owned(),
+    }
+    .encode()
+}
+
+/// The fact that the subagent `agent_id`'s file cannot be read.
+pub fn subagent_unreadable_fact(agent_id: &str, error: &str) -> Vec<u8> {
+    AgentFact::SubagentUnreadable {
+        agent_id: agent_id.to_owned(),
+        error: error.to_owned(),
+    }
+    .encode()
 }
 
 /// What the interpreter knows about the Claude process and its session.
@@ -287,17 +340,12 @@ struct Call {
     message_id: String,
     /// Its tool result row arrived.
     finished: bool,
-    /// An Agent call's subagent: the steps it has taken so far.
-    subagent: Option<Subagent>,
+    /// An Agent call: it starts a subagent.
+    #[serde(default)]
+    agent_call: bool,
     /// A subagent launched in the background: the call returned, and the
     /// task notification carries the answer.
     awaiting_notification: bool,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-struct Subagent {
-    tool_count: u32,
-    last_tool: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -387,6 +435,24 @@ impl Decision {
             Ok(DecisionOutcome::Allowed) => Verdict::approved_for(permission),
             Ok(DecisionOutcome::Denied) => Verdict::sent_back(&self.note),
             _ => Verdict::of(wire::PlanVerdict::Dismissed),
+        }
+    }
+
+    /// Puts the decision on the call it was reached for.
+    fn apply<T>(self, tool: &mut crate::claude_common::Tool<T>) {
+        if tool.question {
+            // Answered in Claude's own terminal, the question's result
+            // says how; anything else closed it without answers.
+            match (self.record, DecisionOutcome::try_from(self.outcome)) {
+                (Some(record), _) => tool.asked = Some(record),
+                (None, Ok(DecisionOutcome::Allowed)) => {}
+                (None, _) => tool.asked = Some(ask_item::dismissed()),
+            }
+        } else {
+            match &mut tool.plan {
+                Some(plan) => *plan = self.plan_verdict(None),
+                None => tool.decision = Some(self.to_wire()),
+            }
         }
     }
 
@@ -495,8 +561,16 @@ pub struct State {
     /// Claude's background jobs; the shared part publishes them.
     jobs: Jobs,
     messages: Vec<PendingMessage>,
-    /// Each subagent's agent id and the tool-use id of its Agent call.
-    agents: BTreeMap<String, String>,
+    /// The subagents Claude's Agent tool started, by Claude's agent id for
+    /// each: kept past each one's end, so a continuation names the call
+    /// that first started it. A checkpoint from before they were agents of
+    /// their own has none.
+    #[serde(default)]
+    subagents: BTreeMap<String, subagents::Sub>,
+    /// The background commands a subagent's calls started, by task id, and
+    /// the subagent each is for.
+    #[serde(default)]
+    owned_tasks: BTreeMap<String, String>,
     slash: Option<Slash>,
     /// The running turn began with a local command, not a model request.
     local_turn: bool,
@@ -620,7 +694,8 @@ impl State {
             context_tokens: None,
             jobs: Jobs::default(),
             messages: Vec::new(),
-            agents: BTreeMap::new(),
+            subagents: BTreeMap::new(),
+            owned_tasks: BTreeMap::new(),
             slash: None,
             local_turn: false,
             interruption: None,
@@ -691,22 +766,60 @@ impl State {
     /// Emits a tool call's item if it is drawn and changed since the last
     /// emission.
     fn emit_tool(&mut self, emit: &mut Emit, id: &str) {
-        let Some(tool) = self.tools.get_mut(id) else {
-            return;
-        };
-        let subagent = tool.of.subagent.as_ref().map(|subagent| SubagentProgress {
-            tool_count: subagent.tool_count,
-            last_tool: subagent.last_tool.clone(),
-            finished: tool.of.finished,
-        });
-        tool.emit(&mut self.shared, emit, id, subagent);
+        if let Some(tool) = self.tools.get_mut(id) {
+            tool.emit(&mut self.shared, emit, id);
+        }
     }
 
     // --- asks ------------------------------------------------------------
 
+    /// The running subagent that raised the ask keyed `ask_key`, whose
+    /// chat holds it; None for the agent's own.
+    fn asker(&self, ask_key: &str) -> Option<String> {
+        self.asks
+            .get(ask_key)
+            .and_then(|meta| meta.agent.clone())
+            .filter(|child| self.shared.subagent_running(child))
+    }
+
+    /// The open ask keyed `ask_key`, in whichever agent's snapshot holds it.
+    fn wire_ask(&self, ask_key: &str) -> Option<Ask> {
+        match self.asker(ask_key) {
+            None => self.shared.asks().get(ask_key).cloned(),
+            Some(child) => self.shared.subagent_asks(&child)?.get(ask_key).cloned(),
+        }
+    }
+
+    /// Opens an ask, or rewrites the open one, in the snapshot of the agent
+    /// that raised it.
+    fn put_ask(&mut self, emit: &mut Emit, ask: Ask) {
+        match self.asker(&ask.key) {
+            None => self.shared.open_ask(ask),
+            Some(child) => self.shared.subagent(emit, &child).open_ask(ask),
+        }
+    }
+
+    /// Closes an open ask in the snapshot of the agent that raised it.
+    fn take_ask(&mut self, emit: &mut Emit, ask_key: &str) -> Option<Ask> {
+        match self.asker(ask_key) {
+            None => self.shared.close_ask(ask_key),
+            Some(child) => self.shared.subagent(emit, &child).close_ask(ask_key),
+        }
+    }
+
+    /// Writes an item into the chat of the agent `who`, the agent's own for
+    /// None.
+    fn draw(&mut self, emit: &mut Emit, who: Option<&str>, draft: ItemDraft) {
+        match who {
+            None => self.shared.item(emit, draft),
+            Some(child) => self.shared.subagent(emit, child).item(draft),
+        }
+    }
+
     /// Points an ask at a call's row: the wire ask gains its item key, or a
     /// decision reached before the row was drawn goes onto the call.
     fn bind(&mut self, emit: &mut Emit, ask_key: &str, tool_id: &str) {
+        let who = self.asker(ask_key);
         let Some(meta) = self.asks.get_mut(ask_key) else {
             return;
         };
@@ -714,15 +827,15 @@ impl State {
         match meta.closed.clone() {
             Some(decision) => {
                 self.asks.remove(ask_key);
-                self.decide(emit, tool_id, decision);
+                self.decide_as(emit, who.as_deref(), tool_id, decision);
             }
             None => {
-                if let Some(open) = self.shared.asks().get(ask_key) {
+                if let Some(open) = self.wire_ask(ask_key) {
                     let ask = Ask {
                         item_key: tool_id.to_owned(),
-                        ..open.clone()
+                        ..open
                     };
-                    self.shared.open_ask(ask);
+                    self.put_ask(emit, ask);
                 }
             }
         }
@@ -749,22 +862,20 @@ impl State {
         }
     }
 
-    fn decide(&mut self, emit: &mut Emit, tool_id: &str, decision: Decision) {
-        if let Some(tool) = self.tools.get_mut(tool_id) {
-            if tool.question {
-                // Answered in Claude's own terminal, the question's result
-                // says how; anything else closed it without answers.
-                match (decision.record, DecisionOutcome::try_from(decision.outcome)) {
-                    (Some(record), _) => tool.asked = Some(record),
-                    (None, Ok(DecisionOutcome::Allowed)) => {}
-                    (None, _) => tool.asked = Some(ask_item::dismissed()),
-                }
-            } else {
-                match &mut tool.plan {
-                    Some(plan) => *plan = decision.plan_verdict(None),
-                    None => tool.decision = Some(decision.to_wire()),
-                }
+    /// A decision on a call of the agent's own, or of its subagent `who`.
+    fn decide_as(&mut self, emit: &mut Emit, who: Option<&str>, tool_id: &str, decision: Decision) {
+        if let Some(child) = who {
+            if let Some(sub) = self.subagents.get_mut(child)
+                && let Some(tool) = sub.conversation.tools.get_mut(tool_id)
+            {
+                decision.apply(tool);
+                let mut view = self.shared.subagent(emit, child);
+                sub.conversation.emit_tool(&mut view, tool_id);
             }
+            return;
+        }
+        if let Some(tool) = self.tools.get_mut(tool_id) {
+            decision.apply(tool);
             self.emit_tool(emit, tool_id);
         }
     }
@@ -797,23 +908,38 @@ impl State {
             }
             _ => {}
         }
-        self.shared.close_ask(ask_key);
+        let who = self.asker(ask_key);
+        self.take_ask(emit, ask_key);
         let Some(meta) = self.asks.get_mut(ask_key) else {
             return;
         };
         match meta.bound.clone() {
             Some(tool_id) => {
                 self.asks.remove(ask_key);
-                self.decide(emit, &tool_id, decision);
+                self.decide_as(emit, who.as_deref(), &tool_id, decision);
             }
-            None if meta.agent.is_some() || meta.call.is_none() => {
+            // The call's row may still be on its way: Claude writes a gated
+            // call's row once it is decided. A subagent that ended has no
+            // more rows to come.
+            None if meta.call.is_none() || (meta.agent.is_some() && who.is_none()) => {
                 self.asks.remove(ask_key);
             }
             None => meta.closed = Some(decision),
         }
     }
 
+    /// The keys of every open ask: the agent's own, and its running
+    /// subagents'.
     fn open_ask_keys(&self) -> Vec<String> {
+        self.asks
+            .keys()
+            .filter(|key| self.wire_ask(key).is_some())
+            .cloned()
+            .collect()
+    }
+
+    /// The keys of the agent's own open asks.
+    fn own_ask_keys(&self) -> Vec<String> {
         self.shared
             .asks()
             .open_asks()
@@ -822,9 +948,9 @@ impl State {
             .collect()
     }
 
-    /// The open plan ask, if any.
+    /// The open plan ask of the agent's own, if any.
     fn plan_ask(&self) -> Option<String> {
-        self.open_ask_keys().into_iter().find(|key| {
+        self.own_ask_keys().into_iter().find(|key| {
             self.asks.get(key).is_some_and(|meta| {
                 matches!(meta.shape, AskShape::Answer(AnswerShape::Plan { .. }))
             })
@@ -927,56 +1053,30 @@ impl State {
         }
     }
 
-    /// A fact that proves the main thread's asks are over without saying
-    /// how. A subagent Claude still runs in the background keeps the dialog
-    /// it raised open in Claude's own view: so does amux, until that
-    /// subagent stops.
-    fn close_main_threads_asks(&mut self, emit: &mut Emit) {
-        for key in self.open_ask_keys() {
-            let in_background = self
-                .asks
-                .get(&key)
-                .and_then(|meta| meta.agent.as_ref())
-                .is_some_and(|agent| self.jobs.running(agent));
-            if !in_background {
-                self.close(emit, &key, Decision::unknown());
-            }
+    /// A fact that proves the agent's own asks are over without saying how.
+    /// A subagent's asks are its own, and end with its calls or itself.
+    fn close_own_asks(&mut self, emit: &mut Emit) {
+        for key in self.own_ask_keys() {
+            self.close(emit, &key, Decision::unknown());
         }
     }
 
     /// Writes the own item of an ask that is not a call's (a tool server's
-    /// form or link, the trust question), open or closed.
+    /// form or link, the trust question), open or closed, into the chat of
+    /// the agent that raised it.
     fn emit_ask_item(&mut self, emit: &mut Emit, ask: &Ask, closed: Option<AskClosed>) {
-        let item = match &ask.body {
-            Some(wire::ask::Body::Form(form)) => wire::ask_item::Ask::Form(form.clone()),
-            Some(wire::ask::Body::Link(link)) => wire::ask_item::Ask::Link(link.clone()),
-            Some(wire::ask::Body::Question(question)) => {
-                wire::ask_item::Ask::Question(question.clone())
-            }
-            _ => return,
-        };
-        let item = ask_item::opened(item);
-        let item = match closed {
-            Some(closed) => ask_item::close(item, closed),
-            None => item,
-        };
-        self.shared.item(
-            emit,
-            ItemDraft {
-                key: ask.item_key.clone(),
-                body: item_body(claude_item::Kind::Ask(item)),
-                at_ms: Some(ask.opened_at_ms),
-                complete: true,
-                ..Default::default()
-            },
-        );
+        let who = self.asker(&ask.key);
+        if let Some(draft) = crate::claude_subagent::ask_draft(ask, closed) {
+            self.draw(emit, who.as_deref(), draft);
+        }
     }
 
     fn close_ask_item(&mut self, emit: &mut Emit, ask_key: &str, closed: AskClosed) {
         self.release(emit, ask_key);
-        if let Some(ask) = self.shared.close_ask(ask_key) {
+        if let Some(ask) = self.wire_ask(ask_key) {
             let ask = self.as_asked(ask);
             self.emit_closed_ask_item(emit, ask_key, ask, closed);
+            self.take_ask(emit, ask_key);
         }
         self.asks.remove(ask_key);
     }
@@ -1003,7 +1103,7 @@ impl State {
         if meta.hook.is_none() || meta.asked.is_some() {
             return;
         }
-        let Some(open) = self.shared.asks().get(ask_key).cloned() else {
+        let Some(open) = self.wire_ask(ask_key) else {
             return;
         };
         let reason = match &open.body {
@@ -1018,12 +1118,15 @@ impl State {
             _ => return,
         };
         self.release(emit, ask_key);
-        self.shared.open_ask(Ask {
-            body: Some(wire::ask::Body::Unanswerable(wire::UnanswerableAsk {
-                reason,
-            })),
-            ..open.clone()
-        });
+        self.put_ask(
+            emit,
+            Ask {
+                body: Some(wire::ask::Body::Unanswerable(wire::UnanswerableAsk {
+                    reason,
+                })),
+                ..open.clone()
+            },
+        );
         if let Some(meta) = self.asks.get_mut(ask_key) {
             meta.asked = Some(open);
         }
@@ -1085,7 +1188,7 @@ impl State {
             if call.as_deref() != Some(tool_id) {
                 continue;
             }
-            let Some(open) = self.shared.asks().get(&key) else {
+            let Some(open) = self.wire_ask(&key) else {
                 continue;
             };
             if !open.item_key.is_empty() {
@@ -1093,9 +1196,9 @@ impl State {
             }
             let ask = Ask {
                 item_key: ask_item::key(&key),
-                ..open.clone()
+                ..open
             };
-            self.shared.open_ask(ask.clone());
+            self.put_ask(emit, ask.clone());
             let ask = self.as_asked(ask);
             self.emit_ask_item(emit, &ask, None);
         }
@@ -1344,7 +1447,7 @@ impl State {
                 self.permission_seen(emit, &next);
                 self.shared.accept(emit, &id, false);
             }
-            claude_pty_input::Of::Answer(answer) => self.answer(emit, &id, answer),
+            claude_pty_input::Of::Answer(answer) => self.answer(emit, &id, answer, None),
         }
     }
 
@@ -1352,25 +1455,30 @@ impl State {
     /// handed to Claude as the output of the hook it waits on, the decision
     /// headless Claude would be handed. The ask closes with the outcome the
     /// answer carries.
-    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: ClaudeAnswer) {
+    /// `who` is the subagent whose ask it answers; None for the agent's
+    /// own.
+    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: ClaudeAnswer, who: Option<&str>) {
         let key = answer.ask_key;
-        if self.shared.asks().get(&key).is_none() {
-            self.shared.answer(emit, id, &key);
+        let open = match who {
+            None => self.shared.asks().get(&key).cloned(),
+            Some(child) => self
+                .shared
+                .subagent_asks(child)
+                .and_then(|asks| asks.get(&key).cloned()),
+        };
+        let Some(open) = open else {
+            self.answered(emit, who, id, &key);
             return;
-        }
+        };
         let parsed = answer.of;
         let Some(meta) = self.asks.get(&key).cloned() else {
-            return self.shared.reject(emit, id, Refusal::Unsupported);
+            return self.reply_as(emit, who, id, crate::reply::rejected(Refusal::Unsupported));
         };
         let shape = match meta.shape {
             AskShape::Trust => return self.answer_trust(emit, id, &key, parsed),
             AskShape::Answer(shape) => shape,
         };
-        let body = self
-            .shared
-            .asks()
-            .get(&key)
-            .and_then(|ask| ask.body.clone());
+        let body = open.body.clone();
         let asked = match &body {
             Some(wire::ask::Body::Question(asked)) => Some(asked.clone()),
             _ => None,
@@ -1393,10 +1501,13 @@ impl State {
                 parsed,
             )
         }) else {
-            return self.shared.reject(emit, id, Refusal::Unsupported);
+            return self.reply_as(emit, who, id, crate::reply::rejected(Refusal::Unsupported));
         };
         let Some(hook) = meta.hook else {
-            return self.shared.refuse(emit, id, no_hook_for_answer());
+            let refused = wire::SendInputResponse {
+                of: Some(wire::send_input_response::Of::Rejected(no_hook_for_answer())),
+            };
+            return self.reply_as(emit, who, id, refused);
         };
         // amux knows where an allowance moves Claude's permission, as it
         // knows Claude's cycle: recorded at once, confirmed by Claude's
@@ -1422,21 +1533,61 @@ impl State {
             id: hook,
             answer: hook_output(decision),
         });
-        let answered = self.shared.answer(emit, id, &key);
+        // The ask stays in its holder's snapshot until it is closed below,
+        // so a dialog's item lands in the chat that holds it.
         match (dialog, decided) {
             (Some(closed), _) => {
+                self.emit_closed_ask_item(emit, &key, open, closed);
+                self.answered(emit, who, id, &key);
                 self.asks.remove(&key);
-                if let Some(ask) = answered {
-                    self.emit_closed_ask_item(emit, &key, ask, closed);
-                }
             }
-            (None, Some(decided)) => self.close(emit, &key, Decision::from(decided)),
-            (None, None) => self.close(emit, &key, Decision::unknown()),
+            (decision, decided) => {
+                let decision = match (decision, decided) {
+                    (None, Some(decided)) => Decision::from(decided),
+                    _ => Decision::unknown(),
+                };
+                self.answered(emit, who, id, &key);
+                self.close(emit, &key, decision);
+            }
         }
         if let Some(permission) = switched_to {
             self.permission_seen(emit, &permission);
         }
-        self.shared.accept(emit, id, false);
+        self.reply_as(emit, who, id, crate::reply::accepted(false));
+    }
+
+    /// The stale-answer rule for an ask of the agent's or of its subagent
+    /// `who`: an open one closes and is handed back, one that is not is
+    /// refused as answered already.
+    fn answered(
+        &mut self,
+        emit: &mut Emit,
+        who: Option<&str>,
+        id: &[u8],
+        key: &str,
+    ) -> Option<Ask> {
+        match who {
+            None => self.shared.answer(emit, id, key),
+            Some(child) => self.shared.subagent(emit, child).answer(id, key),
+        }
+    }
+
+    /// Replies to a person's input by its id, from the chat it came from.
+    fn reply_as(
+        &mut self,
+        emit: &mut Emit,
+        who: Option<&str>,
+        id: &[u8],
+        verdict: wire::SendInputResponse,
+    ) {
+        let effect = Effect::Reply {
+            input_id: id.to_vec(),
+            verdict,
+        };
+        match who {
+            None => emit.effect(effect),
+            Some(child) => self.shared.subagent(emit, child).effect(effect),
+        }
     }
 }
 
@@ -1531,6 +1682,9 @@ impl Interpreter for ClaudePty {
         // amux's tools.
         state.provider.tools_withheld = false;
         state.provider.offered = spec.offered.clone();
+        // The new process runs none of the last one's subagents, and follows
+        // a file again only once Claude names it again.
+        state.forget_subagents();
         // The new process counts its own terminal clients, each of which
         // says so again: one attached when the last process ended never
         // said it left.
@@ -1541,9 +1695,13 @@ impl Interpreter for ClaudePty {
     fn step(state: &mut State, event: Event) -> Stepped {
         let mut emit = Emit::default();
         match event {
-            Event::Tick { at_ms } => state.shared.tick(at_ms),
+            Event::Tick { at_ms } => {
+                state.shared.tick(at_ms);
+                state.endings_due(&mut emit);
+            }
             Event::Fact(fact) => state.fact(&mut emit, fact),
             Event::Input(input) => state.input(&mut emit, input),
+            Event::ChildInput { agent_id, input } => state.child_input(&mut emit, &agent_id, input),
             Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
             Event::Rename { .. } => state.shared.renamed(),
             Event::ProviderExit { code } => state.exited(&mut emit, crate::provider_exit(code)),
@@ -1570,6 +1728,7 @@ impl Interpreter for ClaudePty {
         state
             .submitted
             .retain(|prompt| awaiting.contains(&prompt.id));
+        state.subagent_snapshots(&mut emit);
         let body = state.body();
         let notice = state.shared.notice(crate::notice::claude_ask);
         state.shared.finish(emit, body, notice)
@@ -1577,6 +1736,12 @@ impl Interpreter for ClaudePty {
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {
         state.shared.pending_messages().iter().cloned().collect()
+    }
+
+    /// A subagent whose parent learned it ended waits a bounded moment for
+    /// its last rows.
+    fn wake_at(state: &Self::State) -> Option<i64> {
+        state.ending_at()
     }
 
     fn typed_unrecorded(state: &Self::State) -> bool {

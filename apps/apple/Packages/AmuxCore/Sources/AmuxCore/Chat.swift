@@ -47,7 +47,7 @@ public final class Chat: ChatSource, @unchecked Sendable {
 
     public func opening() -> ChatDelta {
         let closed = ChatDelta(
-            chat: id, rows: [], ask: nil, frame: nil, keys: .reload([]), overview: nil,
+            chat: id, rows: [], agents: nil, ask: nil, frame: nil, keys: .reload([]), overview: nil,
             settings: nil)
         return call(closed) { live in
             Bridge.read(ChatDelta.self, amux_session_opening(live)) ?? closed
@@ -78,6 +78,10 @@ public final class Chat: ChatSource, @unchecked Sendable {
 
     public func toggleRun(_ member: String) {
         call(()) { live in member.withCString { amux_session_toggle_run(live, $0) } }
+    }
+
+    public func toggleGroup(_ member: String) {
+        call(()) { live in member.withCString { amux_session_toggle_group(live, $0) } }
     }
 
     public func foldTurns(_ on: Bool) {

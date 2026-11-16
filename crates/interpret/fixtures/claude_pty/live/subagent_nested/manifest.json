@@ -1,0 +1,24 @@
+{
+  "spec": "subagent_nested",
+  "recorded": {
+    "provider": "claude",
+    "version": "2.1.325",
+    "model": "claude-haiku-5-5",
+    "at": "2026-11-16T00:28:12.647620Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:10ed0c2ecaef2880d77225c23ef4229640b8d221ea953a50a4b7e03d60098ece",
+    "spawn.jsonl": "sha256:9d2def5c2180a6fe041b9c5283db271095a91e27700151b665c1f1739af0ff14"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 142,
+    "personal_identifiers": 6
+  },
+  "session_ids": [
+    "48535dea-fd12-4e8c-ad15-3d18b5b101ab"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

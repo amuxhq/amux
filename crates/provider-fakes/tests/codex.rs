@@ -29,12 +29,17 @@ struct Host {
 
 impl Host {
     async fn start(script: Value) -> Self {
+        Host::start_exempt(script, EXEMPT).await
+    }
+
+    /// A host that also takes frames in `exempt` groups unrecorded.
+    async fn start_exempt(script: Value, exempt: &'static [&'static str]) -> Self {
         let line = Line::spawn(
             Kind::Codex,
             env!("CARGO_BIN_EXE_fake-codex"),
             &["app-server", "--listen", "stdio://"],
             script,
-            EXEMPT,
+            exempt,
         )
         .await;
         let mut host = Host {
@@ -874,4 +879,406 @@ mod socket {
         assert_eq!(commands.last().unwrap()["status"], "declined");
         view.drawn("turn completed").await;
     }
+}
+
+/// The threads the parent's subagent activity started, in order.
+fn children(frames: &[Value], parent: &str) -> Vec<String> {
+    frames
+        .iter()
+        .filter(|frame| frame["method"] == "item/started" && frame["params"]["threadId"] == parent)
+        .map(|frame| &frame["params"]["item"])
+        .filter(|item| item["type"] == "subAgentActivity" && item["kind"] == "started")
+        .filter_map(|item| item["agentThreadId"].as_str().map(str::to_owned))
+        .collect()
+}
+
+/// Where in `frames` each frame on `thread` that `method` names falls.
+fn at(frames: &[Value], thread: &str, method: &str) -> Vec<usize> {
+    frames
+        .iter()
+        .enumerate()
+        .filter(|(_, frame)| frame["method"] == method && frame["params"]["threadId"] == thread)
+        .map(|(at, _)| at)
+        .collect()
+}
+
+#[tokio::test]
+async fn subagents_run_in_child_threads_their_items_interleaved() {
+    let mut host = Host::start(json!({"steps": [
+        {"subagents": {"agents": [
+            {"task": "list the files", "nickname": "Ada", "steps": [
+                {"tool": {"class": "exploration", "outcome": {"output": "a.txt"}}},
+                {"text": {"chunks": ["A done"]}},
+            ]},
+            {"task": "run the tests", "steps": [
+                {"tool": {"class": "consequential", "input": {"command": "make test"},
+                          "outcome": {"output": "ok"}}},
+                {"text": {"chunks": ["B done"]}},
+            ]},
+        ]}},
+        {"text": {"chunks": ["Both done"]}},
+        "turn_end",
+    ]}))
+    .await;
+    host.turn("Split it").await;
+    let parent = host.thread.clone();
+    let done = host
+        .line
+        .until(|frame| {
+            frame["method"] == "turn/completed" && frame["params"]["threadId"] == parent.as_str()
+        })
+        .await;
+    assert_eq!(done["params"]["turn"]["items"][0]["text"], "Both done");
+    let frames = host.line.frames.clone();
+    let kids = children(&frames, &host.thread);
+    assert_eq!(kids.len(), 2, "one child thread per subagent");
+    assert_ne!(kids[0], kids[1]);
+    for (child, said) in kids.iter().zip(["A done", "B done"]) {
+        let ended = at(&frames, child, "turn/completed");
+        assert_eq!(ended.len(), 1, "each child runs one turn");
+        let turn = &frames[ended[0]]["params"]["turn"];
+        assert_eq!(turn["status"], "completed");
+        assert_eq!(turn["items"][0]["text"], said);
+        assert!(at(&frames, child, "turn/started")[0] < ended[0]);
+        assert_eq!(
+            at(&frames, child, "item/completed").len(),
+            2,
+            "a tool and a message"
+        );
+    }
+    // In parallel: the second child's first item comes before the first
+    // child's last.
+    let first_last = *at(&frames, &kids[0], "item/completed").last().unwrap();
+    let second_first = at(&frames, &kids[1], "item/started")[0];
+    assert!(second_first < first_last, "the children's items interleave");
+    // The parent waits on them, and its turn ends after theirs.
+    let waits = items(&frames, "collabAgentToolCall");
+    assert_eq!(waits.len(), 1);
+    assert_eq!(waits[0]["tool"], "wait");
+    let parent_ended = at(&frames, &host.thread, "turn/completed")[0];
+    assert!(
+        kids.iter()
+            .all(|child| at(&frames, child, "turn/completed")[0] < parent_ended)
+    );
+    assert_eq!(host.line.close().await, 0);
+}
+
+/// What amux's client sends a subagent is in no recording yet: amux reads
+/// no subagent's thread, and the recorded stop listed and ended its
+/// commands from another client. The shapes are from a hand probe of
+/// codex-cli 0.166.0 and that stop's own log.
+const CHILD_EXEMPT: &[&str] = &[
+    "result/thread/backgroundTerminals/list",
+    "result/thread/backgroundTerminals/terminate",
+    "result/turn/steer",
+    "error/turn/steer",
+    "error/thread/resume",
+    "result/model/list",
+    "result/skills/list",
+    "result/thread/read",
+    "error/turn/start",
+];
+
+#[tokio::test]
+async fn a_subagent_takes_no_direct_input_and_reads_back_its_nickname() {
+    let dir = tempfile::tempdir().unwrap();
+    let gate = dir.path().join("gate");
+    let mut host = Host::start_exempt(
+        json!({"steps": [
+            {"subagents": {"agents": [
+                {"task": "wait", "nickname": "Noether", "steps": [{"wait_for": {"path": gate}}]},
+            ]}},
+            "turn_end",
+        ]}),
+        CHILD_EXEMPT,
+    )
+    .await;
+    host.turn("Delegate").await;
+    let thread = host.thread.clone();
+    let started = host
+        .line
+        .until(|frame| {
+            frame["method"] == "turn/started" && frame["params"]["threadId"] != thread.as_str()
+        })
+        .await;
+    let child = started["params"]["threadId"].as_str().unwrap().to_owned();
+    let refused = host
+        .call(
+            "turn/start",
+            json!({"threadId": child, "input": [{"type": "text", "text": "Hi"}]}),
+        )
+        .await;
+    assert_eq!(refused["error"]["code"], -32600);
+    assert_eq!(
+        refused["error"]["message"],
+        "direct app-server input is not allowed for multi-agent v2 sub-agents"
+    );
+    let read = host.call("thread/read", json!({"threadId": child})).await;
+    let read = &read["result"]["thread"];
+    assert_eq!(read["agentNickname"], "Noether");
+    assert_eq!(read["parentThreadId"], thread.as_str());
+    assert_eq!(read["threadSource"], "subagent");
+    assert_eq!(read["canAcceptDirectInput"], false);
+    std::fs::write(&gate, "").unwrap();
+    host.line
+        .until(|frame| {
+            frame["method"] == "turn/completed" && frame["params"]["threadId"] == thread.as_str()
+        })
+        .await;
+    assert_eq!(host.line.close().await, 0);
+}
+
+/// The stop Codex 0.166.0 needs for a subagent, recorded in the corpus's
+/// `child_stop`: its turn interrupted leaves its command running and its
+/// parent waiting; the command is ended by its process id on the child's
+/// thread; a steer into the parent's turn ends the wait.
+#[tokio::test]
+async fn a_stopped_subagent_leaves_its_parent_waiting_until_steered() {
+    let mut host = Host::start_exempt(
+        json!({"steps": [
+            {"subagents": {"agents": [
+                {"task": "sleep", "steps": [
+                    {"tool": {"class": "consequential",
+                              "input": {"command": "sleep 97", "run_in_background": true}}},
+                    {"pause": {"ms": 60000}},
+                ]},
+            ]}},
+            {"text": {"chunks": ["STOPPED"]}},
+            "turn_end",
+        ]}),
+        CHILD_EXEMPT,
+    )
+    .await;
+    let parent_turn = host.turn("Delegate").await;
+    let parent = host.thread.clone();
+    let command = host
+        .line
+        .until(|frame| {
+            frame["method"] == "item/started"
+                && frame["params"]["item"]["type"] == "commandExecution"
+        })
+        .await;
+    let child = command["params"]["threadId"].as_str().unwrap().to_owned();
+    assert_ne!(child, parent);
+    let child_turn = command["params"]["turnId"].as_str().unwrap().to_owned();
+
+    // One: the child's turn ends interrupted; nothing ends on the parent.
+    host.call(
+        "turn/interrupt",
+        json!({"threadId": child, "turnId": child_turn}),
+    )
+    .await;
+    let ended = host
+        .line
+        .until(|frame| {
+            frame["method"] == "turn/completed" && frame["params"]["threadId"] == child.as_str()
+        })
+        .await;
+    assert_eq!(ended["params"]["turn"]["status"], "interrupted");
+
+    // Two: its command is still listed on its own thread, and ended there.
+    let listed = host
+        .call(
+            "thread/backgroundTerminals/list",
+            json!({"threadId": child}),
+        )
+        .await;
+    let process = listed["result"]["data"][0]["processId"].clone();
+    assert!(process.is_string(), "the command runs on: {listed}");
+    let mine = host
+        .call(
+            "thread/backgroundTerminals/list",
+            json!({"threadId": parent}),
+        )
+        .await;
+    assert_eq!(mine["result"]["data"], json!([]), "the parent lists none");
+    let terminated = host
+        .call(
+            "thread/backgroundTerminals/terminate",
+            json!({"threadId": child, "processId": process}),
+        )
+        .await;
+    assert_eq!(terminated["result"]["terminated"], true);
+    let killed = host
+        .line
+        .until(|frame| {
+            frame["method"] == "item/completed"
+                && frame["params"]["item"]["type"] == "commandExecution"
+        })
+        .await;
+    assert_eq!(killed["params"]["threadId"], child.as_str());
+    assert!(
+        !host
+            .line
+            .frames
+            .iter()
+            .any(|frame| frame["method"] == "turn/completed"
+                && frame["params"]["threadId"] == parent.as_str()),
+        "the parent still waits"
+    );
+
+    // Three: steered, the parent stops waiting and finishes.
+    host.call(
+        "turn/steer",
+        json!({"threadId": parent, "expectedTurnId": parent_turn,
+               "clientUserMessageId": "host-stop-note",
+               "input": [{"type": "text", "text": "I stopped it."}]}),
+    )
+    .await;
+    let done = host
+        .line
+        .until(|frame| {
+            frame["method"] == "turn/completed" && frame["params"]["threadId"] == parent.as_str()
+        })
+        .await;
+    assert_eq!(done["params"]["turn"]["status"], "completed");
+    assert_eq!(host.line.close().await, 0);
+}
+
+/// A subagent interrupted while it waits, on a command held by its gate or
+/// on an approval the host has not answered, stops waiting: its turn ends
+/// interrupted, an open approval is resolved, and its parent waits on
+/// until steered.
+#[tokio::test]
+async fn an_interrupted_subagent_stops_waiting_on_its_call_or_its_approval() {
+    let dir = tempfile::tempdir().unwrap();
+    let never = dir.path().join("never");
+    let gated = json!({"tool": {"class": "consequential", "wait_for": never,
+                                "input": {"command": "sleep 90"}}});
+    let asking = json!({"ask": {"permission": {"class": "consequential",
+                                               "input": {"command": "touch x"}}}});
+    for (waits, waiting) in [("call", gated), ("approval", asking)] {
+        let mut host = Host::start_exempt(
+            json!({"steps": [
+                {"subagents": {"agents": [{"task": "wait", "steps": [
+                    waiting,
+                    {"text": {"chunks": ["never said"]}},
+                ]}]}},
+                {"text": {"chunks": ["STOPPED"]}},
+                "turn_end",
+            ]}),
+            CHILD_EXEMPT,
+        )
+        .await;
+        let parent_turn = host.turn("Delegate").await;
+        let parent = host.thread.clone();
+        let waiting = host
+            .line
+            .until(|frame| match waits {
+                "call" => {
+                    frame["method"] == "item/started"
+                        && frame["params"]["item"]["type"] == "commandExecution"
+                }
+                _ => frame["method"] == "item/commandExecution/requestApproval",
+            })
+            .await;
+        let child = waiting["params"]["threadId"].as_str().unwrap().to_owned();
+        assert_ne!(child, parent, "{waits}");
+        let child_turn = waiting["params"]["turnId"].as_str().unwrap().to_owned();
+        host.call(
+            "turn/interrupt",
+            json!({"threadId": child, "turnId": child_turn}),
+        )
+        .await;
+        let ended = host
+            .line
+            .until(|frame| {
+                frame["method"] == "turn/completed" && frame["params"]["threadId"] == child.as_str()
+            })
+            .await;
+        assert_eq!(ended["params"]["turn"]["status"], "interrupted", "{waits}");
+        if waits == "approval" {
+            assert!(
+                host.line.frames.iter().any(|frame| {
+                    frame["method"] == "serverRequest/resolved"
+                        && frame["params"]["requestId"] == waiting["id"]
+                }),
+                "the interrupted subagent's approval is resolved"
+            );
+        }
+        host.call(
+            "turn/steer",
+            json!({"threadId": parent, "expectedTurnId": parent_turn,
+                   "clientUserMessageId": "host-stop-note",
+                   "input": [{"type": "text", "text": "I stopped it."}]}),
+        )
+        .await;
+        let done = host
+            .line
+            .until(|frame| {
+                frame["method"] == "turn/completed"
+                    && frame["params"]["threadId"] == parent.as_str()
+            })
+            .await;
+        assert_eq!(
+            done["params"]["turn"]["items"][0]["text"], "STOPPED",
+            "{waits}"
+        );
+        assert!(
+            !host
+                .line
+                .frames
+                .iter()
+                .any(|frame| frame["params"]["item"]["text"] == "never said"),
+            "{waits}"
+        );
+        assert_eq!(host.line.close().await, 0);
+    }
+}
+
+/// A subagent's tool-server ask is the subagent's: Codex's ask to allow
+/// the call and the server's own ask both name its thread and its turn.
+#[tokio::test]
+async fn a_subagents_elicitation_names_its_thread() {
+    let mut host = Host::start_exempt(
+        json!({"steps": [
+            {"subagents": {"agents": [{"task": "confirm", "steps": [
+                {"ask": {"form": {"server": "spec", "message": "Confirm",
+                                  "schema": {"type": "object", "properties": {}}}}},
+                {"text": {"chunks": ["confirmed"]}},
+            ]}]}},
+            {"text": {"chunks": ["DONE"]}},
+            "turn_end",
+        ]}),
+        CHILD_EXEMPT,
+    )
+    .await;
+    host.turn("Delegate").await;
+    let parent = host.thread.clone();
+    let started = host
+        .line
+        .until(|frame| {
+            frame["method"] == "turn/started" && frame["params"]["threadId"] != parent.as_str()
+        })
+        .await;
+    let child = started["params"]["threadId"].clone();
+    let child_turn = started["params"]["turn"]["id"].clone();
+    for _ in 0..2 {
+        let answer = json!({"action": "accept", "content": {}});
+        let request = host
+            .line
+            .until(|frame| {
+                frame["method"] == "mcpServer/elicitation/request" && frame.get("id").is_some()
+            })
+            .await;
+        assert_eq!(request["params"]["threadId"], child, "{request}");
+        assert_eq!(request["params"]["turnId"], child_turn, "{request}");
+        host.line
+            .send(json!({"id": request["id"], "result": answer}))
+            .await;
+        host.line
+            .until(|frame| {
+                frame["method"] == "serverRequest/resolved"
+                    && frame["params"]["requestId"] == request["id"]
+            })
+            .await;
+    }
+    let done = host
+        .line
+        .until(|frame| {
+            frame["method"] == "turn/completed" && frame["params"]["threadId"] == parent.as_str()
+        })
+        .await;
+    assert_eq!(done["params"]["turn"]["items"][0]["text"], "DONE");
+    assert_eq!(host.line.close().await, 0);
 }

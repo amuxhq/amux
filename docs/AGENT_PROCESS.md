@@ -71,6 +71,7 @@ agents/<agent id>/
     codex.sock           Codex's app server listens here; the agent is one client
     facts/               the facts ring and its checkpoints
     transcript-cursor    how far Claude's transcript has been read, and which file
+    subagent-cursors/    the same for each of terminal Claude's subagents' files, by its id
     provider-session     the provider's session or thread id, for the next incarnation
     provider.log         the provider child's stderr
 ```
@@ -180,7 +181,7 @@ provider's process group at once and writes nothing.
 | `Running` | `Stop` arrives | The interpreter cancels the turn the provider's own way, so an open ask closes as dismissed and its call as cancelled; `Draining` (stop) |
 | `Draining` | The turn ends, or no turn is running | A turn end is marked `last`; `exit` with `DAEMON_LOST` or `STOPPED`; a one-shot agent whose turn ends quiescent while it drains for a lost daemon exits `FINISHED`, as its parent hears it |
 | `Draining` after the daemon was lost | An ask is open (phase needs you) | A drain deadline is armed; when it passes, `exit` with `ORPHANED` |
-| `Running`, the agent has a parent | A turn ends with nothing running, nothing queued, no accepted agent message still unconsumed, no typed prompt the provider has yet to record, no child it asked for still unsettled, and the last report of every child incarnation it made or was told is live already taken | The turn end is marked `last`; `exit` with `FINISHED` (the one-shot rule) |
+| `Running`, the agent has a parent | A turn ends with nothing running, nothing queued, no accepted agent message still unconsumed, no typed prompt the provider has yet to record, no child it asked for still unsettled, the last report of every child incarnation it made or was told is live already taken, and no provider subagent of its own running | The turn end is marked `last`; `exit` with `FINISHED` (the one-shot rule) |
 | `Running`, the agent has a parent and sits idle | A child it asked for is settled as never made, and nothing else is waited for: a later daemon's `children` frame leaves out a spawn its predecessor never answered, or a refusal arrives after a turn cut short has ended | `exit` with `FINISHED`; no turn end was marked `last`, so the daemon reports the exit to the parent |
 | Any | The interpreter asks to exit (`Effect::Exit`) | `exit` with `ENDED_UNEXPECTEDLY` and the interpreter's words |
 | Any | A write to the directory fails (in practice, a full disk): a journal frame, a blob, or the provider's own state in `private/` that the next incarnation resumes from (Codex's thread id, the transcript position) | `exit` with `DIRECTORY_FAILED` and the failed write as the detail; if even that cannot be written, the provider is killed. The cause is then not in the journal either, so the row says `ENDED_UNEXPECTEDLY` (or `ENDED_WHILE_AWAY`) |
@@ -254,6 +255,21 @@ written the frame before it made the child.
 [Agent tools](AGENT_TOOLS.md#families) has the rule in full, and why a
 child created for the agent from outside it is not covered.
 
+A provider subagent (Claude's Agent tool, a Codex child thread) runs inside
+the agent's own provider and hands its answer back through it: Claude starts
+a turn of the parent's on the subagent's task notification, and Codex returns
+it within the parent's running turn. A one-shot agent whose turn ends while
+one runs would kill it and report the launch as its answer, so it stays. The
+process knows which run from the steps it journals itself, each subagent's
+part of a step carrying its start or its end, so the rule is the same for
+every provider. When the provider answers with a turn of its own, that turn
+has started by the step that carries the subagent's end, and the turn's end
+decides, as after a child's report. When the last subagent's end leaves the
+agent idle with nothing queued or awaited and no turn of the provider's to
+follow, the agent finishes there, as when a spawn it waited on made no child.
+A turn after one subagent ended while another still runs reports up and is not
+the last.
+
 The one-shot rule is what having a parent means: there is no flag. An input
 that arrives while such an agent is exiting is answered `REFUSAL_EXITING`,
 and the daemon then treats it as exited and resumes it if the sender is its
@@ -272,6 +288,7 @@ version integer, and a frame a reader does not know is ignored.
 | `hello` | agent → daemon | Sent at once on every connection: the agent id |
 | `nudge` | agent → daemon | The journal grew. Sent after every step that wrote bytes; an empty step writes nothing and sends nothing |
 | `input` | daemon → agent | A person's `Input` (a prompt, an answer, an interrupt, a setting, …), its body as the client encoded it |
+| `child_input` | daemon → agent | `ChildInput { agent_id, input }`: a person's `Input` to one of the provider subagents this agent's provider runs: an answer to one of its asks, or a `StopJob { key }` naming a job in the subagent's own snapshot (its own job, keyed by the provider's id for it, stops it). The core hands it to the interpreter as `Event::ChildInput`, through the facts ring like any input, and the interpreter answers the provider for the subagent; the `reply` is keyed by the input id, and a draining or exiting agent refuses it as it refuses its own input. The daemon refuses every other input to a subagent itself |
 | `agent_message` | daemon → agent | An `Envelope` with the sender the daemon set; the recipient's interpreter picks the carrier |
 | `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's record for a report, answered in any mode |
 | `rename` | daemon → agent | `Rename { name }`: a Codex agent's thread takes the agent's new name, so Codex's own app shows what amux does; other kinds have nothing to rename |
@@ -313,7 +330,8 @@ provider left behind can hold a terminal or a pipe open forever, so after the
 exit the output already on its way is collected for 300 ms and the reader is
 abandoned, not joined. Before the exit is recorded, the agent feeds the
 interpreter everything the provider said first: events already queued, then
-any transcript rows a follower has not read yet.
+any transcript rows a follower has not read yet, the agent's own and then
+its subagents'.
 
 A provider's background jobs do not outlive the agent's exit: every provider
 ends them on SIGTERM, and the census kills any it left. A provider process killed on its
@@ -364,7 +382,7 @@ Claude is started through `pty_host::spawn` with the spec's arguments plus:
   program and its arguments with no shell between, as the hook command for
   `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PermissionRequest`,
   `PermissionDenied`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
-  `Stop`, `SubagentStop`, `Elicitation`, `MessageDisplay` and
+  `Stop`, `SubagentStart`, `Elicitation`, `MessageDisplay` and
   `PostModelSwitch`, the two that wait for a decision with a timeout of
   seven days, accepts messages from other sessions at once, and allows amux's own tools
   (all but `attach`, which asks like any read) and reading the agent's `blobs/` folder (where the files a person attaches
@@ -523,7 +541,11 @@ It is segmented like the journal, and each segment has a checkpoint beside it,
 first entry.
 
 - An entry is one JSON line: a fact with its channel and its payload (as text
-  when it is UTF-8, as hex otherwise), a person's input or an agent message
+  when it is UTF-8, as hex otherwise; terminal Claude's subagent transcript
+  rows on a channel of their own, `subagent_transcript`, apart from its main
+  transcript's), a person's input, a person's input to one of its provider
+  subagents (`child_input`, the encoded `ChildInput`; a ring from before
+  subagents were agents of their own has none) or an agent message
   as its encoded protobuf in hex, a Codex agent's new name, a tick, the
   provider's exit, the daemon being lost, a stop, the
   process exiting, or the folder's git facts as an encoded `Git` in hex
@@ -599,6 +621,27 @@ file every 25 ms, passes on whole lines only, and records its position in
 `private/transcript-cursor` (the offset and the file's path) after every row.
 A later incarnation following the same file continues from the saved
 position, so a resumed session's rows are not read twice.
+
+Each subagent's conversation is a file of its own beside the transcript,
+`<session>/subagents/agent-<id>.jsonl`, with `agent-<id>.meta.json` naming
+the call that launched it. When Claude's `SubagentStart` hook names one, the
+interpreter asks the agent to follow its file (`FollowSubagent`). A subagent
+has one follower, as a continued one writes on in the same file. Its follower sends
+the meta first (rows wait up to half a second for it), then the user,
+assistant and system rows, on the `subagent_transcript` channel; Claude's
+attachment and bookkeeping rows are not sent. Each keeps its own position in
+`private/subagent-cursors/<id>`. A follower reads every 25 ms while its file
+grows, and backs off to once a second while it does not, since one follows
+each subagent, finished ones included, until Claude exits. A file it can no
+longer read, or one now shorter than what it read, is reported once and its
+follower ends. The interpreter asks again at each `SubagentStart` for a
+subagent it already follows, as Claude fires one when its model continues a
+subagent: that wakes a follower to read at once and at its quick rate, or
+starts anew, from the saved position, one that ended. Claude
+can tell the agent a subagent finished before writing its last rows, so the
+interpreter asks for the file to be drained (`DrainSubagent`): the follower
+reads it to its end, waits up to two seconds for a completed subagent's
+final reply, and reports it drained.
 
 An agent message for terminal Claude goes onto Claude's messaging socket,
 which queues it the way Claude queues a peer's message. When the socket is
@@ -765,6 +808,7 @@ terminal. `amux agent` exits 0 whatever the cause; 1 means it could not start
 | Provider asked to finish, then killed | 10 s | `PROVIDER_STOP_MS` in `agent-core` |
 | Output collected after a child exits | 300 ms | `TRAILING_OUTPUT` in `provider.rs` |
 | Transcript poll | 25 ms | `TRANSCRIPT_POLL` in `provider.rs` |
+| A subagent's rows wait for its meta; a drain waits for its final reply | 500 ms; 2 s | `META_WAIT`, `DRAIN_WAIT` in `claude/subagents.rs` |
 | Terminal Claude's first screen: quiet, cap | 100 ms, 500 ms | `FIRST_SCREEN_QUIET`, `FIRST_SCREEN_WAIT` in `provider.rs` |
 | Codex view asked to end, then killed | 2 s | `VIEW_STOP` in `attach.rs` |
 | Tool server retry window | 5 s | `RETRY_WINDOW` in `tools.rs` |

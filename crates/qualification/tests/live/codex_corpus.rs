@@ -89,7 +89,7 @@ fn decide(decision: wire::Decision) -> Answer {
 /// What a scenario changed in Codex's home while it runs: settings in its
 /// config file, or the login moved away. Undone when dropped, before the
 /// next scenario starts its agent.
-struct HomeChange {
+pub(super) struct HomeChange {
     home: PathBuf,
     signed_out: bool,
 }
@@ -114,7 +114,7 @@ impl Install {
     }
 
     /// Codex's config file holds `toml` until the returned change drops.
-    fn configured(&self, toml: &str) -> Result<HomeChange, String> {
+    pub(super) fn configured(&self, toml: &str) -> Result<HomeChange, String> {
         let home = self.home()?.clone();
         std::fs::write(home.join("config.toml"), toml).map_err(|error| error.to_string())?;
         Ok(HomeChange {
@@ -157,7 +157,12 @@ impl Install {
     }
 
     /// Sends a message to the agent as a person on a client does.
-    async fn message(&self, scenario: Scenario, agent: &[u8], text: &str) -> Result<(), String> {
+    pub(super) async fn message(
+        &self,
+        scenario: Scenario,
+        agent: &[u8],
+        text: &str,
+    ) -> Result<(), String> {
         let host_id = self
             .client
             .agents
@@ -195,7 +200,7 @@ impl Install {
     }
 
     /// The scenario's recorded traffic, as the probe wrote it.
-    fn traffic(&self, scenario: Scenario) -> Result<String, String> {
+    pub(super) fn traffic(&self, scenario: Scenario) -> Result<String, String> {
         let fixture = self.collect(scenario)?;
         std::fs::read_to_string(fixture.with_file_name("io.jsonl")).map_err(|e| e.to_string())
     }

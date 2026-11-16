@@ -243,15 +243,25 @@ public enum ActivityKind: Codable, Hashable, Sendable {
 public struct ActivityLine: Codable, Hashable, Sendable {
     public var activity: Activity
     public var step: String?
+    /// While the agent waits on its subagents: how those its chat opened
+    /// that are still at work or waiting on the person stand, by their
+    /// fleet rows, as the chat's activity line reads them
+    /// (`ChatAgents::live`). Only the fleet knows of a subagent's ask, so
+    /// the fleet's view fills it, not the session; while one of them waits
+    /// on the person each client says this, in the group row's words,
+    /// rather than that they all work.
+    public var subagents: GroupState?
 
-    public init(activity: Activity, step: String?) {
+    public init(activity: Activity, step: String?, subagents: GroupState?) {
         self.activity = activity
         self.step = step
+        self.subagents = subagents
     }
 
     private enum CodingKeys: String, CodingKey {
         case activity
         case step
+        case subagents
     }
 }
 
@@ -1512,7 +1522,9 @@ public enum ChatAct: Codable, Hashable, Sendable {
     case resend([UInt8])
     /// Stops the agent's turn; the agent stays.
     case interrupt
-    /// Stops one background job by the key its `JobStop` gives.
+    /// Stops one background job by the key its `JobStop` gives: a job in
+    /// the overview, or a provider subagent's own, which its composer's
+    /// `Native` mode offers.
     case stopJob(String)
     /// Takes terminal Claude's own view back to the agent's conversation
     /// after it switched to another.
@@ -1692,6 +1704,35 @@ public enum ChatAct: Codable, Hashable, Sendable {
     }
 }
 
+/// The agents a chat's held rows open, with each group's combined state:
+/// what a client that keeps rows apart from the fleet redraws when the
+/// fleet moves, since no row changes then.
+public struct ChatAgents: Codable, Hashable, Sendable {
+    /// Each agent a held row opens and the fleet holds, once, oldest call
+    /// first.
+    public var agents: [OpenedAgent]
+    /// Each group the held rows make, by its first call.
+    public var groups: [GroupView]
+    /// The agents of `agents` still at work or waiting on the person, by
+    /// where each stands. While the agent waits on its subagents and one of
+    /// them waits on the person, the activity line says this in the group
+    /// row's words ("3 subagents · 2 running · 1 waiting on you") rather
+    /// than that they all work: only the fleet knows of a subagent's ask.
+    public var live: GroupState
+
+    public init(agents: [OpenedAgent], groups: [GroupView], live: GroupState) {
+        self.agents = agents
+        self.groups = groups
+        self.live = live
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case agents
+        case groups
+        case live
+    }
+}
+
 /// What moved in an open chat since the host last heard: each field only
 /// when it moved.
 public struct ChatDelta: Codable, Hashable, Sendable {
@@ -1701,15 +1742,20 @@ public struct ChatDelta: Codable, Hashable, Sendable {
     /// the reader left it. A row new at either edge, or held through a
     /// reload, is read when it is drawn.
     public var rows: [Row]
+    /// How each agent the held rows open stands, from the fleet, and what
+    /// each group of them comes to: a row that opens an agent draws its
+    /// state from here, since the fleet moving changes no row.
+    public var agents: ChatAgents?
     public var ask: AskMoved?
     public var frame: ChatFrame?
     public var keys: KeysMoved?
     public var overview: Overview?
     public var settings: SettingsView?
 
-    public init(chat: UInt64, rows: [Row], ask: AskMoved?, frame: ChatFrame?, keys: KeysMoved?, overview: Overview?, settings: SettingsView?) {
+    public init(chat: UInt64, rows: [Row], agents: ChatAgents?, ask: AskMoved?, frame: ChatFrame?, keys: KeysMoved?, overview: Overview?, settings: SettingsView?) {
         self.chat = chat
         self.rows = rows
+        self.agents = agents
         self.ask = ask
         self.frame = frame
         self.keys = keys
@@ -1720,6 +1766,7 @@ public struct ChatDelta: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case chat
         case rows
+        case agents
         case ask
         case frame
         case keys
@@ -2190,9 +2237,21 @@ public enum Composer: Codable, Hashable, Sendable {
     /// The chat is not current. Drafting continues; a send is refused at
     /// once and the draft stays in the composer, which says why.
     case waiting(Waiting)
+    /// A subagent its parent's provider runs (Claude's Agent tool, a Codex
+    /// child thread): neither provider lets anyone but the parent's model
+    /// talk to it, so there is no text box, only what says so and, where
+    /// the provider stops one subagent on request, its Stop. `stop` is the
+    /// subagent's own job as its snapshot lists it; an ask in its chat is
+    /// answered as any ask is.
+    case native(stop: JobStop)
 
     private enum Tag: String, CodingKey {
         case waiting = "Waiting"
+        case native = "Native"
+    }
+
+    private enum NativeKeys: String, CodingKey {
+        case stop
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2218,6 +2277,11 @@ public enum Composer: Codable, Hashable, Sendable {
         switch _tag {
         case .waiting:
             self = .waiting(try _container.decode(Waiting.self, forKey: .waiting))
+        case .native:
+            let _fields = try _container.nestedContainer(
+                keyedBy: NativeKeys.self, forKey: .native)
+            self = .native(
+                stop: try _fields.decode(JobStop.self, forKey: .stop))
         }
     }
 
@@ -2232,12 +2296,17 @@ public enum Composer: Codable, Hashable, Sendable {
         case .waiting(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .waiting)
+        case .native(let stop):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: NativeKeys.self, forKey: .native)
+            try _fields.encode(stop, forKey: .stop)
         }
     }
 }
 
 /// The composer as the chat draws it: Send, Resume for an exited agent,
-/// or waiting while drafting continues; with the activity line inside it.
+/// waiting while drafting continues, or no text box at all for a subagent
+/// its parent's provider runs; with the activity line inside it.
 public struct ComposerView: Codable, Hashable, Sendable {
     public var mode: Composer
     /// The agent's own view is on another conversation: prompts are
@@ -3112,6 +3181,11 @@ public struct FleetCard: Codable, Hashable, Sendable {
     public var filing: Filing
     /// It has no parent, so it may be pinned.
     public var topLevel: Bool
+    /// A subagent its parent's provider runs: it goes with its parent and
+    /// has no folder, terminal, settings or composer of its own, so it is
+    /// never offered a resume, a delete, a pin or a terminal of its own.
+    /// It is listed under its parent as any child is, by its title.
+    public var native: Bool
     /// The branch of the folder the agent started in, as of its last turn
     /// end; None on a detached head or outside a repository.
     public var branch: String?
@@ -3120,7 +3194,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
     /// The repository it works in, by its remote, else its folder.
     public var repository: Repository?
 
-    public init(agent: AgentKey, name: String, handle: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, closeHeld: Bool, filing: Filing, topLevel: Bool, branch: String?, exitCause: ExitCause?, repository: Repository?) {
+    public init(agent: AgentKey, name: String, handle: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, closeHeld: Bool, filing: Filing, topLevel: Bool, native: Bool, branch: String?, exitCause: ExitCause?, repository: Repository?) {
         self.agent = agent
         self.name = name
         self.handle = handle
@@ -3138,6 +3212,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
         self.closeHeld = closeHeld
         self.filing = filing
         self.topLevel = topLevel
+        self.native = native
         self.branch = branch
         self.exitCause = exitCause
         self.repository = repository
@@ -3161,6 +3236,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
         case closeHeld = "close_held"
         case filing
         case topLevel = "top_level"
+        case native
         case branch
         case exitCause = "exit_cause"
         case repository
@@ -3681,6 +3757,61 @@ public struct Granted: Codable, Hashable, Sendable {
         case write
         case network
         case forSession = "for_session"
+    }
+}
+
+/// What the agents of a group come to, by where each stands: "2 running ·
+/// 1 waiting on you".
+public struct GroupState: Codable, Hashable, Sendable {
+    /// How many agents the group opened.
+    public var agents: UInt32
+    /// Starting or working.
+    public var running: UInt32
+    public var needsYou: UInt32
+    /// Live and waiting for its parent, as an amux child between turns.
+    public var idle: UInt32
+    public var finished: UInt32
+    /// Stopped, or ended some way that is not failure.
+    public var ended: UInt32
+    public var failed: UInt32
+    /// Not in this client's fleet: not listed yet, or deleted.
+    public var unknown: UInt32
+
+    public init(agents: UInt32, running: UInt32, needsYou: UInt32, idle: UInt32, finished: UInt32, ended: UInt32, failed: UInt32, unknown: UInt32) {
+        self.agents = agents
+        self.running = running
+        self.needsYou = needsYou
+        self.idle = idle
+        self.finished = finished
+        self.ended = ended
+        self.failed = failed
+        self.unknown = unknown
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case agents
+        case running
+        case needsYou = "needs_you"
+        case idle
+        case finished
+        case ended
+        case failed
+        case unknown
+    }
+}
+
+public struct GroupView: Codable, Hashable, Sendable {
+    public var first: String
+    public var state: GroupState
+
+    public init(first: String, state: GroupState) {
+        self.first = first
+        self.state = state
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case first
+        case state
     }
 }
 
@@ -4694,6 +4825,32 @@ public struct OnboardingView: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case toFinish = "to_finish"
         case opensAt = "opens_at"
+    }
+}
+
+/// The agent a call opens, as its fleet row has it.
+public struct OpenedAgent: Codable, Hashable, Sendable {
+    /// The chat a client opens from the row.
+    public var agent: AgentKey
+    /// What a person reads it as: its title, else its name.
+    public var name: String
+    public var kind: Kind
+    /// Where it stands: working, waiting on the person, idle, or how it
+    /// ended.
+    public var phase: PhaseView
+
+    public init(agent: AgentKey, name: String, kind: Kind, phase: PhaseView) {
+        self.agent = agent
+        self.name = name
+        self.kind = kind
+        self.phase = phase
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case agent
+        case name
+        case kind
+        case phase
     }
 }
 
@@ -5783,8 +5940,18 @@ public struct Row: Codable, Hashable, Sendable {
     public var attention: Bool
     /// A permission decision, meta on the tool call's own row.
     public var decision: Decision?
-    /// A subagent's own step: collapsed under the subagent's row, which
-    /// opens to it.
+    /// The calls that opened agents in this row's turn, when they opened
+    /// more than one: they fold into one row (see [`SubagentGroup`]).
+    public var group: SubagentGroup?
+    /// The agent this call started or continues, by its id: a provider
+    /// subagent or a child amux's spawn made. Every client opens that
+    /// agent's chat from the row, a gesture apart from expanding it, and
+    /// reads how the agent stands from its fleet row
+    /// ([`crate::opened_agent`]), never from the call.
+    public var opens: [UInt8]?
+    /// A subagent's own step from history: collapsed under the subagent's
+    /// row, which opens to it. Steps written since a subagent became an
+    /// agent of its own are in its own chat, and carry none.
     public var parent: String?
     public var run: Run?
     /// Where it stands in its finished turn, when the client folds turns
@@ -5792,7 +5959,7 @@ public struct Row: Codable, Hashable, Sendable {
     /// other fold.
     public var turn: TurnPlace?
 
-    public init(id: String, order: UInt64, atMs: Int64, kind: RowKind, collapsed: Bool, attention: Bool, decision: Decision?, parent: String?, run: Run?, turn: TurnPlace?) {
+    public init(id: String, order: UInt64, atMs: Int64, kind: RowKind, collapsed: Bool, attention: Bool, decision: Decision?, group: SubagentGroup?, opens: [UInt8]?, parent: String?, run: Run?, turn: TurnPlace?) {
         self.id = id
         self.order = order
         self.atMs = atMs
@@ -5800,6 +5967,8 @@ public struct Row: Codable, Hashable, Sendable {
         self.collapsed = collapsed
         self.attention = attention
         self.decision = decision
+        self.group = group
+        self.opens = opens
         self.parent = parent
         self.run = run
         self.turn = turn
@@ -5813,6 +5982,8 @@ public struct Row: Codable, Hashable, Sendable {
         case collapsed
         case attention
         case decision
+        case group
+        case opens
         case parent
         case run
         case turn
@@ -5833,7 +6004,13 @@ public enum RowKind: Codable, Hashable, Sendable {
     case child(action: ChildAction, name: String, host: String, kind: String, state: CallPhase, result: String)
     case command(command: String, description: String, state: CallPhase, outputHead: [String], moreLines: UInt, outputTrimmed: Bool, outputTail: [String], durationMs: Int64?, exitCode: Int32?)
     case explore(verb: ExploreVerb, subject: String, state: CallPhase, result: String)
-    case subagent(description: String, running: Bool, toolCount: UInt32, lastTool: String, answer: String, durationMs: Int64?)
+    /// A call that started or continued a subagent its provider runs:
+    /// Claude's Agent call or a SendMessage to its subagent, Codex's spawn
+    /// or follow-up of a child thread. The row opens the subagent's chat
+    /// ([`Row::opens`]); how the subagent stands is its fleet row's, since a
+    /// call can return while its subagent runs on. Only a call from history
+    /// opens nothing, and then `state` is all there is to say.
+    case subagent(description: String, continued: Bool, state: CallPhase, answer: String, durationMs: Int64?)
     case background(command: String, description: String, running: Bool, durationMs: Int64?)
     case image(path: String, generated: Bool, image: BlobRef?)
     case slashOutput(command: String, args: String, output: String)
@@ -5936,9 +6113,8 @@ public enum RowKind: Codable, Hashable, Sendable {
 
     private enum SubagentKeys: String, CodingKey {
         case description
-        case running
-        case toolCount = "tool_count"
-        case lastTool = "last_tool"
+        case continued
+        case state
         case answer
         case durationMs = "duration_ms"
     }
@@ -6105,9 +6281,8 @@ public enum RowKind: Codable, Hashable, Sendable {
                 keyedBy: SubagentKeys.self, forKey: .subagent)
             self = .subagent(
                 description: try _fields.decode(String.self, forKey: .description),
-                running: try _fields.decode(Bool.self, forKey: .running),
-                toolCount: try _fields.decode(UInt32.self, forKey: .toolCount),
-                lastTool: try _fields.decode(String.self, forKey: .lastTool),
+                continued: try _fields.decode(Bool.self, forKey: .continued),
+                state: try _fields.decode(CallPhase.self, forKey: .state),
                 answer: try _fields.decode(String.self, forKey: .answer),
                 durationMs: try _fields.decodeIfPresent(Int64.self, forKey: .durationMs))
         case .background:
@@ -6259,13 +6434,12 @@ public enum RowKind: Codable, Hashable, Sendable {
             try _fields.encode(subject, forKey: .subject)
             try _fields.encode(state, forKey: .state)
             try _fields.encode(result, forKey: .result)
-        case .subagent(let description, let running, let toolCount, let lastTool, let answer, let durationMs):
+        case .subagent(let description, let continued, let state, let answer, let durationMs):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: SubagentKeys.self, forKey: .subagent)
             try _fields.encode(description, forKey: .description)
-            try _fields.encode(running, forKey: .running)
-            try _fields.encode(toolCount, forKey: .toolCount)
-            try _fields.encode(lastTool, forKey: .lastTool)
+            try _fields.encode(continued, forKey: .continued)
+            try _fields.encode(state, forKey: .state)
             try _fields.encode(answer, forKey: .answer)
             try _fields.encodeIfPresent(durationMs, forKey: .durationMs)
         case .background(let command, let description, let running, let durationMs):
@@ -7060,6 +7234,34 @@ public enum StepState: String, Codable, Hashable, Sendable, CaseIterable {
     case done = "done"
     case skipped = "skipped"
     case not_needed = "not_needed"
+}
+
+/// The calls in one turn that opened more than one agent, stated on each
+/// of them.
+public struct SubagentGroup: Codable, Hashable, Sendable {
+    /// The group's oldest held call, where its one row draws, folded or
+    /// open. It moves as the window's low edge does, so it names no group:
+    /// hold an open group by any of its calls (see [`toggle_group`]).
+    public var first: String
+    /// Each agent its calls opened, once, in the order first opened: what
+    /// [`group_state`] sums.
+    public var agents: [[UInt8]]
+    /// The reader opened it, so each call shows its own row. Always open
+    /// for a view that folds nothing, or hides only tool steps: these calls
+    /// are not steps.
+    public var open: Bool
+
+    public init(first: String, agents: [[UInt8]], open: Bool) {
+        self.first = first
+        self.agents = agents
+        self.open = open
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case first
+        case agents
+        case open
+    }
 }
 
 /// One task of the list, by its subject.

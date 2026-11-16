@@ -1,0 +1,24 @@
+{
+  "spec": "child_approval",
+  "recorded": {
+    "provider": "codex",
+    "version": "0.166.0",
+    "model": "gpt-6.1-sol",
+    "at": "2026-11-16T00:09:40.997670Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:21411aa8b8410ab01067e2d914159fcb85d971e78da10848a114bf36e1bef608",
+    "spawn.jsonl": "sha256:6925f41fd523f938dc32952173860dfbae9c29730a3fb6d40f155d6bc9e51f19"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 48,
+    "personal_identifiers": 2
+  },
+  "session_ids": [
+    "01a1e1ae-840e-7810-b3eb-876ebf34ace4"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

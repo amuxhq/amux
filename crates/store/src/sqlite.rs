@@ -9,11 +9,12 @@ use prost::Message as _;
 use rusqlite::{Connection, TransactionBehavior};
 
 use crate::retention::{self, Sweep};
-use crate::rows::{self, ABSORBED, COMMITTED, Rows};
+use crate::rows::{self, ABSORBED, COMMITTED, Rows, SUBAGENT_COMMITTED};
 use crate::schema::MIGRATIONS;
 use crate::{
     Absorb, Absorbed, AgentKey, AgentRow, Append, CommitClock, Committed, Cut, Delivery, Item,
-    Marker, Notification, Page, PageEnd, Record, Snapshot, Step, StoreError, TrustedHost,
+    Marker, Notification, Page, PageEnd, Record, Snapshot, Step, StoreError, SubagentChange,
+    TrustedHost,
 };
 
 /// Marks a file as an amux profile store ("amux").
@@ -281,7 +282,12 @@ fn is_ask(notice: &wire::Notice) -> bool {
 fn copy_envelope(row: &mut AgentRow, snapshot: &Snapshot) {
     row.phase = snapshot.phase;
     row.working_on = snapshot.working_on.clone();
-    row.title = snapshot.title.clone();
+    // A provider subagent's title is the registry's: the provider's
+    // description when its row was made, or none once a person renamed it.
+    // Its host's interpreter has no say in it, here or on a replica.
+    if row.native.is_none() {
+        row.title = snapshot.title.clone();
+    }
     row.last_said = snapshot.last_said.clone();
     row.phase_since_ms = Some(snapshot.phase_since_ms);
     row.git = snapshot.git.clone();
@@ -519,6 +525,26 @@ impl Sqlite {
         self.write(|rows| rows.upsert_agent(row, &update))
     }
 
+    /// Writes several rows as [`Sqlite::put_agent`] does, in one
+    /// transaction: an agent's process ending and the provider subagents it
+    /// ran ending with it land together, or not at all.
+    pub fn put_agents(&mut self, agents: &[AgentRow]) -> Result<(), StoreError> {
+        let own = rows::registry_update(true);
+        let replica = rows::registry_update(false);
+        let own_host = self.own_host.clone();
+        self.write(|rows| {
+            for row in agents {
+                let update = if row.agent.host == own_host {
+                    &own
+                } else {
+                    &replica
+                };
+                rows.upsert_agent(row, update)?;
+            }
+            Ok(())
+        })
+    }
+
     /// The live agents below `parent` in the rows held: own rows walked
     /// into, each replica row counting itself and what its origin counted
     /// below it.
@@ -745,43 +771,73 @@ impl Sqlite {
     }
 }
 
-fn commit(
-    rows: &Rows<'_>,
-    agent: &AgentKey,
-    frames: &[(u64, Step)],
-    clock: CommitClock,
-) -> Result<Committed, StoreError> {
-    let mut row = rows.agent(agent)?.ok_or(StoreError::UnknownAgent)?;
-    let mut committed = Committed::default();
-    let mut next_position = rows.max_position(agent)?.map_or(1, |position| position + 1);
-    for (offset, step) in frames {
-        for item in &step.items {
+/// One agent's row while a commit writes it: the host's, or a provider
+/// subagent's its parts are filed under.
+struct Writing {
+    row: AgentRow,
+    next_position: u64,
+    records: Vec<Record>,
+}
+
+impl Writing {
+    fn open(rows: &Rows<'_>, row: AgentRow) -> Result<Self, StoreError> {
+        // Retention empties an ended provider subagent's block and keeps
+        // its row, the block starting above what it held: a continuation
+        // files from there, not from order 1 under what a replica holds.
+        let next_position = rows
+            .max_position(&row.agent)?
+            .map_or(1, |position| position + 1)
+            .max(row.complete_from_order.unwrap_or(1));
+        Ok(Self {
+            row,
+            next_position,
+            records: Vec::new(),
+        })
+    }
+
+    fn live(&self) -> bool {
+        self.row.lifecycle == wire::Lifecycle::Live as i32
+    }
+
+    /// Files one agent's items, appends and snapshot: each takes the
+    /// agent's next revision, and each new key its next order.
+    fn file(
+        &mut self,
+        rows: &Rows<'_>,
+        items: &[Item],
+        appends: &[wire::Append],
+        snapshot: Option<&Snapshot>,
+        clock: CommitClock,
+    ) -> Result<(), StoreError> {
+        let agent = self.row.agent.clone();
+        for item in items {
             let mut item = item.clone();
-            item.revision = row.next_revision;
-            row.next_revision += 1;
-            item.order = rows.commit_item(agent, &item, next_position)?;
-            if item.order == next_position {
-                next_position += 1;
+            item.revision = self.row.next_revision;
+            self.row.next_revision += 1;
+            item.order = rows.commit_item(&agent, &item, self.next_position)?;
+            if item.order == self.next_position {
+                self.next_position += 1;
             }
-            committed.records.push(Record::Item(item));
+            self.records.push(Record::Item(item));
         }
-        for append in &step.appends {
-            let revision = row.next_revision;
+        for append in appends {
+            let revision = self.row.next_revision;
             let Some(base_revision) =
-                rows.extend(agent, &append.key, &append.text, revision, None)?
+                rows.extend(&agent, &append.key, &append.text, revision, None)?
             else {
                 // The item it extends was never committed: nothing to extend.
                 continue;
             };
-            row.next_revision += 1;
-            committed.records.push(Record::Append(Append {
+            self.row.next_revision += 1;
+            self.records.push(Record::Append(Append {
                 key: append.key.clone(),
                 base_revision,
                 revision,
                 text: append.text.clone(),
             }));
         }
-        if let Some(snapshot) = &step.snapshot {
+        if let Some(snapshot) = snapshot {
+            let row = &mut self.row;
             let mut snapshot = snapshot.clone();
             snapshot.revision = row.next_revision;
             row.next_revision += 1;
@@ -790,7 +846,7 @@ fn commit(
                 .as_ref()
                 .and_then(|last| last.notice.as_deref())
                 .map(Owed::of);
-            copy_envelope(&mut row, &snapshot);
+            copy_envelope(row, &snapshot);
             let now = snapshot.notice.as_deref().map(Owed::of);
             if now != was {
                 rows.remove_notifications(&agent.agent)?;
@@ -803,13 +859,54 @@ fn commit(
                         agent_id: agent.agent.clone(),
                         revision: snapshot.revision,
                         due_at_ms: clock.now_ms + clock.notify_delay_ms,
-                        name: row.name.clone(),
+                        // The person reads a push by what the agent is
+                        // about; its name is only an address.
+                        name: row.title.clone().unwrap_or_else(|| row.name.clone()),
                         notice: notice.encode_to_vec(),
                     })?;
                 }
             }
-            committed.records.push(Record::Snapshot(snapshot));
+            self.records.push(Record::Snapshot(snapshot));
         }
+        Ok(())
+    }
+}
+
+/// The row a subagent's part names, when it is one of `host`'s own
+/// provider subagents: a part naming anything else is not the host's to
+/// write, and is skipped.
+fn subagent_row(
+    rows: &Rows<'_>,
+    host: &AgentKey,
+    agent_id: &[u8],
+) -> Result<Option<AgentRow>, StoreError> {
+    let key = AgentKey::new(host.host.clone(), agent_id.to_vec());
+    Ok(rows
+        .agent(&key)?
+        .filter(|row| row.native.is_some() && row.parent.as_ref() == Some(host)))
+}
+
+fn commit(
+    rows: &Rows<'_>,
+    agent: &AgentKey,
+    frames: &[(u64, Step)],
+    clock: CommitClock,
+) -> Result<Committed, StoreError> {
+    let host = rows.agent(agent)?.ok_or(StoreError::UnknownAgent)?;
+    let mut host = Writing::open(rows, host)?;
+    let mut committed = Committed::default();
+    // Each subagent's row, opened at its first part, in the order the
+    // parts first named them.
+    let mut subagents: Vec<Writing> = Vec::new();
+    for (offset, step) in frames {
+        host.file(
+            rows,
+            &step.items,
+            &step.appends,
+            step.snapshot.as_ref(),
+            clock,
+        )?;
+        let row = &mut host.row;
         if let (Some(turn_end), Some(parent)) = (&step.turn_end, &row.parent) {
             let text = if turn_end.last_message_key.is_empty() {
                 String::new()
@@ -851,9 +948,90 @@ fn commit(
             row.owes_report = true;
         }
         row.ingest_cursor = *offset;
+        for part in &step.agents {
+            let at = match subagents
+                .iter()
+                .position(|sub| sub.row.agent.agent == part.agent_id)
+            {
+                Some(at) => at,
+                None => match subagent_row(rows, agent, &part.agent_id)? {
+                    Some(row) => {
+                        subagents.push(Writing::open(rows, row)?);
+                        subagents.len() - 1
+                    }
+                    None => {
+                        committed.skipped.push(part.agent_id.clone());
+                        continue;
+                    }
+                },
+            };
+            let sub = &mut subagents[at];
+            // A subagent has no process of its own: its starts and ends are
+            // its lifecycle, written in this transaction with the host's
+            // cursor, so a daemon stopping after the commit cannot leave a
+            // row the next one will not read the step that moved it again.
+            //
+            // A start on a row that has ended is its parent's model
+            // continuing it: live and open again, the cause of its last end
+            // no longer holding.
+            if part.start.is_some() && !sub.live() {
+                sub.row.lifecycle = wire::Lifecycle::Live as i32;
+                sub.row.exit_cause = wire::ExitCause::Unspecified as i32;
+                sub.row.exit_detail = None;
+                if sub.row.is_closed() {
+                    sub.row.filing = wire::Filing::Open as i32;
+                    sub.row.filed_at_ms = clock.now_ms;
+                }
+                committed
+                    .changes
+                    .push(SubagentChange::Continued(sub.row.agent.clone()));
+            }
+            // A part that carries its own end is the provider closing the
+            // subagent's steps, as a resumed host does of one its killed
+            // process left, whose row that process's exit already ended.
+            if !sub.live()
+                && part.end.is_none()
+                && !(part.items.is_empty() && part.appends.is_empty())
+            {
+                committed.after_end.push(sub.row.agent.clone());
+            }
+            sub.file(
+                rows,
+                &part.items,
+                &part.appends,
+                part.snapshot.as_ref(),
+                clock,
+            )?;
+            // A subagent's answer goes back through its parent's provider,
+            // so it owes nobody a report, whatever its phase.
+            sub.row.owes_report = false;
+            // An end files one that did its work closed, as its parent
+            // closing it would. An end for a row already ended is the
+            // provider saying so again, as a resumed Claude does of a
+            // subagent the previous process left: nothing changes.
+            if let Some(end) = &part.end
+                && sub.live()
+            {
+                sub.row.lifecycle = wire::Lifecycle::Exited as i32;
+                sub.row.exit_cause = end.cause;
+                sub.row.exit_detail = end.detail.clone();
+                if end.cause == wire::ExitCause::Finished as i32 && !sub.row.is_closed() {
+                    sub.row.filing = wire::Filing::Closed as i32;
+                    sub.row.filed_at_ms = clock.now_ms;
+                }
+                committed
+                    .changes
+                    .push(SubagentChange::Ended(sub.row.agent.clone(), end.clone()));
+            }
+        }
     }
-    committed.cursor = row.ingest_cursor;
-    rows.upsert_agent(&row, &rows::update_of(COMMITTED))?;
+    committed.cursor = host.row.ingest_cursor;
+    rows.upsert_agent(&host.row, &rows::update_of(COMMITTED))?;
+    committed.records = host.records;
+    for sub in subagents {
+        rows.upsert_agent(&sub.row, &rows::update_of(SUBAGENT_COMMITTED))?;
+        committed.subagents.push((sub.row.agent, sub.records));
+    }
     Ok(committed)
 }
 
@@ -955,6 +1133,8 @@ fn absorb(rows: &Rows<'_>, agent: &AgentKey, what: Absorb) -> Result<Absorbed, S
 
 #[cfg(test)]
 mod tests {
+    use rusqlite::params;
+
     use super::*;
 
     const FIRST: &str = "CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL) STRICT;
@@ -1064,5 +1244,43 @@ mod tests {
             )
             .unwrap();
         assert_eq!(tables, 0);
+    }
+
+    /// A row the first release's schema held, as that release wrote it,
+    /// reads as an agent amux started: the column marking a provider
+    /// subagent is NULL on it. The indexes the subagents' rows need are
+    /// made beside it.
+    #[test]
+    fn a_row_from_before_provider_subagents_reads_as_no_subagent() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn, "store", &MIGRATIONS[..1]).unwrap();
+        conn.execute(
+            "INSERT INTO agents (origin_host, agent_id, kind, name, cwd, lifecycle, phase, \
+             created_at_ms, incarnation) VALUES (?1, ?2, 2, 'old', '/', 1, 1, 0, 1)",
+            params![b"own".as_slice(), b"agent".as_slice()],
+        )
+        .unwrap();
+
+        let store = Sqlite::with_connection(conn, "store", b"own".to_vec()).unwrap();
+
+        let key = AgentKey::new(b"own".to_vec(), b"agent".to_vec());
+        let row = store.agent(&key).unwrap().expect("the old row is held");
+        assert_eq!(row.name, "old");
+        assert_eq!(row.native, None);
+        let indexes: Vec<String> = store
+            .connection()
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'agents' \
+                 AND sql IS NOT NULL ORDER BY name",
+            )
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            indexes,
+            ["agents_by_id", "agents_by_name", "agents_by_parent"]
+        );
     }
 }

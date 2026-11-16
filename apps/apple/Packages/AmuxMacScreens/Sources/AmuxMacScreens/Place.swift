@@ -63,6 +63,15 @@ public struct Place: Equatable, Sendable {
         self.changes = changes
     }
 
+    /// Whether the changes pane shows, for an open agent that is a
+    /// provider subagent (`native`) or not. A provider subagent has no
+    /// folder of its own, so on one the pane stays shut while the choice
+    /// stands: opening a subagent from its parent's chat and coming back
+    /// finds the parent's changes still open.
+    public func showsChanges(native: Bool) -> Bool {
+        changes && surface == .agents && agent != nil && !native
+    }
+
     public var canGoBack: Bool { !back.isEmpty }
     public var canGoForward: Bool { !forward.isEmpty }
 

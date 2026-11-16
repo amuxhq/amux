@@ -34,6 +34,7 @@ tagged_enum! {
         "PostModelSwitch" => PostModelSwitch(PostModelSwitch),
         "Stop" => Stop(Stop),
         "SubagentStop" => SubagentStop(SubagentStop),
+        "SubagentStart" => SubagentStart(SubagentStart),
     }
 }
 
@@ -60,6 +61,7 @@ impl Payload {
             Self::PostModelSwitch(payload) => &payload.common,
             Self::Stop(payload) => &payload.common,
             Self::SubagentStop(payload) => &payload.common,
+            Self::SubagentStart(payload) => &payload.common,
             Self::Unknown(_) => return None,
         })
     }
@@ -302,6 +304,20 @@ pub struct Stop {
     /// The jobs still running in the background.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_tasks: Option<Vec<BackgroundTask>>,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
+/// A subagent started, or its parent continued it; its agent id is the
+/// common `agent_id`. Claude raises it for its own internal agents too.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubagentStart {
+    #[serde(flatten)]
+    pub common: Common,
+    /// The subagent's type, as the Agent call named it; empty for Claude's
+    /// own internal agents (a compaction's summary, a session's title).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_type: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

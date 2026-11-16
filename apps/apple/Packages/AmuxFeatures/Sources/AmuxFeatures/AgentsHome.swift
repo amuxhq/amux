@@ -500,8 +500,11 @@ public struct AgentsHome: View {
                 Label(String(localized: "Un-settle"), systemImage: "tray.and.arrow.up")
             }
             .tint(design.accent.color)
-            Button(role: .destructive) { confirming = .delete(row) } label: {
-                Label(String(localized: "Delete"), systemImage: "trash")
+            // A provider subagent goes with its parent, which deletes it.
+            if row.deletable {
+                Button(role: .destructive) { confirming = .delete(row) } label: {
+                    Label(String(localized: "Delete"), systemImage: "trash")
+                }
             }
         } else if row.card.closeHeld {
             Button { actions(.cancelClose(row.id)) } label: {
@@ -547,8 +550,10 @@ public struct AgentsHome: View {
         } label: { Label("Rename", systemImage: "pencil") }
         if row.closed {
             Button { actions(.unfile(row.id)) } label: { Label("Un-settle", systemImage: "tray.and.arrow.up") }
-            Button(role: .destructive) { confirming = .delete(row) } label: {
-                Label("Delete Agent", systemImage: "trash")
+            if row.deletable {
+                Button(role: .destructive) { confirming = .delete(row) } label: {
+                    Label("Delete Agent", systemImage: "trash")
+                }
             }
         } else if row.card.closeHeld {
             Button { actions(.cancelClose(row.id)) } label: {

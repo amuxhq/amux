@@ -4,9 +4,18 @@
 //! Facts arrive on the stream channel as `{"type": …}`: `ready`, `user`
 //! (a prompt's reflection, or `envelope` for an injected message's),
 //! `text`/`text_done` (a streamed message), `tool`/`tool_result`,
-//! `ask`/`ask_closed`, `turn_start`, `turn_end` and `model`. It writes
+//! `ask`/`ask_closed`, `turn_start`, `turn_end` and `model`, and for a
+//! provider subagent it runs, `subagent_start`, `subagent_text` and
+//! `subagent_end`, each naming the subagent by the provider's id for it
+//! (`agent`). It writes
 //! `user`, `answer` and, on a stop while a turn runs or an ask is open,
 //! `interrupt`. Bodies are the SDK's messages under the kind tag `test`.
+//!
+//! It also runs provider subagents, each named by the fact's `child`:
+//! `sub_start` (with the `call` that started it, its `title`, and `by`, the
+//! subagent that made the call when it is nested), `sub_text`/
+//! `sub_text_done`, `sub_ask` and `sub_end`. A person's answer to a
+//! subagent's ask writes `answer` with its `child`.
 
 use std::collections::BTreeMap;
 
@@ -14,13 +23,13 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    AgentSpec, Ask, ClaudeItem, ClaudeSnapshot, Envelope, Input, PermissionAsk, Refusal, Step,
-    ToolCall, ToolState, Turn, TurnOutcome, claude_item, claude_sdk_input,
+    AgentSpec, Ask, ClaudeItem, ClaudeSnapshot, Envelope, Input, NativeStart, PermissionAsk,
+    Refusal, Snapshot, Step, ToolCall, ToolState, Turn, TurnOutcome, claude_item, claude_sdk_input,
 };
 
 use crate::{
     Carrier, Channel, Checkpoint, Effect, Emit, Event, Fact, FixtureInput, Interpreter, ItemDraft,
-    ItemView, Shared, SnapshotView, Stepped, agent_message_body, agent_message_key,
+    ItemView, Shared, SnapshotView, Stepped, Subagent, agent_message_body, agent_message_key,
     claude_sdk_input, human, is_status_tool, status_working_on, unknown,
 };
 
@@ -39,6 +48,13 @@ pub struct State<const FORGET: bool> {
     /// it writes a `woke` item.
     #[serde(default)]
     wake: Option<i64>,
+    /// This agent's id, which each subagent's id is derived from.
+    #[serde(default)]
+    host: Vec<u8>,
+    /// The subagents' parts of the step under way, added to the step it
+    /// returns; always empty between steps.
+    #[serde(skip)]
+    parts: Vec<wire::AgentStep>,
 }
 
 impl<const FORGET: bool> State<FORGET> {
@@ -60,6 +76,36 @@ impl<const FORGET: bool> Checkpoint for State<FORGET> {
         let body = self.body();
         let step = self.shared.resume_step(body);
         (self, step)
+    }
+}
+
+/// A provider subagent's agent id: the same for one provider id under one
+/// host, whenever it is asked for.
+fn subagent_id(host: &[u8], provider_id: &str) -> Vec<u8> {
+    use sha2::Digest as _;
+    let digest = sha2::Sha256::new()
+        .chain_update(host)
+        .chain_update(provider_id.as_bytes())
+        .finalize();
+    digest[..16].to_vec()
+}
+
+/// The step's part for the subagent the provider calls `provider_id`.
+fn part<'a>(
+    parts: &'a mut Vec<wire::AgentStep>,
+    host: &[u8],
+    provider_id: &str,
+) -> &'a mut wire::AgentStep {
+    let agent_id = subagent_id(host, provider_id);
+    match parts.iter().position(|part| part.agent_id == agent_id) {
+        Some(at) => &mut parts[at],
+        None => {
+            parts.push(wire::AgentStep {
+                agent_id,
+                ..wire::AgentStep::default()
+            });
+            parts.last_mut().expect("just pushed")
+        }
     }
 }
 
@@ -202,6 +248,39 @@ impl<const FORGET: bool> TestKind<FORGET> {
             "ask_closed" => {
                 shared.close_ask(&id);
             }
+            "subagent_start" => {
+                let start = wire::NativeStart {
+                    provider_child_id: text_of(&value, "agent"),
+                    call_agent_id: state.host.clone(),
+                    call_key: text_of(&value, "call"),
+                    title: text_of(&value, "title"),
+                };
+                let provider_id = start.provider_child_id.clone();
+                part(&mut state.parts, &state.host, &provider_id).start = Some(start);
+            }
+            "subagent_text" => {
+                let at_ms = shared.now_ms();
+                let part = part(&mut state.parts, &state.host, &text_of(&value, "agent"));
+                part.items.push(wire::Item {
+                    key: id,
+                    text: text_of(&value, "text"),
+                    kind: Self::KIND as i32,
+                    body: body(claude_item::Kind::Message(wire::Text { complete: true })),
+                    at_ms,
+                    ..wire::Item::default()
+                });
+            }
+            "subagent_end" => {
+                let cause = match value.get("cause").and_then(Value::as_str) {
+                    Some("stopped") => wire::ExitCause::Stopped,
+                    _ => wire::ExitCause::Finished,
+                };
+                part(&mut state.parts, &state.host, &text_of(&value, "agent")).end =
+                    Some(wire::IncarnationEnd {
+                        cause: cause as i32,
+                        detail: None,
+                    });
+            }
             "turn_end" => {
                 // Only a stop interrupts this kind's turns, so an
                 // interrupted turn reads as stopped, as the step's TurnEnd
@@ -227,6 +306,71 @@ impl<const FORGET: bool> TestKind<FORGET> {
                         },
                     );
                 }
+            }
+            "sub_start" => {
+                // A nested subagent's call is in the chat of the subagent
+                // that made it; a direct one's is in the agent's own.
+                let call_agent_id = match value.get("by").and_then(Value::as_str) {
+                    Some(by) => shared.subagent_id(by),
+                    None => shared.agent_id().to_vec(),
+                };
+                let mut sub = shared.subagent(emit, &text_of(&value, "child"));
+                sub.start(NativeStart {
+                    call_agent_id,
+                    call_key: text_of(&value, "call"),
+                    title: text_of(&value, "title"),
+                    ..Default::default()
+                });
+                sub_snapshot(&mut sub);
+            }
+            "sub_text" => {
+                let mut sub = shared.subagent(emit, &text_of(&value, "child"));
+                let delta = text_of(&value, "delta");
+                if !sub.append(&id, &delta) {
+                    sub.item(ItemDraft {
+                        key: id,
+                        text: delta,
+                        body: body(claude_item::Kind::Message(wire::Text { complete: false })),
+                        ..Default::default()
+                    });
+                }
+            }
+            "sub_text_done" => {
+                let mut sub = shared.subagent(emit, &text_of(&value, "child"));
+                let text = sub
+                    .open_item(&id)
+                    .map(|item| item.text.clone())
+                    .unwrap_or_default();
+                sub.item(ItemDraft {
+                    key: id,
+                    text,
+                    body: body(claude_item::Kind::Message(wire::Text { complete: true })),
+                    complete: true,
+                    ..Default::default()
+                });
+            }
+            "sub_ask" => {
+                let now_ms = shared.now_ms();
+                let mut sub = shared.subagent(emit, &text_of(&value, "child"));
+                sub.open_ask(Ask {
+                    key: id,
+                    item_key: text_of(&value, "tool"),
+                    body: Some(wire::ask::Body::Permission(PermissionAsk {
+                        tool_name: text_of(&value, "tool_name"),
+                        ..Default::default()
+                    })),
+                    opened_at_ms: now_ms,
+                });
+                sub_snapshot(&mut sub);
+            }
+            "sub_end" => {
+                let mut sub = shared.subagent(emit, &text_of(&value, "child"));
+                sub.close_all_asks();
+                sub_snapshot(&mut sub);
+                sub.end(wire::IncarnationEnd {
+                    cause: wire::ExitCause::Finished as i32,
+                    detail: None,
+                });
             }
             _ => {}
         }
@@ -296,6 +440,49 @@ impl<const FORGET: bool> TestKind<FORGET> {
     }
 }
 
+impl<const FORGET: bool> TestKind<FORGET> {
+    /// A person's answer to a running subagent's ask; anything else, or
+    /// any input to a subagent not running, is refused.
+    fn child_input(state: &mut State<FORGET>, emit: &mut Emit, agent_id: &[u8], input: Input) {
+        let shared = &mut state.shared;
+        let id = input.input_id.clone();
+        let answer = match input.decode_body() {
+            Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
+                of: Some(claude_sdk_input::Of::Answer(answer)),
+            })) => answer,
+            _ => return shared.reject(emit, &id, Refusal::Unsupported),
+        };
+        let Some(child) = shared.subagent_child(agent_id).map(str::to_owned) else {
+            return shared.reject(emit, &id, Refusal::Unsupported);
+        };
+        let mut sub = shared.subagent(emit, &child);
+        if let Some(ask) = sub.answer(&id, &answer.ask_key) {
+            sub.effect(Effect::ProviderWrite(
+                serde_json::to_vec(&serde_json::json!({
+                    "type": "answer", "child": child, "ask": ask.key,
+                }))
+                .expect("json"),
+            ));
+            sub.accept(&id);
+            sub_snapshot(&mut sub);
+        }
+    }
+}
+
+/// A running subagent's snapshot: its phase and its open asks.
+fn sub_snapshot(sub: &mut Subagent<'_, Ask>) {
+    let body = ClaudeSnapshot {
+        asks: sub.asks().open_asks().to_vec(),
+        ..unknown::claude()
+    }
+    .encode_to_vec();
+    sub.snapshot(Snapshot {
+        phase: sub.phase() as i32,
+        body,
+        ..Default::default()
+    });
+}
+
 fn write(text: &str) -> Effect {
     Effect::ProviderWrite(
         serde_json::to_vec(&serde_json::json!({ "type": "user", "text": text })).expect("json"),
@@ -313,6 +500,8 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
             tools: BTreeMap::new(),
             interrupted: false,
             wake: None,
+            host: spec.agent_id.clone(),
+            parts: Vec::new(),
         };
         let step = state.shared.initial_step(Self::unknown_snapshot());
         (state, step)
@@ -320,6 +509,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
 
     fn reincarnate(mut state: Self::State, spec: &AgentSpec) -> (Self::State, Step) {
         state.shared.reincarnate(spec);
+        state.host = spec.agent_id.clone();
         state.resume()
     }
 
@@ -346,6 +536,9 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
             }
             Event::Fact(_) => {}
             Event::Input(input) => Self::input(state, &mut emit, input),
+            Event::ChildInput { agent_id, input } => {
+                Self::child_input(state, &mut emit, &agent_id, input)
+            }
             Event::AgentMessage(envelope) => Self::agent_message(state, &mut emit, envelope),
             Event::Rename { .. } => state.shared.renamed(),
             Event::ProviderExit { code } => {
@@ -376,7 +569,9 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
         }
         let body = state.body();
         let notice = state.shared.notice(crate::notice::claude_ask);
-        state.shared.finish(emit, body, notice)
+        let mut stepped = state.shared.finish(emit, body, notice);
+        stepped.step.agents.append(&mut state.parts);
+        stepped
     }
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {
@@ -501,6 +696,11 @@ mod tests {
     }
 
     #[test]
+    fn subagents_write_their_parts_into_the_hosts_steps() {
+        run("subagents");
+    }
+
+    #[test]
     fn the_checkpoint_property_catches_state_a_resume_loses() {
         let dir = std::env::temp_dir().join(format!("interpret-forget-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -563,6 +763,191 @@ mod tests {
             "{:?}",
             report.failures
         );
+    }
+
+    /// What the shared core does with what an interpreter writes for its
+    /// provider subagents.
+    mod subagents {
+        use wire::{AgentStep, IncarnationEnd, Snapshot};
+
+        use super::*;
+        use crate::{Shared, checks, subagent_id};
+
+        fn shared() -> Shared<Ask> {
+            Shared::new(
+                &AgentSpec {
+                    agent_id: vec![1; 16],
+                    ..Default::default()
+                },
+                wire::Kind::Unspecified,
+            )
+        }
+
+        fn start(call: &str) -> NativeStart {
+            NativeStart {
+                call_agent_id: vec![1; 16],
+                call_key: call.into(),
+                title: "look".into(),
+                ..Default::default()
+            }
+        }
+
+        fn message(key: &str, complete: bool) -> ItemDraft {
+            ItemDraft {
+                key: key.into(),
+                body: body(claude_item::Kind::Message(wire::Text { complete })),
+                complete,
+                ..Default::default()
+            }
+        }
+
+        fn ids(step: &Step) -> Vec<Vec<u8>> {
+            step.agents
+                .iter()
+                .map(|part| part.agent_id.clone())
+                .collect()
+        }
+
+        #[test]
+        fn parts_share_the_hosts_frame_one_per_subagent_in_first_touch_order() {
+            let mut shared = shared();
+            let mut emit = Emit::default();
+            shared.item(&mut emit, message("call", true));
+            shared.subagent(&mut emit, "b").start(start("call"));
+            shared.subagent(&mut emit, "a").start(start("call"));
+            shared.subagent(&mut emit, "b").item(message("m", false));
+            assert!(shared.subagent(&mut emit, "b").append("m", "hi"));
+            let stepped = shared.finish(emit, Vec::new(), None);
+            assert_eq!(stepped.broken, None);
+            let step = stepped.step;
+            assert_eq!(step.items.len(), 1, "the host's own part is as ever");
+            assert_eq!(step.items[0].key, "call");
+            let host = [1u8; 16];
+            assert_eq!(
+                ids(&step),
+                [subagent_id(&host, "b"), subagent_id(&host, "a")]
+            );
+            let b = &step.agents[0];
+            assert_eq!(b.start.as_ref().unwrap().provider_child_id, "b");
+            assert_eq!(b.items.len(), 1);
+            assert_eq!(
+                b.items[0].text, "hi",
+                "an append in the item's own step joins it"
+            );
+            assert_eq!(b.items[0].kind, wire::Kind::Unspecified as i32);
+        }
+
+        #[test]
+        fn a_part_outside_a_subagents_run_breaks_its_check() {
+            let mut shared = shared();
+            let mut emit = Emit::default();
+            shared.subagent(&mut emit, "a").item(message("m", true));
+            let stepped = shared.finish(emit, Vec::new(), None);
+            assert_eq!(
+                stepped.broken.map(|broken| broken.invariant.id),
+                Some(checks::SUBAGENT_RUN.id)
+            );
+            // Nothing is kept for a subagent that never started.
+            assert_eq!(shared.running_subagents().count(), 0);
+
+            let mut emit = Emit::default();
+            let mut sub = shared.subagent(&mut emit, "a");
+            sub.start(start("call"));
+            sub.item(message("n", false));
+            sub.end(IncarnationEnd::default());
+            let stepped = shared.finish(emit, Vec::new(), None);
+            assert_eq!(
+                stepped.broken.map(|broken| broken.detail),
+                Some("subagent a ended with 1 items still streaming".into())
+            );
+        }
+
+        #[test]
+        fn an_end_then_a_new_start_in_one_step_are_two_parts_in_order() {
+            let mut shared = shared();
+            let mut emit = Emit::default();
+            let mut sub = shared.subagent(&mut emit, "a");
+            sub.start(start("call"));
+            sub.end(IncarnationEnd::default());
+            shared.subagent(&mut emit, "a").start(start("again"));
+            let step = shared.finish(emit, Vec::new(), None).step;
+            assert_eq!(step.agents.len(), 2);
+            assert!(step.agents[0].end.is_some());
+            assert_eq!(step.agents[1].start.as_ref().unwrap().call_key, "again");
+            assert_eq!(step.agents[1].end, None);
+        }
+
+        #[test]
+        fn the_incarnations_end_ends_every_subagent_still_running() {
+            let mut shared = shared();
+            let mut emit = Emit::default();
+            shared.subagent(&mut emit, "a").start(start("call"));
+            shared.subagent(&mut emit, "b").start(start("call"));
+            shared.finish(emit, Vec::new(), None);
+            let mut emit = Emit::default();
+            let end = IncarnationEnd {
+                cause: wire::ExitCause::Stopped as i32,
+                detail: None,
+            };
+            emit.end_incarnation(end.clone());
+            let step = shared.finish(emit, Vec::new(), None).step;
+            assert_eq!(step.agents.len(), 2);
+            assert!(step.agents.iter().all(|part| part.end == Some(end.clone())));
+            assert_eq!(shared.running_subagents().count(), 0);
+        }
+
+        #[test]
+        fn a_snapshot_is_carried_only_when_it_changed_and_a_resume_re_emits_it() {
+            let mut shared = shared();
+            let mut emit = Emit::default();
+            let mut sub = shared.subagent(&mut emit, "a");
+            sub.start(start("call"));
+            sub.item(message("m", false));
+            let snapshot = Snapshot {
+                phase: sub.phase() as i32,
+                ..Default::default()
+            };
+            sub.snapshot(snapshot.clone());
+            shared.finish(emit, Vec::new(), None);
+            shared.tick(5000);
+            let mut emit = Emit::default();
+            shared.subagent(&mut emit, "a").snapshot(snapshot);
+            assert!(shared.finish(emit, Vec::new(), None).step.agents.is_empty());
+
+            let resumed = shared.resume_step(Vec::new());
+            assert_eq!(
+                resumed.agents,
+                [AgentStep {
+                    agent_id: shared.subagent_id("a"),
+                    items: vec![resumed.agents[0].items[0].clone()],
+                    snapshot: resumed.agents[0].snapshot.clone(),
+                    ..Default::default()
+                }]
+            );
+            assert_eq!(resumed.agents[0].items[0].key, "m");
+            assert!(resumed.agents[0].snapshot.is_some());
+        }
+
+        /// A checkpoint written before subagents were agents of their own
+        /// has no record of them and reads as none; one with none writes
+        /// none, so its bytes are as they were.
+        #[test]
+        fn a_checkpoint_without_subagents_reads_and_writes_as_before() {
+            let shared = shared();
+            let bytes = serde_json::to_value(&shared).unwrap();
+            assert!(bytes.get("subagents").is_none(), "{bytes}");
+            let read: Shared<Ask> = serde_json::from_value(bytes).unwrap();
+            assert_eq!(read, shared);
+
+            let mut running = shared.clone();
+            let mut emit = Emit::default();
+            running.subagent(&mut emit, "a").start(start("call"));
+            running.finish(emit, Vec::new(), None);
+            let again: Shared<Ask> =
+                serde_json::from_value(serde_json::to_value(&running).unwrap()).unwrap();
+            assert_eq!(again.running_subagents().collect::<Vec<_>>(), ["a"]);
+            assert_eq!(again.subagent_child(&running.subagent_id("a")), Some("a"));
+        }
     }
 
     mod invariants {
@@ -749,6 +1134,126 @@ mod tests {
                 streams_may_remain: true,
             };
             assert!(check_invariants::<TestKind>(&left, &allowed).is_empty());
+        }
+
+        fn part(agent: u8, f: impl FnOnce(&mut wire::AgentStep)) -> wire::AgentStep {
+            let mut part = wire::AgentStep {
+                agent_id: vec![agent; 16],
+                ..Default::default()
+            };
+            f(&mut part);
+            part
+        }
+
+        fn started(part: &mut wire::AgentStep) {
+            part.start = Some(wire::NativeStart {
+                provider_child_id: "c".into(),
+                ..Default::default()
+            });
+        }
+
+        fn ended(part: &mut wire::AgentStep) {
+            part.end = Some(wire::IncarnationEnd::default());
+        }
+
+        fn with_parts(parts: Vec<wire::AgentStep>) -> Step {
+            Step {
+                agents: parts,
+                ..Default::default()
+            }
+        }
+
+        #[test]
+        fn a_subagents_keys_are_its_own() {
+            let steps = [
+                first(),
+                Step {
+                    items: vec![streaming("m", true)],
+                    agents: vec![part(9, |part| {
+                        started(part);
+                        part.items = vec![streaming("m", false)];
+                        part.appends = vec![append("m")];
+                    })],
+                    ..Default::default()
+                },
+                with_parts(vec![part(9, |part| {
+                    part.items = vec![streaming("m", true)];
+                    ended(part);
+                })]),
+            ];
+            assert_eq!(check(&steps), Vec::<String>::new());
+        }
+
+        #[test]
+        fn a_subagents_first_part_has_a_start() {
+            let steps = [
+                first(),
+                with_parts(vec![part(9, |part| {
+                    part.items = vec![streaming("m", true)]
+                })]),
+            ];
+            let violations = check(&steps);
+            assert!(
+                violations[0].contains("subagent sub-09090909 has a part before its start"),
+                "{violations:?}"
+            );
+        }
+
+        #[test]
+        fn nothing_follows_a_subagents_end_but_a_new_start() {
+            let after = [
+                first(),
+                with_parts(vec![part(9, |part| {
+                    started(part);
+                    ended(part);
+                })]),
+                with_parts(vec![part(9, |part| {
+                    part.items = vec![streaming("m", true)]
+                })]),
+            ];
+            let violations = check(&after);
+            assert!(violations[0].contains("after its end"), "{violations:?}");
+            let continued = [
+                first(),
+                with_parts(vec![part(9, |part| {
+                    started(part);
+                    ended(part);
+                })]),
+                with_parts(vec![part(9, |part| {
+                    started(part);
+                    part.items = vec![streaming("m", true)];
+                })]),
+            ];
+            assert_eq!(check(&continued), Vec::<String>::new());
+        }
+
+        #[test]
+        fn a_subagent_ends_after_its_last_item_ends() {
+            let steps = [
+                first(),
+                with_parts(vec![part(9, |part| {
+                    started(part);
+                    part.items = vec![streaming("m", false)];
+                })]),
+                with_parts(vec![part(9, ended)]),
+            ];
+            let violations = check(&steps);
+            assert!(
+                violations[0].contains("ended with streams that never ended: m"),
+                "{violations:?}"
+            );
+            let running = [
+                first(),
+                with_parts(vec![part(9, |part| {
+                    started(part);
+                    part.items = vec![streaming("m", false)];
+                })]),
+            ];
+            let violations = check(&running);
+            assert!(
+                violations[0].contains("subagent sub-09090909: streams never ended"),
+                "{violations:?}"
+            );
         }
 
         #[test]

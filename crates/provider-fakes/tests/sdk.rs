@@ -593,3 +593,461 @@ async fn a_background_command_returns_at_once_and_its_job_ends_when_its_gate_ope
     );
     assert_eq!(host.close().await, 0);
 }
+
+/// A subagent's script: a word, a command, and its answer.
+fn subagent(task: &str, word: &str) -> Value {
+    json!({"task": task, "steps": [
+        {"thinking": {"text": ""}},
+        {"tool": {"name": "Bash", "class": "consequential",
+                  "input": {"command": format!("echo {word}"), "description": format!("Echo {word}")},
+                  "outcome": {"output": word}}},
+        {"text": {"chunks": [format!("It printed {word}.")]}},
+    ]})
+}
+
+/// Four subagents started in one message run as 2.1.325 runs subagents
+/// their parent waits on: each call starts a task whose prompt, thinking,
+/// calls and answer stream tagged with its id and its call, the four take
+/// turns, and each hands its answer back as its call's result before the
+/// parent goes on.
+#[tokio::test]
+async fn parallel_subagents_stream_their_own_conversations_and_hand_back() {
+    let words = ["RED", "GREEN", "BLUE", "GOLD"];
+    let mut host = Host::start(json!({"steps": [
+        {"subagents": {"agents": words.iter().map(|word| subagent(&format!("Echo {word} and report it"), word)).collect::<Vec<_>>()}},
+        {"text": {"chunks": ["RED GREEN BLUE GOLD"]}},
+        "turn_end",
+    ]}))
+    .await;
+    host.prompt(A, "Four subagents").await;
+    let result = host.until(|frame| frame["type"] == "result").await;
+    assert_eq!(result["result"], "RED GREEN BLUE GOLD");
+
+    let frames = host.frames.clone();
+    let started: Vec<&Value> = frames
+        .iter()
+        .filter(|frame| frame["subtype"] == "task_started")
+        .collect();
+    assert_eq!(started.len(), 4);
+    for (task, word) in started.iter().zip(words) {
+        assert_eq!(task["task_type"], "local_agent");
+        assert_eq!(task["is_backgrounded"], false);
+        let (id, call) = (&task["task_id"], &task["tool_use_id"]);
+        let own: Vec<&Value> = frames
+            .iter()
+            .filter(|frame| frame["agent_id"] == *id)
+            .collect();
+        assert!(own.iter().all(|frame| frame["parent_tool_use_id"] == *call));
+        let kinds: Vec<String> = own
+            .iter()
+            .map(|frame| {
+                format!(
+                    "{} {}",
+                    frame["type"].as_str().unwrap(),
+                    frame["message"]["content"][0]["type"].as_str().unwrap()
+                )
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                "user text",
+                "assistant thinking",
+                "assistant tool_use",
+                "user tool_result",
+                "assistant text"
+            ],
+            "subagent {word}"
+        );
+        assert_eq!(own[0]["message"]["content"][0]["text"], task["prompt"]);
+        let handed: Vec<&Value> = frames
+            .iter()
+            .filter(|frame| {
+                frame["parent_tool_use_id"].is_null()
+                    && frame["message"]["content"][0]["tool_use_id"] == *call
+            })
+            .collect();
+        assert_eq!(handed.len(), 1, "one result for {word}'s call");
+        assert!(
+            handed[0]["message"]["content"][0]["content"]
+                .to_string()
+                .contains(&format!("It printed {word}."))
+        );
+    }
+    // They take turns: every subagent has run a command before the first
+    // one answers.
+    let first_answer = frames
+        .iter()
+        .position(|frame| {
+            frame["agent_id"].is_string()
+                && frame["message"]["content"][0]["type"] == "text"
+                && frame["type"] == "assistant"
+        })
+        .unwrap();
+    let commands = frames[..first_answer]
+        .iter()
+        .filter(|frame| {
+            frame["agent_id"].is_string() && frame["message"]["content"][0]["type"] == "tool_use"
+        })
+        .count();
+    assert_eq!(commands, 4);
+    let notified: Vec<&Value> = frames
+        .iter()
+        .filter(|frame| frame["subtype"] == "task_notification")
+        .collect();
+    assert_eq!(notified.len(), 4);
+    assert!(notified.iter().all(|frame| frame["status"] == "completed"));
+    assert!(
+        !frames
+            .iter()
+            .any(|frame| frame["type"] == "stream_event" && frame["agent_id"].is_string()),
+        "a subagent's messages are not streamed"
+    );
+    assert_eq!(host.close().await, 0);
+}
+
+/// A subagent's ask names the subagent.
+#[tokio::test]
+async fn a_subagents_ask_names_it() {
+    let mut host = Host::start(json!({"steps": [
+        {"subagents": {"agents": [{"task": "Touch a file", "steps": [
+            {"ask": {"permission": {"class": "consequential", "input": {"command": "touch asked.txt"},
+                                    "outcome": {"output": ""}}}},
+            {"text": {"chunks": ["done"]}},
+        ]}]}},
+        {"text": {"chunks": ["DONE"]}},
+        "turn_end",
+    ]}))
+    .await;
+    host.prompt(A, "Ask from a subagent").await;
+    let request = host.until(|frame| frame["type"] == "control_request").await;
+    let started = host
+        .frames
+        .iter()
+        .find(|frame| frame["subtype"] == "task_started")
+        .unwrap()
+        .clone();
+    assert_eq!(request["request"]["subtype"], "can_use_tool");
+    assert_eq!(request["request"]["agent_id"], started["task_id"]);
+    host.send(json!({"type":"control_response","response":{
+        "subtype":"success","request_id":request["request_id"],
+        "response":{"behavior": "allow", "updatedInput": {"command": "touch asked.txt"}}}}))
+        .await;
+    let result = host.until(|frame| frame["type"] == "result").await;
+    assert_eq!(result["result"], "DONE");
+    assert_eq!(host.close().await, 0);
+}
+
+/// A subagent stopped by its task id ends as Claude ends one: the task is
+/// killed and says it stopped, and the call that started it returns
+/// interrupted, so the parent goes on.
+#[tokio::test]
+async fn a_stopped_subagent_says_so_and_its_call_returns_interrupted() {
+    let dir = tempfile::tempdir().unwrap();
+    let never = dir.path().join("never");
+    let mut host = Host::start(json!({"steps": [
+        {"subagents": {"agents": [{"task": "Sleep long", "steps": [
+            {"tool": {"name": "Bash", "class": "consequential", "wait_for": never,
+                      "input": {"command": "sleep 90", "description": "Sleep"}}},
+            {"text": {"chunks": ["never said"]}},
+        ]}]}},
+        {"text": {"chunks": ["It was stopped."]}},
+        "turn_end",
+    ]}))
+    .await;
+    host.prompt(A, "Start and stop").await;
+    let started = host.until(|frame| frame["subtype"] == "task_started").await;
+    host.until(|frame| frame["subtype"] == "task_progress")
+        .await;
+    host.send(json!({"type":"control_request","request_id":"stop-1",
+        "request":{"subtype":"stop_task","task_id":started["task_id"]}}))
+        .await;
+    let response = host
+        .until(|frame| {
+            frame["type"] == "control_response" && frame["response"]["request_id"] == "stop-1"
+        })
+        .await;
+    assert_eq!(response["response"]["subtype"], "success");
+    let result = host.until(|frame| frame["type"] == "result").await;
+    assert_eq!(result["result"], "It was stopped.");
+    let frames = &host.frames;
+    let updated = frames
+        .iter()
+        .find(|frame| frame["subtype"] == "task_updated")
+        .unwrap();
+    assert_eq!(updated["patch"]["status"], "killed");
+    let notified = frames
+        .iter()
+        .find(|frame| frame["subtype"] == "task_notification")
+        .unwrap();
+    assert_eq!(notified["status"], "stopped");
+    let returned = frames
+        .iter()
+        .find(|frame| {
+            frame["parent_tool_use_id"].is_null()
+                && frame["message"]["content"][0]["tool_use_id"] == started["tool_use_id"]
+        })
+        .unwrap();
+    assert_eq!(returned["message"]["content"][0]["is_error"], true);
+    assert!(
+        !frames
+            .iter()
+            .any(|frame| frame["message"]["content"][0]["text"] == "never said")
+    );
+    assert_eq!(host.close().await, 0);
+}
+
+/// A subagent started in the background runs as 2.1.325 runs one: its
+/// call returns "launched" at once and the turn that started it ends while
+/// it works; its steps play once no turn runs, its end notifies, and that
+/// notification starts a turn of Claude's own, with no prompt replayed,
+/// which plays the script's next steps.
+#[tokio::test]
+async fn a_background_subagent_outlives_its_turn_and_its_end_starts_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let gate = dir.path().join("go");
+    let mut host = Host::start(json!({"steps": [
+        {"subagents": {"agents": [{"task": "Count the files", "background": true, "steps": [
+            {"wait_for": {"path": gate}},
+            {"text": {"chunks": ["There are 3 files."]}},
+        ]}]}},
+        {"text": {"chunks": ["It is counting."]}},
+        "turn_end",
+        {"text": {"chunks": ["Done: 3 files."]}},
+        "turn_end",
+    ]}))
+    .await;
+    host.prompt(A, "Count with a subagent").await;
+    let result = host.until(|frame| frame["type"] == "result").await;
+    assert_eq!(result["result"], "It is counting.");
+    let frames = host.frames.clone();
+    let started = frames
+        .iter()
+        .find(|frame| frame["subtype"] == "task_started")
+        .unwrap();
+    assert_eq!(started["is_backgrounded"], true);
+    let launched = frames
+        .iter()
+        .find(|frame| {
+            frame["parent_tool_use_id"].is_null()
+                && frame["message"]["content"][0]["tool_use_id"] == started["tool_use_id"]
+        })
+        .unwrap();
+    assert_eq!(launched["tool_use_result"]["status"], "async_launched");
+    assert!(
+        !frames
+            .iter()
+            .any(|frame| frame["subtype"] == "task_notification"),
+        "the subagent outlives the turn"
+    );
+
+    std::fs::write(&gate, "").unwrap();
+    let notified = host
+        .until(|frame| frame["subtype"] == "task_notification")
+        .await;
+    assert_eq!(notified["status"], "completed");
+    assert_eq!(notified["summary"], "There are 3 files.");
+    let result = host.until(|frame| frame["type"] == "result").await;
+    assert_eq!(result["result"], "Done: 3 files.");
+    let at = host
+        .frames
+        .iter()
+        .position(|frame| frame["subtype"] == "task_notification")
+        .unwrap();
+    let follow_up: Vec<String> = host.frames[at + 1..]
+        .iter()
+        .filter(|frame| frame["type"] != "stream_event")
+        .map(|frame| {
+            format!(
+                "{} {}",
+                frame["type"].as_str().unwrap(),
+                frame["subtype"].as_str().unwrap_or_default()
+            )
+        })
+        .collect();
+    assert_eq!(
+        follow_up,
+        ["system init", "assistant ", "result success"],
+        "no prompt is replayed into the follow-up turn"
+    );
+    assert_eq!(host.close().await, 0);
+}
+
+/// A subagent stopped while it waits on the host, on an open ask or in a
+/// pause, stops waiting: an open ask is withdrawn, and its call returns
+/// interrupted, so the parent goes on.
+#[tokio::test]
+async fn a_subagent_stopped_while_it_waits_stops_waiting() {
+    let asking = json!({"ask": {"permission": {"class": "consequential",
+        "input": {"command": "touch asked.txt"}, "outcome": {"output": ""}}}});
+    let pausing = json!({"pause": {"ms": 60_000}});
+    for (waits, waiting) in [("ask", asking), ("pause", pausing)] {
+        let mut host = Host::start(json!({"steps": [
+            {"subagents": {"agents": [{"task": "Wait", "steps": [
+                waiting,
+                {"text": {"chunks": ["never said"]}},
+            ]}]}},
+            {"text": {"chunks": ["It was stopped."]}},
+            "turn_end",
+        ]}))
+        .await;
+        host.prompt(A, "Start and stop").await;
+        let started = host.until(|frame| frame["subtype"] == "task_started").await;
+        let asked = if waits == "ask" {
+            let request = host.until(|frame| frame["type"] == "control_request").await;
+            Some(request["request_id"].clone())
+        } else {
+            // The subagent's prompt is written before its first step.
+            host.until(|frame| frame["agent_id"] == started["task_id"])
+                .await;
+            None
+        };
+        host.send(json!({"type":"control_request","request_id":"stop-1",
+            "request":{"subtype":"stop_task","task_id":started["task_id"]}}))
+            .await;
+        let result = host.until(|frame| frame["type"] == "result").await;
+        assert_eq!(
+            result["result"], "It was stopped.",
+            "stopped in its {waits}"
+        );
+        let frames = &host.frames;
+        if let Some(asked) = asked {
+            assert!(
+                frames
+                    .iter()
+                    .any(|frame| frame["type"] == "control_cancel_request"
+                        && frame["request_id"] == asked),
+                "the stopped subagent's ask is withdrawn"
+            );
+        }
+        let returned = frames
+            .iter()
+            .find(|frame| {
+                frame["parent_tool_use_id"].is_null()
+                    && frame["message"]["content"][0]["tool_use_id"] == started["tool_use_id"]
+            })
+            .unwrap();
+        assert_eq!(
+            returned["message"]["content"][0]["is_error"], true,
+            "{waits}"
+        );
+        assert!(
+            !frames
+                .iter()
+                .any(|frame| frame["message"]["content"][0]["text"] == "never said"),
+            "{waits}"
+        );
+        assert_eq!(host.close().await, 0);
+    }
+}
+
+/// An interrupt ends the parent's turn and spares a subagent it started in
+/// the background, as Claude spares one for a host that declares it stops
+/// each task itself (amux's `perTaskStopAffordance`): the subagent's steps
+/// play on once the turn is over, each call it makes returns its result,
+/// and its end notifies as completed.
+#[tokio::test]
+async fn a_background_subagent_plays_on_whole_after_its_parents_turn_is_interrupted() {
+    let dir = tempfile::tempdir().unwrap();
+    let never = dir.path().join("never");
+    let mut host = Host::start(json!({"steps": [
+        {"subagents": {"agents": [{"task": "Read the file", "background": true, "steps": [
+            {"tool": {"class": "exploration", "outcome": {"output": "read"}}},
+            {"text": {"chunks": ["It says hello."]}},
+        ]}]}},
+        {"wait_for": {"path": never}},
+        "turn_end",
+    ]}))
+    .await;
+    host.prompt(A, "Read with a subagent").await;
+    let started = host.until(|frame| frame["subtype"] == "task_started").await;
+    host.until(|frame| {
+        frame["parent_tool_use_id"].is_null()
+            && frame["message"]["content"][0]["tool_use_id"] == started["tool_use_id"]
+    })
+    .await;
+    host.send(
+        json!({"type":"control_request","request_id":"req_1","request":{"subtype":"interrupt"}}),
+    )
+    .await;
+    let result = host.until(|frame| frame["type"] == "result").await;
+    assert_eq!(result["subtype"], "error_during_execution");
+    let notified = host
+        .until(|frame| frame["subtype"] == "task_notification")
+        .await;
+    assert_eq!(notified["status"], "completed");
+    assert_eq!(notified["summary"], "It says hello.");
+    let call = host
+        .frames
+        .iter()
+        .find_map(|frame| {
+            let block = &frame["message"]["content"][0];
+            (frame["type"] == "assistant"
+                && block["type"] == "tool_use"
+                && block["name"] != "Agent")
+                .then(|| block["id"].clone())
+        })
+        .expect("the subagent's call");
+    assert!(
+        host.frames
+            .iter()
+            .any(|frame| frame["message"]["content"][0]["tool_use_id"] == call),
+        "the subagent's call returns no result: {:#?}",
+        host.trace()
+    );
+    assert_eq!(host.close().await, 0);
+}
+
+/// An interrupt cuts a subagent the parent's turn waits on, with no notice:
+/// the Agent call that started it returns refused, as terminal Claude's
+/// `subagent_stopped_foreground` recording shows Claude refusing every call
+/// an interrupt cuts.
+#[tokio::test]
+async fn an_interrupt_cuts_a_foreground_subagent_and_refuses_its_call_with_no_notice() {
+    let dir = tempfile::tempdir().unwrap();
+    let never = dir.path().join("never");
+    let mut host = Host::start(json!({"steps": [
+        {"subagents": {"agents": [{"task": "Read the file", "steps": [
+            {"wait_for": {"path": never}},
+            {"text": {"chunks": ["It says hello."]}},
+        ]}]}},
+        "turn_end",
+    ]}))
+    .await;
+    host.prompt(A, "Read with a subagent").await;
+    let started = host.until(|frame| frame["subtype"] == "task_started").await;
+    host.send(
+        json!({"type":"control_request","request_id":"req_1","request":{"subtype":"interrupt"}}),
+    )
+    .await;
+    let result = host.until(|frame| frame["type"] == "result").await;
+    assert_eq!(result["subtype"], "error_during_execution");
+    let returned = host
+        .frames
+        .iter()
+        .find(|frame| {
+            frame["parent_tool_use_id"].is_null()
+                && frame["message"]["content"][0]["tool_use_id"] == started["tool_use_id"]
+        })
+        .unwrap_or_else(|| panic!("the Agent call returns: {:#?}", host.trace()));
+    let block = &returned["message"]["content"][0];
+    assert_eq!(block["is_error"], true);
+    assert!(
+        block["content"]
+            .as_str()
+            .is_some_and(|text| text.starts_with("The user doesn't want to proceed")),
+        "{block}"
+    );
+    assert!(
+        host.frames
+            .iter()
+            .all(|frame| frame["subtype"] != "task_notification"),
+        "{:#?}",
+        host.trace()
+    );
+    let marker = host.frames.iter().any(|frame| {
+        frame["message"]["content"][0]["text"] == "[Request interrupted by user for tool use]"
+    });
+    assert!(marker, "{:#?}", host.trace());
+    assert_eq!(host.close().await, 0);
+}

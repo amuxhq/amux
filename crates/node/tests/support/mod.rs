@@ -200,16 +200,30 @@ impl Install {
     /// daemon core or an agent's core asked for: an invariant it broke, or
     /// a step over its budget.
     pub fn core_dumps(&self) -> Vec<String> {
-        let Ok(bundles) = std::fs::read_dir(self.data_dir.join(node::REPORTS)) else {
-            return Vec::new();
-        };
-        bundles
+        self.bundles()
+            .into_iter()
             .filter_map(|bundle| {
-                let manifest = std::fs::read(bundle.ok()?.path().join(node::MANIFEST)).ok()?;
+                let manifest = std::fs::read(bundle.join(node::MANIFEST)).ok()?;
                 let manifest: serde_json::Value = serde_json::from_slice(&manifest).ok()?;
                 let reason = manifest["reason"].as_str()?;
                 (reason.starts_with(node::CORE_DUMP) || reason.starts_with(node::AGENT_DUMP))
                     .then(|| reason.to_owned())
+            })
+            .collect()
+    }
+
+    /// Every bundle sealed in the installation's reports. A dump assembles
+    /// its bundle in a hidden directory, writes the manifest there last and
+    /// renames it into place, so a hidden one with a manifest is a bundle
+    /// about to move: a path read through it may already be gone.
+    pub fn bundles(&self) -> Vec<PathBuf> {
+        let Ok(entries) = std::fs::read_dir(self.data_dir.join(node::REPORTS)) else {
+            return Vec::new();
+        };
+        entries
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                (!entry.file_name().to_string_lossy().starts_with('.')).then(|| entry.path())
             })
             .collect()
     }

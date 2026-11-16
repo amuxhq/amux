@@ -608,6 +608,7 @@ pub fn to_wire(row: &AgentRow) -> Agent {
         filed_at_ms: row.filed_at_ms,
         title: row.title.clone(),
         last_said: row.last_said.clone(),
+        native: row.native.clone(),
     }
 }
 

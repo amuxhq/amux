@@ -86,8 +86,19 @@ impl Daemon {
     /// The directory holding the agent's files: its own directory, or the
     /// replica's under its host.
     pub(crate) fn files_of(&self, row: &AgentRow) -> PathBuf {
-        let agent = AgentId(row.agent.agent.as_slice().try_into().unwrap_or_default());
+        let mut agent = AgentId(row.agent.agent.as_slice().try_into().unwrap_or_default());
         if row.agent.host == self.store.own_host() {
+            // A provider subagent has no directory: everything it attaches
+            // or uploads lives in the directory of the agent that runs it,
+            // whose process wrote it.
+            if row.native.is_some()
+                && let Some(host) = row
+                    .parent
+                    .as_ref()
+                    .and_then(|parent| AgentId::from_slice(&parent.agent))
+            {
+                agent = host;
+            }
             agent_dir(&self.options.agents, agent)
         } else {
             let host: [u8; 16] = row.agent.host.as_slice().try_into().unwrap_or_default();

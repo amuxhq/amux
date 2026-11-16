@@ -29,6 +29,8 @@ struct TranscriptList: View {
     let notices: [FeedNotice]
     /// This client's prompts on their way, after the newest row.
     var landings: [FeedLanding] = []
+    /// Opens the chat of an agent a row's call started.
+    var openAgent: @MainActor (AgentKey) -> Void = { _ in }
 
     var body: some View {
         // The list fills the space under the header and the standing card
@@ -43,7 +45,7 @@ struct TranscriptList: View {
                     reportsElements: reportsElements, reportedPrefix: reportedPrefix,
                     reportsGeometry: reportsGeometry, dynamicTypeSize: dynamicTypeSize),
                 revision: model.revision, toNewest: model.toNewest,
-                insets: proxy.safeAreaInsets, reported: reported)
+                insets: proxy.safeAreaInsets, reported: reported, openAgent: openAgent)
             .ignoresSafeArea()
         }
         .preference(key: IdentifiedElements.self, value: reported.elements)
@@ -114,6 +116,7 @@ private struct ListView: UIViewRepresentable {
     let toNewest: Int
     let insets: EdgeInsets
     let reported: ReportedElements
+    let openAgent: @MainActor (AgentKey) -> Void
 
     func makeCoordinator() -> FeedCoordinator {
         FeedCoordinator(model: model, environment: environment, reported: reported)
@@ -124,6 +127,7 @@ private struct ListView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: FeedView, context: Context) {
+        context.coordinator.openAgent = openAgent
         context.coordinator.update(
             items: items, notices: notices, landings: landings, environment: environment,
             revision: revision, toNewest: toNewest, insets: insets)
@@ -417,6 +421,10 @@ final class FeedCoordinator: NSObject, UICollectionViewDelegate {
     }
     let model: ChatModel
     let view: FeedView
+    /// Opens an agent a row's call started. The cells call it through the
+    /// coordinator, so a cell configured before the screen handed down a
+    /// newer one still reaches it.
+    var openAgent: @MainActor (AgentKey) -> Void = { _ in }
     private let reported: ReportedElements
     private var dataSource: UICollectionViewDiffableDataSource<Int, ListItem>!
     private var items: [ListItem] = []
@@ -489,7 +497,8 @@ final class FeedCoordinator: NSObject, UICollectionViewDelegate {
         var environment = self.environment
         if let photographed { environment.photographed = photographed }
         return CellContent(
-            model: model, item: item, notice: notice(for: item), landing: landing(for: item))
+            model: model, item: item, notice: notice(for: item), landing: landing(for: item),
+            openAgent: { [weak self] in self?.openAgent($0) })
             .padding(.horizontal, environment.design.metrics.gutter)
             .cellEnvironment(environment)
     }
@@ -820,11 +829,12 @@ private struct CellContent: View {
     let item: ListItem
     let notice: FeedNotice?
     let landing: FeedLanding?
+    let openAgent: @MainActor (AgentKey) -> Void
 
     var body: some View {
         switch item {
         case .row(let id):
-            RowCellView(cell: model.cell(for: id), model: model)
+            RowCellView(cell: model.cell(for: id), model: model, openAgent: openAgent)
         case .notice:
             if let notice { FeedNoticeView(notice: notice) }
         case .landing:

@@ -241,6 +241,40 @@ pub enum Step {
         #[serde(skip)]
         played: usize,
     },
+    /// Subagents the model starts together and waits for: each plays its
+    /// own steps as the provider runs a subagent (Codex: a child thread on
+    /// the same server), the subagents' steps taking turns so their items
+    /// interleave as parallel ones do. The parent's turn goes on once the
+    /// last has finished.
+    Subagents { agents: Vec<Subagent> },
+}
+
+/// One subagent of a [`Step::Subagents`]: its task and what it does. Its
+/// steps are a turn's (text, thinking, tools, asks, pauses); they end when
+/// they run out, so a subagent has no `turn_end` of its own.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Subagent {
+    /// What the parent asked it to do.
+    pub task: String,
+    /// The name the provider gives it (Codex's nickname); one of the
+    /// provider's own when unset.
+    #[serde(default)]
+    pub nickname: Option<String>,
+    /// Its turn waits until a client has read its thread and been answered,
+    /// as a client reading the nickname at the spawn sees Codex answer
+    /// before the child's turn starts. Without it the turn starts at once.
+    #[serde(default)]
+    pub await_read: bool,
+    /// Started in the background, as Claude starts one unless its call asks
+    /// otherwise (headless Claude only): its call returns at once, the
+    /// turn that started it goes on and may end while it works, and its
+    /// steps play while no turn runs. Its end starts a turn of its own on
+    /// its notification, which plays the script's next steps.
+    #[serde(default)]
+    pub background: bool,
+    #[serde(default)]
+    pub steps: Vec<Step>,
 }
 
 /// A tool call. The class picks a tool of that class when no name is given:
@@ -568,6 +602,26 @@ fn check_steps(
                 });
             }
             Step::Repeat { steps, .. } => check_steps(steps, provider, raises, plays)?,
+            Step::Subagents { agents } => {
+                if !plays.contains(&"subagents") {
+                    return Err(ScriptError::UnsupportedStep {
+                        provider,
+                        step: "subagents",
+                    });
+                }
+                for agent in agents {
+                    if agent.background && !plays.contains(&"background_subagents") {
+                        return Err(ScriptError::UnsupportedStep {
+                            provider,
+                            step: "background subagents",
+                        });
+                    }
+                    if let Some(step) = agent.steps.iter().find_map(Step::outside_a_subagent) {
+                        return Err(ScriptError::UnsupportedStep { provider, step });
+                    }
+                    check_steps(&agent.steps, provider, raises, plays)?;
+                }
+            }
             step => {
                 if let Some(kind) = step.provider_kind()
                     && !plays.contains(&kind)
@@ -589,6 +643,21 @@ impl Step {
         match self {
             Step::Usage(_) => Some("usage"),
             Step::AuthFailed { .. } => Some("auth_failed"),
+            Step::Subagents { .. } => Some("subagents"),
+            _ => None,
+        }
+    }
+
+    /// The name of a step only a turn can play, not a subagent inside one:
+    /// what ends or reports on the whole session, and subagents of its own.
+    fn outside_a_subagent(&self) -> Option<&'static str> {
+        match self {
+            Step::TurnEnd => Some("turn_end in a subagent"),
+            Step::Exit { .. } => Some("exit in a subagent"),
+            Step::Usage(_) => Some("usage in a subagent"),
+            Step::AuthFailed { .. } => Some("auth_failed in a subagent"),
+            Step::Repeat { .. } => Some("repeat in a subagent"),
+            Step::Subagents { .. } => Some("subagents in a subagent"),
             _ => None,
         }
     }

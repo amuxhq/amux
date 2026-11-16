@@ -25,27 +25,27 @@ item turn:1 turn final at=1793452834083 text="" #1 TURN_OUTCOME_COMPLETED starte
 snapshot said "one"
 snapshot IDLE queue=[] working_on=- at=1793452834029 asks=[] session=a3084bda-d119-4383-ae59-39b823d3dda1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35576/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 turn_end 1 last=stream:d0242bf7-80b0-4140-8fdc-937a68139159
-## 56 recorded 54: fact Hook hook_event_name=SessionStart
-item boundary:2 boundary final at=1793452834477 text="" BOUNDARY_KIND_RESUMED
-## 61 recorded 59: fact Transcript type=user uuid=03ec20dc-2545-421c-9348-34286b607a15
+## 57 recorded 55: fact Hook hook_event_name=SessionStart
+item boundary:2 boundary final at=1793452846315 text="" BOUNDARY_KIND_RESUMED
+## 67 recorded 65: fact Transcript type=user uuid=03ec20dc-2545-421c-9348-34286b607a15
 item 03ec20dc-2545-421c-9348-34286b607a15 prompt final at=1793452833264 text="Reply with the single word one and nothing else."
-snapshot WORKING queue=[] working_on=- at=1793452834477 asks=[] session=a3084bda-d119-4383-ae59-39b823d3dda1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35576/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
-## 78 recorded 76: fact Transcript type=assistant uuid=38a0048e-af32-4d25-b86f-f07d0dc215e7
+snapshot WORKING queue=[] working_on=- at=1793452855631 asks=[] session=a3084bda-d119-4383-ae59-39b823d3dda1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35576/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 101 recorded 99: fact Transcript type=assistant uuid=38a0048e-af32-4d25-b86f-f07d0dc215e7
 item 38a0048e-af32-4d25-b86f-f07d0dc215e7 message final at=1793452834036 text="one"
-## 81 recorded 79: fact Transcript type=system subtype=turn_duration uuid=248eba56-4d3e-4a65-b6b7-29110a71ffbe
+## 107 recorded 105: fact Transcript type=system subtype=turn_duration uuid=248eba56-4d3e-4a65-b6b7-29110a71ffbe
 item turn:2 turn final at=1793452834083 text="" #2 TURN_OUTCOME_COMPLETED started=1793452833250
-snapshot IDLE queue=[] working_on=- at=1793452834477 asks=[] session=a3084bda-d119-4383-ae59-39b823d3dda1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35576/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot IDLE queue=[] working_on=- at=1793452892685 asks=[] session=a3084bda-d119-4383-ae59-39b823d3dda1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35576/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 turn_end 2 last=38a0048e-af32-4d25-b86f-f07d0dc215e7
-## 90 recorded 88: fact Transcript type=user uuid=7d0e91fd-4d69-4af8-b7e7-34ddc08c2e81
+## 125 recorded 123: fact Transcript type=user uuid=7d0e91fd-4d69-4af8-b7e7-34ddc08c2e81
 item 7d0e91fd-4d69-4af8-b7e7-34ddc08c2e81 prompt final at=1793452836697 text="Reply with the single word two and nothing else."
-snapshot WORKING queue=[] working_on=- at=1793452834477 asks=[] session=a3084bda-d119-4383-ae59-39b823d3dda1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35576/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
-## 92 recorded 90: fact Hook hook_event_name=MessageDisplay
-item stream:257b60ed-3de6-45be-842a-821295df892d message open at=1793452834477 text="two"
-## 94 recorded 92: fact Transcript type=assistant uuid=a5293524-b3ad-48a4-9f0b-fbdc849c6bd0
+snapshot WORKING queue=[] working_on=- at=1793452918241 asks=[] session=a3084bda-d119-4383-ae59-39b823d3dda1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35576/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 129 recorded 127: fact Hook hook_event_name=MessageDisplay
+item stream:257b60ed-3de6-45be-842a-821295df892d message open at=1793452921157 text="two"
+## 133 recorded 131: fact Transcript type=assistant uuid=a5293524-b3ad-48a4-9f0b-fbdc849c6bd0
 item stream:257b60ed-3de6-45be-842a-821295df892d message final at=1793452837486 text="two"
-snapshot WORKING queue=[] working_on=- at=1793452834477 asks=[] session=a3084bda-d119-4383-ae59-39b823d3dda1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35619/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
-## 96 recorded 94: fact Transcript type=system subtype=turn_duration uuid=025b0bf1-37db-42ae-9b12-549cb65d4424
+snapshot WORKING queue=[] working_on=- at=1793452921285 asks=[] session=a3084bda-d119-4383-ae59-39b823d3dda1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35619/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+## 136 recorded 134: fact Transcript type=system subtype=turn_duration uuid=025b0bf1-37db-42ae-9b12-549cb65d4424
 item turn:3 turn final at=1793452837539 text="" #3 TURN_OUTCOME_COMPLETED started=1793452836691
 snapshot said "two"
-snapshot IDLE queue=[] working_on=- at=1793452834477 asks=[] session=a3084bda-d119-4383-ae59-39b823d3dda1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35619/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot IDLE queue=[] working_on=- at=1793452921286 asks=[] session=a3084bda-d119-4383-ae59-39b823d3dda1 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35619/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 turn_end 3 last=stream:257b60ed-3de6-45be-842a-821295df892d

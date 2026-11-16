@@ -71,6 +71,42 @@ pub enum Composer {
     /// The chat is not current. Drafting continues; a send is refused at
     /// once and the draft stays in the composer, which says why.
     Waiting(Waiting),
+    /// A subagent its parent's provider runs (Claude's Agent tool, a Codex
+    /// child thread): neither provider lets anyone but the parent's model
+    /// talk to it, so there is no text box, only what says so and, where
+    /// the provider stops one subagent on request, its Stop. `stop` is the
+    /// subagent's own job as its snapshot lists it; an ask in its chat is
+    /// answered as any ask is.
+    Native {
+        stop: JobStop,
+    },
+}
+
+/// Stopping one background job, which leaves the agent running. Only a kind
+/// whose provider stops one job on request offers it: terminal Claude
+/// cannot.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum JobStop {
+    /// This job cannot be stopped on its own.
+    Unavailable,
+    /// The person can stop it; the key names it in the stop input.
+    Offered { key: String },
+    /// A stop was sent and the provider has not yet said the job ended.
+    Stopping,
+    /// The provider refused the last stop, in its words; the person can
+    /// try again.
+    Refused { key: String, error: String },
+}
+
+impl JobStop {
+    /// The key a stop sends now, when one can go: offered, or refused and
+    /// worth trying again.
+    pub fn key(&self) -> Option<&str> {
+        match self {
+            JobStop::Offered { key } | JobStop::Refused { key, .. } => Some(key),
+            JobStop::Unavailable | JobStop::Stopping => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -206,6 +242,12 @@ mod tests {
             Composer::Waiting(Waiting::Detached),
             Composer::Resume,
             Composer::Send,
+            Composer::Native {
+                stop: JobStop::Refused {
+                    key: "a1".into(),
+                    error: "no such task".into(),
+                },
+            },
         ];
         let text = serde_json::to_string(&values).unwrap();
         let back: Vec<Composer> = serde_json::from_str(&text).unwrap();

@@ -30,12 +30,19 @@ pub const ITEM_BEFORE_OPEN: Check = Check {
     sentence: "every item key is opened before it is updated or closed, and never reopened",
 };
 
+pub const SUBAGENT_RUN: Check = Check {
+    id: "agent.subagent_run",
+    sentence: "a provider subagent's parts come between its start and its end, \
+               and it ends with no item streaming",
+};
+
 /// Every check an interpreter's step is judged by.
 pub const CHECKS: &[Check] = &[
     TOOL_RESULT_WITHOUT_CALL,
     EXIT_LEFT_OPEN,
     CLOSED_ASK_ANSWERED,
     ITEM_BEFORE_OPEN,
+    SUBAGENT_RUN,
 ];
 
 /// How many closed item keys are remembered, so a key opened again after

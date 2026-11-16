@@ -1,16 +1,21 @@
 //! View data goldens for all three kinds, derived from every interpreter
 //! fixture: the interpreter's emission is committed the way the daemon
 //! commits it (an order once per new key, a revision per record), reduced
-//! into a session. Each frame records where the ask card and the composer
-//! moved; the rows, the overview, the context and the settings are
-//! recorded once, as the fixture leaves them. The rows' streaming rules
-//! are held by the session spec and the views tests, not frame by frame
-//! here.
+//! into a session. Each provider subagent's part of a step is committed
+//! under the subagent, into a session of its own, and the subagent gets a
+//! fleet row under the agent from its start, its snapshots' phases and its
+//! end, as the daemon makes it. Each frame records where the ask card and
+//! the composer moved, in the agent's chat and in each subagent's, and how
+//! the agents its rows open stand in the fleet; the rows, the overview,
+//! the context and the settings are recorded once, as the fixture leaves
+//! them, the agent's first and then each subagent's own chat. The rows'
+//! streaming rules are held by the session spec and the views tests, not
+//! frame by frame here.
 //!
 //! Goldens live in `tests/goldens/<kind>/<fixture>.golden` and are only
 //! rewritten with `UI_VIEW_UPDATE_GOLDENS=1`; review the diff.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -18,10 +23,10 @@ use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
 use interpret::{Committer, Interpreter, Replayed, replay};
-use ui_state::{InputOutcome, Msg, SessionState};
+use ui_state::{FleetMsg, FleetState, InputOutcome, Msg, SessionState};
 use ui_view::{
-    ToolRows, ask_card, composer, context, overview, prompts_underway, queue_rows, refused_prompts,
-    settings, sign_in,
+    ToolRows, ask_card, chat_agents, composer, context, overview, prompts_underway, queue_rows,
+    refused_prompts, settings, sign_in,
 };
 use wire::{Kind, SessionEvent, session_event};
 
@@ -96,11 +101,41 @@ fn answered(kind: &ui_view::RowKind) -> String {
     )
 }
 
+/// How a subagent is named here: `sub-` and its id's first eight hex
+/// digits, as the daemon names it.
+fn sub_name(agent_id: &[u8]) -> String {
+    let hex = interpret::to_hex(agent_id);
+    format!("sub-{}", &hex[..hex.len().min(8)])
+}
+
+/// What a row that opens an agent opens, and its group, ahead of the
+/// clipped row so they stay legible.
+fn opening(row: &ui_view::Row) -> String {
+    let Some(agent) = &row.opens else {
+        return String::new();
+    };
+    let mut said = format!("[opens={}", sub_name(agent));
+    if let Some(group) = &row.group {
+        let _ = write!(
+            said,
+            " group[{} x{}{}]",
+            group.first,
+            group.agents.len(),
+            if group.open { " open" } else { "" }
+        );
+    }
+    if row.collapsed {
+        said.push_str(" collapsed");
+    }
+    said + "] "
+}
+
 fn describe_row(row: &ui_view::Row) -> String {
     let mut line = format!(
-        "{:>4} {} {}{:?}",
+        "{:>4} {} {}{}{:?}",
         row.order,
         row.id,
+        opening(row),
         answered(&row.kind),
         row.kind
     );
@@ -147,6 +182,149 @@ fn describe_row(row: &ui_view::Row) -> String {
     clip(line)
 }
 
+/// How the agents a chat's rows open stand in the fleet, and what each
+/// group of them comes to.
+fn describe_agents(agents: &ui_view::ChatAgents) -> String {
+    let each: Vec<String> = agents
+        .agents
+        .iter()
+        .map(|agent| {
+            format!(
+                "{} {:?} {:?}",
+                sub_name(&agent.agent.agent),
+                agent.name,
+                agent.phase
+            )
+        })
+        .collect();
+    let groups: Vec<String> = agents
+        .groups
+        .iter()
+        .map(|group| format!("{} {:?}", group.first, group.state))
+        .collect();
+    format!(
+        "  agents [{}] groups [{}]",
+        each.join(", "),
+        groups.join(", ")
+    )
+}
+
+/// A provider subagent as the harness holds it: its own session and
+/// committer, its fleet row, and what its frames last recorded.
+struct Sub {
+    committer: Committer,
+    state: SessionState,
+    row: wire::Agent,
+    /// The chat and call that started it.
+    call: (Vec<u8>, String),
+    last_card: Option<ui_view::AskCard>,
+    last_composer: String,
+}
+
+fn listed(agent: &wire::Agent) -> FleetMsg {
+    FleetMsg::Event(Box::new(wire::InventoryEvent {
+        of: Some(wire::inventory_event::Of::Agent(agent.clone())),
+    }))
+}
+
+/// Files one subagent's part of a step as the daemon does: its row first,
+/// made at its start and set live again where it is continued, then its
+/// items under it, then its end; its row's phase follows its snapshots.
+/// Returns what its chat moved this frame.
+fn commit_agent(
+    kind: Kind,
+    host: &wire::Agent,
+    subs: &mut BTreeMap<Vec<u8>, Sub>,
+    order: &mut Vec<Vec<u8>>,
+    fleet: &mut FleetState,
+    part: &wire::AgentStep,
+    at: i64,
+) -> Vec<String> {
+    let name = sub_name(&part.agent_id);
+    if let Some(start) = &part.start
+        && !subs.contains_key(&part.agent_id)
+    {
+        let row = wire::Agent {
+            agent_id: part.agent_id.clone(),
+            host_id: host.host_id.clone(),
+            kind: kind as i32,
+            name: name.clone(),
+            title: Some(start.title.clone()).filter(|title| !title.is_empty()),
+            lifecycle: wire::Lifecycle::Live as i32,
+            phase: wire::Phase::Working as i32,
+            incarnation: 1,
+            parent: Some(wire::AgentRef {
+                host_id: host.host_id.clone(),
+                agent_id: host.agent_id.clone(),
+            }),
+            native: Some(wire::NativeChild {
+                provider_child_id: start.provider_child_id.clone(),
+            }),
+            ..wire::Agent::default()
+        };
+        let mut state = SessionState::new(row.clone(), support::CAP);
+        state.update(Msg::Event(SessionEvent {
+            of: Some(session_event::Of::CaughtUp(wire::CaughtUp { revision: 0 })),
+        }));
+        order.push(part.agent_id.clone());
+        subs.insert(
+            part.agent_id.clone(),
+            Sub {
+                committer: Committer::default(),
+                state,
+                row,
+                call: (start.call_agent_id.clone(), start.call_key.clone()),
+                last_card: None,
+                last_composer: String::new(),
+            },
+        );
+    }
+    // A part for a subagent whose start the daemon never saw is skipped.
+    let Some(sub) = subs.get_mut(&part.agent_id) else {
+        return vec![format!("  [{name}] skipped: no start")];
+    };
+    if part.start.is_some() && sub.row.lifecycle == wire::Lifecycle::Exited as i32 {
+        sub.row.lifecycle = wire::Lifecycle::Live as i32;
+        sub.row.phase = wire::Phase::Working as i32;
+        sub.row.exit_cause = 0;
+        sub.row.exit_detail = None;
+    }
+    for event in sub.committer.commit_agent(part) {
+        let outcome = sub.state.update(Msg::Event(event));
+        assert!(
+            outcome.need_get.is_none(),
+            "a committed append always has its base"
+        );
+    }
+    if let Some(snapshot) = &part.snapshot {
+        sub.row.phase = snapshot.phase;
+    }
+    if let Some(end) = &part.end {
+        sub.row.lifecycle = wire::Lifecycle::Exited as i32;
+        sub.row.exit_cause = end.cause;
+        sub.row.exit_detail = end.detail.clone();
+    }
+    sub.state.update(Msg::Entry(sub.row.clone()));
+    fleet.update(listed(&sub.row));
+    let mut lines = Vec::new();
+    let card = ask_card(&sub.state);
+    if card != sub.last_card {
+        lines.push(format!("  [{name}]{}", describe_card(card.as_ref())));
+        sub.last_card = card;
+    }
+    let composing = format!(
+        "  [{name}] composer {:?} activity={:?} phase={:?}",
+        composer(&sub.state, at).mode,
+        sub.state.activity(at).map(|activity| activity.kind),
+        sub.state.phase(),
+    );
+    if composing != sub.last_composer {
+        lines.push(clip(composing.clone()));
+        sub.last_composer = composing;
+    }
+    lines
+}
+
 fn describe_card(card: Option<&ui_view::AskCard>) -> String {
     let Some(card) = card else {
         return "  ask none".into();
@@ -177,13 +355,19 @@ fn describe_card(card: Option<&ui_view::AskCard>) -> String {
 
 /// Replays a fixture's emission through the session and renders the views.
 fn render(kind: Kind, frames: &[Replayed]) -> String {
-    let mut state = SessionState::new(support::agent(kind, wire::Phase::NeedsYou), support::CAP);
+    let host = support::agent(kind, wire::Phase::NeedsYou);
+    let mut state = SessionState::new(host.clone(), support::CAP);
     let mut committer = Committer::default();
+    let mut fleet = FleetState::new();
+    fleet.update(listed(&host));
+    let mut subs = BTreeMap::new();
+    let mut started = Vec::new();
     let mut out = String::new();
     let open = HashSet::new();
     let tools = ToolRows::Collapse { open: &open };
     let mut last_card = None;
     let mut last_composer = String::new();
+    let mut last_agents = ui_view::ChatAgents::default();
     for (index, frame) in frames.iter().enumerate() {
         let mut lines = Vec::new();
         if let Some(input) = &frame.input {
@@ -222,9 +406,22 @@ fn render(kind: Kind, frames: &[Replayed]) -> String {
             .step
             .items
             .iter()
+            .chain(frame.step.agents.iter().flat_map(|part| &part.items))
             .map(|item| item.at_ms)
             .max()
             .unwrap_or(0);
+        let mut agent_lines = Vec::new();
+        for part in &frame.step.agents {
+            agent_lines.extend(commit_agent(
+                kind,
+                &host,
+                &mut subs,
+                &mut started,
+                &mut fleet,
+                part,
+                at,
+            ));
+        }
         // Placed as if each prompt was first drawn in the queue: where a
         // prompt is drawn is the client's memory, not the session's.
         let composing = format!(
@@ -239,6 +436,12 @@ fn render(kind: Kind, frames: &[Replayed]) -> String {
             lines.push(clip(composing.clone()));
             last_composer = composing;
         }
+        let agents = chat_agents(&state, &fleet);
+        if agents != last_agents {
+            lines.push(clip(describe_agents(&agents)));
+            last_agents = agents;
+        }
+        lines.extend(agent_lines);
         if !lines.is_empty() {
             let _ = writeln!(out, "## {index} {}", clip(frame.label.clone()));
             for line in lines {
@@ -258,6 +461,38 @@ fn render(kind: Kind, frames: &[Replayed]) -> String {
         sign_in(&state)
     );
     describe_settings(&mut out, &state);
+    for agent in &started {
+        let sub = &subs[agent];
+        let (call_agent, call_key) = &sub.call;
+        let _ = writeln!(
+            out,
+            "== agent {} {:?} started by {}/{call_key}",
+            sub.row.name,
+            sub.row.title.as_deref().unwrap_or_default(),
+            if *call_agent == host.agent_id || !subs.contains_key(call_agent) {
+                "host".to_owned()
+            } else {
+                sub_name(call_agent)
+            },
+        );
+        let _ = writeln!(
+            out,
+            "  composer {:?} phase={:?}",
+            composer(&sub.state, 0).mode,
+            sub.state.phase()
+        );
+        let _ = writeln!(out, "== chat");
+        for row in crate::support::all_rows(&sub.state, tools) {
+            let _ = writeln!(out, "  {}", describe_row(&row));
+        }
+        let _ = writeln!(out, "== overview {:?}", overview(&sub.state, None));
+        let _ = writeln!(
+            out,
+            "  changes: {:?} commands={}",
+            settings(&sub.state).changeable,
+            settings(&sub.state).commands.len()
+        );
+    }
     out
 }
 

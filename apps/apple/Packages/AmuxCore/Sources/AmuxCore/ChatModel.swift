@@ -1,4 +1,5 @@
 import AmuxValues
+import AmuxWords
 import Foundation
 import Observation
 
@@ -23,6 +24,10 @@ public protocol ChatSource: AnyObject, Sendable {
     /// Opens or closes the run `member` sits in; the next delta carries its
     /// rows drawn so, and it stays open as it grows.
     func toggleRun(_ member: String)
+    /// Opens or closes the group of calls that opened agents `member`
+    /// belongs to ("4 subagents"); the next delta carries its rows drawn
+    /// so. Opening one of those agents is a separate gesture.
+    func toggleGroup(_ member: String)
     /// Folds each finished turn to its prompt, the line over its work and
     /// its answer, or only its runs; the next delta carries every row so.
     func foldTurns(_ on: Bool)
@@ -204,6 +209,17 @@ public final class ChatModel {
     public private(set) var overview: Overview?
     /// What the agent offers to change, the current values marked.
     public private(set) var settings: SettingsView?
+    /// How each agent a held row opens stands, by its id, as the fleet has
+    /// it. A call row names its agent and nothing more, so the fleet moving
+    /// changes no row: the delta's `agents` says what moved instead.
+    public private(set) var openedAgents: [[UInt8]: OpenedAgent] = [:]
+    /// How the agents the held rows open that are still at work or waiting
+    /// on the person stand, for the activity line to say while one of them
+    /// waits on the person.
+    public private(set) var liveSubagents: GroupState = .empty
+    /// What each group of calls that opened agents comes to, by its first
+    /// call, which is where its one row draws.
+    public private(set) var groupStates: [String: GroupState] = [:]
     /// Rows the reader opened: a subagent's steps, or a row's detail.
     public private(set) var expanded: Set<String> = []
     public private(set) var paging: ChatPaging = .idle
@@ -346,6 +362,24 @@ public final class ChatModel {
     /// the next delta hands them over.
     public func toggleRun(_ run: Run) {
         source.toggleRun(run.last)
+    }
+
+    /// The agent a call row opens, as the fleet has it: nil when the row
+    /// opens none, or this client's fleet does not hold the agent yet, and
+    /// then the row's own state is all there is to say.
+    public func opened(by row: Row) -> OpenedAgent? {
+        row.opens.flatMap { openedAgents[$0] }
+    }
+
+    /// What a group's agents come to, by the fleet.
+    public func state(of group: SubagentGroup) -> GroupState? {
+        groupStates[group.first]
+    }
+
+    /// Opens or closes a group of calls that opened agents, by the shared
+    /// fold; its rows say which, as the next delta hands them over.
+    public func toggleGroup(_ group: SubagentGroup) {
+        source.toggleGroup(group.first)
     }
 
     /// Folds each finished turn to its answer, as the Mac reads a chat.
@@ -536,7 +570,29 @@ public final class ChatModel {
         }
         if let overview = delta.overview { self.overview = overview }
         if let settings = delta.settings { self.settings = settings }
+        if let agents = delta.agents { hold(agents) }
         if frame?.git != before?.git { listChangedFiles() }
+    }
+
+    /// How the agents the rows open stand moved: the rows that draw them
+    /// say something new without being handed over, so the list measures
+    /// them again.
+    private func hold(_ agents: ChatAgents) {
+        if agents.live != liveSubagents { liveSubagents = agents.live }
+        let opened = Dictionary(
+            agents.agents.map { ($0.agent.agent, $0) }, uniquingKeysWith: { first, _ in first })
+        let groups = Dictionary(
+            agents.groups.map { ($0.first, $0.state) }, uniquingKeysWith: { first, _ in first })
+        guard opened != openedAgents || groups != groupStates else { return }
+        openedAgents = opened
+        groupStates = groups
+        let next = revision + 1
+        var moved = false
+        for cell in cells.values where cell.row?.opens != nil || cell.row?.group != nil {
+            cell.revision = next
+            moved = true
+        }
+        if moved { revision = next }
     }
 
     // MARK: - Changes
@@ -1270,7 +1326,7 @@ extension RowKind {
         case .fileChange(_, let state): state
         case .toolCall(_, _, _, let state, _): state
         case .child(_, _, _, _, let state, _): state
-        case .subagent(_, let running, _, _, _, _): running ? .running : nil
+        case .subagent(_, _, let state, _, _): state
         default: nil
         }
         return phase == .pending || phase == .running

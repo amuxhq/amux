@@ -36,7 +36,9 @@ screens made larger.
   where it works. Hovering a row swaps its age for pin and settle buttons;
   its menu pins, settles, renames and deletes. A family's members hang off a
   line under the head's tile, each saying what it is doing; the head's count
-  folds them. The settled agents sit
+  folds them. A subagent Claude or Codex runs for its parent hangs there by
+  its title too, but has no pin or Delete: it goes with its parent. The
+  settled agents sit
   behind one row anchored at the foot, which swaps the sidebar to them and
   back. Search narrows the list through the runtime's filter, and the arrow
   keys move the selection.
@@ -78,6 +80,15 @@ screens made larger.
   provider's answers as buttons, the expected one drawn solid and on Return;
   a question's options to pick, and Reply Instead where the agent takes a
   reply; and a note for an answer that takes one.
+- **Subagents** a turn started through Claude's or Codex's own tool fold to
+  one line, "4 subagents", saying what they come to ("2 running · 1 waiting
+  on you · 1 done", the waiting count in coral); a click on it unfolds the
+  calls. Each call names its subagent with where that agent stands, read
+  from its fleet row rather than the call, and a click on the call, or its
+  arrow, opens that subagent's chat. Unfolding and opening are separate
+  targets. The subagent's chat has no composer, since the provider lets only
+  the parent's model talk to it: a bar says who runs it and offers Stop
+  (⌘.), which stops the job running it.
 - **The composer** grows with the draft; Return sends, Shift-Return starts a
   line, ⌘. stops the turn, and a long paste becomes an attachment. Under it:
   + attaches files (dropping them on it does too), the permission the agent
@@ -91,7 +102,10 @@ screens made larger.
   Show in Finder and Open in the first editor installed (VS Code, Cursor,
   Zed, Sublime Text, Xcode). It floats in the margin when the margin holds
   it, moves the chat left to make room while the chat stays readable, and
-  otherwise folds to a pill of the change counts.
+  otherwise folds to a pill of the change counts. A subagent its provider
+  runs has no folder or terminal of its own, so its card shows neither the
+  changes nor the Terminal, Finder and editor actions, and the title bar
+  hides Open in Terminal and the changes toggle.
 - **The changes pane** on the right shows the changes as the host freezes
   them, against the last commit or the branch's base (a menu in its bar),
   a file at a time, with their counts, reload and close. A click picks a

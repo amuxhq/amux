@@ -13,6 +13,10 @@ final class StillChat: ChatSurface {
     private var open: Set<String> = []
     /// The finished turns opened, by their ends.
     private var openTurns: Set<String> = []
+    /// The groups of calls opened, by their first calls.
+    private var openGroups: Set<String> = []
+    /// What the fleet says of the agents the rows open, and of each group.
+    private let agents: ChatAgents
     var frame: ChatFrame?
     var ask: AskCard?
     var draft = ""
@@ -27,9 +31,13 @@ final class StillChat: ChatSurface {
 
     init(
         rows: [Row], frame: ChatFrame?, ask: AskCard? = nil, changes: ChangeTotals? = nil, loading: Bool = false,
-        settings: SettingsView? = nil
+        settings: SettingsView? = nil, agents: ChatAgents = ChatAgents(
+            agents: [], groups: [],
+            live: GroupState(
+                agents: 0, running: 0, needsYou: 0, idle: 0, finished: 0, ended: 0, failed: 0, unknown: 0))
     ) {
         self.settings = settings
+        self.agents = agents
         self.rows = rows
         self.frame = frame
         self.ask = ask
@@ -50,6 +58,11 @@ final class StillChat: ChatSurface {
             let opened = openTurns.contains(end)
             row.turn?.open = opened
             if row.turn?.part == .work, !opened { row.collapsed = true }
+        }
+        if let first = row.group?.first {
+            let opened = openGroups.contains(first)
+            row.group?.open = opened
+            if !opened, row.id != first { row.collapsed = true }
         }
         return row
     }
@@ -73,6 +86,16 @@ final class StillChat: ChatSurface {
     }
 
     func toggleRun(_ run: Run) {}
+    func toggleGroup(_ group: SubagentGroup) {
+        if openGroups.remove(group.first) == nil { openGroups.insert(group.first) }
+    }
+    func opened(by row: Row) -> OpenedAgent? {
+        row.opens.flatMap { id in agents.agents.first { $0.agent.agent == id } }
+    }
+    func state(of group: SubagentGroup) -> GroupState? {
+        agents.groups.first { $0.first == group.first }?.state
+    }
+    var liveSubagents: GroupState { agents.live }
     func counts(of run: Run) -> RunCounts? { row(run.last)?.run?.counts }
     func bytes(of blob: BlobRef) -> Data? { nil }
 
@@ -85,7 +108,10 @@ final class StillChat: ChatSurface {
     func jumpToNewest() {}
     func reachedTop() {}
 
-    var canSend: Bool { true }
+    var canSend: Bool {
+        if case .native? = frame?.composer.mode { return false }
+        return true
+    }
     var canResume: Bool {
         if case .resume? = frame?.composer.mode { return true }
         return false
@@ -96,6 +122,7 @@ final class StillChat: ChatSurface {
     func send() { draft = "" }
     func resume() { draft = "" }
     func interrupt() {}
+    func stopJob(_ key: String) {}
     func withdraw(_ queued: QueuedRow) {}
     func sendNow(_ queued: QueuedRow) {}
     func answer(choice: Int, note: String?) { ask = nil }

@@ -27,8 +27,8 @@ use tokio::sync::mpsc;
 
 use super::{Args, append_row, raw_mode, run_hooks, start_decision_hooks};
 use crate::claude::{Ids, timestamp, uuid};
-use crate::playback::{claude_config_dir, transcript_path};
-use crate::script::{Ask, Question, Script, Step, Tool};
+use crate::playback::{claude_config_dir, subagent_path, transcript_path};
+use crate::script::{Ask, Question, Script, Step, Subagent, Tool};
 use crate::sdk::{claude_tool, sidecar, turn_usage};
 use crate::{DRIFT_EXIT, ToolClass};
 
@@ -55,6 +55,8 @@ pub const NO_MESSAGING_ENV: &str = "AMUX_FAKE_NO_MESSAGING";
 
 /// The asks terminal Claude raises.
 pub const RAISES: &[&str] = &["permission", "question", "plan", "tool_server_dialog"];
+/// The steps only some providers play that terminal Claude plays.
+pub const PLAYS: &[&str] = &["subagents"];
 
 /// What the terminal delivered, decoded.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -81,7 +83,7 @@ enum In {
 }
 
 pub async fn run(script: Script, args: Args) -> i32 {
-    if let Err(error) = script.check("terminal Claude", RAISES, &[]) {
+    if let Err(error) = script.check("terminal Claude", RAISES, PLAYS) {
         eprintln!("fake-claude-pty: {error}");
         return DRIFT_EXIT;
     }
@@ -310,6 +312,38 @@ enum Held {
     Interrupted,
 }
 
+/// What playing a step leaves the turn to do.
+enum Flow {
+    Next,
+    End(Option<i32>),
+}
+
+/// The subagent whose step is playing: its rows go to its own transcript
+/// and its hooks name it.
+#[derive(Clone)]
+struct Within {
+    agent_id: String,
+    agent_type: String,
+    /// `<session>/subagents/agent-<id>.jsonl`.
+    file: PathBuf,
+}
+
+/// A subagent of a [`Step::Subagents`] while it runs: what is left of its
+/// steps and the state of its own conversation, swapped in while it plays.
+struct Running {
+    within: Within,
+    description: String,
+    steps: VecDeque<Step>,
+    request: String,
+    message: String,
+    parent: Option<String>,
+    held_thinking: Option<Value>,
+    last_text: String,
+    /// Its `meta.json` as Claude writes it at launch.
+    meta: Value,
+    done: bool,
+}
+
 struct Engine {
     input: mpsc::UnboundedReceiver<In>,
     /// Where a hook's decision arrives, beside the keys.
@@ -352,6 +386,14 @@ struct Engine {
     untrusted_folder: bool,
     /// File tools change the files they name.
     edit_files: bool,
+    /// What let the call being answered run, where an ask's hook did:
+    /// Claude writes it on the call's result (2.1.325).
+    allowed_by: Option<&'static str>,
+    /// The running turn's assistant message, which a call's interruption
+    /// names.
+    message_id: String,
+    /// The subagent whose step is playing.
+    within: Option<Within>,
 }
 
 impl Engine {
@@ -407,6 +449,9 @@ impl Engine {
             turns: 0,
             last_text: String::new(),
             begun: false,
+            allowed_by: None,
+            message_id: String::new(),
+            within: None,
         }
     }
 
@@ -670,9 +715,28 @@ impl Engine {
     }
 
     fn append(&self, row: &Value) {
-        let bytes = serde_json::to_vec(row).expect("rows serialise");
-        if let Err(error) = append_row(&self.transcript, &bytes) {
-            eprintln!("fake-claude-pty: transcript: {error}");
+        let Some(within) = &self.within else {
+            let bytes = serde_json::to_vec(row).expect("rows serialise");
+            if let Err(error) = append_row(&self.transcript, &bytes) {
+                eprintln!("fake-claude-pty: transcript: {error}");
+            }
+            return;
+        };
+        // A subagent's rows are its own conversation's, a side chain of
+        // the session's that names it; they carry no `session_id`, and its
+        // replies name who wrote them (Claude 2.1.325).
+        let mut row = row.clone();
+        if let Some(fields) = row.as_object_mut() {
+            fields.remove("session_id");
+            fields.insert("isSidechain".into(), json!(true));
+            fields.insert("agentId".into(), json!(within.agent_id));
+            if fields.get("type") == Some(&json!("assistant")) {
+                fields.insert("attributionAgent".into(), json!(within.agent_type));
+            }
+        }
+        let bytes = serde_json::to_vec(&row).expect("rows serialise");
+        if let Err(error) = append_row(&within.file, &bytes) {
+            eprintln!("fake-claude-pty: subagent transcript: {error}");
         }
     }
 
@@ -727,8 +791,14 @@ impl Engine {
             .unwrap_or_default()
             .to_owned();
         let event = event.as_str();
-        if !matches!(event, "SessionStart" | "SessionEnd") {
+        if let Some(within) = &self.within {
+            payload["agent_id"] = json!(within.agent_id);
+            payload["agent_type"] = json!(within.agent_type);
+        }
+        if !matches!(event, "SessionStart" | "SessionEnd" | "SubagentStart") {
             payload["permission_mode"] = json!(self.mode);
+        }
+        if !matches!(event, "SessionStart" | "SessionEnd") {
             payload["prompt_id"] = json!(self.prompt_id);
         }
         if matches!(event, "SessionEnd") {
@@ -756,6 +826,8 @@ impl Engine {
                 | "PermissionRequest"
                 | "MessageDisplay"
                 | "Stop"
+                | "SubagentStart"
+                | "SubagentStop"
         ) {
             payload["scratchpad_dir"] = json!(format!("{}/.scratchpad", self.cwd));
         }
@@ -812,6 +884,7 @@ impl Engine {
         self.user_row(&first, "typed");
         let request = self.ids.next("req_fake");
         let message = self.ids.next("msg_fake");
+        self.message_id = message.clone();
         let exit = loop {
             // A deny ends the turn at the menu: keys typed after it belong
             // to the composer of an idle Claude, not to this turn's queue.
@@ -825,74 +898,9 @@ impl Engine {
             let Some(step) = crate::script::next_step(&mut self.steps) else {
                 break None;
             };
-            match step {
-                // Claude's terminal shows a message whole once written.
-                Step::Text { chunks } => {
-                    let text = chunks.concat();
-                    self.screen(&text);
-                    // Claude hands its finished lines to MessageDisplay as
-                    // it draws them; the fake draws the message whole.
-                    self.hook(json!({
-                        "hook_event_name": "MessageDisplay",
-                        "delta": text,
-                        "final": true,
-                        "index": 0,
-                        "message_id": uuid(),
-                        "turn_id": self.turn_id,
-                    }));
-                    self.assistant(
-                        &request,
-                        &message,
-                        json!({ "type": "text", "text": text }),
-                        "end_turn",
-                    );
-                    self.last_text = text;
-                }
-                Step::Thinking { text } => {
-                    let block = json!({ "type": "thinking", "thinking": text, "signature": "" });
-                    self.assistant(&request, &message, block, "tool_use");
-                }
-                Step::Tool(tool) => {
-                    let (id, name, input) = self.tool_use(&request, &message, &tool);
-                    match self.hold(&tool).await {
-                        Held::Ran => {
-                            let outcome = self.outcome(&name, &tool, &input).await;
-                            let absorbed = self.absorb();
-                            self.finish_tool(&id, &name, &input, &tool, outcome);
-                            self.attach(absorbed);
-                        }
-                        Held::Interrupted => {
-                            self.abandon(&id, &name, &input, &tool);
-                            self.interruption_row("[Request interrupted by user for tool use]");
-                            self.cut = Some(Cut::InterruptedCall);
-                        }
-                    }
-                }
-                Step::Ask(ask) => {
-                    self.ask(&request, &message, ask).await;
-                    if self.cut.is_none() {
-                        self.fold();
-                    }
-                }
-                Step::WaitFor { path } => {
-                    while !path.exists() && self.cut.is_none() && !self.closed {
-                        self.pump().await;
-                    }
-                }
-                Step::Spawn { command } => crate::script::spawn_detached(&command),
-                Step::Pause { ms } => {
-                    let until = tokio::time::Instant::now() + std::time::Duration::from_millis(ms);
-                    while tokio::time::Instant::now() < until && self.cut.is_none() && !self.closed
-                    {
-                        self.pump().await;
-                    }
-                }
-                Step::TurnEnd => break None,
-                Step::Exit { code } => break Some(code),
-                Step::Usage(_) | Step::AuthFailed { .. } => {
-                    unreachable!("refused when the script loaded")
-                }
-                Step::Repeat { .. } => unreachable!("next_step unrolls repeats"),
+            match self.play(step, &request, &message).await {
+                Flow::Next => {}
+                Flow::End(exit) => break exit,
             }
         };
         if exit.is_some() {
@@ -932,6 +940,282 @@ impl Engine {
         }
         self.busy = false;
         None
+    }
+
+    /// Plays one step of the running turn, or of the subagent it is in.
+    async fn play(&mut self, step: Step, request: &str, message: &str) -> Flow {
+        match step {
+            // Claude's terminal shows a message whole once written.
+            Step::Text { chunks } => {
+                let text = chunks.concat();
+                // A subagent's reply is its parent's to show.
+                if self.within.is_none() {
+                    self.screen(&text);
+                    // Claude hands its finished lines to MessageDisplay as
+                    // it draws them; the fake draws the message whole.
+                    self.hook(json!({
+                        "hook_event_name": "MessageDisplay",
+                        "delta": text,
+                        "final": true,
+                        "index": 0,
+                        "message_id": uuid(),
+                        "turn_id": self.turn_id,
+                    }));
+                }
+                self.assistant(
+                    request,
+                    message,
+                    json!({ "type": "text", "text": text }),
+                    "end_turn",
+                );
+                self.last_text = text;
+            }
+            Step::Thinking { text } => {
+                let block = json!({ "type": "thinking", "thinking": text, "signature": "" });
+                self.assistant(request, message, block, "tool_use");
+            }
+            Step::Tool(tool) => {
+                let (id, name, input) = self.tool_use(request, message, &tool);
+                match self.hold(&tool).await {
+                    Held::Ran => {
+                        let outcome = self.outcome(&name, &tool, &input).await;
+                        // A prompt typed meanwhile folds into the parent's turn.
+                        let absorbed = if self.within.is_none() {
+                            self.absorb()
+                        } else {
+                            Vec::new()
+                        };
+                        self.finish_tool(&id, &name, &input, &tool, outcome);
+                        self.attach(absorbed);
+                    }
+                    Held::Interrupted => {
+                        self.abandon(&id, &name, &input, &tool);
+                        self.interruption_row("[Request interrupted by user for tool use]");
+                        self.cut = Some(Cut::InterruptedCall);
+                    }
+                }
+            }
+            Step::Ask(ask) => {
+                self.ask(request, message, ask).await;
+                if self.cut.is_none() && self.within.is_none() {
+                    self.fold();
+                }
+            }
+            Step::WaitFor { path } => {
+                while !path.exists() && self.cut.is_none() && !self.closed {
+                    self.pump().await;
+                }
+            }
+            Step::Spawn { command } => crate::script::spawn_detached(&command),
+            Step::Pause { ms } => {
+                let until = tokio::time::Instant::now() + std::time::Duration::from_millis(ms);
+                while tokio::time::Instant::now() < until && self.cut.is_none() && !self.closed {
+                    self.pump().await;
+                }
+            }
+            Step::TurnEnd => return Flow::End(None),
+            Step::Exit { code } => return Flow::End(Some(code)),
+            Step::Subagents { agents } => self.subagents(request, message, agents).await,
+            Step::Usage(_) | Step::AuthFailed { .. } => {
+                unreachable!("refused when the script loaded")
+            }
+            Step::Repeat { .. } => unreachable!("next_step unrolls repeats"),
+        }
+        Flow::Next
+    }
+
+    /// Subagents started together, as terminal Claude 2.1.325 starts them:
+    /// each in the background, one Agent call apiece that returns at once,
+    /// with its own transcript and `meta.json` beside the session's. Their
+    /// steps take turns, and the parent's turn goes on once the last has
+    /// ended. Claude would tell the parent of each in a task notification
+    /// that starts a turn of its own; the fake's parent waits instead.
+    async fn subagents(&mut self, request: &str, message: &str, agents: Vec<Subagent>) {
+        let mut running = Vec::new();
+        for agent in agents {
+            let agent_type = agent
+                .nickname
+                .clone()
+                .unwrap_or_else(|| "general-purpose".to_owned());
+            // Claude's agent ids: `a` and sixteen hex digits.
+            let agent_id = format!("a{:016x}", uuid::Uuid::new_v4().as_u128() as u64);
+            let file = subagent_path(
+                &self.transcript,
+                &format!("subagents/agent-{agent_id}.jsonl"),
+            );
+            let tool = named(
+                "Agent",
+                json!({
+                    "description": agent.task,
+                    "prompt": agent.task,
+                    "subagent_type": agent_type,
+                }),
+            );
+            let (id, name, input) = self.tool_use(request, message, &tool);
+            self.hook(json!({
+                "hook_event_name": "SubagentStart",
+                "agent_id": agent_id,
+                "agent_type": agent_type,
+            }));
+            let meta = json!({
+                "agentType": agent_type,
+                "description": agent.task,
+                "isBuiltIn": false,
+                "launchedWithDefaults": true,
+                "pickedEffortModel": self.model,
+                "requestNonInteractive": true,
+                "requestShape": "background",
+                "spawnDepth": 1,
+                "toolUseId": id,
+            });
+            write_meta(&file, &meta);
+            let mut sub = Running {
+                within: Within {
+                    agent_id: agent_id.clone(),
+                    agent_type,
+                    file: file.clone(),
+                },
+                description: agent.task.clone(),
+                steps: agent.steps.into(),
+                request: self.ids.next("req_fake"),
+                message: self.ids.next("msg_fake"),
+                parent: None,
+                held_thinking: None,
+                last_text: String::new(),
+                meta,
+                done: false,
+            };
+            // Its conversation opens on what its parent asked of it.
+            self.enter(&mut sub);
+            let prompt = self.envelope(json!({
+                "type": "user",
+                "message": { "role": "user", "content": agent.task },
+                "promptId": self.prompt_id,
+            }));
+            self.row(prompt);
+            self.leave(&mut sub);
+            let launched = json!({
+                "agentId": agent_id,
+                "canContinueAgent": true,
+                "canReadOutputFile": true,
+                "description": agent.task,
+                "isAsync": true,
+                "outputFile": file.display().to_string(),
+                "prompt": agent.task,
+                "resolvedModel": self.model,
+                "status": "async_launched",
+            });
+            self.hook(json!({
+                "hook_event_name": "PostToolUse",
+                "duration_ms": 1,
+                "tool_input": input,
+                "tool_name": name,
+                "tool_response": launched,
+                "tool_use_id": id,
+            }));
+            let text = format!(
+                "Async agent launched successfully.\nagentId: {agent_id} (internal ID - do not \
+                 mention to user. Use SendMessage with to: '{agent_id}' to continue this agent.)\n\
+                 The agent is working in the background. You will be notified automatically when \
+                 it completes."
+            );
+            let decision = self.permission_decision();
+            self.result_row(
+                &id,
+                json!([{ "type": "text", "text": text }]),
+                false,
+                launched,
+                Some(decision),
+            );
+            running.push(sub);
+        }
+        while running.iter().any(|sub| !sub.done) {
+            for at in 0..running.len() {
+                if running[at].done {
+                    continue;
+                }
+                if self.cut.is_some() || self.closed {
+                    return;
+                }
+                let Some(step) = crate::script::next_step(&mut running[at].steps) else {
+                    self.end_subagent(&mut running, at, None);
+                    continue;
+                };
+                let last = running[at].steps.is_empty();
+                // Claude reports a subagent's end before its last reply
+                // reaches its transcript.
+                let reply = match &step {
+                    Step::Text { chunks } if last => Some(chunks.concat()),
+                    _ => None,
+                };
+                if let Some(reply) = &reply {
+                    self.end_subagent(&mut running, at, Some(reply));
+                }
+                let (request, message) = (running[at].request.clone(), running[at].message.clone());
+                self.enter(&mut running[at]);
+                Box::pin(self.play(step, &request, &message)).await;
+                self.leave(&mut running[at]);
+                if last && reply.is_none() {
+                    self.end_subagent(&mut running, at, None);
+                }
+            }
+        }
+    }
+
+    /// Plays a subagent's steps in its own conversation.
+    fn enter(&mut self, sub: &mut Running) {
+        self.within = Some(sub.within.clone());
+        std::mem::swap(&mut self.parent, &mut sub.parent);
+        std::mem::swap(&mut self.held_thinking, &mut sub.held_thinking);
+        std::mem::swap(&mut self.last_text, &mut sub.last_text);
+    }
+
+    /// Back to the parent's conversation.
+    fn leave(&mut self, sub: &mut Running) {
+        if let Some(thinking) = self.held_thinking.take() {
+            self.append(&thinking);
+        }
+        std::mem::swap(&mut self.parent, &mut sub.parent);
+        std::mem::swap(&mut self.held_thinking, &mut sub.held_thinking);
+        std::mem::swap(&mut self.last_text, &mut sub.last_text);
+        self.within = None;
+    }
+
+    /// A subagent's end: its SubagentStop hook, naming the subagents still
+    /// running with it, then its `meta.json` marked finished.
+    fn end_subagent(&mut self, running: &mut [Running], at: usize, reply: Option<&str>) {
+        let background: Vec<Value> = running
+            .iter()
+            .filter(|sub| !sub.done)
+            .map(|sub| {
+                json!({
+                    "agent_type": sub.within.agent_type,
+                    "description": sub.description,
+                    "id": sub.within.agent_id,
+                    "status": "running",
+                    "type": "subagent",
+                })
+            })
+            .collect();
+        let sub = &mut running[at];
+        sub.done = true;
+        let last = reply
+            .map(str::to_owned)
+            .unwrap_or_else(|| sub.last_text.clone());
+        let within = sub.within.clone();
+        sub.meta["finished"] = json!(true);
+        let meta = sub.meta.clone();
+        self.hook(json!({
+            "hook_event_name": "SubagentStop",
+            "agent_id": within.agent_id,
+            "agent_type": within.agent_type,
+            "agent_transcript_path": within.file.display().to_string(),
+            "background_tasks": background,
+            "last_assistant_message": last,
+            "session_crons": [],
+            "stop_hook_active": false,
+        }));
+        write_meta(&within.file, &meta);
     }
 
     fn assistant(&mut self, request: &str, message: &str, block: Value, stop: &str) {
@@ -978,9 +1262,15 @@ impl Engine {
             "requestRef": format!("{request}-ref"),
             "requestedModel": self.model,
             "session_id": self.session,
+            // Who wrote the row and the cache the request asked for, on
+            // every assistant row (Claude 2.1.325).
+            "madeBy": "model",
+            "promptCacheRequested": "1h",
         }));
         if !wire_inputs.is_null() {
             row["wireToolInputs"] = wire_inputs;
+            // How long the call's input took to stream (Claude 2.1.325).
+            row["toolInputStreamMs"] = json!(1);
         }
         if thinking {
             row["thinkingDurationMs"] = json!(1);
@@ -1019,8 +1309,9 @@ impl Engine {
     /// A call's tool_use row.
     fn call_row(&mut self, request: &str, message: &str, id: &str, name: &str, input: &Value) {
         // A tool the session has not used before adds a tools-used row
-        // listing every tool used so far, ahead of the message's rows.
-        if !self.tools_used.iter().any(|used| used == name) {
+        // listing every tool used so far, ahead of the message's rows. A
+        // subagent's calls add none.
+        if self.within.is_none() && !self.tools_used.iter().any(|used| used == name) {
             self.tools_used.push(name.to_owned());
             self.append(&json!({
                 "type": "tools-used",
@@ -1042,7 +1333,9 @@ impl Engine {
             "tool_use",
             json!({ id: input.clone() }),
         );
-        self.screen(&format!("● {name}"));
+        if self.within.is_none() {
+            self.screen(&format!("● {name}"));
+        }
     }
 
     /// The call's result row, and its PostToolUse hook when it ran.
@@ -1065,6 +1358,14 @@ impl Engine {
         tool: &Tool,
         outcome: Result<String, String>,
     ) {
+        // A refused call ran under no decision.
+        let decision = match outcome {
+            Ok(_) => Some(self.permission_decision()),
+            Err(_) => {
+                self.allowed_by = None;
+                None
+            }
+        };
         let (content, is_error, result) = match outcome {
             Ok(output) if tool.outcome.error => {
                 (output.clone(), true, json!(format!("Error: {output}")))
@@ -1080,7 +1381,7 @@ impl Engine {
             }
             Err(refusal) => (refusal.clone(), true, json!(format!("Error: {refusal}"))),
         };
-        self.result_row(id, json!(content), is_error, result.clone());
+        self.result_row(id, json!(content), is_error, result.clone(), decision);
         if !is_error {
             self.hook(json!({
                 "hook_event_name": "PostToolUse",
@@ -1093,9 +1394,23 @@ impl Engine {
         }
     }
 
-    fn result_row(&mut self, id: &str, content: Value, is_error: bool, result: Value) {
+    /// What let a call run, as Claude writes it on the call's result: its
+    /// settings or mode, or the hook that answered its ask (2.1.325).
+    fn permission_decision(&mut self) -> Value {
+        let source = self.allowed_by.take().unwrap_or("config");
+        json!({ "decision": "accept", "source": source })
+    }
+
+    fn result_row(
+        &mut self,
+        id: &str,
+        content: Value,
+        is_error: bool,
+        result: Value,
+        decision: Option<Value>,
+    ) {
         let source = self.parent.clone();
-        let row = self.envelope(json!({
+        let mut row = self.envelope(json!({
             "type": "user",
             "message": { "role": "user", "content": [{
                 "type": "tool_result",
@@ -1108,6 +1423,9 @@ impl Engine {
             "sourceToolAssistantUUID": source,
             "toolUseResult": result,
         }));
+        if let Some(decision) = decision {
+            row["permissionDecision"] = decision;
+        }
         self.row(row);
     }
 
@@ -1171,12 +1489,15 @@ impl Engine {
     }
 
     fn interruption_row(&mut self, text: &str) {
-        let row = self.envelope(json!({
+        let mut row = self.envelope(json!({
             "type": "user",
             "message": { "role": "user", "content": [{ "type": "text", "text": text }] },
             "promptId": self.prompt_id,
             "session_id": self.session,
         }));
+        // An interruption names the assistant message it cut short (Claude
+        // 2.1.325).
+        row["interruptedMessageId"] = json!(self.message_id);
         self.row(row);
     }
 
@@ -1282,7 +1603,10 @@ impl Engine {
                 let decision = loop {
                     match self.menu_key().await {
                         None => match self.decided.take() {
-                            Some(decided) => break Decision::of(&decided["decision"]),
+                            Some(decided) => {
+                                self.allowed_by = Some("hook");
+                                break Decision::of(&decided["decision"]);
+                            }
                             None => return self.abandon(&id, &name, &input, &tool),
                         },
                         Some(Key::Escape) => break Decision::no(),
@@ -1335,7 +1659,10 @@ impl Engine {
                 let decision = loop {
                     match self.key().await {
                         None => match self.decided.take() {
-                            Some(decided) => break Decision::of(&decided["decision"]),
+                            Some(decided) => {
+                                self.allowed_by = Some("hook");
+                                break Decision::of(&decided["decision"]);
+                            }
                             None => {
                                 self.call_row(request, message, &id, &name, &input);
                                 return self.abandon(&id, &name, &input, &tool);
@@ -1374,11 +1701,13 @@ impl Engine {
                         let content = format!(
                             "User has approved your plan. You can now start coding.\n\n## Approved Plan:\n{markdown}"
                         );
+                        let decision = self.permission_decision();
                         self.result_row(
                             &id,
                             json!(content),
                             false,
                             json!({ "plan": markdown, "isAgent": false }),
+                            Some(decision),
                         );
                     }
                     Decision::Deny { message, stop } => {
@@ -1445,7 +1774,8 @@ impl Engine {
                     .map(|(q, answer)| (q.question.clone(), json!(answer)))
                     .collect();
                 let result = json!({ "questions": input["questions"], "answers": answers });
-                self.result_row(&id, json!(content), false, result);
+                let decision = self.permission_decision();
+                self.result_row(&id, json!(content), false, result, Some(decision));
             }
             Ask::ToolServerDialog {
                 server,
@@ -1642,6 +1972,18 @@ impl Decision {
                 .unwrap_or_else(|| if stop { STOPPED } else { REFUSED }.to_owned()),
             stop,
         }
+    }
+}
+
+/// Writes a subagent's `meta.json` beside its transcript, whole.
+fn write_meta(transcript: &std::path::Path, meta: &Value) {
+    let path = transcript.with_extension("meta.json");
+    let written = path
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| std::fs::write(&path, serde_json::to_vec(meta).expect("meta serialises")));
+    if let Err(error) = written {
+        eprintln!("fake-claude-pty: {}: {error}", path.display());
     }
 }
 

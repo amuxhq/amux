@@ -5,6 +5,7 @@
 
 use schemars::JsonSchema;
 use serde::Serialize;
+pub use ui_state::JobStop;
 use ui_state::{Key, SessionState, Usage};
 use wire::{
     BackgroundKind, Diff, DiffBase, DiffFileChange, Kind, Limit, TaskListStatus, UsageMeter,
@@ -64,22 +65,6 @@ pub struct JobRow {
     pub kind: BackgroundKind,
     /// Whether the person can stop this one job, and how that stands.
     pub stop: JobStop,
-}
-
-/// Stopping one background job, which leaves the agent running. Only a kind
-/// whose provider stops one job on request offers it: terminal Claude
-/// cannot.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
-pub enum JobStop {
-    /// This job cannot be stopped on its own.
-    Unavailable,
-    /// The person can stop it; the key names it in the stop input.
-    Offered { key: String },
-    /// A stop was sent and the provider has not yet said the job ended.
-    Stopping,
-    /// The provider refused the last stop, in its words; the person can
-    /// try again.
-    Refused { key: String, error: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
@@ -164,8 +149,12 @@ pub enum Comparison {
 }
 
 /// The Diff base for a comparison; None on the branch when the agent's row
-/// names no base branch.
+/// names no base branch, and None for a provider subagent, which has no
+/// folder of its own: what changed there is its host's to show.
 pub fn diff_base(state: &SessionState, comparison: Comparison) -> Option<DiffBase> {
+    if state.native() {
+        return None;
+    }
     let base = match comparison {
         Comparison::Uncommitted => diff_base::Base::Head(wire::Empty {}),
         Comparison::OnBranch => diff_base::Base::Branch(
@@ -227,11 +216,19 @@ pub fn overview(state: &SessionState, diff: Option<&Diff>) -> Overview {
     // Headless Claude and Codex stop one job on request; terminal Claude
     // has no way to.
     let stops_one = matches!(state.kind(), Kind::ClaudeSdk | Kind::Codex);
+    // A provider subagent's own job is the subagent itself, which its
+    // composer stops; the overview lists only what it started.
+    let own_job = state
+        .agent()
+        .native
+        .as_ref()
+        .map(|native| &native.provider_child_id);
     let jobs = if agent.background.known {
         agent
             .background
             .jobs
             .iter()
+            .filter(|job| !(job.kind() == BackgroundKind::Subagent && Some(&job.key) == own_job))
             .map(|job| JobRow {
                 step: (!job.item_key.is_empty()).then(|| job.item_key.clone()),
                 command: job.command.clone(),

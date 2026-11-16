@@ -128,6 +128,8 @@ pub const VOCABULARY: &[(&str, &[&str])] = &[
     ),
     ("kind", &["task-notification", "human", "peer"]),
     ("commandMode", &["prompt", "bash"]),
+    // What terminal Claude did to its queue of prompts.
+    ("operation", &["enqueue", "dequeue", "remove"]),
     ("promptSource", &["system", "user"]),
     ("checks", &["trustedAccessForCyber"]),
     (
@@ -343,6 +345,15 @@ pub const VOCABULARY: &[(&str, &[&str])] = &[
             crate::STATUS_TOOL,
             wire::ATTACH_TOOL,
         ],
+    ),
+    // What a Codex subagent did, reported on its parent's thread.
+    ("kind", &["started", "interacted", "completed"]),
+    // The agent process's handshake requests to Codex, whose answers the
+    // interpreter tells apart by id: a resumed thread's answer leaves its
+    // turns out, a new thread's does not.
+    (
+        "id",
+        &[crate::codex::THREAD_REQUEST, crate::codex::RESUME_REQUEST],
     ),
     ("role", &["user", "assistant", "system"]),
     (
@@ -901,6 +912,8 @@ pub(crate) const TOOL_RESULT: &[&str] = &[
     "isAsync",
     "canContinueAgent",
     "canReadOutputFile",
+    // A SendMessage that resumed a stopped subagent in the background.
+    "resumedAgentId",
     "description",
     "prompt",
     "resolvedModel",
@@ -1410,7 +1423,8 @@ impl Skeleton {
             (wire::Kind::ClaudeSdk, Some(Channel::Stream)) => {
                 claude_protocol::stream::fields(payload)
             }
-            (wire::Kind::ClaudePty, Some(Channel::Transcript)) => {
+            // A subagent's transcript rows have the main transcript's shape.
+            (wire::Kind::ClaudePty, Some(Channel::Transcript | Channel::SubagentTranscript)) => {
                 claude_protocol::transcript::fields(payload)
             }
             (wire::Kind::ClaudePty, Some(Channel::Hook)) => claude_protocol::hooks::fields(payload),
@@ -1459,6 +1473,11 @@ impl Skeleton {
             Value::Number(_) => value.clone(),
             Value::String(text) => self
                 .embedded(text, at, key, kind)
+                .or_else(|| {
+                    (!at.tool && is_tool_name(key, kind))
+                        .then(|| self.server_tool_name(text))
+                        .flatten()
+                })
                 .or_else(|| (!at.server).then(|| self.framed(text)).flatten())
                 .unwrap_or_else(|| Value::String(self.string(text, at, key, kind))),
             Value::Array(items) => {
@@ -1591,6 +1610,18 @@ impl Skeleton {
                 return format!("={text}");
             }
             if (MODEL.contains(&key) && chosen(Chosen::Model, text)) || OWN_SERVERS.contains(&text)
+            {
+                return self.named(text);
+            }
+            // amux numbers its own control requests (`amux-<n>`), which
+            // says nothing anyone wrote. Aliased, the number would share
+            // its hash with any equal number the interpreter derives, a
+            // turn's id among them, and a stream made up from the record
+            // could not keep both.
+            if key == "request_id"
+                && let Some(number) = text.strip_prefix("amux-")
+                && !number.is_empty()
+                && number.bytes().all(|b| b.is_ascii_digit())
             {
                 return self.named(text);
             }
@@ -1748,6 +1779,24 @@ impl Skeleton {
             "=json": self.json(&json, inner, &Names::Own, "", "", key, kind),
             "bytes": text.len(),
         }))
+    }
+
+    /// A tool server's tool name, `mcp__<server>__<tool>`, as its pieces:
+    /// the server's name aliased as the server's name is wherever else it
+    /// is written (a form names the server that asks), so a replay still
+    /// tells which calls are that server's. None for any other name.
+    fn server_tool_name(&self, name: &str) -> Option<Value> {
+        let rest = name.strip_prefix("mcp__")?;
+        let (server, tool) = rest.split_once("__")?;
+        if server.is_empty() || tool.is_empty() || server == crate::AMUX_TOOL_SERVER {
+            return None;
+        }
+        Some(serde_json::json!({ "=text": [
+            "=mcp__",
+            self.alias("", server),
+            "=__",
+            self.alias("", tool),
+        ]}))
     }
 
     /// A tool's name as Claude writes it: a built-in tool's, or amux's own
@@ -2173,7 +2222,12 @@ mod tests {
         let blocks = &out["message"]["content"];
         assert_eq!(
             blocks[0]["name"],
-            format!("@mcp__@{}~12", SKELETON.hash(b"acme__lookup"))
+            json!({"=text": [
+                "=mcp__",
+                format!("@{}~4", SKELETON.hash(b"acme")),
+                "=__",
+                format!("@{}~6", SKELETON.hash(b"lookup")),
+            ]})
         );
         let mut input = Map::new();
         input.insert(h("customer", 8), h("secret", 6).into());

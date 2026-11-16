@@ -1,0 +1,10 @@
+{
+  "about": "A child thread in a read-only sandbox asks to run a command outside it, and amux approves: the approval names the child's thread and is answered on the parent's connection.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "recording": {
+    "path": "live/child_approval/io.jsonl",
+    "format": "codex_io"
+  }
+}

@@ -156,6 +156,7 @@ fake waits for a prompt or an injected message, then plays steps until `turn_end
 | `turn_end` | Finish the turn. |
 | `exit` | Exit the provider process with a code. |
 | `repeat` | Play some steps a number of times, without writing them out. |
+| `subagents` | Start provider subagents together (headless Claude's Agent tool, Codex's child threads), each playing its own steps as a turn does, one step of each in turn, so an ask or a `wait_for` in one holds them all. The turn goes on once the last has ended. A subagent's `nickname` is Codex's name for its child and Claude's description of its task; `await_read` holds a Codex child's turn until a client has read its thread. A headless Claude subagent can be `background`: its call returns at once, its steps play while no turn runs, and its end starts Claude's follow-up turn, which plays the script's next steps. |
 
 A script can also set the `model`, the `models` and `commands` a session offers, `turn_ms`, how long headless
 Claude says each finished turn took (the chat's "Worked 4m"), and, for terminal Claude, `offers_auto_mode` and
@@ -718,7 +719,9 @@ just suite link-stories                    # spec_links
 ```
 
 The `spec_*` suites (modules of testnet's integration test binary) are the many-daemon specifications: pairing, trust, discovery, routing, relay carriers,
-credential refresh, revocation, account isolation, the inventory, replication and agent families across hosts.
+credential refresh, revocation, account isolation, the inventory, replication, agent families across hosts, and
+provider subagents read, answered and stopped from clients of the host that runs them and of a paired one, the
+phone's own runtime being each host's client (`spec_subagents`).
 `spec_links` holds one story per route a link takes (the same network, SSH, IPv6 alone), each reaching an agent's
 session, streaming it live and naming the carrying path from the link log. A story on the relay alone puts every
 host on a network of its own behind a `strict` router and ends by asserting, with `still_relayed`, that each end's

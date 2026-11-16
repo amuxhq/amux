@@ -319,19 +319,11 @@ impl Run {
                     "untyped": untyped,
                 })
             }
-            Event::Input(input) => {
-                let shape = I::input_shape(input);
-                json!({
-                    "event": "input",
-                    "input_id": alias.id(&input.input_id),
-                    "id_bytes": input.input_id.len(),
-                    "arm": shape.arm,
-                    "answer": shape.answer,
-                    "ask_key": shape.ask_key.map(|key| alias.key(&key)),
-                    "target": shape.target.map(|target| alias.id(&target)),
-                    "bytes": input.body.len(),
-                    "shape": alias.skeleton().proto(input_message(I::KIND), &input.body),
-                })
+            Event::Input(input) => person_input::<I>(alias, "input", input),
+            Event::ChildInput { agent_id, input } => {
+                let mut value = person_input::<I>(alias, "child_input", input);
+                value["agent"] = alias.id(agent_id).into();
+                value
             }
             Event::AgentMessage(envelope) => message(alias, envelope),
             Event::Rename { name } => json!({
@@ -420,11 +412,69 @@ impl Run {
                 "bytes": snapshot.body.len(),
             })
         });
+        // Each provider subagent's part: its agent, whether it started or
+        // ended, and its items by key and arm, as the agent's own are.
+        let agents: Vec<Value> = step
+            .agents
+            .iter()
+            .map(|part| {
+                let agent = alias.id(&part.agent_id);
+                let items: Vec<Value> = part
+                    .items
+                    .iter()
+                    .map(|item| {
+                        let key = alias.key(&item.key);
+                        let shape = I::item_shape(&item.body);
+                        let open = format!("{agent}/{key}");
+                        let op = match (shape.complete, self.open.contains(&open)) {
+                            (true, true) => "close",
+                            (true, false) => "whole",
+                            (false, true) => "update",
+                            (false, false) => "open",
+                        };
+                        if shape.complete {
+                            self.open.remove(&open);
+                        } else {
+                            self.open.insert(open);
+                        }
+                        sparse(json!({
+                            "key": key,
+                            "arm": shape.arm,
+                            "op": op,
+                            "input_id": alias.id(&item.input_id),
+                            "bytes": item.text.len() + item.body.len(),
+                        }))
+                    })
+                    .collect();
+                json!({
+                    "agent": agent,
+                    "start": part.start.is_some(),
+                    "items": items,
+                    "appends": part
+                        .appends
+                        .iter()
+                        .map(|append| (alias.key(&append.key), append.text.len()))
+                        .collect::<Vec<_>>(),
+                    "snapshot": part.snapshot.as_ref().map(|snapshot| json!({
+                        "phase": snapshot.phase,
+                        "asks": I::describe_snapshot(&snapshot.body)
+                            .asks
+                            .iter()
+                            .map(|(ask, item)| (alias.key(ask), alias.key(item)))
+                            .collect::<Vec<_>>(),
+                        "background_jobs": snapshot.background_jobs,
+                        "bytes": snapshot.body.len(),
+                    })),
+                    "end": part.end.as_ref().map(|end| end.cause),
+                })
+            })
+            .collect();
         let concluded = json!({
             "step": {
                 "items": items,
                 "appends": appends,
                 "snapshot": snapshot,
+                "agents": agents,
                 // The turn's number, its outcome and whether it was the last.
                 "turn_end": step.turn_end.as_ref().map(|end| (end.turn_id, end.outcome, end.last)),
                 "incarnation_end": step.incarnation_end.as_ref().map(|end| end.cause),
@@ -442,6 +492,24 @@ impl Run {
             fed.extend(concluded);
         }
     }
+}
+
+/// A person's input, to the agent or (`child_input`) to one of its
+/// provider subagents: its arm, the ask or queued input it names, and its
+/// body's shape.
+fn person_input<I: Interpreter>(alias: &Alias, event: &str, input: &wire::Input) -> Value {
+    let shape = I::input_shape(input);
+    json!({
+        "event": event,
+        "input_id": alias.id(&input.input_id),
+        "id_bytes": input.input_id.len(),
+        "arm": shape.arm,
+        "answer": shape.answer,
+        "ask_key": shape.ask_key.map(|key| alias.key(&key)),
+        "target": shape.target.map(|target| alias.id(&target)),
+        "bytes": input.body.len(),
+        "shape": alias.skeleton().proto(input_message(I::KIND), &input.body),
+    })
 }
 
 /// The value with every null, false, empty string, list and object left
@@ -524,8 +592,15 @@ impl Alias {
         let alias = |name: &str| format!("name-{}", self.hash(name.as_bytes()));
         match name {
             Name::Own(name) if schema_name(name) => name.clone(),
+            // The server's name and the tool's apart, as the skeleton keeps
+            // them, so a replay tells which calls are that server's.
             Name::Server(name) if name.starts_with("mcp__") => {
-                format!("mcp__{}", alias(&name["mcp__".len()..]))
+                match name["mcp__".len()..].split_once("__") {
+                    Some((server, tool)) if !server.is_empty() && !tool.is_empty() => {
+                        format!("mcp__{}__{}", alias(server), alias(tool))
+                    }
+                    _ => format!("mcp__{}", alias(&name["mcp__".len()..])),
+                }
             }
             Name::Server(name) => name.split('/').map(alias).collect::<Vec<_>>().join("/"),
             Name::Own(name) => alias(name),
@@ -670,6 +745,11 @@ fn effect_record(alias: &Alias, kind: wire::Kind, effect: &Effect) -> Value {
             "attachments": attachments.len(),
         }),
         Effect::FollowTranscript { .. } => json!({ "effect": "follow_transcript" }),
+        Effect::FollowSubagent { .. } => json!({ "effect": "follow_subagent" }),
+        Effect::DrainSubagent { last_reply, .. } => json!({
+            "effect": "drain_subagent",
+            "reply_bytes": last_reply.as_ref().map(String::len),
+        }),
         Effect::ProviderSession { id } => {
             json!({ "effect": "provider_session", "id": alias.id(id.as_bytes()) })
         }

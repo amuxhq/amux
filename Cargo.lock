@@ -2048,6 +2048,7 @@ dependencies = [
  "sha2 0.10.9",
  "shell-words",
  "toml",
+ "uuid",
  "wire",
 ]
 
@@ -4215,10 +4216,12 @@ dependencies = [
  "agent-dir",
  "analytics",
  "anyhow",
+ "app-runtime",
  "base64 0.22.1",
  "bytes",
  "chrono",
  "clap",
+ "client",
  "daemon-core",
  "futures-util",
  "http-body-util",
@@ -4253,6 +4256,7 @@ dependencies = [
  "tui",
  "ui-runtime",
  "ui-state",
+ "ui-view",
  "unicode-width 0.2.2",
  "uuid",
  "wire",

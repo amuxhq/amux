@@ -75,6 +75,13 @@ produced:
 | `snapshot` | The agent's snapshot, when this step changed it |
 | `turn_end` | Set when the step ended a turn: the turn id, the key of the turn's last message, and how the turn ended (a `TurnOutcome`) |
 | `incarnation_end` | Set on the last step of an incarnation: why it ended (an `ExitCause`) and the cause's own words. The daemon copies it onto the row when it commits the step |
+| `agents` | The parts of the step that belong to provider subagents, the agents Claude's Agent tool or Codex's child threads start inside this agent's provider process: one `AgentStep` per subagent the step touched, each naming the subagent's agent id and carrying its own items, appends, snapshot and end, and a `NativeStart` where the subagent starts or is continued. An `AgentStep` has no turn end, since a subagent owes nobody a report |
+
+A subagent's parts share its host's frame rather than taking frames of their
+own, because one step often touches two agents (a subagent's start and the
+call row in its parent's chat) and the frame is the unit that survives a crash
+whole. A journal from before subagents were agents has no `agents` parts and
+reads as it did.
 
 The snapshot rides in the same frame because it costs nothing, but nothing
 depends on it being there: after a restart the interpreter re-derives and
@@ -141,15 +148,19 @@ One ingest step:
 2. Read the agent's `ingest_cursor` from its row.
 3. Read whole frames from that offset with `journal::Reader::read_up_to`, at
    most `INGEST_BATCH` (256) frames.
-4. Commit them in one transaction (`Sqlite::commit`), which also writes the
+4. Make a row for each provider subagent whose part starts it and that has
+   none ([provider subagents](#provider-subagents)).
+5. Commit them in one transaction (`Sqlite::commit`), which also writes the
    advanced cursor, and arm the checkpoint timer if it is not armed.
-5. Answer each committed record once to every stream open on the agent, and
-   the agent's inventory row to every inventory stream if a snapshot was
-   committed: it carries the row's phase, `working_on`, since-when and git
-   facts.
-6. At the end of the journal, the first time after each Hello, set the
-   agent's CaughtUp marker and answer `CaughtUp`.
-7. If the batch was full, arm a timer for the next one, so every other
+6. Answer each committed record once to every stream open on the agent it
+   was filed under, and that agent's inventory row to every inventory stream
+   if a snapshot of it was committed: it carries the row's phase,
+   `working_on`, since-when and git facts. Then apply what the parts said of
+   each subagent's life: continued, or ended.
+7. At the end of the journal, the first time after each Hello, set the
+   agent's CaughtUp marker, and each of its live subagents', and answer
+   `CaughtUp`.
+8. If the batch was full, arm a timer for the next one, so every other
    input is stepped between batches.
 
 Answering in the step that commits makes commit order the answer order, and a
@@ -183,6 +194,7 @@ processes the frames in journal order, inside one transaction:
 | Snapshot changing what its `notice` owes the person | Deletes the agent's pending `notifications` rows and, for a notice a top-level agent raised or any agent's ask, inserts one due after the push delay. Another ask is a change; another ask behind the same one is not. |
 | `turn_end` on an agent with a parent | Inserts a `deliveries` row carrying a copy of the turn's last message, the turn's outcome and whether it is the incarnation's `last`; a turn end marked last clears `owes_report`. |
 | `incarnation_end` | Copies the cause and its words onto the row as `exit_cause` and `exit_detail`. The row stays live until the daemon marks the agent exited, which keeps this cause, so a daemon that stops in between leaves it for the next one. |
+| A subagent's part (`agents`) | Files its items, appends and snapshot under the subagent's own row, with the subagent's own orders and revisions, as the host's are filed under the host. Its starts and ends are its lifecycle, written in the same transaction as the host's cursor, since there is no process whose exit the registry could see later: a start on a row that has ended makes it live and open again and clears its exit cause, and an end on a live one marks it exited with its cause, filing a finished one closed. The commit returns these in journal order for the registry. It never makes a delivery or sets `owes_report`. A snapshot leaves the row's title alone: a subagent's title is the registry's. A part naming no row, or a row that is not one of this agent's own subagents, is skipped and returned. |
 
 Then the row's `ingest_cursor` is set to the offset just past the last frame
 and the row is written, in the same transaction as the records it describes.
@@ -200,6 +212,59 @@ Three consequences follow:
 The unique index `items_by_position` holds one key per order (the store keeps
 the wire `order` in its `position` column), so a bug that would place two keys
 at one order fails the transaction instead of corrupting the transcript.
+
+### Provider subagents
+
+A provider subagent is an agent that Claude's Agent tool or a Codex child
+thread started inside one of this host's agents' own provider process, its
+host. It has a row, a chat and a fleet entry, and no process, directory or
+journal. Its host's interpreter writes its parts into the host's journal
+(`Step.agents`), and ingest files them under it
+([`crates/daemon-core/src/subagents.rs`](../crates/daemon-core/src/subagents.rs)):
+
+- **Its row comes first.** Before a batch commits, a part with a start for an
+  agent with no row makes one: `native` set to the provider's id for it, the
+  host as its parent, the host's kind and folder, live and working, named
+  `sub-` and the first eight hex digits of its id (with the next free suffix
+  if taken), and titled with the provider's description. It is published and
+  counted as a spawned child is, so a subscriber hears of it before anything
+  in it.
+- **Its starts and ends commit with its host's cursor.** A start on a row
+  that had ended is its parent's model continuing it: live and open again,
+  its chat carrying on, its incarnation still 1. An end marks it exited and
+  files a finished one closed. The commit writes both, so a daemon that
+  stops right after it leaves no row its next start would have to read the
+  step again to move. After the commit the registry publishes the change,
+  and an end goes through the exit path every agent's takes; it makes no
+  delivery, since a subagent's answer goes back to its parent through the
+  provider. An end for a row that has already
+  ended changes nothing: a resumed Claude reports the subagents the last
+  process left as stopped.
+- **It ends with its host.** When the host's process ends, every subagent of
+  it still live is marked exited in the same write as the host, with its own
+  cause if a part already gave one and the host's otherwise; a journal cut
+  short gives both the daemon's cause.
+- **Catch-up.** It has no Hello: when its host's journal is read to the end
+  after a Hello, the host's CaughtUp marker and every live subagent's are set
+  together. One made or continued while its host reads as caught up reads so
+  too; its end sets its own; and once the start's sweep is done, every
+  subagent that had ended gets one. The sweep looks for no directory or
+  process of a subagent.
+- **Its host is never told of it** as a child to wait for: it sends no report.
+  The host's own process follows its subagents from the parts it journals.
+- **Two checks** at the end of the step name an interpreter that breaks the
+  shape, with a dump: a part that gives a subagent items after its end with
+  no start to continue it (the items are kept), unless the part carries an
+  end of its own, as a resumed host's does when it closes the steps of a
+  subagent its killed process left; and a part naming an agent
+  that has a row but is not one of the host's own subagents (skipped). A part
+  naming no row at all, with no start, is skipped and counted
+  (`Ingested.skipped`) but is no fault, since a resumed provider may report
+  the end of a subagent this store never held, such as one started before
+  the session ran under amux.
+
+Blobs a subagent attaches live in its host's directory, and `GetBlob` for a
+subagent reads them there. A push for a subagent's ask names it by its title.
 
 ### At-least-once emission
 
@@ -391,6 +456,7 @@ The schema is the text in
 | `exhausted` | No older history exists: the origin said so, or retention trimmed it |
 | `owes_report` | Own rows: the incarnation has not yet sent its parent its last report, from its start until a turn end marked `last` (and again should a later turn start). An incarnation that exits still owing one, its turn open or ended idle, tells its parent it failed. |
 | `created_at_ms`, `incarnation` | Creation time and the `spec.<n>` it is running |
+| `native` | An encoded `amux.v1.NativeChild` on a provider subagent, the provider's id for it; NULL on an agent amux started, which is every row written before the column existed. Owned by the registry; a replica copies its origin's |
 
 Kind, lifecycle, exit cause and phase are stored as their wire integers, so a value from
 a newer peer is stored and served rather than refused.
@@ -408,6 +474,11 @@ a newer peer is stored and served rather than refused.
 | `kind` | The envelope's `Kind`, as its wire integer: which per-kind body this is |
 | `attachments` | The envelope's attachment list, encoded |
 | `body` | The per-kind body, never decoded or re-encoded by the store |
+
+Three indexes sit on `agents` beside its key, because provider subagents
+multiply its rows: `agents_by_parent` (a family, by `parent_host` and
+`parent_id`), `agents_by_id` (an agent by its id alone, which is unique
+across hosts) and `agents_by_name` (a name on its host).
 
 Three indexes sit on `items`: `items_by_position` (unique: one key per order),
 `items_by_revision` (what `after` reads) and `items_by_input` (partial, where
@@ -547,9 +618,17 @@ the profile's own budget:
    an exited one they never looked at stays in their fleet. A closed child
    whose parent is live is skipped, because its parent can still send to
    it; under an exited parent it goes, even one the person kept, so a
-   long-lived agent's finished one-shot children are reclaimed. A parent
-   goes together with its descendants, and one with a descendant still kept
-   stays.
+   long-lived agent's finished one-shot children are reclaimed. A provider
+   subagent that has ended loses its rows in the same order, whether or not
+   the person closed it and while its host lives: a long-lived agent may
+   start hundreds, and the call row in its parent's chat keeps each one's
+   result. Its agents row stays, with its block emptied and starting above
+   everything it held, because its parent's model may continue it under the
+   same id: what it says then is filed above that, with revisions going on
+   from the row's, so a replica or subscriber holding the earlier rows takes
+   it rather than seeing numbers it already passed. The row goes with its
+   host. A parent goes together with its descendants, and one with a
+   descendant still kept stays.
 2. If still over, trim the other agents in rounds: each round takes the
    largest and deletes its oldest rows until about one chunk of bytes is
    gone, then measures again. No agent is taken below its newest K rows.

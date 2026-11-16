@@ -19,6 +19,7 @@ use wire::{
 };
 
 use crate::checks::{self, Watch};
+use crate::subagent::{Native, Subagent, subagent_id};
 use crate::{Effect, Stepped, reply, serde_pb};
 
 /// An open ask as the shared list needs to see it. Implemented by the
@@ -274,7 +275,7 @@ pub fn parse_reply(text: String) -> (String, Vec<Attachment>) {
 /// One step's output as it is assembled.
 #[derive(Debug, Default)]
 pub struct Emit {
-    step: Step,
+    pub(crate) step: Step,
     effects: Vec<Effect>,
 }
 
@@ -330,6 +331,102 @@ pub fn output_cut(text: &str) -> usize {
         _ => (from..=text.len())
             .find(|at| text.is_char_boundary(*at))
             .unwrap_or(text.len()),
+    }
+}
+
+/// One agent's items and appends in the step in hand, with the items it
+/// holds open: the agent's own, or one of its provider subagents'. Both
+/// follow the same rules, so both are written here.
+pub(crate) struct Lane<'p> {
+    pub(crate) open: &'p mut BTreeMap<String, Item>,
+    pub(crate) items: &'p mut Vec<Item>,
+    pub(crate) appends: &'p mut Vec<Append>,
+    pub(crate) watch: &'p mut Watch,
+    /// The subagent these are, None for the agent's own. Item keys are
+    /// unique within one agent's chat only, so the keys the checks remember
+    /// closing are kept apart per agent.
+    pub(crate) scope: Option<&'p [u8]>,
+}
+
+impl Lane<'_> {
+    /// The key the checks remember an item by.
+    fn watched(&self, key: &str) -> String {
+        match self.scope {
+            None => key.to_owned(),
+            Some(agent) => format!("{}/{key}", serde_pb::to_hex(agent)),
+        }
+    }
+
+    pub(crate) fn item(&mut self, kind: i32, now_ms: i64, draft: ItemDraft) {
+        let at_ms = draft
+            .at_ms
+            .unwrap_or_else(|| self.open.get(&draft.key).map_or(now_ms, |open| open.at_ms));
+        let item = Item {
+            key: draft.key,
+            order: 0,
+            revision: 0,
+            input_id: draft.input_id,
+            text: draft.text,
+            attachments: draft.attachments,
+            kind,
+            body: draft.body,
+            at_ms,
+        };
+        let watched = self.watched(&item.key);
+        if draft.complete {
+            self.open.remove(&item.key);
+            self.watch.closed(&watched);
+        } else {
+            if !self.open.contains_key(&item.key) && self.watch.was_closed(&watched) {
+                self.watch.broke(
+                    checks::ITEM_BEFORE_OPEN,
+                    "an item was opened again after its final state",
+                );
+            }
+            self.open.insert(item.key.clone(), item.clone());
+        }
+        // A step's items commit before its appends, and a key appears once
+        // per step: this full state supersedes anything the step already
+        // holds for the key.
+        self.appends.retain(|append| append.key != item.key);
+        match self.items.iter_mut().find(|held| held.key == item.key) {
+            Some(held) => *held = item,
+            None => self.items.push(item),
+        }
+    }
+
+    pub(crate) fn append(&mut self, key: &str, text: &str) -> bool {
+        let Some(item) = self.open.get_mut(key) else {
+            return false;
+        };
+        item.text.push_str(text);
+        if let Some(held) = self.items.iter_mut().find(|held| held.key == key) {
+            held.text.push_str(text);
+            return true;
+        }
+        self.appends.push(Append {
+            key: key.to_owned(),
+            base_revision: 0,
+            revision: 0,
+            text: text.to_owned(),
+        });
+        true
+    }
+
+    pub(crate) fn append_output(&mut self, key: &str, text: &str) -> Output {
+        let Some(item) = self.open.get_mut(key) else {
+            return Output::NotOpen;
+        };
+        if item.text.len() + text.len() <= 2 * OUTPUT_CAP {
+            self.append(key, text);
+            return Output::Appended;
+        }
+        item.text.push_str(text);
+        let dropped = output_cut(&item.text);
+        item.text.drain(..dropped);
+        Output::Cut {
+            dropped: dropped as u64,
+        }
     }
 }
 
@@ -435,6 +532,11 @@ pub struct Shared<A: OpenAsk> {
     /// Housekeeping already ran in this idle stretch; the next turn ends it.
     #[serde(default)]
     housekept: bool,
+    /// The provider subagents running in this agent's provider process, by
+    /// the provider's id for each. A checkpoint from before subagents were
+    /// agents of their own has none, and one with none writes none.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    subagents: BTreeMap<String, Native<A>>,
     /// What the checks after every step watch.
     watch: Watch,
 }
@@ -478,6 +580,7 @@ impl<A: OpenAsk> Shared<A> {
             idle_since_ms: None,
             housekeeping: false,
             housekept: false,
+            subagents: BTreeMap::new(),
             watch: Watch::default(),
         };
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) {
@@ -503,6 +606,9 @@ impl<A: OpenAsk> Shared<A> {
         self.provider_titles = !spec.name_given;
         // A new provider process runs nothing in the background yet.
         self.set_jobs(Vec::new());
+        // Nor any subagent of the last one. One that process never ended
+        // takes the end of its incarnation, which the journal holds.
+        self.subagents.clear();
         self.now_ms = self.now_ms.max(spec.created_at_ms);
         self.fresh = false;
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap)
@@ -528,6 +634,7 @@ impl<A: OpenAsk> Shared<A> {
     /// Finishes a step: appends a Snapshot if anything a client draws from
     /// it changed, and judges the step by every interpreter's checks.
     pub fn finish(&mut self, mut emit: Emit, body: Vec<u8>, notice: Option<Notice>) -> Stepped {
+        self.settle_subagents(&mut emit);
         self.snapshot_into(&mut emit, body, notice, false);
         self.judge(&emit);
         Stepped {
@@ -621,6 +728,19 @@ impl<A: OpenAsk> Shared<A> {
     pub fn resume_step(&mut self, body: Vec<u8>) -> Step {
         let mut emit = Emit::default();
         emit.step.items = self.open_items.values().cloned().collect();
+        // A running subagent's open items and snapshot, as the agent's own:
+        // no start, since its row already exists.
+        for native in self.subagents.values() {
+            let part = wire::AgentStep {
+                agent_id: native.agent.clone(),
+                items: native.open_items.values().cloned().collect(),
+                snapshot: native.last_snapshot.clone(),
+                ..wire::AgentStep::default()
+            };
+            if !part.items.is_empty() || part.snapshot.is_some() {
+                emit.step.agents.push(part);
+            }
+        }
         let notice = self
             .last_snapshot
             .as_ref()
@@ -692,6 +812,104 @@ impl<A: OpenAsk> Shared<A> {
         }
     }
 
+    // --- provider subagents ---------------------------------------------
+
+    /// The view of the provider subagent the provider calls
+    /// `provider_child_id`, scoped to the step in hand: what is written
+    /// through it is that subagent's part of the step. See
+    /// [`Subagent`]. A subagent this state has no record of running (one
+    /// not started yet, or ended) gets a fresh record, which its
+    /// [`Subagent::start`] begins.
+    pub fn subagent<'a>(
+        &'a mut self,
+        emit: &'a mut Emit,
+        provider_child_id: &str,
+    ) -> Subagent<'a, A> {
+        let agent = subagent_id(&self.agent, provider_child_id);
+        self.subagents
+            .entry(provider_child_id.to_owned())
+            .or_insert_with(|| Native::new(agent.clone()));
+        Subagent {
+            natives: &mut self.subagents,
+            child: provider_child_id.to_owned(),
+            agent,
+            watch: &mut self.watch,
+            emit,
+            kind: self.kind,
+            now_ms: self.now_ms,
+        }
+    }
+
+    /// This agent's own id: the call agent of a subagent it started itself.
+    pub fn agent_id(&self) -> &[u8] {
+        &self.agent
+    }
+
+    /// The agent id of the provider subagent `provider_child_id` of this
+    /// agent, whether or not it runs: what the call row that starts or
+    /// continues it carries.
+    pub fn subagent_id(&self, provider_child_id: &str) -> Vec<u8> {
+        subagent_id(&self.agent, provider_child_id)
+    }
+
+    /// The provider's id for the running subagent whose agent id is
+    /// `agent_id`, the one a person's input addressed to it names; None for
+    /// a subagent not running.
+    pub fn subagent_child(&self, agent_id: &[u8]) -> Option<&str> {
+        self.subagents
+            .iter()
+            .find(|(_, native)| native.started && native.agent == agent_id)
+            .map(|(child, _)| child.as_str())
+    }
+
+    /// The open asks of the running subagent `provider_child_id`, read
+    /// without taking its view: an interpreter that keeps its own record
+    /// of an ask finds here which agent holds it. None for a subagent not
+    /// running.
+    pub fn subagent_asks(&self, provider_child_id: &str) -> Option<&Asks<A>> {
+        self.subagents
+            .get(provider_child_id)
+            .filter(|native| native.started)
+            .map(|native| &native.asks)
+    }
+
+    /// Whether the subagent `provider_child_id` has started and not ended.
+    pub fn subagent_running(&self, provider_child_id: &str) -> bool {
+        self.subagents
+            .get(provider_child_id)
+            .is_some_and(|native| native.started)
+    }
+
+    /// The provider's ids of the subagents running, in their order.
+    pub fn running_subagents(&self) -> impl Iterator<Item = &str> {
+        self.subagents
+            .iter()
+            .filter(|(_, native)| native.started)
+            .map(|(child, _)| child.as_str())
+    }
+
+    /// What every step's end does for subagents. A step that ends the
+    /// incarnation ends every subagent still running, for the same cause:
+    /// the provider process that ran them is going. A record made for a
+    /// subagent that never started is dropped, as is a part that holds
+    /// nothing.
+    fn settle_subagents(&mut self, emit: &mut Emit) {
+        if let Some(end) = emit.step.incarnation_end.clone() {
+            let running: Vec<String> = self.running_subagents().map(str::to_owned).collect();
+            for child in running {
+                self.subagent(emit, &child).end(end.clone());
+            }
+        }
+        self.subagents.retain(|_, native| native.started);
+        emit.step.agents.retain(|part| {
+            part.start.is_some()
+                || !part.items.is_empty()
+                || !part.appends.is_empty()
+                || part.snapshot.is_some()
+                || part.end.is_some()
+        });
+    }
+
     // --- repository ------------------------------------------------------
 
     /// Publishes the branch and change totals on the next snapshot; a step
@@ -746,62 +964,14 @@ impl<A: OpenAsk> Shared<A> {
 
     /// Emits an item at its full current state.
     pub fn item(&mut self, emit: &mut Emit, draft: ItemDraft) {
-        let at_ms = draft.at_ms.unwrap_or_else(|| {
-            self.open_items
-                .get(&draft.key)
-                .map_or(self.now_ms, |open| open.at_ms)
-        });
-        let item = Item {
-            key: draft.key,
-            order: 0,
-            revision: 0,
-            input_id: draft.input_id,
-            text: draft.text,
-            attachments: draft.attachments,
-            kind: self.kind,
-            body: draft.body,
-            at_ms,
-        };
-        if draft.complete {
-            self.open_items.remove(&item.key);
-            self.watch.closed(&item.key);
-        } else {
-            if !self.open_items.contains_key(&item.key) && self.watch.was_closed(&item.key) {
-                self.watch.broke(
-                    checks::ITEM_BEFORE_OPEN,
-                    "an item was opened again after its final state",
-                );
-            }
-            self.open_items.insert(item.key.clone(), item.clone());
-        }
-        // A step's items commit before its appends, and a key appears once
-        // per step: this full state supersedes anything the step already
-        // holds for the key.
-        emit.step.appends.retain(|append| append.key != item.key);
-        match emit.step.items.iter_mut().find(|held| held.key == item.key) {
-            Some(held) => *held = item,
-            None => emit.step.items.push(item),
-        }
+        let (kind, now_ms) = (self.kind, self.now_ms);
+        self.lane(emit).item(kind, now_ms, draft);
     }
 
     /// Extends the text of an open item. False, and nothing emitted, when
     /// the key is not open: the caller emits a full item instead.
     pub fn append(&mut self, emit: &mut Emit, key: &str, text: &str) -> bool {
-        let Some(item) = self.open_items.get_mut(key) else {
-            return false;
-        };
-        item.text.push_str(text);
-        if let Some(held) = emit.step.items.iter_mut().find(|held| held.key == key) {
-            held.text.push_str(text);
-            return true;
-        }
-        emit.step.appends.push(Append {
-            key: key.to_owned(),
-            base_revision: 0,
-            revision: 0,
-            text: text.to_owned(),
-        });
-        true
+        self.lane(emit).append(key, text)
     }
 
     /// Extends a running command's output. Past twice [`OUTPUT_CAP`] the
@@ -809,18 +979,17 @@ impl<A: OpenAsk> Shared<A> {
     /// nothing is emitted: the caller sends the item again whole, with the
     /// bytes dropped in its body, and appends continue from there.
     pub fn append_output(&mut self, emit: &mut Emit, key: &str, text: &str) -> Output {
-        let Some(item) = self.open_items.get_mut(key) else {
-            return Output::NotOpen;
-        };
-        if item.text.len() + text.len() <= 2 * OUTPUT_CAP {
-            self.append(emit, key, text);
-            return Output::Appended;
-        }
-        item.text.push_str(text);
-        let dropped = output_cut(&item.text);
-        item.text.drain(..dropped);
-        Output::Cut {
-            dropped: dropped as u64,
+        self.lane(emit).append_output(key, text)
+    }
+
+    /// The agent's own part of the step, for its items and appends.
+    fn lane<'p>(&'p mut self, emit: &'p mut Emit) -> Lane<'p> {
+        Lane {
+            open: &mut self.open_items,
+            items: &mut emit.step.items,
+            appends: &mut emit.step.appends,
+            watch: &mut self.watch,
+            scope: None,
         }
     }
 

@@ -434,3 +434,48 @@ fn a_read_says_how_far_it_saw_the_journal_torn_tail_included() {
     assert_eq!(keys(&batch), ["a"]);
     assert_eq!(batch.seen, whole + 3);
 }
+
+/// A provider subagent's parts ride in its host's frame: the host's own
+/// part and each subagent's come back together, in order, and a step that
+/// touched only a subagent is a frame of its own.
+#[test]
+fn a_step_with_provider_subagent_parts_reads_back_whole() {
+    use wire::{AgentStep, IncarnationEnd, NativeStart};
+    let dir = tempfile::tempdir().unwrap();
+    let mut writer = Writer::open(dir.path(), 1 << 20).unwrap();
+    let started = Step {
+        agents: vec![AgentStep {
+            agent_id: b"sub-1".to_vec(),
+            start: Some(NativeStart {
+                provider_child_id: "a1795690345bfafb1".into(),
+                call_agent_id: b"host".to_vec(),
+                call_key: "toolu_1".into(),
+                title: "Read a.txt".into(),
+            }),
+            items: step("sub-prompt", "Read the file").items,
+            snapshot: Some(Snapshot {
+                kind: wire::Kind::ClaudeSdk as i32,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }],
+        ..step("toolu_1", "Agent")
+    };
+    let only_the_subagent = Step {
+        agents: vec![AgentStep {
+            agent_id: b"sub-1".to_vec(),
+            end: Some(IncarnationEnd {
+                cause: wire::ExitCause::Finished as i32,
+                detail: None,
+            }),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    writer.append(&started).unwrap();
+    assert!(writer.append(&only_the_subagent).unwrap() > 0);
+
+    let batch = Reader::new(dir.path(), 0).read_to_end().unwrap();
+    let read: Vec<_> = batch.frames.into_iter().map(|(_, step)| step).collect();
+    assert_eq!(read, [started, only_the_subagent]);
+}

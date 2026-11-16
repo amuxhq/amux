@@ -23,6 +23,7 @@ extension ComponentCatalog {
         fleet("busy") { StoryFleet.busy(away: true) },
         fleet("notifications-offer", offerNotifications: true) { StoryFleet.busy(nearby: false) },
         fleet("settled", scope: .closed) { StoryFleet.busy() },
+        fleet("subagents") { StoryFleet.busy(subagents: true) },
         fleet("no-agents") { StoryFleet.noAgents() },
         fleet("first-run") { StoryFleet.firstRun() },
         fleet("first-run-two-found") { StoryFleet.firstRun(found: [StoryFleet.laptop, StoryFleet.studioFound]) },
@@ -121,9 +122,11 @@ enum StoryFleet {
 
     /// - Parameter nearby: whether a machine this phone has not paired is
     ///   on its network, offering itself above the list.
+    /// - Parameter subagents: lists the migration's subagents under it, as
+    ///   a person who opened its family sees them.
     static func busy(
         away: Bool = false, accounts: Int = 1, picture: Bool = false,
-        nearby: Bool = true
+        nearby: Bool = true, subagents: Bool = false
     ) -> Stores {
         let studioReach: Reach = away ? .away : .online(.direct)
         let pinned = [
@@ -136,13 +139,22 @@ enum StoryFleet {
             row(2, "auth-refactor", on: studio, .needsYou, minutes: 6, reach: studioReach, branch: "refactor-auth",
                 .said(.ask(key: "", wants: .run(command: "cargo test -p amux-auth"), why: "", more: 0))),
         ]
-        let live = [
+        let live: [FleetRow] = [
             row(3, "flaky-e2e", on: desk, .working, minutes: 1, kind: .claudePty,
-                .step(ActivityLine(activity: activity(.running(key: "t1")), step: "cargo test -p e2e reconnect"))),
-            row(4, "migration", on: desk, .working, minutes: 3, children: 2,
-                .step(ActivityLine(activity: activity(.subagents(count: 2)), step: nil))),
+                .step(ActivityLine(activity: activity(.running(key: "t1")), step: "cargo test -p e2e reconnect", subagents: nil))),
+            row(4, "migration", on: desk, .working, minutes: 3, children: 2, expanded: subagents,
+                .step(ActivityLine(activity: activity(.subagents(count: 2)), step: nil, subagents: nil))),
+        ] + (subagents ? [
+            // Claude's subagents, by the titles Claude gave them; each its
+            // own agent with no folder, listed under the parent that runs it.
+            row(12, "Port the schema to the new store", on: desk, .working, minutes: 3, handle: "sub-3f9a01c2",
+                native: true, .step(ActivityLine(activity: activity(.running(key: "t2")), step: "cargo test -p store", subagents: nil))),
+            row(13, "Check the old migrations still apply", on: desk, .needsYou, minutes: 1, handle: "sub-81c4d2e7",
+                native: true,
+                .said(.ask(key: "", wants: .run(command: "sqlite3 fleet.db .schema"), why: "", more: 0))),
+        ] : []) + [
             row(5, "docs-pass", on: studio, .working, minutes: 4, kind: .codex, reach: studioReach,
-                .step(ActivityLine(activity: activity(.thinking), step: nil))),
+                .step(ActivityLine(activity: activity(.thinking), step: nil, subagents: nil))),
             row(6, "licensing", on: desk, .idle, minutes: 18,
                 .lastSaid("Drafted the licensing page; it's ready for you to read.")),
             row(7, "sensor-logger", on: pi, .idle, minutes: 52, kind: .codex,
@@ -247,16 +259,18 @@ enum StoryFleet {
     private static func row(
         _ index: UInt8, _ name: String, on host: HostView, _ attention: Attention, minutes: Double,
         kind: Kind = .claudeSdk, reach: Reach = .online(.direct), children: UInt32 = 0,
-        branch: String? = nil, exit: ExitCause? = nil, filing: Filing = .open, _ second: SecondLine
+        branch: String? = nil, exit: ExitCause? = nil, filing: Filing = .open, expanded: Bool = false,
+        handle: String? = nil, native: Bool = false, _ second: SecondLine
     ) -> FleetRow {
         FleetRow(
             card: FleetCard(
-                agent: key(index, on: host), name: name, handle: name, kind: kind, attention: attention,
-                cwd: "/Users/ada/src/\(name)", phaseSinceMs: ms(minutesAgo: minutes),
+                agent: key(index, on: host), name: name, handle: handle ?? name, kind: kind, attention: attention,
+                cwd: native ? "" : "/Users/ada/src/\(name)", phaseSinceMs: ms(minutesAgo: minutes),
                 host: host.name, hostReach: reach, children: children, familyAttention: attention,
-                members: children + 1, descendants: children, backgroundJobs: 0, closeHeld: false, filing: filing, topLevel: true,
+                members: children + 1, descendants: children, backgroundJobs: 0, closeHeld: false, filing: filing,
+                topLevel: !native, native: native,
                 branch: branch, exitCause: exit, repository: nil),
-            depth: 0, expanded: false, secondLine: second, loud: nil)
+            depth: native ? 1 : 0, expanded: expanded, secondLine: second, loud: nil)
     }
 }
 

@@ -1,0 +1,10 @@
+{
+  "about": "A subagent's command runs when its host is settled and resumed: the resumed Claude says the subagent stopped, and SendMessage starts it again under the same task id. Today its steps fold under its calls.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "recording": {
+    "path": "live/subagent_resumed/io.jsonl",
+    "format": "claude_sdk_io"
+  }
+}

@@ -186,7 +186,7 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
     }
 
     private var inspecting: Bool {
-        place.changes && place.surface == .agents && place.agent != nil
+        place.showsChanges(native: place.agent.flatMap { content.fleet.row($0) }?.native == true)
     }
 
     private func exists(_ agent: AgentKey) -> Bool { content.fleet.row(agent) != nil }
@@ -241,7 +241,9 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
                         .font(.ui(.meta))
                         .foregroundStyle(.secondary)
                 }
-                if place.surface == .agents, let agent = place.agent {
+                // A provider subagent has no terminal and no folder of its
+                // own, so neither its interface nor its changes open.
+                if place.surface == .agents, let agent = place.agent, content.fleet.row(agent)?.native != true {
                     BarButton(symbol: "square-terminal", help: "Open in Terminal") { actions.openTerminal(agent) }
                     if !place.changes {
                         BarButton(symbol: "panel-right", help: "Show Changes (⌥⌘I)") { place.changes = true }
@@ -272,7 +274,7 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
     @ViewBuilder private var title: some View {
         if place.surface == .agents, let agent = place.agent, let row = content.fleet.row(agent) {
             HStack(spacing: 6) {
-                RepositoryTile(repository: row.card.repository, size: 18)
+                RepositoryTile(repository: row.card.repository, size: 18, native: row.native)
                 Text(row.card.repository?.name ?? PlacesWords.place(row))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -408,8 +410,10 @@ struct AgentMenu: View {
 
     var body: some View {
         let agent = row.card.agent
-        Button("Open in Terminal") { actions.openTerminal(agent) }
-        Divider()
+        if !row.native {
+            Button("Open in Terminal") { actions.openTerminal(agent) }
+            Divider()
+        }
         if row.pinned {
             Button("Unpin") { actions.act(.unfile, agent) }
         } else if row.pinnable {

@@ -49,12 +49,15 @@ public enum FleetWords {
     }
 
     /// The step a working agent is on, as the chat's activity line names
-    /// it: the step's own subject when it is running one.
+    /// it: the step's own subject when it is running one, and while it
+    /// waits on its subagents and one of them waits on the person, how they
+    /// stand, as the chat's line and their group's row say it.
     public static func step(_ line: AmuxValues.ActivityLine) -> String {
         if case .running = line.activity.kind, let step = line.step, !step.isEmpty {
             return ChatWords.firstLine(step)
         }
-        return ChatWords.activityParts(line.activity.kind, elapsedMs: 0, subject: nil).words
+        return ChatWords.activityParts(
+            line.activity.kind, elapsedMs: 0, subject: nil, subagents: line.subagents).words
     }
 
     /// The provider a sign-in belongs to.

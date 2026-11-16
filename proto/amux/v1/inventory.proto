@@ -178,6 +178,18 @@ message Agent {
   // snapshot envelope, so a row says it with no stream open: an agent that
   // has stopped keeps no stream.
   optional string last_said = 21;
+  // Set on a provider subagent: an agent that Claude's Agent tool or a Codex
+  // child thread started inside its parent's provider process. It has no
+  // process, directory or composer of its own, its parent is always the
+  // agent whose process runs it, and it takes no messages. Absent on every
+  // agent amux started itself.
+  optional NativeChild native = 22;
+}
+
+// What marks a provider subagent's row.
+message NativeChild {
+  // The provider's own id for it: Claude's agent id, Codex's thread id.
+  string provider_child_id = 1;
 }
 
 enum Filing {

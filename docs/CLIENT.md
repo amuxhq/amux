@@ -31,7 +31,7 @@ Three rules shape the library:
 | Crate | What it owns |
 |---|---|
 | [`client`](../crates/client/src/lib.rs) | The `Client` trait: the one seam both clients call the runtime through, with a gRPC implementation over the profile socket and an in-process one for the phone. |
-| [`ui-state`](../crates/ui-state/src/lib.rs) | `SessionState` (one open chat) and `FleetState` (the inventory), updated by messages. No I/O, no clock, no handles. Also the plain shared values ([`model.rs`](../crates/ui-state/src/model.rs)): `Key`, `AgentKey`, `Attention`, `Connection`, `BlobStatus`, `Composer`, `Waiting`, `PhaseView`, `Activity`, `InputState`, from which the Swift mirrors are generated. |
+| [`ui-state`](../crates/ui-state/src/lib.rs) | `SessionState` (one open chat) and `FleetState` (the inventory), updated by messages. No I/O, no clock, no handles. Also the plain shared values ([`model.rs`](../crates/ui-state/src/model.rs)): `Key`, `AgentKey`, `Attention`, `Connection`, `BlobStatus`, `Composer`, `Waiting`, `JobStop`, `PhaseView`, `Activity`, `InputState`, from which the Swift mirrors are generated. |
 | [`ui-view`](../crates/ui-view/src/lib.rs) | Pure functions from the state to content values: chat rows, the ask card, the composer and overview, the settings view, fleet rows and cards, the review document, and onboarding's: which step opens, which comes next and how many are left to finish. |
 | [`ui-runtime`](../crates/ui-runtime/src/lib.rs) | The drivers, `Session` and `Fleet`: subscribe, reconnect, page, send, fetch blobs, and keep a bounded trace for reports. The fleet holds the one session each live agent has. The only place a chat does I/O. |
 | [`replay-support`](../crates/replay-support/src/lib.rs) | Replaying a report's records through the daemon core and the session state. |
@@ -203,8 +203,9 @@ The state answers the questions every client asks, so no client re-derives them:
 
 | Method | Answer |
 |---|---|
-| `can_send()` | Caught up, and the entry does not say exited. Drafting is never gated. |
-| `composer()` | `Send`; `Resume` for an exited agent (the draft becomes the next incarnation's first prompt); or `Waiting(Waiting)` with `CatchingUp`, `Detached` or `Reconnecting`: the chat is not current, so nothing sends and the draft stays in the composer. |
+| `can_send()` | Caught up, the entry does not say exited, and the agent is not a provider subagent. Drafting is never gated. |
+| `composer()` | `Send`; `Resume` for an exited agent (the draft becomes the next incarnation's first prompt); `Waiting(Waiting)` with `CatchingUp`, `Detached` or `Reconnecting`: the chat is not current, so nothing sends and the draft stays in the composer; or `Native { stop }` for a provider subagent (see below). |
+| `native()`, `native_stop()` | Whether the agent is a subagent its parent's provider runs (`Agent.native`), and its Stop: a `JobStop` from its own job in its snapshot's background jobs, the one of kind `SUBAGENT` keyed by the provider's id for it. Offered while listed and not stopping, `Stopping` once a stop went, `Refused` with the provider's words, and `Unavailable` once it ended, when it is not listed, and always on terminal Claude. |
 | `phase()` | `PhaseView`: lifecycle from the entry, everything else from the snapshot. |
 | `open_asks()` | The asks to draw, head first. Before CaughtUp an ask is drawn only if the entry says needs-you, so an ask answered on another device does not flash from a cached snapshot and vanish. |
 | `activity(now_ms)` | The activity line, derived from the newest items and the phase (see [the chat vocabulary](CHAT_VOCABULARY.md)). |
@@ -377,7 +378,9 @@ directly (a name, a path, a count the state holds), but never works out a judgem
 | `controls(state)` | The `ControlsSummary` beside the composer: the running model by its one name, the effort in force, and the permission and mode only while they are not the agent's normal ones. |
 | `new_agent_settings(catalogue, chosen)`, `new_agent_pick(catalogue, chosen, pick)` | A new agent's settings from its host's catalogue, in the settings view's own choices (what can be set at start, the chosen ones marked, the normal mode in force when none is chosen, a chosen value the host does not list kept); and what is chosen after a pick: another model starts at its default effort and gives up a permission it does not take for the normal one, and picking the normal mode leaves the mode unchosen. |
 | `fleet_view(fleet, local_host, lines, expand, keep)`, `session_line(state, now_ms)` | Home's sections (needs you, live, exited) with each family in its loudest member's section, newest since-when first, whether each starts folded, and every row's second line; the fleet-wide counts of agents that need you and that are working; what one session knows for that line. |
-| `fleet_card(fleet, local_host, agent_id)`, `family_header(fleet, local_host, agent_id)` | One agent's card (name, branch, host and its reach, how it ended, family counts), and a chat's family header with how many of the family need you. |
+| `fleet_card(fleet, local_host, agent_id)`, `family_header(fleet, local_host, agent_id)` | One agent's card (name, branch, host and its reach, how it ended, family counts, whether it is a provider subagent), and a chat's family header with how many of the family need you. |
+| `opened_agent(fleet, agent_id)`, `group_state(fleet, agents)`, `chat_agents(state, fleet)` | The agent a call row opens as its fleet row has it (its key to open, its title else its name, its kind, its `PhaseView`), or None when the fleet does not hold it; what a group's agents come to (`GroupState`: running, needing you, idle, finished, ended, failed, unknown); and every agent a chat's held rows open with each group's state, which the phone is handed when the fleet moves. |
+| `toggle_group(state, member, open)`, `subagent_rows_moved(state, changed)` | Opens or closes the group a call belongs to, in the set that holds open runs; and the calls whose group a change moved without touching them (a call joining, a turn bound, a cut taking the first), for a client holding rows by key. |
 | `reach(fleet, local_host, host)` | How this machine reaches a host: online over a route; away, meaning only that the relay refused it for the account's free plan and upgrading reaches it; or offline, for a reason this machine can name (this machine is signed out, or the host no longer trusts it) or for none. |
 | `review_doc(diff, patch, comments)` | A patch parsed into files, hunks and lines, with review comments placed. |
 | `patch_head(state, key, max)` | The first lines of an edit's patch. |
@@ -391,12 +394,35 @@ head, for a step opened to show how it ended; and a background command's row its
 **Rows are items.** `chat_rows` emits exactly one [`Row`](../crates/ui-view/src/rows.rs) per item, and the row id
 is always the item key. A `Row` carries its `kind` (a `RowKind`), its `run` (a `Run`, when it is in one), a
 `collapsed` flag the client skips, the permission `decision` drawn on a tool call's own row, `attention` (an open
-ask points at it, or it failed) and a `parent` for a subagent's own step, which collapses under the subagent's
-row. The row kinds and what each draws are in [CHAT_VOCABULARY.md](CHAT_VOCABULARY.md).
+ask points at it, or it failed), `opens` and `group` for a call that opens an agent (below), and a `parent` for
+a subagent's own step from history, which collapses under the subagent's row. The row kinds and what each draws
+are in [CHAT_VOCABULARY.md](CHAT_VOCABULARY.md).
+
+**Calls open their agents.** A call that started or continues an agent names it in `opens`, by its id: Claude's
+Agent call and a SendMessage continuing it (`ToolCall.child_agent_id`), a Codex spawn or follow-up of a child
+thread (`CollabWork.agent_ids`), and amux's own spawn from either (`ToolCall.child_agent_id`,
+`McpToolCall.child_agent_id`). Every client opens that agent's chat from the row (a tap on the phone and the Mac,
+the leader's open on the focused row in the terminal), a gesture apart from expanding the row. How the agent
+stands (running, waiting on you, done, stopped) is never the call's: a call can return while its subagent runs
+on, and only the fleet row knows of an ask the subagent waits on. A client reads it from the fleet it already
+holds, with `opened_agent`. The row carries only the reference, so rows still change only with their items. A call from before amux knew the agent
+opens nothing and reads its own state. Such a call is not a step: it ends a run rather than folding into one, and
+`Hide` does not hide it. Codex's calls on children that start none (waiting on, closing, interrupting, listing
+them) draw nothing.
+
+**Groups are attributes.** The calls of one turn that opened more than one agent fold into one row, "4 subagents ·
+2 running · 1 waiting on you": each carries `group` (`SubagentGroup`: its `first` held call, each agent it opened
+once, in order, and whether it is `open`). Folded, the first call draws the group's row, from `group_state` over
+its agents, and the rest are `collapsed`; open, each call draws its own row under it. A client holds a group open
+by any of its calls, in the same set that holds open runs: `toggle_group` holds its newest call, which no trim at
+the low edge takes first. `ShowAll` and `Hide` draw every group open. A call joining a group, a turn bound
+splitting one, and a cut taking a group's first call change rows the change does not touch;
+`subagent_rows_moved` names them, and the phone's runtime adds them to every delta.
 
 **Runs are attributes.** There is one fold for tool steps: a run is every tool step between two pieces of what
-the agent or the person put in the transcript. Thinking, retry notices, a subagent's own steps and items that draw
-nothing pass through a run; an ask, the agent's text, a prompt or a turn's end ends it. The session's run index
+the agent or the person put in the transcript. Thinking, retry notices, a subagent's own steps from history and
+items that draw nothing pass through a run; an ask, the agent's text, a prompt, a turn's end or a call that opens
+an agent ends it. The session's run index
 keeps membership current on every message (and marks every member changed when its run moves), and `Run` on each
 member row says it: the run's `first` held step (where an opened run draws its header), its `last` step,
 `steps`, `live` (nothing has ended it yet), `open_below`, `recent` (for one of its two newest steps, how many
@@ -460,6 +486,15 @@ if the runtime's source for that agent is current, or after the delta if it is c
   runtime's source reconnects, the delta or a Reset follows under the same rules; the client does nothing.
 - A deleted agent's session reports `ended()`, and the client closes it to the fleet. The fleet is home: no
   client reopens a chat on its own.
+- A provider subagent's chat (Claude's Agent tool, a Codex child thread; `Agent.native` is set) opens like any
+  other, from its fleet row under its parent or from the call row in its parent's chat that opens it. Its
+  composer is `Native { stop }`: no text box, only that Claude or Codex runs this subagent and it takes no
+  messages, and the Stop `stop` offers, which sends `StopJob { key }` to the subagent's own id. Its asks are
+  answered as any ask is, to its id; the daemon passes answers and stops to the process that runs it and refuses
+  the rest. Nothing keyed on a folder, a terminal or a composer applies to it: `settings` offers nothing to pick
+  and no command, `diff_base` is None (its files are its parent's), the runtime fetches no catalogue and keeps no
+  draft for it, terminal attach refuses it, and its fleet card says `native`, so no client offers it a resume, a
+  delete, a pin or a terminal. Its overview leaves out its own job, which the composer stops.
 
 ### Sending
 
@@ -532,7 +567,9 @@ streams. A folded family whose head does not need the person carries the member 
 
 Each row's second line goes by the state the inventory row says, in words its session supplies: the snapshot's
 notice, the same one a push says, when it needs you; the step it is running (the chat's activity line, with the
-step's command or file) when working; when idle, what stops it (signed out, a spent usage window, a failed turn),
+step's command or file) when working, and while it waits on its subagents, how those its chat opened that are still
+live stand (`ActivityLine.subagents`, filled by `fleet_view` from the fleet as `ChatAgents.live` is), so that once one
+of them waits on the person the row says so in the group's words, as the chat does; when idle, what stops it (signed out, a spent usage window, a failed turn),
 also from the notice, or else the first line of what it last said, its markdown read as words; nothing while starting or before its session opens; how it ended once exited,
 whatever its host is doing; or that its host no longer trusts this machine (`HostRevoked`), which only pairing
 again undoes. A host out of reach otherwise changes nothing in the line: the row says what this machine last held,
@@ -634,8 +671,9 @@ line under a scrolled-back feed reads `arrivals_held()`.
 change signal and gathers `take_changes()` into a coalescer that wakes the host once per turn, however many updates
 land. On the host's step it hands over one `ChatDelta` per chat that moved, computed against what it last handed
 over: the keys at their edges (new above the newest held, a page below the oldest, and how many of the oldest a
-following window dropped) or, after a reload, all of them; the rows of the keys it held that changed; and the frame, the head ask, the overview and the settings only when they moved, the frame not for the clock
-alone. The Swift `ChatModel` applies each delta and reads a row by key only when its cell is first drawn or after a
+following window dropped) or, after a reload, all of them; the rows of the keys it held that changed; and the frame, the head ask, the overview, the settings and the agents the rows open (`chat_agents`) only when they moved, the frame not for the clock
+alone. A chat also watches the fleet while its rows open agents, since the fleet moving changes how they stand
+and no row; a group is opened and closed with `Chat::toggle_group` (`amux_session_toggle_group`). The Swift `ChatModel` applies each delta and reads a row by key only when its cell is first drawn or after a
 reload, so a streaming append costs one cell and nothing is read back on the main thread. The fleet is handed over
 the same way, as a `FleetDelta`. The top of the list coming into view asks for an older page. `AppRuntime::set_foreground` hands the app's foreground to the fleet, and dropping a `Chat` closes it to
 the fleet. `ChatModel.following` is told to the session with `follow(_:)` whenever it changes, and New activity shows

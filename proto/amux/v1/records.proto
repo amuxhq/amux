@@ -121,6 +121,52 @@ message Step {
   // without one (the process was killed or crashed) gets the daemon's own
   // cause.
   optional IncarnationEnd incarnation_end = 5;
+  // The parts of this step that belong to provider subagents: the ones
+  // Claude's Agent tool or Codex's child threads start inside this agent's
+  // own provider process, each an agent of its own with no process. One per
+  // subagent the step touched. They share this frame with the agent's own
+  // part, rather than taking frames of their own, because one step often
+  // touches two agents (a subagent's start and its parent's call row) and
+  // the frame is what survives a crash whole. Empty in every step of an
+  // agent whose provider started no subagent.
+  repeated AgentStep agents = 6;
+}
+
+// One provider subagent's part of a step, filed under the subagent's own
+// row. It has no turn end: a subagent's answer goes back to its parent
+// through the provider, so the subagent owes nobody a report.
+message AgentStep {
+  // The subagent's agent id, derived from its host's id and the provider's
+  // id for it, so it is the same across restarts, replays and
+  // continuations.
+  bytes agent_id = 1;
+  // Set on the step where the subagent starts, and again where its parent's
+  // model continues it; absent on every other step.
+  optional NativeStart start = 2;
+  // The subagent's items, appends and snapshot, as the agent's own part of
+  // a step carries its own.
+  repeated Item items = 3;
+  repeated Append appends = 4;
+  optional Snapshot snapshot = 5;
+  // Set on the subagent's last step: why it ended. Absent while it runs.
+  optional IncarnationEnd end = 6;
+}
+
+// What a provider subagent's row is made from, when the provider starts or
+// continues it.
+message NativeStart {
+  // The provider's own id for the subagent: Claude's agent id, Codex's
+  // thread id.
+  string provider_child_id = 1;
+  // The agent whose chat holds the call that started the subagent: the
+  // host, or a provider subagent that started a nested one.
+  bytes call_agent_id = 2;
+  // That call's item key. A continuation names the original call, not the
+  // one that continued it.
+  string call_key = 3;
+  // The provider's description of the subagent, which becomes the row's
+  // title; empty when the provider gave none.
+  string title = 4;
 }
 
 message IncarnationEnd {

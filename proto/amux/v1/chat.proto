@@ -83,6 +83,11 @@ message ToolCall {
   ToolInput input = 16;
   // A file edit or write that finished: the hunks Claude says it changed.
   repeated PatchHunk patch = 17;
+  // The agent this call started or continues, whose chat the call's row
+  // opens: a provider subagent on Claude's Agent call and on a later
+  // SendMessage call to the same subagent, or the child amux's own spawn
+  // made. Empty on any other call, and on a call from before amux knew it.
+  bytes child_agent_id = 18;
 }
 
 // What a Claude call was asked to do, read once by the interpreter from the

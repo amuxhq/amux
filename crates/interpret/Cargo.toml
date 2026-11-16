@@ -22,6 +22,7 @@ serde = { workspace = true }
 serde_json = { workspace = true, features = ["raw_value"] }
 sha2 = { workspace = true }
 shell-words = { workspace = true }
+uuid = { workspace = true }
 wire = { workspace = true }
 
 [features]

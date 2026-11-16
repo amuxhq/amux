@@ -150,7 +150,7 @@ fn between(transcript: &Transcript, lo: u64, hi: u64) -> impl DoubleEndedIterato
 }
 
 /// A prompt, a steer or a turn's end: what says where a turn ends.
-fn bounds_turn(class: &ItemClass) -> bool {
+pub(crate) fn bounds_turn(class: &ItemClass) -> bool {
     matches!(
         class,
         ItemClass::Prompt | ItemClass::Steer | ItemClass::Turn

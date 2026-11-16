@@ -734,6 +734,11 @@ fn effect_record(alias: &Alias, kind: wire::Kind, effect: &Effect) -> Value {
             "attachments": attachments.len(),
         }),
         Effect::FollowTranscript { .. } => json!({ "effect": "follow_transcript" }),
+        Effect::FollowSubagent { .. } => json!({ "effect": "follow_subagent" }),
+        Effect::DrainSubagent { last_reply, .. } => json!({
+            "effect": "drain_subagent",
+            "reply_bytes": last_reply.as_ref().map(String::len),
+        }),
         Effect::ProviderSession { id } => {
             json!({ "effect": "provider_session", "id": alias.id(id.as_bytes()) })
         }

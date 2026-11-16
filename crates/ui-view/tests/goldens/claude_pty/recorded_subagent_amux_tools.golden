@@ -2,18 +2,20 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 14 recorded 12: fact Transcript type=user uuid=cec0032a-2385-4859-9900-b27784befebf
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 46 recorded 44: fact Transcript type=assistant uuid=d7bbc68f-da65-4f38-804c-52cbf329b922
-  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
-## 65 recorded 63: fact Transcript type=system subtype=turn_duration uuid=c3ef65f0-1ed6-4b2a-9806-5ccac7e15e09
-  composer Send activity=None queue=[] underway=[] refused=[]
-## 88 recorded 86: fact Transcript type=user uuid=d3f0ba0f-ea39-423d-ba03-fa5a27b519be
+## 48 recorded 46: fact Transcript type=assistant uuid=d7bbc68f-da65-4f38-804c-52cbf329b922
+  composer Send activity=Some(Running { key: "toolu_0178uDxBqXBZfv443vRkiBtq" }) queue=[] underway=[] refused=[]
+## 61 recorded 59: fact Hook hook_event_name=MessageDisplay
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 97 recorded 95: fact Transcript type=system subtype=turn_duration uuid=ed77232f-8b7a-4aa8-a658-17dc9c0c8cef
+## 68 recorded 66: fact Transcript type=system subtype=turn_duration uuid=c3ef65f0-1ed6-4b2a-9806-5ccac7e15e09
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 94 recorded 92: fact Transcript type=queue-operation
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 110 recorded 108: fact Transcript type=system subtype=turn_duration uuid=ed77232f-8b7a-4aa8-a658-17dc9c0c8cef
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
      2 cec0032a-2385-4859-9900-b27784befebf Prompt { text: [Text("Launch the `reporter` subagent and wait for it. When it has reported, reply with exactly what it said.")], steered: false }
-     3 toolu_0178uDxBqXBZfv443vRkiBtq Subagent { description: "Run reporter subagent", running: false, tool_count: 2, last_tool: "agents", answer: "DONE", duration_ms: Some(6056) } run[toolu_0178uDxBqXBZfv443vRkiBtq..toolu_0178uDxBqXBZfv443vRkiBtq x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0 }]
+     3 toolu_0178uDxBqXBZfv443vRkiBtq Subagent { description: "Run reporter subagent", running: true, tool_count: 0, last_tool: "", answer: "DONE", duration_ms: Some(5906) } run[toolu_0178uDxBqXBZfv443vRkiBtq..toolu_0178uDxBqXBZfv443vRkiBtq x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0 }]
      4 stream:a9881b96-8ea9-4eb3-bc5b-8092ae7309a2 Prose { text: [Text("The reporter subagent is running in the background. I'll reply with its report once it comes back.")], streaming: false, working_note: false }
      5 turn:1 TurnEnd { duration_ms: Some(5105), failed: false }
      6 stream:55ac50a4-3a66-4925-a338-b3fb250a14b5 Prose { text: [Text("DONE")], streaming: false, working_note: false }

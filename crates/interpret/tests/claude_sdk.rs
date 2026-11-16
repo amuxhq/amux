@@ -1046,15 +1046,13 @@ fn listed_jobs(stepped: &interpret::Stepped) -> Option<Vec<String>> {
     })
 }
 
-/// A subagent that starts in the foreground and is then sent to the
-/// background: Claude says so only on `task_updated`, as a patch with
-/// `is_backgrounded`. It is a background job from then on, as one started
-/// in the background is.
+/// A subagent lists its own job, the one a person stops it by, in its own
+/// snapshot, foreground or background: the agent's own list names only the
+/// agent's own commands.
 #[test]
-fn a_task_backgrounded_after_it_started_is_a_background_job() {
+fn a_subagent_lists_its_own_job_and_the_agent_lists_none() {
     let mut state = started();
-    let mut last = None;
-    let shown = ClaudeSdk::step(
+    ClaudeSdk::step(
         &mut state,
         stream(
             json!({"type": "assistant", "uuid": "a1", "session_id": "s", "message": {
@@ -1063,7 +1061,6 @@ fn a_task_backgrounded_after_it_started_is_a_background_job() {
                 "input": {"description": "Watch the build", "prompt": "Watch it.", "subagent_type": "general-purpose"}}]}}),
         ),
     );
-    last = listed_jobs(&shown).or(last);
     let launched = ClaudeSdk::step(
         &mut state,
         stream(
@@ -1072,7 +1069,17 @@ fn a_task_backgrounded_after_it_started_is_a_background_job() {
             "task_type": "local_agent", "is_backgrounded": false}),
         ),
     );
-    last = listed_jobs(&launched).or(last);
+    let host = listed_jobs(&launched).unwrap_or_default();
+    assert!(host.is_empty(), "the agent lists its subagent: {host:?}");
+    let (_, snapshot) = part_snapshot(&launched).expect("the subagent's snapshot");
+    let jobs = snapshot.background_jobs.unwrap_or_default().jobs;
+    assert_eq!(
+        jobs.iter()
+            .map(|job| (job.kind(), job.key.as_str()))
+            .collect::<Vec<_>>(),
+        [(wire::BackgroundKind::Subagent, "task_a")],
+        "the subagent's own job: {jobs:?}"
+    );
     let backgrounded = ClaudeSdk::step(
         &mut state,
         stream(
@@ -1080,10 +1087,10 @@ fn a_task_backgrounded_after_it_started_is_a_background_job() {
             "task_id": "task_a", "patch": {"is_backgrounded": true}}),
         ),
     );
-    let jobs = listed_jobs(&backgrounded).or(last);
+    let host = listed_jobs(&backgrounded).unwrap_or_default();
     assert!(
-        jobs.as_ref().is_some_and(|jobs| jobs.len() == 1),
-        "the subagent sent to the background is not a background job: {jobs:?}"
+        host.is_empty(),
+        "the agent lists its subagent once backgrounded: {host:?}"
     );
 }
 
@@ -1619,10 +1626,10 @@ fn a_subagents_interruption_does_not_mark_the_turn() {
     assert_eq!(outcomes, [wire::TurnOutcome::Completed]);
 }
 
-/// Claude names the subagent that asks: its call hangs under the call that
-/// started that subagent even before its own frame arrives.
+/// Claude names the subagent that asks: the ask and the call it is for
+/// are in that subagent's chat, even before its own frame names the call.
 #[test]
-fn a_subagents_ask_hangs_under_its_task() {
+fn a_subagents_ask_opens_in_its_own_chat() {
     let mut state = idle_on_root();
     ClaudeSdk::step(
         &mut state,
@@ -1642,15 +1649,197 @@ fn a_subagents_ask_hangs_under_its_task() {
             },
         })),
     );
-    let child: Vec<_> = item_kinds(&asked)
-        .into_iter()
-        .filter(|(key, ..)| key == "toolu_child")
-        .collect();
-    assert!(!child.is_empty(), "{:?}", item_kinds(&asked));
     assert!(
-        child.iter().all(|(_, _, parent)| parent == "toolu_agent"),
-        "{child:?}"
+        item_kinds(&asked)
+            .iter()
+            .all(|(key, ..)| key != "toolu_child"),
+        "the subagent's call is in the agent's own chat: {:?}",
+        item_kinds(&asked)
     );
+    let part = &asked.step.agents[0];
+    assert_eq!(part.agent_id, interpret::subagent_id(b"agent", "a1"));
+    assert!(
+        part.items.iter().any(|item| item.key == "toolu_child"),
+        "the call is not in the subagent's chat: {:?}",
+        part.items.iter().map(|item| &item.key).collect::<Vec<_>>()
+    );
+    let (phase, snapshot) = part_snapshot(&asked).expect("the subagent's snapshot");
+    assert_eq!(phase, wire::Phase::NeedsYou);
+    assert_eq!(snapshot.asks.len(), 1);
+    if let Some((_, host)) = sdk_snapshot(&asked) {
+        assert!(host.asks.is_empty(), "the agent holds the subagent's ask");
+    }
+}
+
+/// A person answers a subagent's ask, and stops the subagent, from the
+/// subagent's own chat: the answer goes to Claude as the response to the
+/// request that asked, and the stop as Claude's own stop of that task.
+#[test]
+fn a_subagents_ask_is_answered_and_it_is_stopped_from_its_chat() {
+    let mut state = idle_on_root();
+    for event in [
+        stream(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "count", "is_backgrounded": true,
+        })),
+        stream(json!({
+            "type": "control_request", "request_id": "req-1",
+            "request": {
+                "subtype": "can_use_tool", "tool_name": "Bash", "input": {"command": "ls"},
+                "tool_use_id": "toolu_child", "agent_id": "a1",
+            },
+        })),
+    ] {
+        ClaudeSdk::step(&mut state, event);
+    }
+    let child = interpret::subagent_id(b"agent", "a1");
+    let to_child = |id: &[u8], of: wire::claude_sdk_input::Of| Event::ChildInput {
+        agent_id: child.clone(),
+        input: wire::Input::new(id.to_vec(), wire::ClaudeSdkInput { of: Some(of) }),
+    };
+    let written = |stepped: &interpret::Stepped| -> Vec<Value> {
+        stepped
+            .effects
+            .iter()
+            .filter_map(|effect| match effect {
+                Effect::ProviderWrite(bytes) => serde_json::from_slice(bytes).ok(),
+                _ => None,
+            })
+            .collect()
+    };
+    let answered = ClaudeSdk::step(
+        &mut state,
+        to_child(
+            b"in-1",
+            wire::claude_sdk_input::Of::Answer(wire::ClaudeAnswer {
+                ask_key: "req-1".into(),
+                of: Some(wire::claude_answer::Of::Permission(
+                    wire::PermissionAnswer {
+                        of: Some(wire::permission_answer::Of::Allow(wire::PermissionAllow {
+                            scope: None,
+                        })),
+                    },
+                )),
+            }),
+        ),
+    );
+    let lines = written(&answered);
+    assert!(
+        lines.iter().any(|line| line["type"] == "control_response"
+            && line["response"]["request_id"] == "req-1"
+            && line["response"]["response"]["behavior"] == "allow"),
+        "the answer is not Claude's response to the ask: {lines:?}"
+    );
+    assert!(
+        answered.effects.iter().any(|effect| matches!(
+            effect,
+            Effect::Reply { input_id, .. } if input_id.as_slice() == b"in-1"
+        )),
+        "the answer is not accepted by its input id: {:?}",
+        answered.effects
+    );
+    let (_, snapshot) = part_snapshot(&answered).expect("the answered ask closes");
+    assert!(snapshot.asks.is_empty());
+    let stopped = ClaudeSdk::step(
+        &mut state,
+        to_child(
+            b"in-2",
+            wire::claude_sdk_input::Of::StopJob(wire::StopJob { key: "a1".into() }),
+        ),
+    );
+    let lines = written(&stopped);
+    assert!(
+        lines.iter().any(|line| line["type"] == "control_request"
+            && line["request"]["subtype"] == "stop_task"
+            && line["request"]["task_id"] == "a1"),
+        "the stop is not Claude's stop of the task: {lines:?}"
+    );
+    let (_, snapshot) = part_snapshot(&stopped).expect("the subagent reads stopping");
+    let jobs = snapshot.background_jobs.unwrap_or_default().jobs;
+    assert!(
+        jobs.iter().any(|job| job.key == "a1" && job.stopping),
+        "{jobs:?}"
+    );
+    let notified = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "system", "subtype": "task_notification", "uuid": "n1", "session_id": "s",
+            "task_id": "a1", "tool_use_id": "toolu_agent", "status": "stopped",
+            "summary": "stopped", "output_file": "",
+        })),
+    );
+    let end = notified.step.agents[0]
+        .end
+        .clone()
+        .expect("the subagent ends");
+    assert_eq!(end.cause(), wire::ExitCause::Stopped);
+}
+
+/// A subagent that only `task_started` and `task_notification` name, with
+/// no frame of its own between them, still starts and ends.
+#[test]
+fn a_subagent_starts_and_ends_from_its_task_alone() {
+    let mut state = idle_on_root();
+    let started = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "count", "is_backgrounded": true,
+        })),
+    );
+    let start = started.step.agents[0]
+        .start
+        .clone()
+        .expect("the subagent starts");
+    assert_eq!(start.call_key, "toolu_agent");
+    assert_eq!(start.call_agent_id, b"agent");
+    assert_eq!(start.title, "count");
+    let notified = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "system", "subtype": "task_notification", "uuid": "n1", "session_id": "s",
+            "task_id": "a1", "tool_use_id": "toolu_agent", "status": "completed",
+            "summary": "counted", "output_file": "",
+        })),
+    );
+    let end = notified.step.agents[0]
+        .end
+        .clone()
+        .expect("the subagent ends");
+    assert_eq!(end.cause(), wire::ExitCause::Finished);
+}
+
+fn part_snapshot(stepped: &interpret::Stepped) -> Option<(wire::Phase, wire::ClaudeSnapshot)> {
+    use prost::Message as _;
+    stepped
+        .step
+        .agents
+        .iter()
+        .find_map(|part| part.snapshot.as_ref())
+        .map(|snapshot| {
+            (
+                snapshot.phase(),
+                wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap(),
+            )
+        })
+}
+
+fn part_tool_states(stepped: &interpret::Stepped) -> Vec<(String, wire::ToolState)> {
+    use prost::Message as _;
+    stepped
+        .step
+        .agents
+        .iter()
+        .flat_map(|part| &part.items)
+        .filter_map(
+            |item| match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_item::Kind::Tool(tool) => Some((item.key.clone(), tool.state())),
+                _ => None,
+            },
+        )
+        .collect()
 }
 
 /// A subagent working in the background holds no turn open, so the
@@ -1679,24 +1868,10 @@ fn a_prompt_goes_in_while_a_background_subagent_works() {
     );
 }
 
-fn tool_states(stepped: &interpret::Stepped) -> Vec<(String, wire::ToolState)> {
-    use prost::Message as _;
-    stepped
-        .step
-        .items
-        .iter()
-        .filter_map(
-            |item| match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
-                wire::claude_item::Kind::Tool(tool) => Some((item.key.clone(), tool.state())),
-                _ => None,
-            },
-        )
-        .collect()
-}
-
 /// A subagent Claude runs in the background outlives the turn that
 /// started it: the turn's result leaves its calls and the ask it raised
-/// open, its calls still finish, and its asks close when its task ends.
+/// open, its calls still finish, and it ends, its asks closed, when its
+/// task does.
 #[test]
 fn a_background_subagents_calls_and_asks_outlive_the_turn() {
     let mut state = idle_on_root();
@@ -1748,14 +1923,18 @@ fn a_background_subagents_calls_and_asks_outlive_the_turn() {
         })),
     );
     // A step publishes a snapshot only when it changes.
-    let asks = sdk_snapshot(&ended).map_or(1, |(_, snapshot)| snapshot.asks.len());
+    let asks = part_snapshot(&ended).map_or(1, |(_, snapshot)| snapshot.asks.len());
     assert_eq!(asks, 1, "the subagent's ask stays open");
     assert!(
-        tool_states(&ended)
+        ended.step.agents.iter().all(|part| part.end.is_none()),
+        "the turn's end ends the subagent"
+    );
+    assert!(
+        part_tool_states(&ended)
             .iter()
             .all(|(_, state)| *state != wire::ToolState::Cancelled),
         "{:?}",
-        tool_states(&ended)
+        part_tool_states(&ended)
     );
     let finished = ClaudeSdk::step(
         &mut state,
@@ -1767,7 +1946,7 @@ fn a_background_subagents_calls_and_asks_outlive_the_turn() {
         })),
     );
     assert_eq!(
-        tool_states(&finished),
+        part_tool_states(&finished),
         [("toolu_child".to_owned(), wire::ToolState::Succeeded)],
         "a call the subagent made before the turn ended still finishes"
     );
@@ -1779,11 +1958,16 @@ fn a_background_subagents_calls_and_asks_outlive_the_turn() {
             "summary": "counted", "output_file": "",
         })),
     );
-    let (_, snapshot) = sdk_snapshot(&notified).expect("the ask closing changes the snapshot");
+    let (_, snapshot) = part_snapshot(&notified).expect("the ask closing changes the snapshot");
     assert!(
         snapshot.asks.is_empty(),
         "its asks close when its task ends"
     );
+    let end = notified.step.agents[0]
+        .end
+        .clone()
+        .expect("the subagent ends");
+    assert_eq!(end.cause(), wire::ExitCause::Finished);
 }
 
 fn result_frame(uuid: &str, extra: Value) -> Event {

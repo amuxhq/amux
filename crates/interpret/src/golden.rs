@@ -2075,6 +2075,17 @@ fn render_effect(effect: &Effect, catalogue: Option<&[u8]>) -> String {
             format!("hook {id} answered {}", String::from_utf8_lossy(answer))
         }
         Effect::FollowTranscript { path } => format!("follow {}", Value::String(path.clone())),
+        Effect::FollowSubagent { agent_id } => format!("follow subagent {agent_id}"),
+        Effect::DrainSubagent {
+            agent_id,
+            last_reply,
+        } => format!(
+            "drain subagent {agent_id}{}",
+            last_reply
+                .as_ref()
+                .map(|reply| format!(" until {}", Value::String(reply.clone())))
+                .unwrap_or_default()
+        ),
         Effect::ProviderSession { id } => format!("session {}", Value::String(id.clone())),
         Effect::UserMessage {
             uuid,

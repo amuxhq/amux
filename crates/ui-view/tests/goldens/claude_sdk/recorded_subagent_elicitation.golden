@@ -8,25 +8,7 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 29 recorded 28: fact Stream type=stream_event uuid=e479b0c7-07ad-4267-bccc-d045e072903c
   composer Send activity=Some(Running { key: "toolu_01EKmQfxqunLiRPgSGSEXuRh" }) queue=[] underway=[] refused=[]
-## 90 recorded 89: fact Stream type=system subtype=task_started uuid=d59f59b7-f15e-442f-a4b6-72e882206f23 tool_use_id=toolu_01EKmQfxqunLiRPgSGSEXuRh
-  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
-## 100 recorded 99: fact Stream type=assistant uuid=8957acc1-605f-4ba8-82fd-d91b77713933
-  composer Send activity=Some(Running { key: "toolu_01EwuquVw6HXXeTTeW62hSHR" }) queue=[] underway=[] refused=[]
-## 102 recorded 101: fact Stream type=user uuid=e9dd8ef3-b54a-42ca-9146-7a8e49f5ce81
-  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
-## 108 recorded 107: fact Stream type=assistant uuid=42421225-6b3c-4dbc-af6e-d689ff2e9c9a
-  composer Send activity=Some(Running { key: "toolu_01U3HJ9aUUrsQqqJGjQ8HuUy" }) queue=[] underway=[] refused=[]
-## 110 recorded 109: fact Stream type=control_request
-  ask 789f51d0-2b0b-430b-8b5a-8e446b95b159 -> "ask:789f51d0-2b0b-430b-8b5a-8e446b95b159" 1/1 Open
-    choices Submit*, Decline
-    body Form { server: "external", message: "Confirm the word ALBATROSS.", fields: [FormField { name: "confirmed", title: "confirmed", description: "", required: true, kind: Text { min_length: None, max_length: None }, initial: Text("") }] }
-  composer Send activity=None queue=[] underway=[] refused=[]
-## 112 recorded 111: input stdin-4
-  ask none
-  composer Send activity=Some(Running { key: "toolu_01U3HJ9aUUrsQqqJGjQ8HuUy" }) queue=[] underway=[] refused=[]
-## 116 recorded 115: fact Stream type=user uuid=cc3547b4-3df5-431f-891c-e405669b18e1
-  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
-## 120 recorded 119: fact Stream type=system subtype=task_updated uuid=b002db62-fe84-4038-8df6-a4b36953febf
+## 123 recorded 122: fact Stream type=user uuid=ffa7762c-c6de-4bd2-bf89-1c103d13c8a4
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 137 recorded 136: fact Stream type=result subtype=success uuid=d5ada659-5869-4491-a289-6de885e1a07e
   composer Send activity=None queue=[] underway=[] refused=[]
@@ -35,13 +17,10 @@
      2 c572d8de-6b3d-40e6-bc48-7b49ce4a3a8c Prompt { text: [Text("Use the Agent tool (subagent_type general-purpose) to start one subagent whose task is: call the mcp__external__ask_the_operator tool with word set to ALBATROSS, then report exactly what it returned. When it has reported back, reply with exactly what it said.")], steered: false }
      3 c4b6a815-089d-487b-848a-2bd2982ead81 Hidden collapsed
      4 msg_011Ch5eTsFZobVqdJyWqK2hT:0 Thinking { text: "", open: false, duration_ms: Some(1599) }
-     5 toolu_01EKmQfxqunLiRPgSGSEXuRh Subagent { description: "Call ask_the_operator with ALBATROSS", running: false, tool_count: 2, last_tool: "mcp__external__ask_the_operator", answer: "  <tools-used-before-summary>ToolSearch, mcp__external__ask_the_operator</tools-used-before-summary>\n  \n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model…
-     6 toolu_01EwuquVw6HXXeTTeW62hSHR Explore { verb: Search, subject: "select:mcp__external__ask_the_operator", state: Succeeded, result: "" } collapsed parent=toolu_01EKmQfxqunLiRPgSGSEXuRh
-     7 toolu_01U3HJ9aUUrsQqqJGjQ8HuUy ToolCall { server: "external", tool: "ask_the_operator", fact: "ALBATROSS", state: Succeeded, result: "ALBATROSS" } collapsed parent=toolu_01EKmQfxqunLiRPgSGSEXuRh
-     8 ask:789f51d0-2b0b-430b-8b5a-8e446b95b159 Ask(Form { server: "external", message: "Confirm the word ALBATROSS.", fields: ["confirmed"], resolution: Answered })
-     9 e4536d19-973b-46e2-adac-87a9f1c01d49 Hidden collapsed
-    10 msg_011Ch5eUVQvfzwzUtAaoRTBG:0 Prose { text: [Text("ALBATROSS")], streaming: false, working_note: false }
-    11 turn:1 TurnEnd { duration_ms: Some(9499), failed: false }
+     5 toolu_01EKmQfxqunLiRPgSGSEXuRh Subagent { description: "Call ask_the_operator with ALBATROSS", running: false, tool_count: 0, last_tool: "", answer: "  <tools-used-before-summary>ToolSearch, mcp__external__ask_the_operator</tools-used-before-summary>\n  \n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the…
+     6 e4536d19-973b-46e2-adac-87a9f1c01d49 Hidden collapsed
+     7 msg_011Ch5eUVQvfzwzUtAaoRTBG:0 Prose { text: [Text("ALBATROSS")], streaming: false, working_note: false }
+     8 turn:1 TurnEnd { duration_ms: Some(9499), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 21342, window_tokens: Some(1000000), percent: Some(2), near_full: false }) sign-in None
 == settings

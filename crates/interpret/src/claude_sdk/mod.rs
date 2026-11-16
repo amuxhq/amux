@@ -18,12 +18,12 @@
 mod facts;
 mod recording;
 mod streamed;
+mod subagents;
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use claude_protocol::stream::control::{
     ApplyFlagSettingsRequest, InterruptRequest, SetModelRequest, SetPermissionModeRequest,
-    StopTaskRequest,
 };
 use claude_protocol::stream::{
     self as claude_stream, ControlRequest, ControlRequestBody, ControlResponse, FlagSettings,
@@ -34,9 +34,9 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    AgentSpec, Ask, AskClosed, ClaudeAnswer, ClaudeSnapshot, ClaudeUsage, DecisionOutcome,
-    Envelope, Input, KindInput, OfferedCommand, OfferedModel, Refusal, SignIn, Step, ToolServer,
-    claude_answer, claude_item, claude_sdk_input,
+    AgentSpec, Ask, AskClosed, ClaudeAnswer, ClaudeSnapshot, ClaudeUsage, Envelope, Input,
+    KindInput, OfferedCommand, OfferedModel, Refusal, SignIn, Step, ToolServer, claude_answer,
+    claude_item, claude_sdk_input,
 };
 
 use crate::claude_answers::{self, Answer, AnswerShape, Decided};
@@ -94,6 +94,29 @@ struct Call {
     task: Option<TaskProgress>,
 }
 
+/// One subagent Claude's Agent tool started, by Claude's id for it (its
+/// task id, the `agent_id` on its frames and asks). Kept after it ends:
+/// Claude's model can continue it, and a continuation names the call that
+/// first started it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct Sub {
+    /// The Agent call that first started it.
+    call: String,
+    /// The subagent whose chat holds that call, for a nested one; None for
+    /// one the agent's own conversation started.
+    parent: Option<String>,
+    /// What Claude calls its task, the row's title.
+    title: String,
+    started_at_ms: i64,
+    /// Its start is written and its end is not.
+    running: bool,
+    /// A stop was sent and Claude has not said it ended.
+    stopping: bool,
+    /// Claude's refusal of the last stop.
+    stop_error: String,
+    conversation: crate::claude_subagent::Conversation,
+}
+
 /// What answering an ask needs beyond the wire Ask.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct AskMeta {
@@ -123,13 +146,9 @@ enum Request {
     Title,
 }
 
-/// What a call's task has done so far, and whether it ended.
+/// Whether a call's task ended.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct TaskProgress {
-    /// A subagent's steps; a shell in the background counts none.
-    subagent: bool,
-    tool_count: u32,
-    last_tool: String,
     finished: bool,
 }
 
@@ -203,6 +222,14 @@ pub struct State {
     blocks: BTreeMap<String, u32>,
     tools: BTreeMap<String, Tool>,
     asks: BTreeMap<String, AskMeta>,
+    /// The subagents Claude's Agent tool started, by Claude's id for each.
+    /// A checkpoint from before they were agents of their own has none.
+    #[serde(default)]
+    subagents: BTreeMap<String, Sub>,
+    /// The tasks a subagent's calls started (the shells it runs), by task
+    /// id, and the subagent each is for.
+    #[serde(default)]
+    owned_tasks: BTreeMap<String, String>,
     requests: BTreeMap<String, Request>,
     next_request: u64,
     next_boundary: u64,
@@ -343,6 +370,8 @@ impl State {
             blocks: BTreeMap::new(),
             tools: BTreeMap::new(),
             asks: BTreeMap::new(),
+            subagents: BTreeMap::new(),
+            owned_tasks: BTreeMap::new(),
             requests: BTreeMap::new(),
             next_request: 0,
             next_boundary: 0,
@@ -456,10 +485,15 @@ impl State {
             ),
             effort: self.effort.clone(),
             permission: self.permission_mode.clone(),
+            // A subagent is an agent of its own, drawn by its own row.
             active_tasks: self
                 .active_tasks
                 .iter()
-                .filter(|(_, task)| task.state == wire::TaskState::Running as i32 && !task.shell)
+                .filter(|(id, task)| {
+                    task.state == wire::TaskState::Running as i32
+                        && !task.shell
+                        && !self.subagents.contains_key(*id)
+                })
                 .map(|(id, task)| task.to_wire(id))
                 .collect(),
             usage: Some(self.usage.clone().unwrap_or_else(unknown::claude_usage)),
@@ -564,23 +598,7 @@ impl State {
             claude_sdk_input::Of::Withdraw(withdraw) => {
                 self.shared.withdraw(emit, &id, &withdraw.queued_input_id)
             }
-            // The job reads stopping until Claude says it ended, as a task
-            // notification or a list without it.
-            claude_sdk_input::Of::StopJob(stop) => {
-                let Some(jobs) = self.jobs.stop_sent(&stop.key) else {
-                    return self.shared.reject(emit, &id, Refusal::Unsupported);
-                };
-                self.shared.set_jobs(jobs);
-                self.control_request(
-                    emit,
-                    Request::StopJob(stop.key.clone()),
-                    ControlRequestBody::StopTask(StopTaskRequest {
-                        task_id: stop.key,
-                        extensions: Default::default(),
-                    }),
-                );
-                self.shared.accept(emit, &id, false);
-            }
+            claude_sdk_input::Of::StopJob(stop) => self.stop_job(emit, &id, &stop.key, None),
             claude_sdk_input::Of::SendNow(send) => {
                 let running = self.shared.is_busy();
                 if let Some(entry) = self
@@ -667,7 +685,7 @@ impl State {
                 );
                 self.shared.accept(emit, &id, false);
             }
-            claude_sdk_input::Of::Answer(answer) => self.answer(emit, &id, answer),
+            claude_sdk_input::Of::Answer(answer) => self.answer(emit, &id, answer, None),
         }
     }
 
@@ -675,7 +693,9 @@ impl State {
     fn plan_ask(&self) -> Option<(String, String)> {
         self.asks
             .iter()
-            .find(|(_, meta)| matches!(meta.shape, AnswerShape::Plan { .. }))
+            .find(|(_, meta)| {
+                meta.agent.is_none() && matches!(meta.shape, AnswerShape::Plan { .. })
+            })
             .map(|(key, meta)| (key.clone(), meta.tool_use_id.clone()))
     }
 
@@ -817,23 +837,19 @@ impl State {
         );
     }
 
-    /// An answer through amux: checked against the ask, then sent as the
+    /// An answer through amux, to the agent's own ask or, with `who`, to one
+    /// its subagent raised: checked against the ask, then sent as the
     /// control response. The ask closes with the outcome it carries.
-    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: ClaudeAnswer) {
+    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: ClaudeAnswer, who: Option<&str>) {
         let key = answer.ask_key;
-        if self.shared.asks().get(&key).is_none() {
-            self.shared.answer(emit, id, &key);
+        let Some(open) = self.open_ask(who, &key) else {
+            self.answered(emit, who, id, &key);
             return;
-        }
+        };
         let parsed = answer.of;
         let closed = match &parsed {
             Some(claude_answer::Of::Form(form)) => {
-                let schema = match self
-                    .shared
-                    .asks()
-                    .get(&key)
-                    .and_then(|ask| ask.body.as_ref())
-                {
+                let schema = match &open.body {
                     Some(wire::ask::Body::Form(asked)) => asked.schema_json.as_slice(),
                     _ => &[],
                 };
@@ -842,12 +858,7 @@ impl State {
             Some(claude_answer::Of::Link(link)) => Some(ask_item::link_answered(link.action)),
             _ => None,
         };
-        let asked = match self
-            .shared
-            .asks()
-            .get(&key)
-            .and_then(|ask| ask.body.as_ref())
-        {
+        let asked = match &open.body {
             Some(wire::ask::Body::Question(asked)) => Some(asked.clone()),
             _ => None,
         };
@@ -860,9 +871,9 @@ impl State {
                 parsed?,
             )
         }) else {
-            return self.shared.reject(emit, id, Refusal::Unsupported);
+            return self.reject_as(emit, who, id, Refusal::Unsupported);
         };
-        let ask = self.shared.answer(emit, id, &key);
+        let ask = self.answered(emit, who, id, &key);
         let meta = self.asks.remove(&key);
         emit.effect(write(&claude_stream::Input::ControlResponse(
             match response {
@@ -871,148 +882,139 @@ impl State {
             },
         )));
         if let (Some(meta), Some(decided)) = (meta, decision) {
-            self.decide(emit, &meta.tool_use_id, decided);
+            self.decide_as(emit, who, &meta.tool_use_id, decided);
         }
         if let (Some(ask), Some(closed)) = (ask, closed) {
-            self.emit_ask(emit, &ask, Some(closed));
+            self.emit_ask(emit, who, &ask, Some(closed));
         }
-        self.shared.accept(emit, id, false);
+        self.accept_as(emit, who, id);
     }
 
-    /// Writes the item of a tool-server form or link, open or closed: an ask
-    /// that is the work. A question or plan is drawn on its own tool call.
-    fn emit_ask(&mut self, emit: &mut Emit, ask: &Ask, closed: Option<AskClosed>) {
-        let asked = match &ask.body {
-            Some(wire::ask::Body::Form(form)) => wire::ask_item::Ask::Form(form.clone()),
-            Some(wire::ask::Body::Link(link)) => wire::ask_item::Ask::Link(link.clone()),
-            _ => return,
-        };
-        let item = ask_item::opened(asked);
-        let item = match closed {
-            Some(closed) => ask_item::close(item, closed),
-            None => item,
-        };
-        self.shared.item(
-            emit,
-            ItemDraft {
-                key: ask.item_key.clone(),
-                body: item_body(claude_item::Kind::Ask(item)),
-                at_ms: Some(ask.opened_at_ms),
-                complete: true,
-                ..Default::default()
-            },
-        );
+    /// The open ask keyed `key` of the agent, or of its subagent `who`.
+    fn open_ask(&self, who: Option<&str>, key: &str) -> Option<Ask> {
+        match who {
+            None => self.shared.asks().get(key).cloned(),
+            Some(child) => self.shared.subagent_asks(child)?.get(key).cloned(),
+        }
     }
 
-    /// Closes every open ask without an answer: the provider ended under
-    /// it.
-    fn dismiss_asks(&mut self, emit: &mut Emit) {
+    /// The stale-answer rule for an ask of the agent's or its subagent's:
+    /// an open one closes and is handed back, one that is not is refused.
+    fn answered(
+        &mut self,
+        emit: &mut Emit,
+        who: Option<&str>,
+        id: &[u8],
+        key: &str,
+    ) -> Option<Ask> {
+        match who {
+            None => self.shared.answer(emit, id, key),
+            Some(child) => self.shared.subagent(emit, child).answer(id, key),
+        }
+    }
+
+    fn accept_as(&mut self, emit: &mut Emit, who: Option<&str>, id: &[u8]) {
+        match who {
+            None => self.shared.accept(emit, id, false),
+            Some(child) => self.shared.subagent(emit, child).accept(id),
+        }
+    }
+
+    fn reject_as(&mut self, emit: &mut Emit, who: Option<&str>, id: &[u8], refusal: Refusal) {
+        match who {
+            None => self.shared.reject(emit, id, refusal),
+            Some(child) => self.shared.subagent(emit, child).reject(id, refusal),
+        }
+    }
+
+    /// The running subagent that raised the ask keyed `key`; None for the
+    /// agent's own.
+    fn asker(&self, key: &str) -> Option<String> {
+        self.asks
+            .get(key)
+            .and_then(|meta| meta.agent.clone())
+            .filter(|child| self.shared.subagent_running(child))
+    }
+
+    /// Closes an open ask of whichever agent raised it, without letting go
+    /// of what answering it needs.
+    fn close_open_ask(&mut self, emit: &mut Emit, key: &str) -> Option<Ask> {
+        match self.asker(key) {
+            None => self.shared.close_ask(key),
+            Some(child) => self.shared.subagent(emit, &child).close_ask(key),
+        }
+    }
+
+    /// Writes the item of a tool-server form or link, open or closed, into
+    /// the chat of the agent that raised it: an ask that is the work. A
+    /// question or plan is drawn on its own tool call.
+    fn emit_ask(
+        &mut self,
+        emit: &mut Emit,
+        who: Option<&str>,
+        ask: &Ask,
+        closed: Option<AskClosed>,
+    ) {
+        if !matches!(
+            ask.body,
+            Some(wire::ask::Body::Form(_) | wire::ask::Body::Link(_))
+        ) {
+            return;
+        }
+        let Some(draft) = crate::claude_subagent::ask_draft(ask, closed) else {
+            return;
+        };
+        match who {
+            None => self.shared.item(emit, draft),
+            Some(child) => self.shared.subagent(emit, child).item(draft),
+        }
+    }
+
+    /// Closes every open ask of the agent's own without an answer: the
+    /// turn they were raised in is over.
+    fn dismiss_own_asks(&mut self, emit: &mut Emit) {
         for ask in self.shared.close_all_asks() {
-            self.dismissed(emit, &ask);
+            self.dismissed(emit, None, &ask);
         }
     }
 
-    /// Closes the asks a turn's end is the end of, and those `ended` says
-    /// are over, without an answer. A subagent still running in the
-    /// background keeps the asks it raised.
-    fn dismiss_asks_but_background(&mut self, emit: &mut Emit) {
-        let keys: Vec<String> = self
-            .shared
-            .asks()
-            .open_asks()
-            .iter()
-            .map(|ask| ask.key.clone())
-            .filter(|key| !self.asked_in_background(key))
-            .collect();
-        for key in keys {
-            if let Some(ask) = self.shared.close_ask(&key) {
-                self.dismissed(emit, &ask);
-            }
+    /// Closes every open ask of the subagent `child` without an answer: it
+    /// is ending.
+    fn dismiss_subagent_asks(&mut self, emit: &mut Emit, child: &str) {
+        if !self.shared.subagent_running(child) {
+            return;
         }
-    }
-
-    /// Whether the ask keyed `key` is a subagent's that still runs: one
-    /// naming a task still running, or whose call hangs under one.
-    fn asked_in_background(&self, key: &str) -> bool {
-        let Some(meta) = self.asks.get(key) else {
-            return false;
-        };
-        meta.agent.as_ref().is_some_and(|agent| {
-            self.active_tasks
-                .get(agent)
-                .is_some_and(|task| task.state == wire::TaskState::Running as i32)
-        }) || self.under_running_task(&meta.tool_use_id)
-    }
-
-    /// Whether the call `id`, or a call it hangs under, is one whose task
-    /// still runs.
-    fn under_running_task(&self, id: &str) -> bool {
-        self.call_and_parents(id).iter().any(|id| {
-            self.tools[*id]
-                .of
-                .task
-                .as_ref()
-                .is_some_and(|task| !task.finished)
-        })
-    }
-
-    /// The keys of the call `id` and of each call it hangs under, nearest
-    /// first, as far as they are held.
-    fn call_and_parents<'a>(&'a self, id: &'a str) -> Vec<&'a str> {
-        let mut chain = Vec::new();
-        let mut next = id;
-        // A chain of nested calls is short; the bound guards a cycle.
-        while let Some(tool) = self.tools.get(next)
-            && chain.len() < 16
-        {
-            chain.push(next);
-            next = &tool.parent_key;
-        }
-        chain
-    }
-
-    /// The task `task` started by the call `call` ended: the asks its
-    /// subagent raised are over, without an answer.
-    fn task_asks_over(&mut self, emit: &mut Emit, task: &str, call: &str) {
-        let keys: Vec<String> = self
-            .shared
-            .asks()
-            .open_asks()
-            .iter()
-            .map(|ask| ask.key.clone())
-            .filter(|key| {
-                self.asks.get(key).is_some_and(|meta| {
-                    meta.agent.as_deref() == Some(task)
-                        || (!call.is_empty()
-                            && meta.tool_use_id != call
-                            && self.call_and_parents(&meta.tool_use_id).contains(&call))
-                })
-            })
-            .collect();
-        for key in keys {
-            if let Some(ask) = self.shared.close_ask(&key) {
-                self.dismissed(emit, &ask);
-            }
+        for ask in self.shared.subagent(emit, child).close_all_asks() {
+            self.dismissed(emit, Some(child), &ask);
         }
     }
 
     /// Claude withdrew a request it had asked: an interrupt cancels an
     /// open permission request, and Claude refuses the call.
     pub(super) fn request_cancelled(&mut self, emit: &mut Emit, request_id: &str) {
-        if let Some(ask) = self.shared.close_ask(request_id) {
-            self.dismissed(emit, &ask);
+        let who = self.asker(request_id);
+        if let Some(ask) = self.close_open_ask(emit, request_id) {
+            self.dismissed(emit, who.as_deref(), &ask);
         }
     }
 
-    /// An ask closed with no answer. Its own item says so; a call it held
-    /// that is still in flight will never run, so it reads cancelled until
-    /// Claude says more.
-    fn dismissed(&mut self, emit: &mut Emit, ask: &Ask) {
+    /// An ask of the agent's or of its subagent `who` closed with no
+    /// answer. Its own item says so; a call it held that is still in
+    /// flight will never run, so it reads cancelled until Claude says more.
+    fn dismissed(&mut self, emit: &mut Emit, who: Option<&str>, ask: &Ask) {
         let meta = self.asks.remove(&ask.key);
-        self.emit_ask(emit, ask, Some(ask_item::dismissed()));
+        self.emit_ask(emit, who, ask, Some(ask_item::dismissed()));
         let Some(id) = meta.map(|meta| meta.tool_use_id) else {
             return;
         };
+        let now = self.shared.now_ms();
+        if let Some(child) = who {
+            if let Some(sub) = self.subagents.get_mut(child) {
+                let mut view = self.shared.subagent(emit, child);
+                sub.conversation.dismissed(&mut view, &id, now);
+            }
+            return;
+        }
         let Some(tool) = self.tools.get_mut(&id) else {
             return;
         };
@@ -1027,47 +1029,42 @@ impl State {
             Ok(wire::ToolState::Pending | wire::ToolState::Running)
         ) {
             tool.state = wire::ToolState::Cancelled as i32;
-            tool.ended_at_ms.get_or_insert(self.shared.now_ms());
+            tool.ended_at_ms.get_or_insert(now);
         }
         self.emit_tool(emit, &id);
     }
 
     fn decide(&mut self, emit: &mut Emit, tool_use_id: &str, decided: Decided) {
-        if let Some(tool) = self.tools.get_mut(tool_use_id) {
-            match decided {
-                // A question cannot be declined: one refused anyway closed
-                // without answers.
-                Decided::Tool(_) if tool.question => {
-                    tool.asked.get_or_insert_with(ask_item::dismissed);
-                }
-                Decided::Tool(decision) => {
-                    if decision.outcome == DecisionOutcome::Allowed as i32 {
-                        tool.started_at_ms.get_or_insert(self.shared.now_ms());
-                    }
-                    tool.decision = Some(decision.to_wire())
-                }
-                Decided::Plan(verdict) => tool.plan = Some(verdict),
-                Decided::Question(closed) => tool.asked = Some(closed),
+        self.decide_as(emit, None, tool_use_id, decided);
+    }
+
+    /// A decision on a call of the agent's own, or of its subagent `who`.
+    fn decide_as(
+        &mut self,
+        emit: &mut Emit,
+        who: Option<&str>,
+        tool_use_id: &str,
+        decided: Decided,
+    ) {
+        let now = self.shared.now_ms();
+        if let Some(child) = who {
+            if let Some(sub) = self.subagents.get_mut(child) {
+                let mut view = self.shared.subagent(emit, child);
+                sub.conversation
+                    .decide(&mut view, tool_use_id, decided, now);
             }
+            return;
+        }
+        if let Some(tool) = self.tools.get_mut(tool_use_id) {
+            crate::claude_subagent::apply_decided(tool, decided, now);
             self.emit_tool(emit, tool_use_id);
         }
     }
 
     fn emit_tool(&mut self, emit: &mut Emit, id: &str) {
-        let Some(tool) = self.tools.get_mut(id) else {
-            return;
-        };
-        let subagent = tool
-            .of
-            .task
-            .as_ref()
-            .filter(|task| task.subagent)
-            .map(|task| wire::SubagentProgress {
-                tool_count: task.tool_count,
-                last_tool: task.last_tool.clone(),
-                finished: task.finished,
-            });
-        tool.emit(&mut self.shared, emit, id, subagent);
+        if let Some(tool) = self.tools.get_mut(id) {
+            tool.emit(&mut self.shared, emit, id);
+        }
     }
 
     /// The boundary the next init makes when it is known before that init
@@ -1145,6 +1142,7 @@ impl Interpreter for ClaudeSdk {
         state.shared.reincarnate(spec);
         state.title_asked = false;
         state.jobs.clear();
+        state.forget_subagents();
         // A new process: its first init is the incarnation's boundary.
         state.incarnation = spec.incarnation;
         state.cwd = spec.cwd.clone();
@@ -1167,13 +1165,7 @@ impl Interpreter for ClaudeSdk {
             }
             Event::Fact(fact) => state.fact(&mut emit, fact),
             Event::Input(input) => state.input(&mut emit, input),
-            // This kind does not yet run its provider's subagents as agents
-            // of their own, so none can be addressed.
-            Event::ChildInput { input, .. } => {
-                state
-                    .shared
-                    .reject(&mut emit, &input.input_id, wire::Refusal::Unsupported)
-            }
+            Event::ChildInput { agent_id, input } => state.child_input(&mut emit, &agent_id, input),
             Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
             Event::Rename { .. } => state.shared.renamed(),
             Event::ProviderExit { code } => state.exited(&mut emit, crate::provider_exit(code)),
@@ -1196,6 +1188,7 @@ impl Interpreter for ClaudeSdk {
         if let Some(entry) = state.shared.next_queued() {
             state.submit(&mut emit, entry);
         }
+        state.subagent_snapshots(&mut emit);
         let body = state.body();
         let notice = state.shared.notice(crate::notice::claude_ask);
         state.shared.finish(emit, body, notice)

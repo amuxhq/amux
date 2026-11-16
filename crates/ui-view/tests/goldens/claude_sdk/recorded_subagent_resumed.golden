@@ -8,11 +8,15 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 31 recorded 30: fact Stream type=stream_event uuid=a0dfc736-04e2-4371-a093-155f813ecc7d
   composer Send activity=Some(Running { key: "toolu_01AWjCnhh21Tm2THbdDzYLW1" }) queue=[] underway=[] refused=[]
-## 72 recorded 71: fact Stream type=system subtype=task_started uuid=2c383ec9-8ecb-48fc-b7ac-baa33b3c4298 tool_use_id=toolu_01AWjCnhh21Tm2THbdDzYLW1
-  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
+## 79 recorded 78: fact Stream type=system subtype=status uuid=dbc084fc-0428-4cf1-aea7-7712445c82c2
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 95 recorded 94: fact Stream type=result subtype=success uuid=a5a30e48-bd73-4e04-98fa-bf8bd5bbb1bf
   composer Send activity=None queue=[] underway=[] refused=[]
+## 102 recorded 101: fact Stream type=system subtype=task_notification uuid=316aa501-7c2f-4106-b0f0-8f5389ab69ee
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 105 recorded 104: input 0x86bc6dc0bb844979b376e49f77bf7c43
+  composer Send activity=Some(Working) queue=[QueuedRow { input_id: [134, 188, 109, 192, 187, 132, 73, 121, 179, 118, 228, 159, 119, 191, 124, 67], text: [Text("Is the subagent you started still running? Answer from what you know. Then use the SendMessage tool to send it, by its agent id, this message: reply with the single word BACK. When it has answered, or if it cannot be reached, reply with th…
+## 108 recorded 107: fact Stream type=result subtype=success uuid=c61788a0-1e07-4402-aec5-3dc6f53e1a94
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 114 recorded 113: fact Stream type=stream_event uuid=2adcfec2-820a-4057-87bb-66fabc162f4e
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
@@ -24,14 +28,12 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 136 recorded 135: fact Stream type=stream_event uuid=8522b129-1813-441d-9efd-4be7d2b7d0d0
   composer Send activity=Some(Running { key: "toolu_01Bc3fPerJUwREWRCihhdQbZ" }) queue=[] underway=[] refused=[]
-## 151 recorded 150: fact Stream type=user uuid=fbe8e7c7-eb4a-4347-a613-e2b2930b36fd
+## 155 recorded 154: fact Stream type=system subtype=status uuid=27ee2472-e455-4ac0-89d3-87c821d43ab7
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 159 recorded 158: fact Stream type=stream_event uuid=7b5bbd7c-cb08-4c6e-a7de-9f96c932fe22
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
 ## 169 recorded 168: fact Stream type=assistant uuid=b3cd86da-bec7-48e4-9715-f0b833ffc1ce
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 212 recorded 211: fact Stream type=assistant uuid=18851dc4-3b68-4480-a502-d6e3178e1fa0
-  composer Send activity=Some(Running { key: "toolu_01QXPHrNggR1JMVTRV5jnLVv" }) queue=[] underway=[] refused=[]
 ## 229 recorded 228: fact Stream type=result subtype=success uuid=4431903a-730d-4688-b7b9-16d8475ccf49
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
@@ -39,23 +41,21 @@
      2 a7a4769a-01fa-4332-bd1d-cffe7b28e3c3 Prompt { text: [Text("Use the Agent tool once, with run_in_background set to true, to start one general-purpose subagent whose task is exactly: run the Bash command `python3 -c 'import time; time.sleep(90)'; echo LATE` in the foreground and report what it printed. Then reply with the single word STARTED.")], steered: false }
      3 48580488-10cf-4bfa-8883-ac3db6a6a477 Hidden collapsed
      4 msg_011Ch5eYtvQrnTAbDGonVSLf:0 Thinking { text: "", open: false, duration_ms: Some(1208) }
-     5 toolu_01AWjCnhh21Tm2THbdDzYLW1 Subagent { description: "Run delayed echo command", running: false, tool_count: 1, last_tool: "Bash", answer: "Background agent \"Run delayed echo command\" didn't finish before the previous session ended", duration_ms: Some(2063) } run[toolu_01AWjCnhh21Tm2THbdDzYLW1..toolu_01AWjCnhh21Tm2THbdDzYLW1 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searche…
+     5 toolu_01AWjCnhh21Tm2THbdDzYLW1 Subagent { description: "Run delayed echo command", running: true, tool_count: 0, last_tool: "", answer: "Background agent \"Run delayed echo command\" didn't finish before the previous session ended", duration_ms: Some(2063) } run[toolu_01AWjCnhh21Tm2THbdDzYLW1..toolu_01AWjCnhh21Tm2THbdDzYLW1 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0,…
      6 dbc084fc-0428-4cf1-aea7-7712445c82c2 Hidden collapsed
      7 msg_011Ch5eZ4c5LWsjYMPa87PrT:0 Prose { text: [Text("STARTED")], streaming: false, working_note: false }
      8 turn:1 TurnEnd { duration_ms: Some(3383), failed: false }
-     9 toolu_019DLoVyfNb7jwEQhVZCCN4v Command { command: "python3 -c 'import time; time.sleep(90)'; echo LATE", description: "Sleep 90 seconds then print LATE", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } collapsed parent=toolu_01AWjCnhh21Tm2THbdDzYLW1
+     9 turn:2 TurnEnd { duration_ms: Some(130), failed: false }
     10 86bc6dc0-bb84-4979-b376-e49f77bf7c43 Prompt { text: [Text("Is the subagent you started still running? Answer from what you know. Then use the SendMessage tool to send it, by its agent id, this message: reply with the single word BACK. When it has answered, or if it cannot be reached, reply with the single word DONE.")], steered: false }
     11 60607bb0-2546-408c-b431-740f03ae1ccf Hidden collapsed
     12 msg_011Ch5eZTiddwxfaeYL8KBMW:0 Thinking { text: "", open: false, duration_ms: None }
     13 toolu_01M9aBccFwDSbVB42mbqAVXQ Explore { verb: Search, subject: "select:SendMessage", state: Succeeded, result: "" } run[toolu_01M9aBccFwDSbVB42mbqAVXQ..toolu_01Bc3fPerJUwREWRCihhdQbZ x2 recent=1] collapsed
     14 ccc89278-8ade-46d0-a884-e138723cd34d Hidden run[toolu_01M9aBccFwDSbVB42mbqAVXQ..toolu_01Bc3fPerJUwREWRCihhdQbZ x2] collapsed
-    15 toolu_01Bc3fPerJUwREWRCihhdQbZ ToolCall { server: "", tool: "SendMessage", fact: "BACK", state: Succeeded, result: "{\"success\":true,\"message\":\"Resuming agent ab9effc\",\"resumedAgentId\":\"ab9effcda2cceb589\",\"pin\":{\"id\":\"ab9effcda2cceb589\",\"name\":\"ab9effcda2cceb589\",\"ref\":\"99c3c3\"}}" } run[toolu_01M9aBccFwDSbVB42mbqAVXQ..toolu_01Bc3fPerJUwREWRCihhdQbZ x2 recent=0 RunCounts…
+    15 toolu_01Bc3fPerJUwREWRCihhdQbZ ToolCall { server: "", tool: "SendMessage", fact: "BACK", state: Running, result: "" } run[toolu_01M9aBccFwDSbVB42mbqAVXQ..toolu_01Bc3fPerJUwREWRCihhdQbZ x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 1 }]
     16 27ee2472-e455-4ac0-89d3-87c821d43ab7 Hidden collapsed
     17 msg_011Ch5eZjbMFiWyoGMx6b7mQ:0 Thinking { text: "", open: false, duration_ms: Some(1059) }
     18 msg_011Ch5eZjbMFiWyoGMx6b7mQ:1 Prose { text: [Text("The agent is not running: its notification reports it as stopped, because it didn't finish before the previous session ended. My `BACK` message resumed it (agent ab9effc), but its reply hasn't arrived yet, so I'm not replying `DONE` until it answers.")], streaming: false, working_note: false }
-    19 toolu_01QXPHrNggR1JMVTRV5jnLVv Command { command: "python3 -c 'import time; time.sleep(90)'; echo LATE", description: "Sleep 90 seconds then print LATE", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } collapsed parent=toolu_01AWjCnhh21Tm2THbdDzYLW1
-    20 turn:2 TurnEnd { duration_ms: Some(6624), failed: false }
-    21 task:bj6j6c0z4 Subagent { description: "Sleep 90 seconds then print LATE", running: true, tool_count: 0, last_tool: "", answer: "", duration_ms: None }
+    19 turn:3 TurnEnd { duration_ms: Some(6624), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 24477, window_tokens: Some(1000000), percent: Some(2), near_full: false }) sign-in None
 == settings

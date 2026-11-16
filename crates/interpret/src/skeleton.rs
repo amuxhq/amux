@@ -128,6 +128,8 @@ pub const VOCABULARY: &[(&str, &[&str])] = &[
     ),
     ("kind", &["task-notification", "human", "peer"]),
     ("commandMode", &["prompt", "bash"]),
+    // What terminal Claude did to its queue of prompts.
+    ("operation", &["enqueue", "dequeue", "remove"]),
     ("promptSource", &["system", "user"]),
     ("checks", &["trustedAccessForCyber"]),
     (

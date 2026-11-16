@@ -4,9 +4,7 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 19 recorded 18: fact Stream type=stream_event uuid=25ff6908-870f-4430-8d32-4da6a6cb3f56
   composer Send activity=Some(Running { key: "toolu_012VXWzW2WdrKc71g3eWUc4e" }) queue=[] underway=[] refused=[]
-## 40 recorded 39: fact Stream type=system subtype=task_started uuid=bd32ecc1-e922-4493-b8dd-f3515f41230e tool_use_id=toolu_012VXWzW2WdrKc71g3eWUc4e
-  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
-## 53 recorded 52: fact Stream type=system subtype=task_updated uuid=3cd456af-f39a-4386-a6a8-b4d6311f9dd1
+## 49 recorded 48: fact Stream type=system subtype=status uuid=3c5a4d7c-f60e-4ad9-9a48-398e78f342c8
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 76 recorded 75: fact Stream type=result subtype=success uuid=f49078d5-ea51-40ff-addb-80446ac59a83
   composer Send activity=None queue=[] underway=[] refused=[]
@@ -14,7 +12,7 @@
      1 boundary:1 Hidden collapsed
      2 b6abf140-06d3-4c66-98d9-5f197546f4a5 Prompt { text: [Text("Delegate to the `counter` subagent, then reply with exactly what it said.")], steered: false }
      3 f4e68ade-2abb-4980-9ab6-fbedd3d795d3 Hidden collapsed
-     4 toolu_012VXWzW2WdrKc71g3eWUc4e Subagent { description: "Run counter subagent", running: false, tool_count: 0, last_tool: "", answer: "ONE TWO THREE", duration_ms: Some(1608) } run[toolu_012VXWzW2WdrKc71g3eWUc4e..toolu_012VXWzW2WdrKc71g3eWUc4e x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0 }]
+     4 toolu_012VXWzW2WdrKc71g3eWUc4e Subagent { description: "Run counter subagent", running: true, tool_count: 0, last_tool: "", answer: "ONE TWO THREE", duration_ms: Some(1608) } run[toolu_012VXWzW2WdrKc71g3eWUc4e..toolu_012VXWzW2WdrKc71g3eWUc4e x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0 }]
      5 3c5a4d7c-f60e-4ad9-9a48-398e78f342c8 Hidden collapsed
      6 msg_011CgZkUceLXT9mEkW4mUDRn:0 Prose { text: [Text("The `counter` subagent is running in the background. I'll reply with its exact output once its completion notification arrives.")], streaming: false, working_note: false }
      7 turn:1 TurnEnd { duration_ms: Some(2673), failed: false }

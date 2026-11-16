@@ -478,6 +478,18 @@ impl Values {
         for (recorded, append) in array(&step["appends"]).iter().zip(&stepped.step.appends) {
             self.bind_alias(&recorded[0], append.key.as_bytes());
         }
+        // Each provider subagent's part: its agent id, derived from the
+        // agent's, and its items' keys, as the agent's own are bound.
+        for (recorded, part) in array(&step["agents"]).iter().zip(&stepped.step.agents) {
+            self.bind_alias(&recorded["agent"], &part.agent_id);
+            for (recorded, item) in array(&recorded["items"]).iter().zip(&part.items) {
+                self.bind_alias(&recorded["key"], item.key.as_bytes());
+                self.bind_alias(&recorded["input_id"], &item.input_id);
+            }
+            for (recorded, append) in array(&recorded["appends"]).iter().zip(&part.appends) {
+                self.bind_alias(&recorded[0], append.key.as_bytes());
+            }
+        }
         if let Some(snapshot) = &stepped.step.snapshot {
             let recorded = &step["snapshot"];
             for (alias, queued) in array(&recorded["queue"]).iter().zip(&snapshot.queue) {

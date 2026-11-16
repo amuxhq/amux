@@ -2,26 +2,20 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 13 recorded 11: fact Transcript type=user uuid=226f8ce8-6c73-4d3a-9edc-e968e85d438f
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 44 recorded 42: fact Transcript type=assistant uuid=c12859e4-b165-4335-953b-89b614b19a16
-  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
-## 59 recorded 57: fact Hook hook_event_name=PermissionRequest
-  ask ask:1 -> "toolu_01U1ghx1wqq2KycPjx9ZhiAa" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "Accept edits", scope: Session }, Deny+note, DenyAndStop+note
-    body Command { command: "touch sub-asked.txt", cwd: "", reason: "", description: "Create empty file sub-asked.txt in current directory" }
-  composer Send activity=None queue=[] underway=[] refused=[]
-## 66 recorded 64: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01DUTwXcG93nCqtpjah9JknP
-  ask none
-  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
-## 71 recorded 69: fact Transcript type=system subtype=turn_duration uuid=4284be8a-07f4-4f9e-b75d-e2316a374847
-  composer Send activity=None queue=[] underway=[] refused=[]
-## 82 recorded 80: fact Transcript type=user uuid=586fab8a-ec55-4666-a8c3-056d1e502f3e
+## 46 recorded 44: fact Transcript type=assistant uuid=c12859e4-b165-4335-953b-89b614b19a16
+  composer Send activity=Some(Running { key: "toolu_01U1ghx1wqq2KycPjx9ZhiAa" }) queue=[] underway=[] refused=[]
+## 69 recorded 67: fact Hook hook_event_name=MessageDisplay
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 90 recorded 88: fact Transcript type=system subtype=turn_duration uuid=257f7be4-5784-418d-bb54-38701bb67291
+## 77 recorded 75: fact Transcript type=system subtype=turn_duration uuid=4284be8a-07f4-4f9e-b75d-e2316a374847
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 89 recorded 87: fact Transcript type=queue-operation
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 104 recorded 102: fact Transcript type=system subtype=turn_duration uuid=257f7be4-5784-418d-bb54-38701bb67291
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
      2 226f8ce8-6c73-4d3a-9edc-e968e85d438f Prompt { text: [Text("Launch the `toucher` subagent and wait for it. When it has reported, reply with exactly what it said.")], steered: false }
-     3 toolu_01U1ghx1wqq2KycPjx9ZhiAa Subagent { description: "Run toucher subagent", running: false, tool_count: 1, last_tool: "Bash", answer: "DONE", duration_ms: Some(4343) } run[toolu_01U1ghx1wqq2KycPjx9ZhiAa..toolu_01U1ghx1wqq2KycPjx9ZhiAa x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0 }]
+     3 toolu_01U1ghx1wqq2KycPjx9ZhiAa Subagent { description: "Run toucher subagent", running: true, tool_count: 0, last_tool: "", answer: "DONE", duration_ms: Some(4185) } run[toolu_01U1ghx1wqq2KycPjx9ZhiAa..toolu_01U1ghx1wqq2KycPjx9ZhiAa x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0 }]
      4 stream:a445b10a-72e8-484d-8717-f05d0421825f Prose { text: [Text("The `toucher` subagent is running in the background. I'll reply with its exact report once it finishes.")], streaming: false, working_note: false }
      5 turn:1 TurnEnd { duration_ms: Some(4200), failed: false }
      6 stream:38c1b4ef-4e1e-41a0-b1bd-1ae71a500556 Prose { text: [Text("DONE")], streaming: false, working_note: false }

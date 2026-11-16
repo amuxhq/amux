@@ -63,13 +63,17 @@ Tool-server forms are therefore recorded headless only, but for
 What Claude writes for each subagent is in `subagent` lines: a row of
 `<session>/subagents/agent-<id>.jsonl`, or the whole `agent-<id>.meta.json`
 beside it each time Claude rewrites it, named by the session's transcript
-(`<TRANSCRIPT_1>/subagents/agent-<id>.jsonl`). amux does not register the
-`SubagentStart` hook; the recorder registers one that only records its
-payload, so its `hook` lines are the recorder's. What passed between Claude
-and each tool server (amux's own, and the probe's in the form scenarios) is
-in `mcp:<server>` lines, `stdin` what Claude sent: a call's `_meta` is
-there. The fakes play `subagent` lines, writing the files where Claude
-would, and leave `mcp:` lines alone; the interpreter reads neither yet.
+(`<TRANSCRIPT_1>/subagents/agent-<id>.jsonl`). These captures were made
+before amux registered the `SubagentStart` hook, so the recorder registered
+one that only records its payload, and their `hook` lines for it are the
+recorder's. A replay reads `subagent` lines as the agent process delivers
+them: a file's meta before its first row, its rows on the subagent channel,
+and the file drained once its last recorded row is read. What passed between
+Claude and each tool server (amux's own, and the probe's in the form
+scenarios) is in `mcp:<server>` lines, `stdin` what Claude sent: a call's
+`_meta` is there. The fakes play `subagent` lines, writing the files where
+Claude would, and leave `mcp:` lines alone; the interpreter reads no `mcp:`
+line.
 
 Each folder is sanitized like a recording: `io.jsonl`, `spawn.jsonl` and a
 `manifest.json` naming the Claude version and model the capture shows (a

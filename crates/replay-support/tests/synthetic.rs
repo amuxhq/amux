@@ -225,6 +225,22 @@ const TITLED_FROM_WORDS: &[&str] = &[
     "codex/thread_title.json",
 ];
 
+/// The fixtures where a tool server's form goes to the one agent, of a
+/// host and its subagents, with a call to that server open, told by the
+/// server's name inside the call's tool name (`mcp__<server>__<tool>`). A
+/// record aliases a tool server's call name whole, apart from the server's
+/// own name, so its replay cannot tell whose the form is.
+const ROUTED_BY_SERVER_NAME: &[&str] = &[
+    "claude_sdk/recorded_subagent_elicitation.json",
+    "claude_pty/recorded_subagent_elicitation.json",
+];
+
+/// The fixtures recorded by a build that wrote the person's next prompt
+/// to headless Claude while Claude answered a subagent's notification with
+/// a turn of its own. This build holds the prompt until that turn ends, so
+/// the recording acknowledges a prompt before its replay has sent it.
+const PROMPTED_DURING_A_NOTIFICATION_TURN: &[&str] = &["claude_sdk/recorded_subagent_resumed.json"];
+
 struct Outcome {
     fixtures: usize,
     exact: usize,
@@ -275,7 +291,10 @@ fn round_trip<I: Interpreter>(kind: &str) -> Outcome {
             .iter()
             .filter(|line| !derived(line) && !streamed_opening(line, &recorded))
             .collect();
-        if TITLED_FROM_WORDS.contains(&name.as_str()) {
+        if TITLED_FROM_WORDS.contains(&name.as_str())
+            || ROUTED_BY_SERVER_NAME.contains(&name.as_str())
+            || PROMPTED_DURING_A_NOTIFICATION_TURN.contains(&name.as_str())
+        {
             outcome.derived.push(name);
         } else if found.is_empty() {
             outcome.exact += 1;

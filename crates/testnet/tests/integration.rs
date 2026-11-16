@@ -21,3 +21,4 @@ mod spec_pairing_window;
 mod spec_replication;
 mod spec_reports;
 mod spec_sign_in_offers;
+mod spec_subagents;

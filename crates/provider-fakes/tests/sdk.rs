@@ -797,6 +797,82 @@ async fn a_stopped_subagent_says_so_and_its_call_returns_interrupted() {
     assert_eq!(host.close().await, 0);
 }
 
+/// A subagent started in the background runs as 2.1.325 runs one: its
+/// call returns "launched" at once and the turn that started it ends while
+/// it works; its steps play once no turn runs, its end notifies, and that
+/// notification starts a turn of Claude's own, with no prompt replayed,
+/// which plays the script's next steps.
+#[tokio::test]
+async fn a_background_subagent_outlives_its_turn_and_its_end_starts_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let gate = dir.path().join("go");
+    let mut host = Host::start(json!({"steps": [
+        {"subagents": {"agents": [{"task": "Count the files", "background": true, "steps": [
+            {"wait_for": {"path": gate}},
+            {"text": {"chunks": ["There are 3 files."]}},
+        ]}]}},
+        {"text": {"chunks": ["It is counting."]}},
+        "turn_end",
+        {"text": {"chunks": ["Done: 3 files."]}},
+        "turn_end",
+    ]}))
+    .await;
+    host.prompt(A, "Count with a subagent").await;
+    let result = host.until(|frame| frame["type"] == "result").await;
+    assert_eq!(result["result"], "It is counting.");
+    let frames = host.frames.clone();
+    let started = frames
+        .iter()
+        .find(|frame| frame["subtype"] == "task_started")
+        .unwrap();
+    assert_eq!(started["is_backgrounded"], true);
+    let launched = frames
+        .iter()
+        .find(|frame| {
+            frame["parent_tool_use_id"].is_null()
+                && frame["message"]["content"][0]["tool_use_id"] == started["tool_use_id"]
+        })
+        .unwrap();
+    assert_eq!(launched["tool_use_result"]["status"], "async_launched");
+    assert!(
+        !frames
+            .iter()
+            .any(|frame| frame["subtype"] == "task_notification"),
+        "the subagent outlives the turn"
+    );
+
+    std::fs::write(&gate, "").unwrap();
+    let notified = host
+        .until(|frame| frame["subtype"] == "task_notification")
+        .await;
+    assert_eq!(notified["status"], "completed");
+    assert_eq!(notified["summary"], "There are 3 files.");
+    let result = host.until(|frame| frame["type"] == "result").await;
+    assert_eq!(result["result"], "Done: 3 files.");
+    let at = host
+        .frames
+        .iter()
+        .position(|frame| frame["subtype"] == "task_notification")
+        .unwrap();
+    let follow_up: Vec<String> = host.frames[at + 1..]
+        .iter()
+        .filter(|frame| frame["type"] != "stream_event")
+        .map(|frame| {
+            format!(
+                "{} {}",
+                frame["type"].as_str().unwrap(),
+                frame["subtype"].as_str().unwrap_or_default()
+            )
+        })
+        .collect();
+    assert_eq!(
+        follow_up,
+        ["system init", "assistant ", "result success"],
+        "no prompt is replayed into the follow-up turn"
+    );
+    assert_eq!(host.close().await, 0);
+}
+
 /// A subagent stopped while it waits on the host, on an open ask or in a
 /// pause, stops waiting: an open ask is withdrawn, and its call returns
 /// interrupted, so the parent goes on.

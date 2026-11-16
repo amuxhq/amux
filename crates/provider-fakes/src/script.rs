@@ -266,6 +266,13 @@ pub struct Subagent {
     /// before the child's turn starts. Without it the turn starts at once.
     #[serde(default)]
     pub await_read: bool,
+    /// Started in the background, as Claude starts one unless its call asks
+    /// otherwise (headless Claude only): its call returns at once, the
+    /// turn that started it goes on and may end while it works, and its
+    /// steps play while no turn runs. Its end starts a turn of its own on
+    /// its notification, which plays the script's next steps.
+    #[serde(default)]
+    pub background: bool,
     #[serde(default)]
     pub steps: Vec<Step>,
 }
@@ -603,6 +610,12 @@ fn check_steps(
                     });
                 }
                 for agent in agents {
+                    if agent.background && !plays.contains(&"background_subagents") {
+                        return Err(ScriptError::UnsupportedStep {
+                            provider,
+                            step: "background subagents",
+                        });
+                    }
                     if let Some(step) = agent.steps.iter().find_map(Step::outside_a_subagent) {
                         return Err(ScriptError::UnsupportedStep { provider, step });
                     }

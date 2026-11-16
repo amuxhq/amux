@@ -12,7 +12,10 @@
 //! Subagents run as 2.1.325 runs one its parent waits on: each streams its
 //! own conversation, prompt included, tagged with its id and the call that
 //! started it (the frames `forwardSubagentText` asks for), and its end hands
-//! its answer back as the call's result.
+//! its answer back as the call's result. One started in the background
+//! (as 2.1.325 starts one unless asked otherwise) returns its call at once,
+//! plays its steps while no turn runs, and its notification starts Claude's
+//! follow-up turn.
 
 use std::collections::{BTreeMap, VecDeque};
 
@@ -28,7 +31,7 @@ use crate::{DRIFT_EXIT, Mode};
 /// The asks headless Claude can raise.
 pub const RAISES: &[&str] = &["permission", "question", "plan", "form"];
 /// The provider-specific steps headless Claude can play.
-pub const PLAYS: &[&str] = &["usage", "auth_failed", "subagents"];
+pub const PLAYS: &[&str] = &["usage", "auth_failed", "subagents", "background_subagents"];
 
 pub fn main() -> i32 {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -88,6 +91,9 @@ struct Queued {
     /// The host's uuid, when it sent one; lifecycle frames need it.
     uuid: Option<String>,
     message: Value,
+    /// A turn Claude starts by itself on a background subagent's
+    /// notification: no message of the host's, so none is replayed.
+    notification: bool,
 }
 
 struct Engine {
@@ -157,6 +163,9 @@ struct Engine {
     subagents: Vec<Within>,
     /// Subagents the host stopped that have not yet handed back.
     stopped: Vec<String>,
+    /// Subagents started in the background still at work, whose steps
+    /// play while no turn runs, one of each in turn.
+    background: VecDeque<Running>,
 }
 
 /// A subagent Claude runs for the call that started it.
@@ -270,6 +279,7 @@ impl Engine {
             within: None,
             subagents: Vec::new(),
             stopped: Vec::new(),
+            background: VecDeque::new(),
         }
     }
 
@@ -304,6 +314,11 @@ impl Engine {
             }
             if self.eof {
                 return 0;
+            }
+            // So do a background subagent's steps.
+            if let Some(agent) = self.background.pop_front() {
+                self.background_step(agent).await;
+                continue;
             }
             // A background command can end while no turn runs.
             if !self.jobs.is_empty() {
@@ -524,6 +539,7 @@ impl Engine {
         let queued = Queued {
             uuid: frame["uuid"].as_str().map(str::to_owned),
             message: frame["message"].clone(),
+            notification: false,
         };
         if let Some(uuid) = queued.uuid.clone() {
             self.lifecycle(&uuid, "queued").await;
@@ -707,7 +723,9 @@ impl Engine {
         self.send(init).await;
         if !clear {
             self.begin_transcript();
-            self.replay(&first).await;
+            if !first.notification {
+                self.replay(&first).await;
+            }
         }
         let mut calls = 0;
         let exit = if clear {
@@ -1017,6 +1035,7 @@ impl Engine {
     async fn run_subagents(&mut self, request: &str, message: &str, agents: Vec<Subagent>) {
         let mut running = Vec::new();
         for agent in agents {
+            let background = agent.background;
             let description = agent.nickname.clone().unwrap_or_else(|| {
                 agent
                     .task
@@ -1046,7 +1065,7 @@ impl Engine {
                 "tool_use_id": within.call,
                 "description": within.description,
                 "subagent_type": SUBAGENT_TYPE,
-                "is_backgrounded": false,
+                "is_backgrounded": background,
                 "spawn_depth": 1,
                 "task_type": "local_agent",
                 "prompt": within.prompt,
@@ -1070,7 +1089,7 @@ impl Engine {
             self.within = None;
             self.send(prompt).await;
             self.subagents.push(within.clone());
-            running.push(Running {
+            let agent = Running {
                 within,
                 steps: agent.steps.into(),
                 request: self.ids.next("req_fake"),
@@ -1078,7 +1097,13 @@ impl Engine {
                 tools: 0,
                 last_text: String::new(),
                 started: tokio::time::Instant::now(),
-            });
+            };
+            if background {
+                self.launched(&agent.within).await;
+                self.background.push_back(agent);
+            } else {
+                running.push(agent);
+            }
         }
         // One step of each in turn, so their frames interleave as parallel
         // subagents' do.
@@ -1105,6 +1130,104 @@ impl Engine {
                 }
             }
         }
+    }
+
+    /// A background subagent's call returns as it starts, saying so.
+    async fn launched(&mut self, within: &Within) {
+        let text = format!(
+            "Async agent launched successfully.\nagentId: {} (internal ID - do not mention to \
+             user. Use SendMessage with to: '{}', summary: '<5-10 word recap>' to continue this \
+             agent.)\nThe agent is working in the background. You will be notified \
+             automatically when it completes.\noutput_file: /tmp/claude/tasks/{}.output",
+            within.task, within.task, within.task
+        );
+        let sidecar = json!({
+            "agentId": within.task,
+            "canContinueAgent": true,
+            "canReadOutputFile": true,
+            "description": within.description,
+            "isAsync": true,
+            "outputFile": format!("/tmp/claude/tasks/{}.output", within.task),
+            "prompt": within.prompt,
+            "status": "async_launched",
+        });
+        self.user_result(
+            &within.call,
+            json!([{ "type": "text", "text": text }]),
+            Ran::Done,
+            sidecar,
+        )
+        .await;
+    }
+
+    /// One step of a background subagent, while no turn runs. A wait does
+    /// not hold the session: until its file exists the step stays first and
+    /// the host's frames are taken, so a prompt or a stop gets through. Its
+    /// end notifies, and starts the follow-up turn on what it said.
+    async fn background_step(&mut self, mut agent: Running) {
+        let stopped = self.stopped.contains(&agent.within.task);
+        let step = if stopped {
+            None
+        } else {
+            crate::script::next_step(&mut agent.steps)
+        };
+        let Some(step) = step else {
+            self.end_background(agent).await;
+            return;
+        };
+        if let Step::WaitFor { path } = &step
+            && !path.exists()
+        {
+            agent.steps.push_front(step);
+            self.background.push_back(agent);
+            self.pump().await;
+            return;
+        }
+        self.within = Some(agent.within.clone());
+        self.subagent_step(&mut agent, step).await;
+        self.within = None;
+        self.background.push_back(agent);
+    }
+
+    /// A background subagent's steps ran out, or it was stopped: its task
+    /// ends and, when it finished, Claude starts a turn on its notification.
+    async fn end_background(&mut self, agent: Running) {
+        self.subagents
+            .retain(|within| within.task != agent.within.task);
+        let within = &agent.within;
+        if let Some(at) = self.stopped.iter().position(|task| *task == within.task) {
+            self.stopped.remove(at);
+            return;
+        }
+        self.send(json!({
+            "type": "system",
+            "subtype": "task_updated",
+            "task_id": within.task,
+            "run_id": within.run,
+            "patch": { "status": "completed", "end_time": now_s() * 1000 },
+            "uuid": uuid(),
+            "session_id": self.session,
+        }))
+        .await;
+        self.send(json!({
+            "type": "system",
+            "subtype": "task_notification",
+            "task_id": within.task,
+            "run_id": within.run,
+            "tool_use_id": within.call,
+            "status": "completed",
+            "output_file": format!("/tmp/claude/tasks/{}.output", within.task),
+            "summary": agent.last_text,
+            "usage": subagent_usage(&agent),
+            "uuid": uuid(),
+            "session_id": self.session,
+        }))
+        .await;
+        self.queue.push_back(Queued {
+            uuid: None,
+            message: json!({ "role": "user", "content": agent.last_text }),
+            notification: true,
+        });
     }
 
     /// One step of a subagent's, written as its own.

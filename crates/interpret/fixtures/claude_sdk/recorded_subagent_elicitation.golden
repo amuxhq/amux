@@ -64,7 +64,7 @@ agent sub-615de637 item ask:789f51d0-2b0b-430b-8b5a-8e446b95b159 ask final at=17
 agent sub-615de637 snapshot WORKING queue=[] working_on=- at=1794788286729 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 agent sub-615de637 end FINISHED
 ## 123 recorded 122: fact Stream type=user uuid=ffa7762c-c6de-4bd2-bf89-1c103d13c8a4
-item toolu_01EKmQfxqunLiRPgSGSEXuRh tool final at=1794788280505 text="" Agent TOOL_STATE_SUCCEEDED opens=sub-615de637 ended=1794788286731 input=subagent:"Call ask_the_operator with ALBATROSS" out="  <tools-used-before-summary>ToolSearch, mcp__external__ask_…"
+item toolu_01EKmQfxqunLiRPgSGSEXuRh tool final at=1794788280505 text="" Agent TOOL_STATE_SUCCEEDED opens=sub-615de637 ended=1794788286731 input=subagent:"Call ask_the_operator with ALBATROSS" out="ALBATROSS"
 ## 125 recorded 124: fact Stream type=system subtype=status uuid=e4536d19-973b-46e2-adac-87a9f1c01d49
 item e4536d19-973b-46e2-adac-87a9f1c01d49 status final at=1794788286733 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 127 recorded 126: fact Stream type=stream_event uuid=fa6db74b-5c46-4e58-bb55-5cb98f08ab0b

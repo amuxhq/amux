@@ -32,7 +32,7 @@ use crate::{Channel, Emit, Fact, ItemDraft, ask_item, is_status_tool, status_wor
 const REJECTED: &str = "The user doesn't want to proceed with this tool use.";
 const REJECTED_NOTE: &str = "the user said:\n";
 const INTERRUPTED: &str = "[Request interrupted by user";
-use crate::claude_subagent::AGENT_TOOL;
+use crate::claude_subagent::{AGENT_TOOL, runs_subagent, subagent_answer};
 /// How many ended turns' prompts a late reply batch is checked against.
 const ENDED_PROMPTS: usize = 8;
 const TRUST_QUESTION: &str = "Do you trust the files in this folder?";
@@ -1108,7 +1108,13 @@ impl State {
         } else {
             ToolState::Succeeded as i32
         };
-        tool.outcome_text = output;
+        // A subagent's file is read apart from this one, so its last words
+        // may not be read yet: its report comes out of Claude's frame.
+        tool.outcome_text = if tool.state == ToolState::Succeeded as i32 && runs_subagent(tool) {
+            subagent_answer(None, output)
+        } else {
+            output
+        };
         for write in tool.take_result(content, result) {
             emit.effect(write);
         }

@@ -37,6 +37,8 @@
 //! - **Stop.** amux has no per-job stop for terminal Claude: a subagent's
 //!   snapshot lists no job of its own.
 
+use std::collections::BTreeMap;
+
 use claude_protocol::stream::{ContentBlock, MessageContent};
 use claude_protocol::transcript::{self, Row};
 use serde::{Deserialize, Serialize};
@@ -79,8 +81,6 @@ pub(super) struct Sub {
     pub(super) followed: bool,
     /// Its parent learned it ended, and its file is being read to its end.
     pub(super) ending: Option<Ending>,
-    /// Its newest reply, which a completed subagent's notification repeats.
-    pub(super) last_said: String,
     pub(super) conversation: Conversation,
 }
 
@@ -593,7 +593,7 @@ impl State {
         }
         if reply
             .as_deref()
-            .is_some_and(|reply| reply.trim() == sub.last_said.trim())
+            .is_some_and(|reply| reply.trim() == sub.conversation.last_said.trim())
         {
             return self.end_subagent(emit, child, end);
         }
@@ -715,11 +715,16 @@ impl State {
                     return;
                 };
                 let mut view = self.shared.subagent(emit, &child);
+                // Terminal Claude writes each subagent's rows to a file of
+                // its own, read apart from this one, so a nested subagent's
+                // last words may not be read yet: its report comes out of
+                // Claude's frame instead.
                 sub.conversation.user(
                     &mut view,
                     &user.envelope.uuid,
                     &user.message.content,
                     user.tool_use_result.as_ref(),
+                    &BTreeMap::new(),
                     &mut self.tasks,
                     at_ms,
                 );
@@ -751,10 +756,6 @@ impl State {
                     &message.content,
                     at_ms,
                 );
-                let said = crate::claude_common::blocks_text(&message.content);
-                if !said.is_empty() {
-                    sub.last_said = said;
-                }
                 let calls: Vec<String> = message
                     .content
                     .iter()
@@ -772,7 +773,7 @@ impl State {
                 let replied = self.subagents.get(&child).and_then(|sub| {
                     let ending = sub.ending.as_ref()?;
                     let reply = ending.last_reply.as_deref()?;
-                    (reply.trim() == sub.last_said.trim()).then(|| ending.end())
+                    (reply.trim() == sub.conversation.last_said.trim()).then(|| ending.end())
                 });
                 if let Some(end) = replied {
                     self.end_subagent(emit, &child, end);

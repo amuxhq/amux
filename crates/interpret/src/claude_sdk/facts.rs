@@ -28,6 +28,7 @@ use crate::claude_common::{
     permission_scopes, plan_ask, question_ask, question_ask_text, split_tool_name, tool_input,
     tool_result_text,
 };
+use crate::claude_subagent::{runs_subagent, subagent_answer};
 use crate::shared::{json_as_written, without_terminal_codes};
 use crate::{Channel, Effect, Emit, Fact, ItemDraft, ask_item, is_status_tool, status_working_on};
 
@@ -1134,6 +1135,11 @@ impl State {
     ) {
         let output = tool_result_text(content);
         let now = self.shared.now_ms();
+        let said = self
+            .tools
+            .get(id)
+            .filter(|tool| !tool.child_agent_id.is_empty())
+            .and_then(|tool| self.last_said(&tool.child_agent_id));
         let Some(tool) = self.tools.get_mut(id) else {
             self.shared.result_without_call("a user message");
             return;
@@ -1159,6 +1165,8 @@ impl State {
         // is on the decision.
         tool.outcome_text = if denied && output.starts_with(crate::claude_answers::REJECTED) {
             String::new()
+        } else if tool.state == ToolState::Succeeded as i32 && runs_subagent(tool) {
+            subagent_answer(said.as_deref(), output)
         } else {
             output
         };

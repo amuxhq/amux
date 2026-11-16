@@ -31,7 +31,7 @@
      2 a992ca0a-7301-408d-a645-fccc1b376e39 Prompt { text: [Text("Use the Agent tool (subagent_type general-purpose) to start one subagent whose task is: first call the mcp__amux__status tool with text set to 'checking from a subagent', then call the mcp__amux__agents tool, and report the agent names it lists. When it has reported back, reply with the single word DONE.")], steered: false }
      3 71adbc4a-5b70-40d3-aa55-1322de906e67 Hidden collapsed
      4 msg_011Ch5eSTVY2K9soFshpRrND:0 Thinking { text: "", open: false, duration_ms: Some(1332) }
-     5 toolu_01HPoM2fY5DMtyR6w3zbpX51 [opens=sub-ed887bd8] Subagent { description: "Check amux status and list agents", continued: false, state: Succeeded, answer: "  <tools-used-before-summary>ToolSearch, mcp__amux__agents, mcp__amux__status</tools-used-before-summary>\n  \n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a mes…
+     5 toolu_01HPoM2fY5DMtyR6w3zbpX51 [opens=sub-ed887bd8] Subagent { description: "Check amux status and list agents", continued: false, state: Succeeded, answer: "Both calls succeeded.\n\n- `mcp__amux__status` returned `ok` with `working_on` set to \"checking from a subagent\".\n- `mcp__amux__agents` listed two agents:\n\nsubagent-amux-tools\nsubagent-resumed\n\nThe `subagent-resumed` entry's `wor…
      6 947ad711-95e6-43bc-9350-d4a3322e7817 Hidden collapsed
      7 msg_011Ch5eT1Pw67jiH328Zkqzy:0 Prose { text: [Text("DONE")], streaming: false, working_note: false }
      8 turn:1 TurnEnd { duration_ms: Some(8707), failed: false }

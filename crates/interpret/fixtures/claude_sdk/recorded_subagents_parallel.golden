@@ -75,7 +75,7 @@ agent sub-b6e35886 item msg_011Ch5dUdPnAH6wCG9fRY8BW:1 message final at=17947875
 agent sub-b6e35886 snapshot WORKING queue=[] working_on=- at=1794787503100 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 agent sub-b6e35886 end FINISHED
 ## 168 recorded 167: fact Stream type=user uuid=eb757d38-9d39-4b1c-939c-126bafd141c6
-item toolu_01AXqJ5VmMhYkEH9KTp4Zm8D tool final at=1794787494904 text="" Agent TOOL_STATE_SUCCEEDED opens=sub-b6e35886 ended=1794787503101 input=subagent:"Run sleep then echo RED" out="  <tools-used-before-summary>Bash</tools-used-before-summary…"
+item toolu_01AXqJ5VmMhYkEH9KTp4Zm8D tool final at=1794787494904 text="" Agent TOOL_STATE_SUCCEEDED opens=sub-b6e35886 ended=1794787503101 input=subagent:"Run sleep then echo RED" out="The command `sleep 4; echo RED` printed exactly:\n\n```\nRED\n``…"
 ## 170 recorded 169: fact Stream type=assistant uuid=d99296fb-fd13-472d-ae3e-420864d932ae
 agent sub-d04df506 item msg_011Ch5dUeGcnjt4iehTM4Sph:0 thinking final at=1794787503439 text=""
 ## 172 recorded 171: fact Stream type=assistant uuid=d4069e1a-9eb4-40ef-a6a8-23c09b53bf9c
@@ -84,7 +84,7 @@ agent sub-d04df506 item msg_011Ch5dUeGcnjt4iehTM4Sph:1 message final at=17947875
 agent sub-d04df506 snapshot WORKING queue=[] working_on=- at=1794787503532 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 agent sub-d04df506 end FINISHED
 ## 177 recorded 176: fact Stream type=user uuid=25abab32-bc10-48d3-b869-c01a68dec1b9
-item toolu_016TnZ9tUY4YP6EzRwAhZv5Q tool final at=1794787495459 text="" Agent TOOL_STATE_SUCCEEDED opens=sub-d04df506 ended=1794787503532 input=subagent:"Run sleep then echo GREEN" out="  <tools-used-before-summary>Bash</tools-used-before-summary…"
+item toolu_016TnZ9tUY4YP6EzRwAhZv5Q tool final at=1794787495459 text="" Agent TOOL_STATE_SUCCEEDED opens=sub-d04df506 ended=1794787503532 input=subagent:"Run sleep then echo GREEN" out="The command printed exactly: `GREEN`"
 ## 179 recorded 178: fact Stream type=assistant uuid=39082926-ed5b-4039-90d9-0251f55c8041
 agent sub-9d12cfeb item msg_011Ch5dUjCHaa5pELVFfVTru:0 thinking final at=1794787504747 text=""
 ## 181 recorded 180: fact Stream type=assistant uuid=8cbdea84-b06b-4a4e-9479-779e0a1a4b6d
@@ -93,7 +93,7 @@ agent sub-9d12cfeb item msg_011Ch5dUjCHaa5pELVFfVTru:1 message final at=17947875
 agent sub-9d12cfeb snapshot WORKING queue=[] working_on=- at=1794787504751 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 agent sub-9d12cfeb end FINISHED
 ## 187 recorded 186: fact Stream type=user uuid=b6a6eacd-66fc-4efd-95ce-f6a2d16fbd9c
-item toolu_01X8WTkZ9fKYbN6Ltm9mtS2s tool final at=1794787495796 text="" Agent TOOL_STATE_SUCCEEDED opens=sub-9d12cfeb ended=1794787504752 input=subagent:"Run sleep then echo BLUE" out="  <tools-used-before-summary>Bash</tools-used-before-summary…"
+item toolu_01X8WTkZ9fKYbN6Ltm9mtS2s tool final at=1794787495796 text="" Agent TOOL_STATE_SUCCEEDED opens=sub-9d12cfeb ended=1794787504752 input=subagent:"Run sleep then echo BLUE" out="The command printed `BLUE`."
 ## 189 recorded 188: fact Stream type=system subtype=status uuid=fa22dcf0-b30b-4f2f-bbe4-48d09729b519
 item fa22dcf0-b30b-4f2f-bbe4-48d09729b519 status final at=1794787504753 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 191 recorded 190: fact Stream type=stream_event uuid=2a635281-6fb1-4d77-bcbd-ab036caa6406

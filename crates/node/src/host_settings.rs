@@ -188,15 +188,19 @@ impl HostSettings {
         &self,
         request: &UpdateSettingsRequest,
     ) -> Result<InstallationConfig, SettingsError> {
-        let changes = changes(request, self.home(), &self.current())?;
-        self.write(&changes, |held| {
-            if let (Some(on), Some(login)) = (request.start_at_login, &self.login)
-                && (on != held.start_at_login || on != login.is_on())
-            {
-                login.set(on)?;
-            }
-            Ok(())
-        })
+        // From the file as it is when written, not as last polled: a list
+        // that keeps names this build does not know keeps the file's.
+        self.write(
+            |fresh| changes(request, self.home(), fresh),
+            |held| {
+                if let (Some(on), Some(login)) = (request.start_at_login, &self.login)
+                    && (on != held.start_at_login || on != login.is_on())
+                {
+                    login.set(on)?;
+                }
+                Ok(())
+            },
+        )
     }
 
     /// Keeps a person's pick as what later agents of its kind start with.
@@ -238,27 +242,37 @@ impl HostSettings {
         if changes.is_empty() {
             return Ok(None);
         }
-        self.write(&changes, |_| Ok(())).map(Some)
+        self.write(|_| Ok(changes), |_| Ok(())).map(Some)
     }
 
-    /// Puts `changes` in the file (or in memory) and answers the settings
-    /// they leave. `before` runs once they are known to be valid, before
-    /// anything is written, and may refuse them.
+    /// Puts the changes `changes_of` makes of the settings as they are now
+    /// in the file (or in memory) and answers the settings they leave.
+    /// `before` runs once they are known to be valid, before anything is
+    /// written, and may refuse them.
     fn write(
         &self,
-        changes: &[Change],
+        changes_of: impl FnOnce(&InstallationConfig) -> Result<Vec<Change<'static>>, SettingsError>,
         before: impl FnOnce(&InstallationConfig) -> Result<(), SettingsError>,
     ) -> Result<InstallationConfig, SettingsError> {
         let mut held = self.held.lock().unwrap();
-        // A change made beside the daemon since it last looked is kept.
-        if let Some(path) = &self.file {
-            held.text = match std::fs::read_to_string(path) {
-                Ok(text) => text,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-                Err(error) => return Err(error.into()),
-            };
-        }
-        let (text, edited) = settings::edit::edit(&held.text, changes)?;
+        // A change made beside the daemon since it last looked is kept, and
+        // the changes are made of the file as it reads now, under the lock:
+        // what the last poll saw may be up to its interval old.
+        let fresh = match &self.file {
+            Some(path) => {
+                held.text = match std::fs::read_to_string(path) {
+                    Ok(text) => text,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+                    Err(error) => return Err(error.into()),
+                };
+                // One that no longer reads is the edit's to refuse, unless
+                // the change mends it; the last good settings stand in.
+                read(&held.text, path).unwrap_or_else(|_| held.config.clone())
+            }
+            None => held.config.clone(),
+        };
+        let changes = changes_of(&fresh)?;
+        let (text, edited) = settings::edit::edit(&held.text, &changes)?;
         let config = match &self.file {
             Some(path) => read(&text, path)?,
             None => InstallationConfig {
@@ -664,6 +678,38 @@ mod tests {
         assert!(
             matches!(refused, Err(SettingsError::Invalid(_))),
             "{refused:?}"
+        );
+    }
+
+    /// A hand edit lands between the daemon's last read and a client's
+    /// switch, before the next poll would see it: the names the switch
+    /// keeps are the file's as it is now, so the edit's unknown name stays
+    /// and the one it removed does not come back.
+    #[test]
+    fn a_switch_keeps_the_unknown_names_the_file_has_now() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "[experiments]\nenabled = [\"teleport\"]\n").unwrap();
+        let settings = HostSettings::new(SettingsOptions {
+            file: Some(path.clone()),
+            initial: InstallationConfig::from_file(&path).unwrap(),
+            login: None,
+            home: None,
+        });
+        std::fs::write(&path, "[experiments]\nenabled = [\"warp\"]\n").unwrap();
+        let config = settings
+            .update(&UpdateSettingsRequest {
+                experiments: Some(wire::ExperimentList {
+                    names: vec!["suspension".to_owned()],
+                }),
+                ..request()
+            })
+            .unwrap();
+        assert_eq!(config.experiments.enabled, ["suspension", "warp"]);
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("enabled = [\"suspension\", \"warp\"]")
         );
     }
 

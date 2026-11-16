@@ -366,6 +366,18 @@
       "why": "It is there to judge the terminal's warning colours; the phone has its own."
     },
     {
+      "name": "chat.subagents",
+      "shows": "A chat whose agent started three subagents in one turn: they fold into one row saying how many and where they stand, under the prompt that started them.",
+      "clients": ["terminal"],
+      "why": "The phone and the Mac do not draw these screens yet."
+    },
+    {
+      "name": "chat.subagent",
+      "shows": "A subagent's own chat while it works: its prompt and its step, and in the composer's place that Claude runs it and it takes no messages, with its Stop.",
+      "clients": ["terminal"],
+      "why": "The phone and the Mac do not draw these screens yet."
+    },
+    {
       "name": "chat.delete",
       "shows": "Deleting a settled agent from its chat.",
       "clients": ["phone"],

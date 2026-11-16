@@ -90,6 +90,10 @@ asks and the calls that started its own subagents. Its composer has no text box 
 says Claude or Codex runs this subagent and it takes no messages, and offers Stop where the provider stops one
 subagent on request (headless Claude and Codex; never terminal Claude). An ask there is answered as any ask is.
 
+![Calls that started subagents, each drawn as its subagent stands in the fleet: at work, waiting on you, done with its answer opened, stopped and failed; then a call from history reading its own state.](figures/vocabulary/row_subagent.light.png)
+
+![Four subagents started in one turn, folded into one row with where they stand, then opened to each call under the row that folds them again.](figures/vocabulary/row_subagent_group.light.png)
+
 ![Tool-server calls as steps: one running, one always allowed, one denied with its note under it, and one failed, opened to its result.](figures/vocabulary/row_tool_call.light.png)
 
 ![Commands as steps: one waiting for the person's permission, one running, one denied with its note, one that ran, and one failed with its exit code, opened to its last lines of output.](figures/vocabulary/row_command.light.png)

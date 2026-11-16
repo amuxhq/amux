@@ -852,7 +852,7 @@ mod codex {
             "child_command",
             json!([text(),
                    {"subagents": {"agents": [
-                       {"task": "run echo", "steps": [bash(None), text()]},
+                       {"task": "run echo", "await_read": true, "steps": [bash(None), text()]},
                    ]}},
                    text(), "turn_end"]),
         ))

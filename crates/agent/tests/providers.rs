@@ -1633,6 +1633,7 @@ async fn codex_stops_a_subagent_in_three_steps() {
                 agents: vec![provider_fakes::script::Subagent {
                     task: "sleep".into(),
                     nickname: Some("Lovelace".into()),
+                    await_read: false,
                     steps: vec![Step::Tool(sleep), Step::Pause { ms: 60_000 }],
                 }],
             },

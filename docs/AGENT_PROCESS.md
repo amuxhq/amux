@@ -334,10 +334,12 @@ its own stops and kills end with causes of their own (`PROVIDER_EXITED`,
 "killed by a signal", or the exit status 128 and the signal's number a
 provider that catches it gives: 129, 130, 137 or 143 for SIGHUP, SIGINT,
 SIGKILL and SIGTERM, as headless Claude exits 143); or a clean exit
-(`QUIT`) with no turn under way, as a provider that exits cleanly when
-signalled gives. Each counts as no cause here. A quit is the person's own
-when the machine did not restart, or when it came in a turn, which is
-never continued, and is recorded as one then. The interpreter's last
+(`QUIT`), as a provider that exits cleanly when signalled gives (Codex's
+app server does, even mid-turn). Each counts as no cause here. A quit is
+recorded as one when the machine did not restart. Only terminal Claude can
+be quit by a person, in its terminal (Codex's terminal is a view that
+leaves its app server running), so its quit in a turn is the person's and
+is never continued. The interpreter's last
 snapshot after a provider's own end reads idle unless it cut a turn off, so
 the phase tells the two apart:
 

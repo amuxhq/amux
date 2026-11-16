@@ -190,7 +190,7 @@ public enum Stories {
         .step(
             ActivityLine(
                 activity: Activity(kind: .running(key: "s"), sinceMs: 0, elapsedMs: 0, turnElapsedMs: 0),
-                step: text))
+                step: text, subagents: nil))
     }
 
     private static let pinned = FleetSection(
@@ -490,7 +490,7 @@ public enum Stories {
         row(card(12, "Audit the pairing code", on: machine, .working, children: 4, ago: 50),
             .step(ActivityLine(
                 activity: Activity(kind: .subagents(count: 3), sinceMs: 0, elapsedMs: 0, turnElapsedMs: 0),
-                step: nil)),
+                step: nil, subagents: nil)),
             expanded: true)
     }
 

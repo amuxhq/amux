@@ -7,7 +7,7 @@
   ▾ Needs you 1 ────────────────────────────────────────────────────────────────────────────────────────────
 
   › ● lead ▾ 2  Claude · /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                                 [x]
-      2 subagents working
+      2 subagents · 1 running · 1 waiting on you
 
       ● Check the journal's retention  Claude subagent                                                 now
         wants to run du -sh ~/.local/share/amux/journal

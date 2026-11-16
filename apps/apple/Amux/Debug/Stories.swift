@@ -141,20 +141,20 @@ enum StoryFleet {
         ]
         let live: [FleetRow] = [
             row(3, "flaky-e2e", on: desk, .working, minutes: 1, kind: .claudePty,
-                .step(ActivityLine(activity: activity(.running(key: "t1")), step: "cargo test -p e2e reconnect"))),
+                .step(ActivityLine(activity: activity(.running(key: "t1")), step: "cargo test -p e2e reconnect", subagents: nil))),
             row(4, "migration", on: desk, .working, minutes: 3, children: 2, expanded: subagents,
-                .step(ActivityLine(activity: activity(.subagents(count: 2)), step: nil))),
+                .step(ActivityLine(activity: activity(.subagents(count: 2)), step: nil, subagents: nil))),
         ] + (subagents ? [
             // Claude's subagents, by the titles Claude gave them; each its
             // own agent with no folder, listed under the parent that runs it.
             row(12, "Port the schema to the new store", on: desk, .working, minutes: 3, handle: "sub-3f9a01c2",
-                native: true, .step(ActivityLine(activity: activity(.running(key: "t2")), step: "cargo test -p store"))),
+                native: true, .step(ActivityLine(activity: activity(.running(key: "t2")), step: "cargo test -p store", subagents: nil))),
             row(13, "Check the old migrations still apply", on: desk, .needsYou, minutes: 1, handle: "sub-81c4d2e7",
                 native: true,
                 .said(.ask(key: "", wants: .run(command: "sqlite3 fleet.db .schema"), why: "", more: 0))),
         ] : []) + [
             row(5, "docs-pass", on: studio, .working, minutes: 4, kind: .codex, reach: studioReach,
-                .step(ActivityLine(activity: activity(.thinking), step: nil))),
+                .step(ActivityLine(activity: activity(.thinking), step: nil, subagents: nil))),
             row(6, "licensing", on: desk, .idle, minutes: 18,
                 .lastSaid("Drafted the licensing page; it's ready for you to read.")),
             row(7, "sensor-logger", on: pi, .idle, minutes: 52, kind: .codex,

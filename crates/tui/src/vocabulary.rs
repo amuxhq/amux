@@ -400,8 +400,10 @@ pub fn authored_home() -> HomeScene {
                 turn_elapsed_ms: 0,
             },
             step: Some(step.to_owned()),
+            subagents: None,
         }),
         last_said: said.map(str::to_owned),
+        opens: Vec::new(),
     };
     #[allow(clippy::type_complexity)]
     let agents: [(

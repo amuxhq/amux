@@ -2412,10 +2412,21 @@ fn said_words(said: &Said, kind: Kind, now_ms: i64) -> String {
 }
 
 /// The step a working agent is on, as the chat's activity line names it:
-/// the step's own subject when it is running one.
-fn step_words(line: &ActivityLine) -> String {
+/// the step's own subject when it is running one, and while it waits on
+/// its subagents and one of them waits on the person, how they stand, in
+/// their group row's words.
+fn step_words(line: &ActivityLine, theme: Theme) -> String {
     match (&line.activity.kind, &line.step) {
         (ActivityKind::Running { .. }, Some(step)) => text::first_line(step).to_owned(),
+        (ActivityKind::Subagents { .. }, _)
+            if let Some(live) = line.subagents.as_ref().filter(|live| live.needs_you > 0) =>
+        {
+            crate::chat::feed::group_words(live, theme)
+                .into_iter()
+                .map(|(words, _)| words)
+                .collect::<Vec<_>>()
+                .join(" · ")
+        }
         (kind, _) => crate::chat::activity_words(kind),
     }
 }
@@ -2452,7 +2463,10 @@ fn second_words(
         let count = format!("{jobs} background job{}", if jobs == 1 { "" } else { "s" });
         return Some(match line {
             SecondLine::LastSaid(said) => (format!("{count} · {said}"), theme.muted()),
-            SecondLine::Step(step) => (format!("{count} · {}", step_words(step)), theme.muted()),
+            SecondLine::Step(step) => (
+                format!("{count} · {}", step_words(step, theme)),
+                theme.muted(),
+            ),
             _ => (format!("{count} running"), theme.muted()),
         });
     }
@@ -2462,7 +2476,7 @@ fn second_words(
             (said_words(said, row.card.kind, now_ms), theme.text())
         }
         SecondLine::Said(said) => (said_words(said, row.card.kind, now_ms), theme.warning()),
-        SecondLine::Step(step) => (step_words(step), theme.muted()),
+        SecondLine::Step(step) => (step_words(step, theme), theme.muted()),
         SecondLine::LastSaid(said) => (said.clone(), theme.muted()),
         // The Settled heading already says what a settled agent is.
         SecondLine::Exited(ExitCause::Finished | ExitCause::Ended)

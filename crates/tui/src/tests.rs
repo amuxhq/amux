@@ -2520,6 +2520,7 @@ fn home_keeps_its_order_while_agents_stream_and_moves_one_whose_turn_ended() {
                 turn_elapsed_ms: 0,
             },
             step: Some(subject.to_owned()),
+            subagents: None,
         }),
         ..Default::default()
     };

@@ -126,6 +126,46 @@ fn the_activity_line_says_a_subagent_waits_on_you() {
     assert!(!screen.contains("subagents working"), "{screen}");
 }
 
+/// Home's line for a parent that waits on its subagents says how they
+/// stand once one of them waits on the person, in the words and from the
+/// same source as the chat's activity line, not that they all work.
+#[test]
+fn home_says_a_parents_subagent_waits_on_you_as_its_chat_does() {
+    let mut family = running();
+    let parent = ui_state::agent_key(family.state.agent());
+    inventory(&mut family.fleet, host(&parent.host, "host", Reads::Online));
+    // The fixture lists the parent as it started; live, it works while it
+    // waits on its subagents.
+    let mut working = family.state.agent().clone();
+    working.phase = Phase::Working as i32;
+    inventory(&mut family.fleet, wire::inventory_event::Of::Agent(working));
+    let lines = |family: &Family| {
+        HashMap::from([(
+            parent.clone(),
+            ui_view::session_line(&family.state, family.at),
+        )])
+    };
+    let mut home = crate::home::Home::default();
+    home.select(parent.clone());
+    home.key(&family.fleet, key(KeyCode::Right));
+    let screen = home_screen_with(&mut home, &family.fleet, &lines(&family), theme());
+    assert!(screen.contains("3 subagents working"), "{screen}");
+
+    let mut asking = family.sub(1).row.clone();
+    asking.phase = Phase::NeedsYou as i32;
+    family
+        .fleet
+        .update(ui_state::FleetMsg::Event(Box::new(wire::InventoryEvent {
+            of: Some(wire::inventory_event::Of::Agent(asking)),
+        })));
+    let screen = home_screen_with(&mut home, &family.fleet, &lines(&family), theme());
+    assert!(
+        screen.contains("3 subagents · 2 running · 1 waiting on you"),
+        "{screen}"
+    );
+    assert!(!screen.contains("subagents working"), "{screen}");
+}
+
 /// The leader's `o` opens the group in place and closes it again; the
 /// leader's Enter on one of its calls opens that subagent's chat, a
 /// gesture apart. On the folded group, which stands for several agents,

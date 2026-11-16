@@ -243,15 +243,25 @@ public enum ActivityKind: Codable, Hashable, Sendable {
 public struct ActivityLine: Codable, Hashable, Sendable {
     public var activity: Activity
     public var step: String?
+    /// While the agent waits on its subagents: how those its chat opened
+    /// that are still at work or waiting on the person stand, by their
+    /// fleet rows, as the chat's activity line reads them
+    /// (`ChatAgents::live`). Only the fleet knows of a subagent's ask, so
+    /// the fleet's view fills it, not the session; while one of them waits
+    /// on the person each client says this, in the group row's words,
+    /// rather than that they all work.
+    public var subagents: GroupState?
 
-    public init(activity: Activity, step: String?) {
+    public init(activity: Activity, step: String?, subagents: GroupState?) {
         self.activity = activity
         self.step = step
+        self.subagents = subagents
     }
 
     private enum CodingKeys: String, CodingKey {
         case activity
         case step
+        case subagents
     }
 }
 

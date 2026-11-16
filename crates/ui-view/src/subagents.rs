@@ -187,21 +187,52 @@ pub fn chat_agents(state: &SessionState, fleet: &FleetState) -> ChatAgents {
         }
     }
     close(&mut turn);
-    let live: Vec<Vec<u8>> = agents
+    let opened: Vec<&[u8]> = agents
         .iter()
-        .filter(|opened| {
-            matches!(
-                opened.phase,
-                PhaseView::Starting | PhaseView::Working | PhaseView::NeedsYou
-            )
-        })
-        .map(|opened| opened.agent.agent.clone())
+        .map(|opened| opened.agent.agent.as_slice())
         .collect();
     ChatAgents {
-        live: group_state(fleet, &live),
+        live: live_state(fleet, opened),
         agents,
         groups,
     }
+}
+
+/// Each agent the held rows open, once, oldest call first: what
+/// [`live_state`] sums for a client that holds the session apart from the
+/// fleet, as home does.
+pub(crate) fn opened_agents(state: &SessionState) -> Vec<Vec<u8>> {
+    let mut seen = HashSet::new();
+    state
+        .transcript()
+        .iter()
+        .filter_map(|held| ui_state::opens(&held.body))
+        .filter(|agent| seen.insert(*agent))
+        .map(<[u8]>::to_vec)
+        .collect()
+}
+
+/// How those of `opened` still at work or waiting on the person stand, by
+/// their fleet rows: [`ChatAgents::live`], and what home says of a parent
+/// that waits on them, so the two agree. An agent the fleet does not hold
+/// is left out.
+pub(crate) fn live_state<'a>(
+    fleet: &FleetState,
+    opened: impl IntoIterator<Item = &'a [u8]>,
+) -> GroupState {
+    let live: Vec<Vec<u8>> = opened
+        .into_iter()
+        .filter(|agent| {
+            opened_agent(fleet, agent).is_some_and(|opened| {
+                matches!(
+                    opened.phase,
+                    PhaseView::Starting | PhaseView::Working | PhaseView::NeedsYou
+                )
+            })
+        })
+        .map(<[u8]>::to_vec)
+        .collect();
+    group_state(fleet, &live)
 }
 
 /// Each agent once, in the order first met.

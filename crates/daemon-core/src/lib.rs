@@ -638,7 +638,7 @@ pub const REPORT_HANDED_TWICE: Check = Check {
 pub const SUBAGENT_AFTER_ITS_END: Check = Check {
     id: "daemon.subagent_after_its_end",
     sentence: "a provider subagent's end comes after its last item: no part gives it items once it \
-               has ended, unless a start continues it",
+               has ended, unless a start continues it or the part carries an end of its own",
 };
 pub const PART_OF_ANOTHER_AGENT: Check = Check {
     id: "daemon.part_of_another_agent",

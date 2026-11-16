@@ -986,7 +986,13 @@ fn commit(
                     .changes
                     .push(SubagentChange::Continued(sub.row.agent.clone()));
             }
-            if !sub.live() && !(part.items.is_empty() && part.appends.is_empty()) {
+            // A part that carries its own end is the provider closing the
+            // subagent's steps, as a resumed host does of one its killed
+            // process left, whose row that process's exit already ended.
+            if !sub.live()
+                && part.end.is_none()
+                && !(part.items.is_empty() && part.appends.is_empty())
+            {
                 committed.after_end.push(sub.row.agent.clone());
             }
             sub.file(

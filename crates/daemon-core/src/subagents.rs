@@ -1047,6 +1047,62 @@ mod tests {
         assert_eq!(rig.row(SUB).unwrap().exit_cause, ExitCause::Stopped as i32);
     }
 
+    /// A host killed while its subagent ran leaves the subagent's steps
+    /// open. Its exit ended the subagent's row; the resumed process writes
+    /// the previous run's missing last step, closing those steps with the
+    /// subagent's end. That is no fault of the interpreter's.
+    #[test]
+    fn a_resumed_host_closing_the_steps_its_killed_process_left_raises_no_dump() {
+        let mut rig = rig();
+        rig.host_writes(&[starts(SUB, &["s1"])]);
+        rig.step(Input::ControlClosed {
+            agent: HOST,
+            ended: Ended::Exited,
+        });
+        assert_eq!(rig.row(SUB).unwrap().lifecycle, Lifecycle::Exited as i32);
+
+        let (_, out) = rig.call(ClientRequest::ResumeAgent(Box::new(Resume {
+            agent: HOST,
+            bootstrap: None,
+        })));
+        let job = |out: &[Output]| {
+            out.iter()
+                .find_map(|output| match output {
+                    Output::Job { id, .. } => Some(*id),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("a job: {out:?}"))
+        };
+        let out = rig.step(Input::JobDone {
+            job: job(&out),
+            result: crate::payload::JobResult::Done,
+        });
+        let out = rig.step(Input::JobDone {
+            job: job(&out),
+            result: crate::payload::JobResult::Spec(Some(Box::new(AgentSpec {
+                agent_id: HOST.0.to_vec(),
+                kind: wire::Kind::ClaudeSdk as i32,
+                incarnation: 2,
+                ..AgentSpec::default()
+            }))),
+        });
+        assert!(out.contains(&Output::DialAgent { agent: HOST }), "{out:?}");
+        rig.step(Input::AgentHello { agent: HOST });
+        let out = rig.host_writes(&[with_parts(vec![AgentStep {
+            end: Some(wire::IncarnationEnd {
+                cause: ExitCause::Stopped as i32,
+                detail: None,
+            }),
+            ..part(SUB, &["s1"])
+        }])]);
+        assert_eq!(dumped(&out), Vec::<&str>::new(), "{out:?}");
+        assert_eq!(
+            rig.row(SUB).unwrap().exit_cause,
+            ExitCause::EndedUnexpectedly as i32,
+            "the end its host's exit gave it stands"
+        );
+    }
+
     /// Catch-up as a second client opening the subagent's chat meets it.
     fn opened_caught_up(rig: &mut Rig, agent: AgentId) -> bool {
         let (call, out) = rig.call(ClientRequest::SubscribeSession {

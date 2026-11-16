@@ -254,7 +254,9 @@ journal. Its host's interpreter writes its parts into the host's journal
   The host's own process follows its subagents from the parts it journals.
 - **Two checks** at the end of the step name an interpreter that breaks the
   shape, with a dump: a part that gives a subagent items after its end with
-  no start to continue it (the items are kept), and a part naming an agent
+  no start to continue it (the items are kept), unless the part carries an
+  end of its own, as a resumed host's does when it closes the steps of a
+  subagent its killed process left; and a part naming an agent
   that has a row but is not one of the host's own subagents (skipped). A part
   naming no row at all, with no start, is skipped and counted
   (`Ingested.skipped`) but is no fault, since a resumed provider may report

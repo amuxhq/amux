@@ -21,6 +21,14 @@ public protocol ChatSurface: AnyObject {
     func isExpanded(_ id: String) -> Bool
     func toggle(_ id: String)
     func toggleRun(_ run: Run)
+    /// Opens or closes the group of calls that opened agents ("4 subagents")
+    /// a row heads; opening one of those agents is the call's own row.
+    func toggleGroup(_ group: SubagentGroup)
+    /// The agent a call row opens, as the fleet has it; nil when the row
+    /// opens none or the fleet does not hold it yet.
+    func opened(by row: Row) -> OpenedAgent?
+    /// What a group's agents come to, by the fleet.
+    func state(of group: SubagentGroup) -> GroupState?
     /// Opens or closes a finished turn's work.
     func toggleTurn(_ turn: TurnPlace)
     func counts(of run: Run) -> RunCounts?
@@ -71,6 +79,9 @@ public protocol ChatSurface: AnyObject {
     func resume()
     /// Stops the turn under way.
     func interrupt()
+    /// Stops one job by the key its `JobStop` gives: a provider subagent's
+    /// own, from its composer.
+    func stopJob(_ key: String)
     func withdraw(_ queued: QueuedRow)
     func sendNow(_ queued: QueuedRow)
 

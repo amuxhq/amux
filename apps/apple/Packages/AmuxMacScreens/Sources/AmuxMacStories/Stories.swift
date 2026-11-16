@@ -164,7 +164,7 @@ public enum Stories {
             phaseSinceMs: Int64(Date.now.timeIntervalSince1970 * 1000) - ago * 1000,
             host: host, hostReach: .online(.direct), children: children, familyAttention: attention,
             members: children + 1, descendants: children, backgroundJobs: 0, closeHeld: false, filing: filing,
-            topLevel: true, branch: "main", exitCause: exit, repository: repository(cwd))
+            topLevel: true, native: false, branch: "main", exitCause: exit, repository: repository(cwd))
     }
 
     /// The repository the runtime would name for a folder under /src, as if
@@ -336,7 +336,7 @@ public enum Stories {
     ) -> Row {
         Row(
             id: id, order: UInt64(id.dropFirst()) ?? 0, atMs: nowMs, kind: kind, collapsed: collapsed,
-            attention: attention, decision: nil, parent: nil, run: run,
+            attention: attention, decision: nil, group: nil, opens: nil, parent: nil, run: run,
             turn: turn.map { TurnPlace(end: end, open: false, part: $0) })
     }
 
@@ -483,6 +483,100 @@ public enum Stories {
         ],
         added: 9, removed: 3)
 
+    // MARK: - Subagents
+
+    /// An agent that handed its audit to four of Claude's subagents.
+    private static var auditor: FleetRow {
+        row(card(12, "Audit the pairing code", on: machine, .working, children: 4, ago: 50),
+            .step(ActivityLine(
+                activity: Activity(kind: .subagents(count: 3), sinceMs: 0, elapsedMs: 0, turnElapsedMs: 0),
+                step: nil)),
+            expanded: true)
+    }
+
+    /// Its subagents, by the titles Claude gave them: each its own agent,
+    /// with no folder, listed under the parent that runs it.
+    private static let delegated: [(UInt8, String, Attention, String)] = [
+        (21, "Survey the relay's retry path", .working, "sub-3f9a01c2"),
+        (22, "Check the Windows build", .needsYou, "sub-81c4d2e7"),
+        (23, "Find every INVALID_PIN reader", .exited, "sub-0b6e9f14"),
+        (24, "Read the pairing spec", .working, "sub-d27a5c90"),
+    ]
+
+    private static var subagents: [FleetRow] {
+        delegated.map { number, title, attention, handle in
+            var member = card(number, title, on: machine, attention, ago: 40, exit: attention == .exited ? .finished : nil)
+            member.handle = handle
+            member.topLevel = false
+            member.native = true
+            member.branch = nil
+            let line: SecondLine = switch attention {
+            case .needsYou: .said(.ask(key: "a", wants: .run(command: "cargo check --target x86_64-pc-windows-msvc"), why: "", more: 0))
+            case .exited: .lastSaid("Three readers, all on the same string.")
+            default: step("Reading crates/relay-core/src/dial.rs")
+            }
+            return row(member, line, depth: 1)
+        }
+    }
+
+    private static var delegatingFleet: FleetContent {
+        FleetContent(sections: [
+            needsYou,
+            FleetSection(kind: .live, families: 2, foldedByDefault: false, rows: [auditor] + subagents + [live.rows[0]]),
+        ])
+    }
+
+    private static func call(_ id: String, _ title: String, _ agent: UInt8, group: SubagentGroup?) -> Row {
+        Row(
+            id: id, order: UInt64(id.dropFirst()) ?? 0, atMs: nowMs,
+            kind: .subagent(description: title, continued: false, state: .running, answer: "", durationMs: nil),
+            collapsed: false, attention: false, decision: nil, group: group,
+            opens: Array(repeating: agent, count: 16), parent: nil, run: nil, turn: nil)
+    }
+
+    /// The turn that started them: its calls fold into one group, which a
+    /// click opens.
+    private static var delegatingRows: [Row] {
+        let group = SubagentGroup(
+            first: "d4", agents: delegated.map { Array(repeating: $0.0, count: 16) }, open: false)
+        return [
+            r("d1", .prompt(text: text("Audit the pairing code four ways at once and report back."), steered: false)),
+            r("d2", .thinking(text: "", open: false, durationMs: 3_000)),
+            r("d3", .prose(text: text("Starting four subagents, one per area."), streaming: false, workingNote: false)),
+        ] + delegated.enumerated().map { index, agent in
+            call("d\(index + 4)", agent.1, agent.0, group: group)
+        }
+    }
+
+    /// What the fleet says of them, as the runtime hands it with the chat.
+    private static var delegatedAgents: ChatAgents {
+        ChatAgents(
+            agents: delegated.map { number, title, attention, _ in
+                let phase: PhaseView = switch attention {
+                case .needsYou: .needsYou
+                case .exited: .exited(cause: .finished)
+                default: .working
+                }
+                return OpenedAgent(
+                    agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: number, count: 16)),
+                    name: title, kind: .claudeSdk, phase: phase)
+            },
+            groups: [GroupView(first: "d4", state: GroupState(
+                agents: 4, running: 2, needsYou: 1, idle: 0, finished: 1, ended: 0, failed: 0, unknown: 0))])
+    }
+
+    /// The first subagent's own chat: the task its parent gave it, its
+    /// thinking, its tools and what it found so far.
+    private static let subagentRows: [Row] = [
+        r("u1", .prompt(text: text("Survey the relay's retry path: where a dropped link is retried, and what bounds it."), steered: false)),
+        r("u2", .thinking(text: "The retry lives in the link layer; start at the dialler.", open: false, durationMs: 2_000)),
+        r("u3", .explore(verb: .search, subject: "retry_after", state: .succeeded, result: "")),
+        r("u4", .explore(verb: .read, subject: "crates/relay-core/src/dial.rs", state: .succeeded, result: "")),
+        r("u5", command("cargo test -p relay-core retry", .succeeded, ms: 6_100)),
+        r("u6", .prose(text: text("The dialler retries a dropped link with backoff capped at 30 s and gives up at the link's deadline. The cap is `MAX_BACKOFF` in dial.rs."), streaming: false, workingNote: false)),
+        r("u7", .explore(verb: .read, subject: "crates/relay-core/src/link.rs", state: .running, result: "")),
+    ]
+
     private static func chatStory(_ name: String, _ row: FleetRow, _ chat: @escaping @MainActor () -> StillChat)
         -> Story
     {
@@ -520,6 +614,29 @@ public enum Stories {
                     questionNote: true, questionSkip: true, questionReply: true, stopsTurn: true, defaultToNo: false,
                     state: .open),
                 changes: ChangeTotals(files: 1, added: 6, removed: 3), settings: claude)
+        },
+        Story("chat.subagents") {
+            MainStory(
+                MainContent(profiles: [signedIn], fleet: delegatingFleet, hosts: paired, thisMac: thisMac),
+                place: Place(agent: auditor.card.agent),
+                chat: StillChat(
+                    rows: delegatingRows,
+                    frame: frame(auditor.card, .working, activity: .subagents(count: 3)),
+                    settings: claude, agents: delegatedAgents))
+        },
+        Story("chat.subagent") {
+            MainStory(
+                MainContent(profiles: [signedIn], fleet: delegatingFleet, hosts: paired, thisMac: thisMac),
+                place: Place(agent: subagents[0].card.agent),
+                chat: {
+                    var native = frame(
+                        subagents[0].card, .working, activity: .running(key: "u7"),
+                        mode: .native(stop: .offered(key: "toolu_02")))
+                    native.git = nil
+                    native.controls = ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil)
+                    return StillChat(rows: subagentRows, frame: native)
+                }(),
+                family: FamilyHeader(children: [], attention: .working, needYou: 0, parent: auditor.card))
         },
         Story("chat.overview") {
             MainStory(
@@ -570,12 +687,14 @@ private struct SetupStory: View {
 private struct MainStory: View {
     let content: MainContent
     let chat: StillChat?
+    let family: FamilyHeader?
     @State private var place: Place
     @State private var starting = Stories.starting()
 
-    init(_ content: MainContent, place: Place = Place(), chat: StillChat? = nil) {
+    init(_ content: MainContent, place: Place = Place(), chat: StillChat? = nil, family: FamilyHeader? = nil) {
         self.content = content
         self.chat = chat
+        self.family = family
         _place = State(initialValue: place)
     }
 
@@ -584,7 +703,7 @@ private struct MainStory: View {
             if place.surface == .agents, let chat, let agent = place.agent {
                 ChatPane(
                     chat: chat, row: content.fleet.sections.flatMap(\.rows).first { $0.card.agent == agent },
-                    changesOpen: place.changes,
+                    family: family, changesOpen: place.changes,
                     actions: AgentActions(
                         openChanges: { place.changes = true }, reveal: {}, openEditor: {}, editor: "VS Code",
                         editorIcon: appIcon("com.microsoft.VSCode"), terminalIcon: appIcon("com.apple.Terminal"),

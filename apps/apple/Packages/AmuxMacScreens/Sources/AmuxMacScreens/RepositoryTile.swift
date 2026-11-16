@@ -4,10 +4,12 @@ import SwiftUI
 
 /// A repository's tile: the first and last letter of its name on its tint,
 /// the same for every checkout of it, on every client. An agent outside any
-/// folder a tile can name gets a plain folder.
+/// folder a tile can name gets a plain folder, and a provider subagent,
+/// which has no folder, its provider's bot.
 struct RepositoryTile: View {
     let repository: Repository?
     var size: CGFloat = 28
+    var native = false
     /// Settled and finished agents' tiles go quiet with their rows.
     var quiet = false
 
@@ -21,7 +23,7 @@ struct RepositoryTile: View {
                     .frame(width: size, height: size)
                     .background(shape.fill(Palette.tint(repository.tint).opacity(0.16)))
             } else {
-                Icon("folder", size: size * 0.5)
+                Icon(native ? "bot" : "folder", size: size * 0.5)
                     .foregroundStyle(.secondary)
                     .frame(width: size, height: size)
                     .background(shape.fill(Palette.well))

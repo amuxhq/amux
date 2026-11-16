@@ -31,7 +31,7 @@ public struct ChatPane: View {
             VStack(spacing: 0) {
                 Feed(
                     chat: chat, host: host, roomAbove: placing == .pill, trailing: placing.trailing,
-                    openChanges: actions.openChanges
+                    openChanges: actions.openChanges, openAgent: actions.openAgent
                 )
                 .overlay(alignment: .topTrailing) {
                     if !changesOpen, let row {
@@ -96,6 +96,7 @@ private struct Feed: View {
     /// Kept clear on the right for the card.
     let trailing: CGFloat
     let openChanges: @MainActor () -> Void
+    let openAgent: @MainActor (AgentKey) -> Void
     @State private var position = ScrollPosition(edge: .bottom)
 
     var body: some View {
@@ -113,7 +114,7 @@ private struct Feed: View {
                     // The step the ask card is about is shown by the card
                     // under the feed, in full; it comes back once answered.
                     if id != chat.ask?.itemKey {
-                        RowCell(chat: chat, id: id, openChanges: openChanges)
+                        RowCell(chat: chat, id: id, openChanges: openChanges, openAgent: openAgent)
                     }
                 }
                 ForEach(Array(chat.landing.enumerated()), id: \.offset) { _, prompt in
@@ -192,6 +193,7 @@ private struct RowCell: View {
     let chat: any ChatSurface
     let id: String
     let openChanges: @MainActor () -> Void
+    let openAgent: @MainActor (AgentKey) -> Void
 
     var body: some View {
         if let row = chat.row(id), chat.shows(row) {
@@ -221,8 +223,12 @@ private struct RowCell: View {
             rail: RailJoin.of(row, next: chat.row(below: row.id)),
             placement: placement,
             bytes: chat.bytes(of:),
+            opened: chat.opened(by: row),
+            groupState: row.group.flatMap(chat.state(of:)),
             toggle: { chat.toggle(row.id) },
-            toggleRun: { if let run = row.run { chat.toggleRun(run) } })
+            toggleRun: { if let run = row.run { chat.toggleRun(run) } },
+            toggleGroup: { if let group = row.group { chat.toggleGroup(group) } },
+            openAgent: { openAgent($0) })
     }
 }
 
@@ -287,10 +293,14 @@ private struct Footer: View {
                 if let ask = chat.ask {
                     AskCardView(card: ask, chat: chat)
                 }
-                if let frame = chat.frame, !frame.queue.isEmpty {
-                    QueueList(chat: chat, queue: frame.queue)
+                if let stop = chat.frame?.composer.mode.nativeStop {
+                    NativeBar(chat: chat, stop: stop)
+                } else {
+                    if let frame = chat.frame, !frame.queue.isEmpty {
+                        QueueList(chat: chat, queue: frame.queue)
+                    }
+                    Composer(chat: chat, name: row?.name ?? chat.frame?.name ?? "agent", host: host, reach: row?.hostReach)
                 }
-                Composer(chat: chat, name: row?.name ?? chat.frame?.name ?? "agent", host: host, reach: row?.hostReach)
             }
         }
         .frame(maxWidth: Metrics.reading)
@@ -298,6 +308,60 @@ private struct Footer: View {
         .padding(.bottom, 18)
         .frame(maxWidth: .infinity)
         .padding(.trailing, trailing)
+    }
+}
+
+/// Where the composer stands in a provider subagent's chat. Claude and
+/// Codex let only the parent's model talk to a subagent they run, so there
+/// is no field: one quiet bar says what runs it and that it takes no
+/// messages, with its own Stop where the provider stops one subagent on
+/// request. ⌘. stops it, as it stops a turn elsewhere.
+private struct NativeBar: View {
+    let chat: any ChatSurface
+    let stop: JobStop
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Icon("bot", size: 15).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(ChatWords.nativeRunner(chat.frame?.kind)).foregroundStyle(.primary)
+                    Text(ended ?? ChatWords.nativeTakesNoMessages).font(.ui(.meta)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                control
+            }
+            if case .refused(_, let error) = stop {
+                Text(error).font(.ui(.meta)).foregroundStyle(Palette.failure)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 25)
+            }
+        }
+        .font(.ui(.body))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(RoundedRectangle(cornerRadius: Radius.composer, style: .continuous).fill(Palette.raised))
+        .overlay(RoundedRectangle(cornerRadius: Radius.composer, style: .continuous).strokeBorder(Palette.line))
+    }
+
+    /// How it ended, once it has, in place of the reason there is no field.
+    private var ended: String? {
+        guard case .exited(let cause)? = chat.frame?.phase else { return nil }
+        return ChatWords.exited(cause)
+    }
+
+    @ViewBuilder private var control: some View {
+        switch stop {
+        case .offered(let key), .refused(let key, _):
+            Button("Stop") { chat.stopJob(key) }
+                .controlSize(.regular)
+                .keyboardShortcut(".", modifiers: .command)
+                .help("Stop this subagent (⌘.)")
+        case .stopping:
+            Text("Stopping…").foregroundStyle(.secondary)
+        case .unavailable:
+            EmptyView()
+        }
     }
 }
 

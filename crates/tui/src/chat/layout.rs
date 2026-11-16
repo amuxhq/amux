@@ -263,7 +263,7 @@ impl Frame<'_> {
         let transcript = state.transcript();
         let held = transcript.at(order)?;
         if self.asking == Some(&held.item.key) {
-            return None;
+            return self.asked_step(state, order);
         }
         let in_run = chat_rows_for(state, std::slice::from_ref(&held.item.key), self.options())
             .pop()
@@ -415,6 +415,44 @@ impl Frame<'_> {
             text,
             toggle,
             opens,
+        })
+    }
+
+    /// The step the composer's box asks about, which the feed leaves to
+    /// the box. Under way and folded, it may be the only step its run
+    /// shows, carrying what the steps before it did: that line stays, so
+    /// the work before the ask is not lost from view while the box asks.
+    fn asked_step(&self, state: &SessionState, order: u64) -> Option<Block> {
+        if self.tools != ToolSteps::Collapse {
+            return None;
+        }
+        let held = state.transcript().at(order)?;
+        let row =
+            chat_rows_for(state, std::slice::from_ref(&held.item.key), self.options()).pop()?;
+        let run = row.run.clone().filter(|run| run.live)?;
+        let counts = run.hidden.clone()?;
+        if ui_view::run_is_open(state, order, self.open_runs) {
+            return None;
+        }
+        let drawn = feed::header_only(
+            &Header {
+                run: run.clone(),
+                counts,
+                open: false,
+            },
+            self.width,
+            self.theme,
+        );
+        let text = drawn.line_text();
+        Some(Block {
+            key: row.id.clone(),
+            order,
+            row,
+            lines: drawn.lines,
+            hits: drawn.hits,
+            text,
+            toggle: Toggle::Run(run.last.clone()),
+            opens: None,
         })
     }
 

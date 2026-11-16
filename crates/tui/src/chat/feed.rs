@@ -1263,6 +1263,16 @@ fn described_phase(state: CallPhase) -> Option<&'static str> {
     }
 }
 
+/// A live run's line alone, with the blank that parts it from what
+/// follows: what its steps did, where the step it would sit above is
+/// drawn elsewhere.
+pub(crate) fn header_only(header: &Header, width: usize, theme: Theme) -> Drawn {
+    let mut drawn = Drawn::default();
+    header_line(&mut drawn, header, width, theme);
+    drawn.blank();
+    drawn
+}
+
 /// The line above an open or live run's steps.
 fn header_line(drawn: &mut Drawn, header: &Header, width: usize, theme: Theme) {
     let mut line = Line::default();

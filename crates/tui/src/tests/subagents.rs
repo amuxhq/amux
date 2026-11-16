@@ -132,6 +132,11 @@ fn the_leader_opens_a_group_in_place_and_enter_opens_a_subagents_chat() {
     view.toggle_expanded(&family.state);
     let screen = chat_screen(&mut view, &family.state, &family);
     assert!(screen.contains("▸ 3 subagents · 3 running"), "{screen}");
+    // With nothing focused, `o` falls on the newest group, as on a run.
+    view.focus = None;
+    view.toggle_expanded(&family.state);
+    let screen = chat_screen(&mut view, &family.state, &family);
+    assert!(screen.contains("▾ 3 subagents · 3 running"), "{screen}");
 }
 
 /// A lone call reads its subagent's state from the fleet: waiting on you

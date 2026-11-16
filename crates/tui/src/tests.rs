@@ -4446,3 +4446,37 @@ fn a_job_is_stopped_from_the_pane_behind_a_confirm_card() {
     assert!(screen.contains("Stopping…"), "{screen}");
     assert!(screen.contains("Task b2 is not running"), "{screen}");
 }
+
+/// While the box asks about a run's newest step, the steps before it keep
+/// their line in the feed: the box shows the step it asks about, and the
+/// line says what the rest of the run did.
+#[test]
+fn an_asked_steps_run_keeps_its_line_above_the_box() {
+    let (state, at) =
+        crate::fixtures::frame_where(Kind::Codex, "recorded_approval_scopes", |state| {
+            ui_view::ask_card(state).is_some_and(|card| {
+                let open = HashSet::new();
+                ui_view::chat_rows_for(
+                    state,
+                    std::slice::from_ref(&card.item_key),
+                    ui_view::ToolRows::Collapse { open: &open },
+                )
+                .pop()
+                .and_then(|row| row.run)
+                .is_some_and(|run| run.live && run.hidden.is_some())
+            })
+        });
+    let mut view = ChatView::new(b"agent".to_vec(), at, false);
+    let screen = screen_of(&mut view, &state, at);
+    let box_top = screen
+        .lines()
+        .position(|line| line.trim_start().starts_with('╭'))
+        .unwrap_or_else(|| panic!("{screen}"));
+    assert!(
+        screen
+            .lines()
+            .take(box_top)
+            .any(|line| line.trim_start().starts_with("▸ ")),
+        "{screen}"
+    );
+}

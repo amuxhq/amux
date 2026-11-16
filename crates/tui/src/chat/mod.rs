@@ -2233,10 +2233,10 @@ impl ChatView {
         })
     }
 
-    /// `<leader> o`: a folded run opens, an open run's first step folds it
-    /// again, and any other step opens its detail. With no row focused, the
-    /// newest run on screen opens or folds, so a run is never out of the
-    /// keyboard's reach.
+    /// `<leader> o`: a folded run or group of subagents opens, an open
+    /// one's first row folds it again, and any other step opens its detail.
+    /// With no row focused, the newest run or group on screen opens or
+    /// folds, so neither is ever out of the keyboard's reach.
     pub fn toggle_expanded(&mut self, state: &SessionState) {
         let Some(key) = self.focus.clone() else {
             let newest = self
@@ -2245,11 +2245,12 @@ impl ChatView {
                 .iter()
                 .rev()
                 .find_map(|block| match &block.toggle {
-                    Toggle::Run(id) => Some(id.clone()),
+                    Toggle::Run(id) => Some(FeedHit::Run(id.clone())),
+                    Toggle::Group(id) => Some(FeedHit::Group(id.clone())),
                     _ => None,
                 });
-            if let Some(id) = newest {
-                self.feed_hit(state, FeedHit::Run(id));
+            if let Some(hit) = newest {
+                self.feed_hit(state, hit);
             }
             return;
         };

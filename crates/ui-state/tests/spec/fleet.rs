@@ -505,3 +505,100 @@ fn the_branch_is_named_whenever_the_row_has_one() {
         "a detached head has no branch to name"
     );
 }
+
+/// An agent with a running process keeps its row's git facts current, so a
+/// delete's warning reads them; one suspended or exited cannot, so the
+/// warning starts by checking with the host, then says what the host found,
+/// or that a worktree with changes stays when the host could not say.
+#[test]
+fn a_delete_warning_asks_the_host_when_no_process_keeps_the_row_current() {
+    use ui_state::DeleteWarning;
+    use wire::experimental::WorkspaceKind::Git;
+    let stale = git("fix", None, None);
+    let mut suspended = in_workspace(
+        row("a", "sleepy", Phase::Idle, None),
+        Git,
+        "/w/sleepy",
+        true,
+        stale.clone(),
+    );
+    suspended.exit_cause = wire::ExitCause::Suspended as i32;
+    let mut exited = in_workspace(
+        row("a", "gone", Phase::Idle, None),
+        Git,
+        "/w/gone",
+        true,
+        stale.clone(),
+    );
+    exited.lifecycle = wire::Lifecycle::Exited as i32;
+    let mut fleet = FleetState::new();
+    for msg in [
+        host("a"),
+        agent(in_workspace(
+            row("a", "awake", Phase::Idle, None),
+            Git,
+            "/w/awake",
+            true,
+            git("awake", totals(1, 2, 0), None),
+        )),
+        agent(suspended),
+        agent(exited),
+        caught_up(),
+    ] {
+        fleet.update(msg);
+    }
+
+    let awake = fleet.delete_warning(&at("a", "awake")).unwrap();
+    assert!(
+        matches!(&awake, DeleteWarning::Goes(goes) if goes.uncommitted == totals(1, 2, 0)),
+        "{awake:?}"
+    );
+    assert!(awake.discards());
+
+    for name in ["sleepy", "gone"] {
+        let checking = fleet.delete_warning(&at("a", name)).unwrap();
+        assert!(
+            matches!(&checking, DeleteWarning::Checking(goes) if goes.branch.as_deref() == Some("fix")),
+            "{checking:?}"
+        );
+        assert!(!checking.discards(), "nothing named yet");
+
+        let diff = wire::Diff {
+            files: vec![
+                wire::DiffFile {
+                    path: "README.md".into(),
+                    added: 1,
+                    removed: 0,
+                    ..Default::default()
+                },
+                wire::DiffFile {
+                    path: "notes.txt".into(),
+                    added: 1,
+                    removed: 0,
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let found = checking.clone().answered::<()>(Ok(&diff));
+        assert_eq!(
+            found,
+            DeleteWarning::Goes(ui_state::WorkspaceGoes {
+                uncommitted: totals(2, 2, 0),
+                branch: Some("fix".into()),
+            })
+        );
+        assert!(found.discards());
+
+        let clean = checking.clone().answered::<()>(Ok(&wire::Diff::default()));
+        assert!(
+            matches!(&clean, DeleteWarning::Goes(goes) if goes.uncommitted.is_none()),
+            "{clean:?}"
+        );
+        assert!(!clean.discards());
+
+        let failed = checking.answered(Err("unreachable"));
+        assert!(matches!(failed, DeleteWarning::Unknown(_)), "{failed:?}");
+        assert!(!failed.discards(), "no consent without an answer");
+    }
+}

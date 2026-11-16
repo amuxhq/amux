@@ -19,8 +19,9 @@ mod transcript;
 
 pub use body::{AgentState, Fold, ItemBody, ItemClass, OpenAsk, ToolFacts, Usage, decode_snapshot};
 pub use fleet::{
-    AgentKey, Attention, ExitCause, Families, FleetMsg, FleetState, HostId, WorkspaceGoes,
-    agent_key, attention, exit_cause, exit_words, parent_key, shown_name,
+    AgentKey, Attention, DeleteWarning, ExitCause, Families, FleetMsg, FleetState, HostId,
+    WorkspaceGoes, agent_key, attention, exit_cause, exit_words, has_process, parent_key,
+    shown_name,
 };
 pub use inputs::{
     InputId, InputOutcome, InputState, InputWhat, Inputs, Refusal, SentInput, refusal,

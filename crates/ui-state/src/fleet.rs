@@ -34,6 +34,59 @@ pub struct WorkspaceGoes {
     pub branch: Option<String>,
 }
 
+/// What a delete's confirmation says about the workspace that goes with the
+/// agent, and so what confirming it agrees to. The row's git facts are kept
+/// current only by the agent's process: for an agent without one,
+/// suspended or exited, the confirmation asks the agent's host for the
+/// workspace's changes against HEAD and says so until it answers.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum DeleteWarning {
+    /// What goes, from facts that are current: the row's while a process
+    /// keeps them so, else the host's answer.
+    Goes(WorkspaceGoes),
+    /// Asking the host what is uncommitted; the branch is the row's.
+    Checking(WorkspaceGoes),
+    /// The host could not say: a worktree with changes stays on disk.
+    Unknown(WorkspaceGoes),
+}
+
+impl DeleteWarning {
+    /// Whether confirming agrees to lose uncommitted changes: only when the
+    /// warning names them.
+    pub fn discards(&self) -> bool {
+        matches!(self, DeleteWarning::Goes(goes) if goes.uncommitted.is_some())
+    }
+
+    /// The warning once the host answered a `Checking` one with the
+    /// workspace's changes against HEAD, or failed to. Any other warning
+    /// stays as it is.
+    pub fn answered<E>(self, compared: Result<&wire::Diff, E>) -> DeleteWarning {
+        let DeleteWarning::Checking(goes) = self else {
+            return self;
+        };
+        match compared {
+            Ok(diff) => {
+                let totals = ChangeTotals {
+                    files: diff.files.len() as u32,
+                    added: diff.files.iter().map(|file| file.added).sum(),
+                    removed: diff.files.iter().map(|file| file.removed).sum(),
+                };
+                DeleteWarning::Goes(WorkspaceGoes {
+                    uncommitted: (totals.files > 0).then_some(totals),
+                    ..goes
+                })
+            }
+            Err(_) => DeleteWarning::Unknown(goes),
+        }
+    }
+}
+
+/// Whether the agent has a process running, which keeps its row's git facts
+/// current: not exited, and not suspended.
+pub fn has_process(agent: &Agent) -> bool {
+    agent.lifecycle() == wire::Lifecycle::Live && agent.exit_cause() != wire::ExitCause::Suspended
+}
+
 /// The key naming an agent's row.
 /// What a person reads the agent as: its title when it has one, else its
 /// name. Addressing an agent, or renaming it, still takes the name.
@@ -301,6 +354,23 @@ impl FleetState {
         Some(WorkspaceGoes {
             uncommitted,
             branch,
+        })
+    }
+
+    /// What a delete's confirmation starts by saying about the agent's
+    /// workspace: none when it stays; `Checking` when the agent has no
+    /// process to keep its row's facts current, so the client must ask the
+    /// host ([`DeleteWarning::answered`]).
+    pub fn delete_warning(&self, agent: &AgentKey) -> Option<DeleteWarning> {
+        let goes = self.delete_removes_workspace(agent)?;
+        let row = self.agents.get(agent)?;
+        Some(if has_process(row) {
+            DeleteWarning::Goes(goes)
+        } else {
+            DeleteWarning::Checking(WorkspaceGoes {
+                uncommitted: None,
+                ..goes
+            })
         })
     }
 

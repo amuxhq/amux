@@ -420,8 +420,18 @@ fn x_settles_an_agent_and_deletes_only_a_settled_one() {
 }
 
 /// The settled `archive` of [`home_fleet`], the last agent in a worktree
-/// its host made, with the git facts its last turn end read.
+/// its host made, with the git facts its last turn end read, and a process
+/// still running that keeps them current.
 fn archive_in_worktree(git: wire::Git) -> FleetState {
+    archive_in_worktree_as(git, wire::Lifecycle::Live, wire::ExitCause::Unspecified)
+}
+
+/// [`archive_in_worktree`], with the lifecycle and exit cause given.
+fn archive_in_worktree_as(
+    git: wire::Git,
+    lifecycle: wire::Lifecycle,
+    exit_cause: wire::ExitCause,
+) -> FleetState {
     use prost::Message as _;
     let mut fleet = home_fleet();
     let key = ui_state::AgentKey {
@@ -438,6 +448,8 @@ fn archive_in_worktree(git: wire::Git) -> FleetState {
     row.experimental
         .insert("workspaces/1".into(), entry.encode_to_vec());
     row.git = Some(git);
+    row.lifecycle = lifecycle as i32;
+    row.exit_cause = exit_cause as i32;
     inventory(&mut fleet, wire::inventory_event::Of::Agent(row));
     fleet
 }
@@ -592,6 +604,106 @@ fn confirming_a_delete_sends_what_its_window_showed_however_the_fleet_changed() 
         matches!(effects.as_slice(), [FleetEffect::Delete(agent, false)] if agent.agent == b"old"),
         "{effects:?}"
     );
+}
+
+/// Decided: an agent with no process, suspended or exited, cannot keep its
+/// row's git facts current, so a delete's confirmation asks its host what
+/// the worktree holds now, says it is checking until the host answers,
+/// then warns from the answer. Confirming agrees to what was drawn: no
+/// consent while checking, even when the answer came just before Enter, and
+/// none when the host could not say.
+#[test]
+fn a_delete_of_an_agent_without_a_process_warns_from_what_its_host_finds() {
+    let stale = wire::Git {
+        branch: Some("shopper".into()),
+        ..Default::default()
+    };
+    let changed = wire::Diff {
+        files: vec![
+            wire::DiffFile {
+                path: "README.md".into(),
+                added: 1,
+                ..Default::default()
+            },
+            wire::DiffFile {
+                path: "notes.txt".into(),
+                added: 1,
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+    let old = |agent: &ui_state::AgentKey| agent.agent == b"old";
+    for (lifecycle, cause) in [
+        (wire::Lifecycle::Live, wire::ExitCause::Suspended),
+        (wire::Lifecycle::Exited, wire::ExitCause::Stopped),
+    ] {
+        let fleet = archive_in_worktree_as(stale.clone(), lifecycle, cause);
+        let open = || {
+            let mut home = new_home();
+            home_at(&mut home, &fleet, W, H);
+            focus(&mut home, &fleet, "archive");
+            let effects = home.key(&fleet, key(KeyCode::Char('x')));
+            assert!(
+                matches!(effects.as_slice(), [FleetEffect::CheckChanges(agent)] if old(agent)),
+                "{effects:?}"
+            );
+            let screen = home_at(&mut home, &fleet, W, H);
+            assert!(
+                screen.contains("Checking its worktree for uncommitted changes"),
+                "{screen}"
+            );
+            home
+        };
+
+        // The host finds two changed files: the warning names them, and
+        // confirming agrees to lose them.
+        let mut home = open();
+        let key_a = ui_state::AgentKey {
+            host: b"a".to_vec(),
+            agent: b"old".to_vec(),
+        };
+        home.changes_checked(&key_a, Ok(&changed));
+        let screen = home_at(&mut home, &fleet, W, H);
+        assert!(
+            screen.contains("Its worktree goes too, with 2 uncommitted files (+2 \u{2212}0)."),
+            "{screen}"
+        );
+        assert!(
+            screen.contains("The branch shopper keeps what was committed."),
+            "{screen}"
+        );
+        let effects = home.key(&fleet, key(KeyCode::Enter));
+        assert!(
+            matches!(effects.as_slice(), [FleetEffect::Delete(agent, true)] if old(agent)),
+            "{effects:?}"
+        );
+
+        // The answer lands after the last frame: what was drawn, checking,
+        // is what goes.
+        let mut home = open();
+        home.changes_checked(&key_a, Ok(&changed));
+        let effects = home.key(&fleet, key(KeyCode::Enter));
+        assert!(
+            matches!(effects.as_slice(), [FleetEffect::Delete(_, false)]),
+            "{effects:?}"
+        );
+
+        // The host could not say: the warning says a worktree with changes
+        // stays, and confirming agrees to lose nothing.
+        let mut home = open();
+        home.changes_checked(&key_a, Err("the desk is offline".into()));
+        let screen = home_at(&mut home, &fleet, W, H);
+        assert!(
+            screen.contains("stays on disk if it has"),
+            "{screen}"
+        );
+        let effects = home.key(&fleet, key(KeyCode::Enter));
+        assert!(
+            matches!(effects.as_slice(), [FleetEffect::Delete(_, false)]),
+            "{effects:?}"
+        );
+    }
 }
 
 /// A settle its host could not take is held: the row says it waits for the

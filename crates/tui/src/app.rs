@@ -255,6 +255,12 @@ pub enum AppEvent {
         key: crate::chat::FetchKey,
         diff: Diff,
     },
+    /// What an agent's workspace holds against HEAD, or why its host could
+    /// not say, for home's delete confirmation.
+    DeleteChecked {
+        agent: AgentKey,
+        compared: Result<Diff, String>,
+    },
     /// Onboarding's and the settings screen's calls came back.
     Desk(desk::DeskEvent),
     /// The folders a host offers a new agent: its repositories, then recent.
@@ -754,6 +760,10 @@ impl App {
                 }
             }
             AppEvent::Notice(words, tone) => self.notice(words, tone),
+            AppEvent::DeleteChecked { agent, compared } => {
+                self.home
+                    .changes_checked(&agent, compared.as_ref().map_err(Clone::clone));
+            }
             AppEvent::Desk(event) => self.desk_event(event),
             AppEvent::Folders { host, answer } => {
                 self.folders_asked.remove(&host);
@@ -1420,6 +1430,16 @@ impl App {
             }
             FleetEffect::Pin(agent) => self.file(agent, wire::Filing::Pinned, "pin"),
             FleetEffect::Unpin(agent) => self.file(agent, wire::Filing::Open, "unpin"),
+            FleetEffect::CheckChanges(agent) => self.spawn(async move {
+                let head = wire::DiffBase {
+                    base: Some(wire::diff_base::Base::Head(wire::Empty {})),
+                };
+                let compared =
+                    ui_runtime::review::changed_files(client.as_ref(), &agent.agent, head)
+                        .await
+                        .map_err(|error| error.to_string());
+                Some(AppEvent::DeleteChecked { agent, compared })
+            }),
             FleetEffect::Delete(agent, discard) => self.spawn(async move {
                 let request = DeleteAgentRequest {
                     agent_id: agent.agent,

@@ -982,10 +982,14 @@ owner `amux:<host id>`. Each goes with its last agent: a clean one is
 removed, with its branch when that has no commits of its own. One with
 changes stays and stops being amux's, unless a delete agreed to lose them:
 `DeleteAgentRequest.discard_workspace_changes`, which a client sets only
-after warning the person. That consent belongs to the workspace once any of
-its agents' deletes gives it, until the workspace goes or gains an agent, so
-a parent deleted with consent still discards when its child, sharing the
-folder, follows by the family rule without it. A delete forwarded to the
+after warning the person. A delete's consent covers its own agent and the
+descendants that follow it, so it counts only when every other agent left
+in the workspace descends from it, which is when a client warns of the
+loss. It then holds until the workspace goes or gains an agent, so a parent
+deleted with consent still discards when its child, sharing the folder,
+follows by the family rule without it; a delete with other agents still
+working there agrees to lose none of their work. The removal waits for a
+stop of the workspace still running, whose hook holds it. A delete forwarded to the
 agent's host carries the field, and an older host ignores it and keeps the
 changes. Retention, the family rule and every client before the field never
 discard. The host checks for changes itself when it removes the workspace,

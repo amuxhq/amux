@@ -76,12 +76,24 @@ start = "echo started >> .wt/ran"
 stop = "echo stopped >> .wt/ran"
 "#;
 
+/// A stop hook slow enough to delete the tree's agent while it runs, which
+/// says when it begins.
+const SLOW_STOP_CONFIG: &str = r#"
+[lifecycle]
+start = "echo started >> .wt/ran"
+stop = "echo stopping >> .wt/ran; sleep 3; echo stopped >> .wt/ran"
+"#;
+
 /// A repository named `shop` on `main`, configured for wt, with a bare
 /// `origin` whose default branch is `main`.
 fn wt_repository(install: &Install) -> PathBuf {
+    wt_repository_with(install, WT_CONFIG)
+}
+
+fn wt_repository_with(install: &Install, config: &str) -> PathBuf {
     let repo = place(install, "shop");
     git(&repo, &["init", "-q", "-b", "main"]);
-    std::fs::write(repo.join(".wt.toml"), WT_CONFIG).unwrap();
+    std::fs::write(repo.join(".wt.toml"), config).unwrap();
     git(&repo, &["add", ".wt.toml"]);
     git(&repo, &["commit", "-q", "-m", "wt"]);
     let origin = install.path("origin.git");
@@ -432,6 +444,51 @@ async fn a_new_wt_tree_runs_its_agent_in_its_environment_and_its_hooks_with_its_
     // Deleted, its clean tree goes.
     runtime.delete(id_of(&agent)).await.unwrap();
     gone(&tree).await;
+
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
+/// A delete that lands while the tree's stop hook runs, as `amux rm` of an
+/// agent whose process just ended does: wt refuses a removal under the
+/// hook's exclusive hold, so the delete waits for the stop, and the tree
+/// goes rather than staying on disk, nobody's.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_wt_tree_deleted_while_its_stop_hook_runs_goes_once_the_stop_ends() {
+    let install = Install::new();
+    let repo = wt_repository_with(&install, SLOW_STOP_CONFIG);
+    let wt_home = place(&install, "wt-home");
+    let daemon = install.start("boot-1", launch(&install, true)).await;
+    let runtime = runtime(&daemon, &install);
+
+    let agent = runtime
+        .spawn(in_new_workspace(&repo, "fix-scroll"), None)
+        .await
+        .unwrap();
+    let tree = wt_home.join("trees").join("shop").join("fix-scroll");
+    running(&runtime, &agent).await;
+    hook_ran(&tree, "started", 1).await;
+
+    kill_all(&runtime).await;
+    hook_ran(&tree, "stopping", 1).await;
+    assert!(
+        !ran(&tree).contains("stopped"),
+        "the stop hook already ended"
+    );
+    runtime.delete(id_of(&agent)).await.unwrap();
+    gone(&tree).await;
+    // Its branch, with no commits of its own, goes too, just after the tree.
+    until("its empty branch to go", || async {
+        let branches = branches(&repo);
+        if branches.contains(&"fix-scroll".to_owned()) {
+            Err(format!("{branches:?}"))
+        } else {
+            Ok(())
+        }
+    })
+    .await
+    .unwrap();
 
     drop(runtime);
     daemon.shutdown().await.unwrap();

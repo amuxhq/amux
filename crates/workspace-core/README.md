@@ -25,10 +25,12 @@ The rules it enforces:
   while this host's start job for it runs;
 - only workspaces this host made are started, stopped or deleted, but every
   wt tree with an awake member is claimed;
-- a workspace is deleted once, after its last member is, and with its
-  changes discarded only once some member's delete gave consent; removal
-  never waits, so a refused delete means the workspace is kept and is no
-  longer this host's.
+- a workspace is deleted once, after its last member is and once no stop
+  call is outstanding (wt refuses a removal while a stop hook runs), and
+  with its changes discarded only once a member's delete gave consent while
+  every other member was its descendant, following it by the family rule:
+  a delete agrees to lose no one else's work. Removal never waits, so a
+  refused delete means the workspace is kept and is no longer this host's.
 
 Outputs are performed in order. A claim is registered with the backend
 before the next output runs, and a release is done at once, so a stop or

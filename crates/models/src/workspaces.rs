@@ -7,7 +7,9 @@
 //! person made, another host's wt tree, or a plain folder. Agents are
 //! created in it and launched, suspend, are settled or exit, and are
 //! deleted, with or without consent to discard its changes (by a person, or
-//! without consent by retention or the family rule). A person opens and
+//! without consent by retention or the family rule). The second agent is
+//! the first's child, so it follows the first's delete; any later one is
+//! nobody's. A person opens and
 //! closes a `wt shell` in a tree, pins it with `wt start`, unpins it, runs a
 //! hard `wt stop` and edits its files; another host's daemon holds the tree
 //! and lets it go, and stops a tree it made. The create hook finishes or
@@ -23,8 +25,8 @@
 //! a shell, another daemon); it then completes without stopping if the tree
 //! is pinned, and otherwise runs the stop hook, which a running create
 //! hook delays. A removal is refused, keeping the tree and clearing its
-//! owner, if anything holds or pins it, or if it is dirty and the delete
-//! does not discard. A restart keeps the agents' processes and loses the
+//! owner, if anything holds or pins it (a running stop hook holds it
+//! exclusively), or if it is dirty and the delete does not discard. A restart keeps the agents' processes and loses the
 //! daemon's claims and the calls still waiting; hooks wt has begun run to
 //! their end, and a make in flight leaves a half-made tree whose agent is
 //! marked could-not-start. The restarted daemon adds every live agent from
@@ -103,7 +105,7 @@ pub struct WorkspaceLifecycle {
 
 impl WorkspaceLifecycle {
     /// Every part of the world once, beside two agents with two launches
-    /// after their first: 55,695,455 states in 81 s on the 12 threads of an
+    /// after their first: 54,881,148 states in 95 s on the 12 threads of an
     /// M-series Mac for the wt tree this host makes, and at most 59,940 for
     /// any other origin.
     pub const fn world(origin: Origin) -> Self {
@@ -123,12 +125,12 @@ impl WorkspaceLifecycle {
     }
 
     /// The bounds `just test` explores exhaustively. Every origin but one
-    /// explores its whole world (2,665 states for the git worktree, 29,970
+    /// explores its whole world (2,515 states for the git worktree, 29,970
     /// for the hand-made tree, 59,940 for another host's, 74 for a folder,
     /// each well under a second). The wt tree this host makes explores its
     /// world in two halves, since the whole of it is nightly's: this one
-    /// leaves out the person's pin and another host's hold, 4,341,589 states
-    /// in 5.4 s on the Mac's 12 threads, and [`Self::holders`] has them.
+    /// leaves out the person's pin and another host's hold, 4,054,913 states
+    /// in 5.7 s on the Mac's 12 threads, and [`Self::holders`] has them.
     pub const fn ci(origin: Origin) -> Self {
         match origin {
             Origin::MadeWt => Self {
@@ -142,7 +144,7 @@ impl WorkspaceLifecycle {
 
     /// The wt tree this host makes, held by everything that can hold it (a
     /// shell, a pin, another host's daemon) and stopped by a person, with no
-    /// failures, edits or restarts: 1,851,118 states in 2.5 s on the Mac's
+    /// failures, edits or restarts: 1,824,217 states in 2.7 s on the Mac's
     /// 12 threads.
     pub const fn holders() -> Self {
         Self {
@@ -155,7 +157,7 @@ impl WorkspaceLifecycle {
 
     /// The bounds a nightly run explores: the whole world for the wt tree
     /// this host makes, and larger bounds for every other origin (at most
-    /// 2,927,232 states, another host's tree, in 7 s on the Mac's 12
+    /// 2,927,232 states, another host's tree, in 8 s on the Mac's 12
     /// threads).
     pub const fn nightly(origin: Origin) -> Self {
         if matches!(origin, Origin::MadeWt) {
@@ -210,6 +212,23 @@ impl WorkspaceLifecycle {
 
 fn member(index: u8) -> MemberId {
     MemberId([index + 1; 16])
+}
+
+/// The agent's parent: the second agent is the first's child.
+fn parent(index: u8) -> Option<u8> {
+    (index == 1).then_some(0)
+}
+
+/// Whether `index` descends from `ancestor`.
+fn descends(index: u8, ancestor: u8) -> bool {
+    let mut at = index;
+    while let Some(up) = parent(at) {
+        if up == ancestor {
+            return true;
+        }
+        at = up;
+    }
+    false
 }
 
 fn plan() -> Plan {
@@ -395,13 +414,19 @@ struct Seen {
     delete_rule: bool,
     restarted: bool,
     stopped_awake_after_restart: bool,
-    /// Some member's delete gave consent since the workspace last gained a
-    /// member, in this daemon's life.
+    /// A member's delete gave consent, when every other member left was its
+    /// descendant, since the workspace last gained a member, in this
+    /// daemon's life.
     consent: bool,
     last_delete_discarded: bool,
     /// The delete outstanding discards though the member delete that
     /// issued it did not: an earlier member's consent stuck.
     sticky_discard: bool,
+    /// A delete was refused only because amux's own stop hook ran, leaving
+    /// a tree this host made on disk, nobody's.
+    refused_for_own_stop: bool,
+    /// The last member was deleted while amux's stop hook ran.
+    deleted_during_stop: bool,
     /// The last awake member went in this daemon's life while the tree was
     /// this host's, and no pin has since kept it running.
     owed: bool,
@@ -412,6 +437,7 @@ struct Seen {
     woke_during_stop_launched: bool,
     dirty_kept: bool,
     consent_stuck: bool,
+    removed_after_stop: bool,
     stop_waited_for_start: bool,
     adopted_claim: bool,
     woke_into_removed: bool,
@@ -536,10 +562,13 @@ impl WorkspaceLifecycle {
             Output::Delete { discard, .. } => {
                 self.touch(state);
                 // A claim of amux's own would make the backend refuse it.
+                // A stop call outstanding may be running its hook, whose
+                // exclusive hold would make the backend refuse it too.
                 if state.jobs.delete.is_some()
                     || state.jobs.deleted.is_some()
                     || state.live() > 0
                     || state.jobs.claim != Claim::None
+                    || state.jobs.waiter.is_some()
                     || (discard && !state.seen.consent)
                 {
                     state.seen.delete_rule = true;
@@ -914,15 +943,28 @@ impl Machine for WorkspaceLifecycle {
             }
             Action::Delete { agent, discard } => {
                 state.agents[usize::from(*agent)] = Agent::Deleted;
-                state.seen.consent |= *discard;
-                state.seen.last_delete_discarded = *discard;
+                let descendants: Vec<u8> = (0..self.agents)
+                    .filter(|index| {
+                        matches!(state.agents[usize::from(*index)], Agent::Live { .. })
+                            && descends(*index, *agent)
+                    })
+                    .collect();
+                // Consent covers the changes of the members the delete takes
+                // with it, and no one else's.
+                let covers = state.live() == descendants.len();
+                state.seen.consent |= *discard && covers;
+                state.seen.last_delete_discarded = *discard && covers;
                 self.feed(
                     &mut state,
                     Input::Removed {
                         member: member(*agent),
                         discard: *discard,
+                        descendants: descendants.into_iter().map(member).collect(),
                     },
                 );
+                if state.live() == 0 && state.jobs.waiter == Some(Waiter::Stopping) {
+                    state.seen.deleted_during_stop = true;
+                }
             }
             Action::Edit => {
                 state.counts.edits += 1;
@@ -1091,17 +1133,31 @@ impl Machine for WorkspaceLifecycle {
                 let discard = state.jobs.delete.take()?;
                 let tree = &mut state.tree;
                 let held = tree.shells > 0 || tree.other_hold || tree.pinned;
+                let stopping = state.jobs.waiter == Some(Waiter::Stopping);
+                let refused =
+                    held || stopping || state.jobs.claim != Claim::None || (tree.dirty && !discard);
                 let removal = if !tree.exists {
                     Removal::Removed
-                } else if held || state.jobs.claim != Claim::None || (tree.dirty && !discard) {
+                } else if refused {
+                    if stopping
+                        && !held
+                        && state.jobs.claim == Claim::None
+                        && !(tree.dirty && !discard)
+                        && tree.owner == Owner::This
+                    {
+                        state.seen.refused_for_own_stop = true;
+                    }
                     tree.owner = Owner::Nobody;
-                    if tree.dirty && !discard && !held {
+                    if tree.dirty && !discard && !held && !stopping {
                         state.seen.dirty_kept = true;
                     }
                     Removal::Kept
                 } else {
                     if tree.dirty && discard && state.seen.sticky_discard {
                         state.seen.consent_stuck = true;
+                    }
+                    if state.seen.deleted_during_stop {
+                        state.seen.removed_after_stop = true;
                     }
                     tree.exists = false;
                     tree.owner = Owner::Nobody;
@@ -1171,10 +1227,16 @@ impl Machine for WorkspaceLifecycle {
                 |_, s: &State| !s.seen.stop_rule && !(s.jobs.waiter.is_some() && s.jobs.start),
             ),
             Property::always(
-                "a workspace is removed at most once, only after its last member, and with its \
-                 changes discarded only once some member's delete gave consent; a dirty workspace \
-                 without consent is kept and disowned",
+                "a workspace is removed at most once, only after its last member and once no stop \
+                 call is outstanding, and with its changes discarded only once a member's delete \
+                 gave consent while every other member left was its descendant; a dirty \
+                 workspace without consent is kept and disowned",
                 |_, s: &State| !s.seen.delete_rule && s.tree.removed <= 1,
+            ),
+            Property::always(
+                "a delete is never refused for amux's own stop hook, which would leave a tree this \
+                 host made on disk, nobody's",
+                |_, s: &State| !s.seen.refused_for_own_stop,
             ),
             Property::always(
                 "a host never starts, stops or removes a workspace another host made, and never \
@@ -1259,8 +1321,13 @@ impl Machine for WorkspaceLifecycle {
                 },
             ),
             Property::sometimes(
+                "a delete of the last member while amux's stop hook runs removes the tree once \
+                 the stop is answered",
+                |model, s: &State| model.origin != Origin::MadeWt || s.seen.removed_after_stop,
+            ),
+            Property::sometimes(
                 "consent sticks: a dirty workspace is removed with its changes by its last \
-                 member's delete without consent, after another member's delete gave it",
+                 member's delete without consent, after its parent's delete gave it",
                 |model, s: &State| {
                     !model.origin.made_here() || model.edits == 0 || s.seen.consent_stuck
                 },

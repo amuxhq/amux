@@ -484,19 +484,54 @@ fn two_members(rig: &mut Rig) -> Key {
 }
 
 #[test]
-fn consent_to_discard_sticks_to_the_workspace_until_its_last_member_goes() {
+fn consent_to_discard_covers_a_child_that_follows_its_parent() {
+    let mut rig = rig();
+    let git = two_members(&mut rig);
+    let mut mate = rig.row(MATE).expect("mate's row");
+    mate.parent = Some(AgentKey::new(OWN, LEAD.0));
+    rig.daemon
+        .store
+        .put_agent(&mate)
+        .expect("mate is lead's child");
+
+    // The parent's delete agrees to discard; its child, in the same
+    // workspace, follows it without saying so, as the family rule deletes
+    // it: the consent covers the child's changes too.
+    let mut jobs = Vec::new();
+    let (_, out) = rig.call(ClientRequest::DeleteAgent {
+        agent: LEAD,
+        discard: true,
+    });
+    jobs.extend(workspace_jobs(&out));
+    if rig.row(MATE).is_some() {
+        let (_, out) = rig.call(ClientRequest::DeleteAgent {
+            agent: MATE,
+            discard: false,
+        });
+        jobs.extend(workspace_jobs(&out));
+    }
+    assert!(
+        jobs.contains(&WorkspaceJob::Delete {
+            workspace: git,
+            discard: true
+        }),
+        "{jobs:#?}"
+    );
+}
+
+#[test]
+fn consent_to_discard_does_not_cover_another_agent_working_in_the_workspace() {
     let mut rig = rig();
     let git = two_members(&mut rig);
 
-    // The first delete agrees to discard, but the workspace has another
-    // member: nothing is removed yet.
+    // The first delete agrees to discard, but another agent, not its
+    // descendant, still works in the workspace: nothing is removed, and the
+    // consent was not this delete's to give.
     let (_, out) = rig.call(ClientRequest::DeleteAgent {
         agent: MATE,
         discard: true,
     });
     assert!(workspace_jobs(&out).is_empty(), "{out:#?}");
-    // The last member's delete does not say so, as a child deleted with its
-    // parent or an older client's would not: the consent given stands.
     let (_, out) = rig.call(ClientRequest::DeleteAgent {
         agent: LEAD,
         discard: false,
@@ -504,9 +539,9 @@ fn consent_to_discard_sticks_to_the_workspace_until_its_last_member_goes() {
     assert!(
         workspace_jobs(&out).contains(&WorkspaceJob::Delete {
             workspace: git,
-            discard: true
+            discard: false
         }),
-        "{out:#?}"
+        "the other agent's work was lost to a consent that never covered it: {out:#?}"
     );
 }
 

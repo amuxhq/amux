@@ -71,9 +71,15 @@ impl Run {
     }
 
     fn removed(&mut self, n: u8, discard: bool) -> Vec<Output> {
+        self.removed_before(n, discard, &[])
+    }
+
+    /// Member `n` removed ahead of `descendants`, which follow it.
+    fn removed_before(&mut self, n: u8, discard: bool, descendants: &[u8]) -> Vec<Output> {
         self.step(Input::Removed {
             member: member(n),
             discard,
+            descendants: descendants.iter().copied().map(member).collect(),
         })
     }
 
@@ -316,17 +322,41 @@ fn a_member_woken_during_a_stop_gets_a_start_once_the_stop_completes() {
 }
 
 #[test]
-fn consent_sticks_to_the_workspace_until_it_gains_a_member() {
+fn consent_covers_only_the_members_its_delete_takes_with_it() {
+    // A parent deleted with consent, its child in the tree following it by
+    // the family rule without: the child's delete removes the tree and the
+    // changes the parent agreed to lose.
     let mut run = Run::made_wt_running();
     run.added(2, Kind::Wt, true);
     run.slept(1);
     run.stopped();
-    assert_eq!(run.removed(1, true), vec![], "a member is left");
+    assert_eq!(
+        run.removed_before(1, true, &[2]),
+        vec![],
+        "its child is left"
+    );
     assert_eq!(run.removed(2, false), vec![delete(Kind::Wt, true)]);
 
+    // Another agent working in the tree, not its descendant: the consent
+    // was not the first delete's to give, and the other's own plain delete
+    // keeps the changes.
     let mut run = Run::made_wt_running();
     run.added(2, Kind::Wt, true);
-    run.removed(1, true);
+    run.slept(1);
+    run.stopped();
+    assert_eq!(run.removed(1, true), vec![]);
+    assert_eq!(
+        run.removed(2, false),
+        vec![delete(Kind::Wt, false)],
+        "another member's work was lost to a consent that never covered it"
+    );
+
+    // A member that joins after the consent was given is not covered by it.
+    let mut run = Run::made_wt_running();
+    run.added(2, Kind::Wt, true);
+    run.slept(1);
+    run.stopped();
+    run.removed_before(1, true, &[2]);
     run.added(3, Kind::Wt, true);
     run.removed(2, false);
     let last = run.removed(3, false);
@@ -334,6 +364,31 @@ fn consent_sticks_to_the_workspace_until_it_gains_a_member() {
         last,
         vec![delete(Kind::Wt, false)],
         "the new member's changes were never agreed to"
+    );
+}
+
+#[test]
+fn a_delete_waits_for_an_outstanding_stop_whose_hook_would_refuse_it() {
+    // `amux rm` of an awake agent: its process ends, which asks for the
+    // stop, then its row goes while the stop hook may be running and holding
+    // the tree, so the removal waits for the stop's answer.
+    let mut run = Run::made_wt_running();
+    assert_eq!(run.slept(1), vec![release(Kind::Wt), stop()]);
+    assert_eq!(run.removed(1, true), vec![], "the stop is outstanding");
+    assert_eq!(run.stopped(), vec![delete(Kind::Wt, true)]);
+    assert_eq!(run.deleted(Kind::Wt, Removal::Removed), vec![]);
+    assert_eq!(run.core.keys().count(), 0);
+
+    // A stop that fails is answered too, and the delete follows it.
+    let mut run = Run::made_wt_running();
+    run.slept(1);
+    run.removed(1, false);
+    assert_eq!(
+        run.step(Input::Stopped {
+            workspace: key(Kind::Wt),
+            result: Err("the stop hook timed out".to_owned()),
+        }),
+        vec![delete(Kind::Wt, false)]
     );
 }
 
@@ -432,7 +487,8 @@ fn a_delete_during_making_applies_once_it_is_made() {
 fn a_member_joining_a_workspace_being_deleted_claims_it_and_launches_once_it_is_kept() {
     let mut run = Run::made_wt_running();
     run.slept(1);
-    run.removed(1, false);
+    run.stopped();
+    assert_eq!(run.removed(1, false), vec![delete(Kind::Wt, false)]);
     run.added(2, Kind::Wt, true);
     // The claim makes the backend refuse the removal, and keeps a stop call
     // issued before from beginning under the member.
@@ -448,6 +504,21 @@ fn a_member_joining_a_workspace_being_deleted_claims_it_and_launches_once_it_is_
         "disowned: no start"
     );
     assert!(!run.core.view_of(member(2)).unwrap().made_here);
+
+    // Joining while the delete still waits for the stop: nothing was
+    // deleted, so the member launches and the tree stays this host's.
+    let mut run = Run::made_wt_running();
+    run.slept(1);
+    run.removed(1, false);
+    run.added(2, Kind::Wt, true);
+    assert_eq!(run.launching(2), vec![take(Kind::Wt)]);
+    assert_eq!(run.claimed(Kind::Wt), vec![launch(2)]);
+    assert_eq!(
+        run.stopped(),
+        vec![start()],
+        "the stop ran before the claim was held"
+    );
+    assert!(run.core.view_of(member(2)).unwrap().made_here);
 }
 
 #[test]

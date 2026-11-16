@@ -150,8 +150,14 @@ pub enum Input {
     /// or a launch it waited for was given up.
     Slept { member: MemberId },
     /// The member's row was deleted. `discard`: the delete agreed to lose
-    /// the workspace's uncommitted changes.
-    Removed { member: MemberId, discard: bool },
+    /// the workspace's uncommitted changes. `descendants`: the workspace's
+    /// other members that descend from it, which the family rule deletes
+    /// after it.
+    Removed {
+        member: MemberId,
+        discard: bool,
+        descendants: Vec<MemberId>,
+    },
     /// The daemon's start sweep found these workspaces saying on disk that
     /// this host made them; fed once every member has been added. Each
     /// without a member is deleted, keeping its changes.
@@ -212,8 +218,9 @@ pub enum Output {
     /// claim is held.
     StopWhenUnheld { workspace: Key },
     /// Remove the workspace, without waiting: kept, and its owner cleared,
-    /// if anyone holds it or it has changes and `discard` is false. Answered
-    /// with [`Input::Deleted`].
+    /// if anyone holds it or it has changes and `discard` is false. Never
+    /// asked for while amux's claim is held or a stop call is outstanding.
+    /// Answered with [`Input::Deleted`].
     Delete { workspace: Key, discard: bool },
     /// The member's process may start now.
     Launch { member: MemberId },
@@ -280,6 +287,10 @@ pub const CLAIMED_ABSENT: Check = Check {
     sentence: "a workspace being made holds no claim, and one gone holds none beyond a claim \
                asked for before it went",
 };
+pub const DELETE_BESIDE_STOP: Check = Check {
+    id: "workspace.delete_beside_stop",
+    sentence: "no delete is outstanding beside a stop-when-unheld call",
+};
 pub const IDLE_ENTRY: Check = Check {
     id: "workspace.idle_entry",
     sentence: "a workspace without members is kept only while a job of the core's is outstanding on it",
@@ -296,6 +307,7 @@ pub const CHECKS: &[Check] = &[
     STOP_BESIDE_START,
     HOOKS_WITHOUT_HOOKS,
     CLAIMED_ABSENT,
+    DELETE_BESIDE_STOP,
     IDLE_ENTRY,
     MEMBER_INDEX,
 ];
@@ -359,8 +371,8 @@ struct Workspace {
     /// The last awake member went and the stop it calls for is not yet
     /// issued.
     stop_owed: bool,
-    /// A member's delete agreed to discard changes since the workspace last
-    /// gained a member.
+    /// A member's delete agreed to discard changes, when every other member
+    /// then was its descendant, since the workspace last gained a member.
     consent: bool,
     problem: Option<(Source, String)>,
 }
@@ -512,6 +524,7 @@ impl Workspaces {
     ///   job, and either is outstanding only on a kind with hooks;
     /// - a workspace being made holds no claim, and one gone holds none
     ///   beyond a claim asked for before it went, whose answer releases it;
+    /// - no delete is outstanding beside a stop-when-unheld call;
     /// - a workspace without members is kept only while a job of the core's
     ///   is outstanding on it;
     /// - each member is in exactly the workspace the index names.
@@ -547,6 +560,9 @@ impl Workspaces {
             };
             if claimed {
                 return Err(broken(CLAIMED_ABSENT, key, workspace));
+            }
+            if workspace.phase == Phase::Deleting && workspace.waiter {
+                return Err(broken(DELETE_BESIDE_STOP, key, workspace));
             }
             if workspace.members.is_empty()
                 && workspace.claim != Claim::Taking
@@ -683,13 +699,25 @@ impl Workspaces {
                     workspace.members.insert(member, Awake::Asleep);
                 }
             }
-            Input::Removed { member, discard } => {
+            Input::Removed {
+                member,
+                discard,
+                descendants,
+            } => {
                 let Some(key) = self.members.remove(&member) else {
                     return;
                 };
                 let workspace = self.workspaces.get_mut(&key).expect("an indexed workspace");
                 workspace.members.remove(&member);
-                workspace.consent |= discard;
+                // A delete agrees to lose its own changes and those of the
+                // descendants that follow it, and no other member's: the
+                // clients warn of the loss only when everyone else in the
+                // workspace goes with it.
+                let covers = workspace
+                    .members
+                    .keys()
+                    .all(|other| descendants.contains(other));
+                workspace.consent |= discard && covers;
             }
             Input::Swept { owned } => {
                 for key in owned {
@@ -880,9 +908,12 @@ impl Workspaces {
         }
 
         // Its claim must be gone first, or the backend would refuse the
-        // removal for amux's own hold.
+        // removal for amux's own hold, and so must a stop call: its hook
+        // holds the tree exclusively while it runs, and wt refuses a
+        // removal under it rather than waiting.
         if leaving
             && workspace.claim == Claim::None
+            && !workspace.waiter
             && matches!(workspace.phase, Phase::Ready | Phase::Absent)
         {
             workspace.phase = Phase::Deleting;

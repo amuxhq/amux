@@ -383,7 +383,8 @@ between steps as its value, around one workspace on disk of a chosen
 origin: a wt tree or a git worktree this host makes for its first agent, a
 wt tree a person made, another host's wt tree, or a plain folder. Agents are
 created in it and launched; they suspend, are settled or exit, and are
-deleted, with or without consent to discard its changes. A person opens and
+deleted, with or without consent to discard its changes; the second agent
+is the first's child. A person opens and
 closes a `wt shell`, pins the tree, unpins it, runs a hard `wt stop` and
 edits its files. Another host's daemon holds the tree and lets it go, and
 stops a tree it made. The create hook, a make, a start and a stop each
@@ -392,8 +393,8 @@ by their meaning. A claim counts the moment the core asks for it, and is
 granted behind a stop hook that already runs. A stop-when-unheld call
 begins only once nothing holds the tree, and does nothing if the tree is
 pinned. A removal is refused, keeping the tree and clearing its owner, if
-anything holds or pins it, or if it is dirty and the delete does not
-discard, and its answer reaches the core after it ran, so an agent may wake
+anything holds or pins it (a running stop hook holds it exclusively), or if
+it is dirty and the delete does not discard, and its answer reaches the core after it ran, so an agent may wake
 between. A restart keeps the agents' processes and loses the daemon's
 claims and its calls still waiting, and the restarted daemon adds every
 live agent from its folder, the running ones first, then sweeps the trees

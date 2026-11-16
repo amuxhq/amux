@@ -439,14 +439,53 @@ impl Daemon {
             return;
         }
         self.workspaces.deferred.remove(&agent);
+        let descendants = if discard {
+            self.descendants_in_workspace(agent)
+        } else {
+            Vec::new()
+        };
         self.feed(
             Core::Removed {
                 member: member(agent),
                 discard,
+                descendants,
             },
             None,
             out,
         );
+    }
+
+    /// The other members of the agent's workspace that descend from it, by
+    /// their rows' parents: the family rule deletes them after it, so its
+    /// consent to discard covers their changes. A row that can't be read
+    /// counts as no descendant, so the consent stays narrow.
+    fn descendants_in_workspace(&self, agent: AgentId) -> Vec<MemberId> {
+        let core = &self.workspaces.core;
+        let Some(workspace) = core.workspace_of(member(agent)) else {
+            return Vec::new();
+        };
+        let ancestor = self.own_key(agent);
+        core.members(workspace)
+            .into_iter()
+            .filter(|other| *other != member(agent))
+            .filter(|other| self.descends(AgentId(other.0), &ancestor))
+            .collect()
+    }
+
+    fn descends(&self, agent: AgentId, ancestor: &store::AgentKey) -> bool {
+        let mut at = self.own_key(agent);
+        let mut seen = BTreeSet::new();
+        while seen.insert(at.clone()) {
+            let Ok(Some(row)) = self.store.agent(&at) else {
+                return false;
+            };
+            match row.parent {
+                Some(parent) if &parent == ancestor => return true,
+                Some(parent) => at = parent,
+                None => return false,
+            }
+        }
+        false
     }
 
     /// A launch read the workspace's environment, or it would not load.

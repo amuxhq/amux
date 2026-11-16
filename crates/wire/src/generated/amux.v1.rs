@@ -7427,9 +7427,11 @@ pub struct DeleteAgentRequest {
     /// with its last agent; with this unset, as from every build before it, a
     /// workspace with changes stays on disk and stops being amux's, so nothing
     /// is lost. The host checks for changes itself when it removes the
-    /// workspace, and the consent holds for that workspace until it is removed
-    /// or gains an agent. Deletes amux makes itself (retention, children going
-    /// with their parent) never set it.
+    /// workspace. The consent counts when every other agent in the workspace
+    /// descends from this one, and then holds until the workspace is removed or
+    /// gains an agent, so children going with their parent are covered. Deletes
+    /// amux makes itself (retention, children going with their parent) never
+    /// set it.
     #[prost(bool, tag = "2")]
     pub discard_workspace_changes: bool,
 }

@@ -29,6 +29,10 @@ public protocol ChatSurface: AnyObject {
     func opened(by row: Row) -> OpenedAgent?
     /// What a group's agents come to, by the fleet.
     func state(of group: SubagentGroup) -> GroupState?
+    /// How the agents the rows open that are still at work or waiting on
+    /// the person stand, by the fleet: what the activity line says while
+    /// one of them waits on the person.
+    var liveSubagents: GroupState { get }
     /// Opens or closes a finished turn's work.
     func toggleTurn(_ turn: TurnPlace)
     func counts(of run: Run) -> RunCounts?

@@ -562,7 +562,9 @@ public enum Stories {
                     name: title, kind: .claudeSdk, phase: phase)
             },
             groups: [GroupView(first: "d4", state: GroupState(
-                agents: 4, running: 2, needsYou: 1, idle: 0, finished: 1, ended: 0, failed: 0, unknown: 0))])
+                agents: 4, running: 2, needsYou: 1, idle: 0, finished: 1, ended: 0, failed: 0, unknown: 0))],
+            live: GroupState(
+                agents: 3, running: 2, needsYou: 1, idle: 0, finished: 0, ended: 0, failed: 0, unknown: 0))
     }
 
     /// The first subagent's own chat: the task its parent gave it, its

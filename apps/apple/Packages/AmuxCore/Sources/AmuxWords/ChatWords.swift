@@ -358,10 +358,14 @@ public enum ChatWords {
 
     /// "Running cargo test · 12s", as one sentence to hear. `subject` names
     /// the call a Running line points at, when the chat holds it.
+    /// `subagents` is how the chat's live subagents stand (see
+    /// `activityParts`).
     public static func activity(
-        _ kind: ActivityKind, elapsedMs: Int64, subject: String?, sinceMs: Int64 = 0
+        _ kind: ActivityKind, elapsedMs: Int64, subject: String?, sinceMs: Int64 = 0,
+        subagents: GroupState? = nil
     ) -> String {
-        let parts = activityParts(kind, elapsedMs: elapsedMs, subject: subject, sinceMs: sinceMs)
+        let parts = activityParts(
+            kind, elapsedMs: elapsedMs, subject: subject, sinceMs: sinceMs, subagents: subagents)
         return [[parts.words, parts.subject].compactMap { $0 }.joined(separator: " "), parts.time]
             .compactMap { $0 }.joined(separator: " · ")
     }
@@ -370,8 +374,12 @@ public enum ChatWords {
     /// Running line names (set in mono), and the elapsed time at the end.
     /// Only the busy states that last a while are timed. A retry counts down
     /// to its next attempt instead, from `sinceMs`, when the line has one.
+    /// While the agent waits on its subagents and one of them waits on the
+    /// person, the line says how `subagents` (the chat's live ones) stand,
+    /// as their group's row does, rather than that they all work.
     public static func activityParts(
-        _ kind: ActivityKind, elapsedMs: Int64, subject: String?, sinceMs: Int64 = 0
+        _ kind: ActivityKind, elapsedMs: Int64, subject: String?, sinceMs: Int64 = 0,
+        subagents: GroupState? = nil
     ) -> (words: String, subject: String?, time: String?) {
         let elapsed = duration(elapsedMs / 1_000 * 1_000)
         switch kind {
@@ -381,6 +389,7 @@ public enum ChatWords {
             let named = subject.flatMap { $0.isEmpty ? nil : $0 }
             return (String(localized: "Running"), named, elapsed)
         case .subagents(let count):
+            if let subagents, subagents.needsYou > 0 { return (subagentActivity(subagents), nil, nil) }
             return (count == 1
                 ? String(localized: "1 subagent working")
                 : String(localized: "\(count) subagents working"), nil, nil)

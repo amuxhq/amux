@@ -31,7 +31,10 @@ final class StillChat: ChatSurface {
 
     init(
         rows: [Row], frame: ChatFrame?, ask: AskCard? = nil, changes: ChangeTotals? = nil, loading: Bool = false,
-        settings: SettingsView? = nil, agents: ChatAgents = ChatAgents(agents: [], groups: [])
+        settings: SettingsView? = nil, agents: ChatAgents = ChatAgents(
+            agents: [], groups: [],
+            live: GroupState(
+                agents: 0, running: 0, needsYou: 0, idle: 0, finished: 0, ended: 0, failed: 0, unknown: 0))
     ) {
         self.settings = settings
         self.agents = agents
@@ -92,6 +95,7 @@ final class StillChat: ChatSurface {
     func state(of group: SubagentGroup) -> GroupState? {
         agents.groups.first { $0.first == group.first }?.state
     }
+    var liveSubagents: GroupState { agents.live }
     func counts(of run: Run) -> RunCounts? { row(run.last)?.run?.counts }
     func bytes(of blob: BlobRef) -> Data? { nil }
 

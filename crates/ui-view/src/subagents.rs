@@ -91,6 +91,12 @@ pub struct ChatAgents {
     pub agents: Vec<OpenedAgent>,
     /// Each group the held rows make, by its first call.
     pub groups: Vec<GroupView>,
+    /// The agents of `agents` still at work or waiting on the person, by
+    /// where each stands. While the agent waits on its subagents and one of
+    /// them waits on the person, the activity line says this in the group
+    /// row's words ("3 subagents · 2 running · 1 waiting on you") rather
+    /// than that they all work: only the fleet knows of a subagent's ask.
+    pub live: GroupState,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
@@ -181,7 +187,21 @@ pub fn chat_agents(state: &SessionState, fleet: &FleetState) -> ChatAgents {
         }
     }
     close(&mut turn);
-    ChatAgents { agents, groups }
+    let live: Vec<Vec<u8>> = agents
+        .iter()
+        .filter(|opened| {
+            matches!(
+                opened.phase,
+                PhaseView::Starting | PhaseView::Working | PhaseView::NeedsYou
+            )
+        })
+        .map(|opened| opened.agent.agent.clone())
+        .collect();
+    ChatAgents {
+        live: group_state(fleet, &live),
+        agents,
+        groups,
+    }
 }
 
 /// Each agent once, in the order first met.

@@ -45,7 +45,7 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
     /// The groups the model opened or closed, by the member it named.
     var groupsToggled: [String] = []
     /// How the agents the rows open stand, as the fleet says.
-    var agents = ChatAgents(agents: [], groups: [])
+    var agents = ChatAgents(agents: [], groups: [], live: .empty)
     var facts: Overview?
     var offered: SettingsView?
     var changed: [SettingChange] = []
@@ -338,7 +338,7 @@ private func agents(_ standing: [(UInt8, PhaseView)]) -> ChatAgents {
         agents: standing.map {
             OpenedAgent(agent: AgentKey(host: [1], agent: [$0.0]), name: "sub-\($0.0)", kind: .claudeSdk, phase: $0.1)
         },
-        groups: [])
+        groups: [], live: .empty)
 }
 
 private func row(_ id: String, _ order: UInt64, _ text: String = "", run: Run? = nil) -> Row {
@@ -1064,10 +1064,12 @@ final class ChatModelTests: XCTestCase {
             call("c3", 3, opens: 11, group: group),
         ]
         let source = FakeChat(rows: rows, frame: frame())
+        let standing = GroupState(
+            agents: 3, running: 2, needsYou: 1, idle: 0, finished: 0, ended: 0, failed: 0, unknown: 0)
         source.agents = ChatAgents(
-            agents: [], groups: [GroupView(first: "c1", state: GroupState(
-                agents: 3, running: 2, needsYou: 1, idle: 0, finished: 0, ended: 0, failed: 0, unknown: 0))])
+            agents: [], groups: [GroupView(first: "c1", state: standing)], live: standing)
         let model = ChatModel(source: source)
+        XCTAssertEqual(model.liveSubagents, standing, "the activity line's subagents, from the fleet")
         let shown = ["c1", "c2", "c3"].filter { model.shows(model.cell(for: $0).row!) }
         XCTAssertEqual(shown, ["c1"], "a folded group draws at its first call alone")
         let first = try XCTUnwrap(model.cell(for: "c1").row?.group)

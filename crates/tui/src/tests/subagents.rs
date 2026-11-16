@@ -97,6 +97,35 @@ fn a_turns_subagents_fold_into_one_row_with_where_they_stand() {
     assert!(screen.contains("RED GREEN BLUE"), "{screen}");
 }
 
+/// While the agent waits on its subagents and one of them waits on the
+/// person, its activity line says how they stand, as their group's row
+/// does, not that they all work.
+#[test]
+fn the_activity_line_says_a_subagent_waits_on_you() {
+    let mut family = running();
+    let mut asking = family.sub(1).row.clone();
+    asking.phase = Phase::NeedsYou as i32;
+    family
+        .fleet
+        .update(ui_state::FleetMsg::Event(Box::new(wire::InventoryEvent {
+            of: Some(wire::inventory_event::Of::Agent(asking)),
+        })));
+    let screen = chat_screen(&mut parent_view(&family), &family.state, &family);
+    assert!(
+        screen.contains("▸ 3 subagents · 2 running · 1 waiting on you"),
+        "{screen}"
+    );
+    let activity = screen
+        .lines()
+        .rfind(|line| line.contains("subagent"))
+        .unwrap_or_default();
+    assert!(
+        activity.contains("3 subagents · 2 running · 1 waiting on you") && !activity.contains('▸'),
+        "{screen}"
+    );
+    assert!(!screen.contains("subagents working"), "{screen}");
+}
+
 /// The leader's `o` opens the group in place and closes it again; the
 /// leader's Enter on one of its calls opens that subagent's chat, a
 /// gesture apart. On the folded group, which stands for several agents,

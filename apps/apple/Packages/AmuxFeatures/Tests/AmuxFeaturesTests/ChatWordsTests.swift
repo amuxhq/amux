@@ -170,6 +170,17 @@ final class ChatWordsTests: XCTestCase {
         XCTAssertEqual(ChatWords.activity(.working, elapsedMs: 24_000, subject: nil), "Working · 24s")
         XCTAssertEqual(ChatWords.activity(.thinking, elapsedMs: 24_000, subject: nil), "Thinking")
         XCTAssertEqual(ChatWords.activity(.subagents(count: 3), elapsedMs: 5_000, subject: nil), "3 subagents working")
+        // One of them waiting on the person: how they stand, as their group's row says it.
+        let waiting = GroupState(
+            agents: 3, running: 2, needsYou: 1, idle: 0, finished: 0, ended: 0, failed: 0, unknown: 0)
+        XCTAssertEqual(
+            ChatWords.activity(.subagents(count: 3), elapsedMs: 5_000, subject: nil, subagents: waiting),
+            "3 subagents · 2 running · 1 waiting on you")
+        let working = GroupState(
+            agents: 3, running: 3, needsYou: 0, idle: 0, finished: 0, ended: 0, failed: 0, unknown: 0)
+        XCTAssertEqual(
+            ChatWords.activity(.subagents(count: 3), elapsedMs: 5_000, subject: nil, subagents: working),
+            "3 subagents working")
         XCTAssertEqual(ChatWords.activity(.compacting, elapsedMs: 5_000, subject: nil), "Compacting")
         XCTAssertEqual(
             ChatWords.activity(.retrying(attempt: 2, maxAttempts: 10, retryAtMs: nil), elapsedMs: 0, subject: nil),

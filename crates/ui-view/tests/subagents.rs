@@ -291,6 +291,17 @@ fn a_group_reads_how_its_agents_stand_from_the_fleet() {
     assert_eq!(seen.groups.len(), 1);
     assert_eq!(seen.groups[0].first, "agent-call-0");
     assert_eq!(seen.groups[0].state.needs_you, 1);
+    // What the activity line says while the agent waits on them: the live
+    // ones, without the one that finished.
+    assert_eq!(
+        seen.live,
+        GroupState {
+            agents: 3,
+            running: 2,
+            needs_you: 1,
+            ..GroupState::default()
+        }
+    );
 }
 
 /// Calls in different turns do not group, and one call alone is not a

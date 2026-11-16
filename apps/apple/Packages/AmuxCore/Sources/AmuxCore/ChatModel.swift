@@ -1,4 +1,5 @@
 import AmuxValues
+import AmuxWords
 import Foundation
 import Observation
 
@@ -212,6 +213,10 @@ public final class ChatModel {
     /// it. A call row names its agent and nothing more, so the fleet moving
     /// changes no row: the delta's `agents` says what moved instead.
     public private(set) var openedAgents: [[UInt8]: OpenedAgent] = [:]
+    /// How the agents the held rows open that are still at work or waiting
+    /// on the person stand, for the activity line to say while one of them
+    /// waits on the person.
+    public private(set) var liveSubagents: GroupState = .empty
     /// What each group of calls that opened agents comes to, by its first
     /// call, which is where its one row draws.
     public private(set) var groupStates: [String: GroupState] = [:]
@@ -573,6 +578,7 @@ public final class ChatModel {
     /// say something new without being handed over, so the list measures
     /// them again.
     private func hold(_ agents: ChatAgents) {
+        if agents.live != liveSubagents { liveSubagents = agents.live }
         let opened = Dictionary(
             agents.agents.map { ($0.agent.agent, $0) }, uniquingKeysWith: { first, _ in first })
         let groups = Dictionary(

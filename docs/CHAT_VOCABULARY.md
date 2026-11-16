@@ -125,7 +125,7 @@ one of:
 | `Working` | The default whenever the agent is busy and nothing more specific applies, including right after sending and while a reply streams. |
 | `Thinking` | A thinking item is still open. Terminal Claude writes its thinking row only when thinking ends, so it stays on Working. |
 | `Running { key }` | A tool is in flight, named by its subject. For terminal Claude, a call its hooks announced (`running_calls` in the snapshot) counts before its row lands. |
-| `Subagents { count }` | The parent waits on its children: its calls to subagents still under way, or the tasks it says run. |
+| `Subagents { count }` | The parent waits on its children: its calls to subagents still under way, or the tasks it says run. Only the fleet knows of an ask a subagent waits on, so while one of them waits on the person each client words the line from `ChatAgents.live`, the chat's subagents still at work or waiting, as their group's row does: "3 subagents · 2 running · 1 waiting on you". |
 | `Compacting` | Until the compaction row lands. |
 | `Retrying { attempt, max_attempts, retry_at_ms }` | The provider failed a request and says it will try again. |
 

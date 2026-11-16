@@ -112,7 +112,10 @@ Every agent in the fleet, own and replicated from paired hosts. Each row has
 `working_on`, `exit_cause` (how an exited agent ended: the cause's name, then
 its own words when it has any, as `finished`, `stopped` or
 `provider_exited: exit code 1`), `parent`
-(the parent's name), and `you: true` on the caller's own row. Both read-only tools are marked with MCP's
+(the parent's name), and `you: true` on the caller's own row. Provider
+subagents (Claude's Agent tool, Codex's child threads) are left out: neither
+provider lets anything but the parent's model reach one, so none can be
+messaged. Both read-only tools are marked with MCP's
 `readOnlyHint`.
 
 ### hosts
@@ -154,6 +157,10 @@ any of its names) it is the caller's own working directory, and omitted on
 another host the spawn is refused in words that name that host and ask for
 a folder on it: no folder there is a safe guess, so the caller asks the
 person or uses a path it knows. The caller becomes the child's parent; the request cannot name any other parent.
+The tool server knows its caller only by the socket the call came on, so a
+provider subagent that spawns spawns as the agent whose process runs it: the
+new agent is that agent's child, and its report reaches that agent's main
+conversation, as the tool's description says for every caller.
 [Families](#families) describes what a child is.
 
 ### stop
@@ -292,6 +299,13 @@ between child and parent, and its rules restore the behaviour of a single
 process rather than exceed it.
 
 ## Families
+
+A provider subagent is a child too: its parent is always the agent whose
+process runs it, its host, so every parent edge points at an agent with a
+process. It counts under its host, closes and is deleted with it, and ends
+with its host's process; it sends no report, so its host is never told of it
+as a child to wait for, and a one-shot host waits for it from its own
+journal instead ([one-shot](#families) below).
 
 An agent spawned by an agent is its child. The edge is the child's `parent`,
 a host id and an agent id, on its inventory row and in every spec the daemon

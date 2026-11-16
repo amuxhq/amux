@@ -423,6 +423,23 @@ impl Values {
                         body,
                     })
                 }
+                // Input for one of the agent's subagents names it by the id
+                // the interpreter gave it, which the record aliases like any
+                // other id a step concluded.
+                "child_input" => {
+                    let size = recorded["id_bytes"].as_u64().unwrap_or(16) as usize;
+                    let input_id = self.id(recorded["input_id"].as_str().unwrap_or_default(), size);
+                    let agent_id = self.id(recorded["agent"].as_str().unwrap_or_default(), 16);
+                    let body = self.proto(input_message(I::KIND), &recorded["shape"]);
+                    Event::ChildInput {
+                        agent_id,
+                        input: Input {
+                            input_id,
+                            kind: I::KIND as i32,
+                            body,
+                        },
+                    }
+                }
                 "agent_message" => {
                     let bytes = self.proto("amux.v1.Envelope", &recorded["shape"]);
                     Event::AgentMessage(Envelope::decode(bytes.as_slice()).ok()?)
@@ -477,6 +494,26 @@ impl Values {
         }
         for (recorded, append) in array(&step["appends"]).iter().zip(&stepped.step.appends) {
             self.bind_alias(&recorded[0], append.key.as_bytes());
+        }
+        // A provider subagent's id is derived from the provider's own id for
+        // it, which is made up here, so it is learnt from the step that
+        // first names it, as its items' keys are.
+        for (recorded, part) in array(&step["agents"]).iter().zip(&stepped.step.agents) {
+            self.bind_alias(&recorded["agent"], &part.agent_id);
+            for (recorded, item) in array(&recorded["items"]).iter().zip(&part.items) {
+                self.bind_alias(&recorded["key"], item.key.as_bytes());
+                self.bind_alias(&recorded["input_id"], &item.input_id);
+            }
+            for (recorded, append) in array(&recorded["appends"]).iter().zip(&part.appends) {
+                self.bind_alias(&recorded[0], append.key.as_bytes());
+            }
+            if let Some(snapshot) = &part.snapshot {
+                let asks = I::describe_snapshot(&snapshot.body).asks;
+                for (alias, (ask, item)) in array(&recorded["snapshot"]["asks"]).iter().zip(&asks) {
+                    self.bind_alias(&alias[0], ask.as_bytes());
+                    self.bind_alias(&alias[1], item.as_bytes());
+                }
+            }
         }
         if let Some(snapshot) = &stepped.step.snapshot {
             let recorded = &step["snapshot"];

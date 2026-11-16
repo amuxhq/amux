@@ -1,5 +1,5 @@
 {
-  "about": "Rows beyond the recordings: a reroute, a failing tool server, a blocked usage limit, reasoning with its summary, the plan, working_on from the status tool with no row, a working note apart from the answer, a repeated whole-turn diff written once, a retrying typed error then a failed turn, unknown items and notifications made visible, a child thread's activity left out, and a command that outlives its turn in the background, listed when asked and gone from the list when it completes.",
+  "about": "Rows beyond the recordings: a reroute, a failing tool server, a blocked usage limit, reasoning with its summary, the plan, working_on from the status tool with no row, a working note apart from the answer, a repeated whole-turn diff written once, a retrying typed error then a failed turn, unknown items and notifications made visible, a child thread first heard from by its turn becoming a subagent of its own, its call unknown, and a command that outlives its turn in the background, listed when asked and gone from the list when it completes.",
   "spec": {
     "created_at_ms": 1800000000000
   },

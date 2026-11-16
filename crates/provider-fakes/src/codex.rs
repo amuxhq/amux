@@ -253,6 +253,8 @@ struct Engine {
     speaking: Option<String>,
     /// The child threads the agent's subagents run in, by thread id.
     children: BTreeMap<String, ChildThread>,
+    /// The child threads a client has read and been answered about.
+    children_read: BTreeSet<String>,
     /// Child threads whose running turn a client interrupted.
     interrupted_children: BTreeSet<String>,
     /// A client steered or injected into the running turn since its
@@ -321,6 +323,7 @@ impl Engine {
             terminals: Vec::new(),
             speaking: None,
             children: BTreeMap::new(),
+            children_read: BTreeSet::new(),
             interrupted_children: BTreeSet::new(),
             told: false,
         }
@@ -671,6 +674,7 @@ impl Engine {
                 let child = self.child_value(&thread);
                 self.respond(client, &id, json!({ "readState": null, "thread": child }))
                     .await;
+                self.children_read.insert(thread);
             }
             // Read with its turns, the loaded thread is written to disk.
             "thread/read" if self.thread.as_deref() == params["threadId"].as_str() => {
@@ -1223,6 +1227,14 @@ impl Engine {
             self.status(None).await;
             self.speaking = None;
             self.item(turn, "item/completed", &started).await;
+            // Read as the spawn completes, the nickname's answer comes
+            // before the child's turn starts.
+            if agent.await_read {
+                while !self.eof && !self.children_read.contains(&thread) {
+                    let event = self.events.recv().await;
+                    self.receive(event).await;
+                }
+            }
             self.speaking = Some(thread.clone());
             self.status(Some(&[])).await;
             let mut value = self.turn_value(&child_turn, "inProgress", vec![]);

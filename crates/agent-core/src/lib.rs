@@ -18,8 +18,8 @@
 //!   drain deadline and then exits "orphaned while waiting for you".
 //! - A stop cancels the turn the provider's way and drains the same way; a
 //!   kill, the daemon's escalation past its stop deadline, ends the process
-//!   group at once and writes nothing. A draining agent answers new input as
-//!   `REFUSAL_DRAINING`.
+//!   group at once and writes nothing. A draining agent answers new input,
+//!   its own or one of its provider subagents', as `REFUSAL_DRAINING`.
 //! - Every decision to end goes through one action: the interpreter writes
 //!   the final boundary, the provider is asked to finish, and the agent
 //!   waits for it to exit, killing it past a deadline.
@@ -771,6 +771,18 @@ impl<I: Interpreter> Agent<I> {
             Some(ctl_frame::Of::Input(input)) => {
                 let id = input.input_id.clone();
                 self.take(id, Event::Input(input), out);
+            }
+            // A person's input to a provider subagent this agent's provider
+            // runs: the interpreter answers the provider for it, and the
+            // reply goes back keyed by the input id as any input's does. A
+            // frame without an input carries no id to answer, so it is
+            // dropped.
+            Some(ctl_frame::Of::ChildInput(wire::ChildInput {
+                agent_id,
+                input: Some(input),
+            })) => {
+                let id = input.input_id.clone();
+                self.take(id, Event::ChildInput { agent_id, input }, out);
             }
             Some(ctl_frame::Of::AgentMessage(envelope)) => {
                 let id = envelope.id.clone();

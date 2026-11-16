@@ -2,7 +2,7 @@
 //! agent triaging a bug can read and grep, with nothing in the bundle left
 //! out. Records print as written: what this build cannot read still shows.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -315,15 +315,10 @@ fn core_section(
             held.len()
         );
         let dir = at.join(CORE_JOURNALS).join(id(&agent.0));
+        let mut children = BTreeMap::new();
         for (start, bytes) in held {
             for step in journal_frames(bytes) {
-                let _ = writeln!(
-                    out,
-                    "segment {start}: {} items, {} appends, snapshot {}",
-                    step.items.len(),
-                    step.appends.len(),
-                    step.snapshot.is_some()
-                );
+                journal_step(out, &mut children, *start, &step);
             }
         }
         for (_, path) in segments(&dir)? {
@@ -331,6 +326,46 @@ fn core_section(
         }
     }
     Ok(())
+}
+
+/// One journal frame: the agent's own part in a line, then a line under it
+/// for each provider subagent's part, naming the subagent by its agent id
+/// and by the provider's id for it, which `children` remembers from the
+/// subagent's start in this journal.
+fn journal_step(
+    out: &mut String,
+    children: &mut BTreeMap<Vec<u8>, String>,
+    start: u64,
+    step: &wire::Step,
+) {
+    let _ = writeln!(
+        out,
+        "segment {start}: {} items, {} appends, snapshot {}",
+        step.items.len(),
+        step.appends.len(),
+        step.snapshot.is_some()
+    );
+    for part in &step.agents {
+        if let Some(native) = &part.start {
+            children.insert(part.agent_id.clone(), native.provider_child_id.clone());
+        }
+        let _ = writeln!(
+            out,
+            "  subagent {} child {}: {}{} items, {} appends, snapshot {}{}",
+            id(&part.agent_id),
+            children.get(&part.agent_id).map_or("-", String::as_str),
+            if part.start.is_some() { "start, " } else { "" },
+            part.items.len(),
+            part.appends.len(),
+            part.snapshot.is_some(),
+            part.end.as_ref().map_or(String::new(), |end| format!(
+                ", end {}",
+                wire::ExitCause::try_from(end.cause).map_or("?", |cause| cause
+                    .as_str_name()
+                    .trim_start_matches("EXIT_CAUSE_"))
+            )),
+        );
+    }
 }
 
 /// The agent rows of a store file, read from a copy so the bundle is left
@@ -454,5 +489,55 @@ fn time(ms: i64) -> String {
     match chrono::DateTime::from_timestamp_millis(ms) {
         Some(at) if ms != 0 => format!("{ms} ({})", at.format("%Y-%m-%dT%H:%M:%S%.3fZ")),
         _ => ms.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Each provider subagent's part of a journal frame is named, by its
+    /// agent id and by the provider's id its start gave.
+    #[test]
+    fn a_journal_frame_names_each_subagents_part() {
+        let agent = vec![0x33; 16];
+        let mut children = BTreeMap::new();
+        let mut out = String::new();
+        let started = wire::Step {
+            agents: vec![wire::AgentStep {
+                agent_id: agent.clone(),
+                start: Some(wire::NativeStart {
+                    provider_child_id: "a1b2".into(),
+                    ..Default::default()
+                }),
+                snapshot: Some(wire::Snapshot::default()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let ended = wire::Step {
+            items: vec![wire::Item::default()],
+            agents: vec![wire::AgentStep {
+                agent_id: agent,
+                items: vec![wire::Item::default(), wire::Item::default()],
+                end: Some(wire::IncarnationEnd {
+                    cause: wire::ExitCause::Finished as i32,
+                    detail: None,
+                }),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        journal_step(&mut out, &mut children, 4, &started);
+        journal_step(&mut out, &mut children, 4, &ended);
+        assert_eq!(
+            out,
+            "segment 4: 0 items, 0 appends, snapshot false\n\
+             \x20 subagent 33333333-3333-3333-3333-333333333333 child a1b2: start, 0 items, \
+             0 appends, snapshot true\n\
+             segment 4: 1 items, 0 appends, snapshot false\n\
+             \x20 subagent 33333333-3333-3333-3333-333333333333 child a1b2: 2 items, \
+             0 appends, snapshot false, end FINISHED\n"
+        );
     }
 }

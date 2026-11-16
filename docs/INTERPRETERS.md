@@ -60,8 +60,9 @@ no ids (they arrive on inputs and facts) and does no I/O. It implements
 | `typed_unrecorded(state)` | A prompt typed that the provider has not recorded yet, where the record starts the turn (terminal Claude); a one-shot agent waits for it too |
 | `describe_item`, `describe_snapshot`, `fixture_input`, `recording` | What the golden harness needs to render bodies, build authored inputs and read recorded corpora |
 
-An `Event` is a provider `Fact`, a person's `Input`, an agent message with
-the envelope its daemon set, the daemon's word that a Codex agent was renamed,
+An `Event` is a provider `Fact`, a person's `Input`, a person's input to one
+of the agent's [provider subagents](#provider-subagents) (`ChildInput`), an
+agent message with the envelope its daemon set, the daemon's word that a Codex agent was renamed,
 a `Tick`, the provider's exit, the daemon being lost, a stop request, the process
 exiting, or the agent folder's git facts (`Git`, none outside a repository),
 which the shared core publishes on the snapshot. A fact carries its `Channel`: `Transcript`, `Hook` and `Agent` for
@@ -212,6 +213,85 @@ checkpoints after every prefix of the events, resumes, runs the rest, and
 requires the same items and final snapshot as the uninterrupted run, with a
 resume that re-emits only keys readers already have, at their current
 content.
+
+## Provider subagents
+
+Claude's Agent tool and Codex's child threads start subagents inside the
+agent's own provider process. Each is an amux agent of its own, with a row
+and a chat but no process; the agent whose process runs it is its host. The
+host's interpreter reads the one provider stream as ever, sorts what it reads
+by the agent it belongs to, and writes each subagent's part into the host's
+own steps: `Step.agents`, one `AgentStep` per subagent the step touched, in
+the order the step first touched them, in the same journal frame as the
+host's own part, which is unchanged. One frame per step keeps a subagent's
+start and the call row in its parent's chat together across a crash.
+
+**Identity.** A subagent's agent id is `interpret::subagent_id(host,
+provider_child_id)`: a UUIDv5 of the host's agent id and the provider's id
+for it (Claude's `agent_id`, Codex's thread id), under a fixed namespace. It
+is the same across restarts, replays and continuations, so nothing records
+it, and the derivation never changes: ids already stored depend on it.
+`Shared::subagent_id` derives it under the agent's own id, for the call row
+that opens the subagent's chat.
+
+**Writing a subagent's part.** `Shared::subagent(&mut emit,
+provider_child_id)` is a view of that one subagent for the step in hand
+(`interpret::Subagent`). It offers what `Shared` offers for the agent's own
+part, and keeps that subagent's open items, last snapshot and asks in the
+checkpointed state:
+
+```rust
+// The Agent call row names the chat it opens.
+let child_agent_id = state.shared.subagent_id(&provider_id);
+let host = state.shared.agent_id().to_vec();
+let mut sub = state.shared.subagent(&mut emit, &provider_id);
+sub.start(NativeStart { call_agent_id: host, call_key, title, ..Default::default() });
+sub.item(ItemDraft { key, text, body, ..Default::default() });
+if !sub.append(&key, delta) { /* not open: emit the item whole */ }
+sub.open_ask(ask);
+sub.snapshot(Snapshot { phase: sub.phase() as i32, body, ..Default::default() });
+sub.end(IncarnationEnd { cause: ExitCause::Finished as i32, detail: None });
+```
+
+- `start` is written where the subagent starts and again where its parent's
+  model continues it, in the step that writes the call row naming it. Its
+  `provider_child_id` is the view's own. `call_agent_id` is the host's id
+  (`Shared::agent_id`) for a subagent the host started, and the parent
+  subagent's id for a nested one.
+- `item`, `append`, `append_output`, `open_item` and `open_keys` follow the
+  [step rule](#the-step-rule) within the subagent's own chat: its keys are
+  its own, apart from the host's.
+- `snapshot` takes what the interpreter knows (phase, the kind's body, the
+  subagent's own stoppable job in `background_jobs` and the body's job list,
+  a notice) and stamps the kind, the clock and when the phase began; the step
+  carries it only when it changed. `phase` is needs-you while one of its asks
+  is open, working otherwise: a running subagent takes no prompts.
+- `open_ask`, `close_ask`, `close_asks_for_item`, `close_all_asks`, `asks`
+  and `answer` keep its asks as `Shared` keeps the agent's, with the same
+  stale-answer rule; `accept`, `reject` and `effect` reply and write to the
+  provider without letting go of the view.
+- `end` consumes the view: close its items and asks and write its final
+  snapshot first. A step that ends the incarnation ends every subagent still
+  running, for the incarnation's cause, since the provider process running
+  them is going. A resume re-emits a running subagent's open items and
+  snapshot, with no start.
+- `Shared::subagent_child(agent_id)` finds the provider's id of a running
+  subagent from its agent id, and `Shared::running_subagents` lists them.
+
+A part written outside a subagent's run (before its first start, or after
+its end with no new start), and an end with an item still streaming, break
+the `agent.subagent_run` check, as `agent.item_before_open` guards the
+agent's own items.
+
+**A person's input to a subagent.** The daemon passes it to the host's
+process as `CtlFrame.child_input`, and the interpreter gets
+`Event::ChildInput { agent_id, input }`: an answer to one of the subagent's
+asks, or `StopJob { key }` for the subagent's own job. The body is of the
+agent's own kind. The interpreter answers the provider the provider's way
+for that subagent, and replies by the input id with a `Reply` effect, as it
+does an `Input`. An interpreter that does not run its provider's subagents
+as agents yet refuses every one as `REFUSAL_UNSUPPORTED`; so does one whose
+subagent is not running.
 
 ## Background jobs
 
@@ -843,15 +923,79 @@ answer.
   real session with Codex's own app attached: the app's prompt and the
   approval it led to, answered from amux. A recording keeps amux's own
   lines only, which is all the interpreter reads.
-- **Child threads' asks.** Codex sends a child thread's approval requests to
-  every client of the server. Each ask keeps the thread that asked: a
-  child's points at no row of the agent's turn (its work is drawn by the
-  child's own subagent row), a child's file-change ask shows the changes the
-  child's own items carried, and the agent's turn end leaves a child's asks
-  open. `serverRequest/resolved` closes an ask whichever thread it names. A
-  tool server's approval belongs to that server's running call (of the tool
-  Codex names, from codex-cli 0.163), else to the newest running call. A
-  child's request amux cannot answer is refused without a row.
+- **Child threads.** Codex's `spawn_agent` runs a subagent in a child
+  thread on the agent's own server; each child thread is a [provider
+  subagent](#provider-subagents) whose id is derived from its thread id
+  (`codex/children.rs`).
+  - **Its start.** Codex 0.166.0 reports the spawn, and each follow-up the
+    parent sends it, as a `subAgentActivity` item (`started`,
+    `interacted`) on the parent's thread: that item is the call row in the
+    parent's chat, a collab `spawnAgent` or `sendInput` row naming the
+    child's agent in `agent_ids`, and it starts or continues the subagent.
+    The start names the chat holding the call (the agent's, or a
+    child's for a child's own child) and the spawn's key, which a follow-up
+    keeps. An older Codex's collab `spawnAgent` and follow-up calls start
+    their receivers the same way; a child thread first heard from by a
+    turn, an item or a request that no call named starts with its call
+    unknown. No child sends `thread/started`.
+  - **Its prompt.** Where Codex says what the parent asked, as an older
+    Codex's collab call does in `prompt`, the child's chat opens with it as
+    a prompt item (`prompt:<call id>`), a follow-up's when it continues the
+    chat. Codex 0.166.0 says it nowhere a client can read: the
+    `spawn_agent` and `followup_task` message, and the child's copy of it,
+    are encrypted even in Codex's raw events, and the child's history holds
+    no prompt. Only the task name is plain, as the activity's `agentPath`
+    (`/root/<task>`).
+  - **Its title.** The row takes its title from the subagent's first start
+    alone, and Codex's nickname for the child (`agentNickname`) comes only
+    from `thread/read` on it, asked once. So the first start waits for the
+    read's answer, and every request and notification naming the child
+    waits with it, to be read in order once the start is out; Codex answers
+    within milliseconds, before the child's first word. If the answer has
+    not come 3 seconds after the spawn (on the next tick or fact), or the
+    parent's turn ends first, the start goes out titled by the task name,
+    or untitled where Codex gave none: a one-shot host's subagents have
+    their rows by its turn end, and a recording with no answer still
+    replays. A follow-up's start does not wait. The subagent's snapshot
+    carries no title.
+  - **Its chat.** Each child keeps its own copy of the per-thread item
+    state; a child's notifications are read by the same rules as the
+    agent's, with that copy swapped in and what they write going to the
+    child's part of the step. Its token use, settings, tool servers and
+    status draw nothing. amux's `status` called on a child's thread sets the
+    subagent's own working-on line; amux's other tools act as the agent.
+  - **Its asks.** A request naming a child's thread opens in that
+    subagent's snapshot and points at its own work (a file-change ask shows
+    its own changes; a tool server's approval belongs to that server's
+    running call of the tool Codex names, from codex-cli 0.163, else to the
+    newest running call). A person answers it with `ChildInput`, which sends
+    Codex's JSON-RPC response; `serverRequest/resolved` closes it as for the
+    agent's own, and the child's turn end dismisses what is still open. The
+    agent's turn end leaves a child's asks alone. A child's request amux
+    cannot answer is refused without a row. A recording's answer to a
+    child's request reads back as `ChildInput`.
+  - **Its end.** A child ends at its own `turn/completed`: completed is
+    finished, interrupted (an interrupted child gets no `subAgentActivity
+    completed`) is stopped, and failed is finished with Codex's words. A
+    command its turn left running carries on in the background, listed on
+    the child (`thread/backgroundTerminals/list` on its thread) beside its
+    own job, and the subagent ends once the last such command does. A
+    `/clear` ends every running child, and the agent's process ending ends
+    them with its cause.
+  - **Its stop.** A running subagent's snapshot lists its own job, kind
+    `SUBAGENT`, keyed by its thread id; `StopJob` on that key stops it in
+    the three steps Codex 0.166.0 needs (`turn/interrupt` on its turn, which
+    leaves its command running; its background terminals listed on its
+    thread and each terminated; then a note steered into the parent's
+    running turn, or injected into its thread when none runs, since
+    otherwise the parent's `wait` waits out its own timeout). A subagent
+    stopped before Codex names its turn is interrupted when it does; one
+    that ends with nothing left running before its list answers tells the
+    parent as it ends. The job reads stopping until the subagent ends; a
+    refused interrupt leaves it running, its job carrying Codex's reason,
+    and it can be stopped again. `StopJob` on one of its commands' process
+    ids ends just that command. A child's child's parent is not told: only
+    the agent's own thread takes input.
 - **Streaming.** Agent-message, plan and reasoning deltas and command output
   are appends to their open items.
 - **Other notices.** A web search that opens a page or looks within one
@@ -873,8 +1017,9 @@ answer.
   or which turn Codex's own app last showed (`thread/readState/changed`).
   Hook runs (`hook/started`, `hook/completed`) and hook-prompt items draw
   nothing: a hook's effect reaches the conversation itself (a blocked call's
-  output names the hook), as for Claude. Nor do sub-agent activity, sleep
-  and function-call-output items. The notifications amux never draws
+  output names the hook), as for Claude. Nor do sleep and
+  function-call-output items, nor a subagent's `completed` activity: its own
+  turn end ends it. The notifications amux never draws
   (`DROPPED_NOTIFICATIONS`: hooks, tool-call progress, patch updates, app
   and environment changes, and the rest) are opted out of at `initialize`
   (`optOutNotificationMethods`) and dropped should Codex send them anyway.
@@ -989,8 +1134,22 @@ Every run also checks the invariants every journal obeys
 the unknown body and no items; a key appears once per step and never changes
 arm; no item reopens after its final revision; appends go only to the newest
 open item; every open ask points at an item that exists; the queue drains
-and every stream ends complete, unless the fixture says otherwise. And it
-checks the checkpoint property described [above](#checkpoints).
+and every stream ends complete, unless the fixture says otherwise. Each
+provider subagent's items are held to the same, within its own chat, and its
+run too: its first part has a start, it ends with no item streaming, and
+nothing follows its end unless a new start continues it. And it checks the
+checkpoint property described [above](#checkpoints), for the agent and for
+each of its subagents.
+
+A golden prints each subagent's part after the agent's own, every line under
+`agent sub-<first eight hex digits of its id>`: its start (the provider's id
+for it, the call that started it as `host/<key>` or `sub-…/<key>`, and its
+title), its items, appends and snapshot as the agent's own are printed, and
+its end. A fixture addresses a subagent with a `child_input` action, which is
+an `input` naming the subagent by the provider's id for it:
+`{"child_input": {"child": "a1b2", "id": "ans1", "answer": {...}}}`. The test
+kind's [`subagents` fixture](../crates/interpret/fixtures/core/subagents.json)
+shows both.
 
 ```sh
 just suite interpreter-emissions

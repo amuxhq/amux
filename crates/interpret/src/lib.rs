@@ -27,6 +27,7 @@ mod serde_pb;
 pub mod shape;
 mod shared;
 pub mod skeleton;
+mod subagent;
 pub mod unknown;
 
 #[cfg(any(test, feature = "testkind"))]
@@ -48,6 +49,7 @@ pub use shared::{
     agent_message_key, human, is_attach_tool, is_send_tool, is_status_tool, output_cut,
     sent_message, status_working_on, without_terminal_codes,
 };
+pub use subagent::{Subagent, subagent_id};
 use wire::{AgentSpec, Envelope, Input, SendInputResponse, Step};
 
 /// One interpreter per agent kind.
@@ -128,6 +130,10 @@ pub trait Interpreter {
     fn fixture_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input>;
 
     /// Turns a recorded provider corpus into events, for recorded fixtures.
+    /// A recording knows a provider subagent only by the provider's id for
+    /// it, so a person's input to one comes back as [`Event::ChildInput`]
+    /// whose `agent_id` is that id's UTF-8: the harness addresses it under
+    /// the fixture's agent, as it does an authored `child_input`.
     fn recording(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
         let _ = bytes;
         Err(format!(
@@ -146,6 +152,16 @@ pub enum Event {
     /// A person's input, its body as the client encoded it. The reply is
     /// keyed by its input id.
     Input(Input),
+    /// A person's input to one of the provider subagents this agent's
+    /// provider runs, named by the subagent's agent id
+    /// ([`subagent_id`]): an answer to one of its asks, or a stop of its
+    /// own job. The body is of this agent's kind, which is the subagent's.
+    /// The interpreter answers the provider for the subagent; the reply is
+    /// keyed by the input id, as for [`Event::Input`].
+    ChildInput {
+        agent_id: Vec<u8>,
+        input: Input,
+    },
     /// An agent message with the envelope its daemon set: who it is from
     /// is the daemon's word, never a client's. The reply is keyed by the
     /// envelope id.

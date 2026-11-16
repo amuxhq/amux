@@ -1,0 +1,30 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 2 input {"id":"p1","prompt":{"text":"Start one agent that runs sleep 97, then wait for it."}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 6 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"agentPath":"/a/lovelace","agentThreadId":"c1","id":"call-spawn","kind":"started","model":"gpt-6.1-sol","reasoningEffort":"low","type":"subAgentActivity"},"threadId":"t1","turnId":"turn-1"}}}
+  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
+## 7 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"agentPath":"/a/lovelace","agentThreadId":"c1","id":"call-spawn","kind":"started","model":"gpt-6.1-sol","reasoningEffort":"low","type":"subAgentActivity"},"threadId":"t1","turnId":"turn-1"}}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 10 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"agentsStates":{},"id":"call-wait","receiverThreadIds":[],"senderThreadId":"t1","status":"inProgress","tool":"wait","type":"collabAgentToolCall"},"threadId":"t1","turnId":"turn-1"}}}
+  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
+## 20 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"amux-told-5","content":[{"text":"I stopped the agent Lovelace you started; it will not answer. Stop waiting for it and go on without it.","text_elements":[],"type":"text"}],"id":"um-1","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 23 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","items":[],"status":"completed"}}}}
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Hidden collapsed
+     2 prompt:7031 Prompt { text: [Text("Start one agent that runs sleep 97, then wait for it.")], steered: false }
+     3 call-spawn Subagent { description: "", running: false, tool_count: 0, last_tool: "spawnAgent", answer: "", duration_ms: Some(0) } run[call-spawn..call-wait x2 recent=1] collapsed
+     4 call-wait Subagent { description: "", running: false, tool_count: 0, last_tool: "wait", answer: "", duration_ms: Some(0) } run[call-spawn..call-wait x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 2, other: 0 }]
+     5 um-1 Prompt { text: [Text("I stopped the agent Lovelace you started; it will not answer. Stop waiting for it and go on without it.")], steered: true }
+     6 msg-1 Prose { text: [Text("Stopped waiting.")], streaming: false, working_note: false }
+     7 turn:1 TurnEnd { duration_ms: Some(0), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context None sign-in None
+== settings
+  model* unlisted gpt-6.1-sol "GPT-6.1 Sol" efforts=[]
+  permission* unlisted "default" "default" unsettable
+  changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("GPT-6.1 Sol") effort=None permission=None mode=None

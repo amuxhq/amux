@@ -261,6 +261,11 @@ pub struct Subagent {
     /// provider's own when unset.
     #[serde(default)]
     pub nickname: Option<String>,
+    /// Its turn waits until a client has read its thread and been answered,
+    /// as a client reading the nickname at the spawn sees Codex answer
+    /// before the child's turn starts. Without it the turn starts at once.
+    #[serde(default)]
+    pub await_read: bool,
     #[serde(default)]
     pub steps: Vec<Step>,
 }

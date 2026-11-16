@@ -77,9 +77,9 @@ waiting on the person), `Pending` when it is announced, not started and asks nob
 `Cancelled`. A call still in flight when its agent exited is `Cancelled`: nothing runs it on. Each client words
 the phase and branches on it, never on its own words.
 
-A native subagent (Claude's Task tool, a Codex child thread) is a row with detail inside the parent's
-transcript, not an agent. Only an amux spawn makes an agent with a chat of its own
-([AGENT_TOOLS.md](AGENT_TOOLS.md)).
+A native subagent (Claude's Task tool, a Codex child thread) is drawn in the parent's transcript by the
+call that started it. A Codex child thread is also an agent of its own, with a chat its call row names
+(`CollabWork.agent_ids`), as an amux spawn is ([AGENT_TOOLS.md](AGENT_TOOLS.md)).
 
 ![Tool-server calls as steps: one running, one always allowed, one denied with its note under it, and one failed, opened to its result.](figures/vocabulary/row_tool_call.light.png)
 

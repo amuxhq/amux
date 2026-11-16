@@ -1612,3 +1612,113 @@ async fn headless_claude_stops_one_background_job() {
 async fn codex_stops_one_background_job() {
     one_job_stops(Kind::Codex).await;
 }
+
+/// A person stops a Codex subagent from its chat, end to end through the
+/// fake: the agent interrupts the child's turn, ends the command that turn
+/// left running on the child's thread, and steers the parent's turn so its
+/// `wait` ends; the subagent ends stopped and the parent finishes its turn.
+#[tokio::test(flavor = "multi_thread")]
+async fn codex_stops_a_subagent_in_three_steps() {
+    let sleep = provider_fakes::Tool {
+        name: None,
+        class: provider_fakes::ToolClass::Consequential,
+        input: Some(serde_json::json!({"command": "sleep 97", "run_in_background": true})),
+        outcome: Default::default(),
+        wait_for: None,
+    };
+    let agent = Agent::start(Setup {
+        kind: Kind::Codex,
+        steps: vec![
+            Step::Subagents {
+                agents: vec![provider_fakes::script::Subagent {
+                    task: "sleep".into(),
+                    nickname: Some("Lovelace".into()),
+                    await_read: false,
+                    steps: vec![Step::Tool(sleep), Step::Pause { ms: 60_000 }],
+                }],
+            },
+            Step::Text {
+                chunks: vec!["STOPPED".into()],
+            },
+            Step::TurnEnd,
+        ],
+        ..Setup::sdk()
+    })
+    .await;
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p1", "delegate").await, Verdict::Accepted);
+    agent
+        .wait("the subagent runs its command", |log| {
+            log.subagent_parts().iter().any(|part| {
+                part.items.iter().any(|item| {
+                    matches!(
+                        <wire::CodexItem as prost::Message>::decode(item.body.as_slice())
+                            .ok()
+                            .and_then(|item| item.kind),
+                        Some(wire::codex_item::Kind::Work(wire::Work {
+                            of: Some(wire::work::Of::Command(_)),
+                            ..
+                        }))
+                    )
+                })
+            })
+        })
+        .await;
+    let start = agent
+        .log()
+        .subagent_parts()
+        .into_iter()
+        .find(|part| part.start.is_some())
+        .expect("the subagent started");
+    let child = start.start.unwrap().provider_child_id;
+    let stop = wire::Input::new(
+        b"s1".to_vec(),
+        wire::CodexInput {
+            of: Some(wire::codex_input::Of::StopJob(wire::StopJob {
+                key: child.clone(),
+            })),
+        },
+    );
+    assert_eq!(
+        daemon.child_input(start.agent_id.clone(), stop).await,
+        Verdict::Accepted
+    );
+    agent
+        .wait("the subagent ends", |log| {
+            log.subagent_parts().iter().any(|part| part.end.is_some())
+        })
+        .await;
+    let end = agent
+        .log()
+        .subagent_parts()
+        .into_iter()
+        .find_map(|part| part.end)
+        .unwrap();
+    assert_eq!(end.cause, wire::ExitCause::Stopped as i32);
+    agent
+        .wait("the parent stops waiting and finishes", |log| {
+            log.turn_ends() == 1
+        })
+        .await;
+    let sent = agent.provider_input();
+    let on = |method: &str, thread: &str| {
+        sent.iter()
+            .any(|line| line["method"] == method && line["params"]["threadId"] == thread)
+    };
+    assert!(
+        on("turn/interrupt", &child),
+        "the child's turn was not interrupted"
+    );
+    assert!(
+        on("thread/backgroundTerminals/terminate", &child),
+        "the child's command was not ended"
+    );
+    let steered = sent
+        .iter()
+        .any(|line| line["method"] == "turn/steer" && line["params"]["threadId"] != child.as_str());
+    assert!(steered, "the parent was not told");
+    assert!(agent.log().has_text("STOPPED"));
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+}

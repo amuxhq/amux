@@ -422,23 +422,37 @@ fn answer_the_fake(
 }
 
 /// Point a recorded request at the fake's thread: the fake starts a thread
-/// of its own id where the recording's host started the recorded one.
+/// of its own id where the recording's host started the recorded one, and
+/// a child thread of its own id for each child the recording's spawned, in
+/// the same order.
 fn name_the_fakes_thread(
     kind: Kind,
     input: &mut Value,
     fake: &[(String, Value)],
     recorded: &[(String, Value)],
 ) {
-    let thread = |frames: &[(String, Value)]| {
-        frames
+    let threads = |frames: &[(String, Value)]| {
+        let own = frames
             .iter()
-            .find_map(|(_, frame)| frame["result"]["thread"]["id"].as_str().map(str::to_owned))
+            .find_map(|(_, frame)| frame["result"]["thread"]["id"].as_str().map(str::to_owned));
+        let children = frames.iter().filter_map(|(_, frame)| {
+            let item = &frame["params"]["item"];
+            (frame["method"] == "item/started"
+                && item["type"] == "subAgentActivity"
+                && item["kind"] == "started")
+                .then(|| item["agentThreadId"].as_str().map(str::to_owned))
+                .flatten()
+        });
+        own.into_iter().chain(children).collect::<Vec<_>>()
     };
     if kind != Kind::Codex {
         return;
     }
-    if let (Some(recorded), Some(fake)) = (thread(recorded), thread(fake))
-        && input["params"]["threadId"] == recorded.as_str()
+    let named = input["params"]["threadId"].clone();
+    if let Some(at) = threads(recorded)
+        .iter()
+        .position(|thread| named == thread.as_str())
+        && let Some(fake) = threads(fake).get(at)
     {
         input["params"]["threadId"] = json!(fake);
     }
@@ -836,8 +850,9 @@ mod codex {
     async fn child_command() {
         conforms(scenario(
             "child_command",
-            json!([{"subagents": {"agents": [
-                       {"task": "run echo", "steps": [text(), bash(None), text()]},
+            json!([text(),
+                   {"subagents": {"agents": [
+                       {"task": "run echo", "await_read": true, "steps": [bash(None), text()]},
                    ]}},
                    text(), "turn_end"]),
         ))

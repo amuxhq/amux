@@ -1776,6 +1776,48 @@ fn a_subagents_ask_is_answered_and_it_is_stopped_from_its_chat() {
     assert_eq!(end.cause(), wire::ExitCause::Stopped);
 }
 
+/// A subagent stopped while its command runs: Claude 2.1.325 reports the
+/// subagent stopped first and its command's task stopped after it. That
+/// late notice is still the subagent's, and draws nothing in the agent's
+/// own chat.
+#[test]
+fn a_stopped_subagents_command_ending_after_it_stays_out_of_the_agents_chat() {
+    let mut state = idle_on_root();
+    for event in [
+        stream(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "Short wait B", "is_backgrounded": false,
+        })),
+        stream(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t2", "session_id": "s",
+            "task_id": "b1", "task_type": "local_bash", "tool_use_id": "toolu_child",
+            "owned_by_subagent": true, "parent_task_id": "a1",
+            "description": "Run a 40-second sleep", "is_backgrounded": false,
+        })),
+        stream(json!({
+            "type": "system", "subtype": "task_notification", "uuid": "n1", "session_id": "s",
+            "task_id": "a1", "tool_use_id": "toolu_agent", "status": "stopped",
+            "summary": "Short wait B", "output_file": "",
+        })),
+    ] {
+        ClaudeSdk::step(&mut state, event);
+    }
+    let late = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "system", "subtype": "task_notification", "uuid": "n2", "session_id": "s",
+            "task_id": "b1", "tool_use_id": "toolu_child", "status": "stopped",
+            "summary": "Run a 40-second sleep", "output_file": "",
+        })),
+    );
+    assert!(
+        late.step.items.is_empty(),
+        "the stopped subagent's command drew in the agent's chat: {:?}",
+        late.step.items
+    );
+}
+
 /// A subagent that only `task_started` and `task_notification` name, with
 /// no frame of its own between them, still starts and ends.
 #[test]

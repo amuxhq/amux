@@ -227,7 +227,8 @@ pub struct State {
     #[serde(default)]
     subagents: BTreeMap<String, Sub>,
     /// The tasks a subagent's calls started (the shells it runs), by task
-    /// id, and the subagent each is for.
+    /// id, and the subagent each is for: kept past the subagent's end
+    /// until the task's own notice, which can come after it.
     #[serde(default)]
     owned_tasks: BTreeMap<String, String>,
     requests: BTreeMap<String, Request>,

@@ -564,7 +564,10 @@ impl State {
         sub.conversation.close(&mut view, now);
         sub.conversation.snapshot(&mut view, Vec::new());
         view.end(end);
-        // Its commands went with it.
+        // Its commands went with it. Each stays known as the subagent's
+        // until its own notice comes: a stopped subagent's notice comes
+        // before its command's, which would otherwise read as a task of
+        // the agent's own and draw in its chat.
         let owned: Vec<String> = self
             .owned_tasks
             .iter()
@@ -572,7 +575,6 @@ impl State {
             .map(|(task, _)| task.clone())
             .collect();
         for task in owned {
-            self.owned_tasks.remove(&task);
             self.jobs.ended(&task);
         }
     }

@@ -13,6 +13,7 @@
 | `aarch64-apple-ios`, `aarch64-apple-ios-sim`, `x86_64-apple-ios` | The iPhone app's Rust bridge and `just mobile-check` |
 | `x86_64-pc-windows-msvc` | The Windows release build and the [Windows cross-check](CI.md) |
 | `x86_64-unknown-linux-gnu` | The Linux release build |
+| `wasm32-unknown-unknown` | The browser extension's WebAssembly, `browser-core` ([Browser extension](BROWSER.md)) |
 
 Formatting uses `nightly-2026-08-30` explicitly (`just fmt`, `just
 fmt-check`), so a stable-toolchain update cannot rewrite the tree
@@ -26,6 +27,10 @@ Other tools a full checkout uses:
   even when `python3` on the PATH is the macOS system 3.9.
 - Xcode and XcodeGen build the iPhone app (see [the iPhone app](IOS.md)).
 - `tmux` drives the terminal journeys.
+- Node 24 or newer, with npm, builds and tests the browser extension under
+  `js/` (`just browser`, `just browser-test`). Biome formats and lints it
+  (`just js-fmt`), and `js/.npmrc` stops packages' install scripts from
+  running.
 - [`gitleaks`](https://github.com/gitleaks/gitleaks) scans what a push
   would publish for credentials. `just hooks` installs that scan as the
   pre-push hook, for every worktree at once; it reads `.gitleaks.toml`, and
@@ -61,7 +66,7 @@ which `nix/toolchain.nix` provides and CI pins to 1.75.0 in
 
 ## Profiles
 
-Four profiles are defined in the workspace [`Cargo.toml`](../Cargo.toml):
+Five profiles are defined in the workspace [`Cargo.toml`](../Cargo.toml):
 
 | Profile | Purpose |
 | --- | --- |
@@ -69,6 +74,7 @@ Four profiles are defined in the workspace [`Cargo.toml`](../Cargo.toml):
 | `release` | What ships, for the desktop binary and the iPhone app alike, and what `just perf` measures: fat LTO, one codegen unit, line tables, aborting panics, and no incremental compilation |
 | `full-debug` | A `dev` build with complete debug information for debugger sessions |
 | `phone-dev` | The bridge every development build of the iPhone app links: `release` without LTO or debug information |
+| `wasm` | The browser extension's WebAssembly: `release` optimised for size, without debug information |
 
 `release` builds are slow, since whole-program optimisation runs over the
 whole binary at once; nothing on the routine edit-and-test path uses it.

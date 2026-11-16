@@ -32,6 +32,14 @@ pub enum AttachmentView {
         patch: Option<BlobRef>,
         comments: u32,
     },
+    /// Comments on a web page: the page's title, or its address when it
+    /// has none, the comment count, and the screenshots of the regions the
+    /// comments were made on.
+    Page {
+        title: String,
+        comments: u32,
+        images: Vec<BlobRef>,
+    },
     Empty,
 }
 
@@ -56,6 +64,19 @@ impl AttachmentView {
             Some(Of::Review(review)) => AttachmentView::Review {
                 patch: review.diff.as_ref().and_then(|diff| diff.patch.clone()),
                 comments: review.comments.len() as u32,
+            },
+            Some(Of::Page(page)) => AttachmentView::Page {
+                title: without_direction_controls(if page.title.is_empty() {
+                    &page.url
+                } else {
+                    &page.title
+                }),
+                comments: page.comments.len() as u32,
+                images: page
+                    .comments
+                    .iter()
+                    .filter_map(|comment| comment.image.as_ref().map(named))
+                    .collect(),
             },
             None => AttachmentView::Empty,
         }

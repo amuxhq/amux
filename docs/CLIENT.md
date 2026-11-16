@@ -3,7 +3,7 @@
 *For developers changing either client, or the shared crates both clients link.*
 
 amux has two rich clients, the terminal client ([TERMINAL.md](TERMINAL.md)) and the iPhone app
-([IOS.md](IOS.md)). Both are thin shells over one Rust library: a pure model of an open chat and of the fleet,
+([IOS.md](IOS.md)); the Mac app and the browser extension ([BROWSER.md](BROWSER.md)) link the same crates. Both are thin shells over one Rust library: a pure model of an open chat and of the fleet,
 a driver that owns the streams and does every piece of I/O, and a set of views that turn the model into plain
 content values. Each client composes those values in its own layout and owns only what is ephemeral: panes,
 scroll position, focus, drafts and which rows are expanded. A client hands its unsent drafts to the fleet driver, which keeps them

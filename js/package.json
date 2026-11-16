@@ -1,0 +1,29 @@
+{
+  "name": "amux-js",
+  "private": true,
+  "description": "amux's TypeScript: the page-review overlay and the browser extension",
+  "type": "module",
+  "workspaces": [
+    "page-review",
+    "extension"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "check": "biome ci . && tsc -p page-review && tsc -p extension",
+    "test": "vitest run",
+    "fmt": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.8",
+    "@playwright/test": "^1.65.1",
+    "@types/chrome": "^0.3.7",
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
+    "happy-dom": "*",
+    "typescript": "^5",
+    "vitest": "^5.1.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

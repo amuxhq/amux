@@ -926,12 +926,17 @@ public enum AttachmentView: Codable, Hashable, Sendable {
     /// which a sent message shows in place of the chip.
     case text(name: String, lines: UInt32, text: String)
     case review(comments: UInt32, patch: BlobRef?)
+    /// Comments on a web page: the page's title, or its address when it
+    /// has none, the comment count, and the screenshots of the regions the
+    /// comments were made on.
+    case page(title: String, comments: UInt32, images: [BlobRef])
 
     private enum Tag: String, CodingKey {
         case image = "Image"
         case file = "File"
         case text = "Text"
         case review = "Review"
+        case page = "Page"
     }
 
     private enum TextKeys: String, CodingKey {
@@ -943,6 +948,12 @@ public enum AttachmentView: Codable, Hashable, Sendable {
     private enum ReviewKeys: String, CodingKey {
         case comments
         case patch
+    }
+
+    private enum PageKeys: String, CodingKey {
+        case title
+        case comments
+        case images
     }
 
     public init(from decoder: any Decoder) throws {
@@ -982,6 +993,13 @@ public enum AttachmentView: Codable, Hashable, Sendable {
             self = .review(
                 comments: try _fields.decode(UInt32.self, forKey: .comments),
                 patch: try _fields.decodeIfPresent(BlobRef.self, forKey: .patch))
+        case .page:
+            let _fields = try _container.nestedContainer(
+                keyedBy: PageKeys.self, forKey: .page)
+            self = .page(
+                title: try _fields.decode(String.self, forKey: .title),
+                comments: try _fields.decode(UInt32.self, forKey: .comments),
+                images: try _fields.decode([BlobRef].self, forKey: .images))
         }
     }
 
@@ -1007,6 +1025,12 @@ public enum AttachmentView: Codable, Hashable, Sendable {
             var _fields = _container.nestedContainer(keyedBy: ReviewKeys.self, forKey: .review)
             try _fields.encode(comments, forKey: .comments)
             try _fields.encodeIfPresent(patch, forKey: .patch)
+        case .page(let title, let comments, let images):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: PageKeys.self, forKey: .page)
+            try _fields.encode(title, forKey: .title)
+            try _fields.encode(comments, forKey: .comments)
+            try _fields.encode(images, forKey: .images)
         }
     }
 }
@@ -2476,12 +2500,16 @@ public enum DraftAttachment: Codable, Hashable, Sendable {
     case text(name: String, text: String)
     /// Comments on a frozen diff, sent with the diff that names its patch.
     case review(diff: Diff, comments: [ReviewComment])
+    /// Comments on a web page, whose screenshots were stored with put_blob
+    /// first.
+    case page(PageReview)
 
     private enum Tag: String, CodingKey {
         case image = "Image"
         case file = "File"
         case text = "Text"
         case review = "Review"
+        case page = "Page"
     }
 
     private enum TextKeys: String, CodingKey {
@@ -2519,6 +2547,8 @@ public enum DraftAttachment: Codable, Hashable, Sendable {
             self = .review(
                 diff: try _fields.decode(Diff.self, forKey: .diff),
                 comments: try _fields.decode([ReviewComment].self, forKey: .comments))
+        case .page:
+            self = .page(try _container.decode(PageReview.self, forKey: .page))
         }
     }
 
@@ -2540,6 +2570,9 @@ public enum DraftAttachment: Codable, Hashable, Sendable {
             var _fields = _container.nestedContainer(keyedBy: ReviewKeys.self, forKey: .review)
             try _fields.encode(diff, forKey: .diff)
             try _fields.encode(comments, forKey: .comments)
+        case .page(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .page)
         }
     }
 }
@@ -4716,6 +4749,57 @@ public struct Overview: Codable, Hashable, Sendable {
     }
 }
 
+/// One comment, anchored on the block of the page it was made on. Every
+/// gesture lands on a block: a click comments on the whole block, a text
+/// selection on a phrase within it, and a dragged box on a region, which the
+/// block is the smallest element containing.
+public struct PageComment: Codable, Hashable, Sendable {
+    public var text: String
+    /// The selected phrase within the block's text; empty for the whole block.
+    public var quote: String
+    public var element: PageElement?
+    /// The dragged region as a screenshot, a blob of the agent; unset for a
+    /// click or a selection.
+    public var image: BlobRef?
+
+    public init(text: String, quote: String, element: PageElement?, image: BlobRef?) {
+        self.text = text
+        self.quote = quote
+        self.element = element
+        self.image = image
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case text
+        case quote
+        case element
+        case image
+    }
+}
+
+/// A block of a page, as the agent can search for it.
+public struct PageElement: Codable, Hashable, Sendable {
+    /// A CSS selector for the block when the comment was made.
+    public var selector: String
+    /// The block's visible text, cut short.
+    public var text: String
+    /// Where the page says the block was drawn from, as "path:line"; empty when
+    /// it does not say.
+    public var source: String
+
+    public init(selector: String, text: String, source: String) {
+        self.selector = selector
+        self.text = text
+        self.source = source
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case selector
+        case text
+        case source
+    }
+}
+
 /// What asking for older rows came to.
 public enum PageOutcome: Codable, Hashable, Sendable {
     case arrived(UInt32)
@@ -4768,6 +4852,27 @@ public enum PageOutcome: Codable, Hashable, Sendable {
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .failed)
         }
+    }
+}
+
+/// Comments a person made on a web page: an app the agent builds, a page it
+/// changed, a document it wrote. It says nothing of intent; the words sent
+/// with it say whether the comments mean "fix" or "revise".
+public struct PageReview: Codable, Hashable, Sendable {
+    public var url: String
+    public var title: String
+    public var comments: [PageComment]
+
+    public init(url: String, title: String, comments: [PageComment]) {
+        self.url = url
+        self.title = title
+        self.comments = comments
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case url
+        case title
+        case comments
     }
 }
 

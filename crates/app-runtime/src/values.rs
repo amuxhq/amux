@@ -249,6 +249,9 @@ pub enum DraftAttachment {
         diff: wire::Diff,
         comments: Vec<wire::ReviewComment>,
     },
+    /// Comments on a web page, whose screenshots were stored with put_blob
+    /// first.
+    Page(wire::PageReview),
 }
 
 impl DraftAttachment {
@@ -265,6 +268,7 @@ impl DraftAttachment {
                 diff: Some(diff.clone()),
                 comments: comments.clone(),
             }),
+            DraftAttachment::Page(page) => Of::Page(page.clone()),
         };
         wire::Attachment { of: Some(of) }
     }
@@ -284,6 +288,7 @@ impl DraftAttachment {
                 diff: review.diff.clone()?,
                 comments: review.comments.clone(),
             },
+            Of::Page(page) => DraftAttachment::Page(page.clone()),
         })
     }
 }

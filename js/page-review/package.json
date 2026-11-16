@@ -1,0 +1,12 @@
+{
+  "name": "@amux/page-review",
+  "private": true,
+  "type": "module",
+  "description": "Comment on blocks, phrases and regions of a web page, for whoever loads it",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "node build.ts"
+  }
+}

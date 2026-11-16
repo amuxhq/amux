@@ -110,8 +110,11 @@ impl ClientApi {
         on: analytics::On,
         queued: Option<bool>,
     ) {
-        if let (true, Some(shape), Some(queued)) = (self.counts(), shape, queued) {
+        if let (true, Some(shape), Some(queued)) = (self.counts(), &shape, queued) {
             runtime.analytics().record(shape.event(on, queued));
+            for event in shape.page_reviews() {
+                runtime.analytics().record(event);
+            }
         }
     }
 
@@ -189,8 +192,8 @@ pub(crate) async fn own_catalogue(
 }
 
 /// The client a call says it is in [`SURFACE_HEADER`], else `otherwise`:
-/// the Mac app opens the same sockets as the terminal and says which it is
-/// in a header.
+/// the Mac app and the browser extension open the same sockets as the
+/// terminal and say which they are in a header.
 pub(crate) fn surface_named(
     metadata: &tonic::metadata::MetadataMap,
     otherwise: analytics::Client,
@@ -200,6 +203,7 @@ pub(crate) fn surface_named(
         .and_then(|value| value.to_str().ok())
     {
         Some("mac") => analytics::Client::Mac,
+        Some("browser") => analytics::Client::Browser,
         _ => otherwise,
     }
 }
@@ -316,8 +320,17 @@ impl AgentService for ClientApi {
             .as_ref()
             .and_then(|agent| telemetry::kind(agent.kind()));
         let first = kind
-            .filter(|_| request.initial_prompt.is_some())
-            .map(InputShape::Prompt);
+            .zip(request.initial_prompt.as_ref())
+            .map(|(kind, prompt)| {
+                InputShape::Prompt(
+                    kind,
+                    prompt
+                        .prompt
+                        .as_ref()
+                        .map(telemetry::pages)
+                        .unwrap_or_default(),
+                )
+            });
         let on = if host == runtime.host() {
             analytics::On::ThisHost
         } else {
@@ -425,13 +438,22 @@ impl AgentService for ClientApi {
         )
         .await?;
         let first = match &request.initial_prompt {
-            Some(_) => runtime
+            Some(prompt) => runtime
                 .row_by_id(&request.agent_id)
                 .await
                 .ok()
                 .flatten()
                 .and_then(|row| telemetry::kind_coded(row.kind))
-                .map(InputShape::Prompt),
+                .map(|kind| {
+                    InputShape::Prompt(
+                        kind,
+                        prompt
+                            .prompt
+                            .as_ref()
+                            .map(telemetry::pages)
+                            .unwrap_or_default(),
+                    )
+                }),
             None => None,
         };
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {

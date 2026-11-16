@@ -1098,6 +1098,22 @@ fn attachment(attachment: &wire::Attachment) -> Value {
                 })).collect::<Vec<_>>(),
             })
         }
+        Some(Of::Page(page)) => json!({
+            "kind": "page",
+            "url": page.url,
+            "title": page.title,
+            "comments": page.comments.iter().map(|comment| {
+                let element = comment.element.clone().unwrap_or_default();
+                json!({
+                    "text": comment.text,
+                    "selector": element.selector,
+                    "element": element.text,
+                    "source": element.source,
+                    "quote": comment.quote,
+                    "image": comment.image.as_ref().map(|image| hex(&image.hash)),
+                })
+            }).collect::<Vec<_>>(),
+        }),
         None => json!({ "kind": "none" }),
     }
 }

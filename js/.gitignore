@@ -1,0 +1,6 @@
+node_modules/
+dist/
+dist-dev/
+test-results/
+playwright-report/
+tour

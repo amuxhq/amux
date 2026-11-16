@@ -54,6 +54,7 @@ tokens! {
         Terminal => "terminal",
         Phone => "phone",
         Mac => "mac",
+        Browser => "browser",
     }
 }
 
@@ -436,11 +437,19 @@ pub enum Event {
         role: OfferRole,
         outcome: OfferOutcome,
     },
+    /// A person sent comments on a web page to an agent: how many comments,
+    /// and how many of them were on a selected phrase or a dragged region
+    /// (the rest were on a whole block). Numbers only, never the page.
+    PageReviewSent {
+        comments: u32,
+        quotes: u32,
+        regions: u32,
+    },
 }
 
 impl Event {
     /// How many variants there are; [`Event::ordinal`] numbers them.
-    pub const COUNT: usize = 22;
+    pub const COUNT: usize = 23;
 
     pub fn name(&self) -> &'static str {
         match self {
@@ -466,6 +475,7 @@ impl Event {
             Event::OnboardingStep { .. } => "onboarding_step",
             Event::RepositoriesChosen { .. } => "repositories_chosen",
             Event::SignInOffer { .. } => "sign_in_offer",
+            Event::PageReviewSent { .. } => "page_review_sent",
         }
     }
 
@@ -496,6 +506,7 @@ impl Event {
             Event::OnboardingStep { .. } => 19,
             Event::RepositoriesChosen { .. } => 20,
             Event::SignInOffer { .. } => 21,
+            Event::PageReviewSent { .. } => 22,
         }
     }
 
@@ -600,6 +611,15 @@ impl Event {
                 put("role", token(*role));
                 put("outcome", token(*outcome));
             }
+            Event::PageReviewSent {
+                comments,
+                quotes,
+                regions,
+            } => {
+                put("comments", json!(comments));
+                put("quotes", json!(quotes));
+                put("regions", json!(regions));
+            }
         }
         out
     }
@@ -699,6 +719,11 @@ impl Event {
             Event::SignInOffer {
                 role: OfferRole::Receiver,
                 outcome: OfferOutcome::Accepted,
+            },
+            Event::PageReviewSent {
+                comments: 4,
+                quotes: 1,
+                regions: 2,
             },
         ]
     }

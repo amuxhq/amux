@@ -814,11 +814,10 @@ impl Provider {
     fn content(&self, text: &str, attachments: &[Attachment]) -> claude_stream::MessageContent {
         use attachments::Piece;
         use claude_stream::{ContentBlock, ImageSource, ImageSourceType};
-        use wire::attachment::Of;
 
         let images = attachments
             .iter()
-            .any(|attachment| matches!(attachment.of, Some(Of::Image(_))));
+            .any(|attachment| !attachments::images(attachment).is_empty());
         if !images {
             return claude_stream::MessageContent::Text(self.with_attachments(text, attachments));
         }
@@ -832,37 +831,38 @@ impl Provider {
         };
         let mut blocks = Vec::new();
         let mut prose = String::new();
-        for piece in attachments::pieces(&positioned, &self.dir.join(dir::BLOBS)) {
+        let blobs = self.dir.join(dir::BLOBS);
+        for piece in attachments::pieces(&positioned, &blobs) {
             match piece {
                 Piece::Text(text) => prose.push_str(text),
                 Piece::Element {
                     element,
                     attachment,
-                    path,
+                    ..
                 } => {
                     prose.push_str(&element);
-                    let Some(Of::Image(_)) = &attachment.of else {
-                        continue;
-                    };
-                    // The element names the file, so a model can still
-                    // read an image whose bytes cannot be inlined, or are
-                    // not an image Claude reads.
-                    let Some(bytes) = path.and_then(|path| std::fs::read(path).ok()) else {
-                        continue;
-                    };
-                    let Some(media_type) = attachments::native_image(&bytes) else {
-                        continue;
-                    };
-                    blocks.push(text_block(std::mem::take(&mut prose)));
-                    blocks.push(ContentBlock::Image {
-                        source: ImageSource {
-                            r#type: ImageSourceType::Base64,
-                            media_type: media_type.to_owned(),
-                            data: base64::engine::general_purpose::STANDARD.encode(&bytes),
+                    for image in attachments::images(attachment) {
+                        // The element names the file, so a model can still
+                        // read an image whose bytes cannot be inlined, or
+                        // are not an image Claude reads.
+                        let path = blobs.join(interpret::to_hex(&image.hash));
+                        let Ok(bytes) = std::fs::read(path) else {
+                            continue;
+                        };
+                        let Some(media_type) = attachments::native_image(&bytes) else {
+                            continue;
+                        };
+                        blocks.push(text_block(std::mem::take(&mut prose)));
+                        blocks.push(ContentBlock::Image {
+                            source: ImageSource {
+                                r#type: ImageSourceType::Base64,
+                                media_type: media_type.to_owned(),
+                                data: base64::engine::general_purpose::STANDARD.encode(&bytes),
+                                extensions: Default::default(),
+                            },
                             extensions: Default::default(),
-                        },
-                        extensions: Default::default(),
-                    });
+                        });
+                    }
                 }
             }
         }
@@ -1171,13 +1171,10 @@ fn codex_turn_input(
         // Every attachment is introduced by its element, which names it: a
         // bare local image reaches the model as "Image #1", and it cannot
         // tell which attached file is which.
-        input.push(UserInput::text(attachments::element(
-            attachment,
-            attachments::blob_path(attachment, blobs).as_deref(),
-        )));
+        input.push(UserInput::text(attachments::element_in(attachment, blobs)));
         // Codex reads only some image types and swaps any other for a note
         // the person never sees; the element names that file instead.
-        if let Some(wire::attachment::Of::Image(blob)) = &attachment.of {
+        for blob in attachments::images(attachment) {
             let path = blobs.join(interpret::to_hex(&blob.hash));
             if attachments::native_image_at(&path).is_some() {
                 input.push(UserInput::LocalImage(LocalImageInput {
@@ -1673,6 +1670,60 @@ mod tests {
             input[3]["path"],
             blobs.join("ab".repeat(32)).display().to_string()
         );
+    }
+
+    /// A page review's screenshots go after its element as local images,
+    /// and the element names each one's path.
+    #[test]
+    fn codex_sees_a_page_reviews_screenshots() {
+        let blobs = tempfile::tempdir().unwrap();
+        std::fs::write(blobs.path().join("ab".repeat(32)), b"\x89PNG\r\n\x1a\n").unwrap();
+        let comment = |text: &str, image: Option<wire::BlobRef>| wire::PageComment {
+            text: text.into(),
+            element: Some(wire::PageElement {
+                selector: "main".into(),
+                ..Default::default()
+            }),
+            quote: String::new(),
+            image,
+        };
+        let page = wire::Attachment {
+            of: Some(wire::attachment::Of::Page(wire::PageReview {
+                url: "http://localhost:5173/".into(),
+                title: "Home".into(),
+                comments: vec![
+                    comment("words only", None),
+                    comment(
+                        "this gap",
+                        Some(wire::BlobRef {
+                            hash: vec![0xab; 32],
+                            name: "region-2.png".into(),
+                            mime: "image/png".into(),
+                            size: 8,
+                        }),
+                    ),
+                ],
+            })),
+        };
+        let request = br#"{"id":"amux-1","method":"turn/start","params":{"threadId":"t1","input":[{"type":"text","text":"fix","text_elements":[]}]}}"#;
+        let written =
+            super::codex_turn_input(request, std::slice::from_ref(&page), blobs.path()).unwrap();
+        let written: serde_json::Value = serde_json::from_slice(&written).unwrap();
+        let input = written["params"]["input"].as_array().unwrap();
+        let path = blobs.path().join("ab".repeat(32)).display().to_string();
+        assert_eq!(
+            input[1]["text"],
+            attachments::element_in(&page, blobs.path())
+        );
+        assert!(
+            input[1]["text"]
+                .as_str()
+                .unwrap()
+                .contains(&format!("image-path: {path}"))
+        );
+        assert_eq!(input[2]["type"], "localImage");
+        assert_eq!(input[2]["path"], path);
+        assert_eq!(input.len(), 3);
     }
 
     /// Codex gets a local image only for bytes it reads natively: an SVG

@@ -138,6 +138,52 @@ release-check *ARGS:
 hooks:
     scripts/hooks/install
 
+# Build the browser extension into js/extension/dist: browser-core as
+# WebAssembly, then the extension around it. `just browser --dev` builds
+# js/extension/dist-dev instead, the copy a development tree loads unpacked,
+# which starts `just browser-dev-host`'s host rather than an installed amux.
+browser *ARGS:
+    {{bounded}} 900 cargo build --locked -p browser-core --target wasm32-unknown-unknown --profile wasm
+    {{bounded}} 300 sh -c 'cd js && npm ci --no-audit --no-fund --loglevel=error && cd extension && node build.ts "$@"' sh "$@"
+
+# Check and test the overlay and the extension: types, unit tests, and the
+# end-to-end test in Chromium against this tree's amux and the fake
+# providers. AMUX_E2E_KEEP=1 keeps what the provider read in js/test-results.
+browser-test: (browser "--dev")
+    {{bounded}} 900 cargo build --locked -p amux -p provider-fakes --bins
+    {{bounded}} 600 sh -c 'cd js && npm run check && npx vitest run && npx playwright install chromium >/dev/null && npx playwright test'
+
+# Cut a release of the browser extension: set VERSION (like 1.2.0) in its
+# manifest, build it, and zip it into target/browser for the Chrome Web
+# Store. Commit the manifest; uploading is a person's step (docs/RELEASE.md).
+browser-release VERSION:
+    {{bounded}} 30 scripts/py scripts/browser_version.py "{{VERSION}}"
+    {{just_executable()}} browser
+    {{bounded}} 60 sh -c 'mkdir -p target/browser && rm -f "target/browser/amux-{{VERSION}}.zip" && cd js/extension/dist && zip -qr "../../../target/browser/amux-{{VERSION}}.zip" . && echo "target/browser/amux-{{VERSION}}.zip"'
+
+# Format and fix the JavaScript under js/ with Biome.
+js-fmt:
+    {{bounded}} 300 sh -c 'cd js && npm ci --no-audit --no-fund --loglevel=error && npm run fmt'
+
+# The browser extension's fast checks, without building it: Biome's format
+# and lint, the types, and the unit tests. `just premerge` runs them when
+# anything under js/ differs from main.
+js-check:
+    {{bounded}} 300 sh -c 'cd js && npm ci --no-audit --no-fund --loglevel=error && npm run check && npx vitest run'
+
+# Screenshot every surface the extension draws, light and dark, into
+# js/tour: the overlay's modes and the side panel's states.
+browser-tour: (browser "--dev")
+    {{bounded}} 900 cargo build --locked -p amux -p provider-fakes --bins
+    {{bounded}} 600 sh -c 'cd js && rm -rf tour && npx playwright install chromium >/dev/null && AMUX_TOUR=1 npx playwright test tour'
+
+# Let this tree's development extension reach this tree's amux: registers
+# the `sh.amux.browser.dev` host with every installed Chromium browser,
+# running this tree's built amux with the config in AMUX_CONFIG now.
+# `just browser-dev-host remove` takes it out again.
+browser-dev-host *ARGS:
+    {{bounded}} 60 scripts/browser-dev-host.sh "$@"
+
 # Check the provider-free graph for iOS devices and simulators.
 mobile-check:
     {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded --target aarch64-apple-ios
@@ -332,6 +378,7 @@ premerge: no-update-flags fmt-check codegen-check proto-compat store-check depen
     {{just_executable()}} ios script-tests
     {{just_executable()}} test -- -p interpret -p replay-support -p tui -p ui-view
     {{just_executable()}} journey terminal all
+    if git diff --quiet "$(git merge-base HEAD origin/main)" -- js; then echo "js: unchanged since main"; else {{just_executable()}} js-check; fi
 
 # Run the same task sequence exercised across continuous-integration jobs.
 ci: no-update-flags lint fmt-check codegen-check proto-compat store-check dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test doctest release-check mobile-check

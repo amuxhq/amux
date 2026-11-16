@@ -22,6 +22,7 @@ CRATES = {
     "app-runtime": {"folder": "app-runtime", "built": {"wire"}, "tests": set()},
     "tui": {"folder": "tui", "built": {"wire"}, "tests": set()},
     "amux-app": {"folder": "amux", "built": {"tui"}, "tests": set()},
+    "browser-core": {"folder": "browser-core", "built": {"wire"}, "tests": set()},
 }
 SANITIZED = ["app-ffi", "tui"]
 
@@ -55,7 +56,7 @@ class AffectedTest(unittest.TestCase):
         )
         self.assertEqual(groups("crates/daemon-core/src/lib.rs"), {"tests", "product", "models"})
         self.assertEqual(
-            groups("crates/wire/src/lib.rs"), {"tests", "product", "models", "bridge"}
+            groups("crates/wire/src/lib.rs"), {"tests", "product", "models", "bridge", "browser"}
         )
 
     def test_a_crates_folder_need_not_be_its_name(self):
@@ -70,6 +71,9 @@ class AffectedTest(unittest.TestCase):
                      "journeys/manifest.json", "proto/amux/v1/chat.proto", "qa/FINDING.md",
                      "crates/gone/src/lib.rs", "crates/README.md"]:
             self.assertEqual(groups(file), set(ci.GROUPS), file)
+
+    def test_the_browser_extension_alone_runs_its_own_job(self):
+        self.assertEqual(groups("js/extension/src/background/index.ts"), {"browser"})
 
     def test_two_commits_that_cannot_be_compared_are_not_guessed_at(self):
         self.assertIsNone(ci.changed_files("", "HEAD"))

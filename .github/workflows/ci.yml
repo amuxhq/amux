@@ -38,6 +38,7 @@ jobs:
       models: ${{ steps.affected.outputs.models }}
       sanitizers: ${{ steps.affected.outputs.sanitizers }}
       bridge: ${{ steps.affected.outputs.bridge }}
+      browser: ${{ steps.affected.outputs.browser }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Read what changed
@@ -344,3 +345,46 @@ jobs:
       - uses: ./.github/actions/setup-just
       - name: Check iOS device and simulator graphs
         run: just mobile-check
+
+  browser:
+    name: Browser extension
+    needs: changes
+    if: needs.changes.outputs.browser == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: browser
+      - uses: ./.github/actions/setup-just
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: js/package-lock.json
+      # Chromium's own libraries, which a bare runner lacks.
+      - name: Install Chromium for the end-to-end test
+        working-directory: js
+        run: npm ci --no-audit --no-fund && npx playwright install --with-deps chromium
+      # Known vulnerabilities in what the extension ships (its runtime
+      # dependencies, bundled into it), not in the tools that build it.
+      - name: Audit the extension's shipped dependencies
+        working-directory: js
+        run: npm audit --omit=dev --audit-level=moderate
+      # Types, unit tests, and the extension in Chromium against the built
+      # amux and the fake providers.
+      - name: Test the browser extension
+        run: just browser-test
+      - name: Upload the browser test's results
+        if: failure()
+        timeout-minutes: 5
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-test
+          path: js/test-results
+          if-no-files-found: ignore
+          retention-days: 7

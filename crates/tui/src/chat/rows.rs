@@ -212,6 +212,12 @@ pub fn chip(view: &AttachmentView) -> String {
             1 => "[review · 1 comment]".into(),
             n => format!("[review · {n} comments]"),
         },
+        AttachmentView::Page {
+            title, comments, ..
+        } => match comments {
+            1 => format!("[{title} · 1 comment]"),
+            n => format!("[{title} · {n} comments]"),
+        },
         AttachmentView::Empty => "[attachment]".into(),
     }
 }

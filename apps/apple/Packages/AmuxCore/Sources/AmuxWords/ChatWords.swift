@@ -320,6 +320,8 @@ public enum ChatWords {
         case .review(let comments, _):
             (String(localized: "Review"),
              comments == 1 ? String(localized: "1 comment") : String(localized: "\(comments) comments"))
+        case .page(let title, let comments, _):
+            (title, comments == 1 ? String(localized: "1 comment") : String(localized: "\(comments) comments"))
         case .empty: (String(localized: "Attachment"), "")
         }
     }
@@ -330,6 +332,7 @@ public enum ChatWords {
         case .file: "doc"
         case .text: "doc.plaintext"
         case .review: "text.bubble"
+        case .page: "globe"
         case .empty: "paperclip"
         }
     }

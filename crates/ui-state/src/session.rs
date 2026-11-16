@@ -986,6 +986,11 @@ fn references(item: &Item, hash: &[u8]) -> bool {
                 .as_ref()
                 .and_then(|diff| diff.patch.as_ref())
                 .is_some_and(|patch| patch.hash == hash),
+            Some(Of::Page(page)) => page
+                .comments
+                .iter()
+                .filter_map(|comment| comment.image.as_ref())
+                .any(|image| image.hash == hash),
             Some(Of::Text(_)) | None => false,
         })
 }

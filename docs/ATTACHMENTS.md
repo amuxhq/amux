@@ -1,6 +1,6 @@
 # Attachments and blobs
 
-*For developers changing how images, files, pasted text and diff reviews travel between people, agents and clients.*
+*For developers changing how images, files, pasted text, diff reviews and page reviews travel between people, agents and clients.*
 
 amux has one attachment type, one store of bytes and one way in. An
 attachment sits at a position in text, on a person's prompt and on an agent's
@@ -23,7 +23,7 @@ The pieces are:
 
 ## Shape
 
-An attachment is one of four kinds:
+An attachment is one of five kinds:
 
 | Kind | Carries | Bytes |
 | --- | --- | --- |
@@ -31,6 +31,7 @@ An attachment is one of four kinds:
 | `file` | a `BlobRef` | a blob |
 | `text` | an `InlineText`: a name and the text | inline, no blob |
 | `review` | a `Review`: a `Diff` and a person's comments | the diff's patch, a blob |
+| `page` | a `PageReview`: a web page's address and title, and a person's comments on it | each dragged box's screenshot, a blob |
 
 A `BlobRef` is the SHA-256 of the bytes (32 bytes), a name, a mime type and a
 size. The name belongs to the reference, not to the bytes: the same bytes
@@ -54,6 +55,14 @@ model reads does not repeat the file list either. A
 `ReviewComment` is a path, a new-side line, an old-side line for a comment on a
 removed line, and the text; line zero comments on the file as a whole.
 
+A `PageComment` is anchored on a block of the page, a `PageElement`: a CSS
+selector, its visible text cut short, and where the page says it was drawn
+from (`path:line`), when it says. A comment on a selected phrase adds the
+quote; one on a dragged box adds its screenshot. A page review names as many
+blobs as it has boxes, so code that brings or checks an attachment's bytes asks
+`attachments::blobs` for every one, never for one. The browser extension makes
+them ([Browser extension](BROWSER.md)).
+
 ## The element
 
 A model reads attachments as `<amux-attachment>` elements in its
@@ -66,6 +75,7 @@ element syntax or a host-local path.
 <amux-attachment kind="file" hash="sha256:…" name="trace.json" mime="application/json" size="8192" path="/…"/>
 <amux-attachment kind="text" name="pasted-1">the pasted text…</amux-attachment>
 <amux-attachment kind="review" hash="sha256:…" name="working-tree.diff" mime="text/x-diff" size="512" base="working-tree" head="4f2a9c1" comments="1" path="/…">…</amux-attachment>
+<amux-attachment kind="page" url="http://localhost:5173/pricing" title="Pricing" comments="2">…</amux-attachment>
 ```
 
 - `hash` is `sha256:` and 64 lowercase hex digits.
@@ -79,6 +89,26 @@ element syntax or a host-local path.
   ```text
   ## path-bytes=10 line=12 old-line=0 text-bytes=11
   src/lib.rsUse helper.
+  ```
+
+- A page review's body is its comments, each a heading that counts the bytes
+  of every line it has, then those lines in a fixed order as `label: value`,
+  so the model reads labelled fields and no value can be taken for the next
+  line. A line with an empty value is left out. A box's screenshot adds its
+  hash and size to the heading and its name, type and path as lines:
+
+  ```text
+  ## comment selector-bytes=8 element-bytes=13 quote-bytes=7 text-bytes=19
+  selector: #pricing
+  element: Pricing cards
+  quote: monthly
+  text: Say annual pricing.
+  ## comment selector-bytes=4 image-hash=sha256:… image-size=1208 image-bytes=12 image-mime-bytes=9 image-path-bytes=14 text-bytes=7
+  selector: main
+  image: region-2.png
+  image-mime: image/png
+  image-path: /…/blobs/…
+  text: Tighter
   ```
 
 - Attribute values and bodies escape XML-significant characters.
@@ -225,8 +255,8 @@ that provider reads (`crates/agent/src/provider.rs`):
 | Kind | What the provider receives |
 | --- | --- |
 | `claude_pty` | The prompt typed into the terminal with each placeholder replaced by its element, blob paths included. |
-| `claude_sdk` | A user message whose text carries the elements with paths. When the prompt has images, the content is blocks instead: the text split at each image's element, with the image's bytes as a native image block right after it, typed by its bytes. An image whose bytes are not a native image gets no block. |
-| `codex` | The turn's input with each attachment appended after the text as its element text naming its blob's path, and an image whose bytes are a native image then as a `localImage` item naming the same path. |
+| `claude_sdk` | A user message whose text carries the elements with paths. When the prompt has images, the content is blocks instead: the text split at each image's element, with the image's bytes as a native image block right after it, typed by its bytes. An image whose bytes are not a native image gets no block. A page review's screenshots are images too, each a block after the review's element. |
+| `codex` | The turn's input with each attachment appended after the text as its element text naming its blob's path, and an image whose bytes are a native image then as a `localImage` item naming the same path; a page review's screenshots follow its element the same way. |
 
 **Between agents.** An agent message carries attachments as a prompt does:
 An `Envelope`'s message body holds positioned text and the ordered

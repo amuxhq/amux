@@ -1246,22 +1246,36 @@ impl Cursor {
     /// or a file gone or shorter than what was read already, which Claude
     /// never does to a transcript it writes. A file not written yet has no
     /// rows.
+    ///
+    /// It is polled for as long as the agent runs, finished subagents'
+    /// files included, so a file no longer than what was read is not
+    /// opened, and one that grew is read only past the cursor.
     pub(crate) fn unread(&self) -> Result<Vec<Vec<u8>>, String> {
+        use std::io::{Read as _, Seek as _};
         let offset = *self.offset.lock().expect("cursor lock");
-        let bytes = match std::fs::read(&self.path) {
-            Ok(bytes) => bytes,
+        let length = match std::fs::metadata(&self.path) {
+            Ok(metadata) => metadata.len() as usize,
             Err(error) if error.kind() == io::ErrorKind::NotFound && offset == 0 => {
                 return Ok(Vec::new());
             }
             Err(error) => return Err(error.to_string()),
         };
-        if bytes.len() < offset {
+        if length < offset {
             return Err(format!(
-                "the file is {} bytes, shorter than the {offset} already read",
-                bytes.len()
+                "the file is {length} bytes, shorter than the {offset} already read"
             ));
         }
-        Ok(whole_rows(&bytes[offset..]))
+        if length == offset {
+            return Ok(Vec::new());
+        }
+        let mut bytes = Vec::with_capacity(length - offset);
+        std::fs::File::open(&self.path)
+            .and_then(|mut file| {
+                file.seek(io::SeekFrom::Start(offset as u64))?;
+                file.read_to_end(&mut bytes)
+            })
+            .map_err(|error| error.to_string())?;
+        Ok(whole_rows(&bytes))
     }
 
     /// The whole rows written past the cursor; a row still being written
@@ -1932,5 +1946,26 @@ mod tests {
                 "/d/agents/a/blobs"
             );
         }
+    }
+
+    /// A transcript is polled for as long as the agent runs: one read to
+    /// its end is not read again until it grows, and then only past the
+    /// cursor. A file this process cannot open shows it: unchanged, it has
+    /// no rows rather than an error.
+    #[cfg(unix)]
+    #[test]
+    fn a_cursor_at_the_end_does_not_read_the_file_again() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("agent-a1.jsonl");
+        std::fs::write(&path, "one\n").unwrap();
+        let cursor = crate::provider::Cursor::new(root.path().join("cursor"), 4, path.clone());
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        assert_eq!(cursor.unread(), Ok(Vec::new()), "the file was read again");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        std::fs::write(&path, "one\ntwo\nthr").unwrap();
+        assert_eq!(cursor.unread(), Ok(vec![b"two".to_vec()]));
+        std::fs::write(&path, "on").unwrap();
+        assert!(cursor.unread().unwrap_err().contains("shorter"));
     }
 }

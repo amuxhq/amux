@@ -20,7 +20,11 @@
 //! - **End.** Its `task_notification`: completed is finished; stopped or
 //!   killed is stopped; failed ends it as the provider failing it. A
 //!   resumed Claude reports a subagent of the previous process as stopped,
-//!   which ends nothing: that subagent ended with its process.
+//!   which ends nothing: that subagent ended with its process. Claude sends
+//!   no notice for a subagent run in the foreground whose call an interrupt
+//!   cut: the result of the Agent call that started it ends one still
+//!   running. Where a notice comes it comes before that result, so it is
+//!   the end, and the result ends nothing more.
 //! - **Asks** a subagent raises are its own, and a person's answer reaches
 //!   it as a child input, answered with Claude's control response. A tool
 //!   server's form names no agent: it is the one agent's with a call to that
@@ -34,14 +38,16 @@ use std::collections::BTreeMap;
 
 use claude_protocol::stream::control::StopTaskRequest;
 use claude_protocol::stream::{
-    AssistantMessage, ControlRequestBody, TaskNotificationMessage, TaskStartedMessage,
-    UserMessageOutput,
+    AssistantMessage, ContentBlock, ControlRequestBody, MessageContent, TaskNotificationMessage,
+    TaskStartedMessage, UserMessageOutput,
 };
 use wire::{BackgroundJob, Input, KindInput, NativeStart, Refusal, ToolState, claude_sdk_input};
 
 use super::{Request, State, Sub, TaskProgress};
 use crate::Emit;
-use crate::claude_subagent::{Conversation, call_state, end_cause};
+use crate::claude_subagent::{
+    Conversation, call_state, end_cause, launched_in_background, returned_status,
+};
 
 /// Claude's task type for a subagent its Agent tool started.
 const AGENT_TASK: &str = "local_agent";
@@ -234,6 +240,56 @@ impl State {
             &mut self.tasks,
             now,
         );
+        if let MessageContent::Blocks(blocks) = &user.message.content {
+            for block in blocks {
+                if let ContentBlock::ToolResult {
+                    tool_use_id,
+                    content,
+                    is_error,
+                    ..
+                } = block
+                {
+                    self.call_returned(
+                        emit,
+                        tool_use_id,
+                        is_error.unwrap_or(false),
+                        &crate::claude_common::tool_result_text(content.as_ref()),
+                        user.tool_use_result.as_ref(),
+                    );
+                }
+            }
+        }
+    }
+
+    /// The result of the call `call` returned, in the agent's own chat or a
+    /// subagent's. When it is the Agent call that started a subagent in the
+    /// foreground and that subagent still runs, no notice ended it, as
+    /// happens when an interrupt cuts the call: it ends now, stopped when
+    /// the call was cut or refused. A result saying only that a subagent
+    /// was launched in the background ends nothing; its notice does.
+    pub(super) fn call_returned(
+        &mut self,
+        emit: &mut Emit,
+        call: &str,
+        is_error: bool,
+        output: &str,
+        result: Option<&serde_json::Value>,
+    ) {
+        if (!is_error && launched_in_background(result, output))
+            || self.tools.get(call).is_some_and(|tool| tool.background)
+        {
+            return;
+        }
+        let Some((child, said)) = self
+            .subagents
+            .iter()
+            .find(|(_, sub)| sub.running && sub.call == call)
+            .map(|(child, sub)| (child.clone(), sub.conversation.last_said.clone()))
+        else {
+            return;
+        };
+        let end = end_cause(returned_status(is_error, output), &said);
+        self.end_subagent(emit, &child, end);
     }
 
     /// What the subagent whose agent id is `agent_id` last said. Headless

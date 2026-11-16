@@ -47,7 +47,9 @@ use wire::{BackgroundJob, DecisionOutcome, Input, KindInput, NativeStart, Refusa
 
 use super::{Decision, State};
 use crate::claude_common::{JobInput, item_body, timestamp_ms, tool_result_text};
-use crate::claude_subagent::{AGENT_TOOL, Conversation, SEND_MESSAGE_TOOL, call_state, end_cause};
+use crate::claude_subagent::{
+    AGENT_TOOL, Conversation, SEND_MESSAGE_TOOL, call_state, end_cause, returned_status,
+};
 use crate::{Effect, Emit, ItemDraft};
 
 /// How long a subagent's end waits for its file to be read to its end
@@ -463,15 +465,7 @@ impl State {
                 .find(|(_, sub)| sub.call.as_deref() == Some(id) && sub.phase == Phase::Running)
                 .map(|(child, _)| child.clone());
             if let Some(child) = ran {
-                let status = if !is_error {
-                    "completed"
-                } else if output.starts_with(crate::claude_answers::REJECTED)
-                    || output.contains("[Request interrupted by user")
-                {
-                    "stopped"
-                } else {
-                    "failed"
-                };
+                let status = returned_status(is_error, output);
                 self.begin_end(emit, &child, end_cause(status, output), None);
             }
         }

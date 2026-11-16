@@ -1140,6 +1140,7 @@ impl State {
             .get(id)
             .filter(|tool| !tool.child_agent_id.is_empty())
             .and_then(|tool| self.last_said(&tool.child_agent_id));
+        self.call_returned(emit, id, is_error, &output, result);
         let Some(tool) = self.tools.get_mut(id) else {
             self.shared.result_without_call("a user message");
             return;

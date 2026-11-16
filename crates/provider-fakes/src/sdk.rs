@@ -1341,7 +1341,10 @@ impl Engine {
     }
 
     /// A subagent's steps ran out, or it was stopped: its task ends and its
-    /// call returns what it said last, or that it was interrupted.
+    /// call returns what it said last, or that it was interrupted. An
+    /// interrupt of the turn it runs in cuts it with no notice, and its call
+    /// returns refused, as Claude refuses every call an interrupt cuts
+    /// (terminal Claude's `subagent_stopped_foreground` recording).
     async fn end_subagent(&mut self, agent: Running) {
         self.subagents
             .retain(|within| within.task != agent.within.task);
@@ -1358,6 +1361,14 @@ impl Engine {
             return;
         }
         if self.interrupting {
+            self.user_result(
+                &within.call,
+                json!(REFUSED),
+                Ran::Refused,
+                json!("User rejected tool use"),
+            )
+            .await;
+            self.refused_call = true;
             return;
         }
         self.send(json!({

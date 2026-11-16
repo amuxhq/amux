@@ -997,3 +997,57 @@ async fn a_background_subagent_plays_on_whole_after_its_parents_turn_is_interrup
     );
     assert_eq!(host.close().await, 0);
 }
+
+/// An interrupt cuts a subagent the parent's turn waits on, with no notice:
+/// the Agent call that started it returns refused, as terminal Claude's
+/// `subagent_stopped_foreground` recording shows Claude refusing every call
+/// an interrupt cuts.
+#[tokio::test]
+async fn an_interrupt_cuts_a_foreground_subagent_and_refuses_its_call_with_no_notice() {
+    let dir = tempfile::tempdir().unwrap();
+    let never = dir.path().join("never");
+    let mut host = Host::start(json!({"steps": [
+        {"subagents": {"agents": [{"task": "Read the file", "steps": [
+            {"wait_for": {"path": never}},
+            {"text": {"chunks": ["It says hello."]}},
+        ]}]}},
+        "turn_end",
+    ]}))
+    .await;
+    host.prompt(A, "Read with a subagent").await;
+    let started = host.until(|frame| frame["subtype"] == "task_started").await;
+    host.send(
+        json!({"type":"control_request","request_id":"req_1","request":{"subtype":"interrupt"}}),
+    )
+    .await;
+    let result = host.until(|frame| frame["type"] == "result").await;
+    assert_eq!(result["subtype"], "error_during_execution");
+    let returned = host
+        .frames
+        .iter()
+        .find(|frame| {
+            frame["parent_tool_use_id"].is_null()
+                && frame["message"]["content"][0]["tool_use_id"] == started["tool_use_id"]
+        })
+        .unwrap_or_else(|| panic!("the Agent call returns: {:#?}", host.trace()));
+    let block = &returned["message"]["content"][0];
+    assert_eq!(block["is_error"], true);
+    assert!(
+        block["content"]
+            .as_str()
+            .is_some_and(|text| text.starts_with("The user doesn't want to proceed")),
+        "{block}"
+    );
+    assert!(
+        host.frames
+            .iter()
+            .all(|frame| frame["subtype"] != "task_notification"),
+        "{:#?}",
+        host.trace()
+    );
+    let marker = host.frames.iter().any(|frame| {
+        frame["message"]["content"][0]["text"] == "[Request interrupted by user for tool use]"
+    });
+    assert!(marker, "{:#?}", host.trace());
+    assert_eq!(host.close().await, 0);
+}

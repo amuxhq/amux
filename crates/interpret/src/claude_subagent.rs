@@ -139,7 +139,7 @@ fn claude_note(text: &str) -> bool {
 /// background: an Agent call whose subagent runs on, a SendMessage that
 /// resumed one, or a shell sent to the background. The work's own end says
 /// how it went.
-fn launched_in_background(result: Option<&Value>, output: &str) -> bool {
+pub(crate) fn launched_in_background(result: Option<&Value>, output: &str) -> bool {
     if resumed_in_background(result, output) {
         return true;
     }
@@ -152,6 +152,20 @@ fn launched_in_background(result: Option<&Value>, output: &str) -> bool {
             .get("backgroundTaskId")
             .and_then(Value::as_str)
             .is_some_and(|id| !id.is_empty())
+}
+
+/// How a subagent ended, as Claude's notice would say it, read from the
+/// result of the call that ran it in the foreground when no notice came
+/// first: a call cut by an interrupt or refused stopped it, another error
+/// failed it, and an answer finished it.
+pub(crate) fn returned_status(is_error: bool, output: &str) -> &'static str {
+    if !is_error {
+        "completed"
+    } else if output.starts_with(crate::claude_answers::REJECTED) || output.contains(INTERRUPTED) {
+        "stopped"
+    } else {
+        "failed"
+    }
 }
 
 /// A decision on a call, as either kind applies one to a call's row: an

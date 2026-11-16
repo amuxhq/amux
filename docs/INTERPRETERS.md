@@ -326,6 +326,12 @@ started it.
   a notification with a turn of its own, so the agent reads working from
   that step on. A resumed Claude's notice for a subagent of an earlier
   process changes nothing: that process's end ended it.
+- An interrupt that cuts a subagent run in the foreground gets no notice:
+  the Agent call that started it returns refused. That result ends a
+  subagent still running, as stopped (failed for another error, finished
+  for an answer). A notice that does come arrives before the result, so
+  the result ends nothing more. A result saying only that the subagent was
+  launched in the background ends nothing.
 - A `can_use_tool` naming the subagent's `agent_id` opens the ask in its
   chat, and the person's answer, a `ChildInput`, goes back as Claude's
   control response to that request.

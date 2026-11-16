@@ -893,6 +893,72 @@ mod headless_claude {
         let out = claude.on(Input::ProviderExited { code: Some(0) });
         assert_eq!(exit_of(&out), Some(&ExitCause::Finished));
     }
+
+    /// An interrupt that cuts a turn while a subagent runs in the
+    /// foreground gets no `task_notification` from Claude: the Agent call
+    /// that started it returns refused, as Claude refuses any call an
+    /// interrupt cuts. That result is the subagent's end, so a one-shot
+    /// host is not left waiting on a subagent Claude no longer runs.
+    #[test]
+    fn a_foreground_subagent_cut_by_an_interrupt_ends_and_a_one_shot_host_finishes() {
+        let mut claude = Claude::one_shot("count the files with a subagent");
+        claude.says(json!({"type": "system", "subtype": "init", "uuid": "i1", "session_id": "s", "model": "claude-test"}));
+        claude.assistant(
+            "a1",
+            json!([{"type": "tool_use", "id": "toolu_agent", "name": "Agent",
+                "input": {"description": "count", "prompt": "Count the files.", "subagent_type": "general-purpose"}}]),
+        );
+        let out = claude.says(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1task", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "count",
+        }));
+        let started = out.iter().any(|output| {
+            matches!(output, Output::AppendJournal(step)
+                if step.agents.iter().any(|part| part.start.is_some()))
+        });
+        assert!(started, "{out:?}");
+        claude.says(json!({
+            "type": "assistant", "uuid": "sa1", "session_id": "s",
+            "agent_id": "a1task", "parent_tool_use_id": "toolu_agent",
+            "message": {
+                "id": "msg-sa1", "type": "message", "role": "assistant", "model": "claude-test",
+                "content": [{"type": "text", "text": "Counting."}],
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            },
+        }));
+
+        // The interrupt: the Agent call returns refused, and no notice.
+        let out = claude.says(json!({
+            "type": "user", "uuid": "u1", "session_id": "s", "parent_tool_use_id": null,
+            "message": {"role": "user", "content": [{
+                "type": "tool_result", "tool_use_id": "toolu_agent", "is_error": true,
+                "content": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.",
+            }]},
+            "tool_use_result": "User rejected tool use",
+        }));
+        let ends: Vec<i32> = out
+            .iter()
+            .filter_map(|output| match output {
+                Output::AppendJournal(step) => Some(step),
+                _ => None,
+            })
+            .flat_map(|step| step.agents.iter().filter_map(|part| part.end.as_ref()))
+            .map(|end| end.cause)
+            .collect();
+        assert_eq!(ends, vec![wire::ExitCause::Stopped as i32], "{out:?}");
+
+        claude.says(json!({
+            "type": "user", "uuid": "u2", "session_id": "s", "parent_tool_use_id": null,
+            "message": {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user for tool use]"}]},
+        }));
+        let out = claude.says(json!({
+            "type": "result", "subtype": "error_during_execution", "uuid": "r1", "session_id": "s",
+            "is_error": true, "duration_ms": 10, "num_turns": 1, "errors": [],
+        }));
+        assert_eq!(marked_last(&out), Some(true), "{out:?}");
+        assert!(closes(&out), "the host waited on a subagent that had ended");
+    }
 }
 
 /// The one-shot rule over provider subagents, from the parts the agent

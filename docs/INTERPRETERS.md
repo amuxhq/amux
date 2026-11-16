@@ -348,7 +348,9 @@ parent subagent.
 
 - Claude's `SubagentStart` hook, which amux registers in its launch
   settings, names the subagent, and the interpreter asks the agent process
-  to follow its file (`FollowSubagent`). One with an empty `agent_type` is
+  to follow its file (`FollowSubagent`), and asks again at each later
+  `SubagentStart` for it, as for a continuation, so the agent process reads
+  the file at once. One with an empty `agent_type` is
   Claude's own helper (a compaction's summary, a title) and is nothing amux
   shows. The agent process sends the meta first, then the file's user,
   assistant and system rows, on the `SubagentTranscript` channel; a file it

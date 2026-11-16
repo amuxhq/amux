@@ -625,13 +625,19 @@ position, so a resumed session's rows are not read twice.
 Each subagent's conversation is a file of its own beside the transcript,
 `<session>/subagents/agent-<id>.jsonl`, with `agent-<id>.meta.json` naming
 the call that launched it. When Claude's `SubagentStart` hook names one, the
-interpreter asks the agent to follow its file (`FollowSubagent`), once per
-subagent, as a continued one writes on in the same file. Its follower sends
+interpreter asks the agent to follow its file (`FollowSubagent`). A subagent
+has one follower, as a continued one writes on in the same file. Its follower sends
 the meta first (rows wait up to half a second for it), then the user,
 assistant and system rows, on the `subagent_transcript` channel; Claude's
 attachment and bookkeeping rows are not sent. Each keeps its own position in
-`private/subagent-cursors/<id>`. A file it can no longer read, or one now
-shorter than what it read, is reported once and followed no further. Claude
+`private/subagent-cursors/<id>`. A follower reads every 25 ms while its file
+grows, and backs off to once a second while it does not, since one follows
+each subagent, finished ones included, until Claude exits. A file it can no
+longer read, or one now shorter than what it read, is reported once and its
+follower ends. The interpreter asks again at each `SubagentStart` for a
+subagent it already follows, as Claude fires one when its model continues a
+subagent: that wakes a follower to read at once and at its quick rate, or
+starts anew, from the saved position, one that ended. Claude
 can tell the agent a subagent finished before writing its last rows, so the
 interpreter asks for the file to be drained (`DrainSubagent`): the follower
 reads it to its end, waits up to two seconds for a completed subagent's

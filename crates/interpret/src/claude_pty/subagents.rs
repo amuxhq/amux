@@ -300,8 +300,17 @@ impl State {
     /// continued one that ended, which starts it again under the call that
     /// first started it.
     pub(super) fn subagent_start_hook(&mut self, emit: &mut Emit, child: &str, agent_type: &str) {
+        let followed = self.subagents.get(child).is_some_and(|sub| sub.followed);
         if !self.subagent_named(emit, child, agent_type) {
             return;
+        }
+        // Its file is followed already, as a continued subagent's is: asked
+        // again, the agent process wakes a follower that polls the idle file
+        // slowly, or starts anew one that ended on a file it could not read.
+        if followed {
+            emit.effect(Effect::FollowSubagent {
+                agent_id: child.to_owned(),
+            });
         }
         if let Some(sub) = self.subagents.get_mut(child)
             && sub.phase == Phase::Ended

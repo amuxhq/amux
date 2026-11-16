@@ -64,6 +64,8 @@ agent sub-c4fe8dc9 item msg_011Ch5eRrR9pTmjuViLvmQLH:0 thinking final at=1794788
 ## 106 recorded 104: fact SubagentTranscript type=assistant uuid=82365d5f-8a14-40c8-b486-9176ae902493
 agent sub-c4fe8dc9 item msg_011Ch5eRrR9pTmjuViLvmQLH:1 message final at=1794788254362 text="ALPHA"
 agent sub-c4fe8dc9 end FINISHED
+## 110 recorded 108: fact Hook hook_event_name=SubagentStart
+effect follow subagent a470553e252570bb0
 ## 124 recorded 122: fact Transcript type=queue-operation
 effect drain subagent a470553e252570bb0 until "OUTER ALPHA"
 item toolu_01Eg8rr4FVAEoB3eHY6GGFKi tool final at=1794788248553 text="" Agent TOOL_STATE_SUCCEEDED background opens=sub-ff9065c1 started=1794788248553 ended=1794788255770 input=subagent:"Run outer subagent" out="OUTER ALPHA"

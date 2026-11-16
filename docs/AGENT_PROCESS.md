@@ -327,7 +327,15 @@ Nothing is written at shutdown, so a clean shutdown, a power cut and a crash
 are the same; the next start decides, from each agent's journal, under the
 experiment. When its sweep finds an agent's process gone, its journal giving
 no cause, and the machine booted since the daemon before (the boot id in
-`<data_dir>/generation`):
+`<data_dir>/generation`), it decides as below. A shutdown can end the
+provider before the agent process, and then the journal does give a cause,
+the provider's own end: killed by a signal (`PROVIDER_EXITED`, "killed by a
+signal"), which amux never sends a provider, since its own stops and kills
+end with causes of their own; or a clean exit (`QUIT`), as a provider that
+exits cleanly when signalled gives. Each counts as no cause here. A quit is
+the person's own only when the machine did not restart, and is recorded as
+one then. The interpreter's last snapshot after a provider's own end reads
+idle unless it cut a turn off, so the phase tells the two apart:
 
 - an agent the person closed was on its way out, and is marked exited as
   stopped;
@@ -341,8 +349,9 @@ no cause, and the machine booted since the daemon before (the boot id in
 
 A process found gone on the same boot is a fault, marked exited as before.
 So that a shutdown never publishes an exit a paired host would stop
-children for, an end whose journal gives no cause is recorded only after a
-grace of three seconds (`CAUSELESS_GRACE_MS`), and once the daemon is asked
+children for, an end whose journal gives no cause, or only the provider's
+own end as above, is recorded only after a grace of three seconds
+(`CAUSELESS_GRACE_MS`), and once the daemon is asked
 to stop (a signal, a client, its supervisor handing over) it records no
 exit at all.
 

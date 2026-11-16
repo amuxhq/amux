@@ -1605,10 +1605,11 @@ impl Daemon {
         if let Some(over) = process.grace {
             return !over;
         }
-        let causeless = row.is_some_and(|row| {
-            row.lifecycle == Lifecycle::Live as i32
-                && row.exit_cause == ExitCause::Unspecified as i32
-        });
+        // The grace only defers the end to the next start, should the daemon
+        // be stopped meanwhile, which decides as for an agent that ended
+        // while it was away.
+        let causeless =
+            row.is_some_and(|row| row.lifecycle == Lifecycle::Live as i32 && shutdown_like(row));
         // A stop the daemon asked for, or a start that failed, is no news
         // a shutdown could get ahead of.
         if !suspension
@@ -1637,17 +1638,19 @@ impl Daemon {
         // and the end of a suspension it met leaves it so.
         if let Some(row) = live
             && row.is_closed()
-            && (row.exit_cause == ExitCause::Suspended as i32
-                || restarted && row.exit_cause == ExitCause::Unspecified as i32)
+            && (row.exit_cause == ExitCause::Suspended as i32 || restarted && shutdown_like(row))
         {
             return Gone::Stopped;
         }
         if live.is_some_and(|row| row.exit_cause == ExitCause::Suspended as i32) {
             return Gone::Suspended;
         }
+        // The provider's own end can come first in a shutdown, its journal
+        // then saying it was signalled, or that it quit as it was asked to:
+        // with the machine restarted since, that is the shutdown.
         if restarted
             && let Some(row) = live
-            && row.exit_cause == ExitCause::Unspecified as i32
+            && shutdown_like(row)
         {
             return if row.phase == wire::Phase::Idle as i32 {
                 Gone::Suspended
@@ -2296,6 +2299,24 @@ fn first_spec(
     spec.incarnation = 1;
     spec.base_branch = base_branch;
     spec
+}
+
+/// Whether the end a row's journal gave is one a machine shutting down can
+/// give before the daemon sees the process go: none at all, or the
+/// provider's own end. amux's stops and kills end with causes of their own,
+/// so a signalled provider was ended from outside. A clean exit counts too,
+/// since a provider that exits cleanly when the machine signals it reads as
+/// a person quitting it: the grace only defers it, and the next start takes
+/// it for a shutdown only if the machine restarted, recording a quit
+/// otherwise.
+fn shutdown_like(row: &AgentRow) -> bool {
+    match ExitCause::try_from(row.exit_cause) {
+        Ok(ExitCause::Unspecified | ExitCause::Quit) => true,
+        Ok(ExitCause::ProviderExited) => {
+            row.exit_detail.as_deref() == Some(wire::PROVIDER_SIGNALLED)
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -3317,6 +3338,128 @@ mod tests {
             )
         );
         assert_eq!(stops(&out, CHILD), [false], "{out:?}");
+    }
+
+    /// What the journal leaves on the row when the provider ended first.
+    fn provider_ended(rig: &mut Rig, agent: AgentId, cause: ExitCause, detail: Option<&str>) {
+        let mut row = rig.row(agent).unwrap();
+        row.exit_cause = cause as i32;
+        row.exit_detail = detail.map(str::to_owned);
+        rig.daemon.store.put_agent(&row).unwrap();
+    }
+
+    /// A shutdown can end the provider before the agent process: the
+    /// journal then says the provider was signalled, or quit as a provider
+    /// does that exits cleanly when signalled. Either gets the grace a
+    /// causeless end gets, and is recorded as it is once the grace is up; a
+    /// provider that failed is no shutdown and is recorded at once.
+    #[test]
+    fn a_provider_signalled_or_quitting_first_gets_the_grace_and_one_that_failed_does_not() {
+        for (cause, detail, grace) in [
+            (
+                ExitCause::ProviderExited,
+                Some(wire::PROVIDER_SIGNALLED),
+                true,
+            ),
+            (ExitCause::Quit, None, true),
+            (ExitCause::ProviderExited, Some("exit code 1"), false),
+        ] {
+            let mut rig = suspension_rig(false);
+            rig.step(Input::Swept);
+            rig.live(PARENT, "lead", None);
+            rig.live(CHILD, "scout", Some(PARENT));
+            provider_ended(&mut rig, PARENT, cause, detail);
+            let out = rig.step(Input::ControlClosed {
+                agent: PARENT,
+                ended: Ended::Exited,
+            });
+            let armed = out.iter().any(|output| {
+                matches!(
+                    output,
+                    Output::ArmTimer {
+                        id: TimerId::Grace(PARENT),
+                        ..
+                    }
+                )
+            });
+            assert_eq!(armed, grace, "{cause:?} {detail:?}: {out:?}");
+            if grace {
+                assert_eq!(rig.row(PARENT).unwrap().lifecycle, Lifecycle::Live as i32);
+                assert!(stops(&out, CHILD).is_empty(), "{out:?}");
+                rig.step(Input::Timer {
+                    id: TimerId::Grace(PARENT),
+                });
+            }
+            let row = rig.row(PARENT).unwrap();
+            assert_eq!(
+                (row.lifecycle, row.exit_cause, row.exit_detail.as_deref()),
+                (Lifecycle::Exited as i32, cause as i32, detail),
+                "recorded as it is once the grace is up"
+            );
+        }
+    }
+
+    /// After a reboot, an agent whose provider the shutdown ended first is
+    /// treated as one whose journal gave no cause: idle, suspended; cut off
+    /// in its turn, continued. A clean quit counts only because the machine
+    /// restarted: without a reboot it is the person's quit. A provider that
+    /// failed stays failed either way.
+    #[test]
+    fn after_a_reboot_a_provider_ended_first_is_suspended_or_continued() {
+        const BUSY: AgentId = AgentId(*b"busy-00000000000");
+        const QUIT: AgentId = AgentId(*b"quit-00000000000");
+        const FAILED: AgentId = AgentId(*b"failed-000000000");
+        let signalled = Some(wire::PROVIDER_SIGNALLED.to_owned());
+        for rebooted in [true, false] {
+            let mut rig = suspension_rig(rebooted);
+            rig.left(PARENT, wire::Phase::Idle, ExitCause::ProviderExited);
+            rig.left(BUSY, wire::Phase::Starting, ExitCause::ProviderExited);
+            rig.left(QUIT, wire::Phase::Idle, ExitCause::Quit);
+            rig.left(FAILED, wire::Phase::Idle, ExitCause::ProviderExited);
+            for (agent, detail) in [
+                (PARENT, signalled.clone()),
+                (BUSY, signalled.clone()),
+                (FAILED, Some("exit code 1".to_owned())),
+            ] {
+                let mut row = rig.row(agent).unwrap();
+                row.exit_detail = detail;
+                rig.daemon.store.put_agent(&row).unwrap();
+            }
+            let mut resumed = Vec::new();
+            for agent in [PARENT, BUSY, QUIT, FAILED] {
+                let out = rig.step(Input::ControlClosed {
+                    agent,
+                    ended: Ended::Away,
+                });
+                if job_of(&out).is_some() {
+                    resumed.push(agent);
+                }
+            }
+            rig.step(Input::Swept);
+            let read = |rig: &Rig, agent| {
+                let row = rig.row(agent).unwrap();
+                (row.lifecycle, row.exit_cause)
+            };
+            let live = Lifecycle::Live as i32;
+            let exited = Lifecycle::Exited as i32;
+            if rebooted {
+                for agent in [PARENT, QUIT] {
+                    assert_eq!(read(&rig, agent), (live, ExitCause::Suspended as i32));
+                }
+                assert_eq!(resumed, [BUSY], "cut off in its turn: continued");
+            } else {
+                assert_eq!(read(&rig, QUIT), (exited, ExitCause::Quit as i32));
+                assert_eq!(
+                    read(&rig, PARENT),
+                    (exited, ExitCause::ProviderExited as i32)
+                );
+                assert!(resumed.is_empty(), "{resumed:?}");
+            }
+            assert_eq!(
+                read(&rig, FAILED),
+                (exited, ExitCause::ProviderExited as i32)
+            );
+        }
     }
 
     #[test]

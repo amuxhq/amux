@@ -218,7 +218,7 @@ pub fn provider_exit(code: Option<i32>) -> wire::IncarnationEnd {
         cause: wire::ExitCause::ProviderExited as i32,
         detail: Some(match code {
             Some(code) => format!("exit code {code}"),
-            None => "killed by a signal".to_owned(),
+            None => wire::PROVIDER_SIGNALLED.to_owned(),
         }),
     }
 }

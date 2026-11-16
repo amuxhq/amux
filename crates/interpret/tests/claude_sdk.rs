@@ -2584,3 +2584,37 @@ fn a_suspensions_last_snapshot_says_idle() {
     let phase = stepped.step.snapshot.map(|snapshot| snapshot.phase);
     assert_eq!(phase, Some(wire::Phase::Idle as i32));
 }
+
+/// The provider's own end says by its last snapshot whether it cut a turn
+/// off: idle when it had none under way, starting when it did. A restart of
+/// the machine that killed the provider first reads the row's phase so, to
+/// suspend an idle agent and continue one in its turn.
+#[test]
+fn a_providers_own_end_says_idle_unless_it_cut_a_turn_off() {
+    let mut idle = started();
+    let stepped = ClaudeSdk::step(&mut idle, Event::ProviderExit { code: None });
+    let phase = stepped.step.snapshot.map(|snapshot| snapshot.phase());
+    assert!(
+        phase.is_none_or(|phase| phase == wire::Phase::Idle),
+        "idle it stays: {phase:?}"
+    );
+
+    let mut working = started();
+    let prompt = wire::Input::new(
+        b"p1".to_vec(),
+        wire::ClaudeSdkInput {
+            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+                text: "go".into(),
+                attachments: Vec::new(),
+            })),
+        },
+    );
+    let stepped = ClaudeSdk::step(&mut working, Event::Input(prompt));
+    assert_eq!(
+        stepped.step.snapshot.map(|snapshot| snapshot.phase()),
+        Some(wire::Phase::Working)
+    );
+    let stepped = ClaudeSdk::step(&mut working, Event::ProviderExit { code: None });
+    let phase = stepped.step.snapshot.map(|snapshot| snapshot.phase());
+    assert_eq!(phase, Some(wire::Phase::Starting), "a turn was cut off");
+}

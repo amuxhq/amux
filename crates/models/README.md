@@ -125,8 +125,9 @@ path the bound on waits cut short is not judged. The properties are in
 experiment, and the world may also kill the parent, suspend it (refusing as
 exiting what was written to it and is unanswered, even as a stop or close
 reaches it), and restart the parent's machine once, the parent's journal
-last saying it was idle, in its turn or suspending: every process on it is
-gone and its daemon starts on a new boot. A resumed process takes the
+last saying it was idle, in its turn, suspending, or that the shutdown
+ended its idle provider first (signalled): every process on it is gone and
+its daemon starts on a new boot. A resumed process takes the
 message it was resumed with as its first input. Beyond the family's own
 promises it checks that a parent the person closed or stopped is never
 started again, that neither a suspension nor a restart has the child asked

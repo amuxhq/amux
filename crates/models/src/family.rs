@@ -441,6 +441,10 @@ pub enum Last {
     /// Its incarnation ended suspended, and the daemon had not yet seen it
     /// gone.
     Suspending,
+    /// The shutdown ended its idle provider first: the incarnation ended
+    /// with the provider signalled. One that cut a turn off reads starting
+    /// and is continued as a busy one is.
+    ProviderGone,
 }
 
 /// One of the two agents.
@@ -591,7 +595,7 @@ impl Machine for FamilyDeliveries {
             out.push(Action::Suspend);
         }
         if world && s.used.restarts < self.restarts {
-            for last in [Last::Idle, Last::Busy, Last::Suspending] {
+            for last in [Last::Idle, Last::Busy, Last::Suspending, Last::ProviderGone] {
                 out.push(Action::Restart { last });
             }
         }
@@ -1512,7 +1516,8 @@ impl<'a> Transition<'a> {
     }
 
     /// The parent's machine restarts: its journal last said the parent was
-    /// in its turn or idle, every process on it goes without a word, and
+    /// in its turn or idle, suspending, or that the shutdown ended its
+    /// provider first, every process on it goes without a word, and
     /// its daemon starts on a new boot. Its link goes with it and comes
     /// back. Whatever the parent's row said live it still says after.
     fn restart(&mut self, last: Last) {
@@ -1534,6 +1539,19 @@ impl<'a> Transition<'a> {
                     incarnation_end: Some(wire::IncarnationEnd {
                         cause: wire::ExitCause::Suspended as i32,
                         detail: None,
+                    }),
+                    ..Default::default()
+                },
+                // As an interpreter writes it for a provider that was idle.
+                Last::ProviderGone => Step {
+                    snapshot: Some(wire::Snapshot {
+                        kind: wire::Kind::Codex as i32,
+                        phase: wire::Phase::Idle as i32,
+                        ..Default::default()
+                    }),
+                    incarnation_end: Some(wire::IncarnationEnd {
+                        cause: wire::ExitCause::ProviderExited as i32,
+                        detail: Some(wire::PROVIDER_SIGNALLED.to_owned()),
                     }),
                     ..Default::default()
                 },

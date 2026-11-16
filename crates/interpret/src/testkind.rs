@@ -392,9 +392,10 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
             Event::ProviderExit { code } => {
                 // A session end closes every open ask, outcome unknown.
                 state.shared.close_all_asks();
-                state.shared.provider_exited();
+                let end = crate::provider_exit(code);
+                state.shared.provider_exited_as(&end);
                 state.jobs.clear();
-                emit.end_incarnation(crate::provider_exit(code));
+                emit.end_incarnation(end);
             }
             Event::Exiting(end) => {
                 state.shared.close_all_asks();

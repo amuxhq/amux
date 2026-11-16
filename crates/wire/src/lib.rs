@@ -117,6 +117,12 @@ sized_service!(
 /// sends none.
 pub const SURFACE_HEADER: &str = "amux-surface";
 
+/// The detail an incarnation's end gives when its provider died of a signal
+/// the agent did not send: amux's own stops and kills end with causes of
+/// their own, so this one came from outside, as when the machine shuts
+/// down. Released builds write these words, so they are read as written.
+pub const PROVIDER_SIGNALLED: &str = "killed by a signal";
+
 /// What a caller says of a method its host does not have. gRPC's own answer
 /// to an unknown method has no words, and a caller's "could not start the
 /// agent: " would end at the colon.

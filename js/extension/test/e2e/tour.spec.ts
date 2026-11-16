@@ -1,7 +1,7 @@
 // A tour of every surface the extension draws, as screenshots in
 // js/tour, in light and dark: the overlay's modes and comment
 // box, and the side panel in each state it can reach here. It checks
-// little; it is for looking at. `just browser-tour` runs it.
+// little; it is for looking at. `just browser tour` runs it.
 //
 // Two notices cannot be reached under Playwright: the one for the browser's
 // own pages and the one for local files without file access. The panel
@@ -27,7 +27,7 @@ import {
   tabOf,
 } from "./harness.ts";
 
-test.skip(!process.env.AMUX_TOUR, "the tour runs from `just browser-tour`");
+test.skip(!process.env.AMUX_TOUR, "the tour runs from `just browser tour`");
 
 const out = join(here, "../../../tour");
 const PANEL = { width: 400, height: 760 };

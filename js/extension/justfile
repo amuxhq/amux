@@ -1,0 +1,74 @@
+# The browser extension's recipes. `just browser <recipe>` from anywhere in
+# the checkout; every recipe runs from the repository root. docs/BROWSER.md
+# describes the extension, docs/RELEASE.md its release.
+
+set shell := ["sh", "-cu"]
+set positional-arguments
+set working-directory := "../.."
+
+bounded := "scripts/bounded"
+python := "scripts/py"
+
+# List the browser extension's recipes.
+default:
+    @just --list browser
+
+# browser-core as WebAssembly, then the extension around it, into
+# js/extension/dist. `--dev` builds js/extension/dist-dev instead, the copy a
+# development tree loads unpacked, which starts `just browser dev-host`'s
+# host rather than an installed amux.
+# Build the browser extension.
+build *ARGS:
+    {{bounded}} 900 cargo build --locked -p browser-core --target wasm32-unknown-unknown --profile wasm
+    {{bounded}} 300 sh -c 'cd js && npm ci --no-audit --no-fund --loglevel=error && cd extension && node build.ts "$@"' sh "$@"
+
+# Types, unit tests, and the end-to-end test in Chromium against this tree's
+# amux and the fake providers. AMUX_E2E_KEEP=1 keeps what the provider read
+# in js/test-results.
+# Check and test the overlay and the extension.
+test: (build "--dev")
+    {{bounded}} 900 cargo build --locked -p amux -p provider-fakes --bins
+    {{bounded}} 600 sh -c 'cd js && npm run check && npx vitest run && npx playwright install chromium >/dev/null && npx playwright test'
+
+# Biome's format and lint, the types, and the unit tests, without building.
+# `just premerge` runs them when anything under js/ differs from main.
+# The JavaScript's fast checks.
+check:
+    {{bounded}} 300 sh -c 'cd js && npm ci --no-audit --no-fund --loglevel=error && npm run check && npx vitest run'
+
+# Format and fix the JavaScript under js/ with Biome.
+fmt:
+    {{bounded}} 300 sh -c 'cd js && npm ci --no-audit --no-fund --loglevel=error && npm run fmt'
+
+# The overlay's modes and the side panel's states, light and dark, into
+# js/tour, with the Chrome Web Store's screenshots and promo tile.
+# Screenshot every surface the extension draws.
+tour: (build "--dev")
+    {{bounded}} 900 cargo build --locked -p amux -p provider-fakes --bins
+    {{bounded}} 600 sh -c 'cd js && rm -rf tour && npx playwright install chromium >/dev/null && AMUX_TOUR=1 npx playwright test tour'
+
+# Registers the `sh.amux.browser.dev` host with every installed Chromium
+# browser, running this tree's built amux with the config in AMUX_CONFIG
+# now. `just browser dev-host remove` takes it out again.
+# Let this tree's development extension reach this tree's amux.
+dev-host *ARGS:
+    {{bounded}} 60 scripts/browser-dev-host.sh "$@"
+
+# `just browser release 0.2.0` sets the manifest's version, builds, zips,
+# commits, tags browser-v0.2.0, pushes, and keeps the zip as that tag's
+# GitHub Release asset.
+# Cut a release of the browser extension.
+release VERSION:
+    JUST={{just_executable()}} {{bounded}} 1800 {{python}} -B scripts/browser_release.py release {{VERSION}}
+
+# `just browser deploy 0.2.0` uploads the release's zip to the Chrome Web
+# Store and submits it for review, published once approved. `--staged` holds
+# it after approval until `deploy 0.2.0` again publishes it; `--dry-run`
+# says what would happen and changes nothing.
+# Put a released version on the Chrome Web Store.
+deploy VERSION *ARGS:
+    shift; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 900 {{python}} -B scripts/browser_release.py deploy {{VERSION}} "$@"
+
+# Show what the Chrome Web Store holds: the published and submitted versions.
+status:
+    {{bounded}} 120 {{python}} -B scripts/browser_release.py status

@@ -82,7 +82,7 @@ takes seconds shares a job, and the models run a few to a job.
 | Pointer checks over the C ABI | `ubuntu-latest` | `just miri`: the phone's C ABI tests under the pinned nightly's interpreter, which fails on any undefined behaviour in a pointer handed across the boundary, read or freed; the tests that start an installation or a tokio runtime are ignored there, each saying why |
 | Sanitizers | `ubuntu-latest`, one job for each of `address` and `thread` | `just sanitize <kind>`: the tests that reach unsafe code and C, built on the pinned nightly with the standard library under the sanitizer; `address` fails on an out-of-bounds access, a use after free or a double free, `thread` on a data race |
 | iOS target check | `macos-latest` | `just mobile-check` |
-| Browser extension | `ubuntu-latest` | Node 24 and Playwright's Chromium; an audit of the dependencies the extension ships for known vulnerabilities; then `just browser-test`: Biome's format and lint, the overlay's and extension's types and unit tests, and the extension in Chromium against the built `amux` and the fake providers |
+| Browser extension | `ubuntu-latest` | Node 24 and Playwright's Chromium; an audit of the dependencies the extension ships for known vulnerabilities; then `just browser test`: Biome's format and lint, the overlay's and extension's types and unit tests, and the extension in Chromium against the built `amux` and the fake providers |
 
 The test job runs nextest's `ci` profile, which does not stop at the first
 failure, so a platform reports every failing test; the job's log holds each

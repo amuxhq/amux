@@ -184,23 +184,25 @@ browser's own recipes and CI job, never in `just premerge`.
 ## Building and testing
 
 ```sh
-just browser              # browser-core as WebAssembly, then js/extension/dist
-just browser --dev        # js/extension/dist-dev, the copy a development tree loads
-just browser-test         # types, unit tests, and the end-to-end test
-just browser-tour         # screenshots of every surface, light and dark
-just js-check             # Biome, types and unit tests, without building
-just js-fmt               # format and fix with Biome
-just browser-release 1.2.0  # set the version, build, zip for the store
-just browser-dev-host     # let dist-dev reach this tree's amux
+just browser build          # browser-core as WebAssembly, then js/extension/dist
+just browser build --dev    # js/extension/dist-dev, the copy a development tree loads
+just browser test           # types, unit tests, and the end-to-end test
+just browser tour           # screenshots of every surface, light and dark
+just browser check          # Biome, types and unit tests, without building
+just browser fmt            # format and fix with Biome
+just browser dev-host       # let dist-dev reach this tree's amux
 ```
 
-To try a change, run `just browser --dev`, load `js/extension/dist-dev`
-unpacked from `chrome://extensions`, and run `just browser-dev-host` with
+Releasing it to the Chrome Web Store (`just browser release`, `deploy` and
+`status`) is in [RELEASE](RELEASE.md#the-browser-extension).
+
+To try a change, run `just browser build --dev`, load `js/extension/dist-dev`
+unpacked from `chrome://extensions`, and run `just browser dev-host` with
 `AMUX_CONFIG` naming this tree's installation (`wt exec <tree> --` sets it).
 The development copy is named "amux (dev)" and starts the
 `sh.amux.browser.dev` host, which runs this tree's `target/debug/amux`, so it
 never reaches an installed amux; the installed extension's host is left alone.
-`just browser-dev-host remove` takes it out.
+`just browser dev-host remove` takes it out.
 
 The end-to-end test ([`review.spec.ts`](../js/extension/test/e2e/review.spec.ts))
 starts a daemon with the fake providers, loads the extension in Playwright's
@@ -212,7 +214,7 @@ so the copy under test is given access to every site instead; the side panel
 is opened as a page with `?tab=` naming the tab it shows. `AMUX_E2E_KEEP=1`
 keeps what the provider read in `js/test-results`.
 
-`just browser-tour` drives the same harness through every surface the extension
+`just browser tour` drives the same harness through every surface the extension
 draws, in light and dark, into `js/tour`: the overlay's hover, gestures,
 comment box and pins, and the side panel's states, including the one for a page
 the extension has not been let into (a browser without access to every site)
@@ -226,7 +228,7 @@ The JavaScript is one npm workspace under `js/`, as the crates are one Cargo
 workspace: one lockfile, one base `tsconfig`, Biome for format and lint,
 Vitest and Playwright. It needs Node 24 or later, which runs the TypeScript
 build scripts directly. Packages' install scripts never run (`js/.npmrc`).
-`just premerge` runs `just js-check` when anything under `js/` differs from
+`just premerge` runs `just browser check` when anything under `js/` differs from
 main, so a change elsewhere pays nothing for it.
 
 ## Rejected alternatives

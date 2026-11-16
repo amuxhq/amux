@@ -378,7 +378,7 @@ jobs:
       # Types, unit tests, and the extension in Chromium against the built
       # amux and the fake providers.
       - name: Test the browser extension
-        run: just browser-test
+        run: just browser test
       - name: Upload the browser test's results
         if: failure()
         timeout-minutes: 5

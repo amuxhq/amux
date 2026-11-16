@@ -1,10 +1,10 @@
 // Builds the extension into dist/, ready to zip for the
 // store: the four scripts, the panel's page, the manifest, the icons, and
-// browser-core's WebAssembly, which `just browser` builds first.
+// browser-core's WebAssembly, which `just browser build` builds first.
 //
 // `--dev` builds the copy a development tree loads: it names itself
 // "amux (dev)" and starts the `sh.amux.browser.dev` host, which
-// `just browser-dev-host` points at that tree's own amux, so it never
+// `just browser dev-host` points at that tree's own amux, so it never
 // talks to an installed one.
 
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";

@@ -887,6 +887,49 @@ whether the config switches it on, and `UpdateSettingsRequest.experiments`
 replaces the list of names switched on, keeping any the build does not
 know. A change takes effect when the daemon next starts.
 
+A person switches an experiment by its **name** (`workspaces`: lowercase
+letters only, so a store table's name says whose it is). A build implements
+at most one **version** of each (`workspaces/1`), and everything sent or
+stored is keyed by the version. The registry,
+[`crates/settings/src/experiments.rs`](../crates/settings/src/experiments.rs),
+lists each with its description and its own settings. In the config file the
+switch is the `[experiments]` table:
+
+```toml
+[experiments]
+enabled = ["workspaces", "suspension"]
+
+[experiments.suspension]
+after = "30m"
+```
+
+- **`experiments.enabled` is the one key the config promises.** A name this
+  build has no experiment by is ignored with a warning, and kept when a
+  client switches experiments, since no client of this build can see it.
+  The daemon makes the new list from the file as it reads under the
+  settings' write lock, not from its last poll, so a hand edit made just
+  before is neither undone nor lost.
+- **Each `[experiments.<name>]` table belongs to its experiment.** The config
+  reader keeps it raw and the experiment's module reads it
+  (`settings::experiments::suspension`); a value the module cannot use is a
+  warning and the default, so an experiment's settings never stop amux
+  starting. The module lists its keys (`Experiment.keys`), and `amux config
+  get`, `set` and `unset` reach `experiments.<name>.<key>` through them. The
+  table stops being read when the experiment graduates or goes.
+- **The switch is per installation,** so an experiment is on for every
+  profile: experiments change what the daemon does, and an installation runs
+  one daemon. The daemon reads the switch once, as it starts
+  (`Launch.experiments`, logged with the serving line). Switching while it
+  runs was rejected: every experiment would have to handle being turned off
+  while its work is under way, which none needs.
+- **An experiment's data may be lost at any upgrade,** so it keeps nothing
+  there it cannot afford to lose; what must survive lives in a promised
+  place or with the thing it describes, as a workspace's maker is recorded
+  on disk ([workspaces](WORKSPACES.md#who-made-it)). A file a release
+  promises, such as an agent's spec, carries an experiment's data only as
+  entries in its map (`AgentSpec.experimental["suspension/1"]` holds the
+  suspension delay).
+
 To change an experiment's shape, edit its `.proto` and run `just protobuf`.
 A change a build at the same version could misread moves the experiment to
 its next version (`workspaces/2`, under a key of its own, in the registry

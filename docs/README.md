@@ -50,6 +50,8 @@ paths to the `.md` files, so they work both here and on the site.
   review document.
 - [Agent tools](AGENT_TOOLS.md) — the seven tools agents call, messaging, families, delivery, completion and
   work across hosts.
+- [Workspaces](WORKSPACES.md) — where agents run: folders, git worktrees and wt trees, who made each, the
+  row-first create, holding, starting and stopping, deletion and consent.
 - [Supervisor](SUPERVISOR.md) — `amux supervise`, login items, stopping, updates and channels, overlap and
   rollback, keep-awake.
 

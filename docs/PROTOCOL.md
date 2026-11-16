@@ -994,11 +994,12 @@ agent's host carries the field, and an older host ignores it and keeps the
 changes. Retention, the family rule and every client before the field never
 discard. The host checks for changes itself when it removes the workspace,
 whatever the rows said. A wt tree is claimed while one of its
-agents runs, started before the first launches, and stopped once nothing
-holds it. A tree a person made with wt is only held and run in; amux never
-starts, stops or removes it. Every launch in a wt tree runs the provider in
-the tree's environment. One whose environment does not load launches
-without it and says so in the entry's `problem`.
+agents runs, started as the first launches (the launch does not wait for
+its start hook), and stopped once nothing holds it. A tree a person made
+with wt is only held and run in; amux never starts, stops or removes it.
+Every launch in a wt tree runs the provider in the tree's environment. One
+whose environment does not load launches without it and says so in the
+entry's `problem`. [Workspaces](WORKSPACES.md) has the lifecycle in full.
 
 ### The client services on a link
 

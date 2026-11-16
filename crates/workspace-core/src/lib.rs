@@ -28,11 +28,13 @@
 //!   nothing was stopped, or it completes and the start follows it.
 //! - Only workspaces this host made are made, started, stopped or deleted.
 //!   Every wt tree with an awake member is claimed, made here or not.
-//! - A workspace this host made is deleted once, after its last member is,
-//!   and with its changes discarded only when some member's delete gave
-//!   consent since it last gained a member. Removal never waits: the backend
-//!   refuses a tree someone holds, or a dirty one without consent, and keeps
-//!   it, clearing its owner, so it is no longer this host's.
+//! - A workspace this host made is deleted once, after its last member is
+//!   and once no stop call of its own is outstanding, and with its changes
+//!   discarded only when a member's delete gave consent while every other
+//!   member was its descendant, since it last gained a member. The removal
+//!   waits for no other holder: the backend refuses a tree someone holds,
+//!   or a dirty one without consent, and keeps it, clearing its owner, so
+//!   it is no longer this host's.
 //!
 //! An entry lives while the workspace has a member or a job of the core's is
 //! outstanding on it, so the answer to a job always finds the entry that
@@ -909,8 +911,8 @@ impl Workspaces {
 
         // Its claim must be gone first, or the backend would refuse the
         // removal for amux's own hold, and so must a stop call: its hook
-        // holds the tree exclusively while it runs, and wt refuses a
-        // removal under it rather than waiting.
+        // holds the tree exclusively while it runs, and a removal that
+        // found it held would disown a clean tree.
         if leaving
             && workspace.claim == Claim::None
             && !workspace.waiter

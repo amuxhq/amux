@@ -361,6 +361,49 @@ own end as above, is recorded only after a grace of three seconds
 to stop (a signal, a client, its supervisor handing over) it records no
 exit at all.
 
+### Why suspension is shaped this way
+
+Suspension must be invisible: on any client and any paired host, builds
+before it included, a suspended agent is an idle one that any message
+reaches. Each choice above follows from that, and these were rejected:
+
+- **Suspending agents with a parent.** They already end themselves by the
+  one-shot rule once their work is done, and a message resumes them, so the
+  processes that linger are those of agents without a parent.
+- **The daemon deciding,** from quiet and busy reports the agent sends, with
+  a timer of its own and a stop that checks again before it acts. The agent
+  core already knows every condition, its children included, and an input
+  that meets the exit is already handled by the one-shot path: refused as
+  exiting, then woken.
+- **Recording a suspension as an exit,** a row that reads exited with a new
+  cause newer clients draw as idle. Every older host and client would see an
+  exited agent, stop its children and drop the reports owed to it, and a
+  great deal of code branches on whether a row is live.
+- **Gating the suspended-row handling on the switch.** Rows already
+  suspended would be stranded when a person switched the experiment off,
+  so only new suspensions stop.
+- **Publishing the run's first incarnation on the row,** so a child's host
+  could judge a report's staleness itself. It needs a wire field and a
+  replica table to tell other hosts what only the parent's host needs to
+  know. **Keeping the incarnation number across a suspension** fails too:
+  every spec file, journal boundary and envelope dedupe is per incarnation.
+- **Asking the person to continue an agent a restart cut off in its turn.**
+  A person who restarts a machine almost always wants the work to carry
+  on, a step repeated by an automatic continuation is no riskier than one
+  repeated after a typed "continue", and unattended work survives only this
+  way. It applies only after a reboot: on the same boot, a command the dead
+  process started may still run, and continuing the turn could run it
+  twice.
+- **Marking the continuation with a new kind of sender, or a reason on the
+  resume's boundary.** amux has only agent and person senders, and older
+  clients would get one they could not place. A fixed marker in the
+  prompt's input id needs no protocol field and no change to the
+  interpreters, which already keep the input id on a prompt's item.
+- **Writing anything at shutdown.** The operating system signals agents and
+  the daemon in no promised order, and a power cut writes nothing, so the
+  next start decides from each journal, and the grace keeps a daemon that
+  is itself about to be signalled from publishing an exit first.
+
 ## The control socket
 
 `ctl.sock` carries `CtlFrame` messages

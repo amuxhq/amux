@@ -260,6 +260,18 @@ impl Provider {
                     self.said.push_back(Said::Fact(fact(
                         json!({"type": "tool", "id": id, "name": name, "input": input}),
                     )));
+                    // Claude's Agent tool: a provider subagent runs inside
+                    // this process, says its answer and ends before the
+                    // call returns, its parts in the host's own journal.
+                    if name == "Agent" {
+                        for said in [
+                            json!({"type": "subagent_start", "agent": id, "call": id, "title": "a subagent"}),
+                            json!({"type": "subagent_text", "agent": id, "id": format!("{id}:said"), "text": tool.outcome.text()}),
+                            json!({"type": "subagent_end", "agent": id}),
+                        ] {
+                            self.said.push_back(Said::Fact(fact(said)));
+                        }
+                    }
                     let result = fact(
                         json!({"type": "tool_result", "id": id, "output": tool.outcome.text()}),
                     );

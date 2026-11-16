@@ -84,6 +84,7 @@ impl Daemon {
                 kind: 0,
                 end: IngestEnd::Failed(error.to_string()),
                 seen,
+                skipped: 0,
             });
         if report.end == IngestEnd::More {
             self.journals.more.insert(agent);
@@ -151,8 +152,13 @@ impl Daemon {
                 IngestEnd::Read
             },
             seen: *seen,
+            skipped: 0,
         };
         if !batch.frames.is_empty() {
+            // The rows of the provider subagents the batch starts come
+            // first, as a spawn's row does: each exists before its first
+            // item, and a subscriber hears of it before anything in it.
+            let made = self.make_subagents(&key, &batch.frames, out)?;
             let clock = CommitClock {
                 now_ms: self.timers.now_ms as i64,
                 notify_delay_ms: self.settings.notify_delay_ms,
@@ -172,28 +178,58 @@ impl Daemon {
             // Only now, with the transaction committed: a subscriber never
             // sees a revision the store could not serve it.
             let mut envelope = false;
-            for record in committed.records {
-                let of = match record {
-                    Record::Item(item) => session_event::Of::Item(item),
-                    Record::Append(append) => session_event::Of::Append(append),
-                    Record::Snapshot(snapshot) => {
-                        envelope = true;
-                        session_event::Of::Snapshot(snapshot)
-                    }
-                };
-                self.publish_session(&key, Arc::new(event(of)), out);
+            let mut agents = vec![(key.clone(), committed.records)];
+            agents.extend(committed.subagents);
+            for (owner, records) in agents {
+                let mut moved = false;
+                for record in records {
+                    let of = match record {
+                        Record::Item(item) => session_event::Of::Item(item),
+                        Record::Append(append) => session_event::Of::Append(append),
+                        Record::Snapshot(snapshot) => {
+                            moved = true;
+                            session_event::Of::Snapshot(snapshot)
+                        }
+                    };
+                    self.publish_session(&owner, Arc::new(event(of)), out);
+                }
+                if moved {
+                    // Phase, working_on, since-when and git ride the
+                    // inventory row.
+                    self.publish_row(&owner, out)?;
+                    envelope = true;
+                }
             }
             if envelope {
-                // Phase, working_on, since-when and git ride the inventory row.
-                self.publish_row(&key, out)?;
                 self.drain_notifications(out);
             }
+            if !committed.skipped.is_empty() {
+                // An interpreter wrote a part for an agent it does not run:
+                // nothing of it is filed, and the count says it happened.
+                tracing::warn!(
+                    agent = %crate::hex(&agent.0),
+                    parts = committed.skipped.len(),
+                    first = %crate::hex(&committed.skipped[0]),
+                    "skipped subagent parts naming no subagent of this agent"
+                );
+                report.skipped = committed.skipped.len() as u32;
+                for named in committed.skipped {
+                    if self.store.agent_by_id(&named)?.is_some() {
+                        self.touched.foreign_parts.push((key.clone(), named));
+                    }
+                }
+            }
+            self.touched.after_end.extend(committed.after_end);
+            self.subagents_committed(&key, &made, committed.changes, out)?;
             // A message waiting for its acceptance item is answered after
             // the subscribers were told of the item.
             self.lane_committed(agent, out);
         }
         if at_end && self.journals.caught_up_due.remove(&agent) {
             self.announce_caught_up(&key, out)?;
+            // A subagent has no Hello of its own: its host's journal read
+            // to the end is everything it has said too.
+            self.subagents_caught_up(&key, out)?;
         }
         Ok(report)
     }
@@ -422,6 +458,7 @@ mod tests {
                 kind: 0,
                 end: IngestEnd::More,
                 seen: end,
+                skipped: 0,
             },
         }));
 

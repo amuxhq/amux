@@ -22,6 +22,7 @@ mod registry;
 mod resumption;
 mod settings;
 mod single_daemon;
+mod subagents;
 mod supervisor;
 mod upgrade;
 mod worktree;

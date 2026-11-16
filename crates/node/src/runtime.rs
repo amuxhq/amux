@@ -259,6 +259,10 @@ pub enum RegistryError {
     Refused(wire::Error),
     #[error("the profile's core: {0}")]
     Core(String),
+    /// The agent is a provider subagent, which cannot do this; the words
+    /// say why.
+    #[error("{0}")]
+    Subagent(String),
 }
 
 /// What [`ProfileRuntime::ingest`] committed.
@@ -311,6 +315,7 @@ impl RegistryError {
             Self::KindNotRun { .. }
             | Self::ParentEnded(_)
             | Self::HasParent(_)
+            | Self::Subagent(_)
             | Self::UnreadableAttachment => ErrorCode::FailedPrecondition,
             Self::StartTimeout(_) | Self::StopTimeout(_) => ErrorCode::Aborted,
             Self::Worktree(error) => match error {
@@ -384,6 +389,9 @@ pub struct ProfileRuntime {
     /// Journal frames committed since start: what ingest has done, so its
     /// cost per frame can be measured from outside.
     ingested_frames: AtomicU64,
+    /// Provider subagent parts ingest skipped: an interpreter wrote a part
+    /// naming no subagent of the agent whose journal held it.
+    skipped_subagent_parts: AtomicU64,
     pub(crate) push: Arc<dyn PushSender>,
     /// What this host's own entry says of notifications.
     pub(crate) push_key: std::sync::Mutex<Option<Vec<u8>>>,
@@ -690,6 +698,7 @@ impl ProfileRuntime {
             },
             commits: watch::Sender::new(0),
             ingested_frames: AtomicU64::new(0),
+            skipped_subagent_parts: AtomicU64::new(0),
             push,
             push_key: std::sync::Mutex::new(None),
             background: Mutex::new(Vec::new()),
@@ -796,6 +805,12 @@ impl ProfileRuntime {
     /// started.
     pub fn ingested_frames(&self) -> u64 {
         self.ingested_frames.load(Ordering::Relaxed)
+    }
+
+    /// How many provider subagent parts ingest skipped since this runtime
+    /// started, for parts naming no subagent of the agent that wrote them.
+    pub fn skipped_subagent_parts(&self) -> u64 {
+        self.skipped_subagent_parts.load(Ordering::Relaxed)
     }
 
     /// The profile's core, from the shell's side.
@@ -1504,6 +1519,10 @@ impl ProfileRuntime {
             .await?
             .into_iter()
             .filter(|row| row.agent.host == self.host().as_bytes())
+            // A provider subagent has no directory or process to look
+            // for: it ends with its host, and the core settles it once
+            // the sweep is done.
+            .filter(|row| row.native.is_none())
             .filter_map(|row| Some((Uuid::from_slice(&row.agent.agent).ok()?, row)))
             .collect();
         let mut dirs = HashSet::new();
@@ -1745,6 +1764,8 @@ impl ProfileRuntime {
         self.wrote();
         self.ingested_frames
             .fetch_add(u64::from(report.frames), Ordering::Relaxed);
+        self.skipped_subagent_parts
+            .fetch_add(u64::from(report.skipped), Ordering::Relaxed);
         if report.turn_ends > 0
             && self.analytics.is_on()
             && let Some(kind) = crate::telemetry::kind_coded(report.kind)
@@ -2053,6 +2074,7 @@ fn registry_error(id: AgentId, error: CallError) -> RegistryError {
         }
         Refusal::Worktree(error) => RegistryError::Refused(error),
         Refusal::Store(words) => RegistryError::Core(words),
+        Refusal::Subagent(words) => RegistryError::Subagent(words),
     }
 }
 
@@ -2137,6 +2159,10 @@ fn input_id_of(frame: &CtlFrame) -> Vec<u8> {
     match &frame.of {
         Some(ctl_frame::Of::AgentMessage(envelope)) => envelope.id.clone(),
         Some(ctl_frame::Of::Input(input)) => input.input_id.clone(),
+        Some(ctl_frame::Of::ChildInput(child)) => child
+            .input
+            .as_ref()
+            .map_or_else(Vec::new, |input| input.input_id.clone()),
         _ => Vec::new(),
     }
 }

@@ -4,7 +4,10 @@
 //! Facts arrive on the stream channel as `{"type": …}`: `ready`, `user`
 //! (a prompt's reflection, or `envelope` for an injected message's),
 //! `text`/`text_done` (a streamed message), `tool`/`tool_result`,
-//! `ask`/`ask_closed`, `turn_start`, `turn_end` and `model`. It writes
+//! `ask`/`ask_closed`, `turn_start`, `turn_end` and `model`, and for a
+//! provider subagent it runs, `subagent_start`, `subagent_text` and
+//! `subagent_end`, each naming the subagent by the provider's id for it
+//! (`agent`). It writes
 //! `user`, `answer` and, on a stop while a turn runs or an ask is open,
 //! `interrupt`. Bodies are the SDK's messages under the kind tag `test`.
 
@@ -39,6 +42,13 @@ pub struct State<const FORGET: bool> {
     /// it writes a `woke` item.
     #[serde(default)]
     wake: Option<i64>,
+    /// This agent's id, which each subagent's id is derived from.
+    #[serde(default)]
+    host: Vec<u8>,
+    /// The subagents' parts of the step under way, added to the step it
+    /// returns; always empty between steps.
+    #[serde(skip)]
+    parts: Vec<wire::AgentStep>,
 }
 
 impl<const FORGET: bool> State<FORGET> {
@@ -60,6 +70,36 @@ impl<const FORGET: bool> Checkpoint for State<FORGET> {
         let body = self.body();
         let step = self.shared.resume_step(body);
         (self, step)
+    }
+}
+
+/// A provider subagent's agent id: the same for one provider id under one
+/// host, whenever it is asked for.
+fn subagent_id(host: &[u8], provider_id: &str) -> Vec<u8> {
+    use sha2::Digest as _;
+    let digest = sha2::Sha256::new()
+        .chain_update(host)
+        .chain_update(provider_id.as_bytes())
+        .finalize();
+    digest[..16].to_vec()
+}
+
+/// The step's part for the subagent the provider calls `provider_id`.
+fn part<'a>(
+    parts: &'a mut Vec<wire::AgentStep>,
+    host: &[u8],
+    provider_id: &str,
+) -> &'a mut wire::AgentStep {
+    let agent_id = subagent_id(host, provider_id);
+    match parts.iter().position(|part| part.agent_id == agent_id) {
+        Some(at) => &mut parts[at],
+        None => {
+            parts.push(wire::AgentStep {
+                agent_id,
+                ..wire::AgentStep::default()
+            });
+            parts.last_mut().expect("just pushed")
+        }
     }
 }
 
@@ -202,6 +242,39 @@ impl<const FORGET: bool> TestKind<FORGET> {
             "ask_closed" => {
                 shared.close_ask(&id);
             }
+            "subagent_start" => {
+                let start = wire::NativeStart {
+                    provider_child_id: text_of(&value, "agent"),
+                    call_agent_id: state.host.clone(),
+                    call_key: text_of(&value, "call"),
+                    title: text_of(&value, "title"),
+                };
+                let provider_id = start.provider_child_id.clone();
+                part(&mut state.parts, &state.host, &provider_id).start = Some(start);
+            }
+            "subagent_text" => {
+                let at_ms = shared.now_ms();
+                let part = part(&mut state.parts, &state.host, &text_of(&value, "agent"));
+                part.items.push(wire::Item {
+                    key: id,
+                    text: text_of(&value, "text"),
+                    kind: Self::KIND as i32,
+                    body: body(claude_item::Kind::Message(wire::Text { complete: true })),
+                    at_ms,
+                    ..wire::Item::default()
+                });
+            }
+            "subagent_end" => {
+                let cause = match value.get("cause").and_then(Value::as_str) {
+                    Some("stopped") => wire::ExitCause::Stopped,
+                    _ => wire::ExitCause::Finished,
+                };
+                part(&mut state.parts, &state.host, &text_of(&value, "agent")).end =
+                    Some(wire::IncarnationEnd {
+                        cause: cause as i32,
+                        detail: None,
+                    });
+            }
             "turn_end" => {
                 // Only a stop interrupts this kind's turns, so an
                 // interrupted turn reads as stopped, as the step's TurnEnd
@@ -313,6 +386,8 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
             tools: BTreeMap::new(),
             interrupted: false,
             wake: None,
+            host: spec.agent_id.clone(),
+            parts: Vec::new(),
         };
         let step = state.shared.initial_step(Self::unknown_snapshot());
         (state, step)
@@ -320,6 +395,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
 
     fn reincarnate(mut state: Self::State, spec: &AgentSpec) -> (Self::State, Step) {
         state.shared.reincarnate(spec);
+        state.host = spec.agent_id.clone();
         state.resume()
     }
 
@@ -376,7 +452,9 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
         }
         let body = state.body();
         let notice = state.shared.notice(crate::notice::claude_ask);
-        state.shared.finish(emit, body, notice)
+        let mut stepped = state.shared.finish(emit, body, notice);
+        stepped.step.agents.append(&mut state.parts);
+        stepped
     }
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {

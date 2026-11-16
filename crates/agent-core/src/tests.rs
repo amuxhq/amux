@@ -828,3 +828,310 @@ mod headless_claude {
         assert_eq!(exit_of(&out), Some(&ExitCause::Finished));
     }
 }
+
+/// The one-shot rule over provider subagents, from the parts the agent
+/// journals alone: the test kind, where any fact may also carry `starts`
+/// or `ends` naming a subagent, which adds that subagent's start or end to
+/// the fact's step, as a provider's interpreter does when its provider
+/// starts or ends one.
+mod hosting {
+    use interpret::shape::{InputShape, Structure};
+    use interpret::{ItemView, SnapshotView, Stepped};
+
+    use super::*;
+
+    struct Hosting;
+
+    impl Interpreter for Hosting {
+        type State = <Kind as Interpreter>::State;
+        const KIND: wire::Kind = Kind::KIND;
+
+        fn initial(spec: &AgentSpec) -> (Self::State, Step) {
+            Kind::initial(spec)
+        }
+
+        fn step(state: &mut Self::State, event: Event) -> Stepped {
+            let part = match &event {
+                Event::Fact(fact) if fact.channel == Channel::Stream => {
+                    serde_json::from_slice::<serde_json::Value>(&fact.payload).ok()
+                }
+                _ => None,
+            };
+            let mut stepped = Kind::step(state, event);
+            let Some(fact) = part else {
+                return stepped;
+            };
+            let named = |field: &str| fact[field].as_str().map(|id| id.as_bytes().to_vec());
+            let (starts, ends) = (named("starts"), named("ends"));
+            let mut parts: Vec<wire::AgentStep> = Vec::new();
+            if let Some(id) = starts {
+                parts.push(wire::AgentStep {
+                    agent_id: id,
+                    start: Some(wire::NativeStart::default()),
+                    ..Default::default()
+                });
+            }
+            if let Some(id) = ends {
+                let end = Some(wire::IncarnationEnd {
+                    cause: wire::ExitCause::Finished as i32,
+                    detail: None,
+                });
+                match parts.iter_mut().find(|part| part.agent_id == id) {
+                    Some(part) => part.end = end,
+                    None => parts.push(wire::AgentStep {
+                        agent_id: id,
+                        end,
+                        ..Default::default()
+                    }),
+                }
+            }
+            stepped.step.agents.extend(parts);
+            stepped
+        }
+
+        fn reincarnate(state: Self::State, spec: &AgentSpec) -> (Self::State, Step) {
+            Kind::reincarnate(state, spec)
+        }
+
+        fn unknown_snapshot() -> Vec<u8> {
+            Kind::unknown_snapshot()
+        }
+
+        fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {
+            Kind::pending_messages(state)
+        }
+
+        fn typed_unrecorded(state: &Self::State) -> bool {
+            Kind::typed_unrecorded(state)
+        }
+
+        fn wake_at(state: &Self::State) -> Option<i64> {
+            Kind::wake_at(state)
+        }
+
+        fn describe_item(body: &[u8]) -> ItemView {
+            Kind::describe_item(body)
+        }
+
+        fn input_shape(input: &wire::Input) -> InputShape {
+            Kind::input_shape(input)
+        }
+
+        fn structure(state: &Self::State) -> Structure {
+            Kind::structure(state)
+        }
+
+        fn describe_snapshot(body: &[u8]) -> SnapshotView {
+            Kind::describe_snapshot(body)
+        }
+
+        fn fixture_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<wire::Input> {
+            Kind::fixture_input(input_id, input)
+        }
+    }
+
+    struct Host {
+        agent: Agent<Hosting>,
+        now_ms: u64,
+    }
+
+    impl Host {
+        /// A one-shot agent started on its spawn prompt, its daemon
+        /// connected and its provider running the prompt as a turn.
+        fn one_shot_working() -> Self {
+            let mut out = Vec::new();
+            let agent =
+                Agent::<Hosting>::start(&spec(true, Some("do the thing")), None, 1_000, &mut out);
+            let mut host = Self {
+                agent,
+                now_ms: 1_000,
+            };
+            host.on(Input::DaemonDials { connection: DAEMON });
+            host.fact(json!({"type": "ready"}));
+            host.fact(json!({"type": "user", "id": "p1", "text": "p1"}));
+            host
+        }
+
+        fn on(&mut self, input: Input) -> Vec<Output> {
+            self.now_ms += 1;
+            let mut out = Vec::new();
+            self.agent.step(
+                Input::Tick {
+                    now_ms: self.now_ms,
+                },
+                &mut out,
+            );
+            self.agent.step(input, &mut out);
+            out
+        }
+
+        fn fact(&mut self, fact: serde_json::Value) -> Vec<Output> {
+            self.on(Input::Provider(Fact {
+                channel: Channel::Stream,
+                payload: serde_json::to_vec(&fact).expect("json"),
+            }))
+        }
+
+        /// A step of the provider's that starts the subagent and nothing
+        /// else of the host's.
+        fn starts(&mut self, id: &str) -> Vec<Output> {
+            self.fact(json!({"type": "progress", "starts": id}))
+        }
+
+        fn ends(&mut self, id: &str) -> Vec<Output> {
+            self.fact(json!({"type": "progress", "ends": id}))
+        }
+
+        fn turn_end(&mut self) -> Vec<Output> {
+            self.fact(json!({"type": "turn_end"}))
+        }
+
+        /// The subagent's end comes with the turn the provider runs on its
+        /// answer, started before the end is told: the turn's end, not the
+        /// subagent's, decides.
+        fn ends_into_a_turn(&mut self, id: &str) -> Vec<Output> {
+            self.fact(json!({"type": "turn_start"}));
+            let out = self.ends(id);
+            assert!(!closes(&out), "a turn runs on its answer: {out:?}");
+            self.turn_end()
+        }
+
+        fn exits(&mut self) -> Option<ExitCause> {
+            exit_of(&self.on(Input::ProviderExited { code: Some(0) })).cloned()
+        }
+    }
+
+    /// A turn that ends while a subagent it started runs is not the last:
+    /// the agent stays. When the provider answers with a turn of its own,
+    /// started before the subagent's end is told, that turn's end is the
+    /// last.
+    #[test]
+    fn a_one_shot_host_stays_while_a_subagent_runs_and_ends_after_the_turn_on_its_answer() {
+        let mut host = Host::one_shot_working();
+        host.starts("sub-a");
+        let out = host.turn_end();
+        assert_eq!(marked_last(&out), Some(false), "{out:?}");
+        assert!(!closes(&out), "it left while its subagent ran");
+        assert_eq!(host.agent.summary()["subagents_live"], 1);
+
+        let out = host.ends_into_a_turn("sub-a");
+        assert_eq!(host.agent.summary()["subagents_live"], 0);
+        assert_eq!(marked_last(&out), Some(true));
+        assert!(closes(&out));
+        assert_eq!(host.exits(), Some(ExitCause::Finished));
+    }
+
+    /// The last subagent ending while the agent is idle, with nothing
+    /// queued or awaited and no turn of the provider's to follow, ends a
+    /// one-shot agent there: no turn end will come to decide it.
+    #[test]
+    fn a_one_shot_host_left_idle_by_its_last_subagents_end_finishes() {
+        let mut host = Host::one_shot_working();
+        host.starts("sub-a");
+        host.starts("sub-b");
+        assert_eq!(marked_last(&host.turn_end()), Some(false));
+
+        let out = host.ends("sub-a");
+        assert!(!closes(&out), "sub-b still runs: {out:?}");
+        let out = host.ends("sub-b");
+        assert!(
+            closes(&out),
+            "the last one ended with the agent idle: {out:?}"
+        );
+        assert_eq!(host.exits(), Some(ExitCause::Finished));
+    }
+
+    /// An agent that is not one-shot (a person's, with no parent) stays
+    /// when its last subagent ends while it is idle.
+    #[test]
+    fn a_hosts_last_subagent_ending_leaves_an_agent_with_no_parent_running() {
+        let mut out = Vec::new();
+        let agent =
+            Agent::<Hosting>::start(&spec(false, Some("do the thing")), None, 1_000, &mut out);
+        let mut host = Host {
+            agent,
+            now_ms: 1_000,
+        };
+        host.on(Input::DaemonDials { connection: DAEMON });
+        host.fact(json!({"type": "ready"}));
+        host.fact(json!({"type": "user", "id": "p1", "text": "p1"}));
+        host.starts("sub-a");
+        host.turn_end();
+        let out = host.ends("sub-a");
+        assert!(!closes(&out), "{out:?}");
+        assert_eq!(exit_of(&out), None);
+    }
+
+    /// With two subagents, each notification turn reports up, and only the
+    /// one after the last subagent ended is the last.
+    #[test]
+    fn only_the_turn_after_the_last_subagent_ends_is_a_one_shot_hosts_last() {
+        let mut host = Host::one_shot_working();
+        host.starts("sub-a");
+        host.starts("sub-b");
+        assert_eq!(marked_last(&host.turn_end()), Some(false));
+
+        let out = host.ends_into_a_turn("sub-a");
+        assert_eq!(marked_last(&out), Some(false), "sub-b still runs");
+        assert!(!closes(&out));
+
+        let out = host.ends_into_a_turn("sub-b");
+        assert_eq!(marked_last(&out), Some(true));
+        assert!(closes(&out));
+    }
+
+    /// A subagent that ends in the step that ends the turn, as a foreground
+    /// subagent's end comes within its parent's turn, holds nothing; nor
+    /// does one that starts and ends within one step.
+    #[test]
+    fn a_subagent_ended_in_the_turns_own_step_holds_nothing() {
+        let mut host = Host::one_shot_working();
+        host.fact(json!({"type": "progress", "starts": "sub-a", "ends": "sub-a"}));
+        assert_eq!(host.agent.summary()["subagents_live"], 0);
+        host.starts("sub-b");
+        let out = host.fact(json!({"type": "turn_end", "ends": "sub-b"}));
+        assert_eq!(marked_last(&out), Some(true), "{out:?}");
+        assert!(closes(&out));
+    }
+
+    /// A subagent that starts in the step that ends the turn holds the
+    /// agent, as Claude's background subagent launching just before the
+    /// parent's result does.
+    #[test]
+    fn a_subagent_started_in_the_turns_own_step_holds_the_host() {
+        let mut host = Host::one_shot_working();
+        let out = host.fact(json!({"type": "turn_end", "starts": "sub-a"}));
+        assert_eq!(marked_last(&out), Some(false), "{out:?}");
+        assert!(!closes(&out));
+    }
+
+    /// A parent's model continuing a subagent that ended makes it live
+    /// again, and an end for a subagent this incarnation never started (the
+    /// provider reporting one of its last process stopped) changes nothing.
+    #[test]
+    fn a_continued_subagent_holds_the_host_again_and_an_unknown_end_changes_nothing() {
+        let mut host = Host::one_shot_working();
+        host.starts("sub-a");
+        host.ends("sub-a");
+        host.ends("from-before");
+        host.starts("sub-a");
+        let out = host.turn_end();
+        assert_eq!(
+            marked_last(&out),
+            Some(false),
+            "the continued subagent runs"
+        );
+        assert_eq!(marked_last(&host.ends_into_a_turn("sub-a")), Some(true));
+    }
+
+    /// The live set is part of the core's value, so a restored core judges
+    /// the next turn end as the original does.
+    #[test]
+    fn a_restored_host_still_waits_for_its_subagent() {
+        let mut host = Host::one_shot_working();
+        host.starts("sub-a");
+        let value = host.agent.value();
+        host.agent = Agent::<Hosting>::from_value(&value).expect("the value restores");
+        assert_eq!(marked_last(&host.turn_end()), Some(false));
+    }
+}

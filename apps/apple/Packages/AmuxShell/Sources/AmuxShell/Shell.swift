@@ -588,7 +588,8 @@ private struct ChatPage: View {
             backgroundJobs: Int(card?.backgroundJobs ?? 0),
             closeHeld: card?.closeHeld ?? false,
             filing: card?.filing ?? .open,
-            topLevel: card?.topLevel ?? true)
+            topLevel: card?.topLevel ?? true,
+            native: card?.native ?? false)
         return Standing(subject: subject, family: stores.profile?.family(agent), listed: row != nil)
     }
 

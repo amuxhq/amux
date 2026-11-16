@@ -9409,18 +9409,6 @@
         }
       }
     },
-    "└ %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatRows.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "└ %@"
-          }
-        }
-      }
-    },
     "Goes to the first file" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ReviewPage.swift.",
       "extractionState" : "manual",
@@ -10989,6 +10977,102 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "in background · finished"
+          }
+        }
+      }
+    },
+    "waiting on you" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/Subagents.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "waiting on you"
+          }
+        }
+      }
+    },
+    "done" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/Subagents.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "done"
+          }
+        }
+      }
+    },
+    "Claude runs this subagent" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/Subagents.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude runs this subagent"
+          }
+        }
+      }
+    },
+    "Codex runs this subagent" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/Subagents.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex runs this subagent"
+          }
+        }
+      }
+    },
+    "Its provider runs this subagent" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/Subagents.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its provider runs this subagent"
+          }
+        }
+      }
+    },
+    "It takes no messages." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/Subagents.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It takes no messages."
+          }
+        }
+      }
+    },
+    "Continued" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatRows.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continued"
+          }
+        }
+      }
+    },
+    "Subagent" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatRows.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subagent"
           }
         }
       }

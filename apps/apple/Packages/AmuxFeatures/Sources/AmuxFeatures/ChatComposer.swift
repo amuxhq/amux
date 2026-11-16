@@ -327,6 +327,90 @@ struct ComposerBox: View {
     }
 }
 
+/// Where the composer stands in a provider subagent's chat. Claude and
+/// Codex let only the parent's model talk to a subagent they run, so there
+/// is no field: what runs it and that it takes no messages, the activity
+/// line while it works, and its own Stop where the provider stops one
+/// subagent on request. An ask it raises takes this card's place, as any
+/// ask does.
+struct NativeComposer: View {
+    @Environment(\.design) private var design
+    let model: ChatModel
+    let stop: JobStop
+    let activity: Activity?
+    let activitySubject: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let activity {
+                ActivityLine(activity: activity, subject: activitySubject)
+            }
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(design.inkMuted.color)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(ChatWords.nativeRunner(model.frame?.kind))
+                        .designFont(.bodyEmphasis, design)
+                        .foregroundStyle(design.ink.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(ended ?? ChatWords.nativeTakesNoMessages)
+                        .designFont(.detail, design)
+                        .foregroundStyle(design.inkMuted.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .identified(
+                    "chat.native", label: ChatWords.nativeRunner(model.frame?.kind),
+                    value: ended ?? ChatWords.nativeTakesNoMessages)
+                control
+            }
+            if case .refused(_, let error) = stop {
+                // The provider's own words for why the last stop did not
+                // take; Stop beside them tries again.
+                Text(error)
+                    .designFont(.detail, design)
+                    .foregroundStyle(design.removed.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .identified("chat.native.refused", label: error)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
+    }
+
+    /// How it ended, once it has: the line under the head says so in place
+    /// of the reason there is no field.
+    private var ended: String? {
+        guard case .exited(let cause)? = model.frame?.phase else { return nil }
+        return ChatWords.exited(cause)
+    }
+
+    @ViewBuilder
+    private var control: some View {
+        switch stop {
+        case .offered(let key), .refused(let key, _):
+            Button { model.stopJob(key) } label: {
+                ActionLabel(String(localized: "Stop"), kind: .outline)
+            }
+            .buttonStyle(.amuxControl)
+            .fixedSize()
+            .identified("chat.native.stop", label: String(localized: "Stop"))
+        case .stopping:
+            Text("Stopping…")
+                .designFont(.detail, design)
+                .foregroundStyle(design.inkMuted.color)
+                .fixedSize()
+                .identified("chat.native.stopping", label: String(localized: "Stopping…"))
+        case .unavailable:
+            EmptyView()
+        }
+    }
+}
+
 /// The draft's attachment chips, wrapped onto as many lines as they need
 /// so none is cut off at the composer's edge.
 struct ChipFlow: Layout {

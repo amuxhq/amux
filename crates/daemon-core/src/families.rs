@@ -607,6 +607,7 @@ impl Daemon {
             Caller::Family => {
                 if let Err(refusal) = outcome
                     && refusal != Refusal::NotFound
+                    && refusal != Refusal::NotSuspended
                 {
                     tracing::warn!(agent = %crate::hex(&agent.0), ?refusal, "following its parent failed");
                 }
@@ -1461,10 +1462,12 @@ impl Daemon {
         self.after_gone(agent, ended, out);
         self.lane_exited(agent, out);
         if continued && let Some(row) = &row {
+            // A wake: a stop the person asked for while the journal was
+            // still being read has left it exited, and it stays so.
             let resume = Resume {
                 agent,
                 bootstrap: Some(continue_after_restart(row)),
-                if_suspended: false,
+                if_suspended: true,
             };
             self.registry_call(Caller::Family, agent, Op::Resume(Box::new(resume)), out);
         }
@@ -3142,6 +3145,66 @@ mod tests {
                 "the continue keeps the run"
             );
         }
+    }
+
+    /// A stop the person asks for while the start is still reading the
+    /// journal of an agent the restart cut off in its turn stops it: the
+    /// continuation that follows the read is a wake, which the stopped row
+    /// does not take, so the agent is not started again.
+    #[test]
+    fn a_stop_while_a_restart_reads_the_journal_is_not_undone_by_the_continuation() {
+        let mut rig = suspension_rig(true);
+        rig.left(PARENT, wire::Phase::Working, ExitCause::Unspecified);
+        let mut journal =
+            journal::synthetic::SyntheticWriter::open(rig.daemon.journal_dir(PARENT), 1 << 30)
+                .expect("the journal opens");
+        for n in 0..crate::ingest::INGEST_BATCH + 10 {
+            journal
+                .append(&wire::Step {
+                    items: vec![wire::Item {
+                        key: format!("k{n:03}"),
+                        ..wire::Item::default()
+                    }],
+                    ..wire::Step::default()
+                })
+                .expect("a frame is written");
+        }
+        let gone = rig.step(Input::ControlClosed {
+            agent: PARENT,
+            ended: Ended::Away,
+        });
+        assert!(
+            gone.contains(&Output::ArmTimer {
+                id: TimerId::Ingest(PARENT),
+                at_ms: rig.daemon.timers.now_ms,
+            }),
+            "the journal takes more than one batch: {gone:?}"
+        );
+        rig.step(Input::Swept);
+        let (stop, _) = rig.call(ClientRequest::KillAgent { agent: PARENT });
+        let read = rig.step(Input::Timer {
+            id: TimerId::Ingest(PARENT),
+        });
+        let row = rig.row(PARENT).unwrap();
+        assert_eq!(
+            (row.lifecycle, row.exit_cause),
+            (Lifecycle::Exited as i32, ExitCause::Stopped as i32),
+            "{read:?}"
+        );
+        assert!(
+            answer_of(&read, stop).is_some(),
+            "the stop is answered: {read:?}"
+        );
+        assert!(
+            !read.iter().any(|output| matches!(
+                output,
+                Output::Job {
+                    op: Job::AwaitUnlocked { .. },
+                    ..
+                }
+            )),
+            "nothing is started again: {read:?}"
+        );
     }
 
     #[test]

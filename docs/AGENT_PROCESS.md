@@ -329,7 +329,8 @@ no cause, and the machine booted since the daemon before (the boot id in
 - an idle one, or one waiting on its children, is left suspended;
 - one in its turn is suspended and resumed at once with *"The machine
   restarted while you were working; carry on where you left off."*, which
-  continues its run; the provider finds the cut-off turn in its own
+  continues its run (a wake, so a stop the person asked for while the
+  journal was being read holds); the provider finds the cut-off turn in its own
   transcript, and a question it was asking is asked again by the retried
   tool call.
 

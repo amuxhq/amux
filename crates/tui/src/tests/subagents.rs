@@ -228,6 +228,68 @@ fn a_subagent_waiting_on_you_reads_so_on_its_parents_row() {
     assert!(!ask.contains("interrupt"), "{ask}");
 }
 
+/// A subagent's chat has no text box, so nothing typed there lands in a
+/// draft nobody sees. A key pressed as its ask appears is dropped, not
+/// kept for a draft: the ask was not read yet, so it does not answer it
+/// either. Once the ask has been on screen half a second with no key, a
+/// digit answers it. A paste goes nowhere.
+#[test]
+fn keys_pressed_as_a_subagents_ask_appears_never_land_in_a_hidden_draft() {
+    let family = frame_at(Kind::ClaudeSdk, "recorded_subagent_ask", "recorded 57:");
+    let sub = &family.sub(0).state;
+    let mut view = sub_view(&family, 0);
+    let at = family.at;
+    crate::fixtures::draw(&mut view, sub, at, SW, SH, theme());
+    let effects = view.key_at(sub, key(KeyCode::Char('1')), theme(), at + 100);
+    assert!(effects.is_empty(), "{effects:?}");
+    view.paste_text(sub, "pasted");
+    assert_eq!(view.editor.text(), "", "a subagent's chat kept a draft");
+
+    let now = at + 100 + crate::chat::ASK_ARMS_MS;
+    crate::fixtures::draw(&mut view, sub, now, SW, SH, theme());
+    let effects = view.key_at(sub, key(KeyCode::Char('1')), theme(), now);
+    assert!(
+        matches!(effects.as_slice(), [ChatEffect::Answer(_)]),
+        "{effects:?}"
+    );
+    assert_eq!(view.editor.text(), "");
+}
+
+/// Words selected in a subagent's chat copy, but offer no reply: there is
+/// no draft to quote them into.
+#[test]
+fn a_selection_in_a_subagents_chat_offers_no_reply() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    let family = running();
+    let sub = &family.sub(0).state;
+    let mut view = sub_view(&family, 0);
+    let (buffer, _) = crate::fixtures::draw(&mut view, sub, family.at, SW, SH, theme());
+    let screen = text(&buffer);
+    let (row, line) = screen
+        .lines()
+        .enumerate()
+        .find(|(_, line)| line.contains("echo RED. Report"))
+        .unwrap_or_else(|| panic!("{screen}"));
+    let column = line[..line.find("RED").unwrap()].chars().count() as u16;
+    let at = |column: u16, kind| MouseEvent {
+        kind,
+        column,
+        row: row as u16,
+        modifiers: KeyModifiers::NONE,
+    };
+    let left = MouseButton::Left;
+    view.mouse(sub, at(column, MouseEventKind::Down(left)), theme());
+    view.mouse(sub, at(column + 2, MouseEventKind::Drag(left)), theme());
+    crate::fixtures::draw(&mut view, sub, family.at, SW, SH, theme());
+    view.mouse(sub, at(column + 2, MouseEventKind::Up(left)), theme());
+    let (buffer, _) = crate::fixtures::draw(&mut view, sub, family.at, SW, SH, theme());
+    let screen = text(&buffer);
+    assert!(screen.contains("esc clear"), "{screen}");
+    assert!(!screen.contains("r reply"), "{screen}");
+    view.key(sub, key(KeyCode::Char('r')), theme());
+    assert_eq!(view.editor.text(), "", "a subagent's chat kept a quote");
+}
+
 /// A subagent's chat shows its own work: its prompt, its steps and its
 /// answer, and a header with no diff of its own.
 #[test]

@@ -701,7 +701,7 @@ impl ChatView {
             self.ask.paste_box_note(&card, text);
             return;
         }
-        if self.tray.is_none() {
+        if self.tray.is_none() && has_draft(state) {
             self.editor.paste(text);
             self.focus = None;
         }
@@ -852,8 +852,9 @@ impl ChatView {
         if let Some(card) = self.card_takes_keys(state) {
             if !self.arm_ask(&card, now_ms, quiet_since) {
                 // Words typed as the ask appears are still the draft's; Enter
-                // neither sends the draft nor answers what was not read.
-                if key.code != KeyCode::Enter && self.editor.key(key) {
+                // neither sends the draft nor answers what was not read. A
+                // chat with no draft drops them: the ask was not read either.
+                if key.code != KeyCode::Enter && has_draft(state) && self.editor.key(key) {
                     self.not_sent = None;
                 }
                 return vec![];
@@ -1997,7 +1998,7 @@ impl ChatView {
                 self.clear_selection();
                 Some(vec![])
             }
-            KeyCode::Char('r') if plain && in_feed => {
+            KeyCode::Char('r') if plain && in_feed && has_draft(state) => {
                 let words = self.selected_words(state, theme);
                 self.editor.quote(&words);
                 self.focus = None;
@@ -2032,7 +2033,7 @@ impl ChatView {
         if !self.copy_on_select && !self.copied {
             pairs.push(("c", "copy"));
         }
-        if in_feed {
+        if in_feed && has_draft(state) {
             pairs.push(("r", "reply"));
         }
         pairs.push(("esc", "clear"));
@@ -4114,6 +4115,14 @@ pub(crate) fn refusal_words(refusal: &Refusal) -> String {
         wire::Refusal::Unspecified => "it was refused",
     }
     .to_owned()
+}
+
+/// Whether the chat has a draft to type into. A provider subagent's has
+/// none: its composer is no text box, so a key, a paste or a quote there
+/// would land in a draft nobody sees, one that later swallows Ctrl+C and
+/// `?` while the screen shows nothing to clear.
+fn has_draft(state: &SessionState) -> bool {
+    !matches!(state.composer(), Composer::Native { .. })
 }
 
 /// What an agent is doing, as the activity line names it.

@@ -201,7 +201,8 @@ with a refusal, Tab on `No` adds a note.
 
 For half a second after a question appears, your keys still go to what you
 were typing, so a key you'd already started pressing can't answer something
-you haven't read.
+you haven't read. In a subagent's chat, which has nothing to type in, those
+keys do nothing.
 
 A plan offers to start building, to start building and switch to a mode that
 asks less, or to keep planning with a note. Questions with several parts come

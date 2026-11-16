@@ -435,7 +435,13 @@ impl State {
             .and_then(|path| path.strip_prefix("/root/"))
             .and_then(|path| path.rsplit('/').next())
             .filter(|task| !task.is_empty());
-        if !self.child_live(&thread) && !self.left.contains(&thread) {
+        // Its start or follow-up begins at the item's start. The item's
+        // completion can come after the child's turn is over, so it starts
+        // only a child it is the first word of.
+        let begins = !completed
+            || (activity.kind == SubAgentActivityKind::Started
+                && !self.children.contains_key(&thread));
+        if begins && !self.child_live(&thread) && !self.left.contains(&thread) {
             let parent = self.speaking.clone();
             self.start_child(emit, &thread, parent, id.to_owned(), None);
         }
@@ -544,9 +550,17 @@ impl State {
         }
         match notification {
             ServerNotification::TurnStarted(started) => {
+                let turn = Some(started.turn.id.clone()).filter(|turn| !turn.is_empty());
                 if let Some(child) = self.children.get_mut(thread) {
-                    child.turn = Some(started.turn.id.clone()).filter(|turn| !turn.is_empty());
+                    child.turn.clone_from(&turn);
                     child.over = None;
+                    // Stopped before its turn had an id: the interrupt
+                    // waited for this.
+                    if child.stopping
+                        && let Some(turn) = turn
+                    {
+                        self.interrupt_child(emit, thread, turn);
+                    }
                 }
             }
             ServerNotification::TurnCompleted(completed) => {
@@ -613,9 +627,18 @@ impl State {
         if child.turn.is_some() || running_on {
             return;
         }
-        if let Some(end) = child.over.clone() {
-            self.end_child(emit, thread, end);
+        let Some(end) = child.over.clone() else {
+            return;
+        };
+        // Stopped with nothing left running, it ends before its command
+        // list answers: its parent is told now, as that answer would have.
+        if let Some(child) = self.children.get_mut(thread)
+            && child.stopping
+            && !std::mem::replace(&mut child.told, true)
+        {
+            self.tell_parent(emit, thread, true);
         }
+        self.end_child(emit, thread, end);
     }
 
     /// The child's subagent ends for `end`: what it holds open is closed as
@@ -623,6 +646,10 @@ impl State {
     /// its part's last word.
     fn end_child(&mut self, emit: &mut Emit, thread: &str, end: IncarnationEnd) {
         self.begin_child(emit, thread);
+        // What its held start held may have ended it already.
+        if !self.child_running(thread) {
+            return;
+        }
         self.as_child(thread, |state| {
             for ask in state.close_all_asks(emit) {
                 let meta = state.asks.remove(&ask.key);
@@ -676,6 +703,8 @@ impl State {
     pub(super) fn children_went(&mut self) {
         for child in self.children.values_mut() {
             child.pending = false;
+            child.held.clear();
+            child.prompt = None;
         }
         let running: Vec<String> = self.shared.running_subagents().map(str::to_owned).collect();
         if running.is_empty() {
@@ -799,27 +828,33 @@ impl State {
         if !child.stopping {
             child.stopping = true;
             child.stop_error.clear();
-            match child.turn.clone() {
-                Some(turn) => {
-                    let id = self.child_request_id("interrupt");
-                    let bytes = self.request_as(
-                        id,
-                        ClientRequest::TurnInterrupt(TurnInterruptParams {
-                            thread_id: thread.to_owned(),
-                            turn_id: turn,
-                            extra: Default::default(),
-                        }),
-                        Request::ChildInterrupt {
-                            thread: thread.to_owned(),
-                        },
-                    );
-                    emit.effect(Effect::ProviderWrite(bytes));
-                }
+            match (child.turn.clone(), child.over.is_some()) {
+                (Some(turn), _) => self.interrupt_child(emit, thread, turn),
                 // Its turn is over and only its commands run on.
-                None => self.as_child(thread, |state| state.list_jobs(emit, 1, None, Vec::new())),
+                (None, true) => {
+                    self.as_child(thread, |state| state.list_jobs(emit, 1, None, Vec::new()))
+                }
+                // Started, its turn not yet named: interrupted once it is.
+                (None, false) => {}
             }
         }
         self.shared.subagent(emit, thread).accept(id);
+    }
+
+    fn interrupt_child(&mut self, emit: &mut Emit, thread: &str, turn: String) {
+        let id = self.child_request_id("interrupt");
+        let bytes = self.request_as(
+            id,
+            ClientRequest::TurnInterrupt(TurnInterruptParams {
+                thread_id: thread.to_owned(),
+                turn_id: turn,
+                extra: Default::default(),
+            }),
+            Request::ChildInterrupt {
+                thread: thread.to_owned(),
+            },
+        );
+        emit.effect(Effect::ProviderWrite(bytes));
     }
 
     /// The person stops one command a subagent left running, by Codex's
@@ -863,14 +898,23 @@ impl State {
     }
 
     /// Codex answered the interrupt of a stopped subagent's turn: what its
-    /// turn left running is listed next, to be ended.
-    pub(super) fn child_interrupted(&mut self, emit: &mut Emit, thread: &str) {
-        if self
-            .children
-            .get(thread)
-            .is_some_and(|child| child.stopping)
-        {
-            self.as_child(thread, |state| state.list_jobs(emit, 1, None, Vec::new()));
+    /// turn left running is listed next, to be ended. Refused, the subagent
+    /// runs on, its job saying why, and can be stopped again.
+    pub(super) fn child_interrupted(
+        &mut self,
+        emit: &mut Emit,
+        thread: &str,
+        result: Result<(), String>,
+    ) {
+        let Some(child) = self.children.get_mut(thread).filter(|child| child.stopping) else {
+            return;
+        };
+        match result {
+            Ok(()) => self.as_child(thread, |state| state.list_jobs(emit, 1, None, Vec::new())),
+            Err(error) => {
+                child.stopping = false;
+                child.stop_error = error;
+            }
         }
     }
 
@@ -906,7 +950,13 @@ impl State {
     /// the parent waits on its own timeout. Only the agent's own thread
     /// takes input, so a child's child's parent is not told.
     pub(super) fn tell_parent(&mut self, emit: &mut Emit, thread: &str, steer: bool) {
-        let Some(child) = self.children.get(thread) else {
+        // A child thread takes no input, so only the agent's own thread
+        // can be told; a child's child's parent is not.
+        let Some(child) = self
+            .children
+            .get(thread)
+            .filter(|child| child.parent.is_none())
+        else {
             return;
         };
         let name = if child.title.is_empty() {

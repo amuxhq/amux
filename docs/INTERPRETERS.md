@@ -988,10 +988,14 @@ answer.
     leaves its command running; its background terminals listed on its
     thread and each terminated; then a note steered into the parent's
     running turn, or injected into its thread when none runs, since
-    otherwise the parent's `wait` waits out its own timeout). The job reads
-    stopping until the subagent ends. `StopJob` on one of its commands'
-    process ids ends just that command. A child's child's parent is not
-    told: only the agent's own thread takes input.
+    otherwise the parent's `wait` waits out its own timeout). A subagent
+    stopped before Codex names its turn is interrupted when it does; one
+    that ends with nothing left running before its list answers tells the
+    parent as it ends. The job reads stopping until the subagent ends; a
+    refused interrupt leaves it running, its job carrying Codex's reason,
+    and it can be stopped again. `StopJob` on one of its commands' process
+    ids ends just that command. A child's child's parent is not told: only
+    the agent's own thread takes input.
 - **Streaming.** Agent-message, plan and reasoning deltas and command output
   are appends to their open items.
 - **Other notices.** A web search that opens a page or looks within one

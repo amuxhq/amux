@@ -657,7 +657,10 @@ impl State {
         }
         match request {
             Request::ChildRead { thread } => return self.child_read(emit, &thread, result.ok()),
-            Request::ChildInterrupt { thread } => return self.child_interrupted(emit, &thread),
+            Request::ChildInterrupt { thread } => {
+                let result = result.map(drop).map_err(|error| error.message);
+                return self.child_interrupted(emit, &thread, result);
+            }
             Request::StopNote { thread, steered } => {
                 if result.is_err() && steered {
                     self.tell_parent(emit, &thread, false);

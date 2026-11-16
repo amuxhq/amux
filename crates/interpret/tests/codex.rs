@@ -3382,3 +3382,223 @@ fn a_stop_interrupts_an_idle_compactions_turn() {
     assert_eq!(over.step.turn_end, None);
     assert!(!state.shared().is_housekeeping());
 }
+
+fn stop_child(agent: &mut Driven, thread: &str, id: &[u8]) -> interpret::Stepped {
+    agent.step(to_child(
+        thread,
+        id,
+        wire::codex_input::Of::StopJob(wire::StopJob { key: thread.into() }),
+    ))
+}
+
+fn told_the_parent(writes: &[Value]) -> bool {
+    writes
+        .iter()
+        .any(|write| write["method"] == "turn/steer" || write["method"] == "thread/inject_items")
+}
+
+/// A stopped subagent with nothing left running ends at its interrupted
+/// turn's end, which can come before its command list answers: its parent
+/// is still told, so its `wait` does not wait on until its timeout.
+#[test]
+fn a_stopped_subagent_that_ends_before_its_list_still_tells_its_parent() {
+    let mut agent = with_a_child();
+    let stop = stop_child(&mut agent, "child", b"s1");
+    let interrupt = writes(&stop.effects).remove(0);
+    let mut written = writes(&child_turn_ends(&mut agent, "interrupted").effects);
+    assert!(agent.sub("child").end.is_some(), "the subagent ended");
+    let answered = agent.rpc(json!({"id": interrupt["id"], "result": {}}));
+    written.extend(writes(&answered.effects));
+    assert!(
+        told_the_parent(&written),
+        "the parent was never told: {written:?}"
+    );
+}
+
+/// A stop that comes once the subagent's row is out but before its turn
+/// has an id interrupts the turn as soon as Codex names it.
+#[test]
+fn a_subagent_stopped_before_its_turn_starts_is_interrupted_when_it_does() {
+    let mut agent = Driven::started();
+    agent.rpc(
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+    );
+    agent.rpc(spawned("spawn-1", "child", "started"));
+    agent.rpc(
+        json!({"id": "amux-read-1", "result": {"thread": {"id": "child", "agentNickname": "Ada"}}}),
+    );
+    let stop = stop_child(&mut agent, "child", b"s1");
+    assert_eq!(replied(&stop, b"s1"), Some(true));
+    assert!(
+        writes(&stop.effects).is_empty(),
+        "nothing to interrupt yet: {:?}",
+        writes(&stop.effects)
+    );
+    let started = agent.rpc(
+        json!({"method": "turn/started", "params": {"threadId": "child", "turn": {"id": "child-turn"}}}),
+    );
+    let interrupt = writes(&started.effects)
+        .into_iter()
+        .find(|write| write["method"] == "turn/interrupt")
+        .expect("the turn is interrupted once named");
+    assert_eq!(interrupt["params"]["threadId"], "child");
+    assert_eq!(interrupt["params"]["turnId"], "child-turn");
+}
+
+/// Codex refusing the interrupt leaves the subagent running, its job saying
+/// why, and a second stop tries again.
+#[test]
+fn a_refused_interrupt_says_why_and_the_stop_can_be_tried_again() {
+    let mut agent = with_a_child();
+    let stop = stop_child(&mut agent, "child", b"s1");
+    let interrupt = writes(&stop.effects).remove(0);
+    let refused = agent.rpc(
+        json!({"id": interrupt["id"], "error": {"code": -32600, "message": "no active turn"}}),
+    );
+    assert!(
+        writes(&refused.effects).is_empty(),
+        "a refused interrupt went on to list: {:?}",
+        writes(&refused.effects)
+    );
+    let own = agent
+        .sub("child")
+        .body
+        .as_ref()
+        .unwrap()
+        .background_jobs
+        .as_ref()
+        .unwrap()
+        .jobs[0]
+        .clone();
+    assert!(!own.stopping, "its job still reads stopping");
+    assert_eq!(own.stop_error, "no active turn");
+    let again = stop_child(&mut agent, "child", b"s2");
+    assert!(
+        writes(&again.effects)
+            .iter()
+            .any(|write| write["method"] == "turn/interrupt"),
+        "the second stop did nothing"
+    );
+}
+
+/// A child thread takes no input, so stopping a child's own child tells
+/// no one, rather than the agent's thread, which never waited on it.
+#[test]
+fn stopping_a_childs_child_steers_no_one() {
+    let mut agent = with_a_child();
+    let spawn = agent.rpc(
+        json!({"method": "item/started", "params": {"threadId": "child",
+        "turnId": "child-turn", "item": {"type": "subAgentActivity", "id": "spawn-2",
+        "kind": "started", "agentThreadId": "grandchild", "agentPath": "/root/a/b"}}}),
+    );
+    let read = writes(&spawn.effects).remove(0);
+    agent.rpc(json!({"id": read["id"], "result": {"thread": {"id": "grandchild", "agentNickname": "Bo"}}}));
+    agent.rpc(
+        json!({"method": "turn/started", "params": {"threadId": "grandchild",
+        "turn": {"id": "grandchild-turn"}}}),
+    );
+    let stop = stop_child(&mut agent, "grandchild", b"s1");
+    let interrupt = writes(&stop.effects).remove(0);
+    let answered = agent.rpc(json!({"id": interrupt["id"], "result": {}}));
+    let list = writes(&answered.effects).remove(0);
+    let mut written = writes(
+        &agent
+            .rpc(json!({"id": list["id"], "result": {"data": [], "nextCursor": null}}))
+            .effects,
+    );
+    written.extend(writes(
+        &agent
+            .rpc(
+                json!({"method": "turn/completed", "params": {"threadId": "grandchild",
+                "turn": {"id": "grandchild-turn", "status": "interrupted"}}}),
+            )
+            .effects,
+    ));
+    assert!(!told_the_parent(&written), "a thread was told: {written:?}");
+}
+
+/// What a start held when the process went belonged to that incarnation:
+/// a later follow-up does not read it back.
+#[test]
+fn a_held_start_lets_go_of_what_it_held_when_the_process_goes() {
+    use prost::Message as _;
+    let mut agent = Driven::started();
+    agent.rpc(
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+    );
+    agent.rpc(spawned("spawn-1", "child", "started"));
+    agent.rpc(
+        json!({"method": "item/started", "params": {"threadId": "child",
+        "turnId": "child-turn", "item": {"type": "agentMessage", "id": "stale", "text": ""}}}),
+    );
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 2,
+        ..Default::default()
+    };
+    let state = std::mem::replace(&mut agent.state, Codex::initial(&spec).0);
+    let (state, step) = Codex::reincarnate(state, &spec);
+    agent.state = state;
+    agent.snapshot = wire::CodexSnapshot::decode(step.snapshot.unwrap().body.as_slice()).unwrap();
+    agent.rpc(
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-2"}}}),
+    );
+    let follow_up = agent.rpc(
+        json!({"method": "item/started", "params": {"threadId": "t1",
+        "turnId": "turn-2", "item": {"type": "subAgentActivity", "id": "send-1",
+        "kind": "interacted", "agentThreadId": "child"}}}),
+    );
+    assert!(follow_up.broken.is_none(), "{:?}", follow_up.broken);
+    let keys: Vec<&str> = agent
+        .sub("child")
+        .items
+        .iter()
+        .map(|item| item.key.as_str())
+        .collect();
+    assert!(
+        !keys.contains(&"stale"),
+        "the last incarnation's item came back: {keys:?}"
+    );
+}
+
+/// A held start whose held words already end the subagent ends it once
+/// when the process goes.
+#[test]
+fn a_held_subagent_that_its_held_words_end_ends_once() {
+    let mut agent = Driven::started();
+    agent.rpc(
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+    );
+    agent.rpc(spawned("spawn-1", "child", "started"));
+    agent.rpc(json!({"method": "turn/started", "params": {"threadId": "child", "turn": {"id": "child-turn"}}}));
+    child_turn_ends(&mut agent, "completed");
+    assert!(agent.subs.is_empty(), "the start went out before the read");
+    let exited = agent.step(Event::ProviderExit { code: Some(0) });
+    assert!(exited.broken.is_none(), "{:?}", exited.broken);
+    let ends = exited
+        .step
+        .agents
+        .iter()
+        .filter(|part| part.end.is_some())
+        .count();
+    assert_eq!(ends, 1, "{:?}", exited.step.agents);
+}
+
+/// The spawn's `item/completed` can come after the child's turn is over;
+/// it starts nothing again.
+#[test]
+fn a_spawns_late_completion_does_not_start_the_child_again() {
+    let mut agent = with_a_child();
+    child_turn_ends(&mut agent, "completed");
+    assert!(agent.sub("child").end.is_some(), "the subagent ended");
+    let mut late = spawned("spawn-1", "child", "started");
+    late["method"] = json!("item/completed");
+    let stepped = agent.rpc(late);
+    assert!(stepped.broken.is_none(), "{:?}", stepped.broken);
+    assert!(
+        stepped.step.agents.iter().all(|part| part.start.is_none()),
+        "it started again: {:?}",
+        stepped.step.agents
+    );
+    assert_eq!(agent.sub("child").starts.len(), 1);
+}

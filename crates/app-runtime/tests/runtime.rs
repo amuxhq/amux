@@ -888,6 +888,7 @@ async fn a_chat_hands_over_how_the_subagents_its_rows_open_stand() {
         task: task.into(),
         nickname: None,
         await_read: false,
+        background: false,
         steps: vec![
             Step::WaitFor {
                 path: "report".into(),

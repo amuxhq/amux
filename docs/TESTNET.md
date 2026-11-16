@@ -156,6 +156,7 @@ fake waits for a prompt or an injected message, then plays steps until `turn_end
 | `turn_end` | Finish the turn. |
 | `exit` | Exit the provider process with a code. |
 | `repeat` | Play some steps a number of times, without writing them out. |
+| `subagents` | Start provider subagents together (headless Claude's Agent tool, Codex's child threads), each playing its own steps as a turn does, one step of each in turn, so an ask or a `wait_for` in one holds them all. The turn goes on once the last has ended. A subagent's `nickname` is Codex's name for its child and Claude's description of its task; `await_read` holds a Codex child's turn until a client has read its thread. A headless Claude subagent can be `background`: its call returns at once, its steps play while no turn runs, and its end starts Claude's follow-up turn, which plays the script's next steps. |
 
 A script can also set the `model`, the `models` and `commands` a session offers, `turn_ms`, how long headless
 Claude says each finished turn took (the chat's "Worked 4m"), and, for terminal Claude, `offers_auto_mode` and

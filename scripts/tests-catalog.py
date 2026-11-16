@@ -140,6 +140,10 @@ def just_recipes() -> set[str]:
     return set(run("just", "--summary").split())
 
 
+# The justfile's modules, whose recipes `just --summary` lists as `module::recipe`.
+MODULES = {"amux", "browser", "ios", "mac"}
+
+
 def recipe_name(command: str) -> str | None:
     try:
         words = shlex.split(command)
@@ -147,8 +151,8 @@ def recipe_name(command: str) -> str | None:
         return None
     if len(words) < 2 or words[0] != "just":
         return None
-    if words[1] == "ios":
-        return f"ios::{words[2]}" if len(words) >= 3 else None
+    if words[1] in MODULES:
+        return f"{words[1]}::{words[2]}" if len(words) >= 3 else None
     return words[1]
 
 

@@ -53,16 +53,20 @@ function App() {
       if (incoming.type === "state") setState(incoming.state);
     };
     port.onMessage.addListener(listen);
+    let shown: number | null = null;
     const follow = async () => {
       const tabId = await activeTab();
-      if (tabId !== null) post({ type: "watch", tabId });
+      if (tabId === null || tabId === shown) return;
+      // Another tab's review: its own destination and words, not these.
+      if (shown !== null) {
+        chosen.current = false;
+        setMessage("");
+      }
+      shown = tabId;
+      post({ type: "watch", tabId });
     };
     void follow();
-    const activated = () => {
-      chosen.current = false;
-      setMessage("");
-      void follow();
-    };
+    const activated = () => void follow();
     chrome.tabs.onActivated.addListener(activated);
     chrome.windows.onFocusChanged.addListener(activated);
     return () => {
@@ -85,7 +89,7 @@ function App() {
   return (
     <main class="panel">
       <header>
-        <img src="icon.png" alt="" width={18} height={18} />
+        <img src="icons/icon-32.png" alt="" width={18} height={18} />
         <h1>Page review</h1>
         <Status reach={state.reach} />
       </header>

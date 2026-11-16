@@ -1,13 +1,13 @@
-// Builds the extension into dist/, ready to load unpacked or zip for the
-// store: the four scripts, the panel's page, the manifest, the icon, and
-// browser-core's WebAssembly, which `just browser` builds first.
+// Builds the extension into dist/, ready to zip for the
+// store: the four scripts, the panel's page, the manifest, the icons, and
+// browser-core's WebAssembly, which `just browser build` builds first.
 //
 // `--dev` builds the copy a development tree loads: it names itself
 // "amux (dev)" and starts the `sh.amux.browser.dev` host, which
-// `just browser-dev-host` points at that tree's own amux, so it never
+// `just browser dev-host` points at that tree's own amux, so it never
 // talks to an installed one.
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -57,6 +57,10 @@ await Promise.all([
 
 const manifest = JSON.parse(readFileSync(join(here, "static/manifest.json"), "utf8"));
 if (dev) manifest.name = "amux (dev)";
+// The public key fixes an unpacked copy's ID to the store's, so the host
+// manifests amux writes allow both. The store refuses a package that carries
+// it: the store holds the key for the copy it publishes.
+else delete manifest.key;
 writeFileSync(join(out, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 copyFileSync(join(here, "static/panel.html"), join(out, "panel.html"));
 // The panel's sheet starts with the palette and controls every amux surface
@@ -65,6 +69,6 @@ writeFileSync(
   join(out, "panel.css"),
   `${tokens(":root")}\n${CONTROLS}\n${readFileSync(join(here, "static/panel.css"), "utf8")}`,
 );
-copyFileSync(join(repo, "images/brand/amux.png"), join(out, "icon.png"));
+cpSync(join(here, "static/icons"), join(out, "icons"), { recursive: true });
 copyFileSync(wasm, join(out, "browser_core.wasm"));
 console.log(`built ${out}`);

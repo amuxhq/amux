@@ -1205,7 +1205,7 @@ cargo = [{ package = "browser-core", kind = "lib", targets = ["browser_core"], f
 name = "browser-extension"
 contract = "In Chromium with the extension loaded, a person comments on a block, a phrase and a dragged box of a page, sends the three from the side panel to an agent of a real daemon through the native messaging host, and the provider reads the page review with the box's screenshot; the overlay snaps to blocks, names them by selectors that find them alone and reads the source hints development tools leave."
 paths = ["js"]
-recipe = "just browser-test"
+recipe = "just browser test"
 boundary = "System composition"
 oracle = "What the scripted provider logged reading, the panel's outcome, the pins drawn, and the overlay's anchors exactly."
 real = ["Chromium", "the extension", "native messaging", "built amux binary", "daemon", "agent process", "Unix sockets"]
@@ -1213,7 +1213,7 @@ substituted = ["providers by the scripted fakes", "the toolbar button's grant of
 time = "real"
 capabilities = ["desktop", "Unix", "Node", "Playwright's Chromium"]
 lane = "system"
-evidence = "js/test-results with AMUX_E2E_KEEP=1: what the provider read; `just browser-tour` screenshots every surface into js/tour"
+evidence = "js/test-results with AMUX_E2E_KEEP=1: what the provider read; `just browser tour` screenshots every surface into js/tour"
 update = ""
 cases = ["js/extension/test/e2e/review.spec.ts", "js/page-review/test/blocks.test.ts"]
 cargo = []

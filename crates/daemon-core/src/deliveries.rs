@@ -1663,4 +1663,87 @@ mod tests {
         assert!(resumed(&out, PARENT), "{out:?}");
         assert_eq!(violations(&out), Vec::<crate::Check>::new());
     }
+
+    /// The person stops a parent while it is suspending and a child's
+    /// report it refused as exiting waits for the exit: the stop is done
+    /// before the report is judged again, so the report finds the parent
+    /// stopped and resumes nothing.
+    #[test]
+    fn a_report_waiting_out_a_suspension_the_person_stopped_resumes_nothing() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut daemon = suspension_daemon(&dir);
+        let mut parent = AgentRow::new(daemon.own_key(PARENT), 1, "/src");
+        parent.incarnation = 1;
+        daemon.store.put_agent(&parent).unwrap();
+        step(&mut daemon, Input::Adopted { agent: PARENT });
+        step(&mut daemon, Input::AgentHello { agent: PARENT });
+        let key = daemon.own_key(PARENT);
+        owe_report(&mut daemon, key);
+        let out = step(&mut daemon, Input::Swept);
+        let Some(id) = out.iter().find_map(|output| match output {
+            Output::WriteControl {
+                agent: PARENT,
+                frame:
+                    wire::CtlFrame {
+                        of: Some(ctl_frame::Of::AgentMessage(envelope)),
+                    },
+            } => Some(envelope.id.clone()),
+            _ => None,
+        }) else {
+            panic!("the report is written to the parent: {out:?}");
+        };
+        step(
+            &mut daemon,
+            Input::ClientCall {
+                call: CallId(7),
+                request: ClientRequest::KillAgent { agent: PARENT },
+            },
+        );
+        let exiting = SendInputResponse {
+            of: Some(send_input_response::Of::Rejected(refused(Refused::Exiting))),
+        };
+        step(
+            &mut daemon,
+            Input::Verdict {
+                agent: PARENT,
+                input_id: id,
+                verdict: Some(exiting),
+            },
+        );
+        let mut row = daemon
+            .store
+            .agent(&daemon.own_key(PARENT))
+            .unwrap()
+            .unwrap();
+        row.exit_cause = wire::ExitCause::Suspended as i32;
+        daemon.store.put_agent(&row).unwrap();
+        let out = step(
+            &mut daemon,
+            Input::ControlClosed {
+                agent: PARENT,
+                ended: crate::Ended::Exited,
+            },
+        );
+        assert!(
+            !resumed(&out, PARENT),
+            "a stopped parent is not resumed: {out:?}"
+        );
+        let row = daemon
+            .store
+            .agent(&daemon.own_key(PARENT))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (row.lifecycle, row.exit_cause),
+            (
+                wire::Lifecycle::Exited as i32,
+                wire::ExitCause::Stopped as i32
+            )
+        );
+        assert_eq!(
+            daemon.store.deliveries().unwrap().len(),
+            1,
+            "the report is kept"
+        );
+    }
 }

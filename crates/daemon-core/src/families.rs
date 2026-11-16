@@ -179,6 +179,9 @@ enum Gone {
     /// Suspended, then resumed at once: the machine restarted under its
     /// turn.
     Continued,
+    /// Exited as stopped: the person closed it and it was on its way out
+    /// when its process went.
+    Stopped,
     /// Exited, with the daemon's own cause should its journal give none,
     /// unless it already says exited when `if_live`.
     Exited {
@@ -1401,6 +1404,7 @@ impl Daemon {
         let continued = matches!(gone, Gone::Continued);
         let marked = match gone {
             Gone::Suspended | Gone::Continued => self.mark_suspended(agent, out),
+            Gone::Stopped => self.mark_stopped(agent, out),
             Gone::Exited { fallback, if_live } => self.mark_exited(agent, fallback, if_live, out),
         };
         if let Err(error) = marked {
@@ -1408,8 +1412,12 @@ impl Daemon {
         }
         out.push(Output::ForgetAgent { agent });
         self.member_slept(agent, out);
-        self.lane_exited(agent, out);
+        // The operation that waited on the process is done first: a stop
+        // that met a suspension leaves the row exited before a message
+        // waiting out the exit is judged against it again, so it resumes
+        // nothing the person stopped.
         self.after_gone(agent, ended, out);
+        self.lane_exited(agent, out);
         if continued && let Some(row) = &row {
             let resume = Resume {
                 agent,
@@ -1438,6 +1446,27 @@ impl Daemon {
         } else {
             self.publish_row(&key, out)?;
         }
+        self.journal_readers.remove(&agent);
+        if self.store.markers().get(&key) == Some(&Marker::CaughtUp) {
+            return Ok(());
+        }
+        self.announce_caught_up(&key, out)
+    }
+
+    /// Marks the gone process's row exited as stopped, whatever cause its
+    /// journal ended with, and caught up.
+    fn mark_stopped(&mut self, agent: AgentId, out: &mut Vec<Output>) -> Result<(), StoreError> {
+        let key = self.own_key(agent);
+        let Some(mut row) = self.store.agent(&key)? else {
+            return Ok(());
+        };
+        row.exit_cause = ExitCause::Stopped as i32;
+        row.exit_detail = None;
+        let stopped = wire::IncarnationEnd {
+            cause: ExitCause::Stopped as i32,
+            detail: None,
+        };
+        self.record_exit(row, stopped, out)?;
         self.journal_readers.remove(&agent);
         if self.store.markers().get(&key) == Some(&Marker::CaughtUp) {
             return Ok(());
@@ -1523,26 +1552,24 @@ impl Daemon {
     /// it is continued.
     fn gone(&self, ended: &Ended, process: &Process, row: Option<&AgentRow>) -> Gone {
         let live = row.filter(|row| row.lifecycle == Lifecycle::Live as i32);
+        let restarted = *ended == Ended::Away && self.options.suspension && self.options.rebooted;
+        // One the person closed was on its way out; it has no turn to carry
+        // on and nothing may wake it: a restart that came between the close
+        // and the end of a suspension it met leaves it so.
+        if let Some(row) = live
+            && row.is_closed()
+            && (row.exit_cause == ExitCause::Suspended as i32
+                || restarted && row.exit_cause == ExitCause::Unspecified as i32)
+        {
+            return Gone::Stopped;
+        }
         if live.is_some_and(|row| row.exit_cause == ExitCause::Suspended as i32) {
             return Gone::Suspended;
         }
-        // One the person closed was on its way out; it has no turn to
-        // carry on.
-        if *ended == Ended::Away
-            && self.options.suspension
-            && self.options.rebooted
+        if restarted
             && let Some(row) = live
             && row.exit_cause == ExitCause::Unspecified as i32
         {
-            if row.is_closed() {
-                return Gone::Exited {
-                    fallback: wire::IncarnationEnd {
-                        cause: ExitCause::Stopped as i32,
-                        detail: None,
-                    },
-                    if_live: true,
-                };
-            }
             return if row.phase == wire::Phase::Idle as i32 {
                 Gone::Suspended
             } else {
@@ -3043,5 +3070,33 @@ mod tests {
         })));
         rig.resume_through(&out, 3);
         assert_eq!(rig.daemon.store.run_start(&PARENT.0).unwrap(), Some(3));
+    }
+
+    /// A restart caught a close after its filing was stored and before the
+    /// suspension it met was finished: the row is live, closed and
+    /// suspended. The start marks it exited as stopped, so nothing resumes
+    /// it and undoes the close, with the experiment on or off.
+    #[test]
+    fn a_closed_row_left_suspended_is_marked_stopped_at_start() {
+        for mut rig in [suspension_rig(true), suspension_rig(false), {
+            let mut rig = rig();
+            rig.daemon.families.swept = false;
+            rig
+        }] {
+            rig.left(PARENT, wire::Phase::Idle, ExitCause::Suspended);
+            let mut row = rig.row(PARENT).unwrap();
+            row.filing = wire::Filing::Closed as i32;
+            rig.daemon.store.put_agent(&row).unwrap();
+            rig.step(Input::ControlClosed {
+                agent: PARENT,
+                ended: Ended::Away,
+            });
+            let row = rig.row(PARENT).unwrap();
+            assert_eq!(
+                (row.lifecycle, row.exit_cause),
+                (Lifecycle::Exited as i32, ExitCause::Stopped as i32)
+            );
+            assert!(row.is_closed());
+        }
     }
 }

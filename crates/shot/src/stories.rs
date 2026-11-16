@@ -235,6 +235,8 @@ pub fn all() -> Vec<Story> {
         story("chat.asking", || {
             chat(Kind::ClaudeSdk, "recorded_question_asked", Pick::Asking)
         }),
+        story("chat.subagents", || subagents(None)),
+        story("chat.subagent", || subagents(Some(0))),
         story("chat.plan", || {
             chat(Kind::ClaudeSdk, "recorded_plan_reviewed", Pick::LastAsking)
         }),
@@ -264,8 +266,6 @@ pub fn all() -> Vec<Story> {
         story("chat.permissions", || {
             Scene::Chat(Box::new(tui::vocabulary::chat_permissions()))
         }),
-        story("chat.subagents", || subagents(None)),
-        story("chat.subagent", || subagents(Some(0))),
         // Review.
         story("review.page", || {
             Scene::Review(Box::new(tui::vocabulary::commented_review()))

@@ -200,8 +200,6 @@ pub(crate) struct Watch {
     path: PathBuf,
     wake: Arc<Notify>,
     fallback: Duration,
-    /// False while paused: nothing is watched, and only the fallback looks.
-    watching: bool,
     /// What is watched: the file, or the nearest folder above it that
     /// exists; None when nothing has been looked for yet, or nothing above
     /// the file exists.
@@ -231,7 +229,6 @@ impl Watch {
             path,
             wake: Arc::new(Notify::new()),
             fallback,
-            watching: true,
             watched: None,
             _held: Held::Nothing,
         };
@@ -250,26 +247,8 @@ impl Watch {
         let _ = tokio::time::timeout(self.fallback, self.wake.notified()).await;
     }
 
-    /// Lets the watch go until [`Watch::resume`], leaving the fallback to
-    /// look again: for a file done with, since an agent can follow a
-    /// hundred finished subagents' files and kqueue holds each watched file
-    /// open.
-    pub(crate) fn pause(&mut self) {
-        self.watching = false;
-        self.watched = None;
-        self._held = Held::Nothing;
-    }
-
-    /// Watches again after [`Watch::pause`]; the next wait returns at once.
-    pub(crate) fn resume(&mut self) {
-        self.watching = true;
-    }
-
     /// Watches what the file calls for now; true when that moved.
     fn settle(&mut self) -> bool {
-        if !self.watching {
-            return false;
-        }
         let target = if self.path.exists() {
             Some(self.path.clone())
         } else {
@@ -528,22 +507,15 @@ mod tests {
         assert!(tail.unread().unwrap_err().contains("replaced"));
     }
 
-    /// With no report of a change, as when a watch is paused or its watcher
-    /// could not start, a watch looks again after the fallback, and one
-    /// resumed watches again at once.
-    /// The clock is tokio's paused one, which moves only when every task
-    /// waits on it.
+    /// With nothing to watch, as for a file no folder above exists for, or
+    /// with a watcher that could not start, a watch looks again after the
+    /// fallback. The clock is tokio's paused one, which moves only when
+    /// every task waits on it.
     #[tokio::test(start_paused = true)]
     async fn with_no_report_a_watch_looks_again_after_the_fallback() {
-        let root = tempfile::tempdir().unwrap();
-        let mut watch = Watch::new(root.path().join("s1.jsonl"));
-        watch.pause();
+        let mut watch = Watch::new(PathBuf::from("no-such-folder").join("s1.jsonl"));
         let started = tokio::time::Instant::now();
         watch.changed().await;
         assert_eq!(started.elapsed(), FALLBACK_POLL);
-        watch.resume();
-        let resumed = tokio::time::Instant::now();
-        watch.changed().await;
-        assert_eq!(resumed.elapsed(), Duration::ZERO);
     }
 }

@@ -17,9 +17,11 @@
 //! Claude's model may continue any of them. It reads its file when the
 //! file's watch reports a change (see the tail module), and at once when it
 //! is asked anything: a drain, or a follow again when a SubagentStart names
-//! its subagent once more. Once drained it lets its watch and its open file
-//! go, leaving the watch's once-a-second fallback, until it is asked again.
-//! A follower that ended, on a file it could no longer read, is started
+//! its subagent once more. Once drained it lets its watch, its open file and
+//! every timer go and waits only to be asked again: Claude fires
+//! SubagentStart for a subagent its model continues before that subagent
+//! writes, and anything written otherwise would land after the subagent's
+//! end. A follower that ended, on a file it could no longer read, is started
 //! anew by the next follow.
 
 use std::collections::BTreeMap;
@@ -205,7 +207,9 @@ async fn read(
         let events = events.clone();
         async move { events.send(ProviderEvent::Fact(fact)).await.is_ok() }
     };
-    let mut rows_changed = tail.watch();
+    // The file is watched until its subagent is drained, and again once
+    // it is asked about.
+    let mut rows_changed = Some(tail.watch());
     // The meta is watched until it is read or no longer waited for.
     let mut meta_changed = Some(Watch::new(meta_path.clone()));
     let meta_by = Instant::now() + META_WAIT;
@@ -222,7 +226,9 @@ async fn read(
             }
         }
         while let Some(next) = ask.take().or_else(|| asked.try_recv().ok()) {
-            rows_changed.resume();
+            if rows_changed.is_none() {
+                rows_changed = Some(tail.watch());
+            }
             let Ask::Drain(reply) = next else {
                 continue;
             };
@@ -274,17 +280,23 @@ async fn read(
                 if !send(drained(&agent_id)).await {
                     return;
                 }
-                // Its subagent is done with until it is asked about again,
-                // so its file is looked at only by the watch's fallback.
-                rows_changed.pause();
+                // Its subagent is done with until it is asked about again:
+                // nothing is watched or timed until then.
+                rows_changed = None;
+                meta_changed = None;
                 tail.close();
+                match asked.recv().await {
+                    Some(next) => ask = Some(next),
+                    None => return,
+                }
+                continue;
             }
         }
         // Read again when the file or its awaited meta changes, when asked,
         // or at the next deadline: a drain's end, or the meta's.
         let deadline = draining.or(awaiting_meta.then_some(meta_by));
         tokio::select! {
-            () = rows_changed.changed() => {}
+            () = changed(&mut rows_changed) => {}
             () = changed(&mut meta_changed) => {}
             next = asked.recv() => match next {
                 Some(next) => ask = Some(next),
@@ -372,7 +384,10 @@ mod tests {
         let (_, drained) = next(&mut events).await;
         assert_eq!(drained["type"], "subagent_drained");
 
+        // A drained follower looks again when asked, as a continued
+        // subagent's start asks.
         std::fs::write(&rows, "{}\n").unwrap();
+        followers.follow(&agent_dir, &transcript, "a1", &sender);
         let (_, unreadable) = next(&mut events).await;
         assert_eq!(unreadable["type"], "subagent_unreadable");
         assert!(
@@ -469,11 +484,12 @@ mod tests {
     }
 
     /// A file left alone is read again when it grows, at the latest by the
-    /// fallback look, and a follow asked again, as a continued subagent's
-    /// start asks, reads it at once. The clock is tokio's paused one, which
-    /// moves only when every task waits on it.
+    /// fallback look. Once drained, a file that grows is not read until a
+    /// follow is asked again, as a continued subagent's start asks, which
+    /// reads it at once. The clock is tokio's paused one, which moves only
+    /// when every task waits on it.
     #[tokio::test(start_paused = true)]
-    async fn an_idle_file_is_read_when_it_grows_and_a_follow_again_reads_it_at_once() {
+    async fn an_idle_file_is_read_when_it_grows_and_once_drained_only_when_followed_again() {
         let at = folder();
         let (sender, mut events) = mpsc::channel(16);
         let mut followers = Followers::default();
@@ -490,13 +506,23 @@ mod tests {
             "an idle file read {waited:?} after it grew"
         );
 
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        followers.drain("a1", None, &sender);
+        let (_, drained) = next(&mut events).await;
+        assert_eq!(drained["type"], "subagent_drained");
         append(&at.rows, &row("u3"));
-        let written = Instant::now();
+        // An hour of the paused clock passes at once: no task wakes in it.
+        assert!(
+            tokio::time::timeout(Duration::from_secs(3600), events.recv())
+                .await
+                .is_err(),
+            "a drained file was read before it was asked about"
+        );
+
+        let asked = Instant::now();
         followers.follow(&at.agent_dir, &at.transcript, "a1", &sender);
         assert_eq!(next_row(&mut events).await["uuid"], "u3");
         assert_eq!(
-            written.elapsed(),
+            asked.elapsed(),
             Duration::ZERO,
             "a follow again waits on nothing"
         );

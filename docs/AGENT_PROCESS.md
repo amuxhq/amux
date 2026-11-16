@@ -640,8 +640,9 @@ assistant and system rows, on the `subagent_transcript` channel; Claude's
 attachment and bookkeeping rows are not sent. Each keeps its own position in
 `private/subagent-cursors/<id>`. A follower reads its file as the
 transcript's does, and one follows each subagent, finished ones included,
-until Claude exits; a drained one lets its watch and its open file go and
-looks once a second until it is asked about again. A file it can no
+until Claude exits. A drained one lets its watch, its open file and its
+timers go and waits only to be asked again: Claude fires `SubagentStart`
+for a subagent its model continues before the subagent writes. A file it can no
 longer read, or one now shorter than what it read, is reported once and its
 follower ends. The interpreter asks again at each `SubagentStart` for a
 subagent it already follows, as Claude fires one when its model continues a

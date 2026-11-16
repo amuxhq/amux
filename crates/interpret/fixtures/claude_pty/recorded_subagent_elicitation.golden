@@ -39,6 +39,7 @@ turn_end 1 last=stream:458425f3-f38d-410b-8887-7acdd468d3e2
 ## 68 recorded 66: fact Hook hook_event_name=Elicitation
 agent sub-68d18aee item ask:ask:1 ask final at=1794787866590 text="" form external open
 agent sub-68d18aee snapshot NEEDS_YOU queue=[] working_on=- at=1794787866590 asks=[ask:1->ask:ask:1 form:external "Confirm the word ALBATROSS."] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+agent sub-68d18aee notice ask ask:1 other "external" "Confirm the word ALBATROSS." why="" more=0
 ## 70 recorded 68: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01GNFhj92yT527w1QsPmJFY5
 agent sub-68d18aee item ask:ask:1 ask final at=1794787866590 text="" form external ASK_OUTCOME_DISMISSED
 agent sub-68d18aee snapshot WORKING queue=[] working_on=- at=1794787866636 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]

@@ -350,17 +350,23 @@ impl State {
                 self.call_ran(tool_use_id)
             }
             // Auto mode's refusal names its rule; the call's row says it
-            // was refused.
+            // was refused, in the chat of whoever made the call. A row not
+            // read yet takes it when it lands.
             Payload::PermissionDenied(denied) => {
                 let id = denied.tool_use_id.clone();
-                match self.tools.get_mut(&id) {
-                    Some(tool) => {
-                        tool.decision = Some(Decision::refused(&denied.reason).to_wire());
-                        self.emit_tool(emit, &id);
-                    }
-                    None => {
-                        self.refused.insert(id, denied.reason.clone());
-                    }
+                let who = denied
+                    .common
+                    .agent_id
+                    .clone()
+                    .filter(|child| self.subagents.contains_key(child));
+                let held = match &who {
+                    Some(child) => self.subagents[child].conversation.holds(&id),
+                    None => self.tools.contains_key(&id),
+                };
+                if held {
+                    self.decide_as(emit, who.as_deref(), &id, Decision::refused(&denied.reason));
+                } else {
+                    self.refused.insert(id, denied.reason.clone());
                 }
             }
             Payload::Elicitation(elicitation) => self.elicitation(emit, elicitation),

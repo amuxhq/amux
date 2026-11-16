@@ -220,6 +220,7 @@ impl State {
             &key,
             &user.message.content,
             user.tool_use_result.as_ref(),
+            &mut self.tasks,
             now,
         );
     }

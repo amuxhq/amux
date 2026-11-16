@@ -302,6 +302,11 @@ Both Claude kinds build a subagent's chat with one builder
 with their results, keyed as the agent's own are; its snapshot body is a
 `ClaudeSnapshot`. What differs is where the parts come from.
 
+Claude keeps one task list for a session, its subagents included: a task a
+subagent creates is listed by its host's `TaskList`. So a subagent's
+`TaskCreate` and `TaskUpdate` change the agent's own task list, and, like
+the agent's own task calls, draw no row.
+
 **Headless Claude** forwards each subagent's frames on its own stream,
 tagged with the subagent's `agent_id` (the task id) and the call that
 started it.

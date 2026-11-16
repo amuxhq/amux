@@ -214,6 +214,9 @@ pub enum RegistryError {
     AlreadyExists(AgentId),
     #[error("agent {0} is live; stop it before resuming it")]
     Live(AgentId),
+    /// A wake met an agent that is not suspended.
+    #[error("agent {0} is not suspended")]
+    NotSuspended(AgentId),
     #[error("an agent id is 16 bytes, not {0}")]
     BadId(usize),
     #[error("a new agent names its kind")]
@@ -314,7 +317,9 @@ impl RegistryError {
         let code = match self {
             Self::NotFound(_) | Self::NoSpec(_) => ErrorCode::NotFound,
             Self::AlreadyExists(_) | Self::NameTaken(_) => ErrorCode::AlreadyExists,
-            Self::Live(_) | Self::StillLocked(_) => ErrorCode::FailedPrecondition,
+            Self::Live(_) | Self::NotSuspended(_) | Self::StillLocked(_) => {
+                ErrorCode::FailedPrecondition
+            }
             Self::BadId(_)
             | Self::NoKind
             | Self::BadCwd(_)
@@ -1252,6 +1257,26 @@ impl ProfileRuntime {
         let resume = daemon_core::Resume {
             agent: core_agent(id),
             bootstrap,
+            if_suspended: false,
+        };
+        self.registry_row(id, ClientRequest::ResumeAgent(Box::new(resume)))
+            .await
+    }
+
+    /// Resumes a suspended agent as [`Self::resume`] does, its queue seeded
+    /// by `bootstrap` when one is given. The core decides it is still
+    /// suspended once any process it waits out is gone; one that is not is
+    /// refused as [`RegistryError::NotSuspended`], or [`RegistryError::Live`]
+    /// when it is running.
+    pub async fn wake(
+        &self,
+        id: AgentId,
+        bootstrap: Option<Bootstrap>,
+    ) -> Result<Agent, RegistryError> {
+        let resume = daemon_core::Resume {
+            agent: core_agent(id),
+            bootstrap,
+            if_suspended: true,
         };
         self.registry_row(id, ClientRequest::ResumeAgent(Box::new(resume)))
             .await
@@ -2139,6 +2164,7 @@ fn registry_error(id: AgentId, error: CallError) -> RegistryError {
         Refusal::NotFound => RegistryError::NotFound(id),
         Refusal::AlreadyExists => RegistryError::AlreadyExists(id),
         Refusal::Live => RegistryError::Live(id),
+        Refusal::NotSuspended => RegistryError::NotSuspended(id),
         Refusal::NameTaken(name) => RegistryError::NameTaken(name),
         Refusal::HasParent => RegistryError::HasParent(id),
         Refusal::ParentEnded(parent) => RegistryError::ParentEnded(Uuid::from_bytes(parent.0)),

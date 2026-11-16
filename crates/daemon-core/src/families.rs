@@ -253,6 +253,13 @@ pub struct Resume {
     pub agent: AgentId,
     #[serde(with = "codec::optional")]
     pub bootstrap: Option<wire::Bootstrap>,
+    /// A wake: it goes ahead only for an agent still suspended once its
+    /// turn comes and any process it waited out is gone, else it is
+    /// refused as [`Refusal::NotSuspended`]. A person's input to an agent
+    /// with no process asks this, so an agent stopped in the meantime is
+    /// not started again by something typed to it before the stop showed.
+    #[serde(default)]
+    pub if_suspended: bool,
 }
 
 /// Why the registry refused or could not finish an operation.
@@ -264,6 +271,9 @@ pub enum Refusal {
     AlreadyExists,
     /// The agent is live; it is stopped before it is resumed.
     Live,
+    /// A wake met an agent that is not suspended: exited, or started by
+    /// something else first.
+    NotSuspended,
     /// Another agent on this host has the name.
     NameTaken(String),
     /// Only an agent with no parent is pinned.
@@ -1039,9 +1049,9 @@ impl Daemon {
         out: &mut Vec<Output>,
     ) -> Result<Began, Refusal> {
         let agent = resume.agent;
-        if self.store.agent(&self.own_key(agent))?.is_none() {
+        let Some(row) = self.store.agent(&self.own_key(agent))? else {
             return Err(Refusal::NotFound);
-        }
+        };
         if let Some(process) = self.families.processes.get(&agent) {
             let leaving = process.leaving || process.stopping.is_some() || process.ended.is_some();
             if !leaving {
@@ -1049,6 +1059,11 @@ impl Daemon {
             }
             self.arm_after(TimerId::Exit(agent), self.settings.stop_deadline_ms, out);
             return Ok(Began::Waiting(Doing::AwaitExit { resume }));
+        }
+        // Answered now rather than after the unlock and the spec; the
+        // relaunch checks again.
+        if resume.if_suspended && !self.suspended(agent, &row) {
+            return Err(Refusal::NotSuspended);
         }
         Ok(Began::Waiting(self.await_unlock(resume, out)))
     }
@@ -1097,14 +1112,19 @@ impl Daemon {
     /// and its process starts.
     fn resume_unlocked(
         &mut self,
-        agent: AgentId,
+        resume: &Resume,
         spec: Option<AgentSpec>,
         out: &mut Vec<Output>,
     ) -> Result<Doing, Refusal> {
+        let agent = resume.agent;
         let key = self.own_key(agent);
         // Looked up again: retention may have removed an exited agent while
-        // the resume waited.
+        // the resume waited, and a stop or a process it waited out may have
+        // left it exited.
         let mut row = self.store.agent(&key)?.ok_or(Refusal::NotFound)?;
+        if resume.if_suspended && !self.suspended(agent, &row) {
+            return Err(Refusal::NotSuspended);
+        }
         let mut spec = spec.ok_or(Refusal::NoSpec)?;
         // A resume of a suspended agent continues its run; any other
         // starts a new one. A run kept since before the table held it
@@ -1444,6 +1464,7 @@ impl Daemon {
             let resume = Resume {
                 agent,
                 bootstrap: Some(continue_after_restart(row)),
+                if_suspended: false,
             };
             self.registry_call(Caller::Family, agent, Op::Resume(Box::new(resume)), out);
         }
@@ -1793,8 +1814,9 @@ impl Daemon {
                 },
                 _ => self.finish(agent, Err(Refusal::StillLocked), out),
             },
-            Doing::AwaitSpec { .. } => match result {
-                JobResult::Spec(spec) => match self.resume_unlocked(agent, spec.map(|s| *s), out) {
+            Doing::AwaitSpec { resume, .. } => match result {
+                JobResult::Spec(spec) => match self.resume_unlocked(&resume, spec.map(|s| *s), out)
+                {
                     Ok(doing) => self.set_doing(agent, doing),
                     Err(refusal) => self.finish(agent, Err(refusal), out),
                 },
@@ -2251,6 +2273,7 @@ mod tests {
     const OWN: [u8; 16] = *b"own-host-0000000";
     const PARENT: AgentId = AgentId(*b"parent-000000000");
     const CHILD: AgentId = AgentId(*b"child-0000000000");
+    const OTHER: AgentId = AgentId(*b"other-0000000000");
 
     struct Rig {
         daemon: Daemon,
@@ -2506,6 +2529,7 @@ mod tests {
         let (_, out) = rig.call(ClientRequest::ResumeAgent(Box::new(Resume {
             agent: PARENT,
             bootstrap: None,
+            if_suspended: false,
         })));
         let Some((unlock, Job::AwaitUnlocked { .. })) = job_of(&out) else {
             panic!("the resume waits for the directory: {out:?}");
@@ -2589,6 +2613,7 @@ mod tests {
         let (resume, out) = rig.call(ClientRequest::ResumeAgent(Box::new(Resume {
             agent: PARENT,
             bootstrap: None,
+            if_suspended: false,
         })));
         assert_eq!(job_of(&out), None, "it waits behind the stop: {out:?}");
         // The last snapshot is written as the agent ends, and read with the
@@ -2909,6 +2934,133 @@ mod tests {
         );
     }
 
+    fn wake(agent: AgentId, text: &str) -> ClientRequest {
+        ClientRequest::ResumeAgent(Box::new(Resume {
+            agent,
+            bootstrap: Some(wire::Bootstrap {
+                of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+                    input_id: text.as_bytes().to_vec(),
+                    prompt: Some(wire::PromptInput {
+                        text: text.into(),
+                        attachments: Vec::new(),
+                    }),
+                })),
+            }),
+            if_suspended: true,
+        }))
+    }
+
+    /// A person's input to an agent with no process wakes it only if it is
+    /// suspended, with the input as the next incarnation's first: one the
+    /// person stopped is refused, and one running is left to take the
+    /// input itself.
+    #[test]
+    fn a_wake_resumes_only_a_suspended_agent_with_its_input_first() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        rig.live(CHILD, "scout", None);
+        rig.suspend(PARENT);
+        let (call, out) = rig.call(wake(PARENT, "go on"));
+        let bootstrap = rig.resume_through(&out, 2);
+        assert!(
+            matches!(
+                bootstrap.and_then(|bootstrap| bootstrap.of),
+                Some(wire::bootstrap::Of::Prompt(prompt)) if prompt.input_id == b"go on"
+            ),
+            "the input is the first"
+        );
+        let out = rig.step(Input::AgentHello { agent: PARENT });
+        let row = answer_of(&out, call).expect("answered once it is up");
+        assert_eq!(
+            (row.lifecycle(), row.incarnation),
+            (Lifecycle::Live, 2),
+            "{out:?}"
+        );
+
+        let (call, out) = rig.call(wake(CHILD, "go on"));
+        assert_eq!(refusal_of(&out, call), Some(Refusal::Live), "{out:?}");
+        rig.call(ClientRequest::KillAgent { agent: CHILD });
+        rig.step(Input::ControlClosed {
+            agent: CHILD,
+            ended: Ended::Exited,
+        });
+        let (call, out) = rig.call(wake(CHILD, "go on"));
+        assert_eq!(
+            refusal_of(&out, call),
+            Some(Refusal::NotSuspended),
+            "{out:?}"
+        );
+        assert_eq!(job_of(&out), None, "{out:?}");
+    }
+
+    /// A wake that meets an agent on its way out waits for the exit, then
+    /// resumes it only if the exit left it suspended: typed as it was
+    /// suspending it starts again, typed as a stop was under way it does
+    /// not.
+    #[test]
+    fn a_wake_waiting_out_an_exit_resumes_a_suspension_and_not_a_stop() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        rig.step(Input::Exiting { agent: PARENT });
+        let (call, out) = rig.call(wake(PARENT, "go on"));
+        assert_eq!(job_of(&out), None, "it waits for the exit: {out:?}");
+        let gone = rig.suspend(PARENT);
+        rig.resume_through(&gone, 2);
+        let out = rig.step(Input::AgentHello { agent: PARENT });
+        assert_eq!(answer_of(&out, call).map(|row| row.incarnation), Some(2));
+
+        rig.live(CHILD, "scout", None);
+        let (stop, _) = rig.call(ClientRequest::KillAgent { agent: CHILD });
+        let (call, out) = rig.call(wake(CHILD, "go on"));
+        assert_eq!(job_of(&out), None, "it waits behind the stop: {out:?}");
+        let gone = rig.suspend(CHILD);
+        assert_eq!(
+            answer_of(&gone, stop).map(|row| row.exit_cause),
+            Some(ExitCause::Stopped as i32)
+        );
+        assert_eq!(
+            refusal_of(&gone, call),
+            Some(Refusal::NotSuspended),
+            "{gone:?}"
+        );
+        assert_eq!(job_of(&gone), None, "nothing starts: {gone:?}");
+
+        // Its process ending some other way leaves nothing to wake either,
+        // though only the relaunch can tell.
+        rig.live(OTHER, "other", None);
+        rig.step(Input::Exiting { agent: OTHER });
+        let (call, _) = rig.call(wake(OTHER, "go on"));
+        let gone = rig.step(Input::ControlClosed {
+            agent: OTHER,
+            ended: Ended::Exited,
+        });
+        let Some((unlock, Job::AwaitUnlocked { .. })) = job_of(&gone) else {
+            panic!("the wake waits for the directory: {gone:?}");
+        };
+        let unlocked = rig.step(Input::JobDone {
+            job: unlock,
+            result: JobResult::Done,
+        });
+        let Some((spec, Job::NextSpec { .. })) = job_of(&unlocked) else {
+            panic!("the spec is asked for: {unlocked:?}");
+        };
+        let out = rig.step(Input::JobDone {
+            job: spec,
+            result: JobResult::Spec(Some(Box::new(AgentSpec {
+                agent_id: OTHER.0.to_vec(),
+                kind: wire::Kind::Codex as i32,
+                incarnation: 2,
+                ..AgentSpec::default()
+            }))),
+        });
+        assert_eq!(
+            refusal_of(&out, call),
+            Some(Refusal::NotSuspended),
+            "{out:?}"
+        );
+        assert_eq!(rig.row(OTHER).unwrap().lifecycle, Lifecycle::Exited as i32);
+    }
+
     /// Switched off or on, the start's sweep finds a suspended agent's
     /// directory unlocked, as it is, and leaves its row as it was.
     #[test]
@@ -3079,6 +3231,7 @@ mod tests {
         let (_, out) = rig.call(ClientRequest::ResumeAgent(Box::new(Resume {
             agent: PARENT,
             bootstrap: None,
+            if_suspended: false,
         })));
         rig.resume_through(&out, 2);
         assert_eq!(rig.daemon.store.run_start(&PARENT.0).unwrap(), Some(1));
@@ -3096,6 +3249,7 @@ mod tests {
         let (_, out) = rig.call(ClientRequest::ResumeAgent(Box::new(Resume {
             agent: PARENT,
             bootstrap: None,
+            if_suspended: false,
         })));
         rig.resume_through(&out, 3);
         assert_eq!(rig.daemon.store.run_start(&PARENT.0).unwrap(), Some(3));

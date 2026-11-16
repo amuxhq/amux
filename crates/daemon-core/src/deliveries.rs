@@ -819,6 +819,7 @@ impl Daemon {
             bootstrap: Some(Bootstrap {
                 of: Some(bootstrap::Of::AgentMessage(envelope.clone())),
             }),
+            if_suspended: false,
         };
         self.registry_call(
             Caller::Lane,

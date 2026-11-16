@@ -964,6 +964,7 @@ mod tests {
                 request: ClientRequest::ResumeAgent(Box::new(crate::Resume {
                     agent: AgentId([5; 16]),
                     bootstrap: None,
+                    if_suspended: false,
                 })),
             },
             Input::ControlClosed {

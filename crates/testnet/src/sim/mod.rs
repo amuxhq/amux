@@ -827,6 +827,7 @@ impl World for SimNet {
             ClientRequest::ResumeAgent(Box::new(Resume {
                 agent: id,
                 bootstrap,
+                if_suspended: false,
             })),
         )?
         .ok_or_else(|| answered_without_row(&at.host, &what))

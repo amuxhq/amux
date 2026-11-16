@@ -4,8 +4,8 @@ use std::collections::BTreeSet;
 
 use codex_protocol::client::{
     BackgroundTerminalsListParams, BackgroundTerminalsTerminateParams, CommandApprovalResponse,
-    ElicitationAction, ModelListParams, SkillsListParams, ThreadIdParams, ThreadReadParams,
-    ThreadResumeParams, ThreadSetNameParams, TurnInterruptParams,
+    ElicitationAction, ModelListParams, SkillsListParams, ThreadIdParams, ThreadResumeParams,
+    ThreadSetNameParams, TurnInterruptParams,
 };
 use codex_protocol::items::{
     CommandAction, FileUpdateChange, McpToolCallItem, MessagePhase, PatchChangeKind,
@@ -475,13 +475,7 @@ impl State {
     /// A thread answer: the handshake's, the resume after an unarchive, or
     /// the new thread started in place of one with no history. False when
     /// the answer names no thread.
-    fn thread_answered(
-        &mut self,
-        emit: &mut Emit,
-        result: &Value,
-        resumed: bool,
-        fresh: bool,
-    ) -> bool {
+    fn thread_answered(&mut self, emit: &mut Emit, result: &Value, fresh: bool) -> bool {
         let Ok(response) = codex_protocol::result::<ThreadResponse>(result) else {
             return false;
         };
@@ -491,11 +485,6 @@ impl State {
         self.thread_started(emit, &response.thread, Some(&response), fresh);
         if self.thread_id.as_ref() == Some(&response.thread.id) {
             self.name_thread(emit);
-            // A resume leaves the turns out, so an empty list says nothing
-            // about a resumed thread, which Codex has already written.
-            if !resumed && response.thread.turns.is_empty() {
-                self.persist_thread(emit);
-            }
         }
         self.list_offers(emit);
         true
@@ -573,6 +562,13 @@ impl State {
             RequestId::Integer(_) => None,
         };
         let Some((id, request)) = tracked else {
+            // Every request the interpreter makes is tracked until answered,
+            // so an answer to one of its own ids it does not track is to a
+            // request an earlier build made and this one no longer does, as
+            // a recording of that build holds: nothing of this agent's.
+            if matches!(id, RequestId::String(id) if id.starts_with("amux-")) {
+                return;
+            }
             // The agent process's own handshake.
             let resumed = matches!(id, RequestId::String(id) if id == RESUME_REQUEST);
             let result = match result {
@@ -584,7 +580,7 @@ impl State {
                 Err(error) if is_agent_request(id) => return self.refused_to_start(emit, &error),
                 Err(_) => return,
             };
-            if !self.thread_answered(emit, &result, resumed, false) {
+            if !self.thread_answered(emit, &result, false) {
                 self.account_answered(&result);
             }
             return;
@@ -594,8 +590,7 @@ impl State {
                 return match result {
                     Ok(_) if request == Request::Unarchive => self.resume(emit),
                     Ok(result) => {
-                        let fresh = request == Request::Fresh;
-                        self.thread_answered(emit, &result, !fresh, fresh);
+                        self.thread_answered(emit, &result, request == Request::Fresh);
                     }
                     Err(error) => self.refused_to_start(emit, &error),
                 };
@@ -872,7 +867,6 @@ impl State {
             wire::IncarnationEnd::default(),
         );
         self.name_thread(emit);
-        self.persist_thread(emit);
     }
 
     /// A page of `model/list`: the next page is asked for while the server
@@ -1104,9 +1098,9 @@ impl State {
     }
 
     /// Gives the thread the agent's name, so Codex's own app shows the name
-    /// amux does. Naming a thread that has not run a turn lets another
-    /// client resume it plainly, but not Codex's own app, which resumes
-    /// from history on disk; `persist_thread` is what lets the app attach.
+    /// amux does. Naming also has Codex write a thread that has run no turn
+    /// to disk (codex-cli 0.161 onwards), which Codex's own app resumes
+    /// from, so the app can attach before the first turn.
     pub(super) fn name_thread(&mut self, emit: &mut Emit) {
         if self.name.is_empty() {
             return;
@@ -1123,23 +1117,6 @@ impl State {
                 extra: Default::default(),
             }),
             Request::Name,
-        );
-        emit.effect(Effect::ProviderWrite(bytes));
-    }
-
-    /// Has Codex write a thread that has run no turn to disk. Codex's own
-    /// app resumes a thread from its history on disk, which Codex writes at
-    /// the first turn, so until then the app cannot attach; reading the
-    /// loaded thread with its turns makes Codex write it.
-    fn persist_thread(&mut self, emit: &mut Emit) {
-        let bytes = self.request_as(
-            "amux-persist".into(),
-            ClientRequest::ThreadRead(ThreadReadParams {
-                thread_id: self.thread(),
-                include_turns: Some(true),
-                extra: Default::default(),
-            }),
-            Request::Persist,
         );
         emit.effect(Effect::ProviderWrite(bytes));
     }

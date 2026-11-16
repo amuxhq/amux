@@ -136,7 +136,10 @@ impl Turns {
 fn keeps(kind: &RowKind) -> bool {
     matches!(
         kind,
-        RowKind::Error { .. } | RowKind::Boundary { .. } | RowKind::Compaction { .. }
+        RowKind::Error { .. }
+            | RowKind::Deprecation { .. }
+            | RowKind::Boundary { .. }
+            | RowKind::Compaction { .. }
     )
 }
 

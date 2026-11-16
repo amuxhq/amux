@@ -932,13 +932,18 @@ answer.
   `model/list` offers it. Everything the hidden thread says stops at the
   interpreter. A `thread/name/updated` that is neither the agent's name nor
   its title is a person renaming the thread in Codex.
-- **A fresh thread on disk.** Codex writes a thread to disk at its first
-  turn, and its own app resumes from what is on disk (it asks for the
-  thread without its turns and pages them), so until then the app cannot
-  attach; naming does not write it. When the handshake answers with a
-  thread that has no turns, the interpreter reads it with its turns
-  (`thread/read` with `includeTurns`, id `amux-persist`), which has Codex
-  write it, and ignores the answer and the `deprecationNotice` beside it.
+- **A fresh thread on disk.** Codex's own app resumes a thread from what
+  is on disk (it asks for the thread without its turns and pages them), and
+  Codex writes a thread there at its first turn or when it is named
+  (codex-cli 0.161 onwards). The name the interpreter gives the thread is
+  what lets the app attach before the first turn; a thread nobody named
+  waits for its first turn. Nothing reads a thread back with its turns
+  (`thread/read` with `includeTurns`): Codex answers that with a
+  `deprecationNotice` and pages history with `thread/turns/list` instead.
+  Earlier builds read every new thread so (id `amux-persist`, which Codex
+  0.160 needed, since naming wrote nothing then); an answer to a request of
+  the interpreter's own it no longer tracks, as their recordings hold, is
+  ignored.
 - **Usage.** `account/rateLimits/updated` gives up to two windows, each
   described only by its length: 300 minutes is the five-hour limit, 10080
   the weekly one, and any other length is carried as it is. A window is
@@ -1101,7 +1106,9 @@ answer.
   carries the page's address, as the step's text too, since Codex says
   nothing else about it. Codex's warnings are error items of the kind Codex
   sent them as, in Codex's words, as its own app shows them: `configWarning`
-  (configuration Codex found and did not apply), `deprecationNotice`,
+  (configuration Codex found and did not apply), `deprecationNotice` (which
+  every client draws as a deprecation notice, never a failure: Codex will
+  stop supporting something, and nothing failed),
   `warning` (among them the one that says a request was routed to another
   model; `model/rerouted` itself changes nothing, since a reroute covers one
   request), `guardianWarning` (except an approved review's, which repeats

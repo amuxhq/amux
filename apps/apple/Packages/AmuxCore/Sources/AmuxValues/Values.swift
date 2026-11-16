@@ -6019,6 +6019,9 @@ public enum RowKind: Codable, Hashable, Sendable {
     case turnEnd(failed: Bool, durationMs: Int64?)
     case compaction(automatic: Bool, idle: Bool, tokensAfter: UInt64?, tokensBefore: UInt64?)
     case error(errorKind: String, message: String, attempts: UInt32, gaveUp: Bool)
+    /// The provider saying something amux or the person's setup uses is
+    /// deprecated, in its words: a notice, never a failure.
+    case deprecation(message: String)
     case modelSwitch(to: String, reason: String)
     case boundary(kind: BoundaryKind, cause: String)
     case agentMessage(from: String, kind: EnvelopeKind, text: [Segment], to: String, sent: SendState, rejection: String)
@@ -6046,6 +6049,7 @@ public enum RowKind: Codable, Hashable, Sendable {
         case turnEnd = "TurnEnd"
         case compaction = "Compaction"
         case error = "Error"
+        case deprecation = "Deprecation"
         case modelSwitch = "ModelSwitch"
         case boundary = "Boundary"
         case agentMessage = "AgentMessage"
@@ -6155,6 +6159,10 @@ public enum RowKind: Codable, Hashable, Sendable {
         case message
         case attempts
         case gaveUp = "gave_up"
+    }
+
+    private enum DeprecationKeys: String, CodingKey {
+        case message
     }
 
     private enum ModelSwitchKeys: String, CodingKey {
@@ -6331,6 +6339,11 @@ public enum RowKind: Codable, Hashable, Sendable {
                 message: try _fields.decode(String.self, forKey: .message),
                 attempts: try _fields.decode(UInt32.self, forKey: .attempts),
                 gaveUp: try _fields.decode(Bool.self, forKey: .gaveUp))
+        case .deprecation:
+            let _fields = try _container.nestedContainer(
+                keyedBy: DeprecationKeys.self, forKey: .deprecation)
+            self = .deprecation(
+                message: try _fields.decode(String.self, forKey: .message))
         case .modelSwitch:
             let _fields = try _container.nestedContainer(
                 keyedBy: ModelSwitchKeys.self, forKey: .modelSwitch)
@@ -6483,6 +6496,10 @@ public enum RowKind: Codable, Hashable, Sendable {
             try _fields.encode(message, forKey: .message)
             try _fields.encode(attempts, forKey: .attempts)
             try _fields.encode(gaveUp, forKey: .gaveUp)
+        case .deprecation(let message):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: DeprecationKeys.self, forKey: .deprecation)
+            try _fields.encode(message, forKey: .message)
         case .modelSwitch(let to, let reason):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: ModelSwitchKeys.self, forKey: .modelSwitch)

@@ -38,7 +38,7 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
-     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     2 warning:2 Deprecation { message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." }
      3 prompt:ebf50cf21cee419fa9c7cabd536c4edf Prompt { text: [Text("Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval.")], steered: false }
      4 msg_0b58a38fe8255793016ae5d6f7605c81919ffa3594a9b380bf Prose { text: [Text("I’ll check README.md and put the one-step plan forward for approval.")], streaming: false, working_note: true }
      5 exec-7fb66c6f-14f5-46d0-9e65-c360481cab62 Explore { verb: Read, subject: "cat README.md", state: Succeeded, result: "" } run[exec-7fb66c6f-14f5-46d0-9e65-c360481cab62..exec-7fb66c6f-14f5-46d0-9e65-c360481cab62 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }]

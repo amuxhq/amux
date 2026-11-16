@@ -275,6 +275,11 @@ struct ChatRow: View {
                 meta: attempts <= 1 ? "" : gaveUp ? "gave up after \(attempts) tries" : "\(attempts) tries",
                 detail: detailed ? message : nil, detailLines: expanded ? nil : 3, opens: detailed, open: expanded,
                 toggle: toggle)
+        case .deprecation(let message):
+            GridLine(
+                glyph: "triangle-alert", rail: rail, verb: "Deprecation notice", quiet: true,
+                detail: message, detailLines: expanded ? nil : 3, opens: true, open: expanded,
+                toggle: toggle)
         case .modelSwitch(let to, let reason):
             GridLine(
                 glyph: "arrow-left-right", rail: rail, verb: "Switched to", subject: to,

@@ -488,6 +488,24 @@ fn body(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'sta
             }
             lines
         }
+        RowKind::Deprecation { message } => {
+            let mut lines = vec![head(
+                ("⚠", theme.warning()),
+                "Deprecation notice",
+                "",
+                "",
+                width,
+                theme,
+            )];
+            lines.extend(detail(
+                message,
+                width,
+                theme.muted(),
+                if open { OPEN_LINES } else { 3 },
+                theme,
+            ));
+            lines
+        }
         RowKind::ModelSwitch { to, reason } => {
             vec![head(
                 ("⇄", theme.muted()),

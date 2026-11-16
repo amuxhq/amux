@@ -42,7 +42,7 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
-     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     2 warning:2 Deprecation { message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." }
      3 prompt:12f39456441e428aad50828972369aa5 Prompt { text: [Text("Use apply_patch for every change, one patch per step: first create notes.txt containing the line one; then change that line to two; then delete old.txt. Then reply DONE.")], steered: false }
      4 msg_076027208a1cfec3016ae5d74cee8c8191a5ae67f9d1898b35 Prose { text: [Text("I’ll make the three changes in order, using a separate patch for each step.")], streaming: false, working_note: true }
      5 exec-5ff2f133-cc87-467f-aa15-7c73d982419d FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Created { lines: 1 }, added: 1, removed: 0, line: None }], state: Succeeded } run[exec-5ff2f133-cc87-467f-aa15-7c73d982419d..exec-f4ca4732-ccb1-44aa-b77e-a1eb9c472fc7 x3] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: false } collapsed

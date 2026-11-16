@@ -18,7 +18,7 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
-     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     2 warning:2 Deprecation { message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." }
      3 prompt:13038aef24d24324b20ea3385966b63a Prompt { text: [Text("Run these three shell commands separately, one tool call each: `cat config.txt`, `ls`, and `grep -n VALUE config.txt`. Then reply DONE.")], steered: false }
      4 msg_055a36b02660a1c6016ae5d745b7388191a028d7cd220635a0 Prose { text: [Text("I’ll run the three commands separately.")], streaming: false, working_note: true }
      5 exec-8cf92672-f662-4d36-8e26-d5dbe1de89c5 Explore { verb: Read, subject: "cat config.txt", state: Succeeded, result: "" } run[exec-8cf92672-f662-4d36-8e26-d5dbe1de89c5..exec-00b283e3-d856-4428-9728-56149bc36992 x3] collapsed

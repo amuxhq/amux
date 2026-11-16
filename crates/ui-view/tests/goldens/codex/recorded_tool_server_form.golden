@@ -46,7 +46,7 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
-     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     2 warning:2 Deprecation { message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." }
      3 prompt:297c5848d158446dbd3a9f68f2dee642 Prompt { text: [Text("Call the ask_the_operator tool from the spec tool server twice, one call at a time: first with word BLUE, then with word LINK. Then reply with what each call returned.")], steered: false }
      4 msg_007f767faa1544dd016ae5d78adbec8191a6733ca6c50717b0 Prose { text: [Text("I’ll find the spec server’s `ask_the_operator` tool, then call it with BLUE followed by LINK.")], streaming: false, working_note: true }
      5 exec-d0bc90d4-d37d-4483-805e-c99964f83982 ToolCall { server: "spec", tool: "ask_the_operator", fact: "BLUE", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"BLUE\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-d0bc90d4-d37d-4483-805e-c99964f83982..exec-d0bc90d4-d37d-4483-805e-c99964f83982 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, l…

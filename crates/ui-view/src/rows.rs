@@ -204,6 +204,11 @@ pub enum RowKind {
         attempts: u32,
         gave_up: bool,
     },
+    /// The provider saying something amux or the person's setup uses is
+    /// deprecated, in its words: a notice, never a failure.
+    Deprecation {
+        message: String,
+    },
     ModelSwitch {
         to: String,
         reason: String,
@@ -792,6 +797,9 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             Codex::Turn(turn) => plain(turn_row(state, held, turn)),
             Codex::Boundary(b) => plain(boundary(b, Provider::Codex)),
             Codex::AgentMessage(m) => plain(agent_message(held, m)),
+            Codex::Error(e) if e.error_kind == CODEX_DEPRECATION => plain(RowKind::Deprecation {
+                message: e.message.clone(),
+            }),
             Codex::Error(e) => error(e),
             Codex::Unrecognized(u) => plain(unrecognized(u)),
             Codex::Verdict(v) => plain(RowKind::AutoReview {
@@ -1059,6 +1067,11 @@ fn compaction(c: &wire::Compaction) -> RowKind {
         idle: c.idle,
     }
 }
+
+/// The kind Codex's interpreter gives the error item it writes for Codex's
+/// `deprecationNotice`: Codex telling a client of something it will stop
+/// supporting, which fails nothing.
+const CODEX_DEPRECATION: &str = "deprecationNotice";
 
 fn error(e: &wire::ApiError) -> (RowKind, Option<Decision>, bool) {
     let gave_up = !e.will_retry;

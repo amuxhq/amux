@@ -64,7 +64,7 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
-     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     2 warning:2 Deprecation { message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." }
      3 prompt:9aeb12b3bc8143c3b9843e31c13b9504 Prompt { text: [Text("First call the whoami tool from the meta tool server yourself with caller parent, and call the status tool from the amux tool server with text parent-checking. Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: call the whoami tool from the meta tool server on…
      4 msg_06c8235076ad9215016afa49060ef087d298e8d014725f331c Prose { text: [Text("I’ll make the parent tool calls, start one agent for the child calls, and wait for its answer.")], streaming: false, working_note: true }
      5 exec-296ed999-4835-4a46-996e-de8f5133215a ToolCall { server: "meta", tool: "whoami", fact: "parent", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"process 51775 heard parent\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-296ed999-4835-4a46-996e-de8f5133215a..exec-296ed999-4835-4a46-996e-de8f5133215a x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, …

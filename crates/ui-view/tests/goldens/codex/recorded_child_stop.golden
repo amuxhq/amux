@@ -28,7 +28,7 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
-     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     2 warning:2 Deprecation { message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." }
      3 prompt:1097dcb0cee54067a3fec0a4f9f3b7cd Prompt { text: [Text("Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: run the shell command `sleep 97; echo LATE` once with your shell tool, wait for it to finish, and reply with its output. Then wait for it to finish and reply with what it answered.")], steered: false }
      4 call_1d1427614e5c42cc9e7348c4bf1f2e1c [opens=sub-f9a283a6] Subagent { description: "", continued: false, state: Succeeded, answer: "", duration_ms: None }
      5 msg_0511c8b5137d6fa3016afa4ae68a2887d2aff998678e5cdfe6 Prose { text: [Text("I started one agent with that exact task. I’ll wait for its answer.")], streaming: false, working_note: true }

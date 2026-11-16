@@ -856,7 +856,8 @@ impl Install {
         })
         .await
         .ok_or("its front door never answered")?;
-        let profile = InstallationServiceClient::new(door)
+        let mut door = InstallationServiceClient::new(door);
+        let profile = door
             .list_profiles(wire::ListProfilesRequest {})
             .await
             .map_err(|status| status.to_string())?
@@ -865,6 +866,16 @@ impl Install {
             .into_iter()
             .next()
             .ok_or("it has no profile")?;
+        // An installation set up long ago, as a person's is: the client
+        // opens on its agents, not on setting up.
+        door.answer_onboarding(wire::AnswerOnboardingRequest {
+            profile_id: Vec::new(),
+            answer: Some(wire::answer_onboarding_request::Answer::Dismiss(
+                wire::Empty {},
+            )),
+        })
+        .await
+        .map_err(|status| status.to_string())?;
         let client = wire::client_stubs(
             channel(Path::new(&profile.socket_path))
                 .await
@@ -1925,10 +1936,9 @@ fn item_token(kind: Kind, item: &Item) -> Option<String> {
             Codex::Prompt(_) => Some("prompt".into()),
             Codex::Steer(_) => Some("steer".into()),
             Codex::Work(work) => Some(tool(work.state, work.decision.as_ref())),
-            // Codex answers amux's read of a fresh thread's history with a
-            // deprecation notice whenever it gets to it, before or after the
-            // first prompt; it says nothing about what the scenario did.
-            Codex::Error(error) if error.error_kind == "deprecationNotice" => None,
+            Codex::Error(error) if error.error_kind == "deprecationNotice" => {
+                Some("deprecation notice".into())
+            }
             Codex::Error(_) => Some("error".into()),
             Codex::AgentMessage(_) => Some("agent message".into()),
             Codex::Ask(item) => Some(ask(&item)),

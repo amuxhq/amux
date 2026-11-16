@@ -24,7 +24,7 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
-     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
+     2 warning:2 Deprecation { message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." }
      3 prompt:e4e518e1de164f0faba65cc184811b8e Prompt { text: [Text("Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: run the shell command `echo CHILD_RAN` once with your shell tool and reply with its output. Then wait for it to finish and reply with what it answered.")], steered: false }
      4 msg_0b34e19d51c38077016afaf29be97887d292e92176b259fcca Prose { text: [Text("I’ll start one agent to run the command once, then relay its answer.")], streaming: false, working_note: true }
      5 call_01f1dbc10efd4198a593581cd0c17030 [opens=sub-5f0f220f] Subagent { description: "", continued: false, state: Succeeded, answer: "", duration_ms: None }

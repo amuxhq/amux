@@ -147,8 +147,9 @@ impl Maker for GitBackend {
                 std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
             }
             let path_text = path.to_string_lossy();
+            let repository = Path::new(&plan.repository);
             git(
-                Path::new(&plan.repository),
+                repository,
                 &[
                     "worktree",
                     "add",
@@ -159,10 +160,23 @@ impl Maker for GitBackend {
                     plan.from.as_deref().unwrap_or("HEAD"),
                 ],
             )?;
-            let git_dir = Self::git_dir(path)
-                .ok_or_else(|| format!("{} has no git directory", path.display()))?;
-            std::fs::write(git_dir.join(OWNER_MARKER), &self.host)
-                .map_err(|error| format!("marking it this host's: {error}"))
+            let marked = Self::git_dir(path)
+                .ok_or_else(|| format!("{} has no git directory", path.display()))
+                .and_then(|git_dir| {
+                    std::fs::write(git_dir.join(OWNER_MARKER), &self.host)
+                        .map_err(|error| format!("marking it this host's: {error}"))
+                });
+            if marked.is_err() {
+                // Unmarked, nothing would ever remove it: the worktree and
+                // the branch this make just added are undone, losing
+                // nothing anyone has written.
+                let undone = git(repository, &["worktree", "remove", "--force", &path_text])
+                    .and_then(|_| git(repository, &["branch", "-D", &plan.branch]));
+                if let Err(error) = undone {
+                    tracing::warn!(id = %workspace.id, %error, "undoing an unmarked worktree failed");
+                }
+            }
+            marked
         })();
         made.map_err(|error| format!("making the worktree: {error}"))
     }

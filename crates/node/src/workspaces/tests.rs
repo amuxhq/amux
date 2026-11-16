@@ -244,6 +244,49 @@ fn untracked_files_count_as_changes_whatever_the_repository_shows() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn a_worktree_that_cannot_be_marked_is_undone_with_its_branch() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let place = Place::new();
+    let backends = place.backends(HOST);
+    // A post-checkout hook, which `git worktree add` runs, puts a folder
+    // where the marker goes, so writing it fails after the worktree and its
+    // branch were made.
+    let hooks = place.root.join("hooks");
+    std::fs::create_dir_all(&hooks).unwrap();
+    let hook = hooks.join("post-checkout");
+    std::fs::write(
+        &hook,
+        "#!/bin/sh\nmkdir \"$(git rev-parse --absolute-git-dir)/amux-owner\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    run_git(
+        &place.repo(),
+        &["config", "core.hooksPath", &hooks.to_string_lossy()],
+    );
+
+    let planned = backends.plan(&place.repo(), "unmarked").unwrap();
+    let made = backends.make(&planned.workspace, &planned.plan);
+    assert!(
+        made.is_err(),
+        "a worktree with no marker was made: {made:?}"
+    );
+    assert!(
+        !Path::new(&planned.workspace.id).exists(),
+        "the worktree was left behind"
+    );
+    let branches = run_git(&place.repo(), &["branch", "--format=%(refname:short)"]);
+    assert!(
+        !branches.contains("unmarked"),
+        "the branch was left behind: {branches}"
+    );
+    let worktrees = run_git(&place.repo(), &["worktree", "list", "--porcelain"]);
+    assert!(!worktrees.contains("unmarked"), "{worktrees}");
+}
+
 /// The wt backend, against a wt home and trees folder of the test's own.
 #[cfg(all(unix, not(target_os = "ios")))]
 mod wt {

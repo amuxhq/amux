@@ -218,7 +218,7 @@ impl ComposedNet {
     }
 
     /// A person sends a prompt and asks for a stop while either daemon may
-    /// be killed and started again: 202,965 states in 97 s on 12 threads.
+    /// be killed and started again: 263,288 states in 130 s on 12 threads.
     pub fn calls_through_a_crash() -> Self {
         Self {
             kills: 1,
@@ -230,7 +230,8 @@ impl ComposedNet {
 
     /// The agent's turn calls Claude's Agent tool, whose provider subagent
     /// runs inside the agent's process and ends before the call returns,
-    /// while the agent's host may be killed and started again.
+    /// while the agent's host may be killed and started again: 12,482 states
+    /// in 7 s on 12 threads.
     pub fn subagent_through_a_crash() -> Self {
         let mut topology = Self::two_hosts();
         topology.agents[0].script.insert(

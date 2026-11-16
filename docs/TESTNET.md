@@ -719,7 +719,9 @@ just suite link-stories                    # spec_links
 ```
 
 The `spec_*` suites (modules of testnet's integration test binary) are the many-daemon specifications: pairing, trust, discovery, routing, relay carriers,
-credential refresh, revocation, account isolation, the inventory, replication and agent families across hosts.
+credential refresh, revocation, account isolation, the inventory, replication, agent families across hosts, and
+provider subagents read, answered and stopped from clients of the host that runs them and of a paired one, the
+phone's own runtime being each host's client (`spec_subagents`).
 `spec_links` holds one story per route a link takes (the same network, SSH, IPv6 alone), each reaching an agent's
 session, streaming it live and naming the carrying path from the link log. A story on the relay alone puts every
 host on a network of its own behind a `strict` router and ends by asserting, with `still_relayed`, that each end's

@@ -57,8 +57,11 @@ zstd = { workspace = true }
 
 [dev-dependencies]
 analytics = { workspace = true }
+app-runtime = { workspace = true }
+client = { workspace = true }
 ui-runtime = { workspace = true }
 ui-state = { workspace = true }
+ui-view = { workspace = true }
 
 [[test]]
 name = "integration"

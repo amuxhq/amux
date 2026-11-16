@@ -15,6 +15,8 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     /// The changed files the overview lists once it asks for them.
     private var files: Changes?
     private var offered: SettingsView?
+    /// How the agents the rows open stand, as the fleet would say.
+    private var agents: ChatAgents
     private var images: [[UInt8]: Data]
     /// Attachments whose fetch has failed, and those asked for again.
     public var failedBlobs: Set<[UInt8]> {
@@ -32,6 +34,8 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     public private(set) var sent: [Draft] = []
     /// The settings picks sent, in order.
     public private(set) var changed: [SettingChange] = []
+    /// The jobs asked to stop, by their keys, in order.
+    public private(set) var stoppedJobs: [String] = []
     /// The most rows the window holds while the reader follows: past it the
     /// oldest go as new ones arrive, and the take names the oldest key
     /// left, which is how the session says the window moved.
@@ -49,9 +53,10 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     public init(
         rows: [Row], frame: ChatFrame, card: AskCard? = nil,
         strip: Surroundings = ScriptedChat.strip(), settings: SettingsView? = nil,
-        images: [[UInt8]: Data] = [:]
+        agents: ChatAgents = ChatAgents(agents: [], groups: []), images: [[UInt8]: Data] = [:]
     ) {
         ordered = rows
+        self.agents = agents
         current = strip.applied(to: frame)
         self.card = card
         facts = strip.overview
@@ -138,12 +143,28 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     public static func row(
         _ id: String, _ order: UInt64, _ kind: RowKind, attention: Bool = false,
         decision: Decision? = nil, run: Run? = nil, parent: String? = nil,
-        collapsed: Bool = false
+        collapsed: Bool = false, opens: [UInt8]? = nil, group: SubagentGroup? = nil
     ) -> Row {
         Row(
             id: id, order: order, atMs: 1_790_000_000_000 + Int64(order) * 1_000, kind: kind,
             collapsed: collapsed || parent != nil, attention: attention, decision: decision,
-            parent: parent, run: run, turn: nil)
+            group: group, opens: opens, parent: parent, run: run, turn: nil)
+    }
+
+    /// Calls of one turn that each opened an agent, folded into one group
+    /// as the shared view folds them: every call carries the group, which
+    /// draws at the first.
+    public static func group(_ rows: [Row]) -> [Row] {
+        let calls = rows.filter { $0.opens != nil }
+        guard let first = calls.first else { return rows }
+        var agents: [[UInt8]] = []
+        for call in calls where !agents.contains(call.opens!) { agents.append(call.opens!) }
+        let group = SubagentGroup(first: first.id, agents: agents, open: false)
+        return rows.map { row in
+            var row = row
+            if row.opens != nil { row.group = group }
+            return row
+        }
     }
 
     // MARK: - Changing it
@@ -225,11 +246,13 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
                 ? nil
                 : .edges(above: pending.above, below: pending.below, dropped: UInt32(pending.dropped))
             let wanted = Set(pending.rows).subtracting(pending.below).subtracting(pending.above)
-            let rows = ordered.filter { wanted.contains($0.id) }.map { Self.folding($0, open: openRuns) }
+            let rows = ordered.filter { wanted.contains($0.id) }.map {
+                Self.folding($0, open: openRuns, groups: openGroups)
+            }
             guard keys != nil || !rows.isEmpty || pending.session else { return nil }
             let session = pending.session
             return ChatDelta(
-                chat: 0, rows: rows, ask: session ? AskMoved(card: card) : nil,
+                chat: 0, rows: rows, agents: session ? agents : nil, ask: session ? AskMoved(card: card) : nil,
                 frame: session ? current : nil, keys: keys, overview: session ? facts : nil,
                 settings: session ? offered : nil)
         }
@@ -243,10 +266,11 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
 
     public func show(
         frame: ChatFrame? = nil, card: AskCard?? = nil, strip: Surroundings? = nil,
-        settings: SettingsView? = nil
+        settings: SettingsView? = nil, agents: ChatAgents? = nil
     ) {
         lock.withLock {
             if let frame { current = frame }
+            if let agents { self.agents = agents }
             if let card { self.card = card }
             if let strip {
                 facts = strip.overview
@@ -264,7 +288,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         lock.withLock {
             pending = Pending()
             return ChatDelta(
-                chat: 0, rows: [], ask: AskMoved(card: card), frame: current,
+                chat: 0, rows: [], agents: agents, ask: AskMoved(card: card), frame: current,
                 keys: .reload(ordered.map(\.id)), overview: facts, settings: offered)
         }
     }
@@ -275,6 +299,8 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     private var held: [Row] = []
     /// The runs the reader opened, by their newest step.
     private var openRuns: Set<String> = []
+    /// The groups of calls the reader opened, by their first call.
+    private var openGroups: Set<String> = []
 
     public func follow(_ following: Bool) {
         lock.withLock {
@@ -293,14 +319,24 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     public func rows(for keys: [String]) -> [Row] {
         lock.withLock {
             let wanted = Set(keys)
-            return ordered.filter { wanted.contains($0.id) }.map { Self.folding($0, open: openRuns) }
+            return ordered.filter { wanted.contains($0.id) }.map {
+                Self.folding($0, open: openRuns, groups: openGroups)
+            }
         }
     }
 
     /// A row as the shared fold leaves it: a finished run shows its newest
     /// step and the failures its turn left unfixed, a live run its newest
-    /// step and any still running, and an open run every step.
-    static func folding(_ row: Row, open: Set<String>) -> Row {
+    /// step and any still running, and an open run every step. A folded
+    /// group of calls draws at its first call alone.
+    static func folding(_ row: Row, open: Set<String>, groups: Set<String> = []) -> Row {
+        if var group = row.group {
+            group.open = groups.contains(group.first)
+            var row = row
+            row.group = group
+            row.collapsed = row.collapsed || (!group.open && row.id != group.first)
+            return row
+        }
         guard var run = row.run else { return row }
         let shown = run.live
             ? run.liveShown
@@ -379,6 +415,15 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
             pending.rows.append(contentsOf: ordered.filter { $0.run?.last == last }.map(\.id))
         }
     }
+    /// Opens or closes the group `member` sits in, for the next delta to
+    /// hand its calls over.
+    public func toggleGroup(_ member: String) {
+        lock.withLock {
+            guard let first = ordered.first(where: { $0.id == member })?.group?.first else { return }
+            if openGroups.remove(first) == nil { openGroups.insert(first) }
+            pending.rows.append(contentsOf: ordered.filter { $0.group?.first == first }.map(\.id))
+        }
+    }
     /// A script draws its turns unfolded, as the phone does.
     public func foldTurns(_ on: Bool) {}
     public func toggleTurn(_ end: String) {}
@@ -414,7 +459,10 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         }
     }
     public func interrupt() async -> ActOutcome? { .done }
-    public func stopJob(_ key: String) async -> ActOutcome? { .done }
+    public func stopJob(_ key: String) async -> ActOutcome? {
+        lock.withLock { stoppedJobs.append(key) }
+        return .done
+    }
 
     public func change(_ setting: SettingChange) async -> ActOutcome? {
         lock.withLock { changed.append(setting) }

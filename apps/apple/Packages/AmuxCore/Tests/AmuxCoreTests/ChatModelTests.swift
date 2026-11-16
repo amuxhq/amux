@@ -1,3 +1,4 @@
+import AmuxWords
 import Foundation
 import XCTest
 
@@ -39,6 +40,12 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
     /// What each queued or sent prompt held, by input id.
     var drafts: [[UInt8]: Draft] = [:]
     var interrupts = 0
+    /// The jobs asked to stop, by key.
+    var stopped: [String] = []
+    /// The groups the model opened or closed, by the member it named.
+    var groupsToggled: [String] = []
+    /// How the agents the rows open stand, as the fleet says.
+    var agents = ChatAgents(agents: [], groups: [])
     var facts: Overview?
     var offered: SettingsView?
     var changed: [SettingChange] = []
@@ -64,6 +71,7 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
     private var sentCard: AskCard??
     private var sentFacts: Overview??
     private var sentOffered: SettingsView??
+    private var sentAgents: ChatAgents?
 
     init(rows: [Row], frame: ChatFrame) {
         ordered = rows
@@ -74,8 +82,9 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         pending = ChatChanges(keys: [], reloaded: false, session: false)
         sentKeys = ordered.map(\.id)
         (sentFrame, sentCard, sentFacts, sentOffered) = (Self.drawn(current), card, facts, offered)
+        sentAgents = agents
         return ChatDelta(
-            chat: 0, rows: [], ask: AskMoved(card: card), frame: current,
+            chat: 0, rows: [], agents: agents, ask: AskMoved(card: card), frame: current,
             keys: .reload(sentKeys), overview: facts, settings: offered)
     }
 
@@ -103,11 +112,13 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         sentFacts = facts
         let settings = sentOffered == .some(offered) ? nil : offered
         sentOffered = offered
+        let agents = sentAgents == self.agents ? nil : self.agents
+        sentAgents = self.agents
         guard keys != nil || !rows.isEmpty || frame != nil || ask != nil || overview != nil
-            || settings != nil
+            || settings != nil || agents != nil
         else { return nil }
         return ChatDelta(
-            chat: 0, rows: rows, ask: ask, frame: frame, keys: keys, overview: overview,
+            chat: 0, rows: rows, agents: agents, ask: ask, frame: frame, keys: keys, overview: overview,
             settings: settings)
     }
 
@@ -209,6 +220,18 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
     }
     func foldTurns(_ on: Bool) {}
     func toggleTurn(_ end: String) {}
+    /// Opens or closes a group as the runtime does: every call of it says
+    /// so from then on, and the first draws alone while it is folded.
+    func toggleGroup(_ member: String) {
+        groupsToggled.append(member)
+        guard let first = ordered.first(where: { $0.id == member })?.group?.first else { return }
+        for index in ordered.indices where ordered[index].group?.first == first {
+            ordered[index].group?.open.toggle()
+            let open = ordered[index].group?.open ?? false
+            ordered[index].collapsed = !open && ordered[index].id != first
+            pending.keys.append(ordered[index].id)
+        }
+    }
     /// Opens or closes a run as the runtime does: every row of it says so
     /// from then on, handed over by the next delta.
     func toggleRun(_ member: String) {
@@ -239,7 +262,10 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         interrupts += 1
         return .done
     }
-    func stopJob(_ key: String) async -> ActOutcome? { .done }
+    func stopJob(_ key: String) async -> ActOutcome? {
+        stopped.append(key)
+        return .done
+    }
 
     func change(_ setting: SettingChange) async -> ActOutcome? {
         changed.append(setting)
@@ -296,11 +322,30 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
     }
 }
 
+/// A call that started the agent `agent`, as the shared view draws it:
+/// folded away under its group's first call until the group opens.
+private func call(_ id: String, _ order: UInt64, opens agent: UInt8, group: SubagentGroup? = nil) -> Row {
+    Row(
+        id: id, order: order, atMs: 0,
+        kind: .subagent(description: "Survey \(id)", continued: false, state: .succeeded, answer: "", durationMs: nil),
+        collapsed: group.map { !$0.open && $0.first != id } ?? false, attention: false, decision: nil,
+        group: group, opens: [agent], parent: nil, run: nil, turn: nil)
+}
+
+/// The fleet's word on each agent, by its id on host 1.
+private func agents(_ standing: [(UInt8, PhaseView)]) -> ChatAgents {
+    ChatAgents(
+        agents: standing.map {
+            OpenedAgent(agent: AgentKey(host: [1], agent: [$0.0]), name: "sub-\($0.0)", kind: .claudeSdk, phase: $0.1)
+        },
+        groups: [])
+}
+
 private func row(_ id: String, _ order: UInt64, _ text: String = "", run: Run? = nil) -> Row {
     Row(
         id: id, order: order, atMs: 0,
         kind: .prose(text: [.text(text.isEmpty ? id : text)], streaming: false, workingNote: false),
-        collapsed: false, attention: false, decision: nil, parent: nil, run: run, turn: nil)
+        collapsed: false, attention: false, decision: nil, group: nil, opens: nil, parent: nil, run: run, turn: nil)
 }
 
 private func frame(
@@ -716,7 +761,7 @@ final class ChatModelTests: XCTestCase {
     /// A row's change, as the session reports an attachment landing.
     private func landing(on model: ChatModel) {
         model.apply(ChatDelta(
-            chat: 0, rows: [row("r1", 1, "words")], ask: nil, frame: nil, keys: nil, overview: nil,
+            chat: 0, rows: [row("r1", 1, "words")], agents: nil, ask: nil, frame: nil, keys: nil, overview: nil,
             settings: nil))
     }
 
@@ -752,7 +797,7 @@ final class ChatModelTests: XCTestCase {
         let cell = model.cell(for: "r1")
         let before = cell.attachmentRevision
         model.apply(ChatDelta(
-            chat: 0, rows: [held], ask: nil, frame: nil, keys: nil, overview: nil, settings: nil))
+            chat: 0, rows: [held], agents: nil, ask: nil, frame: nil, keys: nil, overview: nil, settings: nil))
         XCTAssertGreaterThan(cell.attachmentRevision, before)
     }
 
@@ -973,6 +1018,83 @@ final class ChatModelTests: XCTestCase {
         source.pending = ChatChanges(keys: ["a"], reloaded: false, session: false)
         source.deliver(to: model)
         XCTAssertFalse(model.loadingHint)
+    }
+
+    // MARK: - Calls that open agents
+
+    /// A call row reads how its subagent stands from the fleet, which moves
+    /// without the row: the delta's agents carry it, and the cell is
+    /// measured again though no row was handed over.
+    func testACallReadsItsAgentsStandingFromTheFleetAsItMoves() throws {
+        let source = FakeChat(rows: [call("c1", 1, opens: 9)], frame: frame())
+        source.agents = agents([(9, .working)])
+        let model = ChatModel(source: source)
+        let cell = model.cell(for: "c1")
+        let row = try XCTUnwrap(cell.row)
+        XCTAssertEqual(AgentStanding.of(model.opened(by: row), call: .succeeded), .running,
+                       "a call that returned while its subagent runs on reads running")
+        let before = cell.revision
+        source.agents = agents([(9, .needsYou)])
+        source.deliver(to: model)
+        XCTAssertEqual(source.fetched.count, 1, "no row was read again")
+        XCTAssertEqual(AgentStanding.of(model.opened(by: row), call: .succeeded), .needsYou)
+        XCTAssertGreaterThan(cell.revision, before, "the list measures the call again")
+        XCTAssertEqual(model.opened(by: row)?.agent, AgentKey(host: [1], agent: [9]),
+                       "the row opens the agent the fleet names")
+    }
+
+    /// Until the fleet lists a subagent, its call's own state stands in.
+    func testACallWhoseAgentTheFleetDoesNotHoldReadsItsOwnState() throws {
+        let source = FakeChat(rows: [call("c1", 1, opens: 9)], frame: frame())
+        let model = ChatModel(source: source)
+        let row = try XCTUnwrap(model.cell(for: "c1").row)
+        XCTAssertNil(model.opened(by: row))
+        XCTAssertEqual(AgentStanding.of(model.opened(by: row), call: .succeeded), .done)
+        XCTAssertEqual(AgentStanding.of(nil, call: .running), .running)
+        XCTAssertEqual(AgentStanding.of(nil, call: .cancelled), .stopped)
+    }
+
+    /// Calls of one turn that opened several agents draw as one row at the
+    /// first until the reader opens the group, which is the runtime's fold;
+    /// its state is what the fleet says the group comes to.
+    func testAGroupDrawsAtItsFirstCallUntilOpened() throws {
+        let group = SubagentGroup(first: "c1", agents: [[9], [10], [11]], open: false)
+        let rows = [
+            call("c1", 1, opens: 9, group: group), call("c2", 2, opens: 10, group: group),
+            call("c3", 3, opens: 11, group: group),
+        ]
+        let source = FakeChat(rows: rows, frame: frame())
+        source.agents = ChatAgents(
+            agents: [], groups: [GroupView(first: "c1", state: GroupState(
+                agents: 3, running: 2, needsYou: 1, idle: 0, finished: 0, ended: 0, failed: 0, unknown: 0))])
+        let model = ChatModel(source: source)
+        let shown = ["c1", "c2", "c3"].filter { model.shows(model.cell(for: $0).row!) }
+        XCTAssertEqual(shown, ["c1"], "a folded group draws at its first call alone")
+        let first = try XCTUnwrap(model.cell(for: "c1").row?.group)
+        XCTAssertEqual(model.state(of: first).map(ChatWords.subagentGroupState), "2 running · 1 waiting on you")
+        XCTAssertEqual(model.state(of: first).map(ChatWords.subagentGroupStanding), .needsYou)
+        model.toggleGroup(first)
+        XCTAssertEqual(source.groupsToggled, ["c1"])
+        source.deliver(to: model)
+        XCTAssertEqual(["c1", "c2", "c3"].filter { model.shows(model.cell(for: $0).row!) }, ["c1", "c2", "c3"],
+                       "opened, each call draws its own row")
+        XCTAssertTrue(model.expanded.isEmpty, "a group is not a row's own detail")
+    }
+
+    /// A provider subagent's chat has no text box: nothing typed is sent,
+    /// and its Stop stops its own job by the key the composer gives.
+    func testANativeChatSendsNothingAndStopsItsOwnJob() async {
+        let source = FakeChat(
+            rows: [], frame: frame(mode: .native(stop: .offered(key: "task-7")), phase: .working))
+        let model = ChatModel(source: source)
+        model.draft = "hello"
+        XCTAssertFalse(model.canSend)
+        XCTAssertFalse(model.canResume)
+        XCTAssertEqual(model.frame?.composer.mode.nativeStop, .offered(key: "task-7"))
+        XCTAssertNil(Composer.send.nativeStop)
+        await model.stopJob("task-7")?.value
+        XCTAssertEqual(source.stopped, ["task-7"])
+        XCTAssertNil(model.notice)
     }
 
     func testOpeningARunAsksTheRuntimeAndItsRowsComeWithTheNextDelta() {

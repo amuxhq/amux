@@ -24,14 +24,14 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     func close() { closed = true }
     func opening() -> ChatDelta {
         ChatDelta(
-            chat: id, rows: [], ask: AskMoved(card: nil), frame: frame(), keys: .reload(["a"]),
+            chat: id, rows: [], agents: nil, ask: AskMoved(card: nil), frame: frame(), keys: .reload(["a"]),
             overview: nil, settings: nil)
     }
 
     /// The frame as it now stands, as the delta that hands it over.
     func moved() -> ChatDelta {
         ChatDelta(
-            chat: id, rows: [], ask: nil, frame: frame(), keys: nil, overview: nil, settings: nil)
+            chat: id, rows: [], agents: nil, ask: nil, frame: frame(), keys: nil, overview: nil, settings: nil)
     }
 
     func follow(_ following: Bool) {}
@@ -48,6 +48,7 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     func answer(_ ask: String, responses: [QuestionResponse]) async -> ActOutcome? { nil }
     func replyInstead(_ ask: String, text: String, soFar: [QuestionResponse]) async -> ActOutcome? { nil }
     func toggleRun(_ member: String) {}
+    func toggleGroup(_ member: String) {}
     func foldTurns(_ on: Bool) {}
     func toggleTurn(_ end: String) {}
     func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome? { nil }

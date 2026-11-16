@@ -24,7 +24,13 @@ extension FleetRow: Identifiable {
     public var pinned: Bool { card.filing == .pinned }
     public var closed: Bool { card.filing == .closed }
     /// It has no parent, so it may be pinned.
-    public var pinnable: Bool { card.topLevel && !closed }
+    public var pinnable: Bool { card.topLevel && !card.native && !closed }
+    /// A subagent its parent's provider runs: it goes with its parent and
+    /// has no folder or terminal, so it is never pinned, deleted, resumed or
+    /// opened in a terminal on its own.
+    public var native: Bool { card.native }
+    /// Settled, and not a provider subagent, which goes with its parent.
+    public var deletable: Bool { closed && !card.native }
     /// A folded family's head speaking for a member that needs the person.
     public var speaksForAMember: Bool { loud != nil }
 

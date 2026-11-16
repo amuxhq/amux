@@ -297,13 +297,6 @@ public enum ChatWords {
         return String(localized: "Thought for \(duration(durationMs))")
     }
 
-    /// "40 tools · 48s".
-    public static func subagent(toolCount: UInt32, durationMs: Int64?) -> String {
-        var parts = ["\(toolCount) " + plural(toolCount, "tool", "tools")]
-        if let durationMs { parts.append(duration(durationMs)) }
-        return parts.joined(separator: " · ")
-    }
-
     /// An attachment as its chip names it, from the reference alone.
     public static func chip(_ view: AttachmentView) -> String {
         let (name, detail) = chipParts(view)
@@ -411,7 +404,7 @@ public enum ChatWords {
         case .toolCall(let server, let tool, _, _, _): server.isEmpty ? tool : "\(server) · \(tool)"
         case .child(_, let name, _, _, _, _): name.isEmpty ? nil : name
         case .fileChange(let files, _): files.first?.path
-        case .subagent(let description, _, _, _, _, _): firstLine(description)
+        case .subagent(let description, _, _, _, _): firstLine(description)
         default: nil
         }
     }
@@ -454,6 +447,9 @@ public enum ChatWords {
             default:
                 return String(localized: "\(host) is out of reach · your draft is kept")
             }
+        // A provider subagent's chat draws no field to say anything in.
+        case .native?:
+            return ""
         }
     }
 

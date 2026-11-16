@@ -2,6 +2,10 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 24 recorded 23: input 0x8c5551afbf2648979a066af24a22d78e
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 37 recorded 36: fact Rpc method=item/started
+  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
+## 41 recorded 40: fact Rpc method=item/completed
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 52 recorded 51: fact Rpc method=item/started
   composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
 ## 99 recorded 98: fact Rpc method=item/completed
@@ -12,9 +16,10 @@
      1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:8c5551afbf2648979a066af24a22d78e Prompt { text: [Text("Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: run the shell command `echo CHILD_RAN` once with your shell tool and reply with its output. Then wait for it to finish and reply with what it answered.")], steered: false }
-     4 call_546b8ea5a44543a986a480de4081f1ba Subagent { description: "", running: false, tool_count: 0, last_tool: "wait", answer: "", duration_ms: Some(3390) } run[call_546b8ea5a44543a986a480de4081f1ba..call_546b8ea5a44543a986a480de4081f1ba x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0 }]
-     5 msg_04ff46e957675881016afa4958cc6887d2a181e57445ddbde2 Prose { text: [Text("CHILD_RAN")], streaming: false, working_note: false }
-     6 turn:1 TurnEnd { duration_ms: Some(18605), failed: false }
+     4 call_7d4d96e0c3c3491db791396efd1757f0 Subagent { description: "", running: false, tool_count: 0, last_tool: "spawnAgent", answer: "", duration_ms: Some(0) } run[call_7d4d96e0c3c3491db791396efd1757f0..call_546b8ea5a44543a986a480de4081f1ba x2 recent=1] collapsed
+     5 call_546b8ea5a44543a986a480de4081f1ba Subagent { description: "", running: false, tool_count: 0, last_tool: "wait", answer: "", duration_ms: Some(3390) } run[call_7d4d96e0c3c3491db791396efd1757f0..call_546b8ea5a44543a986a480de4081f1ba x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 2, other: 0 }]
+     6 msg_04ff46e957675881016afa4958cc6887d2a181e57445ddbde2 Prose { text: [Text("CHILD_RAN")], streaming: false, working_note: false }
+     7 turn:1 TurnEnd { duration_ms: Some(18605), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 15629, window_tokens: Some(475000), percent: Some(3), near_full: false }) sign-in None
 == settings

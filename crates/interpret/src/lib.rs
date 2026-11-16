@@ -130,6 +130,10 @@ pub trait Interpreter {
     fn fixture_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input>;
 
     /// Turns a recorded provider corpus into events, for recorded fixtures.
+    /// A recording knows a provider subagent only by the provider's id for
+    /// it, so a person's input to one comes back as [`Event::ChildInput`]
+    /// whose `agent_id` is that id's UTF-8: the harness addresses it under
+    /// the fixture's agent, as it does an authored `child_input`.
     fn recording(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
         let _ = bytes;
         Err(format!(

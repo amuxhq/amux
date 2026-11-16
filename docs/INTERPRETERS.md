@@ -923,15 +923,63 @@ answer.
   real session with Codex's own app attached: the app's prompt and the
   approval it led to, answered from amux. A recording keeps amux's own
   lines only, which is all the interpreter reads.
-- **Child threads' asks.** Codex sends a child thread's approval requests to
-  every client of the server. Each ask keeps the thread that asked: a
-  child's points at no row of the agent's turn (its work is drawn by the
-  child's own subagent row), a child's file-change ask shows the changes the
-  child's own items carried, and the agent's turn end leaves a child's asks
-  open. `serverRequest/resolved` closes an ask whichever thread it names. A
-  tool server's approval belongs to that server's running call (of the tool
-  Codex names, from codex-cli 0.163), else to the newest running call. A
-  child's request amux cannot answer is refused without a row.
+- **Child threads.** Codex's `spawn_agent` runs a subagent in a child
+  thread on the agent's own server; each child thread is a [provider
+  subagent](#provider-subagents) whose id is derived from its thread id
+  (`codex/children.rs`).
+  - **Its start.** Codex 0.166.0 reports the spawn, and each follow-up the
+    parent sends it, as a `subAgentActivity` item (`started`,
+    `interacted`) on the parent's thread: that item is the call row in the
+    parent's chat, a collab `spawnAgent` or `sendInput` row naming the
+    child's agent in `agent_ids`, and it starts or continues the subagent.
+    The start names the chat holding the call (the agent's, or a
+    child's for a child's own child) and the spawn's key, which a follow-up
+    keeps. An older Codex's collab `spawnAgent` and follow-up calls start
+    their receivers the same way; a child thread first heard from by a
+    turn, an item or a request that no call named starts with its call
+    unknown. No child sends `thread/started`, and none sends its prompt.
+  - **Its title.** The row takes its title from the start alone, and
+    Codex's nickname for the child comes only from `thread/read` on it
+    (`amux-read-<thread>`, asked once). So the start is held until the read
+    answers, within milliseconds, unless the subagent's part has something
+    to carry first (an item, an ask, its end) or its parent's turn ends,
+    when it starts untitled: a one-shot host's subagents have their rows by
+    its turn end, and a recording with no answer still replays. The
+    subagent's snapshot carries no title.
+  - **Its chat.** Each child keeps its own copy of the per-thread item
+    state; a child's notifications are read by the same rules as the
+    agent's, with that copy swapped in and what they write going to the
+    child's part of the step. Its token use, settings, tool servers and
+    status draw nothing. amux's `status` called on a child's thread sets the
+    subagent's own working-on line; amux's other tools act as the agent.
+  - **Its asks.** A request naming a child's thread opens in that
+    subagent's snapshot and points at its own work (a file-change ask shows
+    its own changes; a tool server's approval belongs to that server's
+    running call of the tool Codex names, from codex-cli 0.163, else to the
+    newest running call). A person answers it with `ChildInput`, which sends
+    Codex's JSON-RPC response; `serverRequest/resolved` closes it as for the
+    agent's own, and the child's turn end dismisses what is still open. The
+    agent's turn end leaves a child's asks alone. A child's request amux
+    cannot answer is refused without a row. A recording's answer to a
+    child's request reads back as `ChildInput`.
+  - **Its end.** A child ends at its own `turn/completed`: completed is
+    finished, interrupted (an interrupted child gets no `subAgentActivity
+    completed`) is stopped, and failed is finished with Codex's words. A
+    command its turn left running carries on in the background, listed on
+    the child (`thread/backgroundTerminals/list` on its thread) beside its
+    own job, and the subagent ends once the last such command does. A
+    `/clear` ends every running child, and the agent's process ending ends
+    them with its cause.
+  - **Its stop.** A running subagent's snapshot lists its own job, kind
+    `SUBAGENT`, keyed by its thread id; `StopJob` on that key stops it in
+    the three steps Codex 0.166.0 needs (`turn/interrupt` on its turn, which
+    leaves its command running; its background terminals listed on its
+    thread and each terminated; then a note steered into the parent's
+    running turn, or injected into its thread when none runs, since
+    otherwise the parent's `wait` waits out its own timeout). The job reads
+    stopping until the subagent ends. `StopJob` on one of its commands'
+    process ids ends just that command. A child's child's parent is not
+    told: only the agent's own thread takes input.
 - **Streaming.** Agent-message, plan and reasoning deltas and command output
   are appends to their open items.
 - **Other notices.** A web search that opens a page or looks within one
@@ -953,8 +1001,9 @@ answer.
   or which turn Codex's own app last showed (`thread/readState/changed`).
   Hook runs (`hook/started`, `hook/completed`) and hook-prompt items draw
   nothing: a hook's effect reaches the conversation itself (a blocked call's
-  output names the hook), as for Claude. Nor do sub-agent activity, sleep
-  and function-call-output items. The notifications amux never draws
+  output names the hook), as for Claude. Nor do sleep and
+  function-call-output items, nor a subagent's `completed` activity: its own
+  turn end ends it. The notifications amux never draws
   (`DROPPED_NOTIFICATIONS`: hooks, tool-call progress, patch updates, app
   and environment changes, and the rest) are opted out of at `initialize`
   (`optOutNotificationMethods`) and dropped should Codex send them anyway.

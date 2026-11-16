@@ -140,6 +140,11 @@ pub enum FixtureInput {
         #[serde(default)]
         effort: Option<String>,
     },
+    /// Stop one background job by its key: a command, or, sent to a
+    /// provider subagent, the subagent itself.
+    StopJob {
+        key: String,
+    },
     /// An encoded Input, hex, for arms the vocabulary above does not name.
     Raw {
         hex: String,
@@ -610,6 +615,14 @@ fn script<I: Interpreter>(fixture: &Path, parsed: &Fixture) -> Result<Vec<Script
             .into_iter()
             .enumerate()
         {
+            // A recording names a subagent by the provider's id for it.
+            let event = match event {
+                Event::ChildInput { agent_id, input } => Event::ChildInput {
+                    agent_id: crate::subagent_id(&host, &String::from_utf8_lossy(&agent_id)),
+                    input,
+                },
+                event => event,
+            };
             script.push(Scripted {
                 label: format!("{RECORDED}{index}: {}", event_label(&event)),
                 action: Action::Event(event),
@@ -950,7 +963,8 @@ pub fn claude_pty_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input
         | FixtureInput::Model { .. }
         | FixtureInput::Permission { .. }
         | FixtureInput::Mode { .. }
-        | FixtureInput::Effort { .. } => return None,
+        | FixtureInput::Effort { .. }
+        | FixtureInput::StopJob { .. } => return None,
     };
     Some(Input::new(input_id, wire::ClaudePtyInput { of: Some(of) }))
 }
@@ -974,6 +988,7 @@ pub fn claude_sdk_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input
         FixtureInput::Effort { effort } => Of::Effort(wire::SetEffort {
             effort: effort.clone(),
         }),
+        FixtureInput::StopJob { key } => Of::StopJob(wire::StopJob { key: key.clone() }),
         FixtureInput::CyclePermissionMode {}
         | FixtureInput::Mode { .. }
         | FixtureInput::Raw { .. } => return None,
@@ -1002,6 +1017,7 @@ pub fn codex_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input> {
         FixtureInput::Mode { value } => Of::Mode(wire::SetMode {
             value: value.clone(),
         }),
+        FixtureInput::StopJob { key } => Of::StopJob(wire::StopJob { key: key.clone() }),
         FixtureInput::Clear {}
         | FixtureInput::CyclePermissionMode {}
         | FixtureInput::Raw { .. } => return None,

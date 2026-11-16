@@ -1,0 +1,60 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
+## 1 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-6.1-sol","sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.166.0","id":"t1","turns":[]}}}}
+effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"t1\"}}"
+effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
+effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+## 2 input {"id":"p1","prompt":{"text":"Start one agent that runs sleep 97, then wait for it."}}
+effect reply p1 accepted
+effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"7031\",\"input\":[{\"text\":\"Start one agent that runs sleep 97, then wait for it.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
+item prompt:7031 prompt final input=p1 at=1800000000000 text="Start one agent that runs sleep 97, then wait for it."
+snapshot WORKING queue=[] working_on="Start one agent that runs sleep 97, then wait for it." at=1800000000000 asks=[] thread=t1 model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+## 3 fact {"channel":"rpc","json":{"id":"amux-1","result":{"turn":{"id":"turn-1","status":"inProgress"}}}}
+## 4 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-1","status":"inProgress"}}}}
+## 5 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"7031","content":[{"text":"Start one agent that runs sleep 97, then wait for it.","text_elements":[],"type":"text"}],"id":"um-0","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
+## 6 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"agentPath":"/a/lovelace","agentThreadId":"c1","id":"call-spawn","kind":"started","model":"gpt-6.1-sol","reasoningEffort":"low","type":"subAgentActivity"},"threadId":"t1","turnId":"turn-1"}}}
+effect write "{\"id\":\"amux-read-1\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":false,\"threadId\":\"c1\"}}"
+item call-spawn work open at=1800000000000 text="" collab spawnAgent threads=[c1] prompt="" agents=[sub-4453d686] TOOL_STATE_RUNNING
+## 7 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"agentPath":"/a/lovelace","agentThreadId":"c1","id":"call-spawn","kind":"started","model":"gpt-6.1-sol","reasoningEffort":"low","type":"subAgentActivity"},"threadId":"t1","turnId":"turn-1"}}}
+item call-spawn work final at=1800000000000 text="" collab spawnAgent threads=[c1] prompt="" agents=[sub-4453d686] TOOL_STATE_SUCCEEDED ended=1800000000000
+## 8 fact {"channel":"rpc","json":{"id":"amux-read-1","result":{"readState":null,"thread":{"agentNickname":"Lovelace","canAcceptDirectInput":false,"id":"c1","parentThreadId":"t1","threadSource":"subagent"}}}}
+agent sub-4453d686 start child=c1 call=host/call-spawn title="Lovelace"
+agent sub-4453d686 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=c1 model=gpt-6.1-sol model_name=? effort=low permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=[-:"Lovelace"@1800000000000]
+## 9 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"c1","turn":{"id":"c-turn","rootTurnId":"turn-1","status":"inProgress"}}}}
+## 10 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"agentsStates":{},"id":"call-wait","receiverThreadIds":[],"senderThreadId":"t1","status":"inProgress","tool":"wait","type":"collabAgentToolCall"},"threadId":"t1","turnId":"turn-1"}}}
+item call-wait work open at=1800000000000 text="" collab wait threads=[] prompt="" TOOL_STATE_RUNNING
+## 11 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"command":"/bin/zsh -lc 'sleep 97; echo LATE'","commandActions":[{"command":"sleep 97; echo LATE","type":"unknown"}],"cwd":"/work","id":"exec-1","processId":"4242","status":"inProgress","type":"commandExecution"},"threadId":"c1","turnId":"c-turn"}}}
+agent sub-4453d686 item exec-1 work open at=1800000000000 text="" command "sleep 97; echo LATE" cwd=/work TOOL_STATE_RUNNING
+## 12 child_input {"child":"c1","id":"s1","stop_job":{"key":"c1"}}
+effect write "{\"id\":\"amux-interrupt-2\",\"method\":\"turn/interrupt\",\"params\":{\"threadId\":\"c1\",\"turnId\":\"c-turn\"}}"
+effect reply s1 accepted
+agent sub-4453d686 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=c1 model=gpt-6.1-sol model_name=? effort=low permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=[-:"Lovelace"@1800000000000]
+## 13 fact {"channel":"rpc","json":{"id":"amux-interrupt-2","result":{}}}
+effect write "{\"id\":\"amux-child-jobs-3-1\",\"method\":\"thread/backgroundTerminals/list\",\"params\":{\"threadId\":\"c1\"}}"
+## 14 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"c1","turn":{"id":"c-turn","items":[],"rootTurnId":"turn-1","status":"interrupted"}}}}
+effect write "{\"id\":\"amux-child-jobs-4-1\",\"method\":\"thread/backgroundTerminals/list\",\"params\":{\"threadId\":\"c1\"}}"
+agent sub-4453d686 item exec-1 work open at=1800000000000 text="" command "sleep 97; echo LATE" cwd=/work background TOOL_STATE_RUNNING
+## 15 fact {"channel":"rpc","json":{"id":"amux-child-jobs-3-1","result":{"data":[{"command":"sleep 97; echo LATE","cpuPercent":null,"cwd":"/work","itemId":"exec-1","osPid":null,"processId":"4242","rssKb":null}],"nextCursor":null}}}
+effect write "{\"id\":\"amux-stop-4242\",\"method\":\"thread/backgroundTerminals/terminate\",\"params\":{\"processId\":\"4242\",\"threadId\":\"c1\"}}"
+effect write "{\"id\":\"amux-told-5\",\"method\":\"turn/steer\",\"params\":{\"clientUserMessageId\":\"amux-told-5\",\"expectedTurnId\":\"turn-1\",\"input\":[{\"text\":\"I stopped the agent Lovelace you started; it will not answer. Stop waiting for it and go on without it.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
+agent sub-4453d686 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=c1 model=gpt-6.1-sol model_name=? effort=low permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=[-:"Lovelace"@1800000000000,exec-1:"sleep 97; echo LATE"@1800000000000]
+## 16 fact {"channel":"rpc","json":{"id":"amux-child-jobs-4-1","result":{"data":[{"command":"sleep 97; echo LATE","cpuPercent":null,"cwd":"/work","itemId":"exec-1","osPid":null,"processId":"4242","rssKb":null}],"nextCursor":null}}}
+## 17 fact {"channel":"rpc","json":{"id":"amux-stop-4242","result":{"terminated":true}}}
+## 18 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"aggregatedOutput":"","command":"/bin/zsh -lc 'sleep 97; echo LATE'","commandActions":[{"command":"sleep 97; echo LATE","type":"unknown"}],"cwd":"/work","durationMs":0,"exitCode":-1,"id":"exec-1","processId":"4242","status":"failed","type":"commandExecution"},"threadId":"c1","turnId":"c-turn"}}}
+agent sub-4453d686 item exec-1 work final at=1800000000000 text="" command "sleep 97; echo LATE" cwd=/work exit=-1 background TOOL_STATE_FAILED started=1800000000000 ended=1800000000000
+agent sub-4453d686 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=c1 model=gpt-6.1-sol model_name=? effort=low permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=[]
+agent sub-4453d686 end STOPPED
+## 19 fact {"channel":"rpc","json":{"id":"amux-told-5","result":{"turnId":"turn-1"}}}
+## 20 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"amux-told-5","content":[{"text":"I stopped the agent Lovelace you started; it will not answer. Stop waiting for it and go on without it.","text_elements":[],"type":"text"}],"id":"um-1","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
+item um-1 steer final at=1800000000000 text="I stopped the agent Lovelace you started; it will not answer. Stop waiting for it and go on without it."
+## 21 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"agentsStates":{},"id":"call-wait","receiverThreadIds":[],"senderThreadId":"t1","status":"completed","tool":"wait","type":"collabAgentToolCall"},"threadId":"t1","turnId":"turn-1"}}}
+item call-wait work final at=1800000000000 text="" collab wait threads=[] prompt="" TOOL_STATE_SUCCEEDED ended=1800000000000
+## 22 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"msg-1","phase":"final_answer","text":"Stopped waiting.","type":"agentMessage"},"threadId":"t1","turnId":"turn-1"}}}
+item msg-1 message final at=1800000000000 text="Stopped waiting."
+## 23 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","items":[],"status":"completed"}}}}
+item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000000
+snapshot said "Stopped waiting."
+snapshot IDLE queue=[] working_on="Start one agent that runs sleep 97, then wait for it." at=1800000000000 asks=[] thread=t1 model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=[]
+turn_end 1 last=msg-1

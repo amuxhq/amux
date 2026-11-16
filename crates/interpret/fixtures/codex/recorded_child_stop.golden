@@ -78,10 +78,11 @@ append msg_0511c8b5137d6fa3016afa4ae68a2887d2aff998678e5cdfe6 "."
 item msg_0511c8b5137d6fa3016afa4ae68a2887d2aff998678e5cdfe6 working_note final at=1794788070561 text="I started one agent with that exact task. I’ll wait for its answer."
 ## 80 recorded 79: fact Rpc method=item/started
 item call_86a3ec09b2884a16b0ccea027cb03596 work open at=1794788071358 text="" collab wait threads=[] prompt="" TOOL_STATE_RUNNING
-## 82 recorded 81: fact Rpc method=item/started
+## 81 recorded 80: tick 1794788073553
 agent sub-f9a283a6 start child=01a1e1b4-8e16-7160-a720-5f9be7e827cc call=host/call_1d1427614e5c42cc9e7348c4bf1f2e1c title=""
-agent sub-f9a283a6 item msg_008eea8cbd430d05016afa4ae99dbc87d29eebb8f3d67db42f working_note open at=1794788073554 text=""
 agent sub-f9a283a6 snapshot WORKING queue=[] working_on=- at=1794788073553 asks=[] thread=01a1e1b4-8e16-7160-a720-5f9be7e827cc model=gpt-6.1-sol model_name=? effort=low permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=[-:"subagent"@1794788068917]
+## 82 recorded 81: fact Rpc method=item/started
+agent sub-f9a283a6 item msg_008eea8cbd430d05016afa4ae99dbc87d29eebb8f3d67db42f working_note open at=1794788073554 text=""
 ## 83 recorded 82: fact Rpc method=item/agentMessage/delta
 agent sub-f9a283a6 append msg_008eea8cbd430d05016afa4ae99dbc87d29eebb8f3d67db42f "I"
 ## 85 recorded 84: fact Rpc method=item/agentMessage/delta

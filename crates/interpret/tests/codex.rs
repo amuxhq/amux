@@ -2199,6 +2199,9 @@ fn with_a_child() -> Driven {
         json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
     );
     agent.rpc(spawned("spawn-1", "child", "started"));
+    agent.rpc(
+        json!({"id": "amux-read-1", "result": {"thread": {"id": "child", "agentNickname": "Ada"}}}),
+    );
     agent.rpc(json!({"method": "turn/started", "params": {"threadId": "child", "turn": {"id": "child-turn"}}}));
     agent
 }
@@ -2315,20 +2318,78 @@ fn a_spawn_starts_the_subagent_from_its_call_row_once_its_nickname_is_read() {
     assert_eq!(body.model.as_deref(), Some("gpt-6.1-sol"));
 }
 
-/// A start held for the nickname goes out untitled as soon as the
-/// subagent has something to show, and at the latest with its parent's
-/// turn end, so a host that leaves then has journaled the row.
+/// A start held for the nickname holds what the child says meanwhile, and
+/// both go out, in order, when the read answers.
 #[test]
-fn a_held_start_goes_out_with_the_childs_first_item_or_its_parents_turn_end() {
-    let mut agent = with_a_child();
-    assert!(agent.subs.is_empty(), "the turn's start alone started it");
+fn a_held_start_holds_the_childs_first_items_until_its_nickname_is_read() {
+    let mut agent = Driven::started();
+    agent.rpc(
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+    );
+    agent.rpc(spawned("spawn-1", "child", "started"));
+    agent.rpc(json!({"method": "turn/started", "params": {"threadId": "child", "turn": {"id": "child-turn"}}}));
     let item = agent.rpc(
         json!({"method": "item/started", "params": {"threadId": "child",
         "turnId": "child-turn", "item": {"type": "agentMessage", "id": "m", "text": ""}}}),
     );
     assert!(item.broken.is_none(), "{:?}", item.broken);
-    assert_eq!(agent.sub("child").starts.len(), 1);
-    assert_eq!(agent.sub("child").starts[0].title, "");
+    assert!(
+        agent.subs.is_empty(),
+        "the child's first item did not wait for its start"
+    );
+
+    let read = agent.rpc(
+        json!({"id": "amux-read-1", "result": {"thread": {"id": "child", "agentNickname": "Ada"}}}),
+    );
+    assert!(read.broken.is_none(), "{:?}", read.broken);
+    let part = &read.step.agents[0];
+    assert_eq!(
+        part.start.as_ref().map(|start| start.title.as_str()),
+        Some("Ada")
+    );
+    assert_eq!(
+        part.items
+            .iter()
+            .map(|item| item.key.as_str())
+            .collect::<Vec<_>>(),
+        ["m"],
+        "the held item went out after the start"
+    );
+}
+
+/// A nickname that does not come within the hold, or a parent's turn that
+/// ends first, lets the start go out without it: titled by the task name
+/// the parent gave the child where Codex says one, so a host that leaves at
+/// its turn end has journaled the row.
+#[test]
+fn a_held_start_goes_out_after_its_hold_or_with_its_parents_turn_end() {
+    let mut agent = Driven::started();
+    agent.rpc(
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+    );
+    agent.rpc(
+        json!({"method": "item/started", "params": {"threadId": "t1", "turnId": "turn-1",
+        "item": {"type": "subAgentActivity", "id": "spawn-1", "kind": "started",
+            "agentThreadId": "child", "agentPath": "/root/read_a"}}}),
+    );
+    agent.rpc(
+        json!({"method": "item/started", "params": {"threadId": "child",
+        "turnId": "child-turn", "item": {"type": "agentMessage", "id": "m", "text": ""}}}),
+    );
+    assert!(
+        agent.subs.is_empty(),
+        "the child's first item did not wait for its start"
+    );
+    let early = agent.step(Event::Tick { at_ms: 2_999 });
+    assert!(early.step.agents.is_empty(), "the hold ended early");
+    let late = agent.step(Event::Tick { at_ms: 3_000 });
+    assert!(late.broken.is_none(), "{:?}", late.broken);
+    let part = &late.step.agents[0];
+    assert_eq!(
+        part.start.as_ref().map(|start| start.title.as_str()),
+        Some("read_a")
+    );
+    assert_eq!(part.items.len(), 1, "the held item went out with the start");
 
     let mut quiet = Driven::started();
     quiet.rpc(
@@ -2339,6 +2400,67 @@ fn a_held_start_goes_out_with_the_childs_first_item_or_its_parents_turn_end() {
     assert!(
         ended.turn_end_with_starts(),
         "the parent's turn end left the start held"
+    );
+}
+
+/// Where Codex says what a parent asked its child, as an older Codex's
+/// collab call does, the child's chat opens with it as a prompt; a
+/// follow-up's opens the continued chat the same way.
+#[test]
+fn a_collab_calls_prompt_is_the_childs_first_item() {
+    let mut agent = Driven::started();
+    agent.rpc(
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+    );
+    let call = |id: &str, tool: &str, status: &str, prompt: &str| {
+        json!({"method": if status == "completed" { "item/completed" } else { "item/started" },
+            "params": {"threadId": "t1", "turnId": "turn-1",
+            "item": {"type": "collabAgentToolCall", "id": id, "tool": tool, "status": status,
+                "senderThreadId": "t1", "receiverThreadIds": ["child"], "prompt": prompt,
+                "agentsStates": {}}}})
+    };
+    agent.rpc(call(
+        "spawn-1",
+        "spawnAgent",
+        "completed",
+        "Count the files.",
+    ));
+    let read = agent.rpc(
+        json!({"id": "amux-read-1", "result": {"thread": {"id": "child", "agentNickname": "Ada"}}}),
+    );
+    assert!(read.broken.is_none(), "{:?}", read.broken);
+    let prompt = |sub: &Sub, n: usize| {
+        let item = &sub.items[n];
+        let Ok(wire::CodexItem {
+            kind: Some(wire::codex_item::Kind::Prompt(_)),
+        }) = <wire::CodexItem as prost::Message>::decode(item.body.as_slice())
+        else {
+            panic!("not a prompt: {item:?}");
+        };
+        (item.key.clone(), item.text.clone())
+    };
+    assert_eq!(
+        prompt(agent.sub("child"), 0),
+        ("prompt:spawn-1".to_owned(), "Count the files.".to_owned())
+    );
+    agent.rpc(
+        json!({"method": "turn/completed", "params": {"threadId": "child",
+        "turn": {"id": "child-turn", "status": "completed"}}}),
+    );
+    assert!(agent.sub("child").end.is_some());
+
+    let follow_up = agent.rpc(call(
+        "send-1",
+        "sendInput",
+        "inProgress",
+        "Now count lines.",
+    ));
+    assert!(follow_up.broken.is_none(), "{:?}", follow_up.broken);
+    let sub = agent.sub("child");
+    assert_eq!(sub.starts.len(), 2, "the follow-up continued it");
+    assert_eq!(
+        prompt(sub, sub.items.len() - 1),
+        ("prompt:send-1".to_owned(), "Now count lines.".to_owned())
     );
 }
 

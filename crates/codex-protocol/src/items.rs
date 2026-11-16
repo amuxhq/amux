@@ -243,6 +243,11 @@ pub struct SubAgentActivityItem {
     pub id: String,
     pub kind: SubAgentActivityKind,
     pub agent_thread_id: String,
+    /// Where the subagent sits in its team: `/root/<task name>`, a level
+    /// deeper for each parent that is itself a subagent. The task name is
+    /// the one the parent gave `spawn_agent`.
+    #[serde(default)]
+    pub agent_path: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }

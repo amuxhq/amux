@@ -21,12 +21,20 @@
 //! A follow-up starts it again under the same agent.
 //!
 //! A subagent's row takes its title from its start alone, and the title is
-//! Codex's nickname for the child, which only `thread/read` gives. So a
-//! start waits for the read's answer, which comes within milliseconds,
-//! unless the subagent's part has something to carry first (an item, an
-//! ask, its end) or its parent's turn ends: then it starts untitled rather
-//! than hold its chat back. A replay of a recording made before amux read
+//! Codex's nickname for the child, which only `thread/read` gives. So the
+//! start waits for the read's answer, and whatever Codex says of the child
+//! meanwhile waits with it, to be read once the start is out. The answer
+//! comes within milliseconds, before the child's first word. If it does
+//! not come within [`HOLD_MS`], or the parent's turn ends first (a host
+//! that leaves at its turn end must have journaled its subagents), the
+//! child starts without it, titled by the task name its parent gave it
+//! when Codex says one. A replay of a recording made before amux read
 //! children is one such case.
+//!
+//! Codex 0.166.0 never shows a client what a parent asked its child: the
+//! `spawn_agent` and `followup_task` message, and the child's copy of it,
+//! reach the client only encrypted. A child's chat opens with its prompt
+//! only where Codex says it, as an older Codex's collab call does.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -49,8 +57,8 @@ use wire::{
 };
 
 use super::facts::{error_kind, error_message};
-use super::{Request, State, Streamed, WorkState};
-use crate::{Effect, Emit, serde_pb};
+use super::{Request, State, Streamed, WorkState, item_body};
+use crate::{Channel, Effect, Emit, Fact, ItemDraft, serde_pb};
 
 /// What the interpreter keeps of one child thread, from the first word of
 /// it until the agent leaves it: past its end, so a follow-up continues the
@@ -71,6 +79,18 @@ pub(super) struct Child {
     /// the module's notes); it is live meanwhile.
     #[serde(default)]
     pub(super) pending: bool,
+    /// What Codex said of it while its start waited, each line as it came,
+    /// to be read once the start is out.
+    #[serde(default)]
+    pub(super) held: Vec<String>,
+    /// The task name its parent gave it, from its place in Codex's team
+    /// (`/root/<name>`): its title when the nickname does not come.
+    #[serde(default)]
+    pub(super) task: String,
+    /// What its parent asked it, where Codex says, and the key of the item
+    /// that shows it: its chat's first item once it starts.
+    #[serde(default)]
+    pub(super) prompt: Option<(String, String)>,
     pub(super) model: Option<String>,
     pub(super) effort: Option<String>,
     /// When it last started or was continued: when its own job began.
@@ -105,6 +125,11 @@ pub(super) struct Child {
     pub(super) items: ThreadItems,
 }
 
+/// How long a child's start waits for its nickname, from its spawn: well
+/// past the few milliseconds Codex takes to answer, and short enough that a
+/// child's chat is not seen to lag when it does not.
+pub(super) const HOLD_MS: i64 = 3_000;
+
 /// One thread's item state: its units of work, its streaming texts, its
 /// amux sends, and the commands it left running.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -138,18 +163,22 @@ fn child_end(turn: &codex_protocol::Turn) -> IncarnationEnd {
 impl State {
     /// Runs `read` as the child thread `thread`: its item state in the
     /// fields the item rules read, and every item, ask and job written going
-    /// to its subagent. Never nested; the child is known.
+    /// to its subagent. A child's own child may start while the child is
+    /// read: the swaps nest, each putting back what it took.
     pub(super) fn as_child<R>(&mut self, thread: &str, read: impl FnOnce(&mut Self) -> R) -> R {
-        debug_assert!(self.speaking.is_none(), "one thread is read at a time");
+        debug_assert!(
+            self.speaking.as_deref() != Some(thread),
+            "a thread is read as itself once"
+        );
         let mut items = self
             .children
             .get_mut(thread)
             .map(|child| std::mem::take(&mut child.items))
             .unwrap_or_default();
         self.swap_items(&mut items);
-        self.speaking = Some(thread.to_owned());
+        let speaking = self.speaking.replace(thread.to_owned());
         let answer = read(self);
-        self.speaking = None;
+        self.speaking = speaking;
         self.swap_items(&mut items);
         if let Some(child) = self.children.get_mut(thread) {
             child.items = items;
@@ -174,12 +203,21 @@ impl State {
     }
 
     /// Writes the held start of child `thread`, if one is held: before
-    /// anything else of the subagent's part, whose row comes from it.
+    /// anything else of the subagent's part, whose row comes from it. Its
+    /// prompt is its first item, and what Codex said of it meanwhile is
+    /// read after, in the order it came.
     pub(super) fn begin_child(&mut self, emit: &mut Emit, thread: &str) {
         let Some(child) = self.children.get_mut(thread).filter(|child| child.pending) else {
             return;
         };
         child.pending = false;
+        let held = std::mem::take(&mut child.held);
+        let prompt = child.prompt.take();
+        let title = if child.title.is_empty() {
+            child.task.clone()
+        } else {
+            child.title.clone()
+        };
         let call_agent_id = match &child.parent {
             Some(parent) => self.shared.subagent_id(parent),
             None => self.shared.agent_id().to_vec(),
@@ -187,10 +225,66 @@ impl State {
         let start = NativeStart {
             call_agent_id,
             call_key: child.call_key.clone(),
-            title: child.title.clone(),
+            title,
             ..NativeStart::default()
         };
         self.shared.subagent(emit, thread).start(start);
+        if let Some((key, text)) = prompt {
+            self.as_child(thread, |state| {
+                state.emit_item(
+                    emit,
+                    ItemDraft {
+                        key,
+                        text,
+                        body: item_body(wire::codex_item::Kind::Prompt(wire::Prompt {})),
+                        complete: true,
+                        ..Default::default()
+                    },
+                )
+            });
+            self.settle_child(emit, thread);
+        }
+        for line in held {
+            self.fact(
+                emit,
+                Fact {
+                    channel: Channel::Rpc,
+                    payload: line.into_bytes(),
+                },
+            );
+        }
+    }
+
+    /// Whether what Codex said (`payload`, about `thread`) waits with the
+    /// child's held start, which it then joins. Past [`HOLD_MS`] the start
+    /// stops waiting and goes out, and this is read now.
+    pub(super) fn hold(&mut self, emit: &mut Emit, thread: &str, payload: &[u8]) -> bool {
+        let now = self.shared.now_ms();
+        let Some(child) = self.children.get_mut(thread).filter(|child| child.pending) else {
+            return false;
+        };
+        if now < child.started_at_ms + HOLD_MS
+            && let Ok(line) = std::str::from_utf8(payload)
+        {
+            child.held.push(line.to_owned());
+            return true;
+        }
+        self.begin_child(emit, thread);
+        false
+    }
+
+    /// Writes each start that has waited [`HOLD_MS`] for its nickname.
+    pub(super) fn begin_overdue(&mut self, emit: &mut Emit) {
+        let now = self.shared.now_ms();
+        let overdue: Vec<String> = self
+            .children
+            .iter()
+            .filter(|(_, child)| child.pending && now >= child.started_at_ms + HOLD_MS)
+            .map(|(thread, _)| thread.clone())
+            .collect();
+        for thread in overdue {
+            self.begin_child(emit, &thread);
+        }
     }
 
     /// Writes every held start: the parent's turn is ending, and a host
@@ -223,19 +317,21 @@ impl State {
         if !activity {
             return false;
         }
-        self.start_child(emit, thread, None, String::new());
+        self.start_child(emit, thread, None, String::new(), None);
         true
     }
 
-    /// The subagent of child thread `thread` starts, or is continued. Its
-    /// nickname is asked for once, and its start is held until the answer
-    /// unless no answer is awaited (see the module's notes).
+    /// The subagent of child thread `thread` starts, or is continued, asked
+    /// `prompt` (its item's key and text) where Codex says what. Its
+    /// nickname is asked for once, and its first start is held until the
+    /// answer (see the module's notes).
     fn start_child(
         &mut self,
         emit: &mut Emit,
         thread: &str,
         parent: Option<String>,
         call_key: String,
+        prompt: Option<(String, String)>,
     ) {
         let now = self.shared.now_ms();
         let child = self
@@ -254,28 +350,25 @@ impl State {
         child.told = false;
         child.stop_error.clear();
         child.pending = true;
-        let read = std::mem::replace(&mut child.read, true);
-        let reading = self.requests.values().any(
-            |request| matches!(request, Request::ChildRead { thread: read } if read == thread),
-        );
-        if read && !reading {
+        child.prompt = prompt;
+        // A continued subagent keeps the title its first start gave it, so
+        // its start has nothing to wait for.
+        if std::mem::replace(&mut child.read, true) {
             return self.begin_child(emit, thread);
         }
-        if !read {
-            let id = self.child_request_id("read");
-            let bytes = self.request_as(
-                id,
-                ClientRequest::ThreadRead(ThreadReadParams {
-                    thread_id: thread.to_owned(),
-                    include_turns: Some(false),
-                    extra: Default::default(),
-                }),
-                Request::ChildRead {
-                    thread: thread.to_owned(),
-                },
-            );
-            emit.effect(Effect::ProviderWrite(bytes));
-        }
+        let id = self.child_request_id("read");
+        let bytes = self.request_as(
+            id,
+            ClientRequest::ThreadRead(ThreadReadParams {
+                thread_id: thread.to_owned(),
+                include_turns: Some(false),
+                extra: Default::default(),
+            }),
+            Request::ChildRead {
+                thread: thread.to_owned(),
+            },
+        );
+        emit.effect(Effect::ProviderWrite(bytes));
     }
 
     /// `thread/read` on a child answered: its nickname is its title, and
@@ -335,9 +428,20 @@ impl State {
             return;
         }
         let id = activity.id.as_str();
+        // `/root/<task>`, a level deeper under a subagent parent.
+        let task = activity
+            .agent_path
+            .as_deref()
+            .and_then(|path| path.strip_prefix("/root/"))
+            .and_then(|path| path.rsplit('/').next())
+            .filter(|task| !task.is_empty());
         if !self.child_live(&thread) && !self.left.contains(&thread) {
             let parent = self.speaking.clone();
-            self.start_child(emit, &thread, parent, id.to_owned());
+            self.start_child(emit, &thread, parent, id.to_owned(), None);
+        }
+        // Read when the start goes out: it waits for the nickname first.
+        if let (Some(task), Some(child)) = (task, self.children.get_mut(&thread)) {
+            child.task = task.to_owned();
         }
         if let Some(child) = self.children.get_mut(&thread) {
             let named = |field: &str| {
@@ -394,7 +498,12 @@ impl State {
                 && ((spawns && !known) || (continues && !completed));
             if start {
                 let parent = self.speaking.clone();
-                self.start_child(emit, thread, parent, id.to_owned());
+                let prompt = call
+                    .prompt
+                    .clone()
+                    .filter(|prompt| !prompt.is_empty())
+                    .map(|prompt| (format!("prompt:{id}"), prompt));
+                self.start_child(emit, thread, parent, id.to_owned(), prompt);
             }
         }
     }

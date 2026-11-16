@@ -2189,6 +2189,7 @@ impl Interpreter for Codex {
         match event {
             Event::Tick { at_ms } => {
                 state.shared.tick(at_ms);
+                state.begin_overdue(&mut emit);
                 state.compact_if_idle(&mut emit);
             }
             Event::Fact(fact) => state.fact(&mut emit, fact),

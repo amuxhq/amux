@@ -307,6 +307,21 @@ impl State {
             }
             Err(_) => return self.unrecognized(emit, "unparsed", "a line that is not JSON"),
         };
+        // What a child says while its start waits for its title waits too.
+        let about = match &message {
+            ServerMessage::Request { request, .. } => Some(request.thread_id()),
+            ServerMessage::Notification {
+                notification: ServerNotification::ServerRequestResolved(_),
+                ..
+            } => None,
+            ServerMessage::Notification { notification, .. } => about_thread(notification),
+            _ => None,
+        };
+        if let Some(thread) = about.filter(|thread| self.thread_id.as_deref() != Some(*thread))
+            && self.hold(emit, thread, &fact.payload)
+        {
+            return;
+        }
         match message {
             ServerMessage::Request { id, request, .. } => {
                 self.server_request(emit, &id, request, &fact.payload)

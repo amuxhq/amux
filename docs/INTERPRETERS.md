@@ -937,15 +937,27 @@ answer.
     keeps. An older Codex's collab `spawnAgent` and follow-up calls start
     their receivers the same way; a child thread first heard from by a
     turn, an item or a request that no call named starts with its call
-    unknown. No child sends `thread/started`, and none sends its prompt.
-  - **Its title.** The row takes its title from the start alone, and
-    Codex's nickname for the child comes only from `thread/read` on it
-    (`amux-read-<thread>`, asked once). So the start is held until the read
-    answers, within milliseconds, unless the subagent's part has something
-    to carry first (an item, an ask, its end) or its parent's turn ends,
-    when it starts untitled: a one-shot host's subagents have their rows by
-    its turn end, and a recording with no answer still replays. The
-    subagent's snapshot carries no title.
+    unknown. No child sends `thread/started`.
+  - **Its prompt.** Where Codex says what the parent asked, as an older
+    Codex's collab call does in `prompt`, the child's chat opens with it as
+    a prompt item (`prompt:<call id>`), a follow-up's when it continues the
+    chat. Codex 0.166.0 says it nowhere a client can read: the
+    `spawn_agent` and `followup_task` message, and the child's copy of it,
+    are encrypted even in Codex's raw events, and the child's history holds
+    no prompt. Only the task name is plain, as the activity's `agentPath`
+    (`/root/<task>`).
+  - **Its title.** The row takes its title from the subagent's first start
+    alone, and Codex's nickname for the child (`agentNickname`) comes only
+    from `thread/read` on it, asked once. So the first start waits for the
+    read's answer, and every request and notification naming the child
+    waits with it, to be read in order once the start is out; Codex answers
+    within milliseconds, before the child's first word. If the answer has
+    not come 3 seconds after the spawn (on the next tick or fact), or the
+    parent's turn ends first, the start goes out titled by the task name,
+    or untitled where Codex gave none: a one-shot host's subagents have
+    their rows by its turn end, and a recording with no answer still
+    replays. A follow-up's start does not wait. The subagent's snapshot
+    carries no title.
   - **Its chat.** Each child keeps its own copy of the per-thread item
     state; a child's notifications are read by the same rules as the
     agent's, with that copy swapped in and what they write going to the

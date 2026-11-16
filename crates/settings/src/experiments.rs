@@ -37,6 +37,38 @@ pub struct Experiment {
     pub version: &'static str,
     /// One line a settings screen shows beside the switch.
     pub description: &'static str,
+    /// The settings its own `[experiments.<name>]` table holds, as its
+    /// module reads them: what `amux config` gets and sets under
+    /// `experiments.<name>.<key>`.
+    pub keys: &'static [ExperimentKey],
+}
+
+/// One setting of an experiment's own table. The experiment's module owns
+/// it: what its value in effect is, and what a person may write.
+#[derive(Debug)]
+pub struct ExperimentKey {
+    /// Its key in the experiment's table.
+    pub name: &'static str,
+    /// The value in effect, given the experiment's table: what the table
+    /// says when the module can use it, else the default the daemon uses.
+    pub value: fn(Option<&toml::Table>) -> toml::Value,
+    /// What a person typed, as the table is to hold it, or why it cannot be.
+    pub parse: fn(&str) -> Result<toml::Value, String>,
+}
+
+// A key is its name: an experiment holds each name once.
+impl PartialEq for ExperimentKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl Eq for ExperimentKey {}
+
+impl std::hash::Hash for ExperimentKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+    }
 }
 
 impl Experiment {
@@ -53,6 +85,7 @@ pub const WORKSPACES: Experiment = Experiment {
     name: "workspaces",
     version: "workspaces/1",
     description: "Run each agent in a workspace that amux makes, starts and stops with its agents.",
+    keys: &[],
 };
 
 /// Idle agents without a parent stop their provider and resume on the next
@@ -61,6 +94,7 @@ pub const SUSPENSION: Experiment = Experiment {
     name: "suspension",
     version: "suspension/1",
     description: "Suspend idle agents and resume them when a message arrives.",
+    keys: suspension::KEYS,
 };
 
 /// Every experiment this build implements, in the order settings screens
@@ -73,6 +107,43 @@ pub fn named(name: &str) -> Option<&'static Experiment> {
         .iter()
         .copied()
         .find(|experiment| experiment.name == name)
+}
+
+/// The setting `key` of the experiment named `name`, as
+/// `experiments.<name>.<key>` addresses it, or a sentence saying what there
+/// is instead.
+pub fn key(name: &str, key: &str) -> Result<(&'static Experiment, &'static ExperimentKey), String> {
+    let Some(experiment) = named(name) else {
+        let names: Vec<&str> = EXPERIMENTS
+            .iter()
+            .map(|experiment| experiment.name)
+            .collect();
+        return Err(format!(
+            "this amux has no experiment named {name:?}; its experiments are {}",
+            names.join(", ")
+        ));
+    };
+    if let Some(found) = experiment.keys.iter().find(|known| known.name == key) {
+        return Ok((experiment, found));
+    }
+    if experiment.keys.is_empty() {
+        return Err(format!("the {name} experiment has no settings of its own"));
+    }
+    let keys: Vec<String> = experiment
+        .keys
+        .iter()
+        .map(|known| format!("experiments.{name}.{}", known.name))
+        .collect();
+    if key.is_empty() {
+        return Err(format!(
+            "the {name} experiment's settings are {}",
+            keys.join(", ")
+        ));
+    }
+    Err(format!(
+        "the {name} experiment has no setting {key:?}; its settings are {}",
+        keys.join(", ")
+    ))
 }
 
 /// The `[experiments]` table as the file holds it: the names switched on,
@@ -242,6 +313,17 @@ mod tests {
             assert!(!experiment.description.contains('\n'));
         }
         assert_eq!(WORKSPACES.table_prefix(), "exp_workspaces_1_");
+        for experiment in EXPERIMENTS {
+            for (index, known) in experiment.keys.iter().enumerate() {
+                assert!(
+                    !experiment.keys[..index].contains(known),
+                    "{}.{} twice",
+                    experiment.name,
+                    known.name
+                );
+                assert_eq!(key(experiment.name, known.name), Ok((*experiment, known)));
+            }
+        }
     }
 
     #[test]
@@ -281,6 +363,7 @@ mod tests {
             name: "workspaces",
             version: "workspaces/2",
             description: "a later shape",
+            keys: &[],
         };
         let on = Enabled::of(&[&WORKSPACES]);
         let off = Enabled::none();

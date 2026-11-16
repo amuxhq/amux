@@ -278,6 +278,11 @@ enabled = ["workspaces"]   # the experiments switched on, by name
 after = "1h"               # how long an agent sits idle before it suspends
 ```
 
+`amux config` reads and changes an experiment's settings by the same names:
+`amux config set experiments.suspension.after 1h`, then
+`amux config get experiments.suspension.after`. A name amux doesn't have is
+refused with the ones it does.
+
 To go back to following Claude or Codex after picking in amux, forget the
 remembered value: `amux config unset new_agent.claude.model`, and likewise
 `new_agent.claude.effort`, `new_agent.codex.model` and `new_agent.codex.effort`.

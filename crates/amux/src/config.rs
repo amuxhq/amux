@@ -7,18 +7,30 @@
 //! key alone, comments and layout kept, and only when the file still reads
 //! after it. The daemon and the supervisor read the file as they need each
 //! setting; what a running one picks up when is the setting's own.
+//!
+//! An experiment's own settings (`experiments.suspension.after`) are its
+//! module's: the module says what a key's value in effect is and what may be
+//! written, and an experiment or key this build does not have is refused
+//! with what there is.
 
 use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use settings::edit::{edit as edited_text, typed};
+use settings::experiments::{Experiment, ExperimentKey};
 use settings::{InstallationConfig, installation_keys, is_deployment_key};
 
 /// `amux config get`: the value in effect, the default when the file does
 /// not set it.
 pub fn get(path: &Path, key: &str) -> Result<()> {
-    known(key)?;
+    println!("{}", value(path, key)?);
+    Ok(())
+}
+
+/// The value `amux config get` prints.
+fn value(path: &Path, key: &str) -> Result<String> {
+    let setting = known(key)?;
     let config = if path.exists() {
         InstallationConfig::from_file(path)?
     } else {
@@ -26,10 +38,13 @@ pub fn get(path: &Path, key: &str) -> Result<()> {
     };
     // The two settings that are absent until set resolve as the daemon
     // resolves them.
-    let value = match key {
-        "host_name" => toml::Value::String(config.host_name().into()),
-        "updates" => toml::Value::try_from(config.updates()?)?,
-        _ => {
+    let value = match (setting, key) {
+        (Setting::Experiment(experiment, setting), _) => {
+            (setting.value)(config.experiments.table(experiment))
+        }
+        (Setting::File, "host_name") => toml::Value::String(config.host_name().into()),
+        (Setting::File, "updates") => toml::Value::try_from(config.updates()?)?,
+        (Setting::File, _) => {
             let table = toml::Value::try_from(&config)?;
             key.split('.')
                 .try_fold(&table, |value, part| value.get(part))
@@ -37,25 +52,34 @@ pub fn get(path: &Path, key: &str) -> Result<()> {
                 .ok_or_else(|| anyhow!("{key} has no value"))?
         }
     };
-    match value {
-        toml::Value::String(text) => println!("{text}"),
-        other => println!("{other}"),
-    }
-    Ok(())
+    Ok(match value {
+        toml::Value::String(text) => text,
+        other => other.to_string(),
+    })
 }
 
 /// `amux config set`: writes one key, refusing a value the file would not
 /// read with.
 pub fn set(path: &Path, key: &str, raw: &str) -> Result<()> {
-    known(key)?;
+    let setting = known(key)?;
     let text = read(path)?;
-    // As TOML first, then as the string it is when that is refused: a host
-    // named `true` is still a name.
     let mut candidates = Vec::new();
-    if let Some(typed) = typed(raw) {
-        candidates.push(typed);
+    match setting {
+        // The experiment's module reads what was typed, and says why not.
+        Setting::Experiment(_, setting) => {
+            let value =
+                (setting.parse)(raw).map_err(|why| anyhow!("{key} cannot be {raw}: {why}"))?;
+            candidates.push(value.to_string().parse::<toml_edit::Value>()?);
+        }
+        // As TOML first, then as the string it is when that is refused: a
+        // host named `true` is still a name.
+        Setting::File => {
+            if let Some(typed) = typed(raw) {
+                candidates.push(typed);
+            }
+            candidates.push(toml_edit::Value::from(raw));
+        }
     }
-    candidates.push(toml_edit::Value::from(raw));
     let mut first_refusal = None;
     for value in candidates {
         match edited_text(&text, &[(key, Some(value.clone()))]) {
@@ -85,7 +109,7 @@ pub fn set(path: &Path, key: &str, raw: &str) -> Result<()> {
                 .unwrap_or(&error);
             bail!("{key} cannot be {raw}: {reason}")
         }
-        None => unreachable!("a raw string is always a candidate"),
+        None => unreachable!("there is always a candidate"),
     }
 }
 
@@ -161,13 +185,29 @@ pub fn edit(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Where a key's value lives.
+#[derive(Clone, Copy)]
+enum Setting {
+    /// The config file's own schema.
+    File,
+    /// An experiment's own table, as its module reads it.
+    Experiment(&'static Experiment, &'static ExperimentKey),
+}
+
 /// Every key is accepted, but an unknown one is answered with the everyday
 /// ones only: how amux is deployed is for whoever deploys it, who knows the
-/// keys from the parameters page.
-fn known(key: &str) -> Result<()> {
+/// keys from the parameters page. A key under an experiment's own table is
+/// that experiment's to know.
+fn known(key: &str) -> Result<Setting> {
     let keys = installation_keys();
     if keys.iter().any(|known| known == key) {
-        return Ok(());
+        return Ok(Setting::File);
+    }
+    if let Some(rest) = key.strip_prefix("experiments.") {
+        let (name, setting) = rest.split_once('.').unwrap_or((rest, ""));
+        return settings::experiments::key(name, setting)
+            .map(|(experiment, setting)| Setting::Experiment(experiment, setting))
+            .map_err(|why| anyhow!("{key} is not a setting: {why}"));
     }
     let everyday: Vec<&str> = keys
         .iter()
@@ -214,6 +254,9 @@ fn note(key: &str) -> Option<&'static str> {
              amux's own masked logs, never what anybody wrote.",
         ),
         "supervisor" | "updates" | "root" => {
+            Some("amux uses it from its next start: `amux server stop`, then any amux command.")
+        }
+        _ if key.starts_with("experiments.") => {
             Some("amux uses it from its next start: `amux server stop`, then any amux command.")
         }
         _ => None,
@@ -282,6 +325,73 @@ mod tests {
             std::fs::read_to_string(&path).unwrap(),
             "channel = \"stable\"\n\n[agent]\ngrace_secs = 60\n"
         );
+    }
+
+    #[test]
+    fn an_experiments_own_setting_is_read_and_written_by_its_module() {
+        use settings::experiments::SUSPENSION;
+        use settings::experiments::suspension::Suspension;
+
+        let (_dir, path) = file("[experiments]\nenabled = [\"suspension\"]\n");
+        let after = "experiments.suspension.after";
+        assert_eq!(value(&path, after).unwrap(), "30m", "unset, the default");
+        set(&path, after, "1h 30m").unwrap();
+        assert_eq!(value(&path, after).unwrap(), "1h 30m");
+        let config = InstallationConfig::from_file(&path).unwrap();
+        assert_eq!(
+            Suspension::read(config.experiments.table(&SUSPENSION))
+                .0
+                .after,
+            std::time::Duration::from_secs(90 * 60),
+            "the daemon reads what was written"
+        );
+
+        // A value the experiment cannot use is refused, the file left alone.
+        let before = std::fs::read_to_string(&path).unwrap();
+        let error = set(&path, after, "soon").unwrap_err().to_string();
+        assert!(
+            error.contains("experiments.suspension.after cannot be soon"),
+            "{error}"
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+
+        unset(&path, after).unwrap();
+        assert_eq!(value(&path, after).unwrap(), "30m");
+        assert_eq!(
+            value(&path, "experiments.enabled").unwrap(),
+            "[\"suspension\"]",
+            "the switch is still the file's own key"
+        );
+    }
+
+    #[test]
+    fn an_unknown_experiment_or_experiment_setting_says_what_there_is() {
+        let (_dir, path) = file("");
+        let error = value(&path, "experiments.teleport.range")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("no experiment named \"teleport\""),
+            "{error}"
+        );
+        assert!(error.contains("workspaces, suspension"), "{error}");
+        let error = set(&path, "experiments.suspension.before", "3")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("no setting \"before\""), "{error}");
+        assert!(error.contains("experiments.suspension.after"), "{error}");
+        let error = value(&path, "experiments.suspension")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("the suspension experiment's settings are experiments.suspension.after"),
+            "{error}"
+        );
+        let error = value(&path, "experiments.workspaces.where")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("has no settings of its own"), "{error}");
+        assert!(std::fs::read_to_string(&path).unwrap().is_empty());
     }
 
     #[test]

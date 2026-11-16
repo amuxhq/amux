@@ -12,6 +12,30 @@
 
 use std::time::Duration;
 
+use super::ExperimentKey;
+
+/// The settings `amux config` reads and writes under
+/// `experiments.suspension`.
+pub const KEYS: &[ExperimentKey] = &[ExperimentKey {
+    name: "after",
+    value: after_value,
+    parse: after_parse,
+}];
+
+/// `after` as written when it reads, so `1500ms` stays `1500ms`; else the
+/// default, which is what the daemon then uses.
+fn after_value(table: Option<&toml::Table>) -> toml::Value {
+    let written = table
+        .and_then(|table| table.get("after"))
+        .and_then(toml::Value::as_str)
+        .filter(|text| duration(text).is_ok());
+    toml::Value::String(written.map_or_else(|| words(DEFAULT_AFTER), |text| text.trim().to_owned()))
+}
+
+fn after_parse(raw: &str) -> Result<toml::Value, String> {
+    duration(raw).map(|_| toml::Value::String(raw.trim().to_owned()))
+}
+
 /// The delay when the config gives none.
 pub const DEFAULT_AFTER: Duration = Duration::from_secs(30 * 60);
 

@@ -315,15 +315,13 @@
     },
     {
       "name": "chat.subagents",
-      "shows": "A parent whose turn started four subagents at once: one row, \"4 subagents\", with what they come to (2 running · 1 waiting on you · 1 done), opening to each call, and each call opening its subagent's chat.",
-      "clients": ["phone", "mac"],
-      "why": "The terminal's storybook does not draw it yet: it opens a subagent's chat from the parent's call row with the leader's open."
+      "shows": "A parent whose turn started several subagents at once: one row saying how many and where they stand (2 running · 1 waiting on you · 1 done), opening to each call, and each call opening its subagent's chat.",
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "chat.subagent",
-      "shows": "A subagent's own chat: the task its parent gave it, its thinking, tools and answer, and in the composer's place what runs it, that it takes no messages, and its Stop.",
-      "clients": ["phone", "mac"],
-      "why": "The terminal's storybook does not draw it yet: it opens a subagent's chat from the parent's call row with the leader's open."
+      "shows": "A subagent's own chat: the task its parent gave it, its steps and answer, and in the composer's place what runs it, that it takes no messages, and its Stop.",
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "chat.plan",
@@ -382,18 +380,6 @@
       "shows": "The permission picker on an agent with full access, which is marked as acting without asking.",
       "clients": ["terminal"],
       "why": "It is there to judge the terminal's warning colours; the phone has its own."
-    },
-    {
-      "name": "chat.subagents",
-      "shows": "A chat whose agent started three subagents in one turn: they fold into one row saying how many and where they stand, under the prompt that started them.",
-      "clients": ["terminal"],
-      "why": "The phone and the Mac do not draw these screens yet."
-    },
-    {
-      "name": "chat.subagent",
-      "shows": "A subagent's own chat while it works: its prompt and its step, and in the composer's place that Claude runs it and it takes no messages, with its Stop.",
-      "clients": ["terminal"],
-      "why": "The phone and the Mac do not draw these screens yet."
     },
     {
       "name": "chat.delete",

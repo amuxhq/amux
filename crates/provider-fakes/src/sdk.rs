@@ -128,7 +128,9 @@ struct Engine {
     running: Option<String>,
     /// Command uuids folded into the running turn.
     absorbed: Vec<String>,
-    /// The host interrupted the running turn.
+    /// The host interrupted the running turn. It ends with the turn: a
+    /// subagent in the background plays on once no turn runs, as Claude
+    /// spares one for a host that declares it stops each task itself.
     interrupting: bool,
     /// The interrupt refused a call whose permission it cancelled.
     refused_call: bool,
@@ -827,7 +829,7 @@ impl Engine {
             {
                 self.lifecycle(&command, "completed").await;
             }
-            self.busy = false;
+            self.idle();
             return None;
         }
         // Commands folded into a finished turn complete before its result,
@@ -852,8 +854,14 @@ impl Engine {
         for (index, queued) in folding.into_iter().enumerate() {
             self.queue.insert(index, queued);
         }
-        self.busy = false;
+        self.idle();
         None
+    }
+
+    /// The turn is over, and so is any interrupt of it.
+    fn idle(&mut self) {
+        self.busy = false;
+        self.interrupting = false;
     }
 
     /// The prompts the running turn answers: the one that started it, then

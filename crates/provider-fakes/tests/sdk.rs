@@ -940,3 +940,60 @@ async fn a_subagent_stopped_while_it_waits_stops_waiting() {
         assert_eq!(host.close().await, 0);
     }
 }
+
+/// An interrupt ends the parent's turn and spares a subagent it started in
+/// the background, as Claude spares one for a host that declares it stops
+/// each task itself (amux's `perTaskStopAffordance`): the subagent's steps
+/// play on once the turn is over, each call it makes returns its result,
+/// and its end notifies as completed.
+#[tokio::test]
+async fn a_background_subagent_plays_on_whole_after_its_parents_turn_is_interrupted() {
+    let dir = tempfile::tempdir().unwrap();
+    let never = dir.path().join("never");
+    let mut host = Host::start(json!({"steps": [
+        {"subagents": {"agents": [{"task": "Read the file", "background": true, "steps": [
+            {"tool": {"class": "exploration", "outcome": {"output": "read"}}},
+            {"text": {"chunks": ["It says hello."]}},
+        ]}]}},
+        {"wait_for": {"path": never}},
+        "turn_end",
+    ]}))
+    .await;
+    host.prompt(A, "Read with a subagent").await;
+    let started = host.until(|frame| frame["subtype"] == "task_started").await;
+    host.until(|frame| {
+        frame["parent_tool_use_id"].is_null()
+            && frame["message"]["content"][0]["tool_use_id"] == started["tool_use_id"]
+    })
+    .await;
+    host.send(
+        json!({"type":"control_request","request_id":"req_1","request":{"subtype":"interrupt"}}),
+    )
+    .await;
+    let result = host.until(|frame| frame["type"] == "result").await;
+    assert_eq!(result["subtype"], "error_during_execution");
+    let notified = host
+        .until(|frame| frame["subtype"] == "task_notification")
+        .await;
+    assert_eq!(notified["status"], "completed");
+    assert_eq!(notified["summary"], "It says hello.");
+    let call = host
+        .frames
+        .iter()
+        .find_map(|frame| {
+            let block = &frame["message"]["content"][0];
+            (frame["type"] == "assistant"
+                && block["type"] == "tool_use"
+                && block["name"] != "Agent")
+                .then(|| block["id"].clone())
+        })
+        .expect("the subagent's call");
+    assert!(
+        host.frames
+            .iter()
+            .any(|frame| frame["message"]["content"][0]["tool_use_id"] == call),
+        "the subagent's call returns no result: {:#?}",
+        host.trace()
+    );
+    assert_eq!(host.close().await, 0);
+}

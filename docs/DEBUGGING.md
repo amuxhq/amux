@@ -335,7 +335,8 @@ state the checkpoint carries was already broken, in which case it fails at the s
 by a build whose interpreter no longer breaks the check holds, and says that the live steps broke it.
 
 `dump-show` prints everything in a bundle as text: the manifest, each agent's record, each chat's record, the core's
-record with its store's rows and journals, and every other file. Both tools open a report's bundle directory, a
+record with its store's rows and journals (each journal frame a line, with a line under it for each provider
+subagent's part, naming the subagent by its id and by the provider's id for it), and every other file. Both tools open a report's bundle directory, a
 report directory (its bundle is under `dump/`), or a report's `dump.pb.zst` as downloaded from the account service,
 which they unpack first, refusing one that unpacks past 1 GiB. A file the manifest names is read only from inside
 the bundle.

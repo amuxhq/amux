@@ -317,13 +317,18 @@ parent hears that it failed.
 **One-shot.** An agent with a parent exits when a turn ends with nothing
 queued, nothing running, no accepted message still pending, no prompt typed
 into terminal Claude still waiting for Claude to record it, no child it
-asked for still unsettled, and no child of its still to send its last
-report; its exit cause is `FINISHED`, which its journal's last step
+asked for still unsettled, no child of its still to send its last
+report, and no provider subagent of its own (Claude's Agent tool, a Codex
+child thread) still running; its exit cause is `FINISHED`, which its journal's last step
 records, and that turn's report is marked `last`. A subagent whose own child
 still works therefore stays: each report the child sends starts its next
 turn, and it reports up as usual. It waits for each child incarnation's last
 report: a mid-way report from a child that waits on its own child, or the
-report of an earlier child, never stands in for it. An unreachable child's
+report of an earlier child, never stands in for it. A provider subagent
+hands its answer back through the provider, as a later turn of its host (a
+Claude task notification) or within the running one (a Codex wait), so the
+host stays until every subagent it started has ended, and the turn on the
+last answer is its last. An unreachable child's
 host leaves it waiting, and stopping it (or its own parent's exit) ends it.
 Input that arrives while it exits is answered `REFUSAL_EXITING`. Its
 transcript and its parent edge stay.

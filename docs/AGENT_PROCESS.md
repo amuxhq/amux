@@ -180,7 +180,7 @@ provider's process group at once and writes nothing.
 | `Running` | `Stop` arrives | The interpreter cancels the turn the provider's own way, so an open ask closes as dismissed and its call as cancelled; `Draining` (stop) |
 | `Draining` | The turn ends, or no turn is running | A turn end is marked `last`; `exit` with `DAEMON_LOST` or `STOPPED`; a one-shot agent whose turn ends quiescent while it drains for a lost daemon exits `FINISHED`, as its parent hears it |
 | `Draining` after the daemon was lost | An ask is open (phase needs you) | A drain deadline is armed; when it passes, `exit` with `ORPHANED` |
-| `Running`, the agent has a parent | A turn ends with nothing running, nothing queued, no accepted agent message still unconsumed, no typed prompt the provider has yet to record, no child it asked for still unsettled, and the last report of every child incarnation it made or was told is live already taken | The turn end is marked `last`; `exit` with `FINISHED` (the one-shot rule) |
+| `Running`, the agent has a parent | A turn ends with nothing running, nothing queued, no accepted agent message still unconsumed, no typed prompt the provider has yet to record, no child it asked for still unsettled, the last report of every child incarnation it made or was told is live already taken, and no provider subagent of its own running | The turn end is marked `last`; `exit` with `FINISHED` (the one-shot rule) |
 | `Running`, the agent has a parent and sits idle | A child it asked for is settled as never made, and nothing else is waited for: a later daemon's `children` frame leaves out a spawn its predecessor never answered, or a refusal arrives after a turn cut short has ended | `exit` with `FINISHED`; no turn end was marked `last`, so the daemon reports the exit to the parent |
 | Any | The interpreter asks to exit (`Effect::Exit`) | `exit` with `ENDED_UNEXPECTEDLY` and the interpreter's words |
 | Any | A write to the directory fails (in practice, a full disk): a journal frame, a blob, or the provider's own state in `private/` that the next incarnation resumes from (Codex's thread id, the transcript position) | `exit` with `DIRECTORY_FAILED` and the failed write as the detail; if even that cannot be written, the provider is killed. The cause is then not in the journal either, so the row says `ENDED_UNEXPECTEDLY` (or `ENDED_WHILE_AWAY`) |
@@ -253,6 +253,18 @@ that leaves a child out never drops it otherwise, since the daemon may have
 written the frame before it made the child.
 [Agent tools](AGENT_TOOLS.md#families) has the rule in full, and why a
 child created for the agent from outside it is not covered.
+
+A provider subagent (Claude's Agent tool, a Codex child thread) runs inside
+the agent's own provider and hands its answer back through it: Claude starts
+a turn of the parent's on the subagent's task notification, and Codex returns
+it within the parent's running turn. A one-shot agent whose turn ends while
+one runs would kill it and report the launch as its answer, so it stays. The
+process knows which run from the steps it journals itself, each subagent's
+part of a step carrying its start or its end, so the rule is the same for
+every provider. A subagent that ends while the agent is idle does not end the
+agent by itself: the provider's turn on its answer does, at its end, as a
+child's report does. A turn after one subagent ended while another still runs
+reports up and is not the last.
 
 The one-shot rule is what having a parent means: there is no flag. An input
 that arrives while such an agent is exiting is answered `REFUSAL_EXITING`,

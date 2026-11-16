@@ -241,3 +241,62 @@ async fn a_power_cut_suspends_the_idle_and_continues_the_turn_it_cut_off() {
     println!("helper's report reached the lead it was sent to before the power cut");
     net.shutdown().await.unwrap();
 }
+
+/// A person's prompt to `agent`, as their client on `host` sends it: that
+/// host's own daemon takes it, or forwards it to the agent's.
+async fn typed(
+    net: &Net,
+    host: &str,
+    agent: &str,
+    id: &[u8],
+    text: &str,
+) -> wire::SendInputResponse {
+    use wire::session_service_server::SessionService as _;
+    let at = net.agent(agent).unwrap();
+    net.client(host)
+        .unwrap()
+        .send_input(tonic::Request::new(wire::SendInputRequest {
+            agent_id: at.id.as_bytes().to_vec(),
+            input: Some(testnet::prompt(at.kind, id, text)),
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+}
+
+/// A person's message wakes a suspended agent, typed on its own host or on
+/// another that forwards it: each is answered as taken, and the agent's
+/// next incarnation takes it as its first input. Before, each was refused
+/// as if the agent had stopped, and only a resume woke it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_persons_message_wakes_a_suspended_agent_from_its_host_or_another() {
+    let net = Net::start_with(desk_and_server(), options(Duration::from_millis(500)))
+        .await
+        .unwrap();
+    let mut incarnation = 1;
+    for (host, id) in [("server", &b"typed-far"[..]), ("desk", &b"typed-near"[..])] {
+        until_row(&net, "desk", "lead", "suspended", suspended).await;
+        let verdict = typed(&net, host, "lead", id, "Carry on.").await;
+        assert!(
+            matches!(verdict.of, Some(wire::send_input_response::Of::Accepted(_))),
+            "typed on {host}: {verdict:?}"
+        );
+        until(&format!("lead to take what was typed on {host}"), || {
+            let net = &net;
+            async move {
+                let got = received(net, "lead").await;
+                got.iter()
+                    .any(|item| item.input_id == id)
+                    .then_some(())
+                    .ok_or_else(|| format!("{} received", got.len()))
+            }
+        })
+        .await
+        .unwrap();
+        let lead = row(&net, "desk", "lead").await.unwrap();
+        assert!(lead.incarnation > incarnation, "woken: {lead:?}");
+        incarnation = lead.incarnation;
+        println!("typed on {host}: lead woke as incarnation {incarnation} and took it");
+    }
+    net.shutdown().await.unwrap();
+}

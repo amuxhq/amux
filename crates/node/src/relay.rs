@@ -2,7 +2,7 @@
 //!
 //! A person's input is relayed to the agent over its control socket and
 //! the interpreter's verdict comes back as the answer; the daemon answers
-//! only for an agent that has exited. An agent message goes to the daemon
+//! only for an agent that has exited, and wakes a suspended one with it. An agent message goes to the daemon
 //! core, which hands it through the recipient's lane and answers once the
 //! recipient has accepted it; what stays here is setting the sender of a
 //! message for another host, and bringing the files a message carries to
@@ -47,6 +47,9 @@ pub enum RelayError {
     Stale,
     #[error("resuming the agent: {0:?}")]
     Resume(daemon_core::Refusal),
+    /// A person's input to a suspended agent could not wake it.
+    #[error("waking the agent: {0}")]
+    Wake(crate::runtime::RegistryError),
     /// A file the message carries could not be brought to the recipient's
     /// host, so the recipient could not open it; the message is not sent.
     #[error("the message's attachment {name} could not be brought to the recipient: {why}")]
@@ -74,6 +77,7 @@ impl RelayError {
             // deleted recipient does.
             Self::Stale => ErrorCode::NotFound,
             Self::Forwarded(error) => return error.to_wire(),
+            Self::Wake(error) => return error.to_wire(),
             Self::Attachment { .. } => ErrorCode::FailedPrecondition,
             Self::Resume(_) | Self::Store(_) | Self::Core(_) => ErrorCode::Internal,
         };
@@ -96,6 +100,30 @@ fn refused(refusal: Refusal) -> Rejected {
         refusal: refusal as i32,
         detail: None,
     }
+}
+
+/// The prompt a person's input carries, as a resume's first input takes
+/// it; none for any other input, or a body this build cannot read.
+fn prompt_of(input: &wire::Input) -> Option<wire::PromptSubmission> {
+    use wire::{KindInput, claude_pty_input, claude_sdk_input, codex_input};
+    let prompt = match input.decode_body()? {
+        KindInput::ClaudePty(input) => match input.of? {
+            claude_pty_input::Of::Prompt(prompt) => prompt,
+            _ => return None,
+        },
+        KindInput::ClaudeSdk(input) => match input.of? {
+            claude_sdk_input::Of::Prompt(prompt) => prompt,
+            _ => return None,
+        },
+        KindInput::Codex(input) => match input.of? {
+            codex_input::Of::Prompt(prompt) => prompt,
+            _ => return None,
+        },
+    };
+    Some(wire::PromptSubmission {
+        input_id: input.input_id.clone(),
+        prompt: Some(prompt),
+    })
 }
 
 fn rejection(verdict: &SendInputResponse) -> Option<&Rejected> {
@@ -184,7 +212,10 @@ impl ProfileRuntime {
 
     /// Relays a person's input and returns the interpreter's verdict. An
     /// exited agent is answered here; one that refuses as exiting is from
-    /// then on treated as leaving, so a resume waits for it.
+    /// then on treated as leaving, so a resume waits for it. Every way a
+    /// person sends input comes here, from this host's clients or forwarded
+    /// by another's, so this is where input to an agent with no process
+    /// wakes it if it is suspended (see [`Self::wake_with`]).
     pub async fn send_input(
         &self,
         request: &SendInputRequest,
@@ -199,23 +230,69 @@ impl ProfileRuntime {
         if row.lifecycle == Lifecycle::Exited as i32 {
             return Ok(rejected(Refusal::Exited));
         }
-        let input_id = input.input_id.clone();
         // Only a person changes a chat's model or effort, so it is the same
         // act as picking them for a new agent, and sticks the same way.
         let picked = crate::spec::Picked::of_input(&input);
         let verdict = self
-            .relay(id, input_id, ctl_frame::Of::Input(input))
+            .relay(
+                id,
+                input.input_id.clone(),
+                ctl_frame::Of::Input(input.clone()),
+            )
             .await?;
-        match rejection(&verdict) {
-            Some(rejected) if rejected.refusal() == Refusal::Exiting => self.mark_exiting(id),
-            None => {
-                if let Some(picked) = picked {
-                    self.remember_pick(picked).await;
-                }
+        // Refused as exiting, it is answered at once rather than held for
+        // an exit a stop may take its whole deadline over: input typed as
+        // the agent suspends is refused, and the next wakes it.
+        let verdict = match rejection(&verdict).map(Rejected::refusal) {
+            Some(Refusal::Exited) => self.wake_with(id, input, verdict).await?,
+            Some(Refusal::Exiting) => {
+                self.mark_exiting(id);
+                verdict
             }
-            Some(_) => {}
+            _ => verdict,
+        };
+        if rejection(&verdict).is_none()
+            && let Some(picked) = picked
+        {
+            self.remember_pick(picked).await;
         }
         Ok(verdict)
+    }
+
+    /// Input the agent's process could not take, as it has none: a
+    /// suspended agent is woken by it. A prompt is the next incarnation's
+    /// first input, so the answer is that it was taken; any other input
+    /// goes to the new process once it is connected. The core decides the
+    /// agent is still suspended when the resume's turn comes, after any
+    /// exit it waits out, so input typed to an agent as it was stopped
+    /// starts nothing and is answered with the refusal it had.
+    async fn wake_with(
+        &self,
+        id: AgentId,
+        input: wire::Input,
+        refused: SendInputResponse,
+    ) -> Result<SendInputResponse, RelayError> {
+        use crate::runtime::RegistryError;
+        let first = prompt_of(&input)
+            .map(crate::spec::prompt_bootstrap)
+            .transpose()
+            .map_err(RelayError::Wake)?;
+        let seeded = first.is_some();
+        match self.wake(id, first).await {
+            Ok(_) if seeded => Ok(SendInputResponse {
+                of: Some(send_input_response::Of::Accepted(wire::Accepted {
+                    queued: false,
+                })),
+            }),
+            // Running: started by something else first, or woken for an
+            // input that is not a prompt.
+            Ok(_) | Err(RegistryError::Live(_)) => {
+                self.relay(id, input.input_id.clone(), ctl_frame::Of::Input(input))
+                    .await
+            }
+            Err(RegistryError::NotSuspended(_)) => Ok(refused),
+            Err(error) => Err(RelayError::Wake(error)),
+        }
     }
 
     /// Hands an input or an agent message to the agent over its control

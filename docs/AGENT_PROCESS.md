@@ -290,6 +290,15 @@ suspensions:
   input: the person's, another agent's, or a child's report, which never
   resumes an exited agent. A report the agent refuses as exiting waits for
   the exit and begins again against the row;
+- a person's input wakes it the same way, whichever client sent it and
+  whether its own host or another forwarded it: the host finds no process
+  to relay the input to, and asks the core for a resume that goes ahead
+  only if the row is still suspended when its turn comes, after any exit it
+  waits out. A prompt is the new incarnation's first input and is answered
+  as taken; any other input goes to the new process once it connects. Input
+  typed to an agent stopped in the meantime starts nothing and is refused as
+  exited. Input the agent refuses as exiting, as it suspends, is answered
+  so at once rather than held for the exit; the next input wakes it;
 - stopping or closing it marks it exited with cause `STOPPED` (closed, for a
   close), and its children follow as for any exit; deleting it removes it;
 - it is no awake member of its workspace while it has no process, and a

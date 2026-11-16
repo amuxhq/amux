@@ -185,3 +185,100 @@ async fn with_the_experiment_off_a_suspended_row_is_still_woken_and_closed() {
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }
+
+fn prompt(id: &[u8], text: &str) -> wire::Input {
+    wire::Input::new(
+        id.to_vec(),
+        wire::ClaudeSdkInput {
+            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+                text: text.to_owned(),
+                attachments: Vec::new(),
+            })),
+        },
+    )
+}
+
+/// What a person typing to the agent sends, as `amux send`, a chat's
+/// composer and a far host's forwarded send all do.
+fn typed(agent: &SyntheticAgent, id: &[u8], text: &str) -> wire::SendInputRequest {
+    wire::SendInputRequest {
+        agent_id: agent.id.as_bytes().to_vec(),
+        input: Some(prompt(id, text)),
+    }
+}
+
+/// A person's input to a suspended agent wakes it with that input as its
+/// next incarnation's first, and is answered as taken; the same input to
+/// an agent the person stopped is refused as exited and starts nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_persons_input_wakes_a_suspended_agent_and_not_a_stopped_one() {
+    let install = Install::new();
+    let napper = SyntheticAgent::new(&install, "napper", SEGMENTS);
+    napper.write_spec();
+    let mut row = napper.row(&install);
+    row.exit_cause = ExitCause::Suspended as i32;
+    install.store().put_agent(&row).unwrap();
+    let stopped = SyntheticAgent::new(&install, "stopped", SEGMENTS);
+    stopped.write_spec();
+    let mut row = stopped.row(&install);
+    row.lifecycle = Lifecycle::Exited as i32;
+    row.exit_cause = ExitCause::Stopped as i32;
+    install.store().put_agent(&row).unwrap();
+    let daemon = install
+        .start(
+            "boot-1",
+            install.launch(
+                "resumed",
+                vec![
+                    support::text("awake"),
+                    provider_fakes::script::Step::TurnEnd,
+                ],
+            ),
+        )
+        .await;
+    let runtime = runtime(&daemon, &install);
+
+    let verdict = runtime
+        .send_input(&typed(&napper, b"typed-1", "time to go on"))
+        .await
+        .expect("the input is answered");
+    assert!(
+        matches!(verdict.of, Some(wire::send_input_response::Of::Accepted(_))),
+        "the suspended agent took it: {verdict:?}"
+    );
+    let woken = runtime.agent(napper.id).await.unwrap();
+    assert_eq!(
+        (woken.lifecycle(), woken.incarnation),
+        (Lifecycle::Live, 2),
+        "{woken:?}"
+    );
+    let spec = std::fs::read(napper.dir.join("spec.2")).unwrap();
+    let spec = <wire::AgentSpec as prost::Message>::decode(spec.as_slice()).unwrap();
+    assert!(
+        matches!(
+            spec.bootstrap.and_then(|bootstrap| bootstrap.of),
+            Some(wire::bootstrap::Of::Prompt(prompt))
+                if prompt.input_id == b"typed-1"
+                    && prompt.prompt.as_ref().is_some_and(|prompt| prompt.text == "time to go on")
+        ),
+        "the input is the first"
+    );
+
+    let verdict = runtime
+        .send_input(&typed(&stopped, b"typed-2", "and you"))
+        .await
+        .expect("the input is answered");
+    assert!(
+        matches!(
+            verdict.of,
+            Some(wire::send_input_response::Of::Rejected(ref rejected))
+                if rejected.refusal() == wire::Refusal::Exited
+        ),
+        "{verdict:?}"
+    );
+    assert_eq!(runtime.agent(stopped.id).await.unwrap().incarnation, 1);
+    assert!(!stopped.dir.join("spec.2").exists());
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}

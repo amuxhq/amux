@@ -947,3 +947,108 @@ async fn a_file_pasted_into_a_new_agents_first_message_reaches_it() {
         .expect("the net shuts down")
         .unwrap();
 }
+
+// --- a suspended agent ---------------------------------------------------------
+
+/// A message typed into a suspended agent's chat wakes it: Enter sends it
+/// at once, and neither the header nor the composer ever says the agent
+/// stopped or the message was not sent. They said "stopped" and "not sent:
+/// it had exited", the host refusing a person's input to an agent with no
+/// process as if it had exited, and the refusal made the chat read exited.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_message_typed_to_a_suspended_agent_wakes_it_and_never_reads_stopped() {
+    use crossterm::event::KeyCode;
+    let options = testnet::NetOptions {
+        launch: Some(std::sync::Arc::new(
+            |_host: &str, launch: &mut node::Launch| {
+                launch.experiments =
+                    settings::experiments::Enabled::of(&[&settings::experiments::SUSPENSION]);
+                launch.suspension = settings::experiments::suspension::Suspension {
+                    after: Duration::from_millis(500),
+                };
+            },
+        )),
+        ..testnet::NetOptions::default()
+    };
+    let net = Net::start_with(
+        Topology::new().host("desk").agent(
+            AgentDecl::new("napper", "desk")
+                .kind(FakeKind::ClaudeSdk)
+                .steps(vec![text("Ready."), Step::TurnEnd])
+                .prompt("go"),
+        ),
+        options,
+    )
+    .await
+    .unwrap();
+    let id = net.agent("napper").unwrap().id;
+    let client: std::sync::Arc<dyn client::Client> =
+        std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
+    let config = tui::TuiConfig {
+        working_dir: "/".into(),
+        leader: 'a',
+        theme: theme(),
+        initial_chat: None,
+        version: String::new(),
+        local_host: net.host("desk").unwrap().host_id.as_bytes().to_vec(),
+        layout: None,
+        chat_in: settings::ChatInSetting::Amux,
+        system_clipboard: false,
+    };
+    let mut app = app_listing(client, config, &[id.as_bytes()]).await;
+    open_chat(&mut app, id.as_bytes()).await;
+    let suspended = |app: &tui::App| {
+        app.fleet
+            .state()
+            .find(id.as_bytes())
+            .is_some_and(|agent| agent.exit_cause() == wire::ExitCause::Suspended)
+    };
+    tokio::time::timeout(PATIENCE, async {
+        while !suspended(&app) {
+            app.housekeep();
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("napper suspends");
+    let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
+    terminal.draw(|frame| app.draw(frame)).unwrap();
+    let screen = screen_text(terminal.backend().buffer());
+    assert!(
+        !screen.contains("stopped"),
+        "suspended, it reads stopped:\n{screen}"
+    );
+
+    for c in "wake up".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+    press(&mut app, KeyCode::Enter);
+    tokio::time::timeout(PATIENCE, async {
+        loop {
+            app.housekeep();
+            terminal.draw(|frame| app.draw(frame)).unwrap();
+            let screen = screen_text(terminal.backend().buffer());
+            assert!(
+                !screen.contains("stopped") && !screen.contains("not sent"),
+                "the message to the suspended agent read as refused:\n{screen}"
+            );
+            let chat = app.chat.as_ref().unwrap();
+            let state = chat.session.state();
+            let taken = state
+                .transcript()
+                .iter()
+                .any(|held| held.item.text.contains("wake up") && !held.item.input_id.is_empty());
+            if taken && ui_view::prompts_underway(&state).is_empty() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the woken agent takes the message");
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}

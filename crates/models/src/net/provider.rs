@@ -308,7 +308,8 @@ impl Provider {
                 | Step::Pause { .. }
                 | Step::Spawn { .. }
                 | Step::Usage(_)
-                | Step::AuthFailed { .. } => {}
+                | Step::AuthFailed { .. }
+                | Step::Subagents { .. } => {}
             }
         }
     }

@@ -1,0 +1,120 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 6 recorded 5: input 0xc572d8de6b3d40e6bc487b49ce4a3a8c
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 18 recorded 17: fact Stream type=stream_event uuid=d951f6e0-16c4-4a36-b8f6-c932b75f003b
+  composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
+## 27 recorded 26: fact Stream type=assistant uuid=449cd364-85be-4571-986b-217a0aebbb47
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 29 recorded 28: fact Stream type=stream_event uuid=e479b0c7-07ad-4267-bccc-d045e072903c
+  composer Send activity=Some(Running { key: "toolu_01EKmQfxqunLiRPgSGSEXuRh" }) queue=[] underway=[] refused=[]
+## 90 recorded 89: fact Stream type=system subtype=task_started uuid=d59f59b7-f15e-442f-a4b6-72e882206f23 tool_use_id=toolu_01EKmQfxqunLiRPgSGSEXuRh
+  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
+## 100 recorded 99: fact Stream type=assistant uuid=8957acc1-605f-4ba8-82fd-d91b77713933
+  composer Send activity=Some(Running { key: "toolu_01EwuquVw6HXXeTTeW62hSHR" }) queue=[] underway=[] refused=[]
+## 102 recorded 101: fact Stream type=user uuid=e9dd8ef3-b54a-42ca-9146-7a8e49f5ce81
+  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
+## 108 recorded 107: fact Stream type=assistant uuid=42421225-6b3c-4dbc-af6e-d689ff2e9c9a
+  composer Send activity=Some(Running { key: "toolu_01U3HJ9aUUrsQqqJGjQ8HuUy" }) queue=[] underway=[] refused=[]
+## 110 recorded 109: fact Stream type=control_request
+  ask 789f51d0-2b0b-430b-8b5a-8e446b95b159 -> "ask:789f51d0-2b0b-430b-8b5a-8e446b95b159" 1/1 Open
+    choices Submit*, Decline
+    body Form { server: "external", message: "Confirm the word ALBATROSS.", fields: [FormField { name: "confirmed", title: "confirmed", description: "", required: true, kind: Text { min_length: None, max_length: None }, initial: Text("") }] }
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 112 recorded 111: input stdin-4
+  ask none
+  composer Send activity=Some(Running { key: "toolu_01U3HJ9aUUrsQqqJGjQ8HuUy" }) queue=[] underway=[] refused=[]
+## 116 recorded 115: fact Stream type=user uuid=cc3547b4-3df5-431f-891c-e405669b18e1
+  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
+## 120 recorded 119: fact Stream type=system subtype=task_updated uuid=b002db62-fe84-4038-8df6-a4b36953febf
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 137 recorded 136: fact Stream type=result subtype=success uuid=d5ada659-5869-4491-a289-6de885e1a07e
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Hidden collapsed
+     2 c572d8de-6b3d-40e6-bc48-7b49ce4a3a8c Prompt { text: [Text("Use the Agent tool (subagent_type general-purpose) to start one subagent whose task is: call the mcp__external__ask_the_operator tool with word set to ALBATROSS, then report exactly what it returned. When it has reported back, reply with exactly what it said.")], steered: false }
+     3 c4b6a815-089d-487b-848a-2bd2982ead81 Hidden collapsed
+     4 msg_011Ch5eTsFZobVqdJyWqK2hT:0 Thinking { text: "", open: false, duration_ms: Some(1599) }
+     5 toolu_01EKmQfxqunLiRPgSGSEXuRh Subagent { description: "Call ask_the_operator with ALBATROSS", running: false, tool_count: 2, last_tool: "mcp__external__ask_the_operator", answer: "  <tools-used-before-summary>ToolSearch, mcp__external__ask_the_operator</tools-used-before-summary>\n  \n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model…
+     6 toolu_01EwuquVw6HXXeTTeW62hSHR Explore { verb: Search, subject: "select:mcp__external__ask_the_operator", state: Succeeded, result: "" } collapsed parent=toolu_01EKmQfxqunLiRPgSGSEXuRh
+     7 toolu_01U3HJ9aUUrsQqqJGjQ8HuUy ToolCall { server: "external", tool: "ask_the_operator", fact: "ALBATROSS", state: Succeeded, result: "ALBATROSS" } collapsed parent=toolu_01EKmQfxqunLiRPgSGSEXuRh
+     8 ask:789f51d0-2b0b-430b-8b5a-8e446b95b159 Ask(Form { server: "external", message: "Confirm the word ALBATROSS.", fields: ["confirmed"], resolution: Answered })
+     9 e4536d19-973b-46e2-adac-87a9f1c01d49 Hidden collapsed
+    10 msg_011Ch5eUVQvfzwzUtAaoRTBG:0 Prose { text: [Text("ALBATROSS")], streaming: false, working_note: false }
+    11 turn:1 TurnEnd { duration_ms: Some(9499), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 21342, window_tokens: Some(1000000), percent: Some(2), near_full: false }) sign-in None
+== settings
+  model  opus "Opus 5.5" efforts=[low,medium,high,xhigh,max]
+  model  fable "Fable 5.2" efforts=[low,medium,high,xhigh,max]
+  model  sonnet "Sonnet 5.5" efforts=[low,medium,high,xhigh,max]
+  model* haiku "Haiku 5.5" efforts=[low,medium,high,xhigh,max]
+  model  claude-fable-5-1 "Fable 5.1" efforts=[low,medium,high,xhigh,max]
+  model  claude-haiku-4-5-20251001 "Haiku 4.5" efforts=[]
+  model  claude-sonnet-5 "Sonnet 5" efforts=[low,medium,high,xhigh,max]
+  model  claude-opus-5 "Opus 5" efforts=[low,medium,high,xhigh,max]
+  model  claude-fable-5 "Fable 5" efforts=[low,medium,high,xhigh,max]
+  model  claude-opus-4-8 "Opus 4.8" efforts=[low,medium,high,xhigh,max]
+  model  claude-opus-4-7 "Opus 4.7" efforts=[low,medium,high,xhigh,max]
+  model  claude-opus-4-6 "Opus 4.6" efforts=[low,medium,high,max]
+  model  claude-sonnet-4-6 "Sonnet 4.6" efforts=[low,medium,high,max]
+  effort  low
+  effort* medium
+  effort  high
+  effort  xhigh
+  effort  max
+  permission* "default" "Ask" normal
+  permission  "acceptEdits" "Accept edits"
+  permission  "plan" "Plan"
+  permission  "auto" "Auto"
+  changes: model Pick · effort Pick · permission Pick · mode NotOffered
+  command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
+  command /rename source="" hint="<name>" "Rename the agent"
+  command /deep-research source="" hint="" "Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report. (dynamic workflow)"
+  command /design source="" hint="consent | revoke" "Grant or revoke Claude agent access to your Design projects"
+  command /design-sync source="" hint="[<project hint, e.g. \"Acme DS\">]" "Push a React design system to claude.ai/design. This runs a converter that bundles the real component code (from Storybook or a bare package) and uploads it. Use when the user runs /design-sync or says \"sync my design system to Claude Design\"."
+  command /dataviz source="" hint="" "Use this skill whenever you are about to create ANY chart, graph, plot, dashboard, or data visualization, in ANY output medium — an HTML or React artifact, inline SVG, plotting code in any library (matplotlib, plotly, d3, Recharts, …), an image/PNG you will render and upload, or a chart shared into Slack. Read it BEFORE writing the first line of chart code, choosing chart colors, building a stat …
+  command /update-config source="" hint="" "Use this skill to configure the Claude Code harness via settings.json. Automated behaviors (\"from now on when X\", \"each time X\", \"whenever X\", \"before/after X\") require hooks configured in settings.json - the harness executes these, not Claude, so memory/preferences cannot fulfill them. Also use for: permissions (\"allow X\", \"add permission\", \"move permission to\"), env vars (\"set X=…
+  command /verify source="" hint="" "Verify that a code change actually does what it's supposed to by exercising it end-to-end and observing behavior — drive the affected flow, not just tests or typecheck. Run before committing nontrivial changes; bootstraps this repo's project verify skill if none exists yet. Don't invoke it on a diff that only touches tests, docs, or other code with no runtime surface to drive (a change to product…
+  command /debug source="" hint="[issue description]" "Enable debug logging for this session and help diagnose issues"
+  command /code-review source="" hint="[low|medium|high|xhigh|max|ultra] [--fix] [--comment] [<pr#>|<branch>|<path>] [--max-findings <n>|all]" "Review the current diff, or a PR number/branch/path target, for correctness bugs (plus reuse/simplification/efficiency cleanups where the model's recipe covers them) at the effort level given first, before any target (low|medium|high|xhigh|max: from few high-confidence findings to many, some uncertain; ultra: deep multi-agent review in the cloud); with no level given, it reuses the level you type…
+  command /simplify source="" hint="[<target>]" "Review the changed code for reuse, simplification, efficiency, and altitude cleanups, then apply the fixes. Quality only — it does not hunt for bugs; use /code-review for that."
+  command /batch source="" hint="<instruction>" "Research and plan a large-scale change, then execute it in parallel across 5–30 isolated worktree agents that each open a PR."
+  command /fewer-permission-prompts source="" hint="" "Scan your transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to project .claude/settings.json to reduce permission prompts."
+  command /loop source="" hint="[interval] [prompt]" "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace."
+  command /schedule source="" hint="" "Create, update, list, or run scheduled cloud agents (routines) that execute on a cron schedule."
+  command /send-to-project source="" hint="[\"project name\" or id] [message]" "Send this session's work to a Claude Project"
+  command /claude-api source="" hint="" "Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, tool use, MCP, agents, caching, token counting, model migration.\nTRIGGER — read FIRST, before you answer, run a command or open a file (already started? read it now); don't skip because it \"looks like a one-liner\" — whenever: the prompt names Claude/Anthropic in any form (Claude, Anthropic, Fable, Opus, Sonne…
+  command /workflow-authoring source="" hint="" "Reference for writing a Workflow tool script (script API and gotchas, resume, quality patterns, worked examples). Load before authoring a script for a workflow the user already opted into; it does not itself authorize running one."
+  command /run source="" hint="" "Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library)."
+  command /run-skill-generator source="" hint="" "Author or improve the run-<unit> skill - a per-project skill that tells agents how to build, launch, and drive this project's app. Use when the user asks to set up the project, get it running, write run instructions, or verify build/run steps work from a clean environment."
+  command /plugin-authoring source="" hint="" "Make a mod: a change to Claude's own interface or behaviour, such as a theme, a panel or pane that stays beside the chat and updates, a band, status line, toast, slash command, or hook on tool calls. Use to make, change or debug a mod or its hooks module."
+  command /advisor source="" hint="[fable|opus|sonnet|off]" "Let Claude consult a stronger model at key moments"
+  command /autocompact source="" hint="[auto|<tokens>]" "Configure the auto-compact window size"
+  command /clear source="" hint="[name]" "Start a new session with empty context; previous session stays on disk (resumable with /resume)"
+  command /compact source="" hint="<optional custom summarization instructions>" "Free up context by summarizing the conversation so far"
+  command /output-style source="" hint="[style]" "List output styles or switch to one"
+  command /context source="" hint="" "Show current context usage"
+  command /fast source="" hint="[on|off]" "Toggle fast mode (Opus 5.5)"
+  command /focus source="" hint="[on|off]" "Toggle focus view: just your prompt, summary, and response"
+  command /init source="" hint="" "Initialize a new CLAUDE.md file with codebase documentation"
+  command /import source="" hint="" "Import config from another AI coding agent"
+  command /__remote-workflow source="" hint="" "Run the workflow script delivered in this session environment (server-launched sessions only)"
+  command /workflow-launch-exec source="" hint="" "Execute a server-launched workflow handoff (workflow_launch event sessions only)"
+  command /reload-plugins source="" hint="[--force]" "Activate pending plugin changes in the current session"
+  command /reload-skills source="" hint="" "Pick up skills added or changed on disk during this session"
+  command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~5-15 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
+  command /security-review source="" hint="" "Complete a security review of the pending changes on the current branch"
+  command /usage-credits source="" hint="" "Configure usage credits or request them from your admin when you hit a limit"
+  command /extra-usage source="" hint="" "Renamed to /usage-credits"
+  command /usage source="" hint="" "Show session cost, plan usage, and what's contributing to your limits"
+  command /insights source="" hint="" "Generate a report analyzing your Claude Code sessions"
+  command /recap source="" hint="" "Generate a one-line session recap now"
+  command /skill-doctor source="" hint="" "Show which loaded skills are unused and costing context"
+  command /goal source="" hint="" "Set a goal — keep working until the condition is met"
+  command /design-consent source="" hint="" "Grant Claude agent access to your Design projects"
+  command /design-revoke source="" hint="" "Revoke Claude agent access to your Design projects"
+  command /list-agents source="" hint="" "List subagents, teammates, and other Claude sessions you can message"
+  command /team-onboarding source="" hint="" "Help teammates ramp on Claude Code with a guide from your usage"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

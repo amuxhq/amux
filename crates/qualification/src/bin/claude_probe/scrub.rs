@@ -40,11 +40,15 @@ fn api_request(row_type: &str) -> bool {
 }
 
 /// Scrubs the owner's context out of a terminal recording's transcript
-/// lines.
+/// lines and its subagents' rows.
 pub fn transcript(events: &mut Vec<IoEvent>) -> io::Result<()> {
     let mut kept = Vec::with_capacity(events.len());
     for mut event in events.drain(..) {
-        if event.transport_id.as_deref() != Some("transcript") {
+        let rows = matches!(
+            event.transport_id.as_deref(),
+            Some("transcript" | "subagent")
+        ) && event.line.contains("\"row\":");
+        if !rows {
             kept.push(event);
             continue;
         }

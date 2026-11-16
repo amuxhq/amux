@@ -78,6 +78,14 @@ goldens! {
     recorded_live_plan => "recorded_live_plan",
     recorded_live_questions => "recorded_live_questions",
     recorded_live_usage => "recorded_live_usage",
+    recorded_subagents_parallel => "recorded_subagents_parallel",
+    recorded_subagent_nested => "recorded_subagent_nested",
+    recorded_subagent_ask => "recorded_subagent_ask",
+    recorded_subagent_stopped => "recorded_subagent_stopped",
+    recorded_subagent_continued => "recorded_subagent_continued",
+    recorded_subagent_elicitation => "recorded_subagent_elicitation",
+    recorded_subagent_amux_tools => "recorded_subagent_amux_tools",
+    recorded_subagent_resumed => "recorded_subagent_resumed",
 }
 
 #[test]

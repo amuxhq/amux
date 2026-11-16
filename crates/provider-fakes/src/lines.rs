@@ -84,7 +84,7 @@ where
                 }
             }
             Channel::Exit => return Ok(Some(crate::playback::exit_code(event))),
-            Channel::Transcript | Channel::Hook => {
+            Channel::Transcript | Channel::Hook | Channel::Subagent => {
                 return Err(format!(
                     "event {index}: a stdio process has no {:?}",
                     event.channel

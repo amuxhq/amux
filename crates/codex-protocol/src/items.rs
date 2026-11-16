@@ -18,7 +18,7 @@ tagged_enum! {
         "fileChange" => FileChange(FileChangeItem),
         "mcpToolCall" => McpToolCall(McpToolCallItem),
         "collabAgentToolCall" => CollabAgentToolCall(CollabAgentToolCallItem),
-        "subAgentActivity" => SubAgentActivity(IdItem),
+        "subAgentActivity" => SubAgentActivity(SubAgentActivityItem),
         "webSearch" => WebSearch(WebSearchItem),
         "imageView" => ImageView(ImageViewItem),
         "sleep" => Sleep(IdItem),
@@ -35,8 +35,8 @@ impl ThreadItem {
     pub fn id(&self) -> &str {
         match self {
             Self::UserMessage(item) => &item.id,
+            Self::SubAgentActivity(item) => &item.id,
             Self::HookPrompt(item)
-            | Self::SubAgentActivity(item)
             | Self::Sleep(item)
             | Self::ContextCompaction(item)
             | Self::FunctionCallOutput(item) => &item.id,
@@ -231,6 +231,32 @@ pub struct TextContent {
     pub text: String,
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+/// What a subagent did, reported on its parent's thread: Codex 0.166.0
+/// started a child thread for it, sent it a follow-up, or saw its turn
+/// complete. The subagent's own items arrive on its thread, named by
+/// `agent_thread_id`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubAgentActivityItem {
+    pub id: String,
+    pub kind: SubAgentActivityKind,
+    pub agent_thread_id: String,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+string_enum! {
+    pub enum SubAgentActivityKind {
+        /// The parent's `spawn_agent` started the child thread.
+        Started = "started",
+        /// The parent sent the child a follow-up, which runs as a turn of
+        /// the child's own.
+        Interacted = "interacted",
+        /// The child's turn completed; an interrupted one says nothing.
+        Completed = "completed",
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

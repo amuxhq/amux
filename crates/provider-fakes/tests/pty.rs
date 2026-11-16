@@ -54,6 +54,8 @@ impl Terminal {
             "Stop",
             "SessionEnd",
             "Elicitation",
+            "SubagentStart",
+            "SubagentStop",
         ];
         let token = root.join("token");
         let mut hooks_settings: serde_json::Map<String, Value> = events
@@ -640,4 +642,141 @@ async fn exit_ends_the_process_with_its_code() {
     let mut exit = terminal.exit.clone();
     let status = tokio::time::timeout(DEADLINE, exit.wait()).await.unwrap();
     assert_eq!(status.exit_code(), 5);
+}
+
+/// Subagents started together run as terminal Claude 2.1.325 runs them:
+/// one Agent call each that returns at once, each subagent's conversation
+/// in its own transcript beside the session's with a `meta.json` naming the
+/// call, its hooks naming it, and its end reported before the parent goes
+/// on. Every row, payload and meta.json has a recorded shape.
+#[tokio::test]
+async fn parallel_subagents_write_their_own_transcripts_and_name_themselves() {
+    let terminal = Terminal::started(json!({"steps": [
+        {"subagents": {"agents": [
+            {"task": "Read a.txt", "nickname": "reader", "steps": [
+                {"tool": {"class": "exploration", "outcome": {"output": "ALPHA"}}},
+                {"text": {"chunks": ["ALPHA"]}},
+            ]},
+            {"task": "Read b.txt", "nickname": "reader", "steps": [
+                {"thinking": {"text": "Which file"}},
+                {"tool": {"class": "exploration", "outcome": {"output": "BRAVO"}}},
+                {"text": {"chunks": ["BRAVO"]}},
+            ]},
+            {"task": "Touch a file", "nickname": "toucher", "steps": [
+                {"ask": {"permission": {"class": "consequential", "input": {"command": "touch x"},
+                                        "outcome": {"output": "ok"}}}},
+                {"text": {"chunks": ["DONE"]}},
+            ]},
+        ]}},
+        {"text": {"chunks": ["ALPHA BRAVO DONE"]}},
+        "turn_end",
+    ]}))
+    .await;
+    terminal.prompt("Delegate").await;
+    let asked = terminal.hook("PermissionRequest").await;
+    terminal.keys(b"1").await;
+    let stop = terminal.hook("Stop").await;
+    assert_eq!(stop["last_assistant_message"], "ALPHA BRAVO DONE");
+
+    let starts = terminal.hooks_of("SubagentStart", 3).await;
+    let stops = terminal.hooks_of("SubagentStop", 3).await;
+    let ids: Vec<&str> = starts
+        .iter()
+        .map(|hook| hook["agent_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        starts
+            .iter()
+            .map(|hook| hook["agent_type"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["reader", "reader", "toucher"]
+    );
+    assert_eq!(
+        asked["agent_id"], ids[2],
+        "the ask names the subagent that raised it"
+    );
+    assert_eq!(asked["agent_type"], "toucher");
+    let inside: Vec<Value> = terminal
+        .hooks()
+        .into_iter()
+        .filter(|hook| hook["hook_event_name"] == "PreToolUse" && hook["tool_name"] != "Agent")
+        .collect();
+    assert_eq!(inside.len(), 3);
+    assert!(
+        inside
+            .iter()
+            .all(|hook| ids.contains(&hook["agent_id"].as_str().unwrap()))
+    );
+
+    // The parent's own transcript has its three Agent calls and none of
+    // their work.
+    let rows = terminal.rows();
+    assert!(rows.iter().all(|row| row["isSidechain"] != true));
+    let calls: Vec<String> = rows
+        .iter()
+        .filter(|row| row["type"] == "assistant" && row["message"]["content"][0]["name"] == "Agent")
+        .map(|row| {
+            row["message"]["content"][0]["id"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(calls.len(), 3);
+
+    let corpus = corpus(Kind::ClaudePty);
+    let recorded_meta: std::collections::BTreeSet<String> = [
+        "agentType",
+        "description",
+        "finished",
+        "isBuiltIn",
+        "launchedWithDefaults",
+        "pickedEffortModel",
+        "requestNonInteractive",
+        "requestShape",
+        "spawnDepth",
+        "toolUseId",
+    ]
+    .map(str::to_owned)
+    .into();
+    for (at, id) in ids.iter().enumerate() {
+        let file = provider_fakes::playback::subagent_path(
+            &terminal.transcript,
+            &format!("subagents/agent-{id}.jsonl"),
+        );
+        // Each ends as its steps run out, not in the order they started.
+        let stop = stops.iter().find(|hook| hook["agent_id"] == *id).unwrap();
+        assert_eq!(stop["agent_transcript_path"], file.display().to_string());
+        let meta: Value =
+            serde_json::from_slice(&std::fs::read(file.with_extension("meta.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            meta["toolUseId"],
+            calls[at].as_str(),
+            "meta.json names its call"
+        );
+        assert_eq!(meta["finished"], true);
+        let keys: std::collections::BTreeSet<String> =
+            meta.as_object().unwrap().keys().cloned().collect();
+        assert_eq!(keys, recorded_meta);
+        let rows = lines(&file);
+        assert_eq!(
+            rows[0]["message"]["content"],
+            ["Read a.txt", "Read b.txt", "Touch a file"][at]
+        );
+        let last = rows.last().unwrap();
+        assert_eq!(
+            last["message"]["content"][0]["text"],
+            stop["last_assistant_message"]
+        );
+        for row in &rows {
+            assert_eq!(row["agentId"], *id);
+            let group = provider_fakes::shape::subagent_group(&json!({ "row": row })).unwrap();
+            if let Err(drift) = corpus.check(Kind::ClaudePty, &group, row) {
+                panic!("{drift}");
+            }
+        }
+    }
+    terminal.check_shapes();
+    assert_eq!(terminal.exit_code().await, 0);
 }

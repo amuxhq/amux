@@ -589,7 +589,8 @@ async fn terminal(scenario: &Scenario) -> Result<(), String> {
                         .to_owned(),
                 );
             }
-            Channel::Output | Channel::Exit => {}
+            // Subagent files are not what the scripted session is compared on.
+            Channel::Output | Channel::Exit | Channel::Subagent => {}
         }
     }
     catch_up(rows.len(), hooks.len()).await;
@@ -826,6 +827,32 @@ mod codex {
             json!([text(), read, {"ask": {"plan": {"markdown": "## Change the line"}}},
                    "turn_end",
                    text(), permission(), bash(None), bash(None), text(), "turn_end"]),
+        ))
+        .await;
+    }
+
+    /// A subagent runs a command in a child thread while its parent waits.
+    #[tokio::test]
+    async fn child_command() {
+        conforms(scenario(
+            "child_command",
+            json!([{"subagents": {"agents": [
+                       {"task": "run echo", "steps": [text(), bash(None), text()]},
+                   ]}},
+                   text(), "turn_end"]),
+        ))
+        .await;
+    }
+
+    /// A subagent's command asks, named by its thread, and is allowed.
+    #[tokio::test]
+    async fn child_approval() {
+        conforms(scenario(
+            "child_approval",
+            json!([{"subagents": {"agents": [
+                       {"task": "touch a file", "steps": [permission(), text()]},
+                   ]}},
+                   text(), "turn_end"]),
         ))
         .await;
     }

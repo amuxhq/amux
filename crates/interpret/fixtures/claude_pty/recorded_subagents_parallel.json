@@ -1,0 +1,20 @@
+{
+  "about": "Three subagents launched in one message, each reading a file and listing the folder; each reports in a task notification.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "live/subagents_parallel/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

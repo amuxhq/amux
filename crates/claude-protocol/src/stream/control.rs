@@ -55,6 +55,14 @@ tagged_enum! {
 pub struct InitializeRequestBody {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub per_task_stop_affordance: Option<bool>,
+    /// Stream a subagent's text, thinking and prompt, not only its tool
+    /// calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forward_subagent_text: Option<bool>,
+    /// Stream the events of a subagent's own subagents, which otherwise
+    /// arrive only as progress lines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forward_nested_subagent_tool_calls: Option<bool>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

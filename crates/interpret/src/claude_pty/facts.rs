@@ -257,6 +257,11 @@ impl State {
         let Some(common) = payload.common() else {
             return;
         };
+        // A subagent is drawn from its Agent call's rows and hooks; its start
+        // adds nothing to them. amux does not register the hook.
+        if matches!(payload, Payload::SubagentStart(_)) {
+            return;
+        }
         // Once a session has started, only its hooks and the next session
         // start concern this agent: another session's are Claude's own view
         // showing another conversation, or not Claude's at all. A hook such a
@@ -356,7 +361,7 @@ impl State {
             Payload::PostModelSwitch(switch) if !switch.to_model.is_empty() => {
                 self.provider.model = Some(switch.to_model.clone());
             }
-            Payload::PostModelSwitch(_) | Payload::Notification(_) => {}
+            Payload::PostModelSwitch(_) | Payload::Notification(_) | Payload::SubagentStart(_) => {}
             Payload::Stop(stop) => {
                 if let Some(tasks) = &stop.background_tasks {
                     let now = self.shared.now_ms();

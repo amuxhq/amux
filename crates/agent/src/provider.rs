@@ -307,12 +307,17 @@ impl Provider {
         // it takes input. amux's interrupt ends the turn and leaves
         // background work running on every kind; Claude spares background
         // subagents on an interrupt, as it spares background shells, only
-        // for a host that says it can stop each task on its own.
+        // for a host that says it can stop each task on its own. The two
+        // forwarding options put every subagent's whole conversation in the
+        // stream, nested subagents' included; without them Claude streams
+        // only direct subagents' tool calls.
         let initialize = claude_stream::ControlRequest::new(
             "agent-initialize",
             claude_stream::ControlRequestBody::Initialize(
                 claude_stream::control::InitializeRequestBody {
                     per_task_stop_affordance: Some(true),
+                    forward_subagent_text: Some(true),
+                    forward_nested_subagent_tool_calls: Some(true),
                     ..Default::default()
                 },
             ),

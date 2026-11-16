@@ -1,0 +1,10 @@
+{
+  "about": "A subagent calls amux's status and agents tools; each call names its tool use, never the subagent. Today the subagent's status lands on the parent.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "recording": {
+    "path": "live/subagent_amux_tools/io.jsonl",
+    "format": "claude_sdk_io"
+  }
+}

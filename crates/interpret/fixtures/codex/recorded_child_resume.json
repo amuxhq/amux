@@ -1,0 +1,10 @@
+{
+  "about": "The parent starts a child, is settled and resumed from amux, then sends the child a follow-up: amux resumes only the parent's thread, and the child's second turn still arrives on the resumed connection.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "recording": {
+    "path": "live/child_resume/io.jsonl",
+    "format": "codex_io"
+  }
+}

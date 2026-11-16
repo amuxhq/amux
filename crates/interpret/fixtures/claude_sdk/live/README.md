@@ -41,9 +41,23 @@ and `resumed` (`resume`). The terminal corpus is
 | `task_list` | the task tools: three tasks created and one worked through |
 | `background_shell` | a shell run in the background and its output read |
 | `subagent_task` | a task delegated to a subagent given at launch (`--agents`) |
+| `subagents_parallel` | three subagents started in one message, each running a command, the parent waiting on them |
+| `subagent_nested` | a subagent that starts a subagent of its own |
+| `subagent_ask` | a subagent asking before a command, allowed from amux |
+| `subagent_stopped` | a subagent in the background stopped from amux while its command runs |
+| `subagent_continued` | a subagent its parent sends a second task with `SendMessage` |
+| `subagent_resumed` | a host settled and resumed while its subagent's command runs, then the subagent continued |
+| `subagent_amux_tools` | a subagent calling amux's `status` and `agents` tools |
+| `subagent_elicitation` | a subagent's call to another tool server that asks a form mid-call, accepted from amux |
 | `sign_in_problem` | a rejected credential, set through the agent's `--settings` |
 | `steer_folded` | a message sent into the running turn, and another left queued for the next |
 | `usage` | one turn, then the usage windows read |
+
+Every capture from `subagents_parallel` down was recorded with the two
+options amux's initialize sets so that each subagent's whole conversation,
+nested subagents' included, is in the stream (`forwardSubagentText`,
+`forwardNestedSubagentToolCalls`). Each of those frames names its subagent
+(`agent_id`) and the call that started it (`parent_tool_use_id`).
 
 Tool-server forms are recorded headless only: a terminal capture does not
 hold what amux answered on a hook, so its replay would read the form as

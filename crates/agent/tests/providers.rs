@@ -1388,6 +1388,28 @@ async fn headless_claude_is_told_at_initialize_that_amux_stops_each_task_on_its_
     );
 }
 
+/// Headless Claude streams its subagents' text, thinking and prompts, and
+/// its subagents' own subagents, only for a host whose initialize asks for
+/// them.
+#[tokio::test(flavor = "multi_thread")]
+async fn headless_claude_is_asked_at_initialize_to_forward_its_subagents_conversations() {
+    let agent = Agent::start(Setup::sdk()).await;
+    let _daemon = agent.dial().await;
+    agent.ready().await;
+    let initialize = agent
+        .provider_input()
+        .into_iter()
+        .find(|line| line["request"]["subtype"] == "initialize")
+        .expect("the agent initializes Claude");
+    for option in ["forwardSubagentText", "forwardNestedSubagentToolCalls"] {
+        assert_eq!(
+            initialize["request"][option],
+            serde_json::json!(true),
+            "the initialize request does not ask for {option}: {initialize}"
+        );
+    }
+}
+
 /// A folder of managed settings holding an organization's MCP config, as
 /// `CLAUDE_CODE_MANAGED_SETTINGS_PATH` names it; it lives as long as the
 /// test binary.

@@ -1,0 +1,10 @@
+{
+  "about": "A subagent's call to another tool server, which asks a form mid-call that amux accepts; the form names no subagent. Today the form sits on the parent.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "recording": {
+    "path": "live/subagent_elicitation/io.jsonl",
+    "format": "claude_sdk_io"
+  }
+}

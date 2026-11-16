@@ -1,0 +1,10 @@
+{
+  "about": "A subagent starts a subagent of its own, whose conversation streams too. Today both fold under the first call.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "recording": {
+    "path": "live/subagent_nested/io.jsonl",
+    "format": "claude_sdk_io"
+  }
+}

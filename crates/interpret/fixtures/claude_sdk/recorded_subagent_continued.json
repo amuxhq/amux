@@ -1,0 +1,10 @@
+{
+  "about": "A subagent its parent sends a second task with SendMessage: the same task id starts again under the SendMessage call. Today both runs fold under their calls.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "recording": {
+    "path": "live/subagent_continued/io.jsonl",
+    "format": "claude_sdk_io"
+  }
+}

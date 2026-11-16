@@ -1,0 +1,24 @@
+{
+  "spec": "subagent_amux_tools",
+  "recorded": {
+    "provider": "claude",
+    "version": "2.1.325",
+    "model": "claude-haiku-5-5",
+    "at": "2026-11-16T00:28:12.759235Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:38179884e06e2c1340923855c7f599aa55df27c5455faef84382ac146ed2f395",
+    "spawn.jsonl": "sha256:aa4e4cb91f92d5cb5488078e8fd330528ba9fbad9fe1349f55457a1956a91f8c"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 102,
+    "personal_identifiers": 6
+  },
+  "session_ids": [
+    "a48ec55f-d1bd-4f5b-a1f5-80a5d68e5e42"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

@@ -1,0 +1,32 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 14 recorded 12: fact Transcript type=user uuid=cd65cd37-e718-42a9-88f5-9cb1ffa0d373
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 45 recorded 43: fact Transcript type=assistant uuid=19685f17-dd4c-4c0a-8921-3741a7581492
+  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
+## 65 recorded 63: fact Transcript type=system subtype=turn_duration uuid=6fd28b33-1fd6-49a6-bbde-b96d772cb36a
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 97 recorded 95: fact Transcript type=user uuid=5e935b1f-1f8d-43ee-88ed-b0fb0207fd32
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 104 recorded 102: fact Transcript type=system subtype=turn_duration uuid=c13127ea-556d-4495-82f0-c190a195f2e0
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Hidden collapsed
+     2 cd65cd37-e718-42a9-88f5-9cb1ffa0d373 Prompt { text: [Text("Launch the `outer` subagent and wait for it. When it has reported, reply with exactly what it said.")], steered: false }
+     3 toolu_01Eg8rr4FVAEoB3eHY6GGFKi Subagent { description: "Run outer subagent", running: true, tool_count: 1, last_tool: "Agent", answer: "", duration_ms: None } run[toolu_01Eg8rr4FVAEoB3eHY6GGFKi..toolu_01Eg8rr4FVAEoB3eHY6GGFKi x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0 }]
+     4 stream:9450040c-6f2f-4aa6-9f8b-a36d5972519b Prose { text: [Text("The `outer` subagent is running in the background. I'll reply with its report once it finishes.")], streaming: false, working_note: false }
+     5 turn:1 TurnEnd { duration_ms: Some(3488), failed: false }
+     6 stream:de88e9ff-2798-4a0a-afe1-12e18fc4d7f7 Prose { text: [Text("OUTER ALPHA")], streaming: false, working_note: false }
+     7 turn:2 TurnEnd { duration_ms: Some(10533), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 35126, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

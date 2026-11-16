@@ -1,0 +1,20 @@
+{
+  "about": "A subagent asks before running a command, and amux allows it.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "live/subagent_ask/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

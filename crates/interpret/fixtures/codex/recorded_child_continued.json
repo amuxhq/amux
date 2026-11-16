@@ -1,0 +1,10 @@
+{
+  "about": "The parent sends its child a follow-up in a second turn: the child's activity reads interacted, and the child runs a second turn of its own on the same thread.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "recording": {
+    "path": "live/child_continued/io.jsonl",
+    "format": "codex_io"
+  }
+}

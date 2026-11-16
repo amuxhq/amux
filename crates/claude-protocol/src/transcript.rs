@@ -39,6 +39,7 @@ tagged_enum! {
         "file-history-delta" => FileHistoryDelta(FileHistoryDeltaRow),
         "tools-used" => ToolsUsed(ToolsUsedRow),
         "cost-state" => CostState(CostStateRow),
+        "session-owner" => SessionOwner(SessionOwnerRow),
     }
 }
 
@@ -79,6 +80,7 @@ impl Row {
             Self::LastPrompt(row) => Some(&row.session_id),
             Self::QueueOperation(row) => Some(&row.session_id),
             Self::CostState(row) => Some(&row.session_id),
+            Self::SessionOwner(row) => Some(&row.session_id),
             Self::System(SystemRow::Unknown(raw)) | Self::Unknown(raw) => {
                 raw.field("sessionId")?.as_str()
             }
@@ -480,6 +482,15 @@ pub struct ToolsUsedRow {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CostStateRow {
+    pub session_id: String,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
+/// The account and organization the session belongs to (Claude 2.1.325).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionOwnerRow {
     pub session_id: String,
     #[serde(flatten)]
     pub extensions: Extensions,

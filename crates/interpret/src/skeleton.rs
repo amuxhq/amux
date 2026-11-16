@@ -344,6 +344,15 @@ pub const VOCABULARY: &[(&str, &[&str])] = &[
             wire::ATTACH_TOOL,
         ],
     ),
+    // What a Codex subagent did, reported on its parent's thread.
+    ("kind", &["started", "interacted", "completed"]),
+    // The agent process's handshake requests to Codex, whose answers the
+    // interpreter tells apart by id: a resumed thread's answer leaves its
+    // turns out, a new thread's does not.
+    (
+        "id",
+        &[crate::codex::THREAD_REQUEST, crate::codex::RESUME_REQUEST],
+    ),
     ("role", &["user", "assistant", "system"]),
     (
         "media_type",
@@ -1591,6 +1600,18 @@ impl Skeleton {
                 return format!("={text}");
             }
             if (MODEL.contains(&key) && chosen(Chosen::Model, text)) || OWN_SERVERS.contains(&text)
+            {
+                return self.named(text);
+            }
+            // amux numbers its own control requests (`amux-<n>`), which
+            // says nothing anyone wrote. Aliased, the number would share
+            // its hash with any equal number the interpreter derives, a
+            // turn's id among them, and a stream made up from the record
+            // could not keep both.
+            if key == "request_id"
+                && let Some(number) = text.strip_prefix("amux-")
+                && !number.is_empty()
+                && number.bytes().all(|b| b.is_ascii_digit())
             {
                 return self.named(text);
             }

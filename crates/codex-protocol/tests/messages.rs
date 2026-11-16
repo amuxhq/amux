@@ -7,7 +7,8 @@ use codex_protocol::client::{
     ClientInfo, InitializeParams, ModelListParams, ThreadStartParams, TurnStartParams,
 };
 use codex_protocol::items::{
-    CollabAgentTool, CommandAction, ThreadItem, ToolStatus, UserInput, WebSearchAction,
+    CollabAgentTool, CommandAction, SubAgentActivityKind, ThreadItem, ToolStatus, UserInput,
+    WebSearchAction,
 };
 use codex_protocol::server::{
     CommandDecision, Decision, Persist, ServerNotification as N, ServerRequest as R, ThreadResponse,
@@ -471,4 +472,43 @@ fn sandbox_modes_are_written_as_thread_start_names_them() {
         serde_json::from_value::<SandboxMode>(json!("future-mode")).unwrap(),
         SandboxMode::Other("future-mode".into())
     );
+}
+
+/// A subagent's activity names its thread on the parent's: started, sent a
+/// follow-up, completed. Its own items and its own turn arrive on that
+/// thread, on the same connection.
+#[test]
+fn a_subagents_activity_reads_its_kind_and_its_thread() {
+    let activity = |kind: &str| match notification(recorded(
+        "child_continued",
+        &[
+            "item/completed",
+            r#""type":"subAgentActivity""#,
+            &format!(r#""kind":"{kind}""#),
+        ],
+    )) {
+        N::ItemCompleted(completed) => match completed.item {
+            ThreadItem::SubAgentActivity(activity) => (completed.thread_id, activity),
+            other => panic!("not sub-agent activity: {other:?}"),
+        },
+        other => panic!("not an item: {other:?}"),
+    };
+    let (parent, started) = activity("started");
+    assert_eq!(started.kind, SubAgentActivityKind::Started);
+    let (_, interacted) = activity("interacted");
+    assert_eq!(interacted.kind, SubAgentActivityKind::Interacted);
+    assert_eq!(interacted.agent_thread_id, started.agent_thread_id);
+    let (_, completed) = activity("completed");
+    assert_eq!(completed.kind, SubAgentActivityKind::Completed);
+    assert_ne!(started.agent_thread_id, parent);
+    let N::TurnStarted(child_turn) = notification(recorded(
+        "child_continued",
+        &[
+            "turn/started",
+            &format!(r#""threadId":"{}""#, started.agent_thread_id),
+        ],
+    )) else {
+        panic!("not a turn start");
+    };
+    assert_eq!(child_turn.thread_id, started.agent_thread_id);
 }

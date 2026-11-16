@@ -9,6 +9,10 @@
 //! Asks are control requests (`can_use_tool` for permissions, questions and
 //! plans, `elicitation` for a tool server's form) that block the turn until
 //! the host's control response.
+//! Subagents run as 2.1.325 runs one its parent waits on: each streams its
+//! own conversation, prompt included, tagged with its id and the call that
+//! started it (the frames `forwardSubagentText` asks for), and its end hands
+//! its answer back as the call's result.
 
 use std::collections::{BTreeMap, VecDeque};
 
@@ -18,13 +22,13 @@ use tokio::sync::mpsc;
 
 use crate::claude::{Args, Ids, timestamp, uuid};
 use crate::lines::Out;
-use crate::script::{Ask, OfferedCommand, OfferedModel, Question, Script, Step, Tool};
+use crate::script::{Ask, OfferedCommand, OfferedModel, Question, Script, Step, Subagent, Tool};
 use crate::{DRIFT_EXIT, Mode};
 
 /// The asks headless Claude can raise.
 pub const RAISES: &[&str] = &["permission", "question", "plan", "form"];
 /// The provider-specific steps headless Claude can play.
-pub const PLAYS: &[&str] = &["usage", "auth_failed"];
+pub const PLAYS: &[&str] = &["usage", "auth_failed", "subagents"];
 
 pub fn main() -> i32 {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -146,7 +150,39 @@ struct Engine {
     jobs: Vec<Job>,
     /// Initialize names no account.
     signed_out: bool,
+    /// The subagent whose step is playing: the frames it writes carry its
+    /// id and the call that started it.
+    within: Option<Within>,
+    /// The subagents running, by task id.
+    subagents: Vec<Within>,
+    /// Subagents the host stopped that have not yet handed back.
+    stopped: Vec<String>,
 }
+
+/// A subagent Claude runs for the call that started it.
+#[derive(Clone, Debug)]
+struct Within {
+    /// Its task id, which its frames name as their `agent_id`.
+    task: String,
+    run: String,
+    call: String,
+    description: String,
+    prompt: String,
+}
+
+/// A subagent of a [`Step::Subagents`] at work.
+struct Running {
+    within: Within,
+    steps: VecDeque<Step>,
+    request: String,
+    message: String,
+    tools: u64,
+    last_text: String,
+    started: tokio::time::Instant,
+}
+
+/// The kind of subagent Claude starts for a task.
+const SUBAGENT_TYPE: &str = "general-purpose";
 
 /// A command Claude runs in the background: it outlives its call and ends
 /// when its gate file exists, or at once without one.
@@ -231,6 +267,9 @@ impl Engine {
             tasks: Vec::new(),
             jobs: Vec::new(),
             signed_out: script.signed_out,
+            within: None,
+            subagents: Vec::new(),
+            stopped: Vec::new(),
         }
     }
 
@@ -396,6 +435,20 @@ impl Engine {
             // its notification says it was stopped.
             "stop_task" => {
                 let task = request["task_id"].as_str().unwrap_or_default().to_owned();
+                if let Some(within) = self
+                    .subagents
+                    .iter()
+                    .find(|within| within.task == task)
+                    .cloned()
+                {
+                    self.stop_subagent(&within).await;
+                    self.send(json!({
+                        "type": "control_response",
+                        "response": { "subtype": "success", "request_id": id, "response": {} },
+                    }))
+                    .await;
+                    return;
+                }
                 let Some(at) = self.jobs.iter().position(|job| job.task == task) else {
                     let error = format!("No task found with ID: {task}");
                     self.send(json!({
@@ -578,6 +631,12 @@ impl Engine {
         let mut frame = json!({
             "type": "system",
             "subtype": "init",
+            // 2.1.325 names the folder it started in and any it was given,
+            // and says whether "ultrathink" does anything.
+            "additional_directories": [],
+            "original_cwd": self.cwd,
+            "ultrathink_available": false,
+            "ultrathink_typed_raises": false,
             "agents": [],
             "analytics_disabled": false,
             "apiKeySource": "none",
@@ -727,6 +786,14 @@ impl Engine {
                         break None;
                     }
                     Step::Repeat { .. } => unreachable!("next_step unrolls repeats"),
+                    Step::Subagents { agents } => {
+                        calls += agents.len() as u32;
+                        self.run_subagents(&request, &message, agents).await;
+                        self.fold().await;
+                        request = self.ids.next("req_fake");
+                        message = self.ids.next("msg_fake");
+                        self.blocks = 0;
+                    }
                 }
             }
         };
@@ -813,13 +880,22 @@ impl Engine {
     /// while it runs; an interrupt stops waiting for it.
     async fn run_tool(&mut self, tool: &Tool) {
         let until = tool.outcome.until();
-        while tokio::time::Instant::now() < until && !self.interrupting {
+        while tokio::time::Instant::now() < until && !self.cut_short() {
             self.pump().await;
         }
         let Some(path) = &tool.wait_for else { return };
-        while !path.exists() && !self.interrupting {
+        while !path.exists() && !self.cut_short() {
             self.pump().await;
         }
+    }
+
+    /// The turn was interrupted, or the subagent playing was stopped.
+    fn cut_short(&self) -> bool {
+        self.interrupting
+            || self
+                .within
+                .as_ref()
+                .is_some_and(|within| self.stopped.contains(&within.task))
     }
 
     /// Start a command in the background as Claude does: the job list
@@ -931,9 +1007,278 @@ impl Engine {
         self.send(frame).await;
     }
 
+    /// Subagents the model starts together and waits for, as Claude
+    /// 2.1.325 runs them: each call starts a task that streams the
+    /// subagent's prompt, then the subagents take turns at their steps, and
+    /// each one's end hands its last words back as its call's result.
+    async fn run_subagents(&mut self, request: &str, message: &str, agents: Vec<Subagent>) {
+        let mut running = Vec::new();
+        for agent in agents {
+            let description = agent.nickname.clone().unwrap_or_else(|| {
+                agent
+                    .task
+                    .split_whitespace()
+                    .take(5)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            });
+            let input = json!({
+                "description": description,
+                "prompt": agent.task,
+                "subagent_type": SUBAGENT_TYPE,
+            });
+            let call = self.named_tool_use(request, message, "Agent", &input).await;
+            let within = Within {
+                task: self.ids.next("afake"),
+                run: self.ids.next("run_fake"),
+                call,
+                description,
+                prompt: agent.task,
+            };
+            self.send(json!({
+                "type": "system",
+                "subtype": "task_started",
+                "task_id": within.task,
+                "run_id": within.run,
+                "tool_use_id": within.call,
+                "description": within.description,
+                "subagent_type": SUBAGENT_TYPE,
+                "is_backgrounded": false,
+                "spawn_depth": 1,
+                "task_type": "local_agent",
+                "prompt": within.prompt,
+                "uuid": uuid(),
+                "session_id": self.session,
+            }))
+            .await;
+            self.within = Some(within.clone());
+            let mut prompt = json!({
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{ "type": "text", "text": within.prompt }],
+                },
+                "parent_tool_use_id": null,
+                "session_id": self.session,
+                "uuid": uuid(),
+                "timestamp": timestamp(),
+            });
+            self.tag(&mut prompt);
+            self.within = None;
+            self.send(prompt).await;
+            self.subagents.push(within.clone());
+            running.push(Running {
+                within,
+                steps: agent.steps.into(),
+                request: self.ids.next("req_fake"),
+                message: self.ids.next("msg_fake"),
+                tools: 0,
+                last_text: String::new(),
+                started: tokio::time::Instant::now(),
+            });
+        }
+        // One step of each in turn, so their frames interleave as parallel
+        // subagents' do.
+        while !running.is_empty() {
+            let mut at = 0;
+            while at < running.len() {
+                let task = running[at].within.task.clone();
+                let step = if self.interrupting || self.stopped.contains(&task) {
+                    None
+                } else {
+                    crate::script::next_step(&mut running[at].steps)
+                };
+                match step {
+                    Some(step) => {
+                        self.within = Some(running[at].within.clone());
+                        self.subagent_step(&mut running[at], step).await;
+                        self.within = None;
+                        at += 1;
+                    }
+                    None => {
+                        let done = running.remove(at);
+                        self.end_subagent(done).await;
+                    }
+                }
+            }
+        }
+    }
+
+    /// One step of a subagent's, written as its own.
+    async fn subagent_step(&mut self, agent: &mut Running, step: Step) {
+        let (request, message) = (agent.request.clone(), agent.message.clone());
+        match step {
+            Step::Text { chunks } => {
+                // The turn's result says the parent's last words, not a
+                // subagent's.
+                let parents = std::mem::take(&mut self.last_text);
+                self.text(&request, &message, &chunks).await;
+                agent.last_text = std::mem::replace(&mut self.last_text, parents);
+            }
+            Step::Thinking { text } => {
+                let block = json!({ "type": "thinking", "thinking": text, "signature": "" });
+                let frame = self.assistant(&request, &message, block);
+                self.send(frame).await;
+            }
+            Step::Tool(tool) => {
+                agent.tools += 1;
+                let (id, input) = self.tool_use(&request, &message, &tool).await;
+                self.subagent_progress(agent, &tool, &input).await;
+                self.run_tool(&tool).await;
+                if self.cut_short() {
+                    return;
+                }
+                let outcome = self.outcome(&tool, &input).await;
+                self.tool_result(&id, &tool, &input, outcome).await;
+                agent.request = self.ids.next("req_fake");
+                agent.message = self.ids.next("msg_fake");
+            }
+            Step::Ask(ask) => {
+                agent.tools += 1;
+                self.ask(&request, &message, ask).await;
+                agent.request = self.ids.next("req_fake");
+                agent.message = self.ids.next("msg_fake");
+            }
+            Step::WaitFor { path } => {
+                while !path.exists() && !self.cut_short() {
+                    self.pump().await;
+                }
+            }
+            Step::Pause { ms } => self.pause(ms).await,
+            Step::Spawn { command } => crate::script::spawn_detached(&command),
+            other => unreachable!("refused when the script loaded: {other:?}"),
+        }
+    }
+
+    /// Claude's word on a subagent's progress, after each of its calls.
+    async fn subagent_progress(&mut self, agent: &Running, tool: &Tool, input: &Value) {
+        let (name, _) = claude_tool(tool, &self.cwd);
+        let doing = input["description"]
+            .as_str()
+            .map(str::to_owned)
+            .unwrap_or_else(|| name.clone());
+        self.send(json!({
+            "type": "system",
+            "subtype": "task_progress",
+            "task_id": agent.within.task,
+            "run_id": agent.within.run,
+            "tool_use_id": agent.within.call,
+            "description": format!("Running {doing}"),
+            "subagent_type": SUBAGENT_TYPE,
+            "usage": subagent_usage(agent),
+            "last_tool_name": name,
+            "uuid": uuid(),
+            "session_id": self.session,
+        }))
+        .await;
+    }
+
+    /// The host stopped a running subagent, as Claude does it: the task is
+    /// killed and says it stopped at once; the subagent's call then returns
+    /// interrupted.
+    async fn stop_subagent(&mut self, within: &Within) {
+        if self.stopped.contains(&within.task) {
+            return;
+        }
+        self.stopped.push(within.task.clone());
+        self.send(json!({
+            "type": "system",
+            "subtype": "task_updated",
+            "task_id": within.task,
+            "run_id": within.run,
+            "patch": { "status": "killed", "end_time": now_s() * 1000 },
+            "uuid": uuid(),
+            "session_id": self.session,
+        }))
+        .await;
+        self.send(json!({
+            "type": "system",
+            "subtype": "task_notification",
+            "task_id": within.task,
+            "run_id": within.run,
+            "tool_use_id": within.call,
+            "status": "stopped",
+            "output_file": format!("/tmp/claude/tasks/{}.output", within.task),
+            "summary": within.description,
+            "uuid": uuid(),
+            "session_id": self.session,
+        }))
+        .await;
+    }
+
+    /// A subagent's steps ran out, or it was stopped: its task ends and its
+    /// call returns what it said last, or that it was interrupted.
+    async fn end_subagent(&mut self, agent: Running) {
+        self.subagents
+            .retain(|within| within.task != agent.within.task);
+        let within = &agent.within;
+        if let Some(at) = self.stopped.iter().position(|task| *task == within.task) {
+            self.stopped.remove(at);
+            self.user_result(
+                &within.call,
+                json!(INTERRUPTED),
+                Ran::Failed,
+                json!(format!("Error: {INTERRUPTED}")),
+            )
+            .await;
+            return;
+        }
+        if self.interrupting {
+            return;
+        }
+        self.send(json!({
+            "type": "system",
+            "subtype": "task_updated",
+            "task_id": within.task,
+            "run_id": within.run,
+            "patch": { "status": "completed", "end_time": now_s() * 1000 },
+            "uuid": uuid(),
+            "session_id": self.session,
+        }))
+        .await;
+        self.send(json!({
+            "type": "system",
+            "subtype": "task_notification",
+            "task_id": within.task,
+            "run_id": within.run,
+            "tool_use_id": within.call,
+            "status": "completed",
+            "output_file": format!("/tmp/claude/tasks/{}.output", within.task),
+            "summary": agent.last_text,
+            "usage": subagent_usage(&agent),
+            "uuid": uuid(),
+            "session_id": self.session,
+        }))
+        .await;
+        let handback = format!(
+            "[Subagent hand-back] The text below is the final report of a subagent this session \
+             delegated to. The report follows:\n  {}\nagentId: {} (use SendMessage with to: \
+             '{}', summary: '<5-10 word recap>' to continue this agent)",
+            agent.last_text, within.task, within.task
+        );
+        let sidecar = json!({
+            "agentId": within.task,
+            "agentType": SUBAGENT_TYPE,
+            "canContinueAgent": true,
+            "content": [{ "type": "text", "text": agent.last_text }],
+            "prompt": within.prompt,
+            "status": "completed",
+            "totalDurationMs": agent.started.elapsed().as_millis() as u64,
+            "totalTokens": 0,
+            "totalToolUseCount": agent.tools,
+        });
+        self.user_result(
+            &within.call,
+            json!([{ "type": "text", "text": handback }]),
+            Ran::Done,
+            sidecar,
+        )
+        .await;
+    }
+
     fn assistant(&mut self, request: &str, message: &str, block: Value) -> Value {
         self.blocks += 1;
-        json!({
+        let mut frame = json!({
             "type": "assistant",
             "message": {
                 "container": null,
@@ -955,13 +1300,28 @@ impl Engine {
             "session_id": self.session,
             "timestamp": timestamp(),
             "uuid": uuid(),
-        })
+        });
+        self.tag(&mut frame);
+        frame
+    }
+
+    /// A subagent's frame names it, the call that started it, its kind and
+    /// its task, as Claude forwards a subagent's conversation.
+    fn tag(&self, frame: &mut Value) {
+        if let Some(within) = &self.within {
+            frame["parent_tool_use_id"] = json!(within.call);
+            frame["agent_id"] = json!(within.task);
+            frame["subagent_type"] = json!(SUBAGENT_TYPE);
+            frame["task_description"] = json!(within.description);
+        }
     }
 
     async fn text(&mut self, request: &str, message: &str, chunks: &[String]) {
         let text: String = chunks.concat();
         let index = self.blocks;
-        if self.args.include_partial_messages {
+        // Claude streams no partial messages of a subagent's.
+        let partial = self.args.include_partial_messages && self.within.is_none();
+        if partial {
             self.stream(json!({
                 "type": "message_start",
                 "message": {
@@ -1001,7 +1361,7 @@ impl Engine {
         }
         let frame = self.assistant(request, message, json!({ "type": "text", "text": text }));
         self.send(frame).await;
-        if self.args.include_partial_messages {
+        if partial {
             self.stream(json!({ "type": "content_block_stop", "index": index }))
                 .await;
         }
@@ -1079,6 +1439,7 @@ impl Engine {
             "type": "result",
             "subtype": "success",
             "api_error_status": 401,
+            "credential_expires_at": credential_expires_at(),
             "duration_api_ms": 0,
             "duration_ms": 1,
             "fast_mode_disabled_reason": "sdk_opt_in_required",
@@ -1139,7 +1500,9 @@ impl Engine {
             "caller": { "type": "direct" },
         });
         let mut frame = self.assistant(request, message, block);
-        frame["wire_tool_inputs"] = json!({ id.clone(): input.clone() });
+        if self.within.is_none() {
+            frame["wire_tool_inputs"] = json!({ id.clone(): input.clone() });
+        }
         self.send(frame).await;
         (id, input)
     }
@@ -1210,7 +1573,7 @@ impl Engine {
         } else {
             json!({ "id": id, "permission_decision": { "decision": "accept", "source": "config" } })
         };
-        let frame = json!({
+        let mut frame = json!({
             "type": "user",
             "message": { "role": "user", "content": [block] },
             "parent_tool_use_id": null,
@@ -1220,6 +1583,13 @@ impl Engine {
             "tool_use_result": sidecar,
             "uuid": uuid(),
         });
+        // A subagent's result has no sidecar.
+        if self.within.is_some()
+            && let Some(fields) = frame.as_object_mut()
+        {
+            fields.remove("tool_use_result");
+        }
+        self.tag(&mut frame);
         self.send(frame).await;
     }
 
@@ -1285,7 +1655,10 @@ impl Engine {
         self.send(status).await;
     }
 
-    async fn request(&mut self, body: Value) -> Option<Value> {
+    async fn request(&mut self, mut body: Value) -> Option<Value> {
+        if let Some(within) = &self.within {
+            body["agent_id"] = json!(within.task);
+        }
         let id = uuid();
         let call = body["tool_use_id"].as_str().map(str::to_owned);
         self.send(json!({ "type": "control_request", "request_id": id, "request": body }))
@@ -1327,21 +1700,27 @@ impl Engine {
             Ask::Permission(tool) => {
                 let (id, input) = self.tool_use(request, message, &tool).await;
                 let (name, _) = claude_tool(&tool, &self.cwd);
-                let answer = self
-                    .request(json!({
-                        "subtype": "can_use_tool",
-                        "tool_name": name,
-                        "display_name": name,
-                        "input": input,
-                        "tool_use_id": id,
-                        "permission_suggestions": [{
-                            "type": "addRules",
-                            "behavior": "allow",
-                            "destination": "localSettings",
-                            "rules": [{ "toolName": name }],
-                        }],
-                    }))
-                    .await;
+                let mut body = json!({
+                    "subtype": "can_use_tool",
+                    "tool_name": name,
+                    "display_name": name,
+                    "input": input,
+                    "tool_use_id": id,
+                    "permission_suggestions": [{
+                        "type": "addRules",
+                        "behavior": "allow",
+                        "destination": "localSettings",
+                        "rules": [{ "toolName": name }],
+                    }],
+                });
+                // 2.1.325 says what a subagent's call is for and the folder
+                // it would touch.
+                if self.within.is_some() {
+                    body["description"] =
+                        json!(input["description"].as_str().unwrap_or(name.as_str()));
+                    body["blocked_path"] = json!(self.cwd);
+                }
+                let answer = self.request(body).await;
                 let Some(answer) = answer else { return };
                 let outcome = match allowed(&answer) {
                     Ok(()) => {
@@ -1449,6 +1828,8 @@ impl Engine {
                 let id = self
                     .named_tool_use(request, message, &name, &json!({}))
                     .await;
+                // 2.1.325 lists the form's fields in the schema's order.
+                let order = property_order(&schema);
                 self.schema = Some(schema);
                 let answer = self
                     .request(json!({
@@ -1456,6 +1837,7 @@ impl Engine {
                         "mcp_server_name": server,
                         "message": prompt,
                         "mode": "form",
+                        "property_order": order,
                         "requested_schema": crate::script::SCHEMA_SLOT,
                     }))
                     .await;
@@ -1501,6 +1883,7 @@ impl Engine {
             "type": "result",
             "subtype": "success",
             "api_error_status": null,
+            "credential_expires_at": credential_expires_at(),
             "duration_api_ms": 1,
             "duration_ms": self.turn_ms,
             "fast_mode_disabled_reason": "sdk_opt_in_required",
@@ -1618,6 +2001,63 @@ fn result_usage() -> Value {
     usage["fallback_credit"] = Value::Null;
     usage
 }
+
+/// The names of a form schema's properties, in the order it lists them: a
+/// parsed JSON value would sort them.
+fn property_order(schema: &crate::script::Schema) -> Vec<String> {
+    struct Keys(Vec<String>);
+    impl<'de> serde::Deserialize<'de> for Keys {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct Visitor;
+            impl<'de> serde::de::Visitor<'de> for Visitor {
+                type Value = Keys;
+                fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    f.write_str("an object")
+                }
+                fn visit_map<A: serde::de::MapAccess<'de>>(
+                    self,
+                    mut map: A,
+                ) -> Result<Keys, A::Error> {
+                    let mut keys = Vec::new();
+                    while let Some((key, _)) = map.next_entry::<String, serde::de::IgnoredAny>()? {
+                        keys.push(key);
+                    }
+                    Ok(Keys(keys))
+                }
+            }
+            deserializer.deserialize_map(Visitor)
+        }
+    }
+    #[derive(serde::Deserialize)]
+    struct Form {
+        #[serde(default)]
+        properties: Option<Keys>,
+    }
+    serde_json::from_str::<Form>(schema.text())
+        .ok()
+        .and_then(|form| form.properties)
+        .map(|keys| keys.0)
+        .unwrap_or_default()
+}
+
+/// When the session's sign-in lapses, which 2.1.325 says on each successful
+/// result: two days from now.
+fn credential_expires_at() -> String {
+    (chrono::Utc::now() + chrono::Duration::days(2))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+/// A running subagent's tally, as its task frames carry it.
+fn subagent_usage(agent: &Running) -> Value {
+    json!({
+        "total_tokens": 0,
+        "tool_uses": agent.tools,
+        "duration_ms": agent.started.elapsed().as_millis() as u64,
+    })
+}
+
+/// What a stopped subagent's call returns.
+const INTERRUPTED: &str = "[Request interrupted by user for tool use]";
 
 fn subagent_stats() -> Value {
     json!({

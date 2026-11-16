@@ -1,0 +1,41 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 14 recorded 12: fact Transcript type=user uuid=bf77b8c2-3dd0-4951-b013-0d6921475c13
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 48 recorded 46: fact Transcript type=assistant uuid=943910c9-050a-4598-9ce7-72f576da51f3
+  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
+## 69 recorded 67: fact Transcript type=system subtype=turn_duration uuid=ec785af9-3c3a-4c78-98a6-8277de5c35fa
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 87 recorded 85: fact Transcript type=user uuid=bf77b8c2-3dd0-4951-b013-0d6921475c13
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 119 recorded 117: fact Transcript type=system subtype=turn_duration uuid=ec785af9-3c3a-4c78-98a6-8277de5c35fa
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 125 recorded 123: fact Transcript type=user uuid=bd7b9d87-0ed9-4d7c-a93a-e758e6fe24a1
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 137 recorded 135: fact Transcript type=system subtype=turn_duration uuid=2cf195bf-3a9c-4483-99c3-8aa951deb685
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Hidden collapsed
+     2 bf77b8c2-3dd0-4951-b013-0d6921475c13 Prompt { text: [Text("Launch the `sleeper` subagent in the background, then reply with exactly LAUNCHED and do nothing else.")], steered: false }
+     3 toolu_01V3Dp6MG6WdWkE9pFBV3m2S Subagent { description: "Run sleeper in background", running: true, tool_count: 1, last_tool: "Bash", answer: "", duration_ms: None } run[toolu_01V3Dp6MG6WdWkE9pFBV3m2S..toolu_01V3Dp6MG6WdWkE9pFBV3m2S x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0 }]
+     4 stream:b3b26c9f-f213-482f-97d8-2aae1f659a21 Prose { text: [Text("LAUNCHED")], streaming: false, working_note: false }
+     5 turn:1 TurnEnd { duration_ms: Some(3022), failed: false }
+     6 boundary:2 Hidden collapsed
+     7 01e3f810-deee-44bd-875f-49d9318013d2 Prose { text: [Text("LAUNCHED")], streaming: false, working_note: false }
+     8 turn:2 TurnEnd { duration_ms: Some(3022), failed: false }
+     9 d4ebfc1a-57d1-4121-ac45-3513cc884f4d Prompt { text: [Text("Is the `sleeper` subagent you launched still running? Check, and reply in one short sentence.")], steered: false }
+    10 stream:3755387b-310b-4fa5-aeb7-357431714223 Prose { text: [Text("No, the `sleeper` agent appears to have stopped: its completion notice says it did not finish before the previous session ended.")], streaming: false, working_note: false }
+    11 fc78eaeb-9dff-4f8f-9d90-9d3a94166ee9 Thinking { text: "", open: false, duration_ms: None }
+    12 turn:3 TurnEnd { duration_ms: Some(2165), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 37254, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None

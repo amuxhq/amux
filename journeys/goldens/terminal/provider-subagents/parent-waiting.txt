@@ -25,7 +25,7 @@
 ▌ ● Running subagent Check the journal's retention · waiting on you
   ● Running subagent Read the store's migrations
 
-    2 subagents working · <t>
+    2 subagents · 1 running · 1 waiting on you · <t>
 
   ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
   │ › Message lead                                                                                         │

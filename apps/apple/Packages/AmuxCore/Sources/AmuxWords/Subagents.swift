@@ -58,6 +58,12 @@ public enum AgentStanding: Equatable, Sendable {
     public var live: Bool { self == .running }
 }
 
+extension GroupState {
+    /// No agents at all: what a chat whose rows open none comes to.
+    public static let empty = GroupState(
+        agents: 0, running: 0, needsYou: 0, idle: 0, finished: 0, ended: 0, failed: 0, unknown: 0)
+}
+
 extension ChatWords {
     /// "4 subagents": the one row the calls of a turn fold into.
     public static func subagentGroup(_ count: UInt32) -> String {
@@ -68,6 +74,14 @@ extension ChatWords {
     /// to, by where each stands, in the order a reader acts on them.
     public static func subagentGroupState(_ state: GroupState) -> String {
         subagentGroupParts(state).map { "\($0.count) \($0.standing.words)" }.joined(separator: " · ")
+    }
+
+    /// "3 subagents · 2 running · 1 waiting on you": the activity line while
+    /// the agent waits on its subagents and one of them waits on the person,
+    /// `live` being the chat's subagents still at work or waiting, in their
+    /// group row's words.
+    public static func subagentActivity(_ live: GroupState) -> String {
+        "\(subagentGroup(live.agents)) · \(subagentGroupState(live))"
     }
 
     /// The counts `subagentGroupState` says, apart, so a client can ink each.

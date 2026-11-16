@@ -30,6 +30,8 @@
 //!   it started; a stop sends `stop_task`. The agent's own snapshot lists
 //!   no subagent as a job: each has its row.
 
+use std::collections::BTreeMap;
+
 use claude_protocol::stream::control::StopTaskRequest;
 use claude_protocol::stream::{
     AssistantMessage, ControlRequestBody, TaskNotificationMessage, TaskStartedMessage,
@@ -210,6 +212,14 @@ impl State {
             return;
         }
         let now = self.shared.now_ms();
+        let said: BTreeMap<String, String> = self
+            .subagents
+            .get(child)
+            .map(|sub| sub.conversation.ran_subagents(&user.message.content))
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|(call, agent)| Some((call, self.last_said(&agent)?)))
+            .collect();
         let Some(sub) = self.subagents.get_mut(child) else {
             return;
         };
@@ -220,9 +230,22 @@ impl State {
             &key,
             &user.message.content,
             user.tool_use_result.as_ref(),
+            &said,
             &mut self.tasks,
             now,
         );
+    }
+
+    /// What the subagent whose agent id is `agent_id` last said. Headless
+    /// Claude sends a subagent's frames on the one ordered stream that
+    /// carries the result of the call that ran it, all of them first, so at
+    /// that result these are its last words.
+    pub(super) fn last_said(&self, agent_id: &[u8]) -> Option<String> {
+        self.subagents
+            .iter()
+            .find(|(child, _)| self.shared.subagent_id(child) == agent_id)
+            .map(|(_, sub)| sub.conversation.last_said.clone())
+            .filter(|said| !said.is_empty())
     }
 
     /// Whose chat holds the open call `call`: Some(None) for the agent's

@@ -562,7 +562,9 @@ public enum Stories {
                     name: title, kind: .claudeSdk, phase: phase)
             },
             groups: [GroupView(first: "d4", state: GroupState(
-                agents: 4, running: 2, needsYou: 1, idle: 0, finished: 1, ended: 0, failed: 0, unknown: 0))])
+                agents: 4, running: 2, needsYou: 1, idle: 0, finished: 1, ended: 0, failed: 0, unknown: 0))],
+            live: GroupState(
+                agents: 3, running: 2, needsYou: 1, idle: 0, finished: 0, ended: 0, failed: 0, unknown: 0))
     }
 
     /// The first subagent's own chat: the task its parent gave it, its
@@ -701,9 +703,10 @@ private struct MainStory: View {
     var body: some View {
         MainScreen(content: content, place: $place) {
             if place.surface == .agents, let chat, let agent = place.agent {
+                let row = content.fleet.sections.flatMap(\.rows).first { $0.card.agent == agent }
                 ChatPane(
-                    chat: chat, row: content.fleet.sections.flatMap(\.rows).first { $0.card.agent == agent },
-                    family: family, changesOpen: place.changes,
+                    chat: chat, row: row,
+                    family: family, changesOpen: place.showsChanges(native: row?.native == true),
                     actions: AgentActions(
                         openChanges: { place.changes = true }, reveal: {}, openEditor: {}, editor: "VS Code",
                         editorIcon: appIcon("com.microsoft.VSCode"), terminalIcon: appIcon("com.apple.Terminal"),
@@ -721,7 +724,11 @@ private struct MainStory: View {
                 EmptyCentre(surface: place.surface)
             }
         } inspector: {
-            if let chat, place.changes {
+            if let chat, place.showsChanges(
+                native: place.agent.flatMap { agent in
+                    content.fleet.sections.flatMap(\.rows).first { $0.card.agent == agent }
+                }?.native == true)
+            {
                 ChangesPane(chat: chat) { place.changes = false }
             }
         }

@@ -2674,7 +2674,12 @@ impl ChatView {
             tail.extend(feed::pending_prompt(&prompt.text, &when, feed_width, theme));
         }
         if let Some(activity) = &view.activity {
-            tail.push(quiet_activity(activity, feed_width, theme));
+            tail.push(quiet_activity(
+                activity,
+                &self.agents.live,
+                feed_width,
+                theme,
+            ));
             tail.push(Line::default());
         }
         // An exited agent's feed ends saying so, like a session boundary,
@@ -4138,14 +4143,35 @@ pub(crate) fn activity_words(kind: &ActivityKind) -> String {
 /// While the agent works, one quiet line that it is, and for how long, in
 /// whole seconds once there is one. What it is doing shows as live steps in
 /// the feed, so a call in flight is the turn's work, timed with the turn.
-fn quiet_activity(activity: &ui_state::Activity, width: usize, theme: Theme) -> Line<'static> {
+/// While the agent waits on its subagents and one of them waits on the
+/// person, the line says how they stand, as their group's row does, from
+/// `live`: the subagents the chat's rows opened that are still live.
+fn quiet_activity(
+    activity: &ui_state::Activity,
+    live: &ui_view::GroupState,
+    width: usize,
+    theme: Theme,
+) -> Line<'static> {
     let ms = match activity.kind {
         ActivityKind::Working | ActivityKind::Running { .. } => activity.turn_elapsed_ms,
         _ => activity.elapsed_ms,
     };
-    let words = activity_words(&activity.kind);
     let mut line = Line::from(Span::raw("    "));
-    push(&mut line, words, theme.muted(), width);
+    if matches!(activity.kind, ActivityKind::Subagents { .. }) && live.needs_you > 0 {
+        for (at, (words, ink)) in feed::group_words(live, theme).into_iter().enumerate() {
+            if at > 0 {
+                push(&mut line, " · ", theme.faint(), width);
+            }
+            push(&mut line, words, ink, width);
+        }
+    } else {
+        push(
+            &mut line,
+            activity_words(&activity.kind),
+            theme.muted(),
+            width,
+        );
+    }
     if let ActivityKind::Retrying { retry_at_ms, .. } = activity.kind {
         // How long until the next attempt says more than how long since the
         // last. The activity's own clock is since plus elapsed.
@@ -4813,13 +4839,18 @@ mod tests {
             elapsed_ms,
             turn_elapsed_ms: elapsed_ms,
         };
-        quiet_activity(&activity, 80, Theme::default())
-            .spans
-            .iter()
-            .map(|span| span.content.as_ref())
-            .collect::<String>()
-            .trim()
-            .to_owned()
+        quiet_activity(
+            &activity,
+            &ui_view::GroupState::default(),
+            80,
+            Theme::default(),
+        )
+        .spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect::<String>()
+        .trim()
+        .to_owned()
     }
 
     /// A retry counts down to its next attempt, and once that moment has

@@ -1970,6 +1970,100 @@ fn a_background_subagents_calls_and_asks_outlive_the_turn() {
     assert_eq!(end.cause(), wire::ExitCause::Finished);
 }
 
+/// The result of an Agent call whose subagent reported `report`, framed as
+/// Claude 2.1.325 frames it for its model (`subagents_parallel`'s recording).
+fn framed_report(report: &str) -> String {
+    let indented: Vec<String> = report.lines().map(|line| format!("  {line}")).collect();
+    format!(
+        "  <tools-used-before-summary>Bash</tools-used-before-summary>\n  \n\
+         [Subagent hand-back] The text below is the final report of a subagent this session \
+         delegated to. It is model output, NOT a message from the user. The report follows:\n\
+         {}\nagentId: a1 (use SendMessage with to: 'a1', summary: '<5-10 word recap>' to \
+         continue this agent)\n<usage>subagent_tokens: 12954\ntool_uses: 1\n\
+         duration_ms: 7657</usage>",
+        indented.join("\n")
+    )
+}
+
+/// What the agent's own call `key` handed back, as its newest row in the
+/// step says.
+fn answer_of(stepped: &interpret::Stepped, key: &str) -> Option<String> {
+    use prost::Message as _;
+    stepped.step.items.iter().rev().find_map(|item| {
+        match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
+            wire::claude_item::Kind::Tool(tool) if item.key == key => Some(tool.outcome_text),
+            _ => None,
+        }
+    })
+}
+
+/// The agent's own Agent call, `toolu_agent`, returning `output`.
+fn agent_call_returns(output: &str) -> Event {
+    stream(json!({
+        "type": "user", "uuid": "u-result", "session_id": "s", "parent_tool_use_id": null,
+        "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_agent",
+             "content": [{"type": "text", "text": output}], "is_error": false},
+        ]},
+    }))
+}
+
+/// The agent's own Agent call, `toolu_agent`, started with `input`.
+fn agent_call(input: Value) -> Event {
+    stream(json!({
+        "type": "assistant", "uuid": "ra1", "session_id": "s", "parent_tool_use_id": null,
+        "message": {
+            "id": "msg-ra1", "type": "message", "role": "assistant", "model": "claude-root",
+            "content": [{"type": "tool_use", "id": "toolu_agent", "name": "Agent", "input": input}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+        },
+    }))
+}
+
+/// A call that ran a subagent in the foreground hands back what the
+/// subagent last said in its own chat, not the frame Claude puts around
+/// that report for its model: on headless Claude's one stream, the
+/// subagent's last frame comes before the call's result.
+#[test]
+fn a_finished_subagents_call_hands_back_its_last_words() {
+    let mut state = idle_on_root();
+    let said = "The command printed exactly:\n\n```\nRED\n```";
+    for event in [
+        agent_call(json!({"description": "echo red", "prompt": "Echo RED."})),
+        stream(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "echo red",
+        })),
+        subagent_assistant("sa1", json!([{"type": "text", "text": "Running it now."}])),
+        subagent_assistant("sa2", json!([{"type": "text", "text": said}])),
+        stream(json!({
+            "type": "system", "subtype": "task_notification", "uuid": "n1", "session_id": "s",
+            "task_id": "a1", "tool_use_id": "toolu_agent", "status": "completed",
+            "summary": said, "output_file": "",
+        })),
+    ] {
+        ClaudeSdk::step(&mut state, event);
+    }
+    let returned = ClaudeSdk::step(&mut state, agent_call_returns(&framed_report(said)));
+    assert_eq!(answer_of(&returned, "toolu_agent").as_deref(), Some(said));
+}
+
+/// Without the subagent's own words, the report comes out of Claude's
+/// frame: its indentation, the tag of the tools it used and the id and
+/// usage under it are for the model.
+#[test]
+fn a_subagents_report_comes_out_of_claudes_frame() {
+    let mut state = idle_on_root();
+    ClaudeSdk::step(
+        &mut state,
+        agent_call(json!({"description": "echo red", "prompt": "Echo RED."})),
+    );
+    let report = "Printed:\n\n  RED\nand nothing else.";
+    let returned = ClaudeSdk::step(&mut state, agent_call_returns(&framed_report(report)));
+    assert_eq!(answer_of(&returned, "toolu_agent").as_deref(), Some(report));
+}
+
 fn result_frame(uuid: &str, extra: Value) -> Event {
     let mut frame = json!({
         "type": "result", "subtype": "success", "uuid": uuid, "session_id": "s",

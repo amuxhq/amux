@@ -43,7 +43,7 @@ struct ComposerBox: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let activity {
-                ActivityLine(activity: activity, subject: activitySubject)
+                ActivityLine(activity: activity, subject: activitySubject, subagents: model.liveSubagents)
             } else if case .exited(let cause)? = model.frame?.phase {
                 exitedHead(cause)
             }
@@ -343,7 +343,7 @@ struct NativeComposer: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let activity {
-                ActivityLine(activity: activity, subject: activitySubject)
+                ActivityLine(activity: activity, subject: activitySubject, subagents: model.liveSubagents)
             }
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: "arrow.triangle.branch")
@@ -494,6 +494,9 @@ struct ActivityLine: View {
     @Environment(\.reducesMotion) private var reducesMotion
     let activity: Activity
     let subject: String?
+    /// How the chat's live subagents stand, which the words say while one
+    /// of them waits on the person.
+    var subagents: GroupState = .empty
 
     // The words and the rule keep separate clocks. The words change once a
     // second, when the elapsed time does; the rule moves on every frame, as a
@@ -514,7 +517,12 @@ struct ActivityLine: View {
             rule
         }
         .accessibilityElement(children: .combine)
-        .identified("chat.activity", label: ChatWords.activity(activity.kind, elapsedMs: 0, subject: subject))
+        .identified("chat.activity", label: spoken)
+    }
+
+    /// The line as one sentence, without its clock.
+    private var spoken: String {
+        ChatWords.activity(activity.kind, elapsedMs: 0, subject: subject, subagents: subagents)
     }
 
     private func elapsed(at date: Date) -> Int64 {
@@ -524,7 +532,7 @@ struct ActivityLine: View {
 
     private func words(elapsed: Int64) -> some View {
         let parts = ChatWords.activityParts(
-            activity.kind, elapsedMs: elapsed, subject: subject, sinceMs: activity.sinceMs)
+            activity.kind, elapsedMs: elapsed, subject: subject, sinceMs: activity.sinceMs, subagents: subagents)
         return HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(parts.words)
                 .designFont(.detail, design)
@@ -549,7 +557,9 @@ struct ActivityLine: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            ChatWords.activity(activity.kind, elapsedMs: elapsed, subject: subject, sinceMs: activity.sinceMs))
+            ChatWords.activity(
+                activity.kind, elapsedMs: elapsed, subject: subject, sinceMs: activity.sinceMs,
+                subagents: subagents))
     }
 
     @ViewBuilder private var rule: some View {

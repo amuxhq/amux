@@ -2065,7 +2065,9 @@ extension CatalogFixtures {
             strip: ScriptedChat.strip(model: "opus 4.6"),
             agents: ChatAgents(
                 agents: delegated.map { opened($0.0, $0.1, $0.2) },
-                groups: [GroupView(first: "d04", state: delegatedState)]))
+                groups: [GroupView(first: "d04", state: delegatedState)],
+                live: GroupState(
+                    agents: 3, running: 2, needsYou: 1, idle: 0, finished: 0, ended: 0, failed: 0, unknown: 0)))
     }
 
     /// Subagent 21's own chat: the task its parent gave it, its thinking,

@@ -60,6 +60,45 @@ pub(crate) struct Conversation {
     /// What it last said it is working on, with amux's status tool: a
     /// subagent's own `status` call is about itself.
     pub(crate) working_on: Option<String>,
+    /// The text of its newest assistant frame that had any: what a
+    /// completed subagent reports, which outlives its end so the call that
+    /// ran it can hand it back. A checkpoint from before this field existed
+    /// reads it as empty.
+    #[serde(default)]
+    pub(crate) last_said: String,
+}
+
+/// The line that opens Claude's frame around a subagent's report in the
+/// result of the call that ran it (as Claude 2.1.325 writes it). Above it
+/// Claude lists the subagent's tools in a tag of its own; below it every
+/// line of the report is indented two spaces, so the first line at column
+/// zero ends the report: the subagent's id and token use, for the model.
+const HAND_BACK: &str = "[Subagent hand-back]";
+
+/// The report inside Claude's frame, as the subagent wrote it; None for a
+/// result with no frame.
+pub(crate) fn hand_back(output: &str) -> Option<String> {
+    let mut lines = output.lines();
+    lines.find(|line| line.starts_with(HAND_BACK))?;
+    let report: Vec<&str> = lines.map_while(|line| line.strip_prefix("  ")).collect();
+    Some(report.join("\n").trim_end().to_owned())
+}
+
+/// What a call that ran a subagent hands back, out of its result `output`:
+/// `said`, the subagent's own last words, when they are known to be its
+/// last; else the report out of Claude's frame, which is for the parent's
+/// model and not a reader; else the result as it came.
+pub(crate) fn subagent_answer(said: Option<&str>, output: String) -> String {
+    match said.filter(|said| !said.trim().is_empty()) {
+        Some(said) => said.to_owned(),
+        None => hand_back(&output).unwrap_or(output),
+    }
+}
+
+/// Whether the call `tool` ran a subagent, whose result is that subagent's
+/// report: an Agent call, or a SendMessage that continued one.
+pub(crate) fn runs_subagent<T>(tool: &Tool<T>) -> bool {
+    !tool.child_agent_id.is_empty() || (tool.server.is_empty() && tool.name == AGENT_TOOL)
 }
 
 /// Whether a user message's text is Claude's own note to the model rather
@@ -162,6 +201,10 @@ impl Conversation {
         if !model.is_empty() && model != "<synthetic>" {
             self.model = Some(model.to_owned());
         }
+        let said = crate::claude_common::blocks_text(blocks);
+        if !said.is_empty() {
+            self.last_said = said;
+        }
         let base = self.blocks.get(message_id).copied().unwrap_or(0);
         self.blocks
             .insert(message_id.to_owned(), base + blocks.len() as u32);
@@ -209,18 +252,41 @@ impl Conversation {
         }
     }
 
+    /// The calls whose results `content` carries that ran a subagent of
+    /// their own, each with that subagent's agent id.
+    pub(crate) fn ran_subagents(&self, content: &MessageContent) -> Vec<(String, Vec<u8>)> {
+        let MessageContent::Blocks(blocks) = content else {
+            return Vec::new();
+        };
+        blocks
+            .iter()
+            .filter_map(|block| match block {
+                ContentBlock::ToolResult { tool_use_id, .. } => {
+                    let tool = self.tools.get(tool_use_id)?;
+                    (!tool.child_agent_id.is_empty())
+                        .then(|| (tool_use_id.clone(), tool.child_agent_id.clone()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     /// One user message of the subagent's: what its parent's model asked of
     /// it (its prompt, or a message continuing it), or its calls' results.
     /// `key` keys a prompt's row; `result` is the message's structured
     /// result of a call. `tasks` is the session's task list: Claude keeps
     /// one for a host and all its subagents, so a subagent's task tools
-    /// change the list its host's snapshot shows.
+    /// change the list its host's snapshot shows. `said` is, by call, the
+    /// last words of a nested subagent one of these results ran, where they
+    /// are known to be its last.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn user(
         &mut self,
         sub: &mut Subagent<'_, Ask>,
         key: &str,
         content: &MessageContent,
         result: Option<&Value>,
+        said: &BTreeMap<String, String>,
         tasks: &mut Option<Vec<Task>>,
         at_ms: i64,
     ) {
@@ -244,6 +310,7 @@ impl Conversation {
                         content.as_ref(),
                         is_error.unwrap_or(false),
                         result,
+                        said.get(tool_use_id).map(String::as_str),
                         at_ms,
                     );
                 }
@@ -268,6 +335,7 @@ impl Conversation {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn tool_result(
         &mut self,
         sub: &mut Subagent<'_, Ask>,
@@ -275,6 +343,7 @@ impl Conversation {
         content: Option<&ToolResultBody>,
         is_error: bool,
         result: Option<&Value>,
+        said: Option<&str>,
         at_ms: i64,
     ) {
         let output = tool_result_text(content);
@@ -302,6 +371,8 @@ impl Conversation {
         } as i32;
         tool.outcome_text = if denied && refused {
             String::new()
+        } else if tool.state == ToolState::Succeeded as i32 && runs_subagent(tool) {
+            subagent_answer(said, output)
         } else {
             output
         };

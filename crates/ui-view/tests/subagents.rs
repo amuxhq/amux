@@ -291,6 +291,17 @@ fn a_group_reads_how_its_agents_stand_from_the_fleet() {
     assert_eq!(seen.groups.len(), 1);
     assert_eq!(seen.groups[0].first, "agent-call-0");
     assert_eq!(seen.groups[0].state.needs_you, 1);
+    // What the activity line says while the agent waits on them: the live
+    // ones, without the one that finished.
+    assert_eq!(
+        seen.live,
+        GroupState {
+            agents: 3,
+            running: 2,
+            needs_you: 1,
+            ..GroupState::default()
+        }
+    );
 }
 
 /// Calls in different turns do not group, and one call alone is not a
@@ -362,6 +373,45 @@ fn a_group_opens_and_closes_by_any_of_its_calls() {
     );
     toggle_group(&state, &keys[1], &mut open);
     assert!(open.is_empty());
+}
+
+/// A group opened while its turn goes on stays open as more calls join it
+/// and the window trims its oldest: the hold moves to its newest call, as
+/// an open run's does, since these calls are no run's steps.
+#[test]
+fn an_opened_group_stays_open_while_the_window_trims_its_oldest_calls() {
+    const CAP: usize = 20;
+    let mut state = SessionState::new(parent(), CAP);
+    state.update(Msg::Connection(ui_state::Connection::Live));
+    state.update(event(session_event::Of::CaughtUp(wire::CaughtUp {
+        revision: 0,
+    })));
+    put(&mut state, item(1, &It::Prompt("go")));
+    put(&mut state, agent_call(2, 0, true));
+    put(&mut state, agent_call(3, 1, true));
+    let mut open = HashSet::new();
+    toggle_group(&state, &"agent-call-0".to_owned(), &mut open);
+    for n in 2..60 {
+        put(&mut state, agent_call(n as u64 + 2, n, true));
+        ui_view::keep_open_runs(&state, &mut open);
+        let keys: Vec<Key> = state
+            .transcript()
+            .iter()
+            .map(|held| held.item.key.clone())
+            .collect();
+        let rows = chat_rows_for(&state, &keys, ToolRows::Collapse { open: &open });
+        assert!(
+            rows.iter().filter(|row| row.opens.is_some()).all(|row| row
+                .group
+                .as_ref()
+                .is_some_and(|group| group.open)
+                && !row.collapsed),
+            "after call {n}: {open:?}"
+        );
+    }
+    let oldest = state.transcript().oldest_held().unwrap();
+    assert!(oldest > 40, "the window trimmed the group's oldest calls");
+    assert_eq!(open, HashSet::from(["agent-call-59".to_owned()]));
 }
 
 /// A history call names no agent: it draws as it did, with its steps

@@ -186,7 +186,7 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
     }
 
     private var inspecting: Bool {
-        place.changes && place.surface == .agents && place.agent != nil
+        place.showsChanges(native: place.agent.flatMap { content.fleet.row($0) }?.native == true)
     }
 
     private func exists(_ agent: AgentKey) -> Bool { content.fleet.row(agent) != nil }

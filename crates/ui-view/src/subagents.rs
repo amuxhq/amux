@@ -11,7 +11,8 @@
 //! call's own row. Like a run of tool steps, the group is an attribute on
 //! its members, decided here so every client draws the same: it draws at
 //! its first call, and a client holds it open by any of its calls, in the
-//! same set that holds open runs.
+//! same set that holds open runs, which [`crate::keep_open_runs`] moves to
+//! the group's newest call as calls join it.
 //!
 //! A turn here is what lies between two prompts, steers or turn ends, as
 //! for every fold.
@@ -90,6 +91,12 @@ pub struct ChatAgents {
     pub agents: Vec<OpenedAgent>,
     /// Each group the held rows make, by its first call.
     pub groups: Vec<GroupView>,
+    /// The agents of `agents` still at work or waiting on the person, by
+    /// where each stands. While the agent waits on its subagents and one of
+    /// them waits on the person, the activity line says this in the group
+    /// row's words ("3 subagents · 2 running · 1 waiting on you") rather
+    /// than that they all work: only the fleet knows of a subagent's ask.
+    pub live: GroupState,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
@@ -180,7 +187,21 @@ pub fn chat_agents(state: &SessionState, fleet: &FleetState) -> ChatAgents {
         }
     }
     close(&mut turn);
-    ChatAgents { agents, groups }
+    let live: Vec<Vec<u8>> = agents
+        .iter()
+        .filter(|opened| {
+            matches!(
+                opened.phase,
+                PhaseView::Starting | PhaseView::Working | PhaseView::NeedsYou
+            )
+        })
+        .map(|opened| opened.agent.agent.clone())
+        .collect();
+    ChatAgents {
+        live: group_state(fleet, &live),
+        agents,
+        groups,
+    }
 }
 
 /// Each agent once, in the order first met.
@@ -295,6 +316,28 @@ pub fn toggle_group(state: &SessionState, member: &Key, open: &mut HashSet<Key>)
         for key in held {
             open.remove(key);
         }
+    }
+}
+
+/// Moves each hold on an open group to the group's newest call, so a
+/// window that trims the group's oldest calls while more join it never
+/// drops the hold; [`crate::keep_open_runs`] calls it for the set both
+/// share. A key no longer held stays, as a run's does.
+pub(crate) fn keep_open_groups(state: &SessionState, open: &mut HashSet<Key>) {
+    let transcript = state.transcript();
+    let moved: Vec<(Key, Key)> = open
+        .iter()
+        .filter_map(|key| {
+            let held = transcript.get(key)?;
+            ui_state::opens(&held.body)?;
+            let calls = calls(transcript, turn_span(transcript, held.item.order)?);
+            let (_, newest, _) = calls.last()?;
+            (newest != key).then(|| (key.clone(), newest.clone()))
+        })
+        .collect();
+    for (old, new) in moved {
+        open.remove(&old);
+        open.insert(new);
     }
 }
 

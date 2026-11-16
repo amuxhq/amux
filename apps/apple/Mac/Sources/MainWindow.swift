@@ -33,9 +33,10 @@ struct AppWindow: View {
     /// The centre: the open agent's chat, the new-agent page, or a host.
     @ViewBuilder private var detail: some View {
         if model.place.surface == .agents, let chat = model.chat, let agent = model.place.agent {
+            let row = model.stores?.fleet.row(agent)
             ChatPane(
-                chat: chat, row: model.stores?.fleet.row(agent), family: model.family(agent),
-                changesOpen: model.place.changes, actions: agentActions(agent)
+                chat: chat, row: row, family: model.family(agent),
+                changesOpen: model.place.showsChanges(native: row?.native == true), actions: agentActions(agent)
             )
             .id(agent)
         } else if model.place.surface == .agents, model.place.agent == nil {
@@ -68,7 +69,7 @@ struct AppWindow: View {
     }
 
     @ViewBuilder private var changes: some View {
-        if let chat = model.chat, model.place.changes {
+        if let chat = model.chat, model.changesShown {
             ChangesPane(chat: chat) { model.place.changes = false }
         }
     }

@@ -53,7 +53,11 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     public init(
         rows: [Row], frame: ChatFrame, card: AskCard? = nil,
         strip: Surroundings = ScriptedChat.strip(), settings: SettingsView? = nil,
-        agents: ChatAgents = ChatAgents(agents: [], groups: []), images: [[UInt8]: Data] = [:]
+        agents: ChatAgents = ChatAgents(
+            agents: [], groups: [],
+            live: GroupState(
+                agents: 0, running: 0, needsYou: 0, idle: 0, finished: 0, ended: 0, failed: 0, unknown: 0)),
+        images: [[UInt8]: Data] = [:]
     ) {
         ordered = rows
         self.agents = agents

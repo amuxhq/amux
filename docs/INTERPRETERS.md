@@ -365,6 +365,17 @@ parent subagent.
 - Terminal Claude has no way to stop one subagent: it lists no job, and a
   stop addressed to one is refused.
 
+**What a call hands back.** The result of a call that ran a subagent is
+written for the parent's model, not a reader: Claude frames the report
+(`[Subagent hand-back] … The report follows:`), indents every line of it,
+lists the tools the subagent used in a tag above the frame, and puts the
+subagent's id and usage below. The call's row carries the report itself.
+Headless Claude sends a subagent's last frame before the result of the
+call that ran it, so the row takes the subagent's own last words; terminal
+Claude reads the subagent's file apart from its parent's, so the row takes
+the report out of the frame. A background subagent's call ends with its
+task's answer, which Claude does not frame.
+
 A tool server's form goes to the one agent, of the host and its subagents,
 with a call to that server open; with more than one, or none, it is the
 agent's own.

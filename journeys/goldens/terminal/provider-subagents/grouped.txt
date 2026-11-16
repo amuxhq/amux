@@ -25,7 +25,7 @@
 
   ▸ 4 subagents · 1 running · 1 waiting on you · 2 done
 
-    2 subagents working
+    2 subagents · 1 running · 1 waiting on you
 
   ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
   │ › Message lead                                                                                         │

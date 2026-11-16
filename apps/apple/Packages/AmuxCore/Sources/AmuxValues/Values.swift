@@ -1679,15 +1679,23 @@ public struct ChatAgents: Codable, Hashable, Sendable {
     public var agents: [OpenedAgent]
     /// Each group the held rows make, by its first call.
     public var groups: [GroupView]
+    /// The agents of `agents` still at work or waiting on the person, by
+    /// where each stands. While the agent waits on its subagents and one of
+    /// them waits on the person, the activity line says this in the group
+    /// row's words ("3 subagents · 2 running · 1 waiting on you") rather
+    /// than that they all work: only the fleet knows of a subagent's ask.
+    public var live: GroupState
 
-    public init(agents: [OpenedAgent], groups: [GroupView]) {
+    public init(agents: [OpenedAgent], groups: [GroupView], live: GroupState) {
         self.agents = agents
         self.groups = groups
+        self.live = live
     }
 
     private enum CodingKeys: String, CodingKey {
         case agents
         case groups
+        case live
     }
 }
 

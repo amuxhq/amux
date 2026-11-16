@@ -36,7 +36,7 @@
      2 c572d8de-6b3d-40e6-bc48-7b49ce4a3a8c Prompt { text: [Text("Use the Agent tool (subagent_type general-purpose) to start one subagent whose task is: call the mcp__external__ask_the_operator tool with word set to ALBATROSS, then report exactly what it returned. When it has reported back, reply with exactly what it said.")], steered: false }
      3 c4b6a815-089d-487b-848a-2bd2982ead81 Hidden collapsed
      4 msg_011Ch5eTsFZobVqdJyWqK2hT:0 Thinking { text: "", open: false, duration_ms: Some(1599) }
-     5 toolu_01EKmQfxqunLiRPgSGSEXuRh [opens=sub-615de637] Subagent { description: "Call ask_the_operator with ALBATROSS", continued: false, state: Succeeded, answer: "  <tools-used-before-summary>ToolSearch, mcp__external__ask_the_operator</tools-used-before-summary>\n  \n[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a messa…
+     5 toolu_01EKmQfxqunLiRPgSGSEXuRh [opens=sub-615de637] Subagent { description: "Call ask_the_operator with ALBATROSS", continued: false, state: Succeeded, answer: "ALBATROSS", duration_ms: Some(6226) }
      6 e4536d19-973b-46e2-adac-87a9f1c01d49 Hidden collapsed
      7 msg_011Ch5eUVQvfzwzUtAaoRTBG:0 Prose { text: [Text("ALBATROSS")], streaming: false, working_note: false }
      8 turn:1 TurnEnd { duration_ms: Some(9499), failed: false }

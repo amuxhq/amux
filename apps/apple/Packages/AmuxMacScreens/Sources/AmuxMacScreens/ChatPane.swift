@@ -243,7 +243,7 @@ private struct ActivityLine: View {
                     + Int64(max(0, context.date.timeIntervalSince1970 * 1000 - Double(activity.sinceMs)))
                 let parts = ChatWords.activityParts(
                     activity.kind, elapsedMs: activity.sinceMs > 0 ? elapsed : activity.elapsedMs, subject: nil,
-                    sinceMs: activity.sinceMs)
+                    sinceMs: activity.sinceMs, subagents: chat.liveSubagents)
                 HStack(spacing: 7) {
                     Working(size: 11)
                     Text(parts.words).foregroundStyle(.secondary)

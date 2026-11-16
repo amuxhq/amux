@@ -1307,7 +1307,7 @@
       {"literal": "\"chat.stop\"", "context": "round(\"stop.fill\", label: String(localized: \"Interrupt\"), id: \"chat.stop\", enabled: true) {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"arrow.up\"", "context": "\"arrow.up\",", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"chat.send\"", "context": "id: \"chat.send\", enabled: model.canSend", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"chat.activity\"", "context": ".identified(\"chat.activity\", label: ChatWords.activity(activity.kind, elapsedMs: 0, subject: subject))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"chat.activity\"", "context": ".identified(\"chat.activity\", label: spoken)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.dock\"", "context": ".identified(\"chat.dock\", value: expanded ? \"expanded\" : \"folded\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"expanded\"", "context": ".identified(\"chat.dock\", value: expanded ? \"expanded\" : \"folded\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\(tasks.done)/\\(tasks.total)\"", "context": "Text(verbatim: \"\\(tasks.done)/\\(tasks.total)\")", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},

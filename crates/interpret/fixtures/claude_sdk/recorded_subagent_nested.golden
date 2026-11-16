@@ -68,7 +68,7 @@ agent sub-24d2107a item msg_011Ch5dYeV8WtfVU2zp2Zr21:1 message final at=17947875
 agent sub-24d2107a snapshot WORKING queue=[] working_on=- at=1794787558367 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 agent sub-24d2107a end FINISHED
 ## 187 recorded 186: fact Stream type=user uuid=7e445396-45c9-4833-a471-7df4c50e3de4
-agent sub-61910d8a item toolu_01KGJc1Exfcon9fTEKR8HBFk tool final at=1794787554263 text="" Agent TOOL_STATE_SUCCEEDED opens=sub-24d2107a ended=1794787558369 input=subagent:"Read b.txt verbatim" out="  <tools-used-before-summary>Read</tools-used-before-summary…"
+agent sub-61910d8a item toolu_01KGJc1Exfcon9fTEKR8HBFk tool final at=1794787554263 text="" Agent TOOL_STATE_SUCCEEDED opens=sub-24d2107a ended=1794787558369 input=subagent:"Read b.txt verbatim" out="The file `<MACHINE_PATH> contains:\n\n```\nbeta\n```\n\nThe Read t…"
 ## 189 recorded 188: fact Stream type=assistant uuid=84ac5069-e4d0-4406-8d62-1e8edfca674b
 agent sub-61910d8a item msg_011Ch5dYp9Yr45BHPhHyDQ4u:0 thinking final at=1794787560479 text=""
 ## 191 recorded 190: fact Stream type=assistant uuid=6f9be8e3-f483-41b4-8556-43f958a3344c
@@ -77,7 +77,7 @@ agent sub-61910d8a item msg_011Ch5dYp9Yr45BHPhHyDQ4u:1 message final at=17947875
 agent sub-61910d8a snapshot WORKING queue=[] working_on=- at=1794787561046 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 agent sub-61910d8a end FINISHED
 ## 197 recorded 196: fact Stream type=user uuid=b9bc0ba5-b006-4b9b-b63a-fe8d3e117f71
-item toolu_01HduYPqwHzevgFBrqoruVQE tool final at=1794787549570 text="" Agent TOOL_STATE_SUCCEEDED opens=sub-61910d8a ended=1794787561059 input=subagent:"Run ls and nested read of b.txt" out="  <tools-used-before-summary>Agent, Bash, Read</tools-used-b…"
+item toolu_01HduYPqwHzevgFBrqoruVQE tool final at=1794787549570 text="" Agent TOOL_STATE_SUCCEEDED opens=sub-61910d8a ended=1794787561059 input=subagent:"Run ls and nested read of b.txt" out="**1. `ls` output (step 1):**\n```\nb.txt\n```\n\n**2. Nested suba…"
 ## 199 recorded 198: fact Stream type=system subtype=status uuid=4c07a2ab-44d0-43ab-beae-3db7170e1d8a
 item 4c07a2ab-44d0-43ab-beae-3db7170e1d8a status final at=1794787561065 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 201 recorded 200: fact Stream type=stream_event uuid=b8d1a850-8e8b-4946-ac05-02ed3476cfa5

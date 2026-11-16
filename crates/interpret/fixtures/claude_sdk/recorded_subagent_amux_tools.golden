@@ -61,7 +61,7 @@ agent sub-ed887bd8 item msg_011Ch5eSriJ1mM3DqUQcTY3j:1 message final at=17947882
 agent sub-ed887bd8 snapshot WORKING queue=[] working_on="checking from a subagent" at=1794788266870 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 agent sub-ed887bd8 end FINISHED
 ## 129 recorded 128: fact Stream type=user uuid=5b4529c2-67dd-44ba-8465-f5df6ad25ae0
-item toolu_01HPoM2fY5DMtyR6w3zbpX51 tool final at=1794788261310 text="" Agent TOOL_STATE_SUCCEEDED opens=sub-ed887bd8 ended=1794788266872 input=subagent:"Check amux status and list agents" out="  <tools-used-before-summary>ToolSearch, mcp__amux__agents, …"
+item toolu_01HPoM2fY5DMtyR6w3zbpX51 tool final at=1794788261310 text="" Agent TOOL_STATE_SUCCEEDED opens=sub-ed887bd8 ended=1794788266872 input=subagent:"Check amux status and list agents" out="Both calls succeeded.\n\n- `mcp__amux__status` returned `ok` w…"
 ## 131 recorded 130: fact Stream type=system subtype=status uuid=947ad711-95e6-43bc-9350-d4a3322e7817
 item 947ad711-95e6-43bc-9350-d4a3322e7817 status final at=1794788266873 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 133 recorded 132: fact Stream type=stream_event uuid=5c73fea3-a71d-45c0-b1d5-0ecbe6f0eaac

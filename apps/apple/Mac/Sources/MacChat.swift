@@ -44,6 +44,7 @@ final class MacChat: ChatSurface {
     func toggleGroup(_ group: SubagentGroup) { model.toggleGroup(group) }
     func opened(by row: Row) -> OpenedAgent? { model.opened(by: row) }
     func state(of group: SubagentGroup) -> GroupState? { model.state(of: group) }
+    var liveSubagents: GroupState { model.liveSubagents }
     func toggleTurn(_ turn: TurnPlace) { model.toggleTurn(turn) }
     func counts(of run: Run) -> RunCounts? { model.counts(of: run) }
     func bytes(of blob: BlobRef) -> Data? { model.bytes(of: blob) }

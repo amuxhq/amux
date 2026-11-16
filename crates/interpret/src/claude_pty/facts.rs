@@ -32,7 +32,9 @@ use crate::{Channel, Emit, Fact, ItemDraft, ask_item, is_status_tool, status_wor
 const REJECTED: &str = "The user doesn't want to proceed with this tool use.";
 const REJECTED_NOTE: &str = "the user said:\n";
 const INTERRUPTED: &str = "[Request interrupted by user";
-use crate::claude_subagent::{AGENT_TOOL, runs_subagent, subagent_answer};
+use crate::claude_subagent::{
+    AGENT_TOOL, SEND_MESSAGE_TOOL, resumed_in_background, runs_subagent, subagent_answer,
+};
 /// How many ended turns' prompts a late reply batch is checked against.
 const ENDED_PROMPTS: usize = 8;
 const TRUST_QUESTION: &str = "Do you trust the files in this folder?";
@@ -506,6 +508,48 @@ impl State {
         };
         tool.of.awaiting_notification = true;
         tool.background = true;
+        true
+    }
+
+    /// Whether the call `id` is a SendMessage whose result says only that it
+    /// resumed the subagent it opens in the background. Then the call stays
+    /// running, as a background Agent call does, until the subagent's end
+    /// finishes it with what the subagent said; one whose subagent already
+    /// ended finishes now with its last words.
+    fn continuation_launched(&mut self, id: &str, result: Option<&Value>, output: &str) -> bool {
+        if !resumed_in_background(result, output) {
+            return false;
+        }
+        let Some(child) = self
+            .tools
+            .get(id)
+            .filter(|tool| tool.name == SEND_MESSAGE_TOOL && !tool.child_agent_id.is_empty())
+            .and_then(|tool| self.subagent_opened(&tool.child_agent_id))
+        else {
+            return false;
+        };
+        let ended = self
+            .subagents
+            .get(&child)
+            .filter(|sub| sub.phase == super::subagents::Phase::Ended)
+            .map(|sub| sub.conversation.last_said.clone());
+        let now = self.shared.now_ms();
+        let Some(tool) = self.tools.get_mut(id) else {
+            return false;
+        };
+        tool.background = true;
+        match ended {
+            Some(said) => {
+                tool.of.finished = true;
+                tool.state = ToolState::Succeeded as i32;
+                tool.outcome_text = said;
+                tool.ended_at_ms.get_or_insert(now);
+            }
+            None => {
+                tool.of.awaiting_notification = true;
+                tool.state = ToolState::Running as i32;
+            }
+        }
         true
     }
 
@@ -1055,6 +1099,12 @@ impl State {
         // A subagent that ran under this call in the foreground ended with
         // it; a SendMessage names the subagent it continued.
         self.call_returned(emit, None, &id, is_error, &output, result);
+        // A SendMessage that resumed a subagent in the background: its
+        // result is for the model, and the call waits for the subagent's end.
+        if !is_error && self.continuation_launched(&id, result, &output) {
+            self.close_for_tool(emit, &id, DecisionOutcome::Allowed);
+            return self.emit_tool(emit, &id);
+        }
         // A shell started in the background: Claude lists it by this id at
         // the turn's end.
         if let Some(task) = result.and_then(shell_in_background)

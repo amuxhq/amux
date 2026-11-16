@@ -374,7 +374,12 @@ Headless Claude sends a subagent's last frame before the result of the
 call that ran it, so the row takes the subagent's own last words; terminal
 Claude reads the subagent's file apart from its parent's, so the row takes
 the report out of the frame. A background subagent's call ends with its
-task's answer, which Claude does not frame.
+task's answer, which Claude does not frame. A SendMessage that resumes a
+stopped subagent returns at once with JSON for the model (`{"success":true,
+"message":"Resuming agent …","resumedAgentId":…}`): the call stays running,
+as a background Agent call does, and the subagent's end finishes it with
+what the subagent said. No call that opens a subagent hands back a JSON
+object; it hands back nothing instead.
 
 A tool server's form goes to the one agent, of the host and its subagents,
 with a call to that server open; with more than one, or none, it is the

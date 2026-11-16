@@ -169,7 +169,9 @@ fn deep_merge(destination: &mut Value, addition: Value) {
 
 /// The hook events terminal Claude reports to the agent. MessageDisplay
 /// streams the reply as Claude draws it; PermissionRequest and Elicitation
-/// are answered (see [`crate::claude::hooks::ANSWERED_EVENTS`]).
+/// are answered (see [`crate::claude::hooks::ANSWERED_EVENTS`]);
+/// SubagentStart names each subagent, whose own transcript the agent then
+/// follows.
 pub const HOOK_EVENTS: &[&str] = &[
     "SessionStart",
     "SessionEnd",
@@ -180,7 +182,7 @@ pub const HOOK_EVENTS: &[&str] = &[
     "PostToolUse",
     "PostToolUseFailure",
     "Stop",
-    "SubagentStop",
+    "SubagentStart",
     "Elicitation",
     "MessageDisplay",
     "PostModelSwitch",

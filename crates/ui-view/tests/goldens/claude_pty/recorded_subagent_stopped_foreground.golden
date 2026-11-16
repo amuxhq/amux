@@ -2,16 +2,16 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 14 recorded 12: fact Transcript type=user uuid=7f3fe9ea-cae2-4e48-b415-139326dbfb5e
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 45 recorded 43: fact Transcript type=assistant uuid=782c5409-808d-453f-8638-04c45b9efb7e
-  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
-## 51 recorded 49: fact Transcript type=user uuid=f45676d8-ee2e-4906-88ee-c28600828bbf
+## 47 recorded 45: fact Transcript type=assistant uuid=782c5409-808d-453f-8638-04c45b9efb7e
+  composer Send activity=Some(Running { key: "toolu_01Dd4XtL7LSAFAXjdZCWLXy8" }) queue=[] underway=[] refused=[]
+## 56 recorded 54: fact Transcript type=user uuid=f45676d8-ee2e-4906-88ee-c28600828bbf
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 55 recorded 53: fact Transcript type=user uuid=440e6326-7535-4fc9-bf7d-0e6c737e62bc
+## 60 recorded 58: fact Transcript type=user uuid=440e6326-7535-4fc9-bf7d-0e6c737e62bc
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
      2 7f3fe9ea-cae2-4e48-b415-139326dbfb5e Prompt { text: [Text("Launch the `sleeper` subagent in the foreground, with run_in_background set to false, and wait for its answer. Then reply with exactly what it said.")], steered: false }
-     3 toolu_01Dd4XtL7LSAFAXjdZCWLXy8 Subagent { description: "Run sleeper subagent in foreground", running: false, tool_count: 1, last_tool: "Bash", answer: "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.", duration_ms: So…
+     3 toolu_01Dd4XtL7LSAFAXjdZCWLXy8 Subagent { description: "Run sleeper subagent in foreground", running: false, tool_count: 0, last_tool: "", answer: "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.", duration_ms: Some(1…
      4 turn:1 Stopped
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 33953, window_tokens: None, percent: None, near_full: false }) sign-in None

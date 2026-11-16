@@ -314,6 +314,10 @@ pub struct Stop {
 pub struct SubagentStart {
     #[serde(flatten)]
     pub common: Common,
+    /// The subagent's type, as the Agent call named it; empty for Claude's
+    /// own internal agents (a compaction's summary, a session's title).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_type: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

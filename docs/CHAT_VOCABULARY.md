@@ -65,7 +65,7 @@ kind is the [`ui_view::RowKind`](../crates/ui-view/src/rows.rs) variant the view
 | File created, deleted, moved | `FileChange` with `Created { lines }`, `Deleted`, `Moved { to }` | "Created path · 38 lines", "Deleted path", "Moved a → b". | partial: create and overwrite only | partial | full |
 | Tool call | `ToolCall { server, tool, fact, state, result }` | "Used github · create_issue" plus one fact, opening to input and result. | partial: name and text result | full | full |
 | Subagent started or stopped | `Child { action, name, host, kind, state, result }` | amux's own `spawn` and `stop` calls in their own words: "Started payment-tests on build · Codex", "Stopped copy-pass". The machine shows only when it is another one; a failure reads "Could not start …" and opens to why. amux's `agents` and `hosts` listings are the agent looking around, and hidden. | full | full | full |
-| Subagent | `Subagent { description, running, tool_count, last_tool, answer, duration_ms }` | Live while running ("12 tools · 48s · last: Read"), its answer once finished; its own steps are rows with a `parent`, collapsed under it. | partial | full | partial |
+| Subagent | `Subagent { description, running, tool_count, last_tool, answer, duration_ms }` | Live while running, its answer once finished. A Claude subagent's call opens the subagent's own chat; a Codex child's steps are rows with a `parent`, collapsed under it, counted while it runs ("12 tools · 48s · last: Read"). | partial | full | partial |
 | Background process | `Background { command, description, running }` | "Started in background npm run dev"; the running job is listed in the overview. | partial | partial | partial |
 | Image | `Image { image, path, generated }` | A thumbnail opening full size on the phone and on a terminal that can draw images; elsewhere a line that opens it. Codex can report generated images. | partial | partial | full |
 | Slash command output | `SlashOutput { command, args, output }` | The command, then its output block. | partial | partial | partial: a review's notices |
@@ -77,9 +77,10 @@ waiting on the person), `Pending` when it is announced, not started and asks nob
 `Cancelled`. A call still in flight when its agent exited is `Cancelled`: nothing runs it on. Each client words
 the phase and branches on it, never on its own words.
 
-A native subagent (Claude's Task tool, a Codex child thread) is drawn in the parent's transcript by the
-call that started it. A Codex child thread is also an agent of its own, with a chat its call row names
-(`CollabWork.agent_ids`), as an amux spawn is ([AGENT_TOOLS.md](AGENT_TOOLS.md)).
+A provider subagent (Claude's Agent tool, a Codex child thread) is an agent with a chat of its own, which the
+call that started it opens: Claude's call row names it (`ToolCall.child_agent_id`, see
+[INTERPRETERS.md](INTERPRETERS.md#claudes-subagents)) and a Codex collab row lists its children
+(`CollabWork.agent_ids`). An amux spawn makes an agent with a process of its own ([AGENT_TOOLS.md](AGENT_TOOLS.md)).
 
 ![Tool-server calls as steps: one running, one always allowed, one denied with its note under it, and one failed, opened to its result.](figures/vocabulary/row_tool_call.light.png)
 

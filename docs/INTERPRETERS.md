@@ -265,7 +265,8 @@ sub.end(IncarnationEnd { cause: ExitCause::Finished as i32, detail: None });
   subagent's own stoppable job in `background_jobs` and the body's job list,
   a notice) and stamps the kind, the clock and when the phase began; the step
   carries it only when it changed. `phase` is needs-you while one of its asks
-  is open, working otherwise: a running subagent takes no prompts.
+  is open, working otherwise: a running subagent takes no prompts. It leaves
+  the title out: the start carries it, and the daemon keeps it from there.
 - `open_ask`, `close_ask`, `close_asks_for_item`, `close_all_asks`, `asks`
   and `answer` keep its asks as `Shared` keeps the agent's, with the same
   stale-answer rule; `accept`, `reject` and `effect` reply and write to the
@@ -274,7 +275,8 @@ sub.end(IncarnationEnd { cause: ExitCause::Finished as i32, detail: None });
   snapshot first. A step that ends the incarnation ends every subagent still
   running, for the incarnation's cause, since the provider process running
   them is going. A resume re-emits a running subagent's open items and
-  snapshot, with no start.
+  snapshot, with no start. A new incarnation runs none of the last one's:
+  one it never ended takes that incarnation's end, which the journal holds.
 - `Shared::subagent_child(agent_id)` finds the provider's id of a running
   subagent from its agent id, and `Shared::running_subagents` lists them.
 
@@ -292,6 +294,75 @@ for that subagent, and replies by the input id with a `Reply` effect, as it
 does an `Input`. An interpreter that does not run its provider's subagents
 as agents yet refuses every one as `REFUSAL_UNSUPPORTED`; so does one whose
 subagent is not running.
+
+### Claude's subagents
+
+Both Claude kinds build a subagent's chat with one builder
+(`claude_subagent::Conversation`): its prompt, thinking, replies, and calls
+with their results, keyed as the agent's own are; its snapshot body is a
+`ClaudeSnapshot`. What differs is where the parts come from.
+
+**Headless Claude** forwards each subagent's frames on its own stream,
+tagged with the subagent's `agent_id` (the task id) and the call that
+started it.
+
+- A `task_started` of type `local_agent` starts the subagent, in the step
+  that draws its call's row, which gains `child_agent_id`: under the agent
+  for one the agent started, under its parent subagent for one whose
+  `parent_task_id` names another. Its title is the call's description. A
+  tagged frame of a subagent no `task_started` began starts it under the
+  call the frame names; one of a subagent that ended is dropped, as a stopped
+  task still flushes the refused result of the call it was in.
+- A `task_started` naming a SendMessage call, for a task id that ended,
+  continues it: a new start on the same agent, under its first call, and
+  the SendMessage row opens its chat too.
+- Its `task_notification` ends it: completed is finished, stopped or killed
+  is stopped, failed is the provider's exit with the reason. Claude answers
+  a notification with a turn of its own, so the agent reads working from
+  that step on. A resumed Claude's notice for a subagent of an earlier
+  process changes nothing: that process's end ended it.
+- A `can_use_tool` naming the subagent's `agent_id` opens the ask in its
+  chat, and the person's answer, a `ChildInput`, goes back as Claude's
+  control response to that request.
+- Its snapshot lists its own job (kind subagent, key its task id, stopping
+  and any stop error), foreground or background, and the shells it started
+  (`owned_by_subagent`). A `ChildInput` stopping that job sends Claude's
+  `stop_task`. The agent's own list names neither.
+- A call it makes to amux's status tool sets its own working-on line.
+
+**Terminal Claude** writes each subagent's conversation to a file of its
+own, `<session>/subagents/agent-<id>.jsonl`, beside its `meta.json`
+(`agent-<id>.meta.json`), which names the call that launched it and its
+parent subagent.
+
+- Claude's `SubagentStart` hook, which amux registers in its launch
+  settings, names the subagent, and the interpreter asks the agent process
+  to follow its file (`FollowSubagent`). One with an empty `agent_type` is
+  Claude's own helper (a compaction's summary, a title) and is nothing amux
+  shows. The agent process sends the meta first, then the file's user,
+  assistant and system rows, on the `SubagentTranscript` channel; a file it
+  can no longer read, or one shorter than what it read, becomes an error
+  item in the subagent's chat.
+- The subagent starts once its call's row is drawn, or at its first row or
+  ask; the call's row opens its chat once both are there.
+- It ends on its parent's notice that its task ended (the queued
+  notification or the notification row), on the refused result of the
+  Agent call it ran under in the foreground, or on the agent's exit.
+  Claude can write the notice before the subagent's last rows, so the end
+  waits for the file to be drained (`DrainSubagent`): it lands once the row
+  of the reply the notice quotes is read, once the agent process says it
+  read the file to its end, or after two seconds. `SubagentStop` is no end:
+  Claude raises it when a subagent's turn stops. A top-level subagent's
+  notice opens the agent's turn, as Claude answers it with one.
+- `SubagentStart` again for the same id is a continuation: a new start.
+- Its asks come from `PermissionRequest` hooks carrying its `agent_id`, and
+  its working-on line from its `PreToolUse` of amux's status tool.
+- Terminal Claude has no way to stop one subagent: it lists no job, and a
+  stop addressed to one is refused.
+
+A tool server's form goes to the one agent, of the host and its subagents,
+with a call to that server open; with more than one, or none, it is the
+agent's own.
 
 ## Background jobs
 
@@ -311,10 +382,13 @@ interpreter sets it from what its provider says:
   command and start. A task that finishes leaves the list. Tasks Claude
   marks ambient (its own housekeeping, such as memory consolidation) are
   nothing the person started: they are neither listed nor drawn.
-- **Terminal Claude** adds a job when a Bash result's `backgroundTaskId` or
-  a background subagent's launch says one started, lists its jobs in the
-  `Stop` hook at each turn's end, and drops one when its task notification
-  row arrives or, for a subagent, its `SubagentStop` hook.
+- **Terminal Claude** adds a job when a Bash result's `backgroundTaskId`
+  says one started, lists its jobs in the `Stop` hook at each turn's end,
+  and drops one when its task notification row arrives.
+
+A subagent is an agent of its own, never one of its host's jobs: a Claude
+subagent and a shell it started are listed in its own snapshot (see
+[Claude's subagents](#claudes-subagents)).
 - **Codex** is asked: at a turn's end with a command still running, the
   interpreter sends `thread/backgroundTerminals/list` (ids
   `amux-jobs-<n>-<page>`, following `nextCursor`) and publishes the commands
@@ -525,15 +599,14 @@ transcript row, in transcript order:
 - A user row of task-notification origin carries a background subagent's
   result onto the Agent call that launched it; that call stays running,
   across the end of the turn that launched it, until the notification
-  arrives.
+  arrives. The notification also ends the subagent (see
+  [Claude's subagents](#claudes-subagents)).
 - A prompt's row precedes the rows of the turn it began, so nothing waits for
   it.
 - The facts that end the main thread's work without saying how its asks
   went (the `Stop` hook, a turn's duration row, a task's notification, an
   interruption, a prompt typed outside amux) close its asks with their
-  outcome unknown, and spare those a subagent still running in the
-  background raised: Claude keeps that dialog open, so amux does, until the
-  subagent's `SubagentStop`.
+  outcome unknown. A subagent's asks are its own, and close with its end.
 
 The rest of the items a chat shows for terminal Claude do not come from hooks
 either: the agent-message item is written when the interpreter accepts the
@@ -554,8 +627,9 @@ Hooks carry only what the transcript never does:
 | `Elicitation` | A tool server asks for a form or a link while one of its calls runs. Claude waits on the hook before drawing its own dialog, so the ask, a form or link with an item of its own, is answered on the hook. Someone at Claude's own terminal must see the dialog: while a terminal client shows Claude's screen, the hook is let go as it arrives, and one that comes to the screen lets go of the hook that waits. Claude then draws its dialog, and the open ask is an unanswerable one saying it is answered there, while its item keeps the form or link. It closes cancelled on an interrupt through amux (which cancels it on the hook too), and dismissed, releasing the hook, on that call's result, a row from a later assistant message, or any fact that closes every ask. |
 | `MessageDisplay` | A batch of finished lines of the reply Claude is drawing. The first opens a message item keyed `stream:<message id>`, later ones append to it, and the reply's transcript row takes the item over, whole. The hook's message id is not the row's, but Claude writes rows in the order it draws replies, so the oldest reply not yet written is the next text row's; a row that lands before its reply's first batch keeps its own key, and the late batch draws nothing. Hooks and rows travel apart, so a reply's last batch can come after the row that ended its turn, even after the next prompt began; every hook names the prompt its turn answers, and a batch for a prompt whose turn is over draws nothing. A reply's first batch can also come before the row of the prompt it answers: a turn's batches wait from its prompt's `UserPromptSubmit` until a user row of that prompt lands, so the reply is drawn below the prompt. Likewise a reply can open after a call's `PostToolUse` but before the call's row is read (a gated call's row is written only once it is decided): a new reply's batches wait until the row of every call whose `PostToolUse` came first lands, so the reply is drawn below the call. A reply cut short with no row ends as drawn when the turn ends. |
 | `PostModelSwitch` | The model Claude switched to, as when plan mode moves to a bigger model, shown until the next assistant row names the model it ran. |
-| `Stop` | Lists the background jobs still running (see [background jobs](#background-jobs)), clears the running marks, and closes every ask still open with its outcome unknown, drawn dismissed until the call's result says how it went, except one raised by a subagent still running in the background, whose dialog Claude keeps open. It does **not** end the turn. |
-| `SubagentStop` | A subagent finished: it leaves the background jobs, and any ask it left open closes with its outcome unknown. |
+| `Stop` | Lists the background jobs still running (see [background jobs](#background-jobs)), clears the running marks, and closes every ask still open with its outcome unknown, drawn dismissed until the call's result says how it went. A subagent's asks are its own and stay open. It does **not** end the turn. |
+| `SubagentStart` | Names a subagent, started or continued, whose own file the agent then follows (see [Claude's subagents](#claudes-subagents)). |
+| `SubagentStop` | Not registered: Claude raises it when a subagent's turn stops, which is not its end. One a recording holds reads as nothing. |
 | `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | Mark a call running, and then not running, for the snapshot's running calls (the activity line while the call's row is on the way); `PreToolUse` also names the call an ask that follows is raised for. They never make a row, except `ExitPlanMode`'s, which opens the plan from its `PreToolUse` since Claude writes the plan's row only once it is decided. `PostToolUse`'s duration gives the call the time it began running, after any wait for approval (`started_at_ms`), which the call's result row carries. |
 | `UserPromptSubmit` | Input is live. |
 | `SessionEnd` | Closes every open ask with its outcome unknown. |
@@ -573,11 +647,10 @@ dialog was raised under has only been announced by `PreToolUse` and its row
 has not landed, the dialog's item waits for that row, so it sits below the
 call.
 
-A subagent's calls reach the hooks socket carrying its agent id and never
-reach the followed transcript. They are counted as steps on the Agent row
-that started the subagent, never drawn as rows of their own. An ask a
-subagent raises points at that Agent row and closes on the subagent's own
-`PostToolUse` for the call.
+A subagent's hooks carry its agent id, and its rows are in its own file, not
+the followed transcript: its calls, asks and status are its own chat's (see
+[Claude's subagents](#claudes-subagents)). An ask a subagent raises closes
+on its own `PostToolUse` for the call.
 
 ### Asks and answers
 
@@ -738,11 +811,8 @@ nothing is inferred.
   none and not of a person's origin, ends work of Claude's own (a peer's
   message, a task's notification) and changes nothing of the person's turn,
   its asks or its calls; one naming amux's message ends the turn whatever
-  began it. The result dismisses the main thread's asks still open. An ask a
-  subagent still running in the background raised (one naming its task's
-  `agent_id`, or whose call hangs under its call) stays open, as do that
-  subagent's calls, which finish after the turn; its asks close when its
-  task's notification says it ended.
+  began it. The result dismisses the main thread's asks still open. A
+  subagent's asks and calls are its own and outlive the turn.
 - **Boundaries.** Claude repeats its `init` at every turn; only a process
   start, a reset or a changed session id is a boundary. A
   `conversation_reset` (a `/clear`, leaving plan mode with its context
@@ -752,12 +822,11 @@ nothing is inferred.
   the boundary then shows, and which the agent saves (`ProviderSession`)
   for the next incarnation to resume. A session id that changes with no
   reset before it is a fork.
-- **Tasks.** A subagent or a shell in the background is reported as task
-  events naming the call that started it. They are progress on that call:
-  a subagent's steps on its Agent row, and the call stays running, across
-  the end of the turn that launched it, until the task's notification ends
-  it with the task's answer. A task whose call this interpreter never showed
-  is an item of its own.
+- **Tasks.** A shell in the background is reported as task events naming
+  the call that started it: the call stays running, across the end of the
+  turn that launched it, until the task's notification ends it with the
+  task's answer, as a background subagent's Agent call does. A task whose
+  call this interpreter never showed is an item of its own.
 - **Claude's words.** Claude says several of its fields may carry terminal
   escapes. Every field made of its words (the status word, a fallback's
   and a refusal's reason, a command's output, an ask's reason, description
@@ -765,14 +834,12 @@ nothing is inferred.
   cleaner, which drops CSI and OSC sequences in either form, the other
   escapes and every control character but a newline and a tab. Terminal
   Claude's `!command` and command output go through the same one.
-- **Subagents' frames.** A frame naming a `parent_tool_use_id` is a
-  subagent's, and is checked for that first: it starts no turn, sets no
-  model or context, and draws no text, thinking, error or interruption of
-  the main thread's; its tool calls are drawn under the call that started
-  it, and its stream events are skipped. A permission ask naming an
-  `agent_id` hangs under that subagent's call too. So a subagent working
-  in the background holds no turn open, and the person's next prompt goes
-  in at once.
+- **Subagents' frames.** A frame naming an `agent_id` or a
+  `parent_tool_use_id` is a subagent's, and is checked for that first: it
+  goes to that subagent's chat, starts no turn, sets no model or context of
+  the agent's, and its stream events are skipped. So a subagent working in
+  the background holds no turn open, and the person's next prompt goes in at
+  once.
 - **Usage.** A `rate_limit_event` states one window's status (its
   `rateLimitType`) and every window's use (`unifiedWindows`). The named
   window takes the status; every other keeps the last status stated for it,

@@ -17,6 +17,7 @@ mod claude_answers;
 mod claude_common;
 pub mod claude_pty;
 pub mod claude_sdk;
+mod claude_subagent;
 pub mod codex;
 mod golden;
 mod notice;
@@ -303,6 +304,21 @@ pub enum Effect {
     /// Claude in a terminal: a session started on this transcript file;
     /// the agent process tails it from now on.
     FollowTranscript { path: String },
+    /// Claude in a terminal: the subagent Claude calls `agent_id` started.
+    /// The agent process follows its own transcript, beside the followed
+    /// session's (`<session>/subagents/agent-<id>.jsonl`), from where an
+    /// earlier follower stopped: it reports the subagent's `meta.json`
+    /// first, then each row on the subagent transcript channel, and says so
+    /// if the file cannot be read.
+    FollowSubagent { agent_id: String },
+    /// Claude in a terminal: the subagent's parent learned it ended. The
+    /// agent process reads its file to its end, waiting a bounded moment
+    /// for a row whose reply is `last_reply` when a completed subagent
+    /// still owes it, and then says it has.
+    DrainSubagent {
+        agent_id: String,
+        last_reply: Option<String>,
+    },
     /// Headless Claude: the provider's session is now `id`, which the next
     /// incarnation resumes and later user messages name.
     ProviderSession { id: String },

@@ -155,6 +155,9 @@ pub struct Envelope {
     /// The session's plan-file name, once it has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slug: Option<String>,
+    /// On every row of a subagent's own transcript: the subagent's id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
 }
 
 /// A person's prompt, tool results, or text Claude adds on the person's
@@ -511,6 +514,13 @@ pub struct LastPromptRow {
 pub struct QueueOperationRow {
     pub session_id: String,
     pub timestamp: String,
+    /// `enqueue`, `dequeue` or `remove`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation: Option<String>,
+    /// What an `enqueue` queued: a prompt, or a background task's
+    /// notification for the model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

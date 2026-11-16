@@ -40,6 +40,11 @@ impl Install {
         done: impl Fn(&Log) -> bool,
     ) -> Result<(), String> {
         let mut answered = BTreeSet::new();
+        // A provider subagent is an agent of its own, whose asks are in its
+        // own session: each one a call row opens is followed too, and its
+        // asks answered through its own id.
+        let mut subagents: std::collections::BTreeMap<Vec<u8>, super::Follow> =
+            std::collections::BTreeMap::new();
         // A scenario may run two turns, with asks between.
         let deadline = tokio::time::Instant::now() + TURN * 2;
         loop {
@@ -47,10 +52,29 @@ impl Install {
             if done(&live) {
                 return Ok(());
             }
-            for ask in live.state(self.kind).asks {
-                if answered.insert(ask.key().to_owned()) {
-                    let of = self.answer_input(&ask, answer(&ask)?)?;
-                    self.input(agent, of).await?;
+            let mut opened = opened_subagents(self.kind, &live);
+            for followed in subagents.values() {
+                opened.extend(opened_subagents(self.kind, &followed.snapshot()));
+            }
+            for child in opened {
+                if let std::collections::btree_map::Entry::Vacant(entry) = subagents.entry(child) {
+                    let followed = self.follow(entry.key());
+                    entry.insert(followed);
+                }
+            }
+            let mut sessions = vec![(agent.to_vec(), live.clone())];
+            sessions.extend(
+                subagents
+                    .iter()
+                    .map(|(child, followed)| (child.clone(), followed.snapshot())),
+            );
+            for (asked, log) in sessions {
+                for ask in log.state(self.kind).asks {
+                    let key = (asked.clone(), ask.key().to_owned());
+                    if answered.insert(key) {
+                        let of = self.answer_input(&ask, answer(&ask)?)?;
+                        self.input(&asked, of).await?;
+                    }
                 }
             }
             if tokio::time::Instant::now() > deadline {
@@ -396,4 +420,32 @@ pub(super) fn question_records(kind: Kind, log: &Log) -> Vec<wire::AskClosed> {
         .filter(|ask| matches!(ask.ask, Some(wire::ask_item::Ask::Question(_))))
         .filter_map(|ask| ask.closed)
         .collect()
+}
+
+/// The provider subagents whose chats the call rows in `log` open.
+pub(super) fn opened_subagents(kind: Kind, log: &Log) -> Vec<Vec<u8>> {
+    log.ordered()
+        .into_iter()
+        .filter_map(|item| match ItemBody::decode(kind, &item.body) {
+            ItemBody::Claude(wire::claude_item::Kind::Tool(tool))
+                if !tool.child_agent_id.is_empty() =>
+            {
+                Some(tool.child_agent_id)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Whether a call row in `log` that opens a provider subagent's chat still
+/// runs: an Agent or SendMessage call runs until its subagent reports.
+pub(super) fn subagent_call_running(kind: Kind, log: &Log) -> bool {
+    log.ordered()
+        .into_iter()
+        .any(|item| match ItemBody::decode(kind, &item.body) {
+            ItemBody::Claude(wire::claude_item::Kind::Tool(tool)) => {
+                !tool.child_agent_id.is_empty() && tool.state() == wire::ToolState::Running
+            }
+            _ => false,
+        })
 }

@@ -128,6 +128,8 @@ pub const VOCABULARY: &[(&str, &[&str])] = &[
     ),
     ("kind", &["task-notification", "human", "peer"]),
     ("commandMode", &["prompt", "bash"]),
+    // What terminal Claude did to its queue of prompts.
+    ("operation", &["enqueue", "dequeue", "remove"]),
     ("promptSource", &["system", "user"]),
     ("checks", &["trustedAccessForCyber"]),
     (
@@ -1469,6 +1471,11 @@ impl Skeleton {
             Value::Number(_) => value.clone(),
             Value::String(text) => self
                 .embedded(text, at, key, kind)
+                .or_else(|| {
+                    (!at.tool && is_tool_name(key, kind))
+                        .then(|| self.server_tool_name(text))
+                        .flatten()
+                })
                 .or_else(|| (!at.server).then(|| self.framed(text)).flatten())
                 .unwrap_or_else(|| Value::String(self.string(text, at, key, kind))),
             Value::Array(items) => {
@@ -1770,6 +1777,24 @@ impl Skeleton {
             "=json": self.json(&json, inner, &Names::Own, "", "", key, kind),
             "bytes": text.len(),
         }))
+    }
+
+    /// A tool server's tool name, `mcp__<server>__<tool>`, as its pieces:
+    /// the server's name aliased as the server's name is wherever else it
+    /// is written (a form names the server that asks), so a replay still
+    /// tells which calls are that server's. None for any other name.
+    fn server_tool_name(&self, name: &str) -> Option<Value> {
+        let rest = name.strip_prefix("mcp__")?;
+        let (server, tool) = rest.split_once("__")?;
+        if server.is_empty() || tool.is_empty() || server == crate::AMUX_TOOL_SERVER {
+            return None;
+        }
+        Some(serde_json::json!({ "=text": [
+            "=mcp__",
+            self.alias("", server),
+            "=__",
+            self.alias("", tool),
+        ]}))
     }
 
     /// A tool's name as Claude writes it: a built-in tool's, or amux's own
@@ -2195,7 +2220,12 @@ mod tests {
         let blocks = &out["message"]["content"];
         assert_eq!(
             blocks[0]["name"],
-            format!("@mcp__@{}~12", SKELETON.hash(b"acme__lookup"))
+            json!({"=text": [
+                "=mcp__",
+                format!("@{}~4", SKELETON.hash(b"acme")),
+                "=__",
+                format!("@{}~6", SKELETON.hash(b"lookup")),
+            ]})
         );
         let mut input = Map::new();
         input.insert(h("customer", 8), h("secret", 6).into());

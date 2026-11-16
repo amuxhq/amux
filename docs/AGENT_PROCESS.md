@@ -71,6 +71,7 @@ agents/<agent id>/
     codex.sock           Codex's app server listens here; the agent is one client
     facts/               the facts ring and its checkpoints
     transcript-cursor    how far Claude's transcript has been read, and which file
+    subagent-cursors/    the same for each of terminal Claude's subagents' files, by its id
     provider-session     the provider's session or thread id, for the next incarnation
     provider.log         the provider child's stderr
 ```
@@ -329,7 +330,8 @@ provider left behind can hold a terminal or a pipe open forever, so after the
 exit the output already on its way is collected for 300 ms and the reader is
 abandoned, not joined. Before the exit is recorded, the agent feeds the
 interpreter everything the provider said first: events already queued, then
-any transcript rows a follower has not read yet.
+any transcript rows a follower has not read yet, the agent's own and then
+its subagents'.
 
 A provider's background jobs do not outlive the agent's exit: every provider
 ends them on SIGTERM, and the census kills any it left. A provider process killed on its
@@ -380,7 +382,7 @@ Claude is started through `pty_host::spawn` with the spec's arguments plus:
   program and its arguments with no shell between, as the hook command for
   `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PermissionRequest`,
   `PermissionDenied`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
-  `Stop`, `SubagentStop`, `Elicitation`, `MessageDisplay` and
+  `Stop`, `SubagentStart`, `Elicitation`, `MessageDisplay` and
   `PostModelSwitch`, the two that wait for a decision with a timeout of
   seven days, accepts messages from other sessions at once, and allows amux's own tools
   (all but `attach`, which asks like any read) and reading the agent's `blobs/` folder (where the files a person attaches
@@ -620,6 +622,21 @@ file every 25 ms, passes on whole lines only, and records its position in
 A later incarnation following the same file continues from the saved
 position, so a resumed session's rows are not read twice.
 
+Each subagent's conversation is a file of its own beside the transcript,
+`<session>/subagents/agent-<id>.jsonl`, with `agent-<id>.meta.json` naming
+the call that launched it. When Claude's `SubagentStart` hook names one, the
+interpreter asks the agent to follow its file (`FollowSubagent`), once per
+subagent, as a continued one writes on in the same file. Its follower sends
+the meta first (rows wait up to half a second for it), then the user,
+assistant and system rows, on the `subagent_transcript` channel; Claude's
+attachment and bookkeeping rows are not sent. Each keeps its own position in
+`private/subagent-cursors/<id>`. A file it can no longer read, or one now
+shorter than what it read, is reported once and followed no further. Claude
+can tell the agent a subagent finished before writing its last rows, so the
+interpreter asks for the file to be drained (`DrainSubagent`): the follower
+reads it to its end, waits up to two seconds for a completed subagent's
+final reply, and reports it drained.
+
 An agent message for terminal Claude goes onto Claude's messaging socket,
 which queues it the way Claude queues a peer's message. When the socket is
 not known yet or refuses the message, the agent pastes it into the terminal
@@ -785,6 +802,7 @@ terminal. `amux agent` exits 0 whatever the cause; 1 means it could not start
 | Provider asked to finish, then killed | 10 s | `PROVIDER_STOP_MS` in `agent-core` |
 | Output collected after a child exits | 300 ms | `TRAILING_OUTPUT` in `provider.rs` |
 | Transcript poll | 25 ms | `TRANSCRIPT_POLL` in `provider.rs` |
+| A subagent's rows wait for its meta; a drain waits for its final reply | 500 ms; 2 s | `META_WAIT`, `DRAIN_WAIT` in `claude/subagents.rs` |
 | Terminal Claude's first screen: quiet, cap | 100 ms, 500 ms | `FIRST_SCREEN_QUIET`, `FIRST_SCREEN_WAIT` in `provider.rs` |
 | Codex view asked to end, then killed | 2 s | `VIEW_STOP` in `attach.rs` |
 | Tool server retry window | 5 s | `RETRY_WINDOW` in `tools.rs` |

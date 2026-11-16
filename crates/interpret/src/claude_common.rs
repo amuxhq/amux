@@ -18,9 +18,9 @@ use wire::{
     ClaudeItem, ClaudeUsage, ContextMeter, DecisionOutcome, EditInput, Envelope, IncarnationEnd,
     Limit, NotebookCell, NotebookEditMode, OfferedCommand, OfferedModel, OfferedPermission,
     PatchHunk, Question, QuestionAsk, QuestionOption, Replacement, ScopeDestination, ShellInput,
-    SubagentProgress, TaskList, TaskListEntry, TaskListStatus, ToolCall, ToolClass, ToolDecision,
-    ToolInput, ToolServer, ToolServerStatus, ToolState, UsageState, attachment, claude_item,
-    codex_grant, tool_decision, tool_input,
+    TaskList, TaskListEntry, TaskListStatus, ToolCall, ToolClass, ToolDecision, ToolInput,
+    ToolServer, ToolServerStatus, ToolState, UsageState, attachment, claude_item, codex_grant,
+    tool_decision, tool_input,
 };
 
 use crate::{
@@ -409,6 +409,14 @@ pub(crate) fn describe_tool(tool: &ToolCall) -> String {
     if tool.background {
         text.push_str(" background");
     }
+    // The chat the call opens, named as the goldens name a subagent.
+    if !tool.child_agent_id.is_empty() {
+        let id = &tool.child_agent_id;
+        text.push_str(&format!(
+            " opens=sub-{}",
+            crate::to_hex(&id[..id.len().min(4)])
+        ));
+    }
     if let Some(subagent) = &tool.subagent {
         text.push_str(&format!(" subagent={}", subagent.tool_count));
         if !subagent.last_tool.is_empty() {
@@ -665,12 +673,6 @@ impl Jobs {
         self.lists += 1;
         self.known = true;
         self.published()
-    }
-
-    /// Whether task `task_id` is a job still running, as far as Claude
-    /// has said.
-    pub(crate) fn running(&self, task_id: &str) -> bool {
-        self.jobs.contains_key(task_id)
     }
 
     /// A stop was sent for task `task_id`. Returns the jobs to publish;
@@ -1693,8 +1695,10 @@ pub(crate) struct Tool<T> {
     /// When the call began running, after any wait for the person's
     /// approval.
     pub(crate) started_at_ms: Option<i64>,
-    /// The subagent call this one is a step of; empty on the main thread.
-    pub(crate) parent_key: String,
+    /// The provider subagent this call started or continued, by its agent
+    /// id: the chat its row opens. Empty on any other call.
+    #[serde(default, with = "serde_pb::bytes")]
+    pub(crate) child_agent_id: Vec<u8>,
     /// Drawn elsewhere than as a tool row: the status tool sets
     /// working_on, the task tools the task list, and a file written in
     /// plan mode is part of the plan.
@@ -1742,7 +1746,7 @@ impl<T> Tool<T> {
             decision: None,
             ended_at_ms: None,
             started_at_ms: None,
-            parent_key: String::new(),
+            child_agent_id: Vec::new(),
             images: Vec::new(),
             attached: Vec::new(),
             asked: None,
@@ -1762,12 +1766,14 @@ impl<T> Tool<T> {
     /// attached, and the structured result. The attach tool's element
     /// names the blob by this host's path, so the step carries the
     /// attachment instead.
+    /// Returns the blob writes for the images, which go in the step that
+    /// draws them.
     pub(crate) fn take_result(
         &mut self,
-        emit: &mut Emit,
         content: Option<&ToolResultBody>,
         result: Option<&Value>,
-    ) {
+    ) -> Vec<Effect> {
+        let mut writes = Vec::new();
         if crate::is_attach_tool(&self.server, &self.name) {
             let (text, attached) =
                 crate::shared::parse_reply(std::mem::take(&mut self.outcome_text));
@@ -1781,13 +1787,14 @@ impl<T> Tool<T> {
             self.images = Vec::new();
             for (image, write) in images {
                 self.images.push(image);
-                emit.effect(write);
+                writes.push(write);
             }
         }
         if let Some(result) = result.filter(|result| !result.is_null() && self.attached.is_empty())
         {
             self.outcome_json = compact_json(&without_image_bytes(result));
         }
+        writes
     }
 
     /// A built-in task tool's call and result applied to the task list.
@@ -1798,18 +1805,22 @@ impl<T> Tool<T> {
         }
     }
 
-    /// Emits the call's item, keyed `key`, if it is drawn and changed since
-    /// the last emission: a question or a plan as its ask, a message sent
-    /// with amux's tool as that message, anything else as a tool step.
-    pub(crate) fn emit(
-        &mut self,
-        shared: &mut Shared<Ask>,
-        emit: &mut Emit,
-        key: &str,
-        subagent: Option<SubagentProgress>,
-    ) {
+    /// Emits the call's item, keyed `key`, into the agent's own part, if it
+    /// is drawn and changed since the last emission.
+    pub(crate) fn emit(&mut self, shared: &mut Shared<Ask>, emit: &mut Emit, key: &str) {
+        if let Some(draft) = self.draft(key) {
+            shared.item(emit, draft);
+        }
+    }
+
+    /// The call's item, keyed `key`, when it is drawn and changed since the
+    /// last one: a question or a plan as its ask, a message sent with
+    /// amux's tool as that message, anything else as a tool step. Whose
+    /// part it goes in is the caller's: the agent's own, or one of its
+    /// provider subagents'.
+    pub(crate) fn draft(&mut self, key: &str) -> Option<ItemDraft> {
         if self.hidden {
-            return;
+            return None;
         }
         let mut draft = ItemDraft {
             key: key.to_owned(),
@@ -1818,14 +1829,10 @@ impl<T> Tool<T> {
             ..Default::default()
         };
         let body = if self.question {
-            let Some(item) = question_item(&self.input, self.asked.clone()) else {
-                return;
-            };
+            let item = question_item(&self.input, self.asked.clone())?;
             item_body(claude_item::Kind::Ask(item))
         } else if let Some(verdict) = &self.plan {
-            let Some((text, plan)) = plan_item(&self.input, verdict) else {
-                return;
-            };
+            let (text, plan) = plan_item(&self.input, verdict)?;
             draft.text = text;
             item_body(claude_item::Kind::Plan(plan))
         } else if crate::is_send_tool(&self.server, &self.name) {
@@ -1856,8 +1863,11 @@ impl<T> Tool<T> {
                 class: self.class,
                 decision: self.decision.clone(),
                 background: self.background,
-                parent_key: self.parent_key.clone(),
-                subagent,
+                // A provider subagent's steps are its own agent's items, and
+                // its live state is its own row's: a call names it by
+                // `child_agent_id` and folds nothing under itself.
+                parent_key: String::new(),
+                subagent: None,
                 server: self.server.clone(),
                 exit_code: None,
                 ended_at_ms: self.ended_at_ms,
@@ -1865,15 +1875,15 @@ impl<T> Tool<T> {
                 line: step.line,
                 started_at_ms: self.started_at_ms,
                 patch: step.patch,
-                child_agent_id: Vec::new(),
+                child_agent_id: self.child_agent_id.clone(),
             }))
         };
         if body == self.emitted {
-            return;
+            return None;
         }
         self.emitted = body.clone();
         draft.body = body;
-        shared.item(emit, draft);
+        Some(draft)
     }
 }
 

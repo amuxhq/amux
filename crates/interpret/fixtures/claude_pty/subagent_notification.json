@@ -1,5 +1,5 @@
 {
-  "about": "A subagent Claude runs in the background. Its launch returns at once; the Agent row stays running across the turn's end, counts the subagent's calls from hooks carrying its agent id (none drawn as rows of their own), shows the subagent's ask on it, and completes with the task notification's result. The notification is Claude's own message to the model: it is never a prompt item, and neither a prompt awaiting its reflection nor a steered entry is taken by it.",
+  "about": "A subagent Claude runs in the background. Its launch returns at once; the Agent row stays running across the turn's end and completes with the task notification's result. The subagent's calls and its ask, which hooks carrying its agent id name, are its own, in its own chat, not the agent's. The notification is Claude's own message to the model: it is never a prompt item, and neither a prompt awaiting its reflection nor a steered entry is taken by it.",
   "spec": {
     "created_at_ms": 1800000000000
   },
@@ -171,6 +171,44 @@
       "fact": {
         "channel": "hook",
         "json": {
+          "hook_event_name": "SubagentStart",
+          "session_id": "s1",
+          "agent_id": "ag1",
+          "agent_type": "general-purpose"
+        }
+      },
+      "expect": {
+        "items": [],
+        "effects": [
+          "follow subagent ag1"
+        ]
+      },
+      "note": "amux follows the subagent's own transcript"
+    },
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "subagent_meta",
+          "agent_id": "ag1",
+          "meta": {
+            "toolUseId": "toolu_agent",
+            "description": "Look around",
+            "spawnDepth": 1
+          }
+        }
+      },
+      "expect": {
+        "items": [
+          "toolu_agent"
+        ]
+      },
+      "note": "its meta names the call that launched it, whose row now opens its chat"
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
           "hook_event_name": "PreToolUse",
           "agent_id": "ag1",
           "agent_type": "general-purpose",
@@ -182,10 +220,9 @@
         }
       },
       "expect": {
-        "items": [
-          "toolu_agent"
-        ]
-      }
+        "items": []
+      },
+      "note": "the subagent's call is its own, not a row of the agent's"
     },
     {
       "fact": {
@@ -202,10 +239,9 @@
         }
       },
       "expect": {
-        "asks": [
-          "ask:1"
-        ]
-      }
+        "asks": []
+      },
+      "note": "the subagent's ask opens in its own chat"
     },
     {
       "fact": {
@@ -300,8 +336,21 @@
         "items": [
           "toolu_agent"
         ],
-        "phase": "WORKING"
+        "phase": "WORKING",
+        "effects": [
+          "drain subagent ag1 until \"A command-line multiplexer for agents.\""
+        ]
       }
+    },
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "subagent_drained",
+          "agent_id": "ag1"
+        }
+      },
+      "note": "the subagent's file is read to its end: it finishes"
     },
     {
       "fact": {

@@ -57,7 +57,7 @@ const CODEX_WRITER_WAIT: Duration = Duration::from_secs(30);
 /// The pause before asking again for a thread another server holds.
 const CODEX_WRITER_RETRY: Duration = Duration::from_millis(250);
 /// How often a followed transcript is read for new rows.
-const TRANSCRIPT_POLL: Duration = Duration::from_millis(25);
+pub(crate) const TRANSCRIPT_POLL: Duration = Duration::from_millis(25);
 
 /// What the provider did.
 #[derive(Debug)]
@@ -145,6 +145,10 @@ pub struct Provider {
     dir: PathBuf,
     events: mpsc::Sender<ProviderEvent>,
     followers: Vec<Follower>,
+    /// The transcript followed last, beside which Claude writes its
+    /// subagents' files.
+    transcript: Option<PathBuf>,
+    subagents: crate::claude::subagents::Followers,
     /// Every process below the provider when it was asked to finish, killed
     /// once it has exited if still running (see the tree module).
     census: Vec<tree::Descendant>,
@@ -301,6 +305,8 @@ impl Provider {
             dir: dir.to_owned(),
             events,
             followers: Vec::new(),
+            transcript: None,
+            subagents: Default::default(),
             census: Vec::new(),
         };
         // Claude reports nothing until it is asked; its answer is what says
@@ -575,6 +581,8 @@ impl Provider {
             dir: dir.to_owned(),
             events,
             followers: Vec::new(),
+            transcript: None,
+            subagents: Default::default(),
             census: Vec::new(),
         })
     }
@@ -725,6 +733,8 @@ impl Provider {
             dir: dir.to_owned(),
             events,
             followers: Vec::new(),
+            transcript: None,
+            subagents: Default::default(),
             census: Vec::new(),
         })
     }
@@ -768,7 +778,22 @@ impl Provider {
                 if let Some(session) = path.file_stem().and_then(|stem| stem.to_str()) {
                     self.adopt_session(session).await;
                 }
+                self.transcript = Some(path.clone());
                 self.follow(path);
+                Ok(())
+            }
+            Effect::FollowSubagent { agent_id } => {
+                if let Some(transcript) = &self.transcript {
+                    self.subagents
+                        .follow(&self.dir, transcript, &agent_id, &self.events);
+                }
+                Ok(())
+            }
+            Effect::DrainSubagent {
+                agent_id,
+                last_reply,
+            } => {
+                self.subagents.drain(&agent_id, last_reply, &self.events);
                 Ok(())
             }
             Effect::Terminal(input) => {
@@ -966,14 +991,8 @@ impl Provider {
     /// resumed session's old rows are not read twice; any other from its
     /// start. The position is kept in private/ after every row.
     fn follow(&mut self, path: PathBuf) {
-        let cursor = Cursor {
-            file: self.dir.join(dir::PRIVATE).join(dir::TRANSCRIPT_CURSOR),
-            offset: Arc::new(std::sync::Mutex::new(saved_cursor(
-                &self.dir.join(dir::PRIVATE).join(dir::TRANSCRIPT_CURSOR),
-                &path,
-            ))),
-            path,
-        };
+        let file = self.dir.join(dir::PRIVATE).join(dir::TRANSCRIPT_CURSOR);
+        let cursor = Cursor::new(file.clone(), saved_cursor(&file, &path), path);
         let events = self.events.clone();
         let reading = cursor.clone();
         let task = tokio::spawn(async move {
@@ -1005,9 +1024,10 @@ impl Provider {
         self.followers.push(Follower { cursor, task });
     }
 
-    /// Stops following and returns the rows the followers had not read:
-    /// the provider has exited, so its transcripts are complete, and rows
-    /// it wrote just before exiting must not be lost to the poll interval.
+    /// Stops following and returns the rows the followers had not read,
+    /// the agent's own and then its subagents': the provider has exited, so
+    /// its transcripts are complete, and rows it wrote just before exiting
+    /// must not be lost to the poll interval.
     pub async fn finish_transcripts(&mut self) -> Vec<Fact> {
         let mut rows = Vec::new();
         for follower in std::mem::take(&mut self.followers) {
@@ -1024,6 +1044,7 @@ impl Provider {
                 });
             }
         }
+        rows.extend(self.subagents.finish(&self.events).await);
         rows
     }
 
@@ -1203,13 +1224,46 @@ struct Follower {
 
 /// How far a transcript has been read, kept in private/ as it moves.
 #[derive(Clone)]
-struct Cursor {
+pub(crate) struct Cursor {
     path: PathBuf,
     file: PathBuf,
     offset: Arc<std::sync::Mutex<usize>>,
 }
 
 impl Cursor {
+    /// The cursor kept in `file` for the transcript `path`, read to
+    /// `offset`.
+    pub(crate) fn new(file: PathBuf, offset: usize, path: PathBuf) -> Self {
+        Self {
+            path,
+            file,
+            offset: Arc::new(std::sync::Mutex::new(offset)),
+        }
+    }
+
+    /// The whole rows written past the cursor, as [`Cursor::new_rows`]
+    /// reads them, or why the file cannot be read on: an error reading it,
+    /// or a file gone or shorter than what was read already, which Claude
+    /// never does to a transcript it writes. A file not written yet has no
+    /// rows.
+    pub(crate) fn unread(&self) -> Result<Vec<Vec<u8>>, String> {
+        let offset = *self.offset.lock().expect("cursor lock");
+        let bytes = match std::fs::read(&self.path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == io::ErrorKind::NotFound && offset == 0 => {
+                return Ok(Vec::new());
+            }
+            Err(error) => return Err(error.to_string()),
+        };
+        if bytes.len() < offset {
+            return Err(format!(
+                "the file is {} bytes, shorter than the {offset} already read",
+                bytes.len()
+            ));
+        }
+        Ok(whole_rows(&bytes[offset..]))
+    }
+
     /// The whole rows written past the cursor; a row still being written
     /// waits for the next read.
     fn new_rows(&self) -> Vec<Vec<u8>> {
@@ -1220,20 +1274,18 @@ impl Cursor {
         let Some(unread) = bytes.get(offset..) else {
             return Vec::new();
         };
-        let Some(end) = unread.iter().rposition(|byte| *byte == b'\n') else {
-            return Vec::new();
-        };
-        unread[..end]
-            .split(|byte| *byte == b'\n')
-            .map(<[u8]>::to_vec)
-            .collect()
+        whole_rows(unread)
     }
 
     /// Moves past one row and its newline; an empty row is skipped the
     /// same way, and never sent. The position is the state a resumed
     /// session reads on from, so a position that cannot be kept ends the
     /// incarnation; false says it could not be.
-    async fn advance(&self, events: &mpsc::Sender<ProviderEvent>, length: usize) -> bool {
+    pub(crate) async fn advance(
+        &self,
+        events: &mpsc::Sender<ProviderEvent>,
+        length: usize,
+    ) -> bool {
         let saved = {
             let mut offset = self.offset.lock().expect("cursor lock");
             *offset += length;
@@ -1252,9 +1304,21 @@ impl Cursor {
     }
 }
 
+/// The rows of `unread` its last newline ends; what follows it is still
+/// being written.
+fn whole_rows(unread: &[u8]) -> Vec<Vec<u8>> {
+    let Some(end) = unread.iter().rposition(|byte| *byte == b'\n') else {
+        return Vec::new();
+    };
+    unread[..end]
+        .split(|byte| *byte == b'\n')
+        .map(<[u8]>::to_vec)
+        .collect()
+}
+
 /// Where an earlier follower of `path` stopped; the start for any other
 /// file, or one that is shorter now.
-fn saved_cursor(cursor: &Path, path: &Path) -> usize {
+pub(crate) fn saved_cursor(cursor: &Path, path: &Path) -> usize {
     let Ok(saved) = std::fs::read_to_string(cursor) else {
         return 0;
     };

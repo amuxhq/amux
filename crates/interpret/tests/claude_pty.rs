@@ -85,7 +85,7 @@ goldens! {
     answers_through_amux_become_hook_decisions => "answers",
     semantic_inputs_become_effects => "inputs",
     send_now_steers_a_queued_prompt_into_the_running_turn => "steering",
-    background_subagent_answers_on_its_agent_row => "subagent_notification",
+    a_background_subagent_completes_with_its_notification => "subagent_notification",
     boundaries_carry_the_provider_session_and_version => "boundaries",
     rows_no_recording_shows => "rows",
     a_tool_servers_form_or_link_is_answered_through_its_hook => "elicitation",
@@ -806,8 +806,9 @@ fn a_model_switch_shows_before_the_next_turn() {
 /// then the main agent's turn stops with that subagent still running, as QA
 /// recorded on 2.1.296 (hook order: the subagent's PermissionRequest, then
 /// the main Stop listing it under background_tasks). Claude's own view
-/// keeps the subagent's dialog open; amux keeps the ask open too, so a
-/// person can answer it, and does not call the agent idle.
+/// keeps the subagent's dialog open; amux keeps the ask open in the
+/// subagent's own chat, which needs the person, while the agent itself
+/// holds no ask.
 #[test]
 fn a_background_subagents_ask_stays_open_past_the_main_turns_stop() {
     use prost::Message as _;
@@ -836,7 +837,8 @@ fn a_background_subagents_ask_stays_open_past_the_main_turns_stop() {
     let (mut state, _) = ClaudePty::initial(&spec);
     let command = serde_json::json!({"command": "python3 -c 'import time; time.sleep(60)'", "description": "Sleep"});
     let mut last = None;
-    let mut seen = Vec::new();
+    let mut host_asks = 0;
+    let mut ended = false;
     for event in [
         with(
             serde_json::json!({"hook_event_name": "SessionStart", "source": "startup", "model": "claude-haiku-5-5"}),
@@ -868,17 +870,28 @@ fn a_background_subagents_ask_stays_open_past_the_main_turns_stop() {
             "background_tasks": [{"id": "a7aebc", "type": "subagent", "status": "running", "description": "Run a 60-second sleep", "agent_type": "general-purpose"}]}),
         ),
     ] {
-        if let Some(snapshot) = ClaudePty::step(&mut state, event).step.snapshot {
-            let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
-            last = Some((snapshot.phase(), body.asks.len()));
-            seen.push(last.unwrap());
+        let step = ClaudePty::step(&mut state, event).step;
+        if let Some(snapshot) = &step.snapshot {
+            host_asks = wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
+                .unwrap()
+                .asks
+                .len();
+        }
+        for part in &step.agents {
+            ended |= part.end.is_some();
+            if let Some(snapshot) = &part.snapshot {
+                let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
+                last = Some((snapshot.phase(), body.asks.len()));
+            }
         }
     }
-    let (phase, asks) = last.expect("a snapshot");
-    assert!(
-        asks > 0 && phase != wire::Phase::Idle,
-        "the subagent's ask is not open once the main turn stops: phase {phase:?}, {asks} asks; every snapshot (phase, asks): {seen:?}"
+    assert_eq!(
+        last,
+        Some((wire::Phase::NeedsYou, 1)),
+        "the subagent's ask is not open in its chat once the main turn stops"
     );
+    assert!(!ended, "the main turn's stop ends the subagent");
+    assert_eq!(host_asks, 0, "the agent holds its subagent's ask");
 }
 
 // --- terminal Claude's turn, permission, effort and conversation follow its
@@ -1114,11 +1127,13 @@ fn a_prompt_is_refused_while_claude_shows_a_conversation_that_is_not_this_agents
     );
 }
 
-/// A subagent Claude ran in the background is listed at the main turn's
-/// Stop; when it finishes, Claude's SubagentStop hook names it, and the
-/// background list drops it then rather than at some later turn's end.
+/// A subagent Claude lists at the main turn's Stop is an agent of its own,
+/// not one of the agent's background jobs, and terminal Claude offers no
+/// way to stop it. Its SubagentStop hook is not its end either: Claude
+/// fires it when the subagent's turn stops, and a continued subagent runs
+/// again under the same id.
 #[test]
-fn a_finished_background_subagent_leaves_the_background_list() {
+fn a_subagent_is_no_background_job_and_its_stop_hook_does_not_end_it() {
     let (mut state, _) = started_claude();
     let common = |extra: serde_json::Value| {
         let mut value = serde_json::json!({
@@ -1132,7 +1147,14 @@ fn a_finished_background_subagent_leaves_the_background_list() {
         hook(value)
     };
     let mut listed = Vec::new();
+    let mut ended = false;
     for event in [
+        common(serde_json::json!({"hook_event_name": "SubagentStart",
+            "agent_id": "a7aebc", "agent_type": "general-purpose"})),
+        common(
+            serde_json::json!({"hook_event_name": "PermissionRequest", "agent_id": "a7aebc",
+            "agent_type": "general-purpose", "tool_name": "Bash", "tool_input": {"command": "sleep 60"}}),
+        ),
         common(
             serde_json::json!({"hook_event_name": "Stop", "stop_hook_active": false,
             "last_assistant_message": "Started a subagent.",
@@ -1146,20 +1168,21 @@ fn a_finished_background_subagent_leaves_the_background_list() {
             "last_assistant_message": "Slept."}),
         ),
     ] {
-        if let Some((_, snapshot)) = decoded(&ClaudePty::step(&mut state, event)) {
-            listed.push(snapshot.background_jobs.unwrap_or_default().jobs.len());
+        let stepped = ClaudePty::step(&mut state, event);
+        if let Some((_, snapshot)) = decoded(&stepped) {
+            listed.extend(snapshot.background_jobs.unwrap_or_default().jobs);
+        }
+        for part in &stepped.step.agents {
+            ended |= part.end.is_some();
+            if let Some(snapshot) = &part.snapshot {
+                use prost::Message as _;
+                let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
+                listed.extend(body.background_jobs.unwrap_or_default().jobs);
+            }
         }
     }
-    assert_eq!(
-        listed.first().copied(),
-        Some(1),
-        "the Stop hook lists the subagent: {listed:?}"
-    );
-    assert_eq!(
-        listed.last().copied(),
-        Some(0),
-        "the finished subagent stays in the background list: {listed:?}"
-    );
+    assert!(listed.is_empty(), "a job lists the subagent: {listed:?}");
+    assert!(!ended, "the SubagentStop hook ends the subagent");
 }
 
 /// A command that waited a minute for the person's approval and then ran
@@ -1623,17 +1646,22 @@ fn user_row(uuid: &str, content: &str, extra: serde_json::Value) -> serde_json::
 /// Four facts end the main thread's work in the terminal: its turn's
 /// duration row, another task's notification, an interruption and a
 /// prompt typed outside amux. None of them ends a subagent still running
-/// in the background, so none closes the ask it raised; its own stop does.
+/// in the background, so none closes the ask it raised; its own end does.
 #[test]
 fn a_background_subagents_ask_survives_every_end_of_the_main_threads_work() {
     use prost::Message as _;
     let open_asks = |stepped: &interpret::Stepped| {
-        stepped.step.snapshot.as_ref().map(|snapshot| {
-            wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
-                .unwrap()
-                .asks
-                .len()
-        })
+        stepped
+            .step
+            .agents
+            .iter()
+            .find_map(|part| part.snapshot.as_ref())
+            .map(|snapshot| {
+                wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
+                    .unwrap()
+                    .asks
+                    .len()
+            })
     };
     let notified = user_row(
         "n1",
@@ -1664,15 +1692,25 @@ fn a_background_subagents_ask_survives_every_end_of_the_main_threads_work() {
         "these closed the subagent's ask: {closing:?}"
     );
     let mut state = a_background_subagents_open_ask();
-    let stopped = ClaudePty::step(
-        &mut state,
-        hook(serde_json::json!({
-            "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
-            "hook_event_name": "SubagentStop", "agent_id": "a7aebc", "agent_type": "general-purpose",
-            "stop_hook_active": false,
-        })),
+    let killed = user_row(
+        "n2",
+        "<task-notification><task-id>a7aebc</task-id><tool-use-id>toolu_agent</tool-use-id><status>killed</status><summary>stopped</summary></task-notification>",
+        serde_json::json!({"origin": {"kind": "task-notification"}}),
     );
-    assert_eq!(open_asks(&stopped), Some(0), "its own stop closes it");
+    ClaudePty::step(&mut state, transcript_row(killed));
+    let drained = ClaudePty::step(
+        &mut state,
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::subagent_drained_fact("a7aebc"),
+        }),
+    );
+    assert_eq!(open_asks(&drained), Some(0), "its own end closes it");
+    let end = drained.step.agents[0]
+        .end
+        .clone()
+        .expect("the subagent ends");
+    assert_eq!(end.cause(), wire::ExitCause::Stopped);
 }
 
 /// The notice that an organization's policy withholds amux's tools holds
@@ -1934,4 +1972,99 @@ fn a_first_prompt_is_drawn_while_terminal_claude_starts_and_typed_once() {
         recorded.step.items
     );
     assert!(!Kind::typed_unrecorded(&state), "the prompt was reflected");
+}
+
+/// A subagent's ask can come before any row of its file: it opens in the
+/// subagent's own chat with no item, as the agent's own ask does before
+/// its call's row lands, and points at the call once the subagent's row
+/// for it is read. The agent itself holds no ask.
+#[test]
+fn a_subagents_ask_before_its_rows_opens_in_its_chat_and_binds_to_the_row() {
+    use prost::Message as _;
+    let (mut state, _) = started_claude();
+    let with = |extra: serde_json::Value| {
+        let mut value = serde_json::json!({
+            "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl",
+            "cwd": "/w", "prompt_id": "p1", "permission_mode": "default",
+        });
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        hook(value)
+    };
+    let subagent_row = |row: serde_json::Value| {
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::SubagentTranscript,
+            payload: row.to_string().into_bytes(),
+        })
+    };
+    let asks = |stepped: &interpret::Stepped| {
+        stepped
+            .step
+            .agents
+            .iter()
+            .find_map(|part| part.snapshot.as_ref())
+            .map(|snapshot| {
+                let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
+                let asks: Vec<String> = body.asks.iter().map(|ask| ask.item_key.clone()).collect();
+                (snapshot.phase(), asks)
+            })
+    };
+    let command = serde_json::json!({"command": "touch done.txt"});
+    for event in [
+        with(
+            serde_json::json!({"hook_event_name": "SubagentStart", "agent_id": "a1", "agent_type": "toucher"}),
+        ),
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::subagent_meta_fact(
+                "a1",
+                serde_json::json!({"toolUseId": "toolu_agent", "description": "Touch"}),
+            ),
+        }),
+        with(
+            serde_json::json!({"hook_event_name": "PreToolUse", "agent_id": "a1", "agent_type": "toucher",
+            "tool_name": "Bash", "tool_use_id": "toolu_sub", "tool_input": command}),
+        ),
+    ] {
+        ClaudePty::step(&mut state, event);
+    }
+    let asked = ClaudePty::step(
+        &mut state,
+        with(
+            serde_json::json!({"hook_event_name": "PermissionRequest", "agent_id": "a1",
+            "agent_type": "toucher", "tool_name": "Bash", "tool_input": command}),
+        ),
+    );
+    assert_eq!(
+        asks(&asked),
+        Some((wire::Phase::NeedsYou, vec![String::new()])),
+        "the subagent's ask, with no item yet, is not open in its chat"
+    );
+    if let Some((_, host)) = decoded(&asked) {
+        assert!(host.asks.is_empty(), "the agent holds its subagent's ask");
+    }
+    ClaudePty::step(
+        &mut state,
+        subagent_row(serde_json::json!({
+            "type": "user", "uuid": "su1", "timestamp": "2026-10-12T08:00:01.000Z",
+            "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+            "message": {"role": "user", "content": "Touch done.txt."},
+        })),
+    );
+    let drawn = ClaudePty::step(
+        &mut state,
+        subagent_row(serde_json::json!({
+            "type": "assistant", "uuid": "sa1", "timestamp": "2026-10-12T08:00:02.000Z",
+            "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+            "message": {"id": "msg_1", "role": "assistant", "model": "claude-haiku-5-5",
+                "content": [{"type": "tool_use", "id": "toolu_sub", "name": "Bash", "input": command}]},
+        })),
+    );
+    assert_eq!(
+        asks(&drawn),
+        Some((wire::Phase::NeedsYou, vec!["toolu_sub".to_owned()])),
+        "the ask does not point at its call once the call's row is read"
+    );
 }

@@ -606,6 +606,9 @@ impl<A: OpenAsk> Shared<A> {
         self.provider_titles = !spec.name_given;
         // A new provider process runs nothing in the background yet.
         self.set_jobs(Vec::new());
+        // Nor any subagent of the last one. One that process never ended
+        // takes the end of its incarnation, which the journal holds.
+        self.subagents.clear();
         self.now_ms = self.now_ms.max(spec.created_at_ms);
         self.fresh = false;
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap)
@@ -857,6 +860,24 @@ impl<A: OpenAsk> Shared<A> {
             .iter()
             .find(|(_, native)| native.started && native.agent == agent_id)
             .map(|(child, _)| child.as_str())
+    }
+
+    /// The open asks of the running subagent `provider_child_id`, read
+    /// without taking its view: an interpreter that keeps its own record
+    /// of an ask finds here which agent holds it. None for a subagent not
+    /// running.
+    pub fn subagent_asks(&self, provider_child_id: &str) -> Option<&Asks<A>> {
+        self.subagents
+            .get(provider_child_id)
+            .filter(|native| native.started)
+            .map(|native| &native.asks)
+    }
+
+    /// Whether the subagent `provider_child_id` has started and not ended.
+    pub fn subagent_running(&self, provider_child_id: &str) -> bool {
+        self.subagents
+            .get(provider_child_id)
+            .is_some_and(|native| native.started)
     }
 
     /// The provider's ids of the subagents running, in their order.

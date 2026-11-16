@@ -2,30 +2,32 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 14 recorded 12: fact Transcript type=user uuid=e7a23bcf-f670-43bc-ac6d-edf9594a46c0
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 45 recorded 43: fact Transcript type=assistant uuid=0b121dfc-2b2e-4a44-89d8-c533c8920562
-  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
-## 68 recorded 66: fact Transcript type=system subtype=turn_duration uuid=fa516b06-e1ba-467f-bc1d-421652a8bc89
-  composer Send activity=None queue=[] underway=[] refused=[]
-## 73 recorded 71: fact Transcript type=user uuid=eff6fb7e-edf8-4d8d-8d83-cc0be847a643
+## 47 recorded 45: fact Transcript type=assistant uuid=0b121dfc-2b2e-4a44-89d8-c533c8920562
+  composer Send activity=Some(Running { key: "toolu_01ScajtpGUSxJ5wGGDbyi5mj" }) queue=[] underway=[] refused=[]
+## 62 recorded 60: fact Hook hook_event_name=MessageDisplay
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 80 recorded 78: fact Transcript type=system subtype=turn_duration uuid=18cfa1ec-6113-4f16-8871-7119897cd383
+## 74 recorded 72: fact Transcript type=system subtype=turn_duration uuid=fa516b06-e1ba-467f-bc1d-421652a8bc89
   composer Send activity=None queue=[] underway=[] refused=[]
-## 89 recorded 87: fact Transcript type=user uuid=2cc29ee4-a6a6-4558-8016-c683f2e26f33
+## 76 recorded 74: fact Transcript type=queue-operation
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 92 recorded 90: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01FToX5ZAtVt7pWXpZtBpjTu
+## 87 recorded 85: fact Transcript type=system subtype=turn_duration uuid=18cfa1ec-6113-4f16-8871-7119897cd383
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 96 recorded 94: fact Transcript type=user uuid=2cc29ee4-a6a6-4558-8016-c683f2e26f33
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 99 recorded 97: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01FToX5ZAtVt7pWXpZtBpjTu
   composer Send activity=Some(Running { key: "toolu_01FToX5ZAtVt7pWXpZtBpjTu" }) queue=[] underway=[] refused=[]
-## 101 recorded 99: fact Transcript type=user uuid=04f9d6d8-338b-4b71-b50d-e812a126cd05
+## 110 recorded 108: fact Transcript type=user uuid=04f9d6d8-338b-4b71-b50d-e812a126cd05
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 110 recorded 108: fact Transcript type=system subtype=turn_duration uuid=8308f3de-377e-4554-a10b-ffe5b6fcc36f
+## 120 recorded 118: fact Transcript type=system subtype=turn_duration uuid=8308f3de-377e-4554-a10b-ffe5b6fcc36f
   composer Send activity=None queue=[] underway=[] refused=[]
-## 118 recorded 116: fact Transcript type=user uuid=9b290baf-cba4-406a-90ba-55cc79e6d745
+## 128 recorded 126: fact Transcript type=queue-operation
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 127 recorded 125: fact Transcript type=system subtype=turn_duration uuid=a2933709-a9f0-473b-addb-08546ca83848
+## 141 recorded 139: fact Transcript type=system subtype=turn_duration uuid=a2933709-a9f0-473b-addb-08546ca83848
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
      2 e7a23bcf-f670-43bc-ac6d-edf9594a46c0 Prompt { text: [Text("Launch the `counter` subagent and wait for its answer. Then reply with exactly what it said.")], steered: false }
-     3 toolu_01ScajtpGUSxJ5wGGDbyi5mj Subagent { description: "Run counter subagent", running: false, tool_count: 0, last_tool: "", answer: "ONE TWO THREE", duration_ms: Some(1696) } run[toolu_01ScajtpGUSxJ5wGGDbyi5mj..toolu_01ScajtpGUSxJ5wGGDbyi5mj x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0 }]
+     3 toolu_01ScajtpGUSxJ5wGGDbyi5mj Subagent { description: "Run counter subagent", running: true, tool_count: 0, last_tool: "", answer: "ONE TWO THREE", duration_ms: Some(1575) } run[toolu_01ScajtpGUSxJ5wGGDbyi5mj..toolu_01ScajtpGUSxJ5wGGDbyi5mj x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0 }]
      4 stream:bcad12a6-f2a9-4d67-8a44-5619385676f0 Prose { text: [Text("The `counter` subagent is running in the background. I'll give you its exact reply once it finishes.")], streaming: false, working_note: false }
      5 turn:1 TurnEnd { duration_ms: Some(3634), failed: false }
      6 a4c53b98-67b6-4857-82b3-b2047bba1a02 Prose { text: [Text("ONE TWO THREE")], streaming: false, working_note: false }

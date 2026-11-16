@@ -114,6 +114,9 @@ wire_struct!(AssistantMessage {
     #[serde(default)] pub request_id: Option<String>,
     #[serde(default)] pub user_message_uuid: Option<String>,
     #[serde(default)] pub timestamp: Option<String>,
+    /// The subagent whose frame this is, when Claude forwards a subagent's
+    /// conversation; its task id. Absent on the main thread's.
+    #[serde(default)] pub agent_id: Option<String>,
 });
 
 wire_struct!(UserMessageOutput {
@@ -125,6 +128,8 @@ wire_struct!(UserMessageOutput {
     #[serde(default)] pub priority: Option<String>,
     #[serde(default)] pub origin: Option<serde_json::Value>,
     #[serde(default)] pub timestamp: Option<String>,
+    /// The subagent whose frame this is, as on an assistant frame.
+    #[serde(default)] pub agent_id: Option<String>,
 });
 
 wire_struct!(UserMessageReplay {
@@ -279,6 +284,12 @@ wire_struct!(TaskStartedMessage {
     #[serde(default)] pub task_type:Option<String>,
     #[serde(default)] pub prompt:Option<String>,
     #[serde(default)] pub ambient:Option<bool>,pub uuid:String,#[serde(default="crate::absent::session_id")] pub session_id:String,
+    /// The subagent whose call started this task: a nested subagent's
+    /// parent, or the subagent a shell runs for. Absent for the main
+    /// thread's.
+    #[serde(default)] pub parent_task_id:Option<String>,
+    /// How deep the subagent sits: 1 for one the main thread started.
+    #[serde(default)] pub spawn_depth:Option<u32>,
 });
 wire_struct!(TaskPatch {
     #[serde(default)] pub status:Option<String>,

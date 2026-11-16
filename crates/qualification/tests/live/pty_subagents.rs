@@ -45,6 +45,7 @@ fn heard_from_all(kind: Kind, turns: usize) -> impl Fn(&Log) -> bool {
         let settled = log.phase() == Phase::Idle
             && state.asks.is_empty()
             && state.background.jobs.is_empty()
+            && !super::asks::subagent_call_running(kind, log)
             && log.turns(kind).len() >= turns;
         let mut last = last.lock().unwrap();
         let seen = (log.ordered().len(), log.snapshots.len());
@@ -136,7 +137,7 @@ impl Install {
         .await?;
         follow
             .until(TURN, "the subagent to run in the background", |log| {
-                log.phase() == Phase::Idle && !log.state(kind).background.jobs.is_empty()
+                log.phase() == Phase::Idle && super::asks::subagent_call_running(kind, log)
             })
             .await
     }
@@ -150,10 +151,13 @@ impl Install {
         Ok(())
     }
 
-    /// Three subagents started in one message, each running tools.
+    /// Three subagents started in one message, each running tools, one of
+    /// them asking before a command, which amux allows on its own chat.
     pub(super) async fn pty_subagents_parallel(&self) -> Result<Verdict, String> {
         let scenario = Scenario::PtySubagentsParallel;
         self.pty_words(scenario)?;
+        let effect = self.project(scenario)?.join("c-read.txt");
+        let mut asked = 0;
         let (_, follow) = match self
             .pty_delegated(
                 scenario,
@@ -161,9 +165,10 @@ impl Install {
                     "reader": {
                         "description": "Reads one file and reports the word in it.",
                         "prompt": "Read the file you are given with the Read tool, then list \
-                                   the .txt files in the working directory with Glob, then \
-                                   reply with exactly the word the file holds.",
-                        "tools": ["Read", "Glob"],
+                                   the .txt files in the working directory with Glob. If you \
+                                   were given c.txt, also use Bash to run exactly: touch \
+                                   c-read.txt. Then reply with exactly the word the file holds.",
+                        "tools": ["Read", "Glob", "Bash"],
                         "model": "haiku",
                     },
                 }),
@@ -171,13 +176,22 @@ impl Install {
                 "In a single message, launch three `reader` subagents in parallel: one for \
                  a.txt, one for b.txt and one for c.txt. When all three have reported, reply \
                  with their three words in file order, separated by spaces.",
-                |ask| self.by_the_way(ask),
+                |ask| {
+                    asked += 1;
+                    self.by_the_way(ask)
+                },
             )
             .await?
         {
             Ok(ready) => ready,
             Err(verdict) => return Ok(verdict),
         };
+        if asked == 0 {
+            return Err("the c.txt reader ran its command without asking".into());
+        }
+        if !effect.exists() {
+            return Err(format!("allowed, but {} does not exist", effect.display()));
+        }
         self.judged(scenario, &follow)
     }
 

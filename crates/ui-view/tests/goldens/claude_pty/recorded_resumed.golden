@@ -4,13 +4,13 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 46 recorded 44: fact Transcript type=system subtype=turn_duration uuid=248eba56-4d3e-4a65-b6b7-29110a71ffbe
   composer Send activity=None queue=[] underway=[] refused=[]
-## 61 recorded 59: fact Transcript type=user uuid=03ec20dc-2545-421c-9348-34286b607a15
+## 67 recorded 65: fact Transcript type=user uuid=03ec20dc-2545-421c-9348-34286b607a15
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 81 recorded 79: fact Transcript type=system subtype=turn_duration uuid=248eba56-4d3e-4a65-b6b7-29110a71ffbe
+## 107 recorded 105: fact Transcript type=system subtype=turn_duration uuid=248eba56-4d3e-4a65-b6b7-29110a71ffbe
   composer Send activity=None queue=[] underway=[] refused=[]
-## 90 recorded 88: fact Transcript type=user uuid=7d0e91fd-4d69-4af8-b7e7-34ddc08c2e81
+## 125 recorded 123: fact Transcript type=user uuid=7d0e91fd-4d69-4af8-b7e7-34ddc08c2e81
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 96 recorded 94: fact Transcript type=system subtype=turn_duration uuid=025b0bf1-37db-42ae-9b12-549cb65d4424
+## 136 recorded 134: fact Transcript type=system subtype=turn_duration uuid=025b0bf1-37db-42ae-9b12-549cb65d4424
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed

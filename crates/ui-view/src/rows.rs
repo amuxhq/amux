@@ -1528,12 +1528,23 @@ fn codex_work(
             Some(Of::Collab(collab))
                 if ui_state::opens(&held.body).is_some() || collab.tool == "spawnAgent" =>
             {
+                let spawns = collab.tool == "spawnAgent";
+                // A spawn that opens its child is named by the child's
+                // title; the task Codex also puts on the call opens the
+                // child's own chat. A follow-up says what it sent. Each
+                // call returns at once while the child works on, so its
+                // own time is not the child's.
+                let named_by_child = spawns && ui_state::opens(&held.body).is_some();
                 RowKind::Subagent {
-                    description: collab.prompt.clone(),
-                    continued: collab.tool != "spawnAgent",
+                    description: if named_by_child {
+                        String::new()
+                    } else {
+                        collab.prompt.clone()
+                    },
+                    continued: !spawns,
                     state: view,
                     answer: String::new(),
-                    duration_ms,
+                    duration_ms: None,
                 }
             }
             Some(Of::Collab(_)) => RowKind::Hidden,

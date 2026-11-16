@@ -432,6 +432,66 @@ fn a_call_from_history_opens_nothing_and_keeps_its_steps_under_it() {
     assert!(rows[1].collapsed);
 }
 
+/// Codex 0.166 puts the child's whole task on its spawn call, and the call
+/// returns at once while the child works on. A spawn that opens its child
+/// is named by the child's title, as the fleet has it, and says no time of
+/// its own; one from history, which opens nothing, still says its task.
+#[test]
+fn a_codex_spawn_is_named_by_its_child_not_its_task() {
+    let spawn = |order: u64, opens: bool| {
+        let work = wire::Work {
+            state: ToolState::Succeeded as i32,
+            started_at_ms: Some(1_000),
+            ended_at_ms: Some(1_005),
+            of: Some(wire::work::Of::Collab(wire::CollabWork {
+                tool: "spawnAgent".into(),
+                thread_ids: vec!["child".into()],
+                prompt: "You are agent \"count files\". Run ls -la and report.".into(),
+                agent_ids: if opens { vec![subagent_id(0)] } else { vec![] },
+            })),
+            ..wire::Work::default()
+        };
+        Item {
+            key: format!("spawn-{order}"),
+            order,
+            kind: Kind::Codex as i32,
+            body: wire::CodexItem {
+                kind: Some(wire::codex_item::Kind::Work(work)),
+            }
+            .encode_to_vec(),
+            ..Item::default()
+        }
+    };
+    let mut state = session(wire::Agent {
+        kind: Kind::Codex as i32,
+        ..parent()
+    });
+    put(&mut state, item(1, &It::Prompt("go")));
+    put(&mut state, spawn(2, true));
+    put(&mut state, spawn(3, false));
+    let rows = chat_rows_for(
+        &state,
+        &["spawn-2".into(), "spawn-3".into()],
+        ToolRows::ShowAll,
+    );
+    let said = |row: &Row| match &row.kind {
+        ui_view::RowKind::Subagent {
+            description,
+            duration_ms,
+            ..
+        } => (description.clone(), *duration_ms),
+        other => panic!("not a subagent's call: {other:?}"),
+    };
+    assert_eq!(said(&rows[0]), (String::new(), None));
+    assert_eq!(
+        said(&rows[1]),
+        (
+            "You are agent \"count files\". Run ls -la and report.".to_owned(),
+            None
+        )
+    );
+}
+
 /// A provider subagent's chat has no text box: its composer offers its own
 /// Stop while its snapshot lists its job as stoppable, says so while a stop
 /// is on its way, and offers nothing once it ended or on terminal Claude.

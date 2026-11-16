@@ -39,12 +39,12 @@
      1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:9874baba3e7e44698ff887eb89bcc144 Prompt { text: [Text("Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: reply with exactly FIRST_ANSWER. Then wait for it to finish and reply with what it answered.")], steered: false }
-     4 call_3edb9c1122bd468c8af70eb60af72315 [opens=sub-f89f892e] Subagent { description: "", continued: false, state: Succeeded, answer: "", duration_ms: Some(0) }
+     4 call_3edb9c1122bd468c8af70eb60af72315 [opens=sub-f89f892e] Subagent { description: "", continued: false, state: Succeeded, answer: "", duration_ms: None }
      5 call_36fb6889a9d845958a2119b4d49156bd Hidden collapsed
      6 msg_04b698f95a7d32de016afa48ef2dd887d2965215b8639db623 Prose { text: [Text("FIRST_ANSWER")], streaming: false, working_note: false }
      7 turn:1 TurnEnd { duration_ms: Some(11060), failed: false }
      8 prompt:1521fcbd09cc4ae19ee94e0fd46aa4e3 Prompt { text: [Text("Send the agent you started a follow-up: ask it to reply with exactly SECOND_ANSWER. Wait for it to finish and reply with what it answered.")], steered: false }
-     9 call_c04993f0ef26447c952c324c829e0c31 [opens=sub-f89f892e] Subagent { description: "", continued: true, state: Succeeded, answer: "", duration_ms: Some(0) }
+     9 call_c04993f0ef26447c952c324c829e0c31 [opens=sub-f89f892e] Subagent { description: "", continued: true, state: Succeeded, answer: "", duration_ms: None }
     10 call_fdc8a6c23ebc4528aa60825f5b8291d4 Hidden collapsed
     11 msg_04b698f95a7d32de016afa48f80d0887d2893321df0268fe1b Prose { text: [Text("SECOND_ANSWER")], streaming: false, working_note: false }
     12 turn:2 TurnEnd { duration_ms: Some(8897), failed: false }

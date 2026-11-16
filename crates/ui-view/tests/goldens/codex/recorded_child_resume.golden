@@ -39,13 +39,13 @@
      1 boundary:1 Hidden collapsed
      2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
      3 prompt:5e05f9ac3bd24742ad32446cd41db0b2 Prompt { text: [Text("Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: reply with exactly FIRST_ANSWER. Then wait for it to finish and reply with what it answered.")], steered: false }
-     4 call_d0fc3feebb44412a99b44b3458f10d01 [opens=sub-8bbf8e46] Subagent { description: "", continued: false, state: Succeeded, answer: "", duration_ms: Some(0) }
+     4 call_d0fc3feebb44412a99b44b3458f10d01 [opens=sub-8bbf8e46] Subagent { description: "", continued: false, state: Succeeded, answer: "", duration_ms: None }
      5 call_0c163a626896459da1484422b1c59da4 Hidden collapsed
      6 msg_06428af10602cf91016afa4b11f10487d280b71166e0eb8034 Prose { text: [Text("FIRST_ANSWER")], streaming: false, working_note: false }
      7 turn:1 TurnEnd { duration_ms: Some(9614), failed: false }
      8 boundary:3 Hidden collapsed
      9 prompt:a529eb95731b43c8b32de58185898415 Prompt { text: [Text("Send the agent you started a follow-up: ask it to reply with exactly SECOND_ANSWER. Wait for it to finish and reply with what it answered.")], steered: false }
-    10 call_143c126db12847ee8bce95540e5efcb9 [opens=sub-8bbf8e46] Subagent { description: "", continued: true, state: Succeeded, answer: "", duration_ms: Some(0) }
+    10 call_143c126db12847ee8bce95540e5efcb9 [opens=sub-8bbf8e46] Subagent { description: "", continued: true, state: Succeeded, answer: "", duration_ms: None }
     11 call_35753a06f35d458baa4b4dddaab1f8d9 Hidden collapsed
     12 msg_0153d73b4ee272bc016afa4b1abc3087d2b44221f7d6894266 Prose { text: [Text("SECOND_ANSWER")], streaming: false, working_note: false }
     13 turn:2 TurnEnd { duration_ms: Some(8488), failed: false }

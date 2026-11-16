@@ -25,7 +25,7 @@
 == chat
      1 boundary:1 Hidden collapsed
      2 prompt:7031 Prompt { text: [Text("Start one agent that runs sleep 97, then wait for it.")], steered: false }
-     3 call-spawn [opens=sub-4453d686] Subagent { description: "", continued: false, state: Succeeded, answer: "", duration_ms: Some(0) }
+     3 call-spawn [opens=sub-4453d686] Subagent { description: "", continued: false, state: Succeeded, answer: "", duration_ms: None }
      4 call-wait Hidden collapsed
      5 um-1 Prompt { text: [Text("I stopped the agent Lovelace you started; it will not answer. Stop waiting for it and go on without it.")], steered: true }
      6 msg-1 Prose { text: [Text("Stopped waiting.")], streaming: false, working_note: false }

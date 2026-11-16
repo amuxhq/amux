@@ -878,7 +878,9 @@ async fn a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own() 
 
 /// Two subagents the agent starts together: the chat's two calls fold into
 /// one row, and how the subagents stand reaches the host from the fleet,
-/// as running and then finished, though no row changes when it does.
+/// as running and then finished, though no row changes when it does. The
+/// subagents hold on a gate, and the turn starts once the chat is open, so
+/// the chat hands over running before they can finish.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_chat_hands_over_how_the_subagents_its_rows_open_stand() {
     use provider_fakes::script::Subagent;
@@ -886,7 +888,12 @@ async fn a_chat_hands_over_how_the_subagents_its_rows_open_stand() {
         task: task.into(),
         nickname: None,
         await_read: false,
-        steps: vec![Step::Pause { ms: 500 }, text(&task.to_uppercase())],
+        steps: vec![
+            Step::WaitFor {
+                path: "report".into(),
+            },
+            text(&task.to_uppercase()),
+        ],
     };
     let net = Net::start(
         Topology::new().host("desk").agent(
@@ -898,34 +905,38 @@ async fn a_chat_hands_over_how_the_subagents_its_rows_open_stand() {
                     },
                     text("both reported"),
                     Step::TurnEnd,
-                ])
-                .prompt("delegate"),
+                ]),
         ),
     )
     .await
     .unwrap();
     let (runtime, mut host) = open(&net).await;
     let chat = opened(&runtime, &worker(&net), 50).await;
+    net.send("worker", "delegate").await.unwrap();
     let wake = Wake::Chat(chat.id());
-    let mut running = false;
-    let mut finished = false;
-    tokio::time::timeout(PATIENCE, async {
-        while !finished {
-            host.next(wake).await;
-            let Some(agents) = chat.delta().and_then(|delta| delta.agents) else {
-                continue;
-            };
-            let Some(group) = agents.groups.first() else {
-                continue;
-            };
-            assert_eq!(group.state.agents, 2, "{agents:?}");
-            running |= group.state.running > 0;
-            finished = group.state.finished == 2;
-        }
-    })
-    .await
-    .expect("the group's subagents finish");
-    assert!(running, "the group read running before it finished");
+    // The group's state from each delta that carries one, until `done`.
+    let mut until_group = async |what: &str, done: &dyn Fn(&ui_view::GroupState) -> bool| {
+        tokio::time::timeout(PATIENCE, async {
+            loop {
+                host.next(wake).await;
+                let Some(agents) = chat.delta().and_then(|delta| delta.agents) else {
+                    continue;
+                };
+                let Some(group) = agents.groups.first() else {
+                    continue;
+                };
+                assert_eq!(group.state.agents, 2, "{agents:?}");
+                if done(&group.state) {
+                    return;
+                }
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("the group never read {what}"));
+    };
+    until_group("running", &|state| state.running > 0).await;
+    net.open_gate("report").unwrap();
+    until_group("finished", &|state| state.finished == 2).await;
     let calls: Vec<_> = chat
         .rows_for(&chat.keys())
         .into_iter()

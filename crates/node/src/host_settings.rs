@@ -83,6 +83,9 @@ impl From<ConfigError> for SettingsError {
         match error {
             ConfigError::Io(error) => SettingsError::Io(error),
             ConfigError::Invalid(reason) => SettingsError::Invalid(reason),
+            // The file holds a value where the change needs a table: the
+            // request cannot be made until a person changes the file.
+            error @ ConfigError::InTheWay { .. } => SettingsError::Invalid(error.to_string()),
         }
     }
 }

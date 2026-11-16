@@ -52,6 +52,17 @@ pub enum ConfigError {
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Invalid(String),
+    /// A key the edit would go under is set to a value, not a table, so
+    /// there is nowhere to put it.
+    #[error("{key} = {value} is no table, so {setting} cannot go under it")]
+    InTheWay {
+        /// The key in the way, dotted.
+        key: String,
+        /// What the file sets it to, as TOML.
+        value: String,
+        /// The key the edit was for.
+        setting: String,
+    },
 }
 
 /// The amux account service a profile signs in to unless told otherwise.

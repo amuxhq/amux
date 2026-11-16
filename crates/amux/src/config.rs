@@ -92,6 +92,10 @@ pub fn set(path: &Path, key: &str, raw: &str) -> Result<()> {
                 }
                 return Ok(());
             }
+            // No value can go there: the file must change first.
+            Err(error @ settings::ConfigError::InTheWay { .. }) => {
+                bail!("{error}; `amux config edit` opens the file to change it")
+            }
             Err(error) => {
                 first_refusal.get_or_insert(error);
             }
@@ -392,6 +396,21 @@ mod tests {
             .to_string();
         assert!(error.contains("has no settings of its own"), "{error}");
         assert!(std::fs::read_to_string(&path).unwrap().is_empty());
+    }
+
+    /// The reader ignores an experiment's table that is no table, so its
+    /// settings read as their defaults; a set under it is refused, saying
+    /// which key is in the way, with the file left alone.
+    #[test]
+    fn a_set_under_a_key_that_is_no_table_says_which_key_is_in_the_way() {
+        let text = "[experiments]\nsuspension = 7\n";
+        let (_dir, path) = file(text);
+        let after = "experiments.suspension.after";
+        assert_eq!(value(&path, after).unwrap(), "30m");
+        let error = set(&path, after, "1h").unwrap_err().to_string();
+        assert!(error.contains("experiments.suspension = 7"), "{error}");
+        assert!(error.contains("amux config edit"), "{error}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
     }
 
     #[test]

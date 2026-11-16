@@ -62,6 +62,7 @@ const SEGMENT_BYTES: u64 = 1 << 20;
 const CREATE: CallId = CallId(1);
 const STOP: CallId = CallId(2);
 const DELETE: CallId = CallId(3);
+const KILL: CallId = CallId(4);
 
 fn parent_key() -> AgentKey {
     AgentKey::new(HOSTS[PARENTS].0.to_vec(), PARENT.0.to_vec())
@@ -217,6 +218,7 @@ struct Used {
     crashes: u8,
     unpaired: bool,
     waits: u8,
+    killed: bool,
     suspends: u8,
     restarts: u8,
     /// The world has stopped changing.
@@ -260,6 +262,12 @@ struct Seen {
     continued: bool,
     /// The parent's process took a report for an earlier incarnation.
     took_earlier: bool,
+    /// The parent's row on its own host has said closed, or exited by a
+    /// stop: the person's close or kill was stored.
+    parent_closed: bool,
+    /// The parent was started again after the person's close or stop was
+    /// stored.
+    revived_after_close: Option<String>,
 }
 
 #[derive(Clone)]
@@ -299,6 +307,9 @@ pub enum Action {
     Stop,
     /// A person deletes the parent.
     Delete,
+    /// A person kills the parent, under the suspension experiment: a stop
+    /// that leaves its row open.
+    Kill,
     /// The agent's process ends: asked to, or of its own accord.
     Exit(Who),
     /// The child's turn ends: its journal says so and its daemon is nudged.
@@ -323,14 +334,15 @@ pub enum Action {
     Unpair,
     /// The world's doing: the host's daemon crashes and starts again.
     Crash(usize),
-    /// The parent's process suspends: its journal ends saying so, and it
-    /// exits.
+    /// The parent's process suspends: what was written to it and is
+    /// unanswered it refuses as exiting, its journal ends saying so, and it
+    /// exits. It may have been asked to stop as it did.
     Suspend,
-    /// The parent's machine restarts, the parent idle or in its turn as its
-    /// journal last said: every process on it is gone, and its daemon starts
-    /// on a new boot.
+    /// The parent's machine restarts, the parent's journal last saying it
+    /// was idle, in its turn or suspending: every process on it is gone,
+    /// and its daemon starts on a new boot.
     Restart {
-        busy: bool,
+        last: Last,
     },
     /// The world stops changing: nobody creates, stops or deletes, no
     /// process exits unasked, no turn ends, the link stays as it is, the
@@ -421,6 +433,16 @@ impl Hash for State {
     }
 }
 
+/// What the parent's journal last said when its machine restarted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Last {
+    Idle,
+    Busy,
+    /// Its incarnation ended suspended, and the daemon had not yet seen it
+    /// gone.
+    Suspending,
+}
+
 /// One of the two agents.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Who {
@@ -509,6 +531,9 @@ impl Machine for FamilyDeliveries {
         if world && !s.used.deleted {
             out.push(Action::Delete);
         }
+        if world && self.suspension && !s.used.killed {
+            out.push(Action::Kill);
+        }
         for (who, process, exits) in [
             (Who::Parent, &s.parent, self.parent_exits),
             (Who::Child, &s.child, self.child_exits),
@@ -556,19 +581,19 @@ impl Machine for FamilyDeliveries {
             out.push(Action::Crash(PARENTS));
             out.push(Action::Crash(CHILDS));
         }
-        // Only an agent holding nothing suspends: nothing written to it
-        // and unanswered.
+        // An agent suspends only once it has taken its first input; what
+        // reached it as it exits it refuses.
         if world
             && s.used.suspends < self.suspends
             && s.parent.connected
-            && !s.parent.asked_stop
-            && s.written.is_empty()
+            && s.written.iter().all(|(_, by)| *by != u8::MAX)
         {
             out.push(Action::Suspend);
         }
         if world && s.used.restarts < self.restarts {
-            out.push(Action::Restart { busy: false });
-            out.push(Action::Restart { busy: true });
+            for last in [Last::Idle, Last::Busy, Last::Suspending] {
+                out.push(Action::Restart { last });
+            }
         }
     }
 
@@ -615,6 +640,11 @@ impl FamilyDeliveries {
             Property::always("the cores never ask for a dump", |_, s: &State| {
                 s.seen.dumped.is_none()
             }),
+            Property::always(
+                "a parent the person closed or stopped is never started again: once its own host \
+                 stored the close or the stop, no message, report or restart resumes it",
+                |_, s: &State| s.seen.revived_after_close.is_none(),
+            ),
             Property::always(
                 "a parent's suspension, or its machine's restart, stops none of its children: the \
                  child is asked to stop only once its parent's row on the parent's own host is \
@@ -864,8 +894,20 @@ impl<'a> Transition<'a> {
     fn store_changed(&mut self, host: usize) {
         let store = self.scratch.slots[host].store();
         if host == PARENTS {
-            if store.agent(&parent_key()).unwrap().is_none() {
-                self.next.seen.parent_deleted = true;
+            match store.agent(&parent_key()).unwrap() {
+                None => self.next.seen.parent_deleted = true,
+                // Closed, or ended by the person's stop: nothing resumes
+                // it from here but the person.
+                Some(row)
+                    if row.is_closed()
+                        || row.lifecycle == Lifecycle::Exited as i32
+                            && [wire::ExitCause::Stopped, wire::ExitCause::Killed]
+                                .iter()
+                                .any(|cause| row.exit_cause == *cause as i32) =>
+                {
+                    self.next.seen.parent_closed = true;
+                }
+                Some(_) => {}
             }
             return;
         }
@@ -977,6 +1019,12 @@ impl<'a> Transition<'a> {
                         incarnation: spec.incarnation,
                         ..Process::default()
                     };
+                    if spec.agent_id == PARENT.0 && self.next.seen.parent_closed {
+                        self.next
+                            .seen
+                            .revived_after_close
+                            .get_or_insert_with(|| "the closed parent started again".into());
+                    }
                     // A resume's first input: a message the process takes
                     // as any written to it, with no verdict to give.
                     match spec.bootstrap.and_then(|bootstrap| bootstrap.of) {
@@ -1196,6 +1244,16 @@ impl<'a> Transition<'a> {
                     },
                 );
             }
+            Action::Kill => {
+                self.next.used.killed = true;
+                self.feed(
+                    PARENTS,
+                    Input::ClientCall {
+                        call: KILL,
+                        request: ClientRequest::KillAgent { agent: PARENT },
+                    },
+                );
+            }
             Action::Delete => {
                 self.next.used.deleted = true;
                 self.feed(
@@ -1403,6 +1461,26 @@ impl<'a> Transition<'a> {
             Action::Rest => self.next.used.rested = true,
             Action::Suspend => {
                 self.next.used.suspends += 1;
+                let run = self.next.hosts[PARENTS].run;
+                for (id, by) in std::mem::take(&mut self.next.written) {
+                    if by == run {
+                        self.feed(
+                            PARENTS,
+                            Input::Verdict {
+                                agent: PARENT,
+                                input_id: id,
+                                verdict: Some(wire::SendInputResponse {
+                                    of: Some(wire::send_input_response::Of::Rejected(
+                                        wire::Rejected {
+                                            refusal: wire::Refusal::Exiting as i32,
+                                            detail: None,
+                                        },
+                                    )),
+                                }),
+                            },
+                        );
+                    }
+                }
                 self.append(
                     PARENTS,
                     PARENT,
@@ -1423,9 +1501,9 @@ impl<'a> Transition<'a> {
                     },
                 );
             }
-            Action::Restart { busy } => {
+            Action::Restart { last } => {
                 self.next.used.restarts += 1;
-                self.restart(*busy);
+                self.restart(*last);
             }
         }
     }
@@ -1434,25 +1512,30 @@ impl<'a> Transition<'a> {
     /// in its turn or idle, every process on it goes without a word, and
     /// its daemon starts on a new boot. Its link goes with it and comes
     /// back. Whatever the parent's row said live it still says after.
-    fn restart(&mut self, busy: bool) {
+    fn restart(&mut self, last: Last) {
         if self.next.parent.running {
-            let phase = if busy {
-                wire::Phase::Working
-            } else {
-                wire::Phase::Idle
-            };
-            self.append(
-                PARENTS,
-                PARENT,
-                &Step {
+            let step = match last {
+                Last::Idle | Last::Busy => Step {
                     snapshot: Some(wire::Snapshot {
                         kind: wire::Kind::Codex as i32,
-                        phase: phase as i32,
+                        phase: if last == Last::Busy {
+                            wire::Phase::Working
+                        } else {
+                            wire::Phase::Idle
+                        } as i32,
                         ..Default::default()
                     }),
                     ..Default::default()
                 },
-            );
+                Last::Suspending => Step {
+                    incarnation_end: Some(wire::IncarnationEnd {
+                        cause: wire::ExitCause::Suspended as i32,
+                        detail: None,
+                    }),
+                    ..Default::default()
+                },
+            };
+            self.append(PARENTS, PARENT, &step);
         }
         let lifecycle = |t: &mut Self| {
             t.scratch.slots[PARENTS].read(&t.next.hosts[PARENTS].held.store, |store| {

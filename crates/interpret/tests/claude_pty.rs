@@ -2230,3 +2230,56 @@ fn auto_modes_refusal_of_a_subagents_call_is_drawn_in_its_chat() {
         );
     }
 }
+
+/// Every call row of the agent's own, by key, in one step: its state and
+/// what it handed back.
+fn own_calls(step: &wire::Step) -> Vec<(String, wire::ToolState, String)> {
+    use prost::Message as _;
+    step.items
+        .iter()
+        .filter_map(
+            |item| match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_item::Kind::Tool(tool) => {
+                    Some((item.key.clone(), tool.state(), tool.outcome_text))
+                }
+                _ => None,
+            },
+        )
+        .collect()
+}
+
+/// A SendMessage that resumes a subagent in the background is that
+/// subagent's continued call: Claude's result says only that it resumed
+/// (`{"success":true,"message":"Resuming agent …"}`, for the model), so the
+/// row runs on with no answer until the subagent's end, and then hands
+/// back what the subagent said.
+#[test]
+fn a_continuation_hands_back_the_subagents_reply_not_claudes_json() {
+    const CALL: &str = "toolu_01FToX5ZAtVt7pWXpZtBpjTu";
+    let frames =
+        interpret::replay::<ClaudePty>(&fixtures().join("recorded_subagent_continued.json"))
+            .unwrap();
+    let rows: Vec<(wire::ToolState, String)> = frames
+        .iter()
+        .flat_map(|frame| own_calls(&frame.step))
+        .filter(|(key, _, _)| key == CALL)
+        .map(|(_, state, answer)| (state, answer))
+        .collect();
+    assert!(
+        rows.iter()
+            .all(|(_, answer)| !answer.contains("Resuming agent")),
+        "{rows:#?}"
+    );
+    assert_eq!(
+        rows.last(),
+        Some(&(wire::ToolState::Succeeded, "FOUR FIVE SIX".to_owned())),
+        "{rows:#?}"
+    );
+    // Between Claude's result and the subagent's end it runs, with nothing
+    // to hand back yet.
+    assert_eq!(
+        rows[rows.len() - 2],
+        (wire::ToolState::Running, String::new()),
+        "{rows:#?}"
+    );
+}

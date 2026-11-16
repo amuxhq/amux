@@ -338,6 +338,15 @@ impl State {
 
     /// Whose chat holds the call `call`: Some(None) for the agent's own,
     /// Some(Some(child)) for a running subagent's.
+    /// Claude's id for the subagent whose agent id is `agent_id`, running
+    /// or not.
+    pub(super) fn subagent_opened(&self, agent_id: &[u8]) -> Option<String> {
+        self.subagents
+            .keys()
+            .find(|child| self.shared.subagent_id(child) == agent_id)
+            .cloned()
+    }
+
     fn call_holder(&self, call: &str) -> Option<Option<String>> {
         if self.tools.contains_key(call) {
             return Some(None);
@@ -526,7 +535,8 @@ impl State {
 
     /// The calls waiting on the subagent `child` end with it, as `state`
     /// with `text`: the one that first started it, in whichever chat holds
-    /// it, and `latest`, the one that last continued it.
+    /// it, `latest`, the one the notice names, and any continuation still
+    /// waiting on it, which the notice need not name.
     fn finish_calls(
         &mut self,
         emit: &mut Emit,
@@ -542,8 +552,26 @@ impl State {
             .and_then(|sub| sub.call.clone())
             .into_iter()
             .collect();
-        if let Some(latest) = latest.filter(|latest| !calls.iter().any(|call| call == latest)) {
-            calls.push(latest.to_owned());
+        let agent = self.shared.subagent_id(child);
+        let waiting = self
+            .tools
+            .iter()
+            .filter(|(_, tool)| {
+                tool.child_agent_id == agent && tool.of.awaiting_notification && !tool.of.finished
+            })
+            .map(|(id, _)| id.clone())
+            .chain(self.subagents.values().flat_map(|sub| {
+                sub.conversation
+                    .tools
+                    .iter()
+                    .filter(|(_, tool)| tool.child_agent_id == agent && tool.of.launched)
+                    .map(|(id, _)| id.clone())
+            }))
+            .collect::<Vec<_>>();
+        for call in latest.map(str::to_owned).into_iter().chain(waiting) {
+            if !calls.contains(&call) {
+                calls.push(call);
+            }
         }
         for call in calls {
             match self.call_holder(&call) {

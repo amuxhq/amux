@@ -87,12 +87,34 @@ pub(crate) fn hand_back(output: &str) -> Option<String> {
 /// What a call that ran a subagent hands back, out of its result `output`:
 /// `said`, the subagent's own last words, when they are known to be its
 /// last; else the report out of Claude's frame, which is for the parent's
-/// model and not a reader; else the result as it came.
+/// model and not a reader; else the result as it came. A result that is a
+/// JSON object is Claude's bookkeeping for the model (a SendMessage's
+/// `{"success":true,"message":"Resuming agent …"}`), never the subagent's
+/// words, so it hands back nothing.
 pub(crate) fn subagent_answer(said: Option<&str>, output: String) -> String {
     match said.filter(|said| !said.trim().is_empty()) {
         Some(said) => said.to_owned(),
+        None if serde_json::from_str::<serde_json::Map<String, Value>>(&output).is_ok() => {
+            String::new()
+        }
         None => hand_back(&output).unwrap_or(output),
     }
+}
+
+/// Whether a SendMessage's result says only that it resumed a subagent
+/// that had stopped, which runs on in the background: Claude's
+/// `{"success":true,"message":"Resuming agent …","resumedAgentId":…}`, in
+/// the structured result or as the text. The subagent's end says how it
+/// went, with its words.
+pub(crate) fn resumed_in_background(result: Option<&Value>, output: &str) -> bool {
+    let resumed = |value: &Value| {
+        value
+            .get("resumedAgentId")
+            .and_then(Value::as_str)
+            .is_some_and(|id| !id.is_empty())
+    };
+    result.is_some_and(resumed)
+        || serde_json::from_str::<Value>(output).is_ok_and(|value| resumed(&value))
 }
 
 /// Whether the call `tool` ran a subagent, whose result is that subagent's
@@ -114,9 +136,13 @@ fn claude_note(text: &str) -> bool {
 }
 
 /// Whether a call's result says only that it launched work in the
-/// background: an Agent call whose subagent runs on, or a shell sent to
-/// the background. The work's own end says how it went.
+/// background: an Agent call whose subagent runs on, a SendMessage that
+/// resumed one, or a shell sent to the background. The work's own end says
+/// how it went.
 fn launched_in_background(result: Option<&Value>, output: &str) -> bool {
+    if resumed_in_background(result, output) {
+        return true;
+    }
     let Some(result) = result else {
         return output.starts_with("Async agent launched");
     };

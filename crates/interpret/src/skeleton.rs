@@ -912,6 +912,8 @@ pub(crate) const TOOL_RESULT: &[&str] = &[
     "isAsync",
     "canContinueAgent",
     "canReadOutputFile",
+    // A SendMessage that resumed a stopped subagent in the background.
+    "resumedAgentId",
     "description",
     "prompt",
     "resolvedModel",

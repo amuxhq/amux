@@ -22,7 +22,7 @@
 ## 105 recorded 103: fact Hook hook_event_name=SubagentStart
   agents [sub-96dfec72 "Run counter subagent" Working] groups []
   [sub-96dfec72] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
-## 110 recorded 108: fact Transcript type=user uuid=04f9d6d8-338b-4b71-b50d-e812a126cd05
+## 113 recorded 111: fact Hook hook_event_name=MessageDisplay
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 120 recorded 118: fact Transcript type=system subtype=turn_duration uuid=8308f3de-377e-4554-a10b-ffe5b6fcc36f
   composer Send activity=None queue=[] underway=[] refused=[]
@@ -42,7 +42,7 @@
      6 a4c53b98-67b6-4857-82b3-b2047bba1a02 Prose { text: [Text("ONE TWO THREE")], streaming: false, working_note: false }
      7 turn:2 TurnEnd { duration_ms: Some(5366), failed: false }
      8 2cc29ee4-a6a6-4558-8016-c683f2e26f33 Prompt { text: [Text("Continue that same `counter` subagent, the one that already answered (send it a message by its agent id, do not launch a new one), asking it to go on. Wait for its answer, then reply with exactly what it said.")], steered: false }
-     9 toolu_01FToX5ZAtVt7pWXpZtBpjTu [opens=sub-96dfec72] Subagent { description: "Please go on.", continued: true, state: Succeeded, answer: "{\"success\":true,\"message\":\"Resuming agent afe84b7\",\"resumedAgentId\":\"afe84b72003f521f5\",\"pin\":{\"id\":\"afe84b72003f521f5\",\"name\":\"afe84b72003f521f5\",\"ref\":\"226752\"}}", duration_ms: Some(46) }
+     9 toolu_01FToX5ZAtVt7pWXpZtBpjTu [opens=sub-96dfec72] Subagent { description: "Please go on.", continued: true, state: Succeeded, answer: "FOUR FIVE SIX", duration_ms: Some(3293) }
     10 stream:d64c21f0-c030-44f9-ba85-25a084e09faa Prose { text: [Text("The `counter` subagent is resumed and working on your message. I'll give you its exact reply when its completion notification arrives.")], streaming: false, working_note: false }
     11 turn:3 TurnEnd { duration_ms: Some(3571), failed: false }
     12 stream:416ba2a2-43fb-44d6-a1ea-f2211e80fb1b Prose { text: [Text("FOUR FIVE SIX")], streaming: false, working_note: false }

@@ -239,3 +239,54 @@ fn an_item_opened_again_after_its_final_state_breaks_its_check() {
     assert_eq!(steps, [None, None, Some(checks::ITEM_BEFORE_OPEN.id)]);
     quiet_everywhere(checks::ITEM_BEFORE_OPEN);
 }
+
+/// Every answer a call that opens a subagent handed back in `step`, the
+/// agent's own and each subagent's.
+fn subagent_answers(step: &wire::Step) -> Vec<(String, String)> {
+    use prost::Message as _;
+    step.items
+        .iter()
+        .chain(step.agents.iter().flat_map(|part| &part.items))
+        .filter_map(
+            |item| match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_item::Kind::Tool(tool) if !tool.child_agent_id.is_empty() => {
+                    Some((item.key.clone(), tool.outcome_text))
+                }
+                _ => None,
+            },
+        )
+        .collect()
+}
+
+/// No call that opens a subagent, on either Claude kind, ever hands back a
+/// JSON object: that is Claude's bookkeeping for its model (a resumed
+/// subagent's `{"success":true,"message":"Resuming agent …"}`), never what
+/// the subagent said.
+#[test]
+fn no_subagent_call_hands_back_claudes_json() {
+    let mut found = Vec::new();
+    let mut sweep = |kind: &str, frames: Vec<interpret::Replayed>, fixture: &Path| {
+        for frame in frames {
+            for (key, answer) in subagent_answers(&frame.step) {
+                if serde_json::from_str::<serde_json::Map<String, Value>>(&answer).is_ok() {
+                    found.push(format!("{kind} {} {key}: {answer}", fixture.display()));
+                }
+            }
+        }
+    };
+    for fixture in fixtures("claude_pty") {
+        sweep(
+            "claude_pty",
+            replay::<ClaudePty>(&fixture).unwrap(),
+            &fixture,
+        );
+    }
+    for fixture in fixtures("claude_sdk") {
+        sweep(
+            "claude_sdk",
+            replay::<ClaudeSdk>(&fixture).unwrap(),
+            &fixture,
+        );
+    }
+    assert!(found.is_empty(), "{found:#?}");
+}

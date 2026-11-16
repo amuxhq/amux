@@ -1305,26 +1305,19 @@ impl Engine {
 
     /// One step of a subagent, on its thread.
     async fn child_step(&mut self, turn: &str, step: Step) {
-        let stopping = |engine: &Self| {
-            engine.interrupted
-                || engine
-                    .speaking
-                    .as_ref()
-                    .is_some_and(|thread| engine.interrupted_children.contains(thread))
-        };
         match step {
             Step::Text { chunks } => self.text(turn, &chunks).await,
             Step::Thinking { text } => self.reasoning(turn, &text).await,
             Step::Tool(tool) => self.tool(turn, &tool, None).await,
             Step::Ask(ask) => self.ask(turn, ask).await,
             Step::WaitFor { path } => {
-                while !path.exists() && !stopping(self) {
+                while !path.exists() && !self.stopping() {
                     self.pump().await;
                 }
             }
             Step::Pause { ms } => {
                 let until = tokio::time::Instant::now() + std::time::Duration::from_millis(ms);
-                while tokio::time::Instant::now() < until && !stopping(self) {
+                while tokio::time::Instant::now() < until && !self.stopping() {
                     self.pump().await;
                 }
             }
@@ -1337,6 +1330,16 @@ impl Engine {
             | Step::Repeat { .. }
             | Step::Subagents { .. } => {}
         }
+    }
+
+    /// The turn playing now was interrupted: the agent's own, or the
+    /// subagent's whose step plays.
+    fn stopping(&self) -> bool {
+        self.interrupted
+            || self
+                .speaking
+                .as_ref()
+                .is_some_and(|thread| self.interrupted_children.contains(thread))
     }
 
     /// A subagent's turn ends with `status`. One that finished is reported
@@ -1533,7 +1536,7 @@ impl Engine {
             if at > 0 && self.chunk_ms > 0 {
                 let until =
                     tokio::time::Instant::now() + std::time::Duration::from_millis(self.chunk_ms);
-                while tokio::time::Instant::now() < until && !self.interrupted {
+                while tokio::time::Instant::now() < until && !self.stopping() {
                     self.pump().await;
                 }
             }
@@ -1559,7 +1562,7 @@ impl Engine {
             if let Some(answer) = self.answers.remove(&id.to_string()) {
                 break Some(answer);
             }
-            if self.interrupted || self.eof {
+            if self.stopping() || self.eof {
                 break None;
             }
             self.pump().await;
@@ -1901,14 +1904,14 @@ impl Engine {
     }
 
     /// A call held until its file exists keeps taking the host's frames
-    /// while it runs; an interrupt stops waiting for it.
+    /// while it runs; an interrupt of its turn stops waiting for it.
     async fn run_tool(&mut self, tool: &Tool) {
         let until = tool.outcome.until();
-        while tokio::time::Instant::now() < until && !self.interrupted {
+        while tokio::time::Instant::now() < until && !self.stopping() {
             self.pump().await;
         }
         let Some(path) = &tool.wait_for else { return };
-        while !path.exists() && !self.interrupted {
+        while !path.exists() && !self.stopping() {
             self.pump().await;
         }
     }
@@ -1932,8 +1935,8 @@ impl Engine {
         });
         self.item(turn, "item/started", &item).await;
         // Codex asks to allow the call before the server's own ask reaches
-        // the host, both as elicitations.
-        let thread = self.thread_id();
+        // the host, both as elicitations, on the thread making the call.
+        let thread = self.on_thread();
         let approval = json!({
             "_meta": {
                 "codex_approval_kind": "mcp_tool_call",

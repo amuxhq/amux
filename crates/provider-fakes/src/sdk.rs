@@ -891,11 +891,14 @@ impl Engine {
 
     /// The turn was interrupted, or the subagent playing was stopped.
     fn cut_short(&self) -> bool {
-        self.interrupting
-            || self
-                .within
-                .as_ref()
-                .is_some_and(|within| self.stopped.contains(&within.task))
+        self.interrupting || self.within_stopped()
+    }
+
+    /// The subagent playing was stopped.
+    fn within_stopped(&self) -> bool {
+        self.within
+            .as_ref()
+            .is_some_and(|within| self.stopped.contains(&within.task))
     }
 
     /// Start a command in the background as Claude does: the job list
@@ -1371,7 +1374,7 @@ impl Engine {
     /// Stay busy for `ms`, still taking the host's frames.
     async fn pause(&mut self, ms: u64) {
         let until = tokio::time::Instant::now() + std::time::Duration::from_millis(ms);
-        while tokio::time::Instant::now() < until && !self.interrupting {
+        while tokio::time::Instant::now() < until && !self.cut_short() {
             self.pump().await;
         }
     }
@@ -1686,6 +1689,13 @@ impl Engine {
                 return None;
             }
             if self.interrupting {
+                return None;
+            }
+            // A stopped subagent's open request goes with it; its call has
+            // no result, as a stopped subagent's running call has none.
+            if self.within_stopped() {
+                self.send(json!({ "type": "control_cancel_request", "request_id": id }))
+                    .await;
                 return None;
             }
             if self.eof {

@@ -1538,7 +1538,7 @@ impl Install {
             .provider_session
             .ok_or("the first incarnation reported no provider session")?;
         self.amux(&["settle", name]).await?;
-        self.listed(name, "exited").await?;
+        self.listed(name, "settled").await?;
         let mark = follow.snapshot().items.len();
         let before = follow.snapshot();
         // Resumed bare, then prompted once it takes input, as the recording

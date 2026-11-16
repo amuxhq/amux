@@ -796,3 +796,71 @@ async fn a_stopped_subagent_says_so_and_its_call_returns_interrupted() {
     );
     assert_eq!(host.close().await, 0);
 }
+
+/// A subagent stopped while it waits on the host, on an open ask or in a
+/// pause, stops waiting: an open ask is withdrawn, and its call returns
+/// interrupted, so the parent goes on.
+#[tokio::test]
+async fn a_subagent_stopped_while_it_waits_stops_waiting() {
+    let asking = json!({"ask": {"permission": {"class": "consequential",
+        "input": {"command": "touch asked.txt"}, "outcome": {"output": ""}}}});
+    let pausing = json!({"pause": {"ms": 60_000}});
+    for (waits, waiting) in [("ask", asking), ("pause", pausing)] {
+        let mut host = Host::start(json!({"steps": [
+            {"subagents": {"agents": [{"task": "Wait", "steps": [
+                waiting,
+                {"text": {"chunks": ["never said"]}},
+            ]}]}},
+            {"text": {"chunks": ["It was stopped."]}},
+            "turn_end",
+        ]}))
+        .await;
+        host.prompt(A, "Start and stop").await;
+        let started = host.until(|frame| frame["subtype"] == "task_started").await;
+        let asked = if waits == "ask" {
+            let request = host.until(|frame| frame["type"] == "control_request").await;
+            Some(request["request_id"].clone())
+        } else {
+            // The subagent's prompt is written before its first step.
+            host.until(|frame| frame["agent_id"] == started["task_id"])
+                .await;
+            None
+        };
+        host.send(json!({"type":"control_request","request_id":"stop-1",
+            "request":{"subtype":"stop_task","task_id":started["task_id"]}}))
+            .await;
+        let result = host.until(|frame| frame["type"] == "result").await;
+        assert_eq!(
+            result["result"], "It was stopped.",
+            "stopped in its {waits}"
+        );
+        let frames = &host.frames;
+        if let Some(asked) = asked {
+            assert!(
+                frames
+                    .iter()
+                    .any(|frame| frame["type"] == "control_cancel_request"
+                        && frame["request_id"] == asked),
+                "the stopped subagent's ask is withdrawn"
+            );
+        }
+        let returned = frames
+            .iter()
+            .find(|frame| {
+                frame["parent_tool_use_id"].is_null()
+                    && frame["message"]["content"][0]["tool_use_id"] == started["tool_use_id"]
+            })
+            .unwrap();
+        assert_eq!(
+            returned["message"]["content"][0]["is_error"], true,
+            "{waits}"
+        );
+        assert!(
+            !frames
+                .iter()
+                .any(|frame| frame["message"]["content"][0]["text"] == "never said"),
+            "{waits}"
+        );
+        assert_eq!(host.close().await, 0);
+    }
+}

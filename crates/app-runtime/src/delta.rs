@@ -4,7 +4,7 @@
 use std::collections::{HashSet, VecDeque};
 
 use ui_state::{Key, Transcript};
-use ui_view::{AskCard, Overview, SettingsView};
+use ui_view::{AskCard, ChatAgents, Overview, SettingsView};
 
 use crate::values::{ChatFrame, KeysMoved};
 
@@ -18,6 +18,7 @@ pub(crate) struct Sent {
     ask: Option<Option<AskCard>>,
     overview: Option<Overview>,
     settings: Option<SettingsView>,
+    agents: Option<ChatAgents>,
 }
 
 impl Sent {
@@ -119,6 +120,10 @@ impl Sent {
 
     pub(crate) fn settings(&mut self, settings: SettingsView) -> Option<SettingsView> {
         moved(&mut self.settings, settings.clone()).then_some(settings)
+    }
+
+    pub(crate) fn agents(&mut self, agents: ChatAgents) -> Option<ChatAgents> {
+        moved(&mut self.agents, agents.clone()).then_some(agents)
     }
 }
 

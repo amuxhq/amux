@@ -669,8 +669,9 @@ line under a scrolled-back feed reads `arrivals_held()`.
 change signal and gathers `take_changes()` into a coalescer that wakes the host once per turn, however many updates
 land. On the host's step it hands over one `ChatDelta` per chat that moved, computed against what it last handed
 over: the keys at their edges (new above the newest held, a page below the oldest, and how many of the oldest a
-following window dropped) or, after a reload, all of them; the rows of the keys it held that changed; and the frame, the head ask, the overview and the settings only when they moved, the frame not for the clock
-alone. The Swift `ChatModel` applies each delta and reads a row by key only when its cell is first drawn or after a
+following window dropped) or, after a reload, all of them; the rows of the keys it held that changed; and the frame, the head ask, the overview, the settings and the agents the rows open (`chat_agents`) only when they moved, the frame not for the clock
+alone. A chat also watches the fleet while its rows open agents, since the fleet moving changes how they stand
+and no row; a group is opened and closed with `Chat::toggle_group` (`amux_session_toggle_group`). The Swift `ChatModel` applies each delta and reads a row by key only when its cell is first drawn or after a
 reload, so a streaming append costs one cell and nothing is read back on the main thread. The fleet is handed over
 the same way, as a `FleetDelta`. The top of the list coming into view asks for an older page. `AppRuntime::set_foreground` hands the app's foreground to the fleet, and dropping a `Chat` closes it to
 the fleet. `ChatModel.following` is told to the session with `follow(_:)` whenever it changes, and New activity shows

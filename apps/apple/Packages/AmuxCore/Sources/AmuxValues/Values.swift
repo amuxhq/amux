@@ -1488,7 +1488,9 @@ public enum ChatAct: Codable, Hashable, Sendable {
     case resend([UInt8])
     /// Stops the agent's turn; the agent stays.
     case interrupt
-    /// Stops one background job by the key its `JobStop` gives.
+    /// Stops one background job by the key its `JobStop` gives: a job in
+    /// the overview, or a provider subagent's own, which its composer's
+    /// `Native` mode offers.
     case stopJob(String)
     /// Takes terminal Claude's own view back to the agent's conversation
     /// after it switched to another.
@@ -1698,15 +1700,20 @@ public struct ChatDelta: Codable, Hashable, Sendable {
     /// the reader left it. A row new at either edge, or held through a
     /// reload, is read when it is drawn.
     public var rows: [Row]
+    /// How each agent the held rows open stands, from the fleet, and what
+    /// each group of them comes to: a row that opens an agent draws its
+    /// state from here, since the fleet moving changes no row.
+    public var agents: ChatAgents?
     public var ask: AskMoved?
     public var frame: ChatFrame?
     public var keys: KeysMoved?
     public var overview: Overview?
     public var settings: SettingsView?
 
-    public init(chat: UInt64, rows: [Row], ask: AskMoved?, frame: ChatFrame?, keys: KeysMoved?, overview: Overview?, settings: SettingsView?) {
+    public init(chat: UInt64, rows: [Row], agents: ChatAgents?, ask: AskMoved?, frame: ChatFrame?, keys: KeysMoved?, overview: Overview?, settings: SettingsView?) {
         self.chat = chat
         self.rows = rows
+        self.agents = agents
         self.ask = ask
         self.frame = frame
         self.keys = keys
@@ -1717,6 +1724,7 @@ public struct ChatDelta: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case chat
         case rows
+        case agents
         case ask
         case frame
         case keys

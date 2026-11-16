@@ -68,6 +68,9 @@ impl Chat {
         // that lands before the watcher first runs, so the watcher must not
         // mark the channel seen itself.
         let mut changed = session.changed();
+        // The fleet moving changes no row, but it moves how each agent a
+        // row opens stands, which the delta carries.
+        let mut fleet_changed = fleet.upgrade().map(|fleet| fleet.changed());
         let chat = Arc::new(Chat {
             id,
             agent,
@@ -87,13 +90,38 @@ impl Chat {
         // chat; it ends when the chat is dropped or the session ends.
         let watched = Arc::downgrade(&chat);
         let watcher = tokio::spawn(async move {
-            while changed.changed().await.is_ok() {
-                let Some(chat) = watched.upgrade() else {
-                    return;
+            loop {
+                let fleet_moved = async {
+                    match fleet_changed.as_mut() {
+                        Some(fleet) => fleet.changed().await.is_ok(),
+                        None => std::future::pending().await,
+                    }
                 };
-                let changes = chat.session.take_changes();
-                chat.changes
-                    .push(changes.keys, changes.reloaded, changes.session);
+                tokio::select! {
+                    moved = changed.changed() => {
+                        if moved.is_err() {
+                            return;
+                        }
+                        let Some(chat) = watched.upgrade() else {
+                            return;
+                        };
+                        let changes = chat.session.take_changes();
+                        chat.changes
+                            .push(changes.keys, changes.reloaded, changes.session);
+                    }
+                    moved = fleet_moved => {
+                        if !moved {
+                            fleet_changed = None;
+                            continue;
+                        }
+                        let Some(chat) = watched.upgrade() else {
+                            return;
+                        };
+                        if chat.opens_agents() {
+                            chat.changes.push(Vec::new(), false, true);
+                        }
+                    }
+                }
             }
         });
         let _ = chat.watcher.set(watcher);
@@ -172,6 +200,41 @@ impl Chat {
         }
         let keys = ui_view::turn_keys(&self.session.state(), &end);
         self.changes.push(keys, false, false);
+    }
+
+    /// Whether any held row opens an agent, whose state a fleet change may
+    /// have moved.
+    fn opens_agents(&self) -> bool {
+        self.session
+            .state()
+            .transcript()
+            .iter()
+            .any(|held| ui_state::opens(&held.body).is_some())
+    }
+
+    /// How each agent the held rows open stands, and each group of them,
+    /// from the fleet; empty once the fleet is gone.
+    pub fn agents(&self) -> ui_view::ChatAgents {
+        match self.fleet.upgrade() {
+            Some(fleet) => ui_view::chat_agents(&self.session.state(), &fleet.state()),
+            None => ui_view::ChatAgents::default(),
+        }
+    }
+
+    /// Opens or closes the group of calls that opened agents `member`
+    /// belongs to; the next delta carries the group's rows drawn so. A
+    /// group is held open in the same set as runs.
+    pub fn toggle_group(&self, member: &str) {
+        let calls: Vec<Key> = {
+            let mut open = self.open_runs.lock().unwrap();
+            let state = self.session.state();
+            let member = member.to_owned();
+            ui_view::toggle_group(&state, &member, &mut open);
+            std::iter::once(member.clone())
+                .chain(ui_view::subagent_rows_moved(&state, &[member]))
+                .collect()
+        };
+        self.changes.push(calls, false, false);
     }
 
     /// Opens or closes the run `member` belongs to; the next delta carries
@@ -257,7 +320,8 @@ impl Chat {
             || delta.frame.is_some()
             || delta.ask.is_some()
             || delta.overview.is_some()
-            || delta.settings.is_some();
+            || delta.settings.is_some()
+            || delta.agents.is_some();
         moved.then_some(delta)
     }
 
@@ -274,19 +338,25 @@ impl Chat {
             ui_view::keep_open_runs(&state, &mut open);
         }
         // Folding turns, a change moves the place in its turn of rows it
-        // does not touch itself.
+        // does not touch itself; and a call joining a group, or a cut
+        // taking its first, moves the group's other calls.
         let widened: Vec<Key>;
-        let changed =
-            if self.folds_turns.load(Ordering::Relaxed) && !reloaded && !changed.is_empty() {
-                widened = changed
-                    .iter()
-                    .cloned()
-                    .chain(ui_view::turn_rows_moved(&state, changed))
-                    .collect();
-                &widened[..]
-            } else {
-                changed
-            };
+        let changed = if !reloaded && !changed.is_empty() {
+            let turns = self
+                .folds_turns
+                .load(Ordering::Relaxed)
+                .then(|| ui_view::turn_rows_moved(&state, changed))
+                .unwrap_or_default();
+            widened = changed
+                .iter()
+                .cloned()
+                .chain(turns)
+                .chain(ui_view::subagent_rows_moved(&state, changed))
+                .collect();
+            &widened[..]
+        } else {
+            changed
+        };
         let (keys, wanted) = sent.keys_moved(state.transcript(), reloaded, changed);
         let turns = self.open_turns.lock().unwrap();
         let rows = ui_view::chat_rows_for(&state, &wanted, self.tools(&open, &turns));
@@ -301,6 +371,10 @@ impl Chat {
                 .map(|card| AskMoved { card }),
             overview: sent.overview(ui_view::overview(&state, files.as_ref())),
             settings: sent.settings(ui_view::settings(&state)),
+            agents: sent.agents(match self.fleet.upgrade() {
+                Some(fleet) => ui_view::chat_agents(&state, &fleet.state()),
+                None => ui_view::ChatAgents::default(),
+            }),
         }
     }
 

@@ -90,7 +90,12 @@ You can also start an agent from the shell, in the current folder:
 ```sh
 amux new claude --prompt "Find out why the login test is flaky"
 amux new codex --cwd ~/source/app --name reviewer
+amux new claude --worktree --name fix-scroll
 ```
+
+`--worktree` is the `w` key: the agent starts in a new worktree of the
+folder's repository, on a new branch named after it, and amux says where the
+worktree is.
 
 ## Chatting
 
@@ -286,7 +291,7 @@ Everything the app does is also a command. Name an agent by its name, by
 | Command | What it does |
 |---|---|
 | `amux ls` | List your agents, subagents beneath the agent that started them |
-| `amux new claude` or `amux new codex` | Start an agent in this folder |
+| `amux new claude` or `amux new codex` | Start an agent in this folder; `--worktree` starts it in a new worktree of the folder's repository |
 | `amux send <agent> <message>` | Send an agent a message |
 | `amux attach <agent>` | Open an agent's chat in this terminal |
 | `amux settle <agent>` | You're done with an agent: stops it if it's running, and settles its subagents. It can be resumed later. |

@@ -44,6 +44,7 @@ change one:
 ```sh
 amux new claude --prompt "find out why the login test is flaky"
 amux new codex
+amux new claude --worktree    # in a new worktree, as w does
 ```
 
 ## Find it

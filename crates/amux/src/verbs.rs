@@ -303,6 +303,8 @@ pub struct Create {
     pub interface: Option<ChatInSetting>,
     pub name: Option<String>,
     pub cwd: Option<PathBuf>,
+    /// In a new worktree of the cwd's repository, named after the agent.
+    pub worktree: bool,
     pub model: Option<String>,
     pub effort: Option<String>,
     pub permission: Option<String>,
@@ -356,6 +358,7 @@ pub async fn create(client: &mut Client, host: &[u8], create: Create) -> Result<
             initial_prompt: create.prompt.as_deref().map(submission),
             cwd: cwd.to_string_lossy().into_owned(),
             agent: Some(config),
+            new_workspace: create.worktree,
             ..CreateAgentRequest::default()
         })
         .await
@@ -363,8 +366,15 @@ pub async fn create(client: &mut Client, host: &[u8], create: Create) -> Result<
         .into_inner()
         .agent;
     let agent = crate::held(agent)?;
+    // The agent works in the worktree, so its folder is where the worktree
+    // is, or will be once the host has made it.
+    let place = if create.worktree {
+        format!(" in a new worktree at {}", agent.cwd)
+    } else {
+        String::new()
+    };
     println!(
-        "Created {} ({}): {}",
+        "Created {} ({}){place}: {}",
         agent.name,
         Uuid::from_slice(&agent.agent_id)?,
         state(&agent)

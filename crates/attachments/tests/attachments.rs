@@ -453,7 +453,10 @@ fn the_path_attribute_is_accepted_and_ignored() {
     assert_eq!(parsed.positioned.attachments, vec![image()]);
     assert!(parsed.reported.is_empty());
     let page_with_paths = element_in(&page(), Path::new("/elsewhere"));
-    assert!(page_with_paths.contains("image-path: /elsewhere/"));
+    assert!(page_with_paths.contains(&format!(
+        "image-path: /elsewhere{}",
+        std::path::MAIN_SEPARATOR
+    )));
     assert_eq!(parse(&page_with_paths).positioned.attachments, vec![page()]);
 }
 
@@ -489,6 +492,8 @@ fn the_page_element() {
         })),
     };
     let hash = hex(&blob(4, "", "").hash);
+    let path = Path::new("/b").join(&hash);
+    let path = path.display();
     assert_eq!(
         element_in(&review, Path::new("/b")),
         format!(
@@ -502,7 +507,7 @@ fn the_page_element() {
              selector: main\n\
              image: region-2.png\n\
              image-mime: image/png\n\
-             image-path: /b/{hash}\n\
+             image-path: {path}\n\
              text: Tighter\n\
              </amux-attachment>"
         )

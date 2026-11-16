@@ -140,8 +140,13 @@ impl Hosts {
     }
 }
 
-/// Where each Chromium browser keeps its data under `home`.
+/// Where each Chromium browser keeps its data under `home`. None on Windows,
+/// where a browser finds its hosts in the registry, which this does not
+/// write yet.
 fn browser_dirs(home: &Path) -> Vec<PathBuf> {
+    if cfg!(windows) {
+        return Vec::new();
+    }
     #[cfg(target_os = "macos")]
     let (base, names): (PathBuf, &[&str]) = (
         home.join("Library/Application Support"),
@@ -200,7 +205,8 @@ pub fn installed(config: Option<&Path>) -> Option<Hosts> {
     })
 }
 
-#[cfg(test)]
+// The host script is a POSIX shell script and Windows registers nothing yet.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

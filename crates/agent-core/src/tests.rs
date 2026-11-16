@@ -986,13 +986,6 @@ mod hosting {
             self.fact(json!({"type": "turn_end"}))
         }
 
-        /// The provider runs a turn of its own, as Claude does on a
-        /// subagent's task notification, and it ends.
-        fn follow_up_turn(&mut self) -> Vec<Output> {
-            self.fact(json!({"type": "turn_start"}));
-            self.turn_end()
-        }
-
         /// The subagent's end comes with the turn the provider runs on its
         /// answer, started before the end is told: the turn's end, not the
         /// subagent's, decides.

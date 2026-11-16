@@ -2,30 +2,75 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 13 recorded 11: fact Transcript type=user uuid=207081b2-0585-4f7b-9ef9-723f46cab13c
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 49 recorded 47: fact SubagentTranscript type=user uuid=cb0105d7-9cab-4830-9d22-9b412dc8f825
+  [sub-8f4c80a2] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
+## 58 recorded 56: fact SubagentTranscript type=user uuid=5c5627b3-e793-43d4-bb6d-68044977a274
+  [sub-b9d113db] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
 ## 67 recorded 65: fact Transcript type=assistant uuid=464bc404-9606-4a72-89d1-0fb7efd76f24
-  composer Send activity=Some(Running { key: "toolu_01N5zxGrayAzJdzy32WzUuDu" }) queue=[] underway=[] refused=[]
+  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
+  agents [sub-8f4c80a2 "Read a.txt" Working] groups []
 ## 69 recorded 67: fact Transcript type=assistant uuid=2b13ed57-c152-46ac-8a5b-f1e4e5218036
-  composer Send activity=Some(Running { key: "toolu_01QNT26Q23MNQzLMPbTipd8r" }) queue=[] underway=[] refused=[]
+  composer Send activity=Some(Subagents { count: 2 }) queue=[] underway=[] refused=[]
+  agents [sub-8f4c80a2 "Read a.txt" Working, sub-b9d113db "Read b.txt" Working] groups [toolu_01N5zxGrayAzJdzy32WzUuDu GroupState { agents: 2, running: 2, needs_you: 0, idle: 0, finished: 0, ended: 0, failed: 0, unknown: 0 }]
 ## 72 recorded 70: fact Transcript type=assistant uuid=6cdf8974-ece5-4354-8aa1-e66b896307e4
-  composer Send activity=Some(Running { key: "toolu_01KMvHG2KaWFq7rQME3vCaz3" }) queue=[] underway=[] refused=[]
-## 102 recorded 100: fact Hook hook_event_name=MessageDisplay
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+  composer Send activity=Some(Subagents { count: 3 }) queue=[] underway=[] refused=[]
+  agents [sub-8f4c80a2 "Read a.txt" Working, sub-b9d113db "Read b.txt" Working, sub-724016b2 "Read c.txt" Working] groups [toolu_01N5zxGrayAzJdzy32WzUuDu GroupState { agents: 3, running: 3, needs_you: 0, idle: 0, finished: 0, ended: 0, failed: 0, unknown: 0 }]
+  [sub-724016b2] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
+## 92 recorded 90: fact SubagentTranscript type=assistant uuid=9d079b17-f2a2-4a9a-8a6d-6df191e5dcee
+  [sub-8f4c80a2] composer Native { stop: Unavailable } activity=Some(Running { key: "toolu_01JVyPfBbkZ4k8qXiKzQ8cLV" }) phase=Working
+## 93 recorded 91: fact SubagentTranscript type=user uuid=f59aee60-fde9-4c8a-8684-dac79756531b
+  [sub-8f4c80a2] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
+## 99 recorded 97: fact SubagentTranscript type=assistant uuid=067e10a6-e9b0-4e34-a551-7cccee3b5e9e
+  [sub-b9d113db] composer Native { stop: Unavailable } activity=Some(Running { key: "toolu_01X8mpULPA5r9NxrhXnQeWZ4" }) phase=Working
+## 100 recorded 98: fact SubagentTranscript type=user uuid=b697d432-1113-484d-a095-d8bff1bfd632
+  [sub-b9d113db] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
 ## 110 recorded 108: fact Transcript type=system subtype=turn_duration uuid=c3c65603-9e3e-4656-a473-602af3801a0f
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 126 recorded 124: fact Transcript type=queue-operation
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+  agents [sub-8f4c80a2 "Read a.txt" Exited { cause: Finished }, sub-b9d113db "Read b.txt" Working, sub-724016b2 "Read c.txt" Working] groups [toolu_01N5zxGrayAzJdzy32WzUuDu GroupState { agents: 3, running: 2, needs_you: 0, idle: 0, finished: 1, ended: 0, failed: 0, unknown: 0 }]
+  [sub-8f4c80a2] composer Native { stop: Unavailable } activity=None phase=Exited { cause: Finished }
+## 127 recorded 125: fact Transcript type=queue-operation
+  agents [sub-8f4c80a2 "Read a.txt" Exited { cause: Finished }, sub-b9d113db "Read b.txt" Exited { cause: Finished }, sub-724016b2 "Read c.txt" Working] groups [toolu_01N5zxGrayAzJdzy32WzUuDu GroupState { agents: 3, running: 1, needs_you: 0, idle: 0, finished: 2, ended: 0, failed: 0, unknown: 0 }]
+  [sub-b9d113db] composer Native { stop: Unavailable } activity=None phase=Exited { cause: Finished }
 ## 144 recorded 142: fact Transcript type=system subtype=turn_duration uuid=5d4f34f5-9f14-4acf-8d59-b5b7b773f41a
   composer Send activity=None queue=[] underway=[] refused=[]
+## 153 recorded 151: fact SubagentTranscript type=assistant uuid=5bd09189-142c-467c-97b5-57e88a8298f1
+  [sub-724016b2] composer Native { stop: Unavailable } activity=Some(Running { key: "toolu_019Pj9TVAQbJHvYGZPuUQBYo" }) phase=Working
+## 154 recorded 152: fact SubagentTranscript type=user uuid=7f42ea20-d2bd-40e4-b716-fbc132894e17
+  [sub-724016b2] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
+## 155 recorded 153: fact SubagentTranscript type=assistant uuid=562ae65c-edd3-4662-8f6a-8ceae2853403
+  [sub-724016b2] composer Native { stop: Unavailable } activity=Some(Running { key: "toolu_01PL2bLMCo8YBi29mfAwEi29" }) phase=Working
+## 159 recorded 157: fact SubagentTranscript type=user uuid=49a3b05d-35fd-4ceb-b947-3b907116893b
+  [sub-724016b2] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
+## 163 recorded 161: fact Hook hook_event_name=PermissionRequest
+  agents [sub-8f4c80a2 "Read a.txt" Exited { cause: Finished }, sub-b9d113db "Read b.txt" Exited { cause: Finished }, sub-724016b2 "Read c.txt" NeedsYou] groups [toolu_01N5zxGrayAzJdzy32WzUuDu GroupState { agents: 3, running: 0, needs_you: 1, idle: 0, finished: 2, ended: 0, failed: 0, unknown: 0 }]
+  [sub-724016b2]  ask ask:1 -> "" 1/1 Open
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "", scope: Session }, Deny+note, DenyAndStop+note
+    body Command { command: "touch c-read.txt", cwd: "", reason: "", description: "Create c-read.txt in the working directory" }
+  [sub-724016b2] composer Native { stop: Unavailable } activity=None phase=NeedsYou
+## 166 recorded 164: fact SubagentTranscript type=assistant uuid=0c952749-2e22-407e-afee-958067e9912d
+  [sub-724016b2]  ask ask:1 -> "toolu_01TGnuCGHJg4CGJULoencBWo" 1/1 Open
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "", scope: Session }, Deny+note, DenyAndStop+note
+    body Command { command: "touch c-read.txt", cwd: "", reason: "", description: "Create c-read.txt in the working directory" }
+## 168 recorded 166: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01TGnuCGHJg4CGJULoencBWo
+  agents [sub-8f4c80a2 "Read a.txt" Exited { cause: Finished }, sub-b9d113db "Read b.txt" Exited { cause: Finished }, sub-724016b2 "Read c.txt" Working] groups [toolu_01N5zxGrayAzJdzy32WzUuDu GroupState { agents: 3, running: 1, needs_you: 0, idle: 0, finished: 2, ended: 0, failed: 0, unknown: 0 }]
+  [sub-724016b2]  ask none
+  [sub-724016b2] composer Native { stop: Unavailable } activity=Some(Running { key: "toolu_01TGnuCGHJg4CGJULoencBWo" }) phase=Working
+## 170 recorded 168: fact SubagentTranscript type=user uuid=66faa75e-34f6-47bd-91a2-2b398242d712
+  [sub-724016b2] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
 ## 179 recorded 177: fact Transcript type=queue-operation
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+  agents [sub-8f4c80a2 "Read a.txt" Exited { cause: Finished }, sub-b9d113db "Read b.txt" Exited { cause: Finished }, sub-724016b2 "Read c.txt" Exited { cause: Finished }] groups [toolu_01N5zxGrayAzJdzy32WzUuDu GroupState { agents: 3, running: 0, needs_you: 0, idle: 0, finished: 3, ended: 0, failed: 0, unknown: 0 }]
+  [sub-724016b2] composer Native { stop: Unavailable } activity=None phase=Exited { cause: Finished }
 ## 191 recorded 189: fact Transcript type=system subtype=turn_duration uuid=84826fcb-64dc-4734-b706-b51513f3d431
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
      2 207081b2-0585-4f7b-9ef9-723f46cab13c Prompt { text: [Text("In a single message, launch three `reader` subagents in parallel: one for a.txt, one for b.txt and one for c.txt. When all three have reported, reply with their three words in file order, separated by spaces.")], steered: false }
-     3 toolu_01N5zxGrayAzJdzy32WzUuDu Subagent { description: "Read a.txt", running: true, tool_count: 0, last_tool: "", answer: "ALPHA", duration_ms: Some(3581) } run[toolu_01N5zxGrayAzJdzy32WzUuDu..toolu_01KMvHG2KaWFq7rQME3vCaz3 x3] collapsed
-     4 toolu_01QNT26Q23MNQzLMPbTipd8r Subagent { description: "Read b.txt", running: true, tool_count: 0, last_tool: "", answer: "BRAVO", duration_ms: Some(3197) } run[toolu_01N5zxGrayAzJdzy32WzUuDu..toolu_01KMvHG2KaWFq7rQME3vCaz3 x3 recent=1] collapsed
-     5 toolu_01KMvHG2KaWFq7rQME3vCaz3 Subagent { description: "Read c.txt", running: true, tool_count: 0, last_tool: "", answer: "CHARLIE", duration_ms: Some(9888) } run[toolu_01N5zxGrayAzJdzy32WzUuDu..toolu_01KMvHG2KaWFq7rQME3vCaz3 x3 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 3, other: 0 }]
+     3 toolu_01N5zxGrayAzJdzy32WzUuDu [opens=sub-8f4c80a2 group[toolu_01N5zxGrayAzJdzy32WzUuDu x3]] Subagent { description: "Read a.txt", continued: false, state: Succeeded, answer: "ALPHA", duration_ms: Some(3581) }
+     4 toolu_01QNT26Q23MNQzLMPbTipd8r [opens=sub-b9d113db group[toolu_01N5zxGrayAzJdzy32WzUuDu x3] collapsed] Subagent { description: "Read b.txt", continued: false, state: Succeeded, answer: "BRAVO", duration_ms: Some(3197) } collapsed
+     5 toolu_01KMvHG2KaWFq7rQME3vCaz3 [opens=sub-724016b2 group[toolu_01N5zxGrayAzJdzy32WzUuDu x3] collapsed] Subagent { description: "Read c.txt", continued: false, state: Succeeded, answer: "CHARLIE", duration_ms: Some(9888) } collapsed
      6 stream:805dc4bf-8dee-4732-9be3-302cb5b1395b Prose { text: [Text("I've launched the three reader agents (a.txt, b.txt, c.txt) in parallel. I'll reply with their words in file order once all three have reported back.")], streaming: false, working_note: false }
      7 turn:1 TurnEnd { duration_ms: Some(4408), failed: false }
      8 stream:2652c8a1-0c86-4efc-89c3-3b5b08bbcf89 Prose { text: [Text("Two of the three readers have reported: a.txt contains **ALPHA** and b.txt contains **BRAVO**. The c.txt reader is still running. I'll reply with all three words in file order once it finishes.")], streaming: false, working_note: false }
@@ -45,3 +90,32 @@
   changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
   command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None
+== agent sub-8f4c80a2 "Read a.txt" started by host/toolu_01N5zxGrayAzJdzy32WzUuDu
+  composer Native { stop: Unavailable } phase=Exited { cause: Finished }
+== chat
+     1 cb0105d7-9cab-4830-9d22-9b412dc8f825 Prompt { text: [Text("Read the file a.txt in the working directory <MACHINE_PATH> (use the absolute path <MACHINE_PATH>) and report the word in it.")], steered: false }
+     2 toolu_01JVyPfBbkZ4k8qXiKzQ8cLV Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_01JVyPfBbkZ4k8qXiKzQ8cLV..toolu_01JVyPfBbkZ4k8qXiKzQ8cLV x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }]
+     3 msg_011Ch6c1TYbGEUq7ShFrdFRd:0 Thinking { text: "", open: false, duration_ms: Some(1898) }
+     4 msg_011Ch6c1TYbGEUq7ShFrdFRd:1 Prose { text: [Text("ALPHA")], streaming: false, working_note: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+  changes: Changeability { model: NotOffered, effort: NotOffered, permission: NotOffered, mode: NotOffered } commands=0
+== agent sub-b9d113db "Read b.txt" started by host/toolu_01QNT26Q23MNQzLMPbTipd8r
+  composer Native { stop: Unavailable } phase=Exited { cause: Finished }
+== chat
+     1 5c5627b3-e793-43d4-bb6d-68044977a274 Prompt { text: [Text("Read the file b.txt in the working directory <MACHINE_PATH> (use the absolute path <MACHINE_PATH>) and report the word in it.")], steered: false }
+     2 toolu_01X8mpULPA5r9NxrhXnQeWZ4 Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_01X8mpULPA5r9NxrhXnQeWZ4..toolu_01X8mpULPA5r9NxrhXnQeWZ4 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }]
+     3 msg_011Ch6c1UjX8VqzS2sqSPMsV:0 Thinking { text: "", open: false, duration_ms: Some(1639) }
+     4 msg_011Ch6c1UjX8VqzS2sqSPMsV:1 Prose { text: [Text("BRAVO")], streaming: false, working_note: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+  changes: Changeability { model: NotOffered, effort: NotOffered, permission: NotOffered, mode: NotOffered } commands=0
+== agent sub-724016b2 "Read c.txt" started by host/toolu_01KMvHG2KaWFq7rQME3vCaz3
+  composer Native { stop: Unavailable } phase=Exited { cause: Finished }
+== chat
+     1 da9abe68-ec2d-4e90-98a0-2a1a04e85830 Prompt { text: [Text("Read the file c.txt in the working directory <MACHINE_PATH> (use the absolute path <MACHINE_PATH>) and report the word in it.")], steered: false }
+     2 toolu_019Pj9TVAQbJHvYGZPuUQBYo Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_019Pj9TVAQbJHvYGZPuUQBYo..toolu_01TGnuCGHJg4CGJULoencBWo x3] collapsed
+     3 toolu_01PL2bLMCo8YBi29mfAwEi29 Command { command: "ls <MACHINE_PATH>", description: "List .txt files in the working directory", state: Succeeded, exit_code: None, output_head: ["<MACHINE_PATH>", "<MACHINE_PATH>", "<MACHINE_PATH>"], more_lines: 0, output_trimmed: false, output_tail: ["<MACHINE_PATH>", "<MACHINE_PATH>", "<MACHINE_PATH>"], duration_ms: Some(187) } run[toolu_019Pj9TVAQbJHvYGZPuUQ…
+     4 msg_011Ch6c1r6APdepnMqGKiEgF:0 Thinking { text: "", open: false, duration_ms: Some(2207) } run[toolu_019Pj9TVAQbJHvYGZPuUQBYo..toolu_01TGnuCGHJg4CGJULoencBWo x3] collapsed
+     5 toolu_01TGnuCGHJg4CGJULoencBWo Command { command: "touch c-read.txt", description: "Create c-read.txt in the working directory", state: Succeeded, exit_code: None, output_head: ["(Bash completed with no output)"], more_lines: 0, output_trimmed: false, output_tail: ["(Bash completed with no output)"], duration_ms: Some(158) } run[toolu_019Pj9TVAQbJHvYGZPuUQBYo..toolu_01TGnuCGHJg4CGJULoencBWo x…
+     6 msg_011Ch6c22Q2DQqqANETHW7Rc:0 Prose { text: [Text("CHARLIE")], streaming: false, working_note: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+  changes: Changeability { model: NotOffered, effort: NotOffered, permission: NotOffered, mode: NotOffered } commands=0

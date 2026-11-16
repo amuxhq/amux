@@ -704,6 +704,8 @@ fn row(kind: RowKind) -> Row {
         decision: None,
         attention: false,
         parent: None,
+        opens: None,
+        group: None,
         turn: None,
     }
 }
@@ -1207,14 +1209,13 @@ fn row_sets() -> Vec<RowSet> {
         ),
         (
             "row_subagent",
-            "A subagent at work with its last tool, then one finished with its answer, opened.",
+            "A subagent at work, then one finished with its answer, opened.",
             vec![
                 (
                     row(RowKind::Subagent {
                         description: "Survey the redraw paths".into(),
-                        running: true,
-                        tool_count: 7,
-                        last_tool: "Read crates/tui/src/app.rs".into(),
+                        continued: false,
+                        state: CallPhase::Running,
                         answer: String::new(),
                         duration_ms: None,
                     }),
@@ -1223,9 +1224,8 @@ fn row_sets() -> Vec<RowSet> {
                 (
                     row(RowKind::Subagent {
                         description: "Survey the redraw paths".into(),
-                        running: false,
-                        tool_count: 12,
-                        last_tool: String::new(),
+                        continued: false,
+                        state: CallPhase::Succeeded,
                         answer: "Two paths redraw: the tick and inventory events.".into(),
                         duration_ms: Some(95_000),
                     }),

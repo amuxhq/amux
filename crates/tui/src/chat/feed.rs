@@ -1394,21 +1394,21 @@ fn step_words(row: &Row) -> (String, String, String) {
             let meta = decided(vec![meta], row, *state == CallPhase::Denied);
             (verb.to_owned(), subject, meta)
         }
+        // How the subagent itself stands is its fleet row's
+        // (`ui_view::opened_agent` on the row's `opens`); until the
+        // terminal draws that, the call's own state stands in.
         RowKind::Subagent {
             description,
-            running,
-            tool_count,
+            state,
             duration_ms,
             ..
         } => {
-            let mut meta = vec![format!(
-                "{tool_count} tool{}",
-                if *tool_count == 1 { "" } else { "s" }
-            )];
-            if !*running && let Some(ms) = duration_ms {
+            let running = state.in_flight();
+            let mut meta = Vec::new();
+            if !running && let Some(ms) = duration_ms {
                 meta.push(text::duration(*ms));
             }
-            let verb = if *running {
+            let verb = if running {
                 "Running subagent"
             } else {
                 "Ran subagent"

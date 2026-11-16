@@ -5,8 +5,9 @@
 //! theme and animation belong to each renderer.
 //!
 //! Rows are items: the row id is the item key and never moves, and a run of
-//! tool steps is an attribute on its members, so paging and streaming only
-//! ever add ids at the two edges.
+//! tool steps is an attribute on its members, as is a group of calls that
+//! opened agents, so paging and streaming only ever add ids at the two
+//! edges.
 
 mod ask;
 mod composer;
@@ -20,6 +21,7 @@ mod rows;
 mod run;
 mod segments;
 mod settings;
+mod subagents;
 mod text;
 mod turn;
 
@@ -64,6 +66,10 @@ pub use settings::{
     ModeChoice, ModelChoice, NewAgentChoices, NewAgentPick, PermissionChoice, SettingChange,
     SettingsView, Slash, controls, new_agent_pick, new_agent_settings, setting_input, settings,
     slash, typed_setting,
+};
+pub use subagents::{
+    ChatAgents, GroupState, GroupView, OpenedAgent, SubagentGroup, chat_agents, group_state,
+    opened_agent, subagent_rows_moved, toggle_group,
 };
 pub use turn::{TurnPart, TurnPlace, Worked, turn_keys, turn_rows_moved};
 /// Why an input was refused, which every client words.

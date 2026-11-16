@@ -1101,6 +1101,8 @@ impl ChatView {
             return vec![];
         }
         match state.composer() {
+            // A provider subagent takes no messages at all.
+            Composer::Native { .. } => vec![],
             // Not current, nothing goes: the draft stays in the composer,
             // whose top edge says why, until it can.
             Composer::Waiting(_) => {
@@ -3870,6 +3872,9 @@ fn waiting_words(composer: &Composer, host: &str, reach: Reach) -> Option<String
         // that daemon gone, never the agent's host, as home says it.
         Composer::Waiting(Waiting::Reconnecting) => "reconnecting to amux".to_owned(),
         Composer::Waiting(Waiting::CatchingUp) => "catching up".to_owned(),
+        Composer::Native { .. } => {
+            "its parent's provider runs this subagent · it takes no messages".to_owned()
+        }
         Composer::Send | Composer::Resume => return None,
     })
 }
@@ -4259,6 +4264,7 @@ fn turn_hint(state: &SessionState, editor: &Editor, reach: Reach, leader: char) 
             pairs.extend(shift_tab);
         }
         Composer::Resume => pairs.push(("enter", "resume")),
+        Composer::Native { .. } => {}
         Composer::Waiting(Waiting::Detached) if reach == Reach::Offline(Offline::SignedOut) => {
             return waits("can't send until this machine signs in");
         }

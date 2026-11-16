@@ -65,7 +65,7 @@ kind is the [`ui_view::RowKind`](../crates/ui-view/src/rows.rs) variant the view
 | File created, deleted, moved | `FileChange` with `Created { lines }`, `Deleted`, `Moved { to }` | "Created path · 38 lines", "Deleted path", "Moved a → b". | partial: create and overwrite only | partial | full |
 | Tool call | `ToolCall { server, tool, fact, state, result }` | "Used github · create_issue" plus one fact, opening to input and result. | partial: name and text result | full | full |
 | Subagent started or stopped | `Child { action, name, host, kind, state, result }` | amux's own `spawn` and `stop` calls in their own words: "Started payment-tests on build · Codex", "Stopped copy-pass". The machine shows only when it is another one; a failure reads "Could not start …" and opens to why. amux's `agents` and `hosts` listings are the agent looking around, and hidden. | full | full | full |
-| Subagent | `Subagent { description, running, tool_count, last_tool, answer, duration_ms }` | Live while running, its answer once finished. A Claude subagent's call opens the subagent's own chat; a Codex child's steps are rows with a `parent`, collapsed under it, counted while it runs ("12 tools · 48s · last: Read"). | partial | full | partial |
+| Subagent | `Subagent { description, continued, state, answer, duration_ms }` | The call that started a subagent its provider runs, or continued it: Claude's Agent call and a SendMessage to it, Codex's spawn and follow-up of a child thread. It opens the subagent's own chat (`Row.opens`); how the subagent stands (running, waiting on you, done, stopped) is its fleet row's, never the call's; its answer once the call returned it. The calls of one turn that opened more than one agent fold into one "N subagents" row with their combined state, opening to each. A call from history names no agent and reads its own `state`, its steps collapsed under it (`parent`). | full | full | full: a Codex child's description is its fleet title |
 | Background process | `Background { command, description, running }` | "Started in background npm run dev"; the running job is listed in the overview. | partial | partial | partial |
 | Image | `Image { image, path, generated }` | A thumbnail opening full size on the phone and on a terminal that can draw images; elsewhere a line that opens it. Codex can report generated images. | partial | partial | full |
 | Slash command output | `SlashOutput { command, args, output }` | The command, then its output block. | partial | partial | partial: a review's notices |
@@ -80,7 +80,15 @@ the phase and branches on it, never on its own words.
 A provider subagent (Claude's Agent tool, a Codex child thread) is an agent with a chat of its own, which the
 call that started it opens: Claude's call row names it (`ToolCall.child_agent_id`, see
 [INTERPRETERS.md](INTERPRETERS.md#claudes-subagents)) and a Codex collab row lists its children
-(`CollabWork.agent_ids`). An amux spawn makes an agent with a process of its own ([AGENT_TOOLS.md](AGENT_TOOLS.md)).
+(`CollabWork.agent_ids`). An amux spawn makes an agent with a process of its own ([AGENT_TOOLS.md](AGENT_TOOLS.md)),
+and its `Child` row opens it the same way. Every row that opens an agent carries it in `Row.opens`, reads how that
+agent stands from the fleet (`ui_view::opened_agent`, `group_state`), and is not a step: it ends a run rather than
+folding into one. Codex's calls on children that start none (wait, close, interrupt, list) draw nothing.
+
+In a provider subagent's own chat everything is drawn as in any chat: its prompt, thinking, text, tool calls,
+asks and the calls that started its own subagents. Its composer has no text box (`Composer::Native { stop }`): it
+says Claude or Codex runs this subagent and it takes no messages, and offers Stop where the provider stops one
+subagent on request (headless Claude and Codex; never terminal Claude). An ask there is answered as any ask is.
 
 ![Tool-server calls as steps: one running, one always allowed, one denied with its note under it, and one failed, opened to its result.](figures/vocabulary/row_tool_call.light.png)
 
@@ -113,7 +121,7 @@ one of:
 | `Working` | The default whenever the agent is busy and nothing more specific applies, including right after sending and while a reply streams. |
 | `Thinking` | A thinking item is still open. Terminal Claude writes its thinking row only when thinking ends, so it stays on Working. |
 | `Running { key }` | A tool is in flight, named by its subject. For terminal Claude, a call its hooks announced (`running_calls` in the snapshot) counts before its row lands. |
-| `Subagents { count }` | The parent waits on its children. |
+| `Subagents { count }` | The parent waits on its children: its calls to subagents still under way, or the tasks it says run. |
 | `Compacting` | Until the compaction row lands. |
 | `Retrying { attempt, max_attempts, retry_at_ms }` | The provider failed a request and says it will try again. |
 
@@ -248,7 +256,7 @@ row or the row failed.
 | Field | Shown | claude_pty | claude_sdk | codex |
 |---|---|---|---|---|
 | `tasks` | "3/7 · Updating the pairing copy", opening to the list (Claude's task list, Codex's plan steps) | partial | partial | full |
-| `jobs` | Each background job still running: its command, when it started, the step that started it, and its own stop where the kind has one (behind a confirm; `Stopping…`; the provider's refusal) | partial | partial | partial |
+| `jobs` | Each background job still running: its command, when it started, the step that started it, and its own stop where the kind has one (behind a confirm; `Stopping…`; the provider's refusal). A provider subagent's own job is left out: its composer stops it. | partial | partial | partial |
 | `failed_servers` | Only tool servers that failed to start or need signing in | none | full | full |
 | `usage_near_limit` | Nothing while fine; a warning near a limit; a foot card when blocked | none | full | full |
 | `changes` | The changed files by folder, root files first, once fetched with `GetDiff` and no patch (`changes(diff)`) | full | full | full |

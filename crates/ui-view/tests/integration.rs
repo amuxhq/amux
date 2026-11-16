@@ -6,5 +6,6 @@ mod support;
 mod answers;
 mod goldens;
 mod runs;
+mod subagents;
 mod turns;
 mod views;

@@ -1041,7 +1041,10 @@ mod hosting {
         let out = host.ends("sub-a");
         assert!(!closes(&out), "sub-b still runs: {out:?}");
         let out = host.ends("sub-b");
-        assert!(closes(&out), "the last one ended with the agent idle: {out:?}");
+        assert!(
+            closes(&out),
+            "the last one ended with the agent idle: {out:?}"
+        );
         assert_eq!(host.exits(), Some(ExitCause::Finished));
     }
 

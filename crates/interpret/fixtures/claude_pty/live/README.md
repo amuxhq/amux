@@ -43,7 +43,7 @@ with a task notification.
 
 | capture | what it holds |
 |---|---|
-| `subagents_parallel` | three subagents launched in one message, each reading a file and listing the folder |
+| `subagents_parallel` | three subagents launched in one message, each reading a file and listing the folder; the third asks before running a command, before any of its own rows are written |
 | `subagent_nested` | a subagent that launches its own; the inner one's report continues the outer one, which then reports to the parent |
 | `subagent_ask` | a subagent asks before a command, and amux allows it on the hook |
 | `subagent_stopped` | a background subagent outlives an interrupted turn; the parent then stops it with `TaskStop` |
@@ -63,10 +63,11 @@ Tool-server forms are therefore recorded headless only, but for
 What Claude writes for each subagent is in `subagent` lines: a row of
 `<session>/subagents/agent-<id>.jsonl`, or the whole `agent-<id>.meta.json`
 beside it each time Claude rewrites it, named by the session's transcript
-(`<TRANSCRIPT_1>/subagents/agent-<id>.jsonl`). These captures were made
-before amux registered the `SubagentStart` hook, so the recorder registered
-one that only records its payload, and their `hook` lines for it are the
-recorder's. A replay reads `subagent` lines as the agent process delivers
+(`<TRANSCRIPT_1>/subagents/agent-<id>.jsonl`). Except for
+`subagents_parallel`, these captures were made before amux registered the
+`SubagentStart` hook, so the recorder registered one that only records its
+payload, and their `hook` lines for it are the recorder's;
+`subagents_parallel` was driven by amux's own hook and followers. A replay reads `subagent` lines as the agent process delivers
 them: a file's meta before its first row, its rows on the subagent channel,
 and the file drained once its last recorded row is read. What passed between
 Claude and each tool server (amux's own, and the probe's in the form

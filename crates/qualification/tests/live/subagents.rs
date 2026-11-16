@@ -383,14 +383,23 @@ impl Install {
              printed. Then reply with the single word STARTED.",
         )
         .await?;
+        // The subagent is an agent of its own: its command runs in its own
+        // session, which the Agent call's row opens.
         follow
-            .until(UNDER_WAY, "the subagent's command to run", |log| {
-                !subagent_jobs(log).is_empty()
-                    && tools(log)
-                        .iter()
-                        .any(|call| call.name == "Bash" && running(call))
+            .until(UNDER_WAY, "the subagent to start", |log| {
+                !super::asks::opened_subagents(Kind::ClaudeSdk, log).is_empty()
             })
             .await?;
+        let child = super::asks::opened_subagents(Kind::ClaudeSdk, &follow.snapshot()).remove(0);
+        let subagent = self.follow(&child);
+        subagent
+            .until(UNDER_WAY, "the subagent's command to run", |log| {
+                tools(log)
+                    .iter()
+                    .any(|call| call.name == "Bash" && running(call))
+            })
+            .await?;
+        drop(subagent);
         tokio::time::sleep(Duration::from_secs(3)).await;
         self.amux(&["settle", &name]).await?;
         self.listed(&name, "settled").await?;
@@ -433,6 +442,19 @@ impl Install {
             }
         }
         live.phases = phases;
+        // The resumed Claude first reports the subagent its exit stopped and
+        // answers that report with an empty turn, before the prompt arrives:
+        // a Working spell of tens of milliseconds inside the process's start,
+        // which a client reading the daemon's latest state can miss. Live
+        // phases that only skip spells the recording holds are its phases.
+        let mut recorded_phases = recorded.phases.iter();
+        if live
+            .phases
+            .iter()
+            .all(|phase| recorded_phases.any(|recorded| recorded == phase))
+        {
+            live.phases = recorded.phases.clone();
+        }
         super::judge(&recorded, &live)?;
         Ok(Verdict::Pass)
     }

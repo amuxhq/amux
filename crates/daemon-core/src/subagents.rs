@@ -137,8 +137,14 @@ impl Daemon {
     }
 
     /// After a batch committed: what its parts said of each subagent's
-    /// life, in journal order, and the sessions of the subagents made for
-    /// it brought as current as their host's.
+    /// life, and the sessions of the subagents made for it brought as
+    /// current as their host's.
+    ///
+    /// Only each subagent's last change in the batch is acted on, since the
+    /// commit stored its row as the batch left it. An end that a later
+    /// start in the same batch overtook, as a catch-up on a long journal
+    /// reads of a finished subagent its parent's model continued, would
+    /// otherwise mark exited a row the provider is still running.
     pub(crate) fn subagents_committed(
         &mut self,
         host: &AgentKey,
@@ -149,7 +155,19 @@ impl Daemon {
         for key in made {
             self.follow_hosts_marker(host, key, out)?;
         }
-        for change in changes {
+        let of = |change: &SubagentChange| match change {
+            SubagentChange::Continued(key) | SubagentChange::Ended(key, _) => key.clone(),
+        };
+        let last: Vec<bool> = (0..changes.len())
+            .map(|at| {
+                let key = of(&changes[at]);
+                changes[at + 1..].iter().all(|later| of(later) != key)
+            })
+            .collect();
+        for (change, last) in changes.into_iter().zip(last) {
+            if !last {
+                continue;
+            }
             match change {
                 SubagentChange::Continued(key) => self.subagent_continued(host, &key, out)?,
                 SubagentChange::Ended(key, end) => self.subagent_ended(&key, end, out)?,
@@ -945,6 +963,34 @@ mod tests {
         assert_eq!(
             (row.lifecycle, row.exit_cause),
             (Lifecycle::Exited as i32, ExitCause::Killed as i32)
+        );
+    }
+
+    /// A catch-up batch can hold a subagent's end and the start of its
+    /// continuation: it is running again, so it reads live and open.
+    #[test]
+    fn an_end_and_a_continuation_in_one_batch_leave_the_subagent_live_and_open() {
+        let mut rig = rig();
+        rig.host_writes(&[starts(SUB, &["s1"])]);
+
+        rig.host_writes(&[ends(SUB, ExitCause::Finished), starts(SUB, &["s2"])]);
+        let row = rig.row(SUB).unwrap();
+        assert_eq!(
+            (row.lifecycle, row.exit_cause),
+            (Lifecycle::Live as i32, ExitCause::Unspecified as i32)
+        );
+        assert!(!row.is_closed(), "a running subagent is not filed closed");
+
+        // Ended, continued and ended again: the last end stands.
+        rig.host_writes(&[
+            ends(SUB, ExitCause::Finished),
+            starts(SUB, &["s3"]),
+            ends(SUB, ExitCause::Stopped),
+        ]);
+        let row = rig.row(SUB).unwrap();
+        assert_eq!(
+            (row.lifecycle, row.exit_cause),
+            (Lifecycle::Exited as i32, ExitCause::Stopped as i32)
         );
     }
 

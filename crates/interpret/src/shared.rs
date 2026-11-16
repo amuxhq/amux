@@ -422,6 +422,10 @@ pub struct Shared<A: OpenAsk> {
     /// there stays for the next incarnation rather than going to a
     /// provider about to be closed.
     leaving: bool,
+    /// The provider was closed by a suspension: the agent reads idle, not
+    /// starting, until its next incarnation.
+    #[serde(default)]
+    suspended: bool,
     /// What the provider process holds that ending it would lose: its
     /// scheduled wake-ups, a grant for its session, and a turn it owes.
     /// Absent from a checkpoint an earlier build wrote.
@@ -492,6 +496,7 @@ impl<A: OpenAsk> Shared<A> {
             turn_on_reflection: false,
             stopping: false,
             leaving: false,
+            suspended: false,
             held: Held::default(),
             watch: Watch::default(),
         };
@@ -512,6 +517,7 @@ impl<A: OpenAsk> Shared<A> {
     pub fn reincarnate(&mut self, spec: &AgentSpec) {
         self.stopping = false;
         self.leaving = false;
+        self.suspended = false;
         // The row's word, which a rename while the agent was not running
         // has changed.
         self.title.clone_from(&spec.title);
@@ -700,7 +706,7 @@ impl<A: OpenAsk> Shared<A> {
     pub fn phase(&self) -> Phase {
         if !self.asks.is_empty() {
             Phase::NeedsYou
-        } else if !self.started {
+        } else if !self.started && !self.suspended {
             Phase::Starting
         } else if self.busy {
             Phase::Working
@@ -1395,6 +1401,14 @@ impl<A: OpenAsk> Shared<A> {
     pub fn turn_abandoned(&mut self) {
         self.busy = false;
         self.turn.end();
+    }
+
+    /// The provider is gone as the incarnation ends for `end`: as
+    /// [`Self::provider_exited`], and a suspension leaves the agent idle, as
+    /// its row says, rather than starting.
+    pub fn provider_exited_as(&mut self, end: &wire::IncarnationEnd) -> Option<OpenTurn> {
+        self.suspended = end.cause == wire::ExitCause::Suspended as i32;
+        self.provider_exited()
     }
 
     /// The provider is gone: no turn runs and nothing is submitted. A turn

@@ -398,7 +398,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
             }
             Event::Exiting(end) => {
                 state.shared.close_all_asks();
-                state.shared.provider_exited();
+                state.shared.provider_exited_as(&end);
                 state.jobs.clear();
                 emit.end_incarnation(end);
             }

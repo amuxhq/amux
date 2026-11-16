@@ -2775,7 +2775,7 @@ impl State {
         }
         self.background = None;
         self.threads.clear();
-        self.shared.provider_exited();
+        self.shared.provider_exited_as(&exit);
         self.active_turn = None;
         self.interrupt_pending = false;
         self.boundary(emit, wire::BoundaryKind::Exited, exit);

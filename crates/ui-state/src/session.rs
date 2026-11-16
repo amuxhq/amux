@@ -426,6 +426,11 @@ impl SessionState {
                 cause: crate::exit_cause(&self.agent),
             };
         }
+        // Suspended: live with no process, idle whatever snapshot an exit
+        // left saying starting.
+        if self.agent.exit_cause() == wire::ExitCause::Suspended {
+            return PhaseView::Idle;
+        }
         let phase = if self.has_snapshot() {
             self.state.phase
         } else {

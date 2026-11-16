@@ -468,8 +468,8 @@ impl State {
     pub(super) fn exited(&mut self, emit: &mut Emit, exit: wire::IncarnationEnd) {
         emit.end_incarnation(exit.clone());
         self.dismiss_asks(emit);
+        self.shared.provider_exited_as(&exit);
         self.boundary(emit, BoundaryKind::Exited, exit);
-        self.shared.provider_exited();
         self.jobs.clear();
         self.exited = true;
         self.unanswered.clear();

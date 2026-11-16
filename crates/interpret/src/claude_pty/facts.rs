@@ -245,8 +245,8 @@ impl State {
         self.close_all_unknown(emit);
         // A reply Claude died drawing ends as it was drawn.
         self.finish_streams(emit);
+        self.shared.provider_exited_as(&exit);
         self.boundary(emit, BoundaryKind::Exited, exit);
-        self.shared.provider_exited();
         self.jobs.clear();
         self.local_turn = false;
     }

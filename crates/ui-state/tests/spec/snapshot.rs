@@ -355,3 +355,22 @@ fn what_the_fetched_catalogue_offers_shows_while_the_snapshot_names_it() {
         );
     }
 }
+
+/// A suspended agent's row is live with the suspended cause: its chat reads
+/// idle, whatever snapshot an earlier build left saying starting, and reads
+/// the snapshot again once a resume clears the cause.
+#[test]
+fn a_suspended_agents_chat_reads_idle_over_a_snapshot_left_starting() {
+    for kind in KINDS {
+        let mut suspended = agent(kind);
+        suspended.exit_cause = wire::ExitCause::Suspended as i32;
+        let mut state = SessionState::new(suspended, CAP);
+        apply_checked(
+            &mut state,
+            ev_snapshot(snapshot(kind, 3, Phase::Starting, &[], &[])),
+        );
+        assert_eq!(state.phase(), PhaseView::Idle, "{kind:?}");
+        apply_checked(&mut state, ui_state::Msg::Entry(agent(kind)));
+        assert_eq!(state.phase(), PhaseView::Starting, "{kind:?}");
+    }
+}

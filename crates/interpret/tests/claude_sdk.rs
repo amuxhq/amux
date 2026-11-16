@@ -2568,3 +2568,19 @@ fn a_recurring_crons_tick_leaves_a_pending_one_shot_held() {
         "the one-shot is still pending: {deleted:?}"
     );
 }
+
+/// A suspension ends the provider with nothing left to do: the agent's last
+/// snapshot says idle, as its row does, not starting.
+#[test]
+fn a_suspensions_last_snapshot_says_idle() {
+    let mut state = started();
+    let stepped = ClaudeSdk::step(
+        &mut state,
+        Event::Exiting(wire::IncarnationEnd {
+            cause: wire::ExitCause::Suspended as i32,
+            detail: None,
+        }),
+    );
+    let phase = stepped.step.snapshot.map(|snapshot| snapshot.phase);
+    assert_eq!(phase, Some(wire::Phase::Idle as i32));
+}

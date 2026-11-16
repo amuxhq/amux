@@ -1030,9 +1030,7 @@ impl<I: Interpreter> Agent<I> {
     /// provider, as a later turn of this agent (Claude's task notification)
     /// or within the running one (Codex's wait), so a one-shot agent that
     /// left while one ran would kill it and report the launch as its
-    /// answer. A subagent that ends while the agent is idle does not end
-    /// the agent by itself: the turn the provider then runs on its answer
-    /// does, at its end. A prompt
+    /// answer. A prompt
     /// typed into one of terminal Claude's own
     /// screens is never recorded, so a one-shot child stays, idle, until a
     /// later prompt row takes it, a stop ends it or its daemon is lost.
@@ -1135,7 +1133,7 @@ impl<I: Interpreter> Agent<I> {
         // Before the turn end is judged: a subagent that ends in the same
         // step as the turn no longer holds the agent, and one that starts
         // in it does.
-        self.track_subagents(&step);
+        let last_subagent_ended = self.track_subagents(&step);
         // Marked here, not by the interpreter: only the process knows its
         // children and whether it is leaving.
         if step.turn_end.is_some() {
@@ -1171,6 +1169,15 @@ impl<I: Interpreter> Agent<I> {
                 .map(|item| item.input_id.clone()),
         );
         let turn_ended = step.turn_end.is_some();
+        // The last subagent ending outside a turn end leaves no turn end to
+        // judge: a one-shot agent it leaves idle with nothing else to wait
+        // for has finished, as one whose spawn turned out to make no child
+        // has. A provider that answers with a turn of its own (Claude's task
+        // notification) has started that turn by then, so the agent is not
+        // idle and the turn's end decides.
+        if last_subagent_ended && !turn_ended {
+            self.settled();
+        }
         // The journal skips an empty step, and an empty step tells the
         // daemon nothing.
         if step != Step::default() {
@@ -1203,8 +1210,10 @@ impl<I: Interpreter> Agent<I> {
     /// within one step; a start on an id that ended is its parent's model
     /// continuing it, live again; an end for an id never started here is a
     /// subagent of the last incarnation the provider reports stopped, and
-    /// changes nothing.
-    fn track_subagents(&mut self, step: &Step) {
+    /// changes nothing. Returns whether the step ended the last one that
+    /// ran.
+    fn track_subagents(&mut self, step: &Step) -> bool {
+        let ran = !self.life.subagents.is_empty();
         for part in &step.agents {
             if part.start.is_some() {
                 self.life.subagents.insert(part.agent_id.clone());
@@ -1213,6 +1222,7 @@ impl<I: Interpreter> Agent<I> {
                 self.life.subagents.remove(&part.agent_id);
             }
         }
+        ran && self.life.subagents.is_empty()
     }
 
     fn read_git(&mut self, out: &mut Vec<Output>) {

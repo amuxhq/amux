@@ -342,7 +342,8 @@ report of an earlier child, never stands in for it. A provider subagent
 hands its answer back through the provider, as a later turn of its host (a
 Claude task notification) or within the running one (a Codex wait), so the
 host stays until every subagent it started has ended, and the turn on the
-last answer is its last. An unreachable child's
+last answer is its last; a last end that leaves it idle with no such turn
+ends it there. An unreachable child's
 host leaves it waiting, and stopping it (or its own parent's exit) ends it.
 Input that arrives while it exits is answered `REFUSAL_EXITING`. Its
 transcript and its parent edge stay.

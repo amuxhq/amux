@@ -993,15 +993,25 @@ mod hosting {
             self.turn_end()
         }
 
+        /// The subagent's end comes with the turn the provider runs on its
+        /// answer, started before the end is told: the turn's end, not the
+        /// subagent's, decides.
+        fn ends_into_a_turn(&mut self, id: &str) -> Vec<Output> {
+            self.fact(json!({"type": "turn_start"}));
+            let out = self.ends(id);
+            assert!(!closes(&out), "a turn runs on its answer: {out:?}");
+            self.turn_end()
+        }
+
         fn exits(&mut self) -> Option<ExitCause> {
             exit_of(&self.on(Input::ProviderExited { code: Some(0) })).cloned()
         }
     }
 
     /// A turn that ends while a subagent it started runs is not the last:
-    /// the agent stays. The subagent's end alone, with the agent idle, does
-    /// not end it either, since the provider hands the answer back as a
-    /// turn of its own; that turn's end is the last.
+    /// the agent stays. When the provider answers with a turn of its own,
+    /// started before the subagent's end is told, that turn's end is the
+    /// last.
     #[test]
     fn a_one_shot_host_stays_while_a_subagent_runs_and_ends_after_the_turn_on_its_answer() {
         let mut host = Host::one_shot_working();
@@ -1011,18 +1021,49 @@ mod hosting {
         assert!(!closes(&out), "it left while its subagent ran");
         assert_eq!(host.agent.summary()["subagents_live"], 1);
 
-        let out = host.ends("sub-a");
-        assert!(
-            !closes(&out),
-            "the turn on the subagent's answer is to come"
-        );
-        assert_eq!(exit_of(&out), None);
+        let out = host.ends_into_a_turn("sub-a");
         assert_eq!(host.agent.summary()["subagents_live"], 0);
-
-        let out = host.follow_up_turn();
         assert_eq!(marked_last(&out), Some(true));
         assert!(closes(&out));
         assert_eq!(host.exits(), Some(ExitCause::Finished));
+    }
+
+    /// The last subagent ending while the agent is idle, with nothing
+    /// queued or awaited and no turn of the provider's to follow, ends a
+    /// one-shot agent there: no turn end will come to decide it.
+    #[test]
+    fn a_one_shot_host_left_idle_by_its_last_subagents_end_finishes() {
+        let mut host = Host::one_shot_working();
+        host.starts("sub-a");
+        host.starts("sub-b");
+        assert_eq!(marked_last(&host.turn_end()), Some(false));
+
+        let out = host.ends("sub-a");
+        assert!(!closes(&out), "sub-b still runs: {out:?}");
+        let out = host.ends("sub-b");
+        assert!(closes(&out), "the last one ended with the agent idle: {out:?}");
+        assert_eq!(host.exits(), Some(ExitCause::Finished));
+    }
+
+    /// An agent that is not one-shot (a person's, with no parent) stays
+    /// when its last subagent ends while it is idle.
+    #[test]
+    fn a_hosts_last_subagent_ending_leaves_an_agent_with_no_parent_running() {
+        let mut out = Vec::new();
+        let agent =
+            Agent::<Hosting>::start(&spec(false, Some("do the thing")), None, 1_000, &mut out);
+        let mut host = Host {
+            agent,
+            now_ms: 1_000,
+        };
+        host.on(Input::DaemonDials { connection: DAEMON });
+        host.fact(json!({"type": "ready"}));
+        host.fact(json!({"type": "user", "id": "p1", "text": "p1"}));
+        host.starts("sub-a");
+        host.turn_end();
+        let out = host.ends("sub-a");
+        assert!(!closes(&out), "{out:?}");
+        assert_eq!(exit_of(&out), None);
     }
 
     /// With two subagents, each notification turn reports up, and only the
@@ -1034,13 +1075,11 @@ mod hosting {
         host.starts("sub-b");
         assert_eq!(marked_last(&host.turn_end()), Some(false));
 
-        host.ends("sub-a");
-        let out = host.follow_up_turn();
+        let out = host.ends_into_a_turn("sub-a");
         assert_eq!(marked_last(&out), Some(false), "sub-b still runs");
         assert!(!closes(&out));
 
-        host.ends("sub-b");
-        let out = host.follow_up_turn();
+        let out = host.ends_into_a_turn("sub-b");
         assert_eq!(marked_last(&out), Some(true));
         assert!(closes(&out));
     }
@@ -1086,8 +1125,7 @@ mod hosting {
             Some(false),
             "the continued subagent runs"
         );
-        host.ends("sub-a");
-        assert_eq!(marked_last(&host.follow_up_turn()), Some(true));
+        assert_eq!(marked_last(&host.ends_into_a_turn("sub-a")), Some(true));
     }
 
     /// The live set is part of the core's value, so a restored core judges

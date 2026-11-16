@@ -261,10 +261,13 @@ it within the parent's running turn. A one-shot agent whose turn ends while
 one runs would kill it and report the launch as its answer, so it stays. The
 process knows which run from the steps it journals itself, each subagent's
 part of a step carrying its start or its end, so the rule is the same for
-every provider. A subagent that ends while the agent is idle does not end the
-agent by itself: the provider's turn on its answer does, at its end, as a
-child's report does. A turn after one subagent ended while another still runs
-reports up and is not the last.
+every provider. When the provider answers with a turn of its own, that turn
+has started by the step that carries the subagent's end, and the turn's end
+decides, as after a child's report. When the last subagent's end leaves the
+agent idle with nothing queued or awaited and no turn of the provider's to
+follow, the agent finishes there, as when a spawn it waited on made no child.
+A turn after one subagent ended while another still runs reports up and is not
+the last.
 
 The one-shot rule is what having a parent means: there is no flag. An input
 that arrives while such an agent is exiting is answered `REFUSAL_EXITING`,

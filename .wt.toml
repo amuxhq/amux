@@ -13,7 +13,12 @@ amux = "target/debug/amux"
 AMUX_CONFIG = "{{root}}/.wt/amux/config.toml"
 AMUX_LOG = "{{root}}/.wt/amux/amux.log"
 
+# The daemon writes its own settings into this file (experiments, model
+# picks), so wt writes it only when it is missing and never overwrites it.
+# A change to the template below reaches an existing tree once its copy
+# is deleted.
 [files.".wt/amux/config.toml"]
+keep = true
 content = """
 host_name = "{{name_short}}"
 root = "{{root}}/.wt/amux"

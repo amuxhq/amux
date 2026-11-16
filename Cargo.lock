@@ -5426,8 +5426,8 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 
 [[package]]
 name = "wt"
-version = "0.6.0-dev"
-source = "git+https://github.com/jordanwebster/wt?rev=0306310553bc99f842c051fb818062dd98c584a9#0306310553bc99f842c051fb818062dd98c584a9"
+version = "0.6.0"
+source = "git+https://github.com/jordanwebster/wt?tag=v0.6.0#13ab527014c4b8c8f24be72d0279d76bbcb931b9"
 dependencies = [
  "blake3",
  "clap",

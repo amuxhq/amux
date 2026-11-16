@@ -211,8 +211,11 @@ fn turn_span(transcript: &Transcript, order: u64) -> Option<RangeInclusive<u64>>
     Some(lo..=hi)
 }
 
-/// The calls in `span` that open an agent: each one's order, key and agent.
-fn calls(transcript: &Transcript, span: RangeInclusive<u64>) -> Vec<(u64, Key, Vec<u8>)> {
+/// A call that opens an agent: its order, key and agent.
+type Call = (u64, Key, Vec<u8>);
+
+/// The calls in `span` that open an agent.
+fn calls(transcript: &Transcript, span: RangeInclusive<u64>) -> Vec<Call> {
     transcript
         .range(span)
         .filter_map(|held| {
@@ -226,7 +229,7 @@ fn calls(transcript: &Transcript, span: RangeInclusive<u64>) -> Vec<(u64, Key, V
 /// many of its calls the read places.
 #[derive(Default)]
 pub(crate) struct Groups {
-    met: Vec<(RangeInclusive<u64>, Vec<(u64, Key, Vec<u8>)>)>,
+    met: Vec<(RangeInclusive<u64>, Vec<Call>)>,
 }
 
 impl Groups {

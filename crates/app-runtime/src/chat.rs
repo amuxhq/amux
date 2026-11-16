@@ -342,11 +342,11 @@ impl Chat {
         // taking its first, moves the group's other calls.
         let widened: Vec<Key>;
         let changed = if !reloaded && !changed.is_empty() {
-            let turns = self
-                .folds_turns
-                .load(Ordering::Relaxed)
-                .then(|| ui_view::turn_rows_moved(&state, changed))
-                .unwrap_or_default();
+            let turns = if self.folds_turns.load(Ordering::Relaxed) {
+                ui_view::turn_rows_moved(&state, changed)
+            } else {
+                Vec::new()
+            };
             widened = changed
                 .iter()
                 .cloned()

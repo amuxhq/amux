@@ -469,7 +469,7 @@ fn render(kind: Kind, frames: &[Replayed]) -> String {
             "== agent {} {:?} started by {}/{call_key}",
             sub.row.name,
             sub.row.title.as_deref().unwrap_or_default(),
-            if *call_agent == host.agent_id || subs.get(call_agent).is_none() {
+            if *call_agent == host.agent_id || !subs.contains_key(call_agent) {
                 "host".to_owned()
             } else {
                 sub_name(call_agent)

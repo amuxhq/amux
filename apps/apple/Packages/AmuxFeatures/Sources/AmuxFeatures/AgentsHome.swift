@@ -100,6 +100,9 @@ public struct AgentsHome: View {
     /// so in its place rather than looking as if the press was dropped.
     private let signingIn: Bool
     private let actions: @MainActor (HomeAction) -> Void
+    /// Asks what deleting an agent does to its workspace, for the delete's
+    /// dialog to say.
+    private let deleteWarning: @MainActor (AgentKey) async -> Result<DeleteWarning?, RuntimeFailure>
     private let scope: HomeScope
     /// The fold is view state, not fleet state: opening it is a thing this
     /// screen is doing, and coming back to the screen starts it closed again.
@@ -115,6 +118,9 @@ public struct AgentsHome: View {
     @State private var discs = AccountDiscs()
     /// A row's close or delete being asked about, and a rename being typed.
     @State private var confirming: Confirming?
+    /// A delete's question to the agent's host about what its worktree
+    /// holds, while its dialog waits on the answer; see `DeleteAsking`.
+    @State private var asking: Task<Void, Never>?
     @State private var renaming: FleetRow?
     @State private var newName = ""
 
@@ -125,9 +131,11 @@ public struct AgentsHome: View {
         offerNotifications: Bool = false,
         signingIn: Bool = false,
         scope: HomeScope = .fleet,
+        deleteWarning: (@MainActor (AgentKey) async -> Result<DeleteWarning?, RuntimeFailure>)? = nil,
         actions: @escaping @MainActor (HomeAction) -> Void
     ) {
         self.scope = scope
+        self.deleteWarning = deleteWarning ?? { _ in await DeleteWords.unasked() }
         self.store = model
         self.accounts = accounts
         self.hosts = hosts
@@ -246,6 +254,7 @@ public struct AgentsHome: View {
         } message: { asked in
             Text(asked.message)
         }
+        .onDisappear { asking?.cancel() }
         .alert(
             String(localized: "Rename Agent"),
             isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })
@@ -503,7 +512,7 @@ public struct AgentsHome: View {
                 Label(String(localized: "Un-settle"), systemImage: "tray.and.arrow.up")
             }
             .tint(design.accent.color)
-            Button(role: .destructive) { confirming = .delete(row) } label: {
+            Button(role: .destructive) { delete(row) } label: {
                 Label(String(localized: "Delete"), systemImage: "trash")
             }
         } else if row.card.closeHeld {
@@ -550,7 +559,7 @@ public struct AgentsHome: View {
         } label: { Label("Rename", systemImage: "pencil") }
         if row.closed {
             Button { actions(.unfile(row.id)) } label: { Label("Un-settle", systemImage: "tray.and.arrow.up") }
-            Button(role: .destructive) { confirming = .delete(row) } label: {
+            Button(role: .destructive) { delete(row) } label: {
                 Label("Delete Agent", systemImage: "trash")
             }
         } else if row.card.closeHeld {
@@ -559,6 +568,16 @@ public struct AgentsHome: View {
             }
         } else {
             Button { close(row) } label: { Label("Settle", systemImage: "checkmark.circle") }
+        }
+    }
+
+    /// Asks before deleting, saying what goes with the agent as its host
+    /// says it now.
+    private func delete(_ row: FleetRow) {
+        asking?.cancel()
+        asking = Task {
+            await DeleteAsking().run(
+                .deleting(row), ask: deleteWarning, showing: { confirming }, show: { confirming = $0 })
         }
     }
 
@@ -1657,22 +1676,90 @@ struct FleetScope: Identifiable {
 }
 
 /// What the list is asking the person about one row before it acts.
+/// How a delete's dialog comes up when what goes with the worktree has to
+/// be asked of the agent's host first, as it does for an agent with no
+/// process.
+///
+/// A system dialog that is up never redraws: its words and its buttons stay
+/// as they were put up. So the dialog goes up on the answer when the answer
+/// comes within `patience`. When it doesn't, the dialog goes up saying it is
+/// checking, and confirming that one agrees to lose nothing; when the answer
+/// comes, that dialog is put away and the answered one put up in its place,
+/// unless the person has already closed it.
+@MainActor
+struct DeleteAsking {
+    var patience: Duration = .milliseconds(300)
+    /// Long enough for a dialog put away to have gone before the next goes up.
+    var swap: Duration = .milliseconds(400)
+
+    func run(
+        _ opened: Confirming,
+        ask: @MainActor (AgentKey) async -> Result<DeleteWarning?, RuntimeFailure>,
+        showing: () -> Confirming?,
+        show: @escaping @MainActor (Confirming?) -> Void
+    ) async {
+        guard let agent = opened.asking else { return show(opened) }
+        let checking = Task { @MainActor [patience] () -> Bool in
+            try? await Task.sleep(for: patience)
+            guard !Task.isCancelled else { return false }
+            show(opened)
+            return true
+        }
+        let answer = await withTaskCancellationHandler {
+            await ask(agent)
+        } onCancel: {
+            checking.cancel()
+        }
+        checking.cancel()
+        let checked = await checking.value
+        guard !Task.isCancelled else { return }
+        if checked {
+            // Closed by the person, with either button: nothing more to say.
+            guard showing()?.id == opened.id else { return }
+            show(nil)
+            try? await Task.sleep(for: swap)
+            guard !Task.isCancelled else { return }
+        }
+        show(opened.answered(answer, for: agent))
+    }
+}
+
 enum Confirming: Identifiable {
     /// A close that would cut work short, with what it cuts.
     case close(FleetRow, cuts: String)
-    case delete(FleetRow)
+    /// A delete, with what it says goes with the workspace. A dialog is put
+    /// up on one value and keeps it, so what confirming agrees to is what
+    /// the dialog drew, never what the fleet says since.
+    case delete(FleetRow, warning: DeleteWarning?)
+
+    /// A delete's dialog as it opens: checking, when a workspace goes.
+    static func deleting(_ row: FleetRow) -> Confirming {
+        .delete(row, warning: DeleteWords.asking(row.card.workspaceGoes))
+    }
 
     var id: String {
         switch self {
         case .close(let row, _): "settle.\(row.id)"
-        case .delete(let row): "delete.\(row.id)"
+        case .delete(let row, _): "delete.\(row.id)"
         }
+    }
+
+    /// The agent whose workspace the dialog is waiting to hear about.
+    var asking: AgentKey? {
+        if case .delete(let row, let warning) = self, DeleteWords.awaitsAnswer(warning) { row.id } else { nil }
+    }
+
+    /// The dialog once what deleting `agent` does is answered. A dialog about
+    /// another agent, or no longer checking, stays as it is.
+    func answered(_ answer: Result<DeleteWarning?, RuntimeFailure>, for agent: AgentKey) -> Confirming {
+        guard case .delete(let row, let warning) = self, row.id == agent else { return self }
+        return .delete(row, warning: DeleteWords.answered(warning, with: answer))
     }
 
     var title: String {
         switch self {
         case .close(let row, _): String(localized: "Settle \(row.name)?")
-        case .delete(let row): String(localized: "Delete \(row.name)?")
+        case .delete(let row, _): String(localized: "Delete \(row.name)?")
         }
     }
 
@@ -1680,8 +1767,8 @@ enum Confirming: Identifiable {
         switch self {
         case .close(_, let cuts):
             String(localized: "\(cuts) Settling stops it now. Its chat and edits stay, and a message resumes it.")
-        case .delete(let row):
-            DeleteWords.message(descendants: row.card.descendants, workspaceGoes: row.card.workspaceGoes)
+        case .delete(let row, let warning):
+            DeleteWords.message(descendants: row.card.descendants, warning: warning)
         }
     }
 
@@ -1690,8 +1777,8 @@ enum Confirming: Identifiable {
     var confirmed: HomeAction {
         switch self {
         case .close(let row, _): .close(row.id)
-        case .delete(let row):
-            DeleteWords.discards(row.card.workspaceGoes) ? .deleteDiscardingChanges(row.id) : .delete(row.id)
+        case .delete(let row, let warning):
+            DeleteWords.discards(warning) ? .deleteDiscardingChanges(row.id) : .delete(row.id)
         }
     }
 }

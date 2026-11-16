@@ -52,6 +52,9 @@ public final class StoreBundle {
     @ObservationIgnored private let opener: (@MainActor (AgentKey) throws(RuntimeFailure) -> OpenChat)?
     /// Acts on an agent; the profile's unless a test hands one in.
     @ObservationIgnored private let acting: (@MainActor (AgentAct, AgentKey) async -> Result<Nothing, RuntimeFailure>)?
+    /// Says what deleting an agent does to its workspace; the profile's
+    /// unless a test hands one in.
+    @ObservationIgnored private let warning: (@MainActor (AgentKey) async -> Result<DeleteWarning?, RuntimeFailure>)?
     @ObservationIgnored public let now: @MainActor () -> Date
     /// Told how many machines this account has paired and how many of its
     /// agents need the person, each time the fleet moves.
@@ -73,13 +76,15 @@ public final class StoreBundle {
         account: AccountId, clock: @escaping @MainActor () -> Date = { Date() },
         sessionRetention: Duration = StoreBundle.sessionRetention,
         opener: (@MainActor (AgentKey) throws(RuntimeFailure) -> OpenChat)? = nil,
-        acting: (@MainActor (AgentAct, AgentKey) async -> Result<Nothing, RuntimeFailure>)? = nil
+        acting: (@MainActor (AgentAct, AgentKey) async -> Result<Nothing, RuntimeFailure>)? = nil,
+        warning: (@MainActor (AgentKey) async -> Result<DeleteWarning?, RuntimeFailure>)? = nil
     ) {
         self.account = account
         self.now = clock
         self.sessionRetention = sessionRetention
         self.opener = opener
         self.acting = acting
+        self.warning = warning
         self.fleet = FleetStore(now: clock())
         self.hosts = HostsStore(clock: clock)
         self.pairing = PairingStore(clock: clock)
@@ -486,6 +491,16 @@ public final class StoreBundle {
             models[agent]?.model.keeping = nil
         }
         return outcome
+    }
+
+    /// What deleting an agent does to its workspace, for its confirmation
+    /// to say before anyone agrees to it: nil when the workspace stays. It
+    /// may wait on the agent's host, which alone knows what an agent with no
+    /// process left uncommitted.
+    public func deleteWarning(_ agent: AgentKey) async -> Result<DeleteWarning?, RuntimeFailure> {
+        if let warning { return await warning(agent) }
+        guard let profile else { return .failure(RuntimeFailure("nothing is running")) }
+        return await profile.deleteWarning(agent)
     }
 
     private func act(_ act: AgentAct, on agent: AgentKey) async -> Result<Nothing, RuntimeFailure> {

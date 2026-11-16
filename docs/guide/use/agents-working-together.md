@@ -73,7 +73,10 @@ follows as soon as that machine is back.
 With the `workspaces` experiment on, deleting the last agent in a worktree
 amux made removes the worktree too. Before you confirm, the terminal and the
 iPhone app say so, with how many files have uncommitted changes and the
-branch that keeps what was committed. Confirming discards those changes. A
+branch that keeps what was committed. For an agent that isn't running, they
+first ask its machine what the worktree holds now, and say they're checking
+until it answers. Confirming discards the changes they named. If the machine
+can't be asked, they say so, and a worktree with changes stays. A
 worktree whose changes weren't shown to you stays on disk, no longer amux's,
 and so does one you delete from an older app or with `amux rm` without
 `--discard-changes`. A worktree that other agents still use stays until the

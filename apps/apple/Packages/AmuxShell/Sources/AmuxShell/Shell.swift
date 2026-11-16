@@ -507,7 +507,7 @@ private struct ChatPage: View {
                 let now = standing ?? read()
                 ChatScreen(
                     model: model, subject: now.subject, family: now.family,
-                    actions: act)
+                    deleteWarning: { [agent, stores] in await stores.deleteWarning(agent) }, actions: act)
             } else {
                 PagePlaceholder(
                     failure.map { .failed(title: String(localized: "Couldn’t open this chat"), reason: $0) }
@@ -654,7 +654,8 @@ private struct AgentsTab: View {
     var body: some View {
         AgentsHome(
             model: stores.fleet, accounts: accounts, hosts: stores.hosts,
-            offerNotifications: offerNotifications, signingIn: signingIn, scope: scope
+            offerNotifications: offerNotifications, signingIn: signingIn, scope: scope,
+            deleteWarning: { [stores] in await stores.deleteWarning($0) }
         ) { action in
             switch action {
             case .close(let agent): Task { _ = await stores.close(agent) }

@@ -486,7 +486,7 @@
       {"literal": "\"pin.fill\"", "context": "Image(systemName: \"pin.fill\")", "reason": "SF Symbol name, not a displayed label.", "count": 1},
       {"literal": "\"home.scope.\\(scope.id)\"", "context": ".identified(\"home.scope.\\(scope.id)\", label: scope.title)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"settle.\\(row.id)\"", "context": "case .close(let row, _): \"settle.\\(row.id)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"delete.\\(row.id)\"", "context": "case .delete(let row): \"delete.\\(row.id)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"delete.\\(row.id)\"", "context": "case .delete(let row, _): \"delete.\\(row.id)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"archivebox\"", "context": "Image(systemName: \"archivebox\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
       {"literal": "\"pair.\\(host.name)\"", "context": "id: \"pair.\\(host.name)\", glyph: offer.waiting ? \"laptopcomputer\" : \"plus.circle\",", "reason": "Stable element/record identifier, not a displayed label.", "count": 2},
       {"literal": "\"laptopcomputer\"", "context": "id: \"pair.\\(host.name)\", glyph: offer.waiting ? \"laptopcomputer\" : \"plus.circle\",", "reason": "SF Symbol name, not a displayed label.", "count": 2},
@@ -908,6 +908,7 @@
       {"literal": "\"fails\"", "context": "case \"fails\": .fails(reason)", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
     ],
     "apps/apple/Amux/Debug/ComponentCatalog.swift": [
+      {"literal": "\"Studio cannot be reached\"", "context": "deleting(\"delete-worktree-unknown\") { .failure(RuntimeFailure(\"Studio cannot be reached\")) },", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"notifications\"", "context": "sheet(\"notifications\") { StoryApp(settingsOpen: true, notifications: .on).settings },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"Change `../plan1/README.md` instead.\"", "context": "label: \"Edit the other\", description: \"Change `../plan1/README.md` instead.\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"Edit the other\"", "context": "label: \"Edit the other\", description: \"Change `../plan1/README.md` instead.\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
@@ -1343,6 +1344,9 @@
       {"literal": "\"\\u{00A0}· \"", "context": "joint: \"\\u{00A0}· \")", "reason": "Separator mark joining the composer chip's facts, not words.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift": [
+      {"literal": "\"ellipsis\"", "context": "Consequence(lines.settled ? \"xmark\" : \"ellipsis\", kept: !lines.settled, lines.workspace)", "reason": "SF Symbol name, not interface copy.", "count": 1},
+      {"literal": "\"chat.delete.workspace\"", "context": ".identified(\"chat.delete.workspace\", label: lines.workspace)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"nothing can be asked\"", "context": ".failure(RuntimeFailure(\"nothing can be asked\"))", "reason": "A failure's reason the screens read as a host that could not say; never drawn.", "count": 1},
       {"literal": "\"/\"", "context": "[name, host.isEmpty ? nil : host.lowercased()].compactMap { $0 }.joined(separator: \"/\")", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"arrow.down\"", "context": "Image(systemName: \"arrow.down\")", "reason": "SF Symbol name, not interface copy.", "count": 2},
       {"literal": "\"chat.newActivity\"", "context": ".identified(\"chat.newActivity\", label: String(localized: \"New activity\"), value: \"shown\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

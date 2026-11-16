@@ -46,14 +46,17 @@ final class PhoneDecisionsTests: XCTestCase {
 
     private func chat(
         _ source: ScriptedChat, subject: ChatSubject = CatalogFixtures.subject, family: FamilyHeader? = nil,
-        size: DynamicTypeSize = .large
+        size: DynamicTypeSize = .large, showing: ChatOverlay? = nil, deleteWarning: DeleteWarningAsk? = nil
     ) async throws -> ChatModel {
         let model = ChatModel(source: source, loadingHintAfter: .zero)
         // In a navigation stack, as the app pushes it: the chat's menu and
         // title are the system bar's, which draws only inside one.
         try host(
             NavigationStack {
-                ChatScreen(model: model, subject: subject, family: family) { [unowned self] action in
+                ChatScreen(
+                    model: model, subject: subject, family: family, showing: showing,
+                    deleteWarning: deleteWarning
+                ) { [unowned self] action in
                     acted.append(action)
                 }
             }, size: size)
@@ -189,6 +192,74 @@ final class PhoneDecisionsTests: XCTestCase {
         XCTAssertTrue(
             said.contains("working") && said.contains("2 background jobs") && said.contains("1 subagent"),
             "the settle confirm names the turn, its 2 background jobs and its subagent: \(said)")
+    }
+
+    /// A settled agent with no process, in a worktree that goes with it: its
+    /// row knows the branch but not what is uncommitted, which only its host
+    /// can say.
+    private let suspendedInWorktree = ChatSubject(
+        name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
+        reach: .online(.direct), filing: .closed,
+        workspaceGoes: WorkspaceGoes(branch: "ada/refactor-auth", uncommitted: nil))
+
+    /// The host's count of what the suspended agent's worktree holds.
+    private let counted = DeleteWarning.goes(
+        WorkspaceGoes(branch: "ada/refactor-auth", uncommitted: ChangeTotals(files: 3, added: 42, removed: 7)))
+
+    /// What the delete card says of the worktree, once it says `words`.
+    private func deleteCardSays(_ words: String) async throws {
+        let deadline = Date().addingTimeInterval(5)
+        while element("chat.delete.workspace")?.label != words, Date() < deadline { await spin(0.05) }
+        XCTAssertEqual(element("chat.delete.workspace")?.label, words)
+    }
+
+    private func deleteCard(answering ask: @escaping DeleteWarningAsk) async throws {
+        _ = try await chat(
+            ScriptedChat(rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .exited(cause: .ended))),
+            subject: suspendedInWorktree, showing: .delete, deleteWarning: ask)
+        try await accessible()
+    }
+
+    /// Confirmed while its host is still being asked, the delete card has
+    /// named no changes, so it agrees to lose none; the answer that comes
+    /// after it is put away changes nothing.
+    func testADeleteConfirmedWhileCheckingKeepsChanges() async throws {
+        var answer: CheckedContinuation<Result<DeleteWarning?, RuntimeFailure>, Never>?
+        var asked = 0
+        try await deleteCard {
+            asked += 1
+            return await withCheckedContinuation { answer = $0 }
+        }
+        try await deleteCardSays("Checking its worktree for uncommitted changes\u{2026}")
+        XCTAssertEqual(asked, 1, "the card did not ask its host once")
+        try activate("chat.delete.confirm")
+        await spin()
+        XCTAssertEqual(acted, [.delete], "a card that was still checking agreed to lose changes")
+        try XCTUnwrap(answer, "the card's question was never asked").resume(returning: .success(counted))
+        await spin()
+        XCTAssertEqual(acted, [.delete], "an answer after the card was put away acted again")
+    }
+
+    /// Once the host has counted the worktree's changes the card names them,
+    /// and confirming then agrees to lose them.
+    func testADeleteConsentsOnceItsHostHasCountedChanges() async throws {
+        try await deleteCard { [counted] in .success(counted) }
+        try await deleteCardSays("Its worktree is removed too, with 3 uncommitted files (+42 \u{2212}7).")
+        try activate("chat.delete.confirm")
+        await spin()
+        XCTAssertEqual(acted, [.deleteDiscardingChanges], "a card that named the changes kept them")
+    }
+
+    /// A host that cannot be asked leaves a worktree with changes on disk,
+    /// and the card says so instead of promising it goes.
+    func testADeleteWhoseHostCannotSayKeepsChanges() async throws {
+        try await deleteCard { .failure(RuntimeFailure("Studio cannot be reached")) }
+        try await deleteCardSays(
+            "Its worktree is removed too, but stays on disk if it has uncommitted changes, "
+                + "which couldn\u{2019}t be checked.")
+        try activate("chat.delete.confirm")
+        await spin()
+        XCTAssertEqual(acted, [.delete], "a card that could not check agreed to lose changes")
     }
 
     /// Terminal Claude's own view resumed another conversation: the chat

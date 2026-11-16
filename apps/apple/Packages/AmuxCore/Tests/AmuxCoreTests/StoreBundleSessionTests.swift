@@ -80,7 +80,8 @@ final class StoreBundleSessionTests: XCTestCase {
 
     private func bundle(
         account: String = "a",
-        acting: (@MainActor (AgentAct, AgentKey) async -> Result<Nothing, RuntimeFailure>)? = nil
+        acting: (@MainActor (AgentAct, AgentKey) async -> Result<Nothing, RuntimeFailure>)? = nil,
+        warning: (@MainActor (AgentKey) async -> Result<DeleteWarning?, RuntimeFailure>)? = nil
     ) -> StoreBundle {
         StoreBundle(
             account: AccountId(account), clock: { [unowned self] in clock },
@@ -95,7 +96,7 @@ final class StoreBundleSessionTests: XCTestCase {
                 opened.append(session)
                 return session
             },
-            acting: acting)
+            acting: acting, warning: warning)
     }
 
     private func sessions(for agent: AgentKey) -> [CaughtUpSession] { opened.filter { $0.agent == agent } }
@@ -260,6 +261,28 @@ final class StoreBundleSessionTests: XCTestCase {
         _ = await stores.delete(agent)
         _ = await stores.delete(agent, discardingChanges: true)
         XCTAssertEqual(acts, [.delete, .deleteDiscardingChanges])
+    }
+
+    /// A delete's confirmation asks the bundle what goes with the agent, and
+    /// is answered for the agent it named; with nothing running there is no
+    /// answer to give, and the bundle says so rather than that nothing goes.
+    func testADeleteWarningIsAskedForTheAgentNamed() async {
+        let agent = Cards.key(2)
+        let counted = DeleteWarning.goes(
+            WorkspaceGoes(branch: "fix-scroll", uncommitted: ChangeTotals(files: 3, added: 42, removed: 7)))
+        var asked: [AgentKey] = []
+        let stores = bundle(account: "warning-\(UUID().uuidString)", warning: { agent in
+            asked.append(agent)
+            return .success(counted)
+        })
+        let answered = await stores.deleteWarning(agent)
+        XCTAssertEqual(try? answered.get(), counted)
+        XCTAssertEqual(asked, [agent])
+
+        let idle = bundle(account: "unasked-\(UUID().uuidString)")
+        guard case .failure = await idle.deleteWarning(agent) else {
+            return XCTFail("a bundle with nothing running answered what a delete does")
+        }
     }
 
     /// A delete that fails leaves the agent, and its draft, as they were.

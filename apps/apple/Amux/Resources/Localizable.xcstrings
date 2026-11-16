@@ -1309,6 +1309,30 @@
         }
       }
     },
+    "Checking its worktree for uncommitted changes…" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking its worktree for uncommitted changes…"
+          }
+        }
+      }
+    },
+    "Its worktree is removed too, but stays on disk if it has uncommitted changes, which couldn’t be checked." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its worktree is removed too, but stays on disk if it has uncommitted changes, which couldn’t be checked."
+          }
+        }
+      }
+    },
     "Its worktree is removed too." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
       "extractionState" : "manual",

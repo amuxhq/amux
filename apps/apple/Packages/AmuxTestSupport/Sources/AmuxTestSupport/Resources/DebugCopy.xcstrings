@@ -709,6 +709,30 @@
         }
       }
     },
+    "delete-worktree-checking" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "delete-worktree-checking"
+          }
+        }
+      }
+    },
+    "delete-worktree-unknown" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "delete-worktree-unknown"
+          }
+        }
+      }
+    },
     "the provider exited: exit code 1" : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
       "extractionState" : "manual",

@@ -694,10 +694,7 @@ fn a_delete_of_an_agent_without_a_process_warns_from_what_its_host_finds() {
         let mut home = open();
         home.changes_checked(&key_a, Err("the desk is offline".into()));
         let screen = home_at(&mut home, &fleet, W, H);
-        assert!(
-            screen.contains("stays on disk if it has"),
-            "{screen}"
-        );
+        assert!(screen.contains("stays on disk if it has"), "{screen}");
         let effects = home.key(&fleet, key(KeyCode::Enter));
         assert!(
             matches!(effects.as_slice(), [FleetEffect::Delete(_, false)]),

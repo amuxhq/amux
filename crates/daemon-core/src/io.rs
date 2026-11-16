@@ -560,6 +560,9 @@ pub struct Ingested {
     /// How far the step found the agent's journal, as a global offset:
     /// the journal cut here reads as the step read it.
     pub seen: u64,
+    /// Provider subagent parts the commit skipped, because no subagent of
+    /// this agent's has the id they name.
+    pub skipped: u32,
 }
 
 /// One line of a driver's record of what its core was fed: an input, or

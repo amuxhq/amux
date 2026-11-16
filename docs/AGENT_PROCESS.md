@@ -284,7 +284,7 @@ version integer, and a frame a reader does not know is ignored.
 | `hello` | agent → daemon | Sent at once on every connection: the agent id |
 | `nudge` | agent → daemon | The journal grew. Sent after every step that wrote bytes; an empty step writes nothing and sends nothing |
 | `input` | daemon → agent | A person's `Input` (a prompt, an answer, an interrupt, a setting, …), its body as the client encoded it |
-| `child_input` | daemon → agent | `ChildInput { agent_id, input }`: a person's `Input` to one of the provider subagents this agent's provider runs, such as the answer to its ask, which the interpreter gives the provider for it; answered by `reply` keyed by the input id. A subagent's stop is not one: a running subagent is one of the agent's background jobs, and its stop is the agent's own `input` carrying `StopJob { key }` |
+| `child_input` | daemon → agent | `ChildInput { agent_id, input }`: a person's `Input` to one of the provider subagents this agent's provider runs, the answer to one of its asks or a `StopJob { key }` naming a job in the subagent's own snapshot (its own job, keyed by the provider's id for it, stops it), which the interpreter gives the provider for it; answered by `reply` keyed by the input id. The daemon refuses every other input to a subagent itself |
 | `agent_message` | daemon → agent | An `Envelope` with the sender the daemon set; the recipient's interpreter picks the carrier |
 | `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's record for a report, answered in any mode |
 | `rename` | daemon → agent | `Rename { name }`: a Codex agent's thread takes the agent's new name, so Codex's own app shows what amux does; other kinds have nothing to rename |

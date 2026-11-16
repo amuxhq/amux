@@ -85,6 +85,10 @@ pub struct SyntheticAgent {
     segment_bytes: u64,
     answer: Arc<Mutex<Answer>>,
     inputs: Arc<Mutex<Vec<Handed>>>,
+    /// The inputs among `inputs` the daemon handed on for one of the
+    /// provider subagents this agent runs: the subagent's id, and the
+    /// input's.
+    child_inputs: Arc<Mutex<Vec<(Vec<u8>, Vec<u8>)>>>,
     /// Set when the agent stops reading its control connection.
     wedged: Arc<tokio::sync::watch::Sender<bool>>,
     /// Set while the agent holds every answer back.
@@ -136,6 +140,7 @@ impl SyntheticAgent {
             segment_bytes,
             answer: Arc::new(Mutex::new(Answer::Accept)),
             inputs: Arc::default(),
+            child_inputs: Arc::default(),
             wedged: Arc::new(tokio::sync::watch::Sender::new(false)),
             frozen: Arc::new(tokio::sync::watch::Sender::new(false)),
             cwd: install.work.clone(),
@@ -182,6 +187,12 @@ impl SyntheticAgent {
     /// Every input and agent message the daemon relayed to this agent.
     pub fn inputs(&self) -> Vec<Handed> {
         self.inputs.lock().unwrap().clone()
+    }
+
+    /// The subagent each input handed on for a provider subagent was for,
+    /// with the input's id, in the order they came.
+    pub fn child_inputs(&self) -> Vec<(Vec<u8>, Vec<u8>)> {
+        self.child_inputs.lock().unwrap().clone()
     }
 
     pub fn key(&self, install: &Install) -> AgentKey {
@@ -262,6 +273,7 @@ impl SyntheticAgent {
         let journal = self.journal.clone();
         let answer = self.answer.clone();
         let inputs = self.inputs.clone();
+        let child_inputs = self.child_inputs.clone();
         let wedged = self.wedged.clone();
         let frozen = self.frozen.clone();
         let accept = tokio::spawn({
@@ -281,11 +293,12 @@ impl SyntheticAgent {
                     }
                     hellos.fetch_add(1, Ordering::SeqCst);
                     *conn.lock().await = Some(writer);
-                    let (conn, journal, answer, inputs) = (
+                    let (conn, journal, answer, inputs, child_inputs) = (
                         conn.clone(),
                         journal.clone(),
                         answer.clone(),
                         inputs.clone(),
+                        child_inputs.clone(),
                     );
                     let mut wedged = wedged.subscribe();
                     let mut frozen = frozen.subscribe();
@@ -322,6 +335,18 @@ impl SyntheticAgent {
                             }
                             let input = match frame.of {
                                 Some(ctl_frame::Of::Input(input)) => Handed::Input(input),
+                                // Answered as its own input is: an agent
+                                // process answers for its subagent.
+                                Some(ctl_frame::Of::ChildInput(wire::ChildInput {
+                                    agent_id,
+                                    input: Some(input),
+                                })) => {
+                                    child_inputs
+                                        .lock()
+                                        .unwrap()
+                                        .push((agent_id, input.input_id.clone()));
+                                    Handed::Input(input)
+                                }
                                 Some(ctl_frame::Of::AgentMessage(envelope)) => {
                                     Handed::Message(Box::new(envelope))
                                 }

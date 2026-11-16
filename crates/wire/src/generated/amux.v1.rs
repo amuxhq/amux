@@ -14380,10 +14380,10 @@ pub mod ctl_frame {
         #[prost(message, tag = "11")]
         DumpAsked(super::DumpAsked),
         /// Daemon to agent: a person's input to one of the provider subagents
-        /// this agent's provider runs, such as the answer to its ask. Answered by
-        /// `reply` keyed by the input's id, as `input` is. Stopping a subagent is
-        /// not one: a running subagent is one of this agent's background jobs,
-        /// stopped by the agent's own `input` carrying a job stop.
+        /// this agent's provider runs: the answer to one of its asks, or a job
+        /// stop naming a job in the subagent's own snapshot, its own included,
+        /// which stops it. The daemon refuses every other input to a subagent
+        /// itself. Answered by `reply` keyed by the input's id, as `input` is.
         #[prost(message, tag = "12")]
         ChildInput(super::ChildInput),
     }

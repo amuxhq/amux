@@ -13,7 +13,8 @@ use crate::rows::{self, ABSORBED, COMMITTED, Rows};
 use crate::schema::MIGRATIONS;
 use crate::{
     Absorb, Absorbed, AgentKey, AgentRow, Append, CommitClock, Committed, Cut, Delivery, Item,
-    Marker, Notification, Page, PageEnd, Record, Snapshot, Step, StoreError, TrustedHost,
+    Marker, Notification, Page, PageEnd, Record, Snapshot, Step, StoreError, SubagentChange,
+    TrustedHost,
 };
 
 /// Marks a file as an amux profile store ("amux").
@@ -519,6 +520,26 @@ impl Sqlite {
         self.write(|rows| rows.upsert_agent(row, &update))
     }
 
+    /// Writes several rows as [`Sqlite::put_agent`] does, in one
+    /// transaction: an agent's process ending and the provider subagents it
+    /// ran ending with it land together, or not at all.
+    pub fn put_agents(&mut self, agents: &[AgentRow]) -> Result<(), StoreError> {
+        let own = rows::registry_update(true);
+        let replica = rows::registry_update(false);
+        let own_host = self.own_host.clone();
+        self.write(|rows| {
+            for row in agents {
+                let update = if row.agent.host == own_host {
+                    &own
+                } else {
+                    &replica
+                };
+                rows.upsert_agent(row, update)?;
+            }
+            Ok(())
+        })
+    }
+
     /// The live agents below `parent` in the rows held: own rows walked
     /// into, each replica row counting itself and what its origin counted
     /// below it.
@@ -745,43 +766,70 @@ impl Sqlite {
     }
 }
 
-fn commit(
-    rows: &Rows<'_>,
-    agent: &AgentKey,
-    frames: &[(u64, Step)],
-    clock: CommitClock,
-) -> Result<Committed, StoreError> {
-    let mut row = rows.agent(agent)?.ok_or(StoreError::UnknownAgent)?;
-    let mut committed = Committed::default();
-    let mut next_position = rows.max_position(agent)?.map_or(1, |position| position + 1);
-    for (offset, step) in frames {
-        for item in &step.items {
+/// One agent's row while a commit writes it: the host's, or a provider
+/// subagent's its parts are filed under.
+struct Writing {
+    row: AgentRow,
+    next_position: u64,
+    records: Vec<Record>,
+    /// A subagent's: whether its row is live as of the part being filed.
+    /// Its lifecycle is the registry's to write after the commit; this is
+    /// what the commit's own reading of its starts and ends says.
+    live: bool,
+}
+
+impl Writing {
+    fn open(rows: &Rows<'_>, row: AgentRow) -> Result<Self, StoreError> {
+        let next_position = rows
+            .max_position(&row.agent)?
+            .map_or(1, |position| position + 1);
+        Ok(Self {
+            live: row.lifecycle == wire::Lifecycle::Live as i32,
+            row,
+            next_position,
+            records: Vec::new(),
+        })
+    }
+
+    /// Files one agent's items, appends and snapshot: each takes the
+    /// agent's next revision, and each new key its next order.
+    fn file(
+        &mut self,
+        rows: &Rows<'_>,
+        items: &[Item],
+        appends: &[wire::Append],
+        snapshot: Option<&Snapshot>,
+        clock: CommitClock,
+    ) -> Result<(), StoreError> {
+        let agent = self.row.agent.clone();
+        for item in items {
             let mut item = item.clone();
-            item.revision = row.next_revision;
-            row.next_revision += 1;
-            item.order = rows.commit_item(agent, &item, next_position)?;
-            if item.order == next_position {
-                next_position += 1;
+            item.revision = self.row.next_revision;
+            self.row.next_revision += 1;
+            item.order = rows.commit_item(&agent, &item, self.next_position)?;
+            if item.order == self.next_position {
+                self.next_position += 1;
             }
-            committed.records.push(Record::Item(item));
+            self.records.push(Record::Item(item));
         }
-        for append in &step.appends {
-            let revision = row.next_revision;
+        for append in appends {
+            let revision = self.row.next_revision;
             let Some(base_revision) =
-                rows.extend(agent, &append.key, &append.text, revision, None)?
+                rows.extend(&agent, &append.key, &append.text, revision, None)?
             else {
                 // The item it extends was never committed: nothing to extend.
                 continue;
             };
-            row.next_revision += 1;
-            committed.records.push(Record::Append(Append {
+            self.row.next_revision += 1;
+            self.records.push(Record::Append(Append {
                 key: append.key.clone(),
                 base_revision,
                 revision,
                 text: append.text.clone(),
             }));
         }
-        if let Some(snapshot) = &step.snapshot {
+        if let Some(snapshot) = snapshot {
+            let row = &mut self.row;
             let mut snapshot = snapshot.clone();
             snapshot.revision = row.next_revision;
             row.next_revision += 1;
@@ -790,7 +838,14 @@ fn commit(
                 .as_ref()
                 .and_then(|last| last.notice.as_deref())
                 .map(Owed::of);
-            copy_envelope(&mut row, &snapshot);
+            let title = row.title.take();
+            copy_envelope(row, &snapshot);
+            // A provider subagent's title is the registry's: the provider's
+            // description when its row was made, or none once a person
+            // renamed it. Its host's interpreter has no say in it.
+            if row.native.is_some() {
+                row.title = title;
+            }
             let now = snapshot.notice.as_deref().map(Owed::of);
             if now != was {
                 rows.remove_notifications(&agent.agent)?;
@@ -803,13 +858,54 @@ fn commit(
                         agent_id: agent.agent.clone(),
                         revision: snapshot.revision,
                         due_at_ms: clock.now_ms + clock.notify_delay_ms,
-                        name: row.name.clone(),
+                        // The person reads a push by what the agent is
+                        // about; its name is only an address.
+                        name: row.title.clone().unwrap_or_else(|| row.name.clone()),
                         notice: notice.encode_to_vec(),
                     })?;
                 }
             }
-            committed.records.push(Record::Snapshot(snapshot));
+            self.records.push(Record::Snapshot(snapshot));
         }
+        Ok(())
+    }
+}
+
+/// The row a subagent's part names, when it is one of `host`'s own
+/// provider subagents: a part naming anything else is not the host's to
+/// write, and is skipped.
+fn subagent_row(
+    rows: &Rows<'_>,
+    host: &AgentKey,
+    agent_id: &[u8],
+) -> Result<Option<AgentRow>, StoreError> {
+    let key = AgentKey::new(host.host.clone(), agent_id.to_vec());
+    Ok(rows
+        .agent(&key)?
+        .filter(|row| row.native.is_some() && row.parent.as_ref() == Some(host)))
+}
+
+fn commit(
+    rows: &Rows<'_>,
+    agent: &AgentKey,
+    frames: &[(u64, Step)],
+    clock: CommitClock,
+) -> Result<Committed, StoreError> {
+    let host = rows.agent(agent)?.ok_or(StoreError::UnknownAgent)?;
+    let mut host = Writing::open(rows, host)?;
+    let mut committed = Committed::default();
+    // Each subagent's row, opened at its first part, in the order the
+    // parts first named them.
+    let mut subagents: Vec<Writing> = Vec::new();
+    for (offset, step) in frames {
+        host.file(
+            rows,
+            &step.items,
+            &step.appends,
+            step.snapshot.as_ref(),
+            clock,
+        )?;
+        let row = &mut host.row;
         if let (Some(turn_end), Some(parent)) = (&step.turn_end, &row.parent) {
             let text = if turn_end.last_message_key.is_empty() {
                 String::new()
@@ -851,9 +947,70 @@ fn commit(
             row.owes_report = true;
         }
         row.ingest_cursor = *offset;
+        for part in &step.agents {
+            let at = match subagents
+                .iter()
+                .position(|sub| sub.row.agent.agent == part.agent_id)
+            {
+                Some(at) => at,
+                None => match subagent_row(rows, agent, &part.agent_id)? {
+                    Some(row) => {
+                        subagents.push(Writing::open(rows, row)?);
+                        subagents.len() - 1
+                    }
+                    None => {
+                        committed.skipped.push(part.agent_id.clone());
+                        continue;
+                    }
+                },
+            };
+            let sub = &mut subagents[at];
+            // A start on a row that has ended is its parent's model
+            // continuing it: the cause of its last end no longer holds.
+            if part.start.is_some() && !sub.live {
+                sub.live = true;
+                sub.row.exit_cause = wire::ExitCause::Unspecified as i32;
+                sub.row.exit_detail = None;
+                committed
+                    .changes
+                    .push(SubagentChange::Continued(sub.row.agent.clone()));
+            }
+            if !sub.live && !(part.items.is_empty() && part.appends.is_empty()) {
+                committed.after_end.push(sub.row.agent.clone());
+            }
+            sub.file(
+                rows,
+                &part.items,
+                &part.appends,
+                part.snapshot.as_ref(),
+                clock,
+            )?;
+            // A subagent's answer goes back through its parent's provider,
+            // so it owes nobody a report, whatever its phase.
+            sub.row.owes_report = false;
+            // As for the host's own end, the cause lands with the step that
+            // says it. An end for a row already ended is the provider
+            // saying so again, as a resumed Claude does of a subagent the
+            // previous process left: nothing changes.
+            if let Some(end) = &part.end
+                && sub.live
+            {
+                sub.live = false;
+                sub.row.exit_cause = end.cause;
+                sub.row.exit_detail = end.detail.clone();
+                committed
+                    .changes
+                    .push(SubagentChange::Ended(sub.row.agent.clone(), end.clone()));
+            }
+        }
     }
-    committed.cursor = row.ingest_cursor;
-    rows.upsert_agent(&row, &rows::update_of(COMMITTED))?;
+    committed.cursor = host.row.ingest_cursor;
+    rows.upsert_agent(&host.row, &rows::update_of(COMMITTED))?;
+    committed.records = host.records;
+    for sub in subagents {
+        rows.upsert_agent(&sub.row, &rows::update_of(COMMITTED))?;
+        committed.subagents.push((sub.row.agent, sub.records));
+    }
     Ok(committed)
 }
 

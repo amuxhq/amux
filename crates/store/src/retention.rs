@@ -7,7 +7,13 @@
 //! rows a stream may still be appending to. An agent the person has not
 //! closed is never removed whole, live or not: an exited one they never
 //! looked at stays in their fleet. A closed child whose parent is live is
-//! kept too, since its parent can still continue it. Replica rows are a cache, so
+//! kept too, since its parent can still continue it. A provider subagent
+//! (one Claude's Agent tool or a Codex child thread started inside its
+//! parent's process) is the exception: once it has ended it goes whole,
+//! oldest first with the rest, whether or not the person closed it and
+//! while its parent lives, since a long-lived agent may start hundreds and
+//! its own chat keeps each one's result on the call that started it.
+//! Replica rows are a cache, so
 //! agents nobody is following lose all their rows, least recently used
 //! first, keeping only their agents row, and the rest keep their newest rows
 //! as one contiguous block.
@@ -46,9 +52,11 @@ pub enum SweepStep {
     Floor,
 }
 
-/// Work retention keeps whole: live, or not closed by the person.
+/// Work retention keeps whole: live, or not closed by the person. A
+/// provider subagent that has ended is not work the person keeps: its
+/// answer is in its parent's chat.
 fn is_kept(row: &AgentRow) -> bool {
-    row.lifecycle == wire::Lifecycle::Live as i32 || !row.is_closed()
+    row.lifecycle == wire::Lifecycle::Live as i32 || (!row.is_closed() && row.native.is_none())
 }
 
 pub(crate) fn sweep_own(
@@ -125,11 +133,16 @@ fn remove_finished(
     // closed, or pinned and idle) does not hold its closed children: a
     // long-lived agent's one-shot children close as they finish, and they
     // would otherwise never be reclaimed.
+    // A provider subagent is not held: should its parent's model continue
+    // one that is gone, it comes back as a new row under the same id, and
+    // the parent's chat already holds each earlier answer.
     let protected = |row: &AgentRow| {
-        row.parent
-            .as_ref()
-            .and_then(|parent| by_ref.get(parent))
-            .is_some_and(|parent| parent.lifecycle == wire::Lifecycle::Live as i32)
+        row.native.is_none()
+            && row
+                .parent
+                .as_ref()
+                .and_then(|parent| by_ref.get(parent))
+                .is_some_and(|parent| parent.lifecycle == wire::Lifecycle::Live as i32)
     };
     let mut candidates = rows
         .iter()

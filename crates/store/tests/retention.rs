@@ -472,6 +472,54 @@ fn retention_keeps_a_live_parents_exited_children_and_frees_an_exited_parents() 
     assert!(store.agent(&own("kept")).unwrap().is_some());
 }
 
+/// A provider subagent is an agent its parent's provider started inside
+/// the parent's own process. A long-lived agent may start hundreds, so
+/// once one has ended it goes, oldest first, though its parent lives and
+/// though nobody closed it; an amux child of the same parent stays.
+#[test]
+fn retention_reclaims_ended_provider_subagents_oldest_first_while_their_host_lives() {
+    let mut store = fresh();
+    let host = own("host");
+    add(&mut store, &host, 1, 1_000, true, None);
+    let ended = |store: &mut Sqlite, name: &str, at_ms: i64, closed: bool| {
+        let key = own(name);
+        add(store, &key, 2, at_ms, false, Some(&host));
+        let mut row = store.agent(&key).unwrap().unwrap();
+        row.native = Some(wire::NativeChild {
+            provider_child_id: name.into(),
+        });
+        if !closed {
+            row.filing = wire::Filing::Open as i32;
+        }
+        store.put_agent(&row).unwrap();
+        key
+    };
+    let older = ended(&mut store, "older-sub", 10, false);
+    let newer = ended(&mut store, "newer-sub", 20, true);
+    let running = own("running-sub");
+    add(&mut store, &running, 2, 5, true, Some(&host));
+    let mut row = store.agent(&running).unwrap().unwrap();
+    row.native = Some(wire::NativeChild {
+        provider_child_id: "running".into(),
+    });
+    store.put_agent(&row).unwrap();
+    // An amux child the person closed waits for its live parent, which may
+    // message it back to work.
+    add(&mut store, &own("amux-child"), 2, 1, false, Some(&host));
+
+    // Over by one subagent's rows: the older goes first, alone.
+    let pool = store.pool_bytes(true).unwrap();
+    let sweep = store.sweep_own(pool - 2 * ROW, ROW, 1).unwrap();
+    assert_eq!(sweep.removed, vec![older.clone()], "{:?}", describe(&sweep));
+
+    let sweep = store.sweep_own(0, ROW, 1).unwrap();
+    assert!(sweep.removed.contains(&newer), "{:?}", describe(&sweep));
+    for kept in [&host, &running, &own("amux-child")] {
+        assert!(!sweep.removed.contains(kept), "{:?}", describe(&sweep));
+        assert!(store.agent(kept).unwrap().is_some());
+    }
+}
+
 #[test]
 fn retention_takes_a_family_whole_unless_a_member_is_live() {
     let mut store = fresh();

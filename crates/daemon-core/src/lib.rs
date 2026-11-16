@@ -43,6 +43,7 @@ pub mod redact;
 pub mod retention;
 pub mod serve;
 pub mod sources;
+pub mod subagents;
 pub mod trust;
 
 pub use blobs::Blobs;
@@ -224,6 +225,7 @@ impl Daemon {
             Input::Retain(retain) => self.retain(retain, out),
             Input::Swept => {
                 self.swept(out);
+                self.subagents_swept(out);
                 self.lanes_swept(out);
                 self.deliveries_due();
                 self.drain_notifications(out);
@@ -460,6 +462,26 @@ impl Daemon {
                 ),
             });
         }
+        if let Some(agent) = self.touched.after_end.first() {
+            return Err(Violation {
+                invariant: SUBAGENT_AFTER_ITS_END,
+                detail: format!(
+                    "provider subagent {} was given items after its end, with no start",
+                    hex(&agent.agent)
+                ),
+            });
+        }
+        if let Some((host, named)) = self.touched.foreign_parts.first() {
+            return Err(Violation {
+                invariant: PART_OF_ANOTHER_AGENT,
+                detail: format!(
+                    "agent {}'s journal held a part for agent {}, which is not one of its provider \
+                     subagents",
+                    hex(&host.agent),
+                    hex(named)
+                ),
+            });
+        }
         if self.touched.committed_while_held {
             return Err(Violation {
                 invariant: NO_COMMIT_WHILE_HELD,
@@ -613,6 +635,17 @@ pub const REPORT_HANDED_TWICE: Check = Check {
     sentence: "a report is handed to its parent at most once at a time",
 };
 
+pub const SUBAGENT_AFTER_ITS_END: Check = Check {
+    id: "daemon.subagent_after_its_end",
+    sentence: "a provider subagent's end comes after its last item: no part gives it items once it \
+               has ended, unless a start continues it",
+};
+pub const PART_OF_ANOTHER_AGENT: Check = Check {
+    id: "daemon.part_of_another_agent",
+    sentence: "each frame's parts name agents the host runs: no part names an agent that is not one \
+               of its own provider subagents",
+};
+
 /// Every check the daemon core makes at the end of a step.
 pub const CHECKS: &[Check] = &[
     ANSWERED_UNCOMMITTED,
@@ -623,6 +656,8 @@ pub const CHECKS: &[Check] = &[
     DELETED_UNDER_A_STALE_LISTING,
     OUTBOX_ROW_DELETED_UNACCEPTED,
     REPORT_HANDED_TWICE,
+    SUBAGENT_AFTER_ITS_END,
+    PART_OF_ANOTHER_AGENT,
 ];
 
 /// An id as a violation names it.
@@ -680,6 +715,13 @@ struct Touched {
     serialized: bool,
     /// The store committed while the WAL was being moved.
     committed_while_held: bool,
+    /// Each provider subagent a commit gave items after its end.
+    after_end: Vec<store::AgentKey>,
+    /// Each agent whose journal held a part naming an agent with a row that
+    /// is not one of its provider subagents, and that agent's id. A part
+    /// naming no row at all is not one: a subagent retention reclaimed may
+    /// still be reported ended.
+    foreign_parts: Vec<(store::AgentKey, Vec<u8>)>,
     /// How long the step waited on the drive for a synced write, which its
     /// budget leaves out.
     synced_micros: u64,

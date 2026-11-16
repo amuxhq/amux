@@ -546,7 +546,7 @@ The `Refusal` says why:
 | --- | --- | --- |
 | `REFUSAL_CLOSED_ASK` | interpreter | The answer names an ask that is not open, for example one already answered on another device |
 | `REFUSAL_NOT_QUEUED` | interpreter | The withdrawal or send-now names an input that is not waiting in the queue |
-| `REFUSAL_UNSUPPORTED` | interpreter | This agent version, kind or state cannot take the input, or send-now with no turn running, or the prompt holds an attachment this build cannot read; a message whose body or attachment this build cannot read is refused the same way by the recipient's daemon |
+| `REFUSAL_UNSUPPORTED` | interpreter | This agent version, kind or state cannot take the input, or send-now with no turn running, or the prompt holds an attachment this build cannot read; a message whose body or attachment this build cannot read is refused the same way by the recipient's daemon, and so is any input but an answer or a job stop, and any message, to a provider subagent |
 | `REFUSAL_DRAINING` | the agent | The agent is finishing up because its daemon went away or it was stopped |
 | `REFUSAL_EXITING` | the agent | A one-shot child decided to exit |
 | `REFUSAL_EXITED` | the owning daemon | The agent has exited; the composer offers Resume |
@@ -702,6 +702,17 @@ provider's id for it (`NativeChild.provider_child_id`). Such an agent has no
 process, directory or composer of its own, its `parent` is always the agent
 whose process runs it, and it takes no messages. Absent on every agent amux
 started, which is every row from a host that predates it.
+
+What a client may do to one: answer its asks and send `StopJob` for the job
+its own snapshot lists (one of kind `BACKGROUND_KIND_SUBAGENT` keyed by
+`provider_child_id`), both through `SendInput` to its id, which its host's
+daemon hands to the host's process as `ChildInput`; every other input,
+prompts included, is answered `REFUSAL_UNSUPPORTED` with a detail, and so is
+a message to it. Closing it while it runs sends that job stop and answers
+once it has ended, and is refused (`FAILED_PRECONDITION`) when its snapshot
+lists no such job; closing it after it ended files it. Resuming, deleting,
+killing and pinning it are refused: it goes with its host. Renaming it works
+as for any agent.
 
 `exit_cause` is an `ExitCause`, and `exit_detail` the cause's own words when it
 has any (a provider's exit code, why a provider could not start). Most causes

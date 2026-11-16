@@ -41,6 +41,9 @@ final class MacChat: ChatSurface {
     func isExpanded(_ id: String) -> Bool { model.isExpanded(id) }
     func toggle(_ id: String) { model.toggle(id) }
     func toggleRun(_ run: Run) { model.toggleRun(run) }
+    func toggleGroup(_ group: SubagentGroup) { model.toggleGroup(group) }
+    func opened(by row: Row) -> OpenedAgent? { model.opened(by: row) }
+    func state(of group: SubagentGroup) -> GroupState? { model.state(of: group) }
     func toggleTurn(_ turn: TurnPlace) { model.toggleTurn(turn) }
     func counts(of run: Run) -> RunCounts? { model.counts(of: run) }
     func bytes(of blob: BlobRef) -> Data? { model.bytes(of: blob) }
@@ -88,6 +91,7 @@ final class MacChat: ChatSurface {
     func send() { _ = model.send() }
     func resume() { _ = model.resume() }
     func interrupt() { _ = model.interrupt() }
+    func stopJob(_ key: String) { _ = model.stopJob(key) }
     func withdraw(_ queued: QueuedRow) { _ = model.withdraw(queued) }
     func sendNow(_ queued: QueuedRow) { _ = model.sendNow(queued) }
 

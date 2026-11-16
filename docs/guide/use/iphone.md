@@ -56,6 +56,14 @@ Tap an agent to open its chat.
   to the newest message. It says **New activity** once something has arrived.
 - **The overview:** shows the agent's tasks, its background jobs and the
   files it changed.
+- **Subagents:** when Claude or Codex hands work to helpers of its own, the
+  chat folds them into one line, such as **4 subagents** with how many are
+  running, waiting on you or done. Tap it to list them, and tap one to open
+  its chat. A helper's chat has no message box, since only the agent that
+  started it can talk to it, but it has **Stop** while it runs. In the
+  Agents list the helpers sit under the agent that started them, by their
+  titles. See
+  [Agents working together](agents-working-together.md#claudes-and-codexs-own-subagents).
 
 If you lose the connection, the chat says so (for example
 `Reconnecting · your draft is kept`) and holds on to what you typed until it

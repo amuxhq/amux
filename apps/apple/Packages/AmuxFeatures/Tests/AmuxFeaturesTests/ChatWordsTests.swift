@@ -8,7 +8,7 @@ final class ChatWordsTests: XCTestCase {
     private func row(_ kind: RowKind, attention: Bool = false, decision: Decision? = nil) -> Row {
         Row(
             id: "k", order: 1, atMs: 0, kind: kind, collapsed: false, attention: attention,
-            decision: decision, parent: nil, run: nil, turn: nil)
+            decision: decision, group: nil, opens: nil, parent: nil, run: nil, turn: nil)
     }
 
     func testDurationsAndCountsReadTheWayTheVocabularyWritesThem() {
@@ -430,5 +430,47 @@ final class ChatWordsTests: XCTestCase {
         XCTAssertTrue(
             ChatWords.headline(card(true)).contains("create"),
             "a new file's card reads \(ChatWords.headline(card(true)))")
+    }
+
+    // MARK: - Subagents
+
+    /// How a subagent stands reads from its fleet row whenever the fleet
+    /// holds it, the call's own state only in its place.
+    func testASubagentStandsAsItsFleetRowSays() {
+        let opened = { (phase: PhaseView) in
+            OpenedAgent(agent: AgentKey(host: [1], agent: [2]), name: "Survey", kind: .claudeSdk, phase: phase)
+        }
+        XCTAssertEqual(AgentStanding.of(opened(.working), call: .succeeded).words, "running")
+        XCTAssertEqual(AgentStanding.of(opened(.needsYou), call: .running).words, "waiting on you")
+        XCTAssertEqual(AgentStanding.of(opened(.exited(cause: .finished)), call: .running).words, "done")
+        XCTAssertEqual(AgentStanding.of(opened(.exited(cause: .ended)), call: .failed).words, "stopped")
+        XCTAssertEqual(AgentStanding.of(opened(.exited(cause: .failed("code 1"))), call: .succeeded).words, "failed")
+        XCTAssertEqual(AgentStanding.of(nil, call: .succeeded).words, "done")
+        XCTAssertEqual(AgentStanding.of(nil, call: .pending).words, "running")
+    }
+
+    /// "4 subagents · 2 running · 1 waiting on you · 1 done", leaving out
+    /// what the fleet does not hold, and its mark taking the person first.
+    func testAGroupSaysWhatItsSubagentsComeTo() {
+        let state = GroupState(
+            agents: 4, running: 2, needsYou: 1, idle: 0, finished: 1, ended: 0, failed: 0, unknown: 0)
+        XCTAssertEqual(ChatWords.subagentGroup(4), "4 subagents")
+        XCTAssertEqual(ChatWords.subagentGroup(1), "1 subagent")
+        XCTAssertEqual(ChatWords.subagentGroupState(state), "2 running · 1 waiting on you · 1 done")
+        XCTAssertEqual(ChatWords.subagentGroupStanding(state), .needsYou)
+        let ended = GroupState(
+            agents: 3, running: 0, needsYou: 0, idle: 0, finished: 1, ended: 1, failed: 0, unknown: 1)
+        XCTAssertEqual(ChatWords.subagentGroupState(ended), "1 done · 1 stopped")
+        XCTAssertEqual(ChatWords.subagentGroupStanding(ended), .done)
+    }
+
+    /// A subagent's composer names its provider and has no placeholder to
+    /// show, since there is no field.
+    func testASubagentsComposerNamesWhoRunsIt() {
+        XCTAssertEqual(ChatWords.nativeRunner(.claudeSdk), "Claude runs this subagent")
+        XCTAssertEqual(ChatWords.nativeRunner(.claudePty), "Claude runs this subagent")
+        XCTAssertEqual(ChatWords.nativeRunner(.codex), "Codex runs this subagent")
+        XCTAssertEqual(
+            ChatWords.placeholder(.native(stop: .unavailable), host: "desk", reach: .online(.direct), working: true), "")
     }
 }

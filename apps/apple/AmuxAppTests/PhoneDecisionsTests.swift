@@ -393,6 +393,86 @@ final class PhoneDecisionsTests: XCTestCase {
         XCTAssertEqual(asked, [.pairAgain(desk)])
     }
 
+    // MARK: - Subagents
+
+    /// A subagent its parent's provider runs takes no messages: where the
+    /// field was, the chat says who runs it, and its Stop stops its own job,
+    /// then reads Stopping, and after a refusal says why and offers it again.
+    func testASubagentsChatOffersItsStopInPlaceOfTheField() async throws {
+        typealias F = CatalogFixtures
+        let source = ScriptedChat(rows: F.subagentWork, frame: F.nativeFrame(.offered(key: "toolu_02")))
+        let model = try await chat(source, subject: F.nativeSubject, family: F.nativeFamily)
+        XCTAssertNil(element("chat.field"), "a subagent's chat draws a field to type in")
+        let native = try XCTUnwrap(element("chat.native"), "nothing says why there is no field")
+        XCTAssertEqual(native.label, "Claude runs this subagent")
+        XCTAssertEqual(native.value, "It takes no messages.")
+        try await accessible()
+        try activate("chat.native.stop")
+        await spin()
+        XCTAssertEqual(source.stoppedJobs, ["toolu_02"], "Stop did not stop the subagent's own job")
+
+        source.show(frame: F.nativeFrame(.stopping))
+        source.deliver(to: model)
+        await spin()
+        XCTAssertNotNil(element("chat.native.stopping"), "a stop on its way does not say so")
+        XCTAssertNil(element("chat.native.stop"), "a stop on its way is offered again")
+
+        let refusal = "Claude could not stop the task: it already finished."
+        source.show(frame: F.nativeFrame(.refused(key: "toolu_02", error: refusal)))
+        source.deliver(to: model)
+        await spin()
+        XCTAssertEqual(element("chat.native.refused")?.label, refusal, "the provider's refusal is not said")
+        XCTAssertNotNil(element("chat.native.stop"), "a refused stop is not offered again")
+    }
+
+    /// A subagent goes with its parent and cannot be messaged: its menu
+    /// renames it but has no address to copy, and settled, no Delete.
+    func testASubagentsMenuHasNoAddressAndNoDelete() async throws {
+        typealias F = CatalogFixtures
+        let settled = ChatSubject(
+            name: "Survey the relay’s retry path", host: "Studio", directory: "", reach: .online(.direct),
+            filing: .closed, topLevel: false, native: true)
+        _ = try await chat(
+            ScriptedChat(rows: F.subagentWork, frame: F.nativeFrame(.unavailable, phase: .exited(cause: .finished))),
+            subject: settled)
+        let opened = try await chatMenuItem("Un-settle")
+        XCTAssertNotNil(opened, "a settled subagent's menu offers Un-settle")
+        XCTAssertNotNil(try menuItem("Rename"), "a subagent's menu offers Rename")
+        XCTAssertNil(try menuItem("Delete Agent"), "a subagent's menu offers Delete Agent")
+        XCTAssertNil(try menuItem("Copy Address"), "a subagent's menu offers its address")
+        XCTAssertNil(try menuItem("Pin"), "a subagent's menu offers Pin")
+    }
+
+    /// Four calls of one turn read as one row with what their subagents
+    /// come to. Tapping it opens the group and nothing else; tapping a call
+    /// then opens that subagent's chat, a gesture apart.
+    func testAGroupOpensToItsCallsAndACallOpensItsSubagent() async throws {
+        typealias F = CatalogFixtures
+        let source = F.delegatingChat()
+        let model = try await chat(source)
+        let group = try XCTUnwrap(element("chat.row.subagent-group"), "the four calls are not one row")
+        XCTAssertTrue(
+            (group.label ?? "").contains("4 subagents") && (group.label ?? "").contains("1 waiting on you"),
+            "the group does not say what its subagents come to: \(group.label ?? "")")
+        XCTAssertEqual(group.value, "folded")
+        XCTAssertFalse(probe.elements.contains { $0.identifier == "chat.row.subagent" }, "a folded group shows its calls")
+
+        try await accessible()
+        try activate("chat.row.subagent-group")
+        source.deliver(to: model)
+        await spin()
+        let calls = probe.elements.filter { $0.identifier == "chat.row.subagent" }
+        XCTAssertEqual(calls.count, 4, "the opened group does not list its four calls")
+        XCTAssertEqual(
+            calls.map { $0.value ?? "" }, ["running", "waiting on you", "done", "running"],
+            "each call does not read how its subagent stands from the fleet")
+        XCTAssertTrue(acted.isEmpty, "opening the group opened a chat: \(acted)")
+
+        try activate("chat.row.subagent")
+        await spin()
+        XCTAssertEqual(acted, [.open(F.subagent(21))], "tapping a call does not open its subagent's chat")
+    }
+
     // MARK: - Home and new agent
 
     /// An idle agent whose only work is in the background says how many
@@ -402,7 +482,7 @@ final class PhoneDecisionsTests: XCTestCase {
             agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 9, count: 16)),
             name: "cx", handle: "cx", kind: .codex, attention: .idle, cwd: "~/src", phaseSinceMs: 0,
             host: "desk", hostReach: .online(.direct), children: 0, familyAttention: .idle,
-            members: 1, descendants: 0, backgroundJobs: 2, closeHeld: false, filing: .open, topLevel: true, branch: nil, exitCause: nil, repository: nil)
+            members: 1, descendants: 0, backgroundJobs: 2, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: nil, repository: nil)
         let fleet = FleetStore()
         fleet.show(
             FleetView(

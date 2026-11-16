@@ -193,8 +193,11 @@ struct FleetSidebar: View {
             newName = row.card.name
             renaming = row
         }
-        Divider()
-        Button("Delete…", role: .destructive) { deleting = row }
+        // A provider subagent goes with its parent, which deletes it.
+        if !row.native {
+            Divider()
+            Button("Delete…", role: .destructive) { deleting = row }
+        }
     }
 
     private var isRenaming: Binding<Bool> {

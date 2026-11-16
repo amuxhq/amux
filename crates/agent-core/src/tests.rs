@@ -477,6 +477,72 @@ fn a_draining_agent_refuses_new_input() {
     );
 }
 
+fn child_answer(child: &str, id: &str, ask: &str) -> ctl_frame::Of {
+    ctl_frame::Of::ChildInput(wire::ChildInput {
+        agent_id: interpret::subagent_id(b"agent", child),
+        input: interpret::claude_sdk_input(
+            id.as_bytes().to_vec(),
+            &FixtureInput::Answer {
+                ask: ask.to_owned(),
+                answer: json!({"allow": {}}),
+            },
+        ),
+    })
+}
+
+/// A person's answer to a provider subagent's ask reaches the interpreter
+/// through the facts ring as an event of its own, and its verdict goes
+/// back keyed by the input id; the subagent's parts are journaled in the
+/// agent's own step.
+#[test]
+fn a_child_input_reaches_the_interpreter_and_is_answered_by_its_id() {
+    let mut run = Run::start(&spec(false, None));
+    run.on(Input::DaemonDials { connection: DAEMON });
+    run.fact(json!({"type": "ready"}));
+    run.prompt("p1", "hello");
+    run.reflect("p1");
+    run.fact(json!({"type": "sub_start", "child": "c1", "call": "call-1"}));
+    let out = run.fact(json!({"type": "sub_ask", "child": "c1", "id": "ask-1"}));
+    let parts: Vec<_> = out
+        .iter()
+        .filter_map(|output| match output {
+            Output::AppendJournal(step) => Some(step.agents.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0][0].agent_id, interpret::subagent_id(b"agent", "c1"));
+
+    let out = run.frame(child_answer("c1", "a1", "ask-1"));
+    assert!(
+        out.iter()
+            .any(|output| matches!(output, Output::Record(Entry::ChildInput { .. })))
+    );
+    assert_eq!(
+        verdicts(&out),
+        vec![(b"a1".to_vec(), reply::accepted(false))]
+    );
+    assert_eq!(
+        provider_writes(&out),
+        vec![r#"{"ask":"ask-1","child":"c1","type":"answer"}"#]
+    );
+}
+
+#[test]
+fn a_draining_agent_refuses_a_child_input() {
+    let mut run = Run::start(&spec(false, None));
+    run.on(Input::DaemonDials { connection: DAEMON });
+    run.fact(json!({"type": "ready"}));
+    run.prompt("p1", "hello");
+    run.reflect("p1");
+    run.frame(ctl_frame::Of::Stop(wire::Stop { kill: false }));
+    let out = run.frame(child_answer("c1", "a1", "ask-1"));
+    assert_eq!(
+        verdicts(&out),
+        vec![(b"a1".to_vec(), reply::rejected(wire::Refusal::Draining))]
+    );
+}
+
 #[test]
 fn a_provider_that_will_not_finish_is_killed_at_its_deadline() {
     let mut run = one_shot_working();

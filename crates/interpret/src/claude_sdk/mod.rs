@@ -1167,6 +1167,13 @@ impl Interpreter for ClaudeSdk {
             }
             Event::Fact(fact) => state.fact(&mut emit, fact),
             Event::Input(input) => state.input(&mut emit, input),
+            // This kind does not yet run its provider's subagents as agents
+            // of their own, so none can be addressed.
+            Event::ChildInput { input, .. } => {
+                state
+                    .shared
+                    .reject(&mut emit, &input.input_id, wire::Refusal::Unsupported)
+            }
             Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
             Event::Rename { .. } => state.shared.renamed(),
             Event::ProviderExit { code } => state.exited(&mut emit, crate::provider_exit(code)),

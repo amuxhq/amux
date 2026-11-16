@@ -176,7 +176,8 @@ with that record, which it writes even when the agent has exited since. Every in
 after every step, whatever its kind: every tool result answers a call the interpreter saw
 (`agent.tool_result_without_call`), the provider's exit leaves no turn open and no item streaming
 (`agent.exit_left_open`), an ask that closed is never answered later (`agent.closed_ask_answered`), and every item
-key is opened before it is updated or closed, and never reopened (`agent.item_before_open`).
+key is opened before it is updated or closed, and never reopened (`agent.item_before_open`), and a provider
+subagent's parts come between its start and its end, and it ends with no item streaming (`agent.subagent_run`).
 Every check has a stable id, its core's name and its own (`daemon.generation_fell`, `agent.taken_still_pending`,
 `transcript.window`; a step over budget is `<core>.over_budget`), which is the manifest's `trigger`. The relay, the
 path machine and the supervisor log the same kind of reason (`the relay core: `, `the supervisor core: `), and the
@@ -269,6 +270,8 @@ the provider's fixed phrases only the phrase is kept, never what follows it. For
 also keeps what the interpreter concluded: each item opened, updated or closed by key and arm, appends by key and
 size, the snapshot's phase and queue, turn ends, its effects by kind with their sizes and the ids they answer, what
 its two queries (messages pending, typed input unrecorded) answered after the step, and the check the step broke.
+Each provider subagent's part of a step is kept the same way under the subagent's aliased id, with whether it started
+or ended there; a person's input to a subagent is an event of its own (`child_input`) naming it.
 Each segment starts from the interpreter's open items, queue, asks and pending inputs by key. Git facts are counts:
 files and lines changed, and whether there is a branch, never its name. Of a shell command only the shell's name and
 flag are kept. The record names the spec's kind; the provider's command when it is `claude` or `codex`, never a

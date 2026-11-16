@@ -591,6 +591,7 @@ fn event_kind(event: &Event) -> String {
             Err(_) => format!("a {:?} fact", fact.channel),
         },
         Event::Input(_) => "an input".to_owned(),
+        Event::ChildInput { .. } => "an input to a provider subagent".to_owned(),
         Event::AgentMessage(_) => "an agent message".to_owned(),
         Event::Rename { .. } => "a rename".to_owned(),
         Event::Tick { at_ms } => format!("a tick at {at_ms}"),

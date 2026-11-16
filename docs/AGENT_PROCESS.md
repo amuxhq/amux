@@ -272,7 +272,7 @@ version integer, and a frame a reader does not know is ignored.
 | `hello` | agent → daemon | Sent at once on every connection: the agent id |
 | `nudge` | agent → daemon | The journal grew. Sent after every step that wrote bytes; an empty step writes nothing and sends nothing |
 | `input` | daemon → agent | A person's `Input` (a prompt, an answer, an interrupt, a setting, …), its body as the client encoded it |
-| `child_input` | daemon → agent | `ChildInput { agent_id, input }`: a person's `Input` to one of the provider subagents this agent's provider runs, such as the answer to its ask, which the interpreter gives the provider for it; answered by `reply` keyed by the input id. A subagent's stop is not one: a running subagent is one of the agent's background jobs, and its stop is the agent's own `input` carrying `StopJob { key }` |
+| `child_input` | daemon → agent | `ChildInput { agent_id, input }`: a person's `Input` to one of the provider subagents this agent's provider runs: an answer to one of its asks, or `StopJob { key }` for the subagent's own job, which its snapshot lists. The core hands it to the interpreter as `Event::ChildInput`, through the facts ring like any input, and the interpreter answers the provider for the subagent; the `reply` is keyed by the input id, and a draining or exiting agent refuses it as it refuses its own input |
 | `agent_message` | daemon → agent | An `Envelope` with the sender the daemon set; the recipient's interpreter picks the carrier |
 | `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's record for a report, answered in any mode |
 | `rename` | daemon → agent | `Rename { name }`: a Codex agent's thread takes the agent's new name, so Codex's own app shows what amux does; other kinds have nothing to rename |
@@ -526,7 +526,9 @@ first entry.
 - An entry is one JSON line: a fact with its channel and its payload (as text
   when it is UTF-8, as hex otherwise; terminal Claude's subagent transcript
   rows on a channel of their own, `subagent_transcript`, apart from its main
-  transcript's), a person's input or an agent message
+  transcript's), a person's input, a person's input to one of its provider
+  subagents (`child_input`, the encoded `ChildInput`; a ring from before
+  subagents were agents of their own has none) or an agent message
   as its encoded protobuf in hex, a Codex agent's new name, a tick, the
   provider's exit, the daemon being lost, a stop, the
   process exiting, or the folder's git facts as an encoded `Git` in hex

@@ -14,6 +14,8 @@
 //!     { "fact": { "channel": "stream", "json": { "type": "ready" } } },
 //!     { "input": { "id": "p1", "prompt": { "text": "hello" } },
 //!       "expect": { "reply": "accepted", "phase": "WORKING" } },
+//!     { "child_input": { "child": "a1b2", "id": "ans1",
+//!                        "answer": { "ask": "k", "answer": { "allow": {} } } } },
 //!     { "agent_message": { "envelope": "e1", "from": "reviewer", "text": "look" } },
 //!     { "rename": { "name": "loud-heron" } },
 //!     { "git": { "branch": "fix", "base_branch": "main",
@@ -32,6 +34,12 @@
 //! `INTERPRET_UPDATE_GOLDENS=1`, never by an ordinary run. A recorded event
 //! that emitted nothing is left out of the golden; its frame number shows
 //! the gap.
+//!
+//! A `child_input` is a person's input to one of the agent's provider
+//! subagents, named by the provider's id for it (`child`) and addressed by
+//! the agent id derived from it under the spec's agent. A subagent's part
+//! of a step prints after the agent's own, each line under `agent
+//! sub-<first eight hex digits of its id>`.
 //!
 //! Besides the golden and the expectations, every run checks the invariants
 //! ([`check_invariants`]) and the checkpoint property: resuming from a
@@ -485,7 +493,7 @@ pub fn run_golden<I: Interpreter>(fixture: &Path) -> GoldenReport {
         Ok(frames) => frames,
         Err(error) => return GoldenReport::fail(fixture, error),
     };
-    report.rendered = render::<I>(&frames);
+    report.rendered = render::<I>(&spec.agent_id, &frames);
 
     let steps = frames
         .iter()
@@ -584,9 +592,12 @@ fn spec<I: Interpreter>(spec: &FixtureSpec) -> AgentSpec {
 }
 
 fn script<I: Interpreter>(fixture: &Path, parsed: &Fixture) -> Result<Vec<Scripted>, String> {
+    let host = spec::<I>(&parsed.spec).agent_id;
     let mut script = Vec::new();
     for (index, value) in parsed.prelude.iter().enumerate() {
-        script.push(scripted::<I>(value).map_err(|error| format!("prelude {index}: {error}"))?);
+        script.push(
+            scripted::<I>(&host, value).map_err(|error| format!("prelude {index}: {error}"))?,
+        );
     }
     if let Some(recording) = &parsed.recording {
         let path = fixture
@@ -607,12 +618,15 @@ fn script<I: Interpreter>(fixture: &Path, parsed: &Fixture) -> Result<Vec<Script
         }
     }
     for (index, value) in parsed.events.iter().enumerate() {
-        script.push(scripted::<I>(value).map_err(|error| format!("event {index}: {error}"))?);
+        script
+            .push(scripted::<I>(&host, value).map_err(|error| format!("event {index}: {error}"))?);
     }
     Ok(script)
 }
 
-fn scripted<I: Interpreter>(value: &Value) -> Result<Scripted, String> {
+/// One authored event. `host` is the fixture's agent id, under which a
+/// `child_input` names its subagent by the provider's id for it.
+fn scripted<I: Interpreter>(host: &[u8], value: &Value) -> Result<Scripted, String> {
     let Value::Object(object) = value else {
         return Err("an event is an object".into());
     };
@@ -635,6 +649,20 @@ fn scripted<I: Interpreter>(value: &Value) -> Result<Scripted, String> {
         }),
         "fact" => Action::Event(Event::Fact(fact(body)?)),
         "input" => Action::Event(Event::Input(input_of::<I>(body)?)),
+        "child_input" => {
+            let mut body = body
+                .as_object()
+                .cloned()
+                .ok_or("a child input is an object")?;
+            let child = body
+                .remove("child")
+                .and_then(|child| child.as_str().map(str::to_owned))
+                .ok_or("a child input names its subagent by the provider's id, `child`")?;
+            Action::Event(Event::ChildInput {
+                agent_id: crate::subagent_id(host, &child),
+                input: input_of::<I>(&Value::Object(body))?,
+            })
+        }
         "agent_message" => Action::Event(Event::AgentMessage(agent_message(body)?)),
         "rename" => Action::Event(Event::Rename {
             name: body
@@ -1224,61 +1252,50 @@ pub fn check_invariants<I: Interpreter>(steps: &[Step], end: &EndRules) -> Vec<S
         }
     }
 
-    let mut arms = BTreeMap::<String, String>::new();
-    let mut open = BTreeSet::<String>::new();
+    let mut own = Ledger::default();
+    let mut agents = BTreeMap::<&[u8], Lifetime>::new();
     let mut last_snapshot: Option<&Snapshot> = None;
     for (index, step) in steps.iter().enumerate() {
-        let mut in_step = BTreeSet::new();
-        for item in &step.items {
-            if !in_step.insert(item.key.as_str()) {
-                violations.push(format!("frame {index}: key {} twice in one step", item.key));
-            }
-            let view = I::describe_item(&item.body);
-            match arms.get(&item.key) {
-                Some(arm) if *arm != view.arm => violations.push(format!(
-                    "frame {index}: key {} changed from {arm} to {}",
-                    item.key, view.arm
-                )),
-                Some(_) => {
-                    if !view.complete && !open.contains(&item.key) {
-                        violations.push(format!(
-                            "frame {index}: key {} reopened after its final item",
-                            item.key
-                        ));
-                    }
-                }
-                None => {
-                    arms.insert(item.key.clone(), view.arm.clone());
-                }
-            }
-            if view.complete {
-                open.remove(&item.key);
-            } else {
-                open.insert(item.key.clone());
-            }
-        }
-        for append in &step.appends {
-            if !arms.contains_key(&append.key) {
-                violations.push(format!(
-                    "frame {index}: append to unknown key {}",
-                    append.key
-                ));
-            } else if !open.contains(&append.key) {
-                violations.push(format!(
-                    "frame {index}: append to {} after its final item",
-                    append.key
-                ));
-            }
-        }
+        let at = format!("frame {index}");
+        own.take::<I>(&at, &step.items, &step.appends, &mut violations);
         if let Some(snapshot) = &step.snapshot {
-            for (ask, item_key) in I::describe_snapshot(&snapshot.body).asks {
-                if !item_key.is_empty() && !arms.contains_key(&item_key) {
+            own.asks_point_at_items::<I>(&at, snapshot, &mut violations);
+            last_snapshot = Some(snapshot);
+        }
+        for part in &step.agents {
+            let name = subagent_name(&part.agent_id);
+            let at = format!("frame {index}: subagent {name}");
+            let lifetime = agents.entry(part.agent_id.as_slice()).or_default();
+            if part.start.is_some() {
+                lifetime.running = true;
+            } else if !lifetime.running {
+                violations.push(if lifetime.ended {
+                    format!("{at} has a part after its end and no new start")
+                } else {
+                    format!("{at} has a part before its start")
+                });
+            }
+            lifetime
+                .ledger
+                .take::<I>(&at, &part.items, &part.appends, &mut violations);
+            if let Some(snapshot) = &part.snapshot {
+                lifetime
+                    .ledger
+                    .asks_point_at_items::<I>(&at, snapshot, &mut violations);
+            }
+            if part.end.is_some() {
+                if !lifetime.ledger.open.is_empty() {
                     violations.push(format!(
-                        "frame {index}: open ask {ask} points at {item_key}, which has no item"
+                        "{at} ended with streams that never ended: {}",
+                        std::mem::take(&mut lifetime.ledger.open)
+                            .into_iter()
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     ));
                 }
+                lifetime.running = false;
+                lifetime.ended = true;
             }
-            last_snapshot = Some(snapshot);
         }
     }
 
@@ -1296,37 +1313,142 @@ pub fn check_invariants<I: Interpreter>(steps: &[Step], end: &EndRules) -> Vec<S
                 .join(", ")
         ));
     }
-    if !end.streams_may_remain && !open.is_empty() {
-        violations.push(format!(
-            "streams never ended with a final item: {}",
-            open.into_iter().collect::<Vec<_>>().join(", ")
-        ));
+    if !end.streams_may_remain {
+        if !own.open.is_empty() {
+            violations.push(format!(
+                "streams never ended with a final item: {}",
+                own.open.iter().cloned().collect::<Vec<_>>().join(", ")
+            ));
+        }
+        for (agent, lifetime) in &agents {
+            if !lifetime.ledger.open.is_empty() {
+                violations.push(format!(
+                    "subagent {}: streams never ended with a final item: {}",
+                    subagent_name(agent),
+                    lifetime
+                        .ledger
+                        .open
+                        .iter()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+        }
     }
     violations
 }
 
+/// One agent's item keys over a run: the arm each key first had, and the
+/// keys still open. The agent's own and each subagent's are apart, since
+/// a key is unique only within one agent's chat.
+#[derive(Default)]
+struct Ledger {
+    arms: BTreeMap<String, String>,
+    open: BTreeSet<String>,
+}
+
+impl Ledger {
+    /// One step's items and appends for this agent; `at` says where, in
+    /// each violation.
+    fn take<I: Interpreter>(
+        &mut self,
+        at: &str,
+        items: &[Item],
+        appends: &[wire::Append],
+        violations: &mut Vec<String>,
+    ) {
+        let mut in_step = BTreeSet::new();
+        for item in items {
+            if !in_step.insert(item.key.as_str()) {
+                violations.push(format!("{at}: key {} twice in one step", item.key));
+            }
+            let view = I::describe_item(&item.body);
+            match self.arms.get(&item.key) {
+                Some(arm) if *arm != view.arm => violations.push(format!(
+                    "{at}: key {} changed from {arm} to {}",
+                    item.key, view.arm
+                )),
+                Some(_) => {
+                    if !view.complete && !self.open.contains(&item.key) {
+                        violations.push(format!(
+                            "{at}: key {} reopened after its final item",
+                            item.key
+                        ));
+                    }
+                }
+                None => {
+                    self.arms.insert(item.key.clone(), view.arm.clone());
+                }
+            }
+            if view.complete {
+                self.open.remove(&item.key);
+            } else {
+                self.open.insert(item.key.clone());
+            }
+        }
+        for append in appends {
+            if !self.arms.contains_key(&append.key) {
+                violations.push(format!("{at}: append to unknown key {}", append.key));
+            } else if !self.open.contains(&append.key) {
+                violations.push(format!(
+                    "{at}: append to {} after its final item",
+                    append.key
+                ));
+            }
+        }
+    }
+
+    fn asks_point_at_items<I: Interpreter>(
+        &self,
+        at: &str,
+        snapshot: &Snapshot,
+        violations: &mut Vec<String>,
+    ) {
+        for (ask, item_key) in I::describe_snapshot(&snapshot.body).asks {
+            if !item_key.is_empty() && !self.arms.contains_key(&item_key) {
+                violations.push(format!(
+                    "{at}: open ask {ask} points at {item_key}, which has no item"
+                ));
+            }
+        }
+    }
+}
+
+/// A provider subagent over a run: its items, and where it is in its run.
+/// A part needs a start before it unless the subagent is running; an end
+/// stops it running until a start continues it.
+#[derive(Default)]
+struct Lifetime {
+    ledger: Ledger,
+    running: bool,
+    ended: bool,
+}
+
 /// A resume re-emits only keys readers already have, at the content they
-/// already hold.
+/// already hold, for the agent and for each of its subagents, and starts
+/// and ends nothing.
 fn check_resumes(frames: &[Frame]) -> Vec<String> {
     let mut problems = Vec::new();
     let mut view = View::default();
     for frame in frames {
         if frame.label == "resume" {
-            for item in &frame.step.items {
-                match view.items.get(&item.key) {
-                    None => problems.push(format!("resume emitted unknown key {}", item.key)),
-                    Some(held) if held != item => problems.push(format!(
-                        "resume re-emitted {} with different content",
-                        item.key
-                    )),
-                    Some(_) => {}
-                }
-            }
-            if !frame.step.appends.is_empty() {
-                problems.push("resume emitted appends".to_owned());
-            }
+            view.own
+                .check_resumed("", &frame.step.items, &frame.step.appends, &mut problems);
             if frame.step.snapshot.is_none() {
                 problems.push("resume emitted no snapshot".to_owned());
+            }
+            for part in &frame.step.agents {
+                let name = format!("subagent {}: ", subagent_name(&part.agent_id));
+                match view.agents.get(&part.agent_id) {
+                    None => problems.push(format!("resume emitted unknown {name}")),
+                    Some(held) => {
+                        held.check_resumed(&name, &part.items, &part.appends, &mut problems)
+                    }
+                }
+                if part.start.is_some() || part.end.is_some() {
+                    problems.push(format!("{name}resume started or ended it"));
+                }
             }
         }
         view.apply(&frame.step);
@@ -1334,25 +1456,35 @@ fn check_resumes(frames: &[Frame]) -> Vec<String> {
     problems
 }
 
-/// What a reader holding every committed record would have: items merged
-/// by key with appends applied, and the newest snapshot.
+/// What a reader holding every committed record would have: for the agent
+/// and for each provider subagent, items merged by key with appends
+/// applied, and the newest snapshot; and each subagent's newest start and
+/// end.
 #[derive(Default)]
 struct View {
-    items: BTreeMap<String, Item>,
-    snapshot: Option<Snapshot>,
+    own: Part,
+    agents: BTreeMap<Vec<u8>, Part>,
 }
 
-impl View {
-    fn apply(&mut self, step: &Step) {
-        for item in &step.items {
+#[derive(Default, PartialEq)]
+struct Part {
+    items: BTreeMap<String, Item>,
+    snapshot: Option<Snapshot>,
+    start: Option<wire::NativeStart>,
+    end: Option<wire::IncarnationEnd>,
+}
+
+impl Part {
+    fn apply(&mut self, items: &[Item], appends: &[wire::Append], snapshot: Option<&Snapshot>) {
+        for item in items {
             self.items.insert(item.key.clone(), item.clone());
         }
-        for append in &step.appends {
+        for append in appends {
             if let Some(item) = self.items.get_mut(&append.key) {
                 item.text.push_str(&append.text);
             }
         }
-        if let Some(snapshot) = &step.snapshot {
+        if let Some(snapshot) = snapshot {
             self.snapshot = Some(Snapshot {
                 at_ms: 0,
                 ..snapshot.clone()
@@ -1360,7 +1492,29 @@ impl View {
         }
     }
 
-    fn difference(&self, other: &View) -> Option<String> {
+    fn check_resumed(
+        &self,
+        name: &str,
+        items: &[Item],
+        appends: &[wire::Append],
+        problems: &mut Vec<String>,
+    ) {
+        for item in items {
+            match self.items.get(&item.key) {
+                None => problems.push(format!("{name}resume emitted unknown key {}", item.key)),
+                Some(held) if held != item => problems.push(format!(
+                    "{name}resume re-emitted {} with different content",
+                    item.key
+                )),
+                Some(_) => {}
+            }
+        }
+        if !appends.is_empty() {
+            problems.push(format!("{name}resume emitted appends"));
+        }
+    }
+
+    fn difference(&self, other: &Part) -> Option<String> {
         let keys = self
             .items
             .keys()
@@ -1374,7 +1528,55 @@ impl View {
                 (None, _) => return Some(format!("extra item {key}")),
             }
         }
-        (self.snapshot != other.snapshot).then(|| "the final snapshot differs".to_owned())
+        if self.snapshot != other.snapshot {
+            return Some("the final snapshot differs".to_owned());
+        }
+        if self.start != other.start || self.end != other.end {
+            return Some("its start or end differs".to_owned());
+        }
+        None
+    }
+}
+
+impl View {
+    fn apply(&mut self, step: &Step) {
+        self.own
+            .apply(&step.items, &step.appends, step.snapshot.as_ref());
+        for part in &step.agents {
+            let held = self.agents.entry(part.agent_id.clone()).or_default();
+            held.apply(&part.items, &part.appends, part.snapshot.as_ref());
+            if part.start.is_some() {
+                held.start.clone_from(&part.start);
+                held.end = None;
+            }
+            if part.end.is_some() {
+                held.end.clone_from(&part.end);
+            }
+        }
+    }
+
+    fn difference(&self, other: &View) -> Option<String> {
+        if let Some(difference) = self.own.difference(&other.own) {
+            return Some(difference);
+        }
+        let agents = self
+            .agents
+            .keys()
+            .chain(other.agents.keys())
+            .collect::<BTreeSet<_>>();
+        for agent in agents {
+            let name = subagent_name(agent);
+            match (self.agents.get(agent), other.agents.get(agent)) {
+                (Some(a), Some(b)) => {
+                    if let Some(difference) = a.difference(b) {
+                        return Some(format!("subagent {name}: {difference}"));
+                    }
+                }
+                (Some(_), None) => return Some(format!("subagent {name} missing")),
+                (None, _) => return Some(format!("extra subagent {name}")),
+            }
+        }
+        None
     }
 }
 
@@ -1519,9 +1721,14 @@ fn check_expectations<I: Interpreter>(frames: &[Frame], script: &[Scripted]) -> 
     failures
 }
 
-fn render<I: Interpreter>(frames: &[Frame]) -> String {
+/// The emission of a run under the agent `host`, whose id a subagent's
+/// start names when the host made the call that started it.
+fn render<I: Interpreter>(host: &[u8], frames: &[Frame]) -> String {
     let mut out = String::new();
-    let mut carried = Carried::default();
+    let mut carried = Carried {
+        host: Some(host.to_vec()),
+        ..Carried::default()
+    };
     let mut pending: &[Vec<u8>] = &[];
     for (index, frame) in frames.iter().enumerate() {
         let pending_changed = frame.pending != pending;
@@ -1598,6 +1805,7 @@ fn is_silent(step: &Step) -> bool {
         && step.appends.is_empty()
         && step.snapshot.is_none()
         && step.turn_end.is_none()
+        && step.agents.is_empty()
 }
 
 /// What a rendering carries from frame to frame: repository facts and the
@@ -1609,6 +1817,10 @@ struct Carried<'a> {
     catalogue: Option<&'a Vec<u8>>,
     title: Option<&'a str>,
     last_said: Option<&'a str>,
+    /// The agent whose steps these are, when the rendering knows it.
+    host: Option<Vec<u8>>,
+    /// What each provider subagent's own parts carry, by its agent id.
+    agents: BTreeMap<Vec<u8>, Carried<'a>>,
 }
 
 fn render_frame<'a, I: Interpreter>(
@@ -1627,60 +1839,14 @@ fn render_frame<'a, I: Interpreter>(
             render_effect(effect, named_catalogue(step))
         );
     }
-    for item in &step.items {
-        let _ = writeln!(out, "{}", render_item::<I>(item));
-    }
-    for append in &step.appends {
-        let _ = writeln!(
-            out,
-            "append {} {}",
-            append.key,
-            Value::String(append.text.clone())
-        );
-    }
-    if let Some(snapshot) = &step.snapshot {
-        if snapshot.git.as_ref() != carried.git {
-            carried.git = snapshot.git.as_ref();
-            let label = carried.git.map_or("git none".to_owned(), git_label);
-            let _ = writeln!(out, "snapshot {label}");
-        }
-        if snapshot.catalogue.as_ref() != carried.catalogue {
-            carried.catalogue = snapshot.catalogue.as_ref();
-            let label = carried
-                .catalogue
-                .map_or("-".to_owned(), |hash| short_hash(hash));
-            let _ = writeln!(out, "snapshot catalogue {label}");
-        }
-        if snapshot.title.as_deref() != carried.title {
-            carried.title = snapshot.title.as_deref();
-            let _ = writeln!(out, "snapshot title {:?}", carried.title.unwrap_or("-"));
-        }
-        if snapshot.last_said.as_deref() != carried.last_said {
-            carried.last_said = snapshot.last_said.as_deref();
-            let _ = writeln!(out, "snapshot said {:?}", carried.last_said.unwrap_or("-"));
-        }
-        let _ = writeln!(
-            out,
-            "snapshot {} queue=[{}] working_on={} at={} {}",
-            phase_name(snapshot.phase),
-            snapshot
-                .queue
-                .iter()
-                .map(queue_label)
-                .collect::<Vec<_>>()
-                .join(","),
-            snapshot
-                .working_on
-                .as_ref()
-                .map_or("-".to_owned(), |text| Value::String(text.clone())
-                    .to_string()),
-            snapshot.at_ms,
-            I::describe_snapshot(&snapshot.body).text
-        );
-        if let Some(notice) = &snapshot.notice {
-            let _ = writeln!(out, "notice {}", crate::notice::describe(notice));
-        }
-    }
+    render_part::<I>(
+        out,
+        carried,
+        "",
+        &step.items,
+        &step.appends,
+        step.snapshot.as_ref(),
+    );
     if let Some(pending) = pending {
         let _ = writeln!(
             out,
@@ -1706,6 +1872,129 @@ fn render_frame<'a, I: Interpreter>(
     }
     if let Some(end) = &step.incarnation_end {
         let _ = writeln!(out, "incarnation_end {}", incarnation_end(end));
+    }
+    for part in &step.agents {
+        render_agent_part::<I>(out, carried, part);
+    }
+}
+
+/// One provider subagent's part of a step, each line under `agent
+/// sub-<id>`: its start (the provider's id for it, the call that started
+/// it and its title), its items, appends and snapshot as the agent's own
+/// are printed, and its end.
+fn render_agent_part<'a, I: Interpreter>(
+    out: &mut String,
+    carried: &mut Carried<'a>,
+    part: &'a wire::AgentStep,
+) {
+    let prefix = format!("agent {} ", subagent_name(&part.agent_id));
+    if let Some(start) = &part.start {
+        let call = if carried.host.as_deref() == Some(start.call_agent_id.as_slice()) {
+            "host".to_owned()
+        } else if start.call_agent_id.is_empty() {
+            "-".to_owned()
+        } else if carried.agents.contains_key(&start.call_agent_id) {
+            subagent_name(&start.call_agent_id)
+        } else {
+            display_id(&start.call_agent_id)
+        };
+        let _ = writeln!(
+            out,
+            "{prefix}start child={} call={call}/{} title={:?}",
+            start.provider_child_id,
+            if start.call_key.is_empty() {
+                "-"
+            } else {
+                &start.call_key
+            },
+            start.title
+        );
+    }
+    let own = carried.agents.entry(part.agent_id.clone()).or_default();
+    render_part::<I>(
+        out,
+        own,
+        &prefix,
+        &part.items,
+        &part.appends,
+        part.snapshot.as_ref(),
+    );
+    if let Some(end) = &part.end {
+        let _ = writeln!(out, "{prefix}end {}", incarnation_end(end));
+    }
+}
+
+/// One agent's items, appends and snapshot, each line after `prefix`.
+fn render_part<'a, I: Interpreter>(
+    out: &mut String,
+    carried: &mut Carried<'a>,
+    prefix: &str,
+    items: &'a [Item],
+    appends: &'a [wire::Append],
+    snapshot: Option<&'a Snapshot>,
+) {
+    for item in items {
+        let _ = writeln!(out, "{prefix}{}", render_item::<I>(item));
+    }
+    for append in appends {
+        let _ = writeln!(
+            out,
+            "{prefix}append {} {}",
+            append.key,
+            Value::String(append.text.clone())
+        );
+    }
+    let Some(snapshot) = snapshot else {
+        return;
+    };
+    if snapshot.git.as_ref() != carried.git {
+        carried.git = snapshot.git.as_ref();
+        let label = carried.git.map_or("git none".to_owned(), git_label);
+        let _ = writeln!(out, "{prefix}snapshot {label}");
+    }
+    if snapshot.catalogue.as_ref() != carried.catalogue {
+        carried.catalogue = snapshot.catalogue.as_ref();
+        let label = carried
+            .catalogue
+            .map_or("-".to_owned(), |hash| short_hash(hash));
+        let _ = writeln!(out, "{prefix}snapshot catalogue {label}");
+    }
+    if snapshot.title.as_deref() != carried.title {
+        carried.title = snapshot.title.as_deref();
+        let _ = writeln!(
+            out,
+            "{prefix}snapshot title {:?}",
+            carried.title.unwrap_or("-")
+        );
+    }
+    if snapshot.last_said.as_deref() != carried.last_said {
+        carried.last_said = snapshot.last_said.as_deref();
+        let _ = writeln!(
+            out,
+            "{prefix}snapshot said {:?}",
+            carried.last_said.unwrap_or("-")
+        );
+    }
+    let _ = writeln!(
+        out,
+        "{prefix}snapshot {} queue=[{}] working_on={} at={} {}",
+        phase_name(snapshot.phase),
+        snapshot
+            .queue
+            .iter()
+            .map(queue_label)
+            .collect::<Vec<_>>()
+            .join(","),
+        snapshot
+            .working_on
+            .as_ref()
+            .map_or("-".to_owned(), |text| Value::String(text.clone())
+                .to_string()),
+        snapshot.at_ms,
+        I::describe_snapshot(&snapshot.body).text
+    );
+    if let Some(notice) = &snapshot.notice {
+        let _ = writeln!(out, "{prefix}notice {}", crate::notice::describe(notice));
     }
 }
 
@@ -1830,6 +2119,11 @@ fn event_label(event: &Event) -> String {
     match event {
         Event::Fact(fact) => format!("fact {:?} {}", fact.channel, summary(&fact.payload)),
         Event::Input(input) => format!("input {}", display_id(&input.input_id)),
+        Event::ChildInput { agent_id, input } => format!(
+            "child_input {} {}",
+            subagent_name(agent_id),
+            display_id(&input.input_id)
+        ),
         Event::AgentMessage(envelope) => format!("agent_message {}", display_id(&envelope.id)),
         Event::Rename { name } => format!("rename {name:?}"),
         Event::Tick { at_ms } => format!("tick {at_ms}"),
@@ -1879,6 +2173,12 @@ fn display_id(bytes: &[u8]) -> String {
     } else {
         format!("0x{}", to_hex(bytes))
     }
+}
+
+/// A provider subagent as goldens name it: `sub-` and its id's first eight
+/// hex digits, the name its row is given.
+fn subagent_name(agent_id: &[u8]) -> String {
+    format!("sub-{}", to_hex(&agent_id[..agent_id.len().min(4)]))
 }
 
 fn display_bytes(bytes: &[u8]) -> String {

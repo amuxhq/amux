@@ -199,7 +199,7 @@ impl ExperimentSettings {
     }
 
     /// Keys under `[experiments]` this build reads nothing from, dotted:
-    /// another build's experiment's table, or a key that is no table.
+    /// another build's experiment's table, or a key that is not a table.
     pub(crate) fn ignored_keys(&self) -> Vec<String> {
         self.tables
             .iter()

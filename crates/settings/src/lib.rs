@@ -54,7 +54,7 @@ pub enum ConfigError {
     Invalid(String),
     /// A key the edit would go under is set to a value, not a table, so
     /// there is nowhere to put it.
-    #[error("{key} = {value} is no table, so {setting} cannot go under it")]
+    #[error("{key} = {value} is not a table, so {setting} cannot go under it")]
     InTheWay {
         /// The key in the way, dotted.
         key: String,

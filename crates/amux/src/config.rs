@@ -398,7 +398,7 @@ mod tests {
         assert!(std::fs::read_to_string(&path).unwrap().is_empty());
     }
 
-    /// The reader ignores an experiment's table that is no table, so its
+    /// The reader ignores an experiment's table that is not a table, so its
     /// settings read as their defaults; a set under it is refused, saying
     /// which key is in the way, with the file left alone.
     #[test]

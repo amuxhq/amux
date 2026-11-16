@@ -457,7 +457,11 @@ impl Run {
                         .collect::<Vec<_>>(),
                     "snapshot": part.snapshot.as_ref().map(|snapshot| json!({
                         "phase": snapshot.phase,
-                        "asks": I::describe_snapshot(&snapshot.body).asks.len(),
+                        "asks": I::describe_snapshot(&snapshot.body)
+                            .asks
+                            .iter()
+                            .map(|(ask, item)| (alias.key(ask), alias.key(item)))
+                            .collect::<Vec<_>>(),
                         "background_jobs": snapshot.background_jobs,
                         "bytes": snapshot.body.len(),
                     })),

@@ -2068,3 +2068,165 @@ fn a_subagents_ask_before_its_rows_opens_in_its_chat_and_binds_to_the_row() {
         "the ask does not point at its call once the call's row is read"
     );
 }
+
+/// Claude keeps one task list for a host and its subagents: a task a
+/// terminal subagent creates, read from its own file, shows in the agent's
+/// own task list.
+#[test]
+fn a_terminal_subagents_task_is_in_the_sessions_task_list() {
+    let (mut state, _) = started_claude();
+    let subagent_row = |row: serde_json::Value| {
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::SubagentTranscript,
+            payload: row.to_string().into_bytes(),
+        })
+    };
+    for event in [
+        hook(serde_json::json!({
+            "hook_event_name": "SubagentStart", "agent_id": "a1", "agent_type": "planner",
+            "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
+        })),
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::subagent_meta_fact(
+                "a1",
+                serde_json::json!({"toolUseId": "toolu_agent", "description": "Plan"}),
+            ),
+        }),
+        subagent_row(serde_json::json!({
+            "type": "assistant", "uuid": "sa1", "timestamp": "2026-10-12T08:00:02.000Z",
+            "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+            "message": {"id": "msg_1", "role": "assistant", "model": "claude-haiku-5-5",
+                "content": [{"type": "tool_use", "id": "toolu_task", "name": "TaskCreate",
+                    "input": {"subject": "probe from subagent", "description": "x"}}]},
+        })),
+    ] {
+        ClaudePty::step(&mut state, event);
+    }
+    let created = ClaudePty::step(
+        &mut state,
+        subagent_row(serde_json::json!({
+            "type": "user", "uuid": "su1", "timestamp": "2026-10-12T08:00:03.000Z",
+            "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+            "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_task",
+                "content": "Task #1 created successfully: probe from subagent"}]},
+            "toolUseResult": {"task": {"id": "1", "subject": "probe from subagent"}},
+        })),
+    );
+    let (_, host) = decoded(&created).expect("the agent's snapshot");
+    let entries: Vec<(String, String)> = host
+        .tasks
+        .iter()
+        .flat_map(|list| &list.entries)
+        .map(|entry| (entry.id.clone(), entry.subject.clone()))
+        .collect();
+    assert_eq!(
+        entries,
+        [("1".to_owned(), "probe from subagent".to_owned())],
+        "the subagent's task is not in the session's task list"
+    );
+}
+
+/// Auto mode refuses a terminal subagent's call: the refusal is that
+/// call's, in the subagent's chat, with the rule Claude names, whether the
+/// hook comes before the call's row is read or after.
+#[test]
+fn auto_modes_refusal_of_a_subagents_call_is_drawn_in_its_chat() {
+    use prost::Message as _;
+    let (mut state, _) = started_claude();
+    let with = |extra: serde_json::Value| {
+        let mut value = serde_json::json!({
+            "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl",
+            "cwd": "/w", "permission_mode": "auto",
+        });
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        hook(value)
+    };
+    let subagent_row = |row: serde_json::Value| {
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::SubagentTranscript,
+            payload: row.to_string().into_bytes(),
+        })
+    };
+    let denied = |id: &str| {
+        with(
+            serde_json::json!({"hook_event_name": "PermissionDenied", "agent_id": "a1",
+            "agent_type": "runner", "tool_name": "Bash", "tool_input": {"command": "rm -rf x"},
+            "tool_use_id": id, "reason": "deletes files"}),
+        )
+    };
+    let call = |uuid: &str, id: &str| {
+        subagent_row(serde_json::json!({
+            "type": "assistant", "uuid": uuid, "timestamp": "2026-10-12T08:00:02.000Z",
+            "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+            "message": {"id": format!("msg_{uuid}"), "role": "assistant", "model": "claude-haiku-5-5",
+                "content": [{"type": "tool_use", "id": id, "name": "Bash", "input": {"command": "rm -rf x"}}]},
+        }))
+    };
+    let result = |uuid: &str, id: &str| {
+        subagent_row(serde_json::json!({
+            "type": "user", "uuid": uuid, "timestamp": "2026-10-12T08:00:03.000Z",
+            "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+            "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": id,
+                "is_error": true, "content": "Permission to use Bash has been denied."}]},
+        }))
+    };
+    let mut events = vec![
+        with(
+            serde_json::json!({"hook_event_name": "SubagentStart", "agent_id": "a1", "agent_type": "runner"}),
+        ),
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::subagent_meta_fact(
+                "a1",
+                serde_json::json!({"toolUseId": "toolu_agent", "description": "Run"}),
+            ),
+        }),
+    ];
+    // The first call is refused before its row is read; the second after.
+    events.extend([
+        denied("toolu_early"),
+        call("sa1", "toolu_early"),
+        result("su1", "toolu_early"),
+    ]);
+    events.extend([
+        call("sa2", "toolu_late"),
+        denied("toolu_late"),
+        result("su2", "toolu_late"),
+    ]);
+    let mut calls = std::collections::BTreeMap::new();
+    for event in events {
+        let stepped = ClaudePty::step(&mut state, event);
+        for item in &stepped.step.items {
+            assert!(
+                !item.key.starts_with("toolu_early") && !item.key.starts_with("toolu_late"),
+                "the subagent's call is in the agent's own chat"
+            );
+        }
+        for item in stepped.step.agents.iter().flat_map(|part| &part.items) {
+            if let Ok(wire::ClaudeItem {
+                kind: Some(wire::claude_item::Kind::Tool(tool)),
+            }) = wire::ClaudeItem::decode(item.body.as_slice())
+            {
+                calls.insert(item.key.clone(), tool);
+            }
+        }
+    }
+    for id in ["toolu_early", "toolu_late"] {
+        let tool = &calls[id];
+        assert_eq!(
+            tool.state(),
+            wire::ToolState::Denied,
+            "{id} is not drawn refused"
+        );
+        let decision = tool.decision.as_ref().expect("the refusal's decision");
+        assert_eq!(decision.outcome(), wire::DecisionOutcome::Denied, "{id}");
+        assert_eq!(
+            decision.note, "deletes files",
+            "{id} does not name the rule"
+        );
+    }
+}

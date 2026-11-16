@@ -720,6 +720,7 @@ impl State {
                     &user.envelope.uuid,
                     &user.message.content,
                     user.tool_use_result.as_ref(),
+                    &mut self.tasks,
                     at_ms,
                 );
             }
@@ -763,6 +764,9 @@ impl State {
                     })
                     .collect();
                 for call in calls {
+                    if let Some(reason) = self.refused.remove(&call) {
+                        self.decide_as(emit, Some(&child), &call, Decision::refused(&reason));
+                    }
                     self.bind_subagent_asks(emit, &child, &call);
                 }
                 let replied = self.subagents.get(&child).and_then(|sub| {

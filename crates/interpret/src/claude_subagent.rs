@@ -25,7 +25,7 @@ use wire::{
 
 use crate::claude_answers::Decided;
 use crate::claude_common::{
-    AnsweredResult, Tool, item_body, message_text, question_ask_text, split_tool_name,
+    AnsweredResult, Task, Tool, item_body, message_text, question_ask_text, split_tool_name,
     tool_result_text,
 };
 use crate::{ItemDraft, Subagent, ask_item, is_status_tool, status_working_on, unknown};
@@ -212,13 +212,16 @@ impl Conversation {
     /// One user message of the subagent's: what its parent's model asked of
     /// it (its prompt, or a message continuing it), or its calls' results.
     /// `key` keys a prompt's row; `result` is the message's structured
-    /// result of a call.
+    /// result of a call. `tasks` is the session's task list: Claude keeps
+    /// one for a host and all its subagents, so a subagent's task tools
+    /// change the list its host's snapshot shows.
     pub(crate) fn user(
         &mut self,
         sub: &mut Subagent<'_, Ask>,
         key: &str,
         content: &MessageContent,
         result: Option<&Value>,
+        tasks: &mut Option<Vec<Task>>,
         at_ms: i64,
     ) {
         if let MessageContent::Blocks(blocks) = content {
@@ -232,6 +235,9 @@ impl Conversation {
                 } = block
                 {
                     results = true;
+                    if let Some(tool) = self.tools.get(tool_use_id) {
+                        tool.apply_to_tasks(tasks, result.unwrap_or(&Value::Null));
+                    }
                     self.tool_result(
                         sub,
                         tool_use_id,

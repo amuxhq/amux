@@ -2738,3 +2738,58 @@ fn the_cache_hour_counts_from_the_last_request() {
         "the hour ran out during the turn"
     );
 }
+
+/// Claude keeps one task list for a host and its subagents: a task a
+/// subagent creates is the host's too, so it shows in the agent's own
+/// task list, though the call, like the agent's own task calls, draws no
+/// row.
+#[test]
+fn a_subagents_task_is_in_the_sessions_task_list() {
+    let mut state = idle_on_root();
+    ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "plan", "is_backgrounded": true,
+        })),
+    );
+    ClaudeSdk::step(
+        &mut state,
+        subagent_assistant(
+            "sa1",
+            json!([{"type": "tool_use", "id": "toolu_task", "name": "TaskCreate",
+                "input": {"subject": "probe from subagent", "description": "x", "activeForm": "Probing"}}]),
+        ),
+    );
+    let created = ClaudeSdk::step(
+        &mut state,
+        subagent(json!({
+            "type": "user", "uuid": "su1",
+            "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_task",
+                "content": "Task #1 created successfully: probe from subagent"}]},
+            "tool_use_result": {"task": {"id": "1", "subject": "probe from subagent"}},
+        })),
+    );
+    let (_, host) = sdk_snapshot(&created).expect("the agent's snapshot");
+    let entries: Vec<(String, String)> = host
+        .tasks
+        .iter()
+        .flat_map(|list| &list.entries)
+        .map(|entry| (entry.id.clone(), entry.subject.clone()))
+        .collect();
+    assert_eq!(
+        entries,
+        [("1".to_owned(), "probe from subagent".to_owned())],
+        "the subagent's task is not in the session's task list"
+    );
+    assert!(
+        created
+            .step
+            .agents
+            .iter()
+            .flat_map(|part| &part.items)
+            .all(|item| item.key != "toolu_task"),
+        "a task call draws a row"
+    );
+}

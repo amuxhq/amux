@@ -193,7 +193,19 @@ impl Maker for GitBackend {
         let common = PathBuf::from(common);
         let main = common.parent().map_or(common.clone(), Path::to_owned);
         let branch = git(path, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok();
-        let dirty = git(path, &["status", "--porcelain"]).map(|status| !status.is_empty());
+        // Explicit flags, as wt's own check has, since a repository's
+        // `status.showUntrackedFiles=no` would hide files the forced removal
+        // then deletes. Ignored files are not changes: build output goes.
+        let dirty = git(
+            path,
+            &[
+                "status",
+                "--porcelain",
+                "--untracked-files=normal",
+                "--ignore-submodules=none",
+            ],
+        )
+        .map(|status| !status.is_empty());
         if dirty != Ok(false) && !discard {
             // Left on disk for the person, and no longer this host's.
             if let Err(error) = std::fs::remove_file(git_dir.join(OWNER_MARKER)) {

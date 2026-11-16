@@ -223,6 +223,27 @@ fn a_clean_worktree_goes_with_its_empty_branch_and_a_dirty_one_stays_nobodys() {
     assert_eq!(backends.delete(&empty, false), Removal::Removed);
 }
 
+#[test]
+fn untracked_files_count_as_changes_whatever_the_repository_shows() {
+    let place = Place::new();
+    let backends = place.backends(HOST);
+    // Large repositories often hide untracked files from `git status`; the
+    // forced removal would still delete them.
+    run_git(
+        &place.repo(),
+        &["config", "status.showUntrackedFiles", "no"],
+    );
+    let planned = backends.plan(&place.repo(), "draft").unwrap();
+    backends.make(&planned.workspace, &planned.plan).unwrap();
+    let draft = Path::new(&planned.workspace.id).join("draft.txt");
+    std::fs::write(&draft, "draft\n").unwrap();
+    assert_eq!(backends.delete(&planned.workspace, false), Removal::Kept);
+    assert!(
+        draft.exists(),
+        "an untracked file was deleted without consent"
+    );
+}
+
 /// The wt backend, against a wt home and trees folder of the test's own.
 #[cfg(all(unix, not(target_os = "ios")))]
 mod wt {

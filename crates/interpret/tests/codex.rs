@@ -2911,14 +2911,29 @@ fn a_stopped_subagents_idle_parent_has_the_note_injected() {
     assert_eq!(written[0]["params"]["threadId"], "t1");
 }
 
-/// A follow-up from the parent continues the same subagent, from the call
-/// that started it.
+/// A follow-up from the parent continues the same subagent, under the
+/// follow-up's call in the parent's chat, and at once: nothing of the child
+/// was kept past its end, and its row already has its title.
 #[test]
-fn a_follow_up_continues_the_subagent_from_its_first_call() {
+fn a_follow_up_continues_the_subagent_under_its_own_call() {
     let mut agent = with_a_child();
     child_turn_ends(&mut agent, "completed");
     assert!(agent.sub("child").end.is_some());
-    agent.rpc(spawned("follow-1", "child", "interacted"));
+    // Codex 0.166.0 names no model on a follow-up.
+    let followed = agent.rpc(
+        json!({"method": "item/started", "params": {"threadId": "t1", "turnId": "turn-1",
+        "item": {"type": "subAgentActivity", "id": "follow-1", "kind": "interacted",
+            "agentThreadId": "child", "agentPath": "/a", "model": null, "reasoningEffort": null}}}),
+    );
+    assert_eq!(agent.sub("child").starts.len(), 2, "started at once");
+    let read = writes(&followed.effects)
+        .into_iter()
+        .find(|write| write["method"] == "thread/read")
+        .expect("the child's thread is read again");
+    agent.rpc(
+        json!({"id": read["id"], "result": {"thread": {"id": "child",
+        "agentNickname": "Ada", "model": "gpt-6.1-sol", "reasoningEffort": "low"}}}),
+    );
     agent.rpc(
         json!({"method": "turn/started", "params": {"threadId": "child",
         "turn": {"id": "child-turn-2"}}}),
@@ -2930,7 +2945,62 @@ fn a_follow_up_continues_the_subagent_from_its_first_call() {
     assert!(continued.broken.is_none(), "{:?}", continued.broken);
     let starts = &agent.sub("child").starts;
     assert_eq!(starts.len(), 2, "continued");
-    assert_eq!(starts[1].call_key, "spawn-1");
+    assert_eq!(starts[1].call_key, "follow-1");
+    assert_eq!(starts[1].call_agent_id, b"agent");
+    let body = agent.sub("child").body.clone().unwrap();
+    assert_eq!(
+        (body.model.as_deref(), body.effort.as_deref()),
+        (Some("gpt-6.1-sol"), Some("low")),
+        "its model comes back from the read"
+    );
+}
+
+/// Nothing of a child thread stays in the checkpoint once its subagent
+/// ended, so a long-lived agent's checkpoint does not grow with every child
+/// it ran.
+#[test]
+fn a_finished_child_leaves_nothing_in_the_checkpoint() {
+    let mut agent = with_a_child();
+    let running = serde_json::to_value(&agent.state).unwrap();
+    assert!(running["children"].get("child").is_some(), "{running:#}");
+    child_turn_ends(&mut agent, "completed");
+    assert!(agent.sub("child").end.is_some());
+    let ended = serde_json::to_value(&agent.state).unwrap();
+    assert!(ended.get("children").is_none(), "{:#}", ended["children"]);
+}
+
+/// The note telling the parent a person stopped its child is sent again as
+/// an injected item when the steer is refused, though the child ended in
+/// the step that sent the steer and nothing of it is kept.
+#[test]
+fn a_refused_stop_note_is_sent_again_once_the_child_is_gone() {
+    let mut agent = with_a_child();
+    let stop = agent.step(to_child(
+        "child",
+        b"s1",
+        wire::codex_input::Of::StopJob(wire::StopJob {
+            key: "child".into(),
+        }),
+    ));
+    let interrupt = writes(&stop.effects).remove(0);
+    agent.rpc(json!({"id": interrupt["id"], "result": {}}));
+    let ended = child_turn_ends(&mut agent, "interrupted");
+    assert!(agent.sub("child").end.is_some());
+    let steer = writes(&ended.effects)
+        .into_iter()
+        .find(|write| write["method"] == "turn/steer")
+        .expect("the parent is told");
+    let refused = agent
+        .rpc(json!({"id": steer["id"], "error": {"code": -32600, "message": "no active turn"}}));
+    let inject = writes(&refused.effects)
+        .into_iter()
+        .find(|write| write["method"] == "thread/inject_items")
+        .expect("the parent is told again");
+    assert_eq!(inject["params"]["threadId"], "t1");
+    assert!(
+        inject.to_string().contains("agent Ada you started"),
+        "{inject}"
+    );
 }
 
 /// The agent's process ending ends every subagent it ran, with what they

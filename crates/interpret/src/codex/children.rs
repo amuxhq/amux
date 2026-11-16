@@ -18,7 +18,11 @@
 //! `subAgentActivity completed`), unless commands it started still run in
 //! the background: an interrupt leaves them running, as it does the
 //! agent's own, so the child stays, listing them, until the last ends.
-//! A follow-up starts it again under the same agent.
+//! Nothing of a child is kept past its end, so a long-lived agent's
+//! checkpoint does not grow with every child it ran. A follow-up starts it
+//! again as the same agent (its id comes from the thread's), afresh: under
+//! the follow-up's call, in the chat of the thread that sent it, its
+//! nickname read again as a first start's is.
 //!
 //! A subagent's row takes its title from its start alone, and the title is
 //! Codex's nickname for the child, which only `thread/read` gives. So the
@@ -61,20 +65,18 @@ use super::{Request, State, Streamed, WorkState, item_body};
 use crate::{Channel, Effect, Emit, Fact, ItemDraft, serde_pb};
 
 /// What the interpreter keeps of one child thread, from the first word of
-/// it until the agent leaves it: past its end, so a follow-up continues the
-/// same subagent from the call that started it.
+/// it until its end.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub(super) struct Child {
     /// The child thread whose chat holds the call that started this one,
     /// for a child's own child; None when the agent's thread started it.
     pub(super) parent: Option<String>,
-    /// That call's item key. A follow-up keeps the spawn's.
+    /// That call's item key: the spawn's, or the follow-up's that continued
+    /// it.
     pub(super) call_key: String,
     /// Codex's nickname for it, from `thread/read`; empty until that
     /// answers, and its row takes it from the next snapshot.
     pub(super) title: String,
-    /// `thread/read` was asked of it.
-    pub(super) read: bool,
     /// It was started or continued and its start waits for its title (see
     /// the module's notes); it is live meanwhile.
     #[serde(default)]
@@ -324,14 +326,16 @@ impl State {
         if !activity {
             return false;
         }
-        self.start_child(emit, thread, None, String::new(), None);
+        self.start_child(emit, thread, None, String::new(), None, false);
         true
     }
 
-    /// The subagent of child thread `thread` starts, or is continued, asked
-    /// `prompt` (its item's key and text) where Codex says what. Its
-    /// nickname is asked for once, and its first start is held until the
-    /// answer (see the module's notes).
+    /// The subagent of child thread `thread` starts, or is continued
+    /// (`continued`, by a follow-up its parent sent), asked `prompt` (its
+    /// item's key and text) where Codex says what. Its nickname is asked
+    /// for, and a first start is held until the answer (see the module's
+    /// notes). A continued one's start goes out at once: its row has the
+    /// title its first start gave it, and the answer is for its snapshot.
     fn start_child(
         &mut self,
         emit: &mut Emit,
@@ -339,30 +343,20 @@ impl State {
         parent: Option<String>,
         call_key: String,
         prompt: Option<(String, String)>,
+        continued: bool,
     ) {
         let now = self.shared.now_ms();
-        let child = self
-            .children
-            .entry(thread.to_owned())
-            .or_insert_with(|| Child {
+        self.children.insert(
+            thread.to_owned(),
+            Child {
                 parent,
+                call_key,
+                started_at_ms: now,
+                pending: true,
+                prompt,
                 ..Child::default()
-            });
-        if child.call_key.is_empty() {
-            child.call_key = call_key;
-        }
-        child.started_at_ms = now;
-        child.over = None;
-        child.stopping = false;
-        child.told = false;
-        child.stop_error.clear();
-        child.pending = true;
-        child.prompt = prompt;
-        // A continued subagent keeps the title its first start gave it, so
-        // its start has nothing to wait for.
-        if std::mem::replace(&mut child.read, true) {
-            return self.begin_child(emit, thread);
-        }
+            },
+        );
         let id = self.child_request_id("read");
         let bytes = self.request_as(
             id,
@@ -376,18 +370,37 @@ impl State {
             },
         );
         emit.effect(Effect::ProviderWrite(bytes));
+        if continued {
+            self.begin_child(emit, thread);
+        }
     }
 
     /// `thread/read` on a child answered: its nickname is its title, and
     /// its held start goes out with it. A refused read starts it untitled.
+    /// The thread's model and effort stand for a child whose call named
+    /// none, as a follow-up's does.
     pub(super) fn child_read(&mut self, emit: &mut Emit, thread: &str, result: Option<Value>) {
-        let nickname = result
+        let read = result
             .as_ref()
-            .and_then(|result| codex_protocol::result::<ThreadResponse>(result).ok())
-            .and_then(|response| response.thread.agent_nickname)
-            .filter(|nickname| !nickname.is_empty());
-        if let (Some(nickname), Some(child)) = (nickname, self.children.get_mut(thread)) {
-            child.title = nickname;
+            .and_then(|result| codex_protocol::result::<ThreadResponse>(result).ok());
+        if let (Some(read), Some(child)) = (read, self.children.get_mut(thread)) {
+            if let Some(nickname) = read.thread.agent_nickname.filter(|name| !name.is_empty()) {
+                child.title = nickname;
+            }
+            let named = |field: &str| {
+                read.thread
+                    .extra
+                    .get(field)
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned)
+            };
+            if child.model.is_none() {
+                child.model = named("model");
+            }
+            if child.effort.is_none() {
+                child.effort = named("reasoningEffort");
+            }
         }
         self.begin_child(emit, thread);
     }
@@ -443,14 +456,25 @@ impl State {
             .and_then(|path| path.rsplit('/').next())
             .filter(|task| !task.is_empty());
         // Its start or follow-up begins at the item's start. The item's
-        // completion can come after the child's turn is over, so it starts
-        // only a child it is the first word of.
+        // completion can come after the child's turn is over, and its record
+        // with it, so it starts only a child it is the first word of: one
+        // whose spawn's start was not seen here.
         let begins = !completed
-            || (activity.kind == SubAgentActivityKind::Started
-                && !self.children.contains_key(&thread));
+            || (activity.kind == SubAgentActivityKind::Started && !self.works.contains_key(id));
         if begins && !self.child_live(&thread) && !self.left.contains(&thread) {
             let parent = self.speaking.clone();
-            self.start_child(emit, &thread, parent, id.to_owned(), None);
+            let continued = activity.kind == SubAgentActivityKind::Interacted;
+            self.start_child(emit, &thread, parent, id.to_owned(), None, continued);
+        }
+        // A child heard from before the call that started or continued it
+        // has its start held for its nickname: it goes out under this call.
+        if let Some(child) = self
+            .children
+            .get_mut(&thread)
+            .filter(|child| child.pending && child.call_key.is_empty())
+        {
+            id.clone_into(&mut child.call_key);
+            child.parent.clone_from(&self.speaking);
         }
         // Read when the start goes out: it waits for the nickname first.
         if let (Some(task), Some(child)) = (task, self.children.get_mut(&thread)) {
@@ -485,9 +509,9 @@ impl State {
 
     /// An older Codex's collab call naming the child threads it spawned or
     /// sent a follow-up: each starts or is continued, its call this one.
-    /// A spawn may name its threads only at its completion; a follow-up
-    /// continues one at its start, so a child that ended between the two
-    /// is not brought back.
+    /// A spawn may name its threads only at its completion, so it starts
+    /// any it names that is not running; a follow-up continues one at its
+    /// start, so a child that ended between the two is not brought back.
     pub(super) fn collab_call(
         &mut self,
         emit: &mut Emit,
@@ -504,11 +528,10 @@ impl State {
                 | CollabAgentTool::SendMessage
         );
         for thread in &call.receiver_thread_ids {
-            let known = self.children.contains_key(thread);
             let start = !thread.is_empty()
                 && !self.left.contains(thread)
                 && !self.child_live(thread)
-                && ((spawns && !known) || (continues && !completed));
+                && (spawns || (continues && !completed));
             if start {
                 let parent = self.speaking.clone();
                 let prompt = call
@@ -516,7 +539,7 @@ impl State {
                     .clone()
                     .filter(|prompt| !prompt.is_empty())
                     .map(|prompt| (format!("prompt:{id}"), prompt));
-                self.start_child(emit, thread, parent, id.to_owned(), prompt);
+                self.start_child(emit, thread, parent, id.to_owned(), prompt, continues);
             }
         }
     }
@@ -665,16 +688,15 @@ impl State {
             state.settle_open(emit, false, &BTreeSet::new());
         });
         if let Some(child) = self.children.get_mut(thread) {
-            child.turn = None;
-            child.over = None;
             child.stopping = false;
-            child.told = false;
             child.stop_error.clear();
             child.jobs.clear();
-            child.items = ThreadItems::default();
         }
         self.child_snapshot(emit, thread, true);
         self.shared.subagent(emit, thread).end(end);
+        // Nothing more is read of it but a follow-up, which starts it
+        // afresh.
+        self.children.remove(thread);
     }
 
     /// Every running subagent ends for `end`: the provider process that ran
@@ -705,8 +727,8 @@ impl State {
 
     /// A new incarnation begins: an earlier one's process that went without
     /// a word took its subagents with it, and their rows were closed with
-    /// it. What this state still holds of them running is let go, without
-    /// a part, as nothing is left to say of them.
+    /// it. What this state still holds of them is let go, without a part,
+    /// as nothing is left to say of them.
     pub(super) fn children_went(&mut self) {
         for child in self.children.values_mut() {
             child.pending = false;
@@ -714,9 +736,6 @@ impl State {
             child.prompt = None;
         }
         let running: Vec<String> = self.shared.running_subagents().map(str::to_owned).collect();
-        if running.is_empty() {
-            return;
-        }
         let mut gone = Emit::default();
         for thread in &running {
             self.end_child(
@@ -728,6 +747,7 @@ impl State {
                 },
             );
         }
+        self.children.clear();
     }
 
     // --- snapshots -----------------------------------------------------
@@ -969,10 +989,24 @@ impl State {
             return;
         };
         let name = if child.title.is_empty() {
-            thread
+            thread.to_owned()
         } else {
-            child.title.as_str()
+            child.title.clone()
         };
+        self.send_stop_note(emit, thread, name, steer);
+    }
+
+    /// The note telling the agent's thread that the person stopped the
+    /// child `thread`, called `name`: the request it goes in names it
+    /// again, so a refused steer is sent again as an injected item after
+    /// the child, and its record, are gone.
+    pub(super) fn send_stop_note(
+        &mut self,
+        emit: &mut Emit,
+        thread: &str,
+        name: String,
+        steer: bool,
+    ) {
         let text = format!(
             "I stopped the agent {name} you started; it will not answer. Stop waiting for it and go on without it."
         );
@@ -1012,6 +1046,7 @@ impl State {
             message,
             Request::StopNote {
                 thread: thread.to_owned(),
+                name,
                 steered,
             },
         );

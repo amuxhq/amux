@@ -129,8 +129,8 @@ item toolu_01KJ1SozFVSeMr46dJHvHAa1 tool final at=1794832346641 text="" SendMess
 item toolu_01KJ1SozFVSeMr46dJHvHAa1 tool final at=1794832346641 text="" SendMessage TOOL_STATE_RUNNING input="{\"content\":\"BACK\",\"message\":\"BACK\",\"recipient\":\"af2e79073c2b…"
 ## 148 recorded 147: fact Stream type=system subtype=task_started uuid=776dfc96-04cd-41da-a92a-62aab4550b61 tool_use_id=toolu_01KJ1SozFVSeMr46dJHvHAa1
 item toolu_01KJ1SozFVSeMr46dJHvHAa1 tool final at=1794832346641 text="" SendMessage TOOL_STATE_RUNNING background opens=sub-b7ece70b input="{\"content\":\"BACK\",\"message\":\"BACK\",\"recipient\":\"af2e79073c2b…"
-agent sub-b7ece70b start child=af2e79073c2b02ec2 call=host/toolu_01FFZk6JxqFayjKY3WESx4HR title="Run delayed echo command"
-agent sub-b7ece70b snapshot WORKING queue=[] working_on=- at=1794832346641 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run delayed echo command"@1794832346641]
+agent sub-b7ece70b start child=af2e79073c2b02ec2 call=host/toolu_01KJ1SozFVSeMr46dJHvHAa1 title="Run delayed echo command"
+agent sub-b7ece70b snapshot WORKING queue=[] working_on=- at=1794832346641 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run delayed echo command"@1794832346641]
 ## 152 recorded 151: fact Stream type=system subtype=status uuid=e307a1f1-fba0-4ff1-9ea7-5e66d4f483c2
 item e307a1f1-fba0-4ff1-9ea7-5e66d4f483c2 status final at=1794832346641 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 154 recorded 153: fact Stream type=stream_event uuid=ee2c16c1-4a7d-4f5c-84de-8d3f62daf07a
@@ -141,6 +141,7 @@ item msg_011Ch6cV27v9yApcQiLGZ57y:0 thinking open at=1794832347863 text=""
 append msg_011Ch6cV27v9yApcQiLGZ57y:0 ""
 ## 161 recorded 160: fact Stream type=assistant uuid=e1910d76-5005-4c23-88a1-89ca2ce4d41a
 agent sub-b7ece70b item msg_011Ch6cV1yytYNt37LFMNRnC:0 thinking final at=1794832348676 text=""
+agent sub-b7ece70b snapshot WORKING queue=[] working_on=- at=1794832348676 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run delayed echo command"@1794832346641]
 ## 163 recorded 162: fact Stream type=assistant uuid=59b25f03-aee9-4de3-bf5a-8d7c3fa4ccd4
 agent sub-b7ece70b item msg_011Ch6cV1yytYNt37LFMNRnC:1 message final at=1794832348878 text="The coordinator's \"BACK\" message arrived while I was working. I'm acknowledging it and continuing with the sleep command in the foreground."
 ## 165 recorded 164: fact Stream type=stream_event uuid=d986f95a-75e4-48e4-a90b-a8f37d8e7bb3

@@ -351,12 +351,13 @@ pub struct NativeStart {
     /// thread id.
     #[prost(string, tag = "1")]
     pub provider_child_id: ::prost::alloc::string::String,
-    /// The agent whose chat holds the call that started the subagent: the
-    /// host, or a provider subagent that started a nested one.
+    /// The agent whose chat holds the call that started this run of the
+    /// subagent: the host, or a provider subagent that made the call.
     #[prost(bytes = "vec", tag = "2")]
     pub call_agent_id: ::prost::alloc::vec::Vec<u8>,
-    /// That call's item key. A continuation names the original call, not the
-    /// one that continued it.
+    /// That call's item key. A continuation names the call that continued it
+    /// (a SendMessage, a Codex follow-up), not the one that first started it:
+    /// a host keeps nothing of a subagent past its end.
     #[prost(string, tag = "3")]
     pub call_key: ::prost::alloc::string::String,
     /// The provider's description of the subagent, which becomes the row's

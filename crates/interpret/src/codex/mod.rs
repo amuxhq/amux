@@ -373,6 +373,9 @@ enum Request {
     /// into its running turn (`steered`), else an injected item.
     StopNote {
         thread: String,
+        /// What the note calls the child, for sending it again.
+        #[serde(default)]
+        name: String,
         steered: bool,
     },
 }
@@ -711,8 +714,8 @@ pub struct State {
     #[serde(default)]
     last_request_ms: Option<i64>,
     /// The child threads Codex runs for this agent, each a provider
-    /// subagent of its own, by thread id: kept past a child's end, so a
-    /// continuation names the call that started it.
+    /// subagent of its own, by thread id, from the first word of each until
+    /// its end: nothing of a finished child is kept.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     children: BTreeMap<String, children::Child>,
     /// Threads the agent left (`/clear`'s old thread and its children),

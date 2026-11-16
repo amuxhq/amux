@@ -529,10 +529,7 @@ impl State {
         else {
             return false;
         };
-        let ended = self
-            .subagents
-            .get(&child)
-            .and_then(|sub| sub.outcome.clone());
+        let ended = self.run_outcome(&child);
         let now = self.shared.now_ms();
         let Some(tool) = self.tools.get_mut(id) else {
             return false;

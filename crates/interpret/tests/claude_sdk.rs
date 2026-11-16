@@ -2091,6 +2091,118 @@ fn a_finished_subagents_call_hands_back_its_last_words() {
     assert_eq!(answer_of(&returned, "toolu_agent").as_deref(), Some(said));
 }
 
+/// How many subagents the checkpoint holds a record of.
+fn subagents_held(state: &State) -> usize {
+    serde_json::to_value(state).unwrap()["subagents"]
+        .as_object()
+        .map_or(0, serde_json::Map::len)
+}
+
+/// A finished subagent stays in the checkpoint only while a call row waits
+/// on it: here the Agent call that ran it in the foreground, whose result
+/// comes after the notice and hands back the subagent's own last words.
+/// Then nothing of it is kept, and a late frame of it, as a stopped task
+/// flushes the refused result of the call it was in, starts nothing.
+#[test]
+fn a_finished_subagent_leaves_the_checkpoint_once_its_call_returns() {
+    let mut state = idle_on_root();
+    for event in [
+        agent_call(json!({"description": "echo red", "prompt": "Echo RED."})),
+        stream(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "echo red",
+        })),
+        subagent_assistant("sa1", json!([{"type": "text", "text": "RED"}])),
+        stream(json!({
+            "type": "system", "subtype": "task_notification", "uuid": "n1", "session_id": "s",
+            "task_id": "a1", "tool_use_id": "toolu_agent", "status": "completed",
+            "summary": "RED", "output_file": "",
+        })),
+    ] {
+        ClaudeSdk::step(&mut state, event);
+    }
+    assert_eq!(
+        subagents_held(&state),
+        1,
+        "the call that ran it waits on it"
+    );
+    let returned = ClaudeSdk::step(
+        &mut state,
+        agent_call_returns(&framed_report("Claude's copy of the report")),
+    );
+    assert_eq!(answer_of(&returned, "toolu_agent").as_deref(), Some("RED"));
+    assert_eq!(subagents_held(&state), 0, "nothing of it is kept");
+    let late = ClaudeSdk::step(
+        &mut state,
+        subagent(json!({
+            "type": "user", "uuid": "su-late", "agent_id": "a1",
+            "message": {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_child", "content": "refused", "is_error": true},
+            ]},
+        })),
+    );
+    assert!(late.step.agents.is_empty(), "{:?}", late.step.agents);
+    assert!(late.broken.is_none(), "{:?}", late.broken);
+}
+
+/// A subagent that ended with its process is kept while its call row in
+/// the background still runs: the resumed Claude's notice that it did not
+/// finish settles that row, and then the record goes.
+#[test]
+fn a_subagent_that_ended_with_its_process_is_kept_for_the_resumed_notice() {
+    let mut state = idle_on_root();
+    for event in [
+        agent_call(json!({"description": "wait", "prompt": "Wait.", "run_in_background": true})),
+        stream(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "wait", "is_backgrounded": true,
+        })),
+        agent_call_returns("Async agent launched successfully."),
+        Event::ProviderExit { code: Some(1) },
+    ] {
+        ClaudeSdk::step(&mut state, event);
+    }
+    assert_eq!(subagents_held(&state), 1, "its call row still runs");
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 2,
+        ..Default::default()
+    };
+    let (mut state, _) = ClaudeSdk::reincarnate(state, &spec);
+    let notified = ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "system", "subtype": "task_notification", "uuid": "n1", "session_id": "s",
+            "task_id": "a1", "status": "stopped", "output_file": "",
+            "summary": "Background agent \"wait\" didn't finish before the previous session ended",
+        })),
+    );
+    let (state_of_row, _) = own_tool(&notified, "toolu_agent").expect("its call row settles");
+    assert_eq!(state_of_row, wire::ToolState::Cancelled);
+    assert!(
+        notified.step.agents.is_empty(),
+        "an end it already had: {:?}",
+        notified.step.agents
+    );
+    assert_eq!(subagents_held(&state), 0);
+}
+
+/// The agent's own call `key` in the step, as its state and what it
+/// handed back.
+fn own_tool(stepped: &interpret::Stepped, key: &str) -> Option<(wire::ToolState, String)> {
+    use prost::Message as _;
+    stepped.step.items.iter().rev().find_map(|item| {
+        match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
+            wire::claude_item::Kind::Tool(tool) if item.key == key => {
+                Some((tool.state(), tool.outcome_text))
+            }
+            _ => None,
+        }
+    })
+}
+
 /// Without the subagent's own words, the report comes out of Claude's
 /// frame: its indentation, the tag of the tools it used and the id and
 /// usage under it are for the model.

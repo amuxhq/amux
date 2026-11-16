@@ -14,9 +14,9 @@
 //!   subagent's agent id. A nested subagent's call is in its parent
 //!   subagent's chat (`parent_task_id`). Claude's model continues a
 //!   subagent with `SendMessage`: a second `task_started` for the same
-//!   task, naming the SendMessage call, starts it again, still under the
-//!   Agent call that first started it, and the SendMessage call names it
-//!   too.
+//!   task, naming the SendMessage call, starts it again, as the same agent
+//!   (its id comes from Claude's), under the SendMessage call, which opens
+//!   its chat too.
 //! - **End.** Its `task_notification`: completed is finished; stopped or
 //!   killed is stopped; failed ends it as the provider failing it. A
 //!   resumed Claude reports a subagent of the previous process as stopped,
@@ -25,6 +25,17 @@
 //!   cut: the result of the Agent call that started it ends one still
 //!   running. Where a notice comes it comes before that result, so it is
 //!   the end, and the result ends nothing more.
+//! - **Forgetting.** A subagent's record lasts while it runs and while a
+//!   call row still waits on it: an Agent call in the foreground whose
+//!   result hands back its last words, or a background row its notice
+//!   finishes, as a resumed Claude's notice does for one that ended with
+//!   the previous process. Then it goes, so a long-lived agent's checkpoint
+//!   does not grow with every subagent it ran. A frame tagged with a
+//!   subagent amux holds no record of, under a call that already opens its
+//!   chat or that no chat holds, is a late frame of one that ended (a
+//!   stopped task flushing the refused result of the call it was in), and
+//!   draws nothing; a stop of it, or an answer to it, is refused as one of
+//!   any agent not running.
 //! - **Asks** a subagent raises are its own, and a person's answer reaches
 //!   it as a child input, answered with Claude's control response. A tool
 //!   server's form names no agent: it is the one agent's with a call to that
@@ -143,10 +154,12 @@ impl State {
     }
 
     /// A tagged frame of a subagent no `task_started` began: it starts now,
-    /// under the call the frame names. A frame of one that already ended is
-    /// dropped: a stopped task still flushes the refused result of the call
-    /// it was in, and only a new `task_started` (a continuation) runs it
-    /// again.
+    /// under the call the frame names, in the chat that holds it. A frame of
+    /// one that already ended is dropped: a stopped task still flushes the
+    /// refused result of the call it was in, and only a new `task_started`
+    /// (a continuation) runs it again. Its record may be gone by then: a
+    /// call that already opens its chat, or one no chat holds, is the call
+    /// of a run that ended.
     fn ensure_running(&mut self, emit: &mut Emit, child: &str, call: Option<&str>) -> bool {
         if let Some(sub) = self.subagents.get(child) {
             return sub.running;
@@ -154,9 +167,63 @@ impl State {
         let Some(call) = call.filter(|call| !call.is_empty()).map(str::to_owned) else {
             return false;
         };
-        let parent = self.holder(&call);
-        self.start_subagent(emit, child, &call, parent.flatten(), "", &call);
+        let Some(parent) = self.holder(&call) else {
+            return false;
+        };
+        if self.call_opens(&call, &self.shared.subagent_id(child)) {
+            return false;
+        }
+        self.start_subagent(emit, child, &call, parent, "", &call);
         true
+    }
+
+    /// Whether the open call `call`, in whichever chat holds it, opens the
+    /// chat of the subagent whose agent id is `agent_id`.
+    fn call_opens(&self, call: &str, agent_id: &[u8]) -> bool {
+        if let Some(tool) = self.tools.get(call) {
+            return tool.child_agent_id == agent_id;
+        }
+        self.subagents.values().any(|sub| {
+            sub.running
+                && sub
+                    .conversation
+                    .tools
+                    .get(call)
+                    .is_some_and(|tool| tool.child_agent_id == agent_id)
+        })
+    }
+
+    /// Whether a call row still waits on the subagent `child`: one of the
+    /// agent's own that opens its chat and still runs (an Agent call in the
+    /// foreground until its result, one in the background until its
+    /// notice), or an open call of a running subagent's that opens it.
+    fn awaited(&self, child: &str) -> bool {
+        let agent_id = self.shared.subagent_id(child);
+        self.tools
+            .values()
+            .any(|tool| tool.child_agent_id == agent_id && tool.state == ToolState::Running as i32)
+            || self.subagents.values().any(|sub| {
+                sub.running
+                    && sub
+                        .conversation
+                        .tools
+                        .values()
+                        .any(|tool| tool.child_agent_id == agent_id)
+            })
+    }
+
+    /// Lets go of each subagent that ended and that no call row waits on
+    /// any more: nothing more of it can arrive that needs its record.
+    pub(super) fn forget_ended_subagents(&mut self) {
+        let ended: Vec<String> = self
+            .subagents
+            .iter()
+            .filter(|(child, sub)| !sub.running && !self.awaited(child))
+            .map(|(child, _)| child.clone())
+            .collect();
+        for child in ended {
+            self.subagents.remove(&child);
+        }
     }
 
     /// Whether the subagent `child` runs, so an ask it raised is its own.
@@ -318,7 +385,10 @@ impl State {
     }
 
     /// A `task_started` for a subagent: it starts, or Claude's model
-    /// continued it. False for any other task, which is a job.
+    /// continued it. False for any other task, which is a job. A continued
+    /// subagent amux kept no record of starts afresh; either way its start
+    /// names the call that continued it. A record a waiting row kept still
+    /// names that row as its first call, which the run's end finishes.
     pub(super) fn task_started(&mut self, emit: &mut Emit, task: &TaskStartedMessage) -> bool {
         if task.task_type.as_deref() != Some(AGENT_TASK)
             && !self.subagents.contains_key(&task.task_id)
@@ -330,8 +400,6 @@ impl State {
             .parent_task_id
             .clone()
             .filter(|parent| self.subagents.contains_key(parent));
-        // A continuation names the call that continued it; the row stays
-        // under the call that first started it.
         let first = self
             .subagents
             .get(&task.task_id)
@@ -353,7 +421,8 @@ impl State {
     /// Starts the subagent `child`, or starts it again, under its first
     /// call `call` in `parent`'s chat (the agent's own for None), and
     /// rewrites the call `linking` that started or continued it to open its
-    /// chat, in the same step.
+    /// chat, in the same step. Its start names `linking`, in the chat that
+    /// holds it: the call that started this run.
     fn start_subagent(
         &mut self,
         emit: &mut Emit,
@@ -364,6 +433,7 @@ impl State {
         linking: &str,
     ) {
         let now = self.shared.now_ms();
+        let linked_in = self.holder(linking);
         let sub = self
             .subagents
             .entry(child.to_owned())
@@ -386,13 +456,17 @@ impl State {
             sub.started_at_ms = now;
             sub.stopping = false;
             sub.stop_error.clear();
-            let call_agent_id = match &sub.parent {
+            let (call_key, in_chat) = match linked_in {
+                Some(holder) if !linking.is_empty() => (linking.to_owned(), holder),
+                _ => (sub.call.clone(), sub.parent.clone()),
+            };
+            let call_agent_id = match &in_chat {
                 Some(parent) => self.shared.subagent_id(parent),
                 None => self.shared.agent_id().to_vec(),
             };
             let start = NativeStart {
                 call_agent_id,
-                call_key: sub.call.clone(),
+                call_key,
                 title: sub.title.clone(),
                 ..Default::default()
             };
@@ -651,7 +725,8 @@ impl State {
 
     /// A new process runs none of the last one's subagents: those it never
     /// ended took the end of its incarnation. One a SendMessage continues
-    /// starts again.
+    /// starts again. A record a waiting row keeps stays for the resumed
+    /// Claude's notice, which finishes that row.
     pub(super) fn forget_subagents(&mut self) {
         for sub in self.subagents.values_mut() {
             sub.running = false;

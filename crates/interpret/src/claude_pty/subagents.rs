@@ -16,9 +16,13 @@
 //!   for a nested one, its parent subagent (`parentAgentId`).
 //! - **Start.** The subagent starts once the call that started it is drawn
 //!   (in the agent's chat, or its parent subagent's), in that call's step,
-//!   or at its first row or ask if those come first. `SubagentStart` firing
-//!   again for an ended subagent is its parent's model continuing it: it
-//!   starts again under the same call, and its rows go on in the same file.
+//!   or at its first row or ask if those come first.
+//! - **Continuation.** Nothing of a subagent is kept past its end, so its
+//!   parent's model continuing it with SendMessage meets a subagent amux
+//!   holds no record of: `SubagentStart` (or an ask) naming it while a
+//!   SendMessage call to it is open. It starts again at once under that
+//!   call, in the chat of whoever made it, as the same agent (its id comes
+//!   from Claude's), and its rows go on in the same file.
 //! - **End.** `SubagentStop` is no end: Claude writes a subagent's last row
 //!   after it, and a subagent stopped, interrupted or killed with its host
 //!   gets none. Its end is its parent's record of it: the task notification
@@ -28,7 +32,10 @@
 //!   to its end, waiting a bounded moment for a completed subagent's last
 //!   reply (the text the notification carries), and says when it has; the
 //!   subagent ends then, or as soon as that reply is read, or once the wait
-//!   is over if the agent process never says.
+//!   is over if the agent process never says. Its record goes with its end.
+//!   Only how the run ended stays, while the SendMessage that continued it
+//!   waits for Claude's result, which can be read after the notice and then
+//!   hands it back.
 //! - **Asks** a subagent raises arrive on the hooks naming it, open in its
 //!   own snapshot and are answered on the hook. A tool server's form names
 //!   no agent: it is the one agent's with a call to that server running.
@@ -58,21 +65,21 @@ use crate::{Effect, Emit, ItemDraft};
 /// agent process says much sooner than this once it has read the file.
 pub(super) const DRAIN_WAIT_MS: i64 = 2_000;
 
-/// Where a subagent is in its life.
+/// Where a subagent is in its life; it has no record once it ended.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum Phase {
     /// Claude named it; it starts once its call is drawn.
     #[default]
     Waiting,
     Running,
-    Ended,
 }
 
 /// One subagent Claude's Agent tool started, by Claude's agent id for it.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub(super) struct Sub {
-    /// The Agent call that first started it, from its `meta.json`; None
-    /// until that is read.
+    /// The call that started this run of it: the Agent call its
+    /// `meta.json` names, or the SendMessage that continued it. None until
+    /// one is known.
     pub(super) call: Option<String>,
     /// Its parent subagent, for a nested one.
     pub(super) parent: Option<String>,
@@ -83,9 +90,10 @@ pub(super) struct Sub {
     pub(super) followed: bool,
     /// Its parent learned it ended, and its file is being read to its end.
     pub(super) ending: Option<Ending>,
-    /// How its latest run ended, as its parent's notice said: what a call
-    /// that continued it hands back when Claude's result of that call is
-    /// read only after the notice. None while a run has had no notice.
+    /// How this run ended, as its parent's notice said, while its file is
+    /// read to its end: what a call that continued it hands back when
+    /// Claude's result of that call is read only after the notice. None
+    /// before the notice.
     #[serde(default)]
     pub(super) outcome: Option<Outcome>,
     pub(super) conversation: Conversation,
@@ -257,18 +265,16 @@ impl State {
         }
     }
 
-    /// The subagent `child` raised an ask, so it runs: one amux has not
-    /// seen start starts, its file followed from now on, and one that
-    /// ended runs again, continued before its start hook said so. False
-    /// when the ask cannot be its own.
+    /// The subagent `child` raised an ask, so it runs: one amux holds no
+    /// record of starts, its file followed from now on, under the
+    /// SendMessage that continued it when one did, before its start hook
+    /// said so. False when the ask cannot be its own.
     pub(super) fn subagent_asking(&mut self, emit: &mut Emit, child: &str) -> bool {
-        if !self.subagents.contains_key(child) && !self.subagent_named(emit, child, "subagent") {
-            return false;
-        }
-        if let Some(sub) = self.subagents.get_mut(child)
-            && sub.phase == Phase::Ended
-        {
-            sub.phase = Phase::Waiting;
+        if !self.subagents.contains_key(child) {
+            if !self.subagent_named(emit, child, "subagent") {
+                return false;
+            }
+            self.continued_by_call(child);
         }
         self.start_subagent(emit, child);
         self.shared.subagent_running(child)
@@ -297,26 +303,104 @@ impl State {
     }
 
     /// Claude's SubagentStart hook: a subagent starts, or its parent's model
-    /// continued one that ended, which starts it again under the call that
-    /// first started it.
+    /// continued one that ended, which starts again at once under the
+    /// SendMessage that continued it.
     pub(super) fn subagent_start_hook(&mut self, emit: &mut Emit, child: &str, agent_type: &str) {
+        let known = self.subagents.contains_key(child);
         let followed = self.subagents.get(child).is_some_and(|sub| sub.followed);
         if !self.subagent_named(emit, child, agent_type) {
             return;
         }
-        // Its file is followed already, as a continued subagent's is: asked
-        // again, the agent process wakes a follower that polls the idle file
-        // slowly, or starts anew one that ended on a file it could not read.
+        // Its file is followed already, as a running subagent's is when its
+        // nested one's notice wakes it: asked again, the agent process wakes
+        // a follower that polls the idle file slowly. Following the file of
+        // a continued one, whose record went with its end, also starts anew
+        // a follower that ended on a file it could not read.
         if followed {
             emit.effect(Effect::FollowSubagent {
                 agent_id: child.to_owned(),
             });
         }
-        if let Some(sub) = self.subagents.get_mut(child)
-            && sub.phase == Phase::Ended
-        {
-            sub.phase = Phase::Waiting;
+        if !known && self.continued_by_call(child) {
             self.start_subagent(emit, child);
+        }
+    }
+
+    /// The open SendMessage call that continues the subagent `child`, and
+    /// the subagent whose call it is (None for the agent's own): the one its
+    /// PreToolUse hook announced, else the newest drawn and not yet
+    /// answered. None when no open call names it, as for a subagent never
+    /// seen before.
+    fn continuing_call(&self, child: &str) -> Option<(String, Option<String>)> {
+        let names = |name: &str, input: &str| {
+            name == SEND_MESSAGE_TOOL && continued(input, None, "").as_deref() == Some(child)
+        };
+        if let Some(call) = self
+            .announced
+            .iter()
+            .rev()
+            .find(|call| names(&call.name, &call.input))
+        {
+            return Some((call.id.clone(), call.agent.clone()));
+        }
+        if let Some((id, _)) = self
+            .tools
+            .iter()
+            .filter(|(_, tool)| !tool.of.finished && names(&tool.name, &tool.input))
+            .max_by_key(|(_, tool)| tool.of.seq)
+        {
+            return Some((id.clone(), None));
+        }
+        self.subagents
+            .iter()
+            .filter(|(_, sub)| sub.phase == Phase::Running)
+            .find_map(|(holder, sub)| {
+                sub.conversation
+                    .tools
+                    .iter()
+                    .find(|(_, tool)| names(&tool.name, &tool.input))
+                    .map(|(id, _)| (id.clone(), Some(holder.clone())))
+            })
+    }
+
+    /// The subagent `child`, whose record was just made, is one an open
+    /// SendMessage continues: its run is that call's, in the chat that holds
+    /// it. False when no open call names it.
+    fn continued_by_call(&mut self, child: &str) -> bool {
+        let Some((call, parent)) = self.continuing_call(child) else {
+            return false;
+        };
+        let Some(sub) = self.subagents.get_mut(child) else {
+            return false;
+        };
+        sub.call = Some(call);
+        sub.parent = parent;
+        true
+    }
+
+    /// Whether a SendMessage of the agent's own that continued the subagent
+    /// `child` still waits for Claude's result.
+    fn continuation_pending(&self, child: &str) -> bool {
+        let agent = self.shared.subagent_id(child);
+        self.tools.values().any(|tool| {
+            tool.name == SEND_MESSAGE_TOOL
+                && !tool.of.finished
+                && (tool.child_agent_id == agent
+                    || continued(&tool.input, None, "").as_deref() == Some(child))
+        })
+    }
+
+    /// Lets go of how each finished subagent's run ended once the
+    /// SendMessage that continued it has settled.
+    pub(super) fn drop_settled_runs(&mut self) {
+        let settled: Vec<String> = self
+            .ended_runs
+            .keys()
+            .filter(|child| !self.continuation_pending(child))
+            .cloned()
+            .collect();
+        for child in settled {
+            self.ended_runs.remove(&child);
         }
     }
 
@@ -345,7 +429,6 @@ impl State {
         let ready: Vec<(String, String, Phase)> = self
             .subagents
             .iter()
-            .filter(|(_, sub)| sub.phase != Phase::Ended)
             .filter_map(|(child, sub)| {
                 let call = sub.call.clone()?;
                 self.call_holder(&call)?;
@@ -355,22 +438,33 @@ impl State {
         for (child, call, phase) in ready {
             match phase {
                 Phase::Waiting => self.start_subagent(emit, &child),
-                _ => self.link(emit, &call, &child),
+                Phase::Running => self.link(emit, &call, &child),
             }
         }
     }
 
-    /// Whose chat holds the call `call`: Some(None) for the agent's own,
-    /// Some(Some(child)) for a running subagent's.
-    /// Claude's id for the subagent whose agent id is `agent_id`, running
-    /// or not.
+    /// Claude's id for the subagent whose agent id is `agent_id`: one amux
+    /// holds a record of, or one whose last run's end a SendMessage still
+    /// waits to hand back.
     pub(super) fn subagent_opened(&self, agent_id: &[u8]) -> Option<String> {
         self.subagents
             .keys()
+            .chain(self.ended_runs.keys())
             .find(|child| self.shared.subagent_id(child) == agent_id)
             .cloned()
     }
 
+    /// How the subagent `child`'s latest run ended, as its notice said:
+    /// None before the notice.
+    pub(super) fn run_outcome(&self, child: &str) -> Option<Outcome> {
+        self.subagents
+            .get(child)
+            .and_then(|sub| sub.outcome.clone())
+            .or_else(|| self.ended_runs.get(child).cloned())
+    }
+
+    /// Whose chat holds the call `call`: Some(None) for the agent's own,
+    /// Some(Some(child)) for a running subagent's.
     fn call_holder(&self, call: &str) -> Option<Option<String>> {
         if self.tools.contains_key(call) {
             return Some(None);
@@ -393,6 +487,7 @@ impl State {
         sub.phase = Phase::Running;
         sub.ending = None;
         sub.outcome = None;
+        self.ended_runs.remove(child);
         let call_agent_id = match &sub.parent {
             Some(parent) => self.shared.subagent_id(parent),
             None => self.shared.agent_id().to_vec(),
@@ -463,7 +558,7 @@ impl State {
         if name == SEND_MESSAGE_TOOL
             && !is_error
             && let Some(child) = continued(&input, result, output)
-            && self.subagents.contains_key(&child)
+            && (self.subagents.contains_key(&child) || self.ended_runs.contains_key(&child))
         {
             self.link(emit, id, &child);
         }
@@ -720,16 +815,13 @@ impl State {
         let Ok(row) = transcript::decode(payload) else {
             return;
         };
-        let phase = match self.subagents.get(&child) {
-            Some(sub) => sub.phase,
-            // A file nothing asked to follow, or a row of an agent Claude
-            // never said started: nothing amux shows.
+        match self.subagents.get(&child).map(|sub| sub.phase) {
+            // A file nothing asked to follow, a row of an agent Claude never
+            // said started, or a late row of one that ended: nothing amux
+            // shows.
             None => return,
-        };
-        match phase {
-            Phase::Ended => return,
-            Phase::Waiting => self.start_subagent(emit, &child),
-            Phase::Running => {}
+            Some(Phase::Waiting) => self.start_subagent(emit, &child),
+            Some(Phase::Running) => {}
         }
         let at_ms = row
             .timestamp()
@@ -903,7 +995,9 @@ impl State {
 
     /// The subagent `child` ended, for `end`'s cause: its asks close
     /// unanswered, a call still running ends cancelled, its last snapshot
-    /// lists nothing, and its part ends.
+    /// lists nothing, and its part ends. Its record goes with it; how the
+    /// run ended stays only while a SendMessage that continued it waits for
+    /// Claude's result.
     pub(super) fn end_subagent(&mut self, emit: &mut Emit, child: &str, end: wire::IncarnationEnd) {
         let running = self.shared.subagent_running(child);
         let keys: Vec<String> = self
@@ -919,11 +1013,14 @@ impl State {
             self.asks.remove(&key);
         }
         let now = self.shared.now_ms();
-        let Some(sub) = self.subagents.get_mut(child) else {
+        let Some(mut sub) = self.subagents.remove(child) else {
             return;
         };
-        sub.phase = Phase::Ended;
-        sub.ending = None;
+        if let Some(outcome) = sub.outcome.take()
+            && self.continuation_pending(child)
+        {
+            self.ended_runs.insert(child.to_owned(), outcome);
+        }
         if !running {
             return;
         }
@@ -945,28 +1042,21 @@ impl State {
 
     /// Every running subagent ends with the process that runs them.
     pub(super) fn end_all_subagents(&mut self, emit: &mut Emit, end: &wire::IncarnationEnd) {
-        let running: Vec<String> = self
-            .subagents
-            .iter()
-            .filter(|(_, sub)| sub.phase != Phase::Ended)
-            .map(|(child, _)| child.clone())
-            .collect();
-        for child in running {
+        let named: Vec<String> = self.subagents.keys().cloned().collect();
+        for child in named {
             self.end_subagent(emit, &child, end.clone());
         }
+        self.ended_runs.clear();
         self.owned_tasks.clear();
     }
 
     /// A new process runs none of the last one's subagents (those it never
-    /// ended took the end of its incarnation) and follows no file yet. One
-    /// Claude continues starts again when its start hook fires.
+    /// ended took the end of its incarnation) and follows no file yet, so
+    /// nothing of them is kept. One Claude continues starts again when its
+    /// start hook fires.
     pub(super) fn forget_subagents(&mut self) {
-        for sub in self.subagents.values_mut() {
-            sub.followed = false;
-            sub.phase = Phase::Ended;
-            sub.ending = None;
-            sub.outcome = None;
-        }
+        self.subagents.clear();
+        self.ended_runs.clear();
         self.owned_tasks.clear();
     }
 

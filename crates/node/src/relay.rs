@@ -234,13 +234,19 @@ impl ProfileRuntime {
         // Only a person changes a chat's model or effort, so it is the same
         // act as picking them for a new agent, and sticks the same way.
         let picked = crate::spec::Picked::of_input(&input);
-        let verdict = self
-            .relay(
+        // A row that says suspended has no process to relay to: asked
+        // first, the wake does not write to a connection its process left
+        // behind for a moment, which would lose the input.
+        let verdict = if row.exit_cause == wire::ExitCause::Suspended as i32 {
+            rejected(Refusal::Exited)
+        } else {
+            self.relay(
                 id,
                 input.input_id.clone(),
                 ctl_frame::Of::Input(input.clone()),
             )
-            .await?;
+            .await?
+        };
         let verdict = match rejection(&verdict).map(Rejected::refusal) {
             Some(Refusal::Exited) => self.wake_with(id, input, verdict).await?,
             // On its way out: as it suspends the input waits for the exit
@@ -280,24 +286,47 @@ impl ProfileRuntime {
             .transpose()
             .map_err(RelayError::Wake)?;
         let seeded = first.is_some();
-        match self.wake(id, first).await {
-            Ok(_) if seeded => Ok(SendInputResponse {
-                of: Some(send_input_response::Of::Accepted(wire::Accepted {
-                    queued: false,
-                })),
-            }),
-            // Running: started by something else first, or woken for an
-            // input that is not a prompt.
-            Ok(_) | Err(RegistryError::Live(_)) => {
-                self.relay(id, input.input_id.clone(), ctl_frame::Of::Input(input))
-                    .await
+        let mut refused = refused;
+        // Twice at most: a process found running is handed the input, and
+        // one that refuses it as it suspends, or is gone by then, is woken
+        // once more.
+        for _ in 0..2 {
+            match self.wake(id, first.clone()).await {
+                Ok(_) if seeded => {
+                    return Ok(SendInputResponse {
+                        of: Some(send_input_response::Of::Accepted(wire::Accepted {
+                            queued: false,
+                        })),
+                    });
+                }
+                // Running: started by something else first, still on its way
+                // out, or woken for an input that is not a prompt.
+                Ok(_) | Err(RegistryError::Live(_)) => {
+                    let verdict = self
+                        .relay(
+                            id,
+                            input.input_id.clone(),
+                            ctl_frame::Of::Input(input.clone()),
+                        )
+                        .await?;
+                    match rejection(&verdict).map(Rejected::refusal) {
+                        Some(Refusal::Exiting) => self.mark_exiting(id),
+                        // Gone between the two: the wake decides again.
+                        Some(Refusal::Exited) => {}
+                        _ => return Ok(verdict),
+                    }
+                    refused = verdict;
+                }
+                Err(RegistryError::NotSuspended(_)) => return Ok(rejected(Refusal::Exited)),
+                // The daemon is stopping it, or it did not let go of its
+                // directory in time: as refused.
+                Err(RegistryError::Ending(_) | RegistryError::StillLocked(_)) => {
+                    return Ok(refused);
+                }
+                Err(error) => return Err(RelayError::Wake(error)),
             }
-            Err(RegistryError::NotSuspended(_)) => Ok(rejected(Refusal::Exited)),
-            // The daemon is stopping it, or it did not let go of its
-            // directory in time: as refused.
-            Err(RegistryError::Ending(_) | RegistryError::StillLocked(_)) => Ok(refused),
-            Err(error) => Err(RelayError::Wake(error)),
         }
+        Ok(refused)
     }
 
     /// Hands an input or an agent message to the agent over its control

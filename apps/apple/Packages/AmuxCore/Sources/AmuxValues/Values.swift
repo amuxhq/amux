@@ -2335,6 +2335,59 @@ public enum DecisionView: String, Codable, Hashable, Sendable, CaseIterable {
     case dismissed = "Dismissed"
 }
 
+/// What a delete's confirmation says about the workspace that goes with the
+/// agent, and so what confirming it agrees to. The row's git facts are kept
+/// current only by the agent's process: for an agent without one,
+/// suspended or exited, the confirmation asks the agent's host for the
+/// workspace's changes against HEAD and says so until it answers.
+public enum DeleteWarning: Codable, Hashable, Sendable {
+    /// What goes, from facts that are current: the row's while a process
+    /// keeps them so, else the host's answer.
+    case goes(WorkspaceGoes)
+    /// Asking the host what is uncommitted; the branch is the row's.
+    case checking(WorkspaceGoes)
+    /// The host could not say: a worktree with changes stays on disk.
+    case unknown(WorkspaceGoes)
+
+    private enum Tag: String, CodingKey {
+        case goes = "Goes"
+        case checking = "Checking"
+        case unknown = "Unknown"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a DeleteWarning names exactly one variant"))
+        }
+        switch _tag {
+        case .goes:
+            self = .goes(try _container.decode(WorkspaceGoes.self, forKey: .goes))
+        case .checking:
+            self = .checking(try _container.decode(WorkspaceGoes.self, forKey: .checking))
+        case .unknown:
+            self = .unknown(try _container.decode(WorkspaceGoes.self, forKey: .unknown))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .goes(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .goes)
+        case .checking(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .checking)
+        case .unknown(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .unknown)
+        }
+    }
+}
+
 /// A comparison of an agent's working tree, made on the agent's host. It
 /// runs to the working tree, untracked files included, from HEAD or from
 /// where the branch left the named base. The patch is a text/x-diff blob of

@@ -84,6 +84,28 @@ pub(crate) const COMMITTED: &[&str] = &[
     "owes_report",
 ];
 
+/// What a commit writes of a provider subagent: what it writes of any
+/// agent, and the lifecycle its parts' starts and ends move, which for an
+/// agent with a process of its own is the registry's.
+pub(crate) const SUBAGENT_COMMITTED: &[&str] = &[
+    "exit_cause",
+    "exit_detail",
+    "phase",
+    "working_on",
+    "phase_since_ms",
+    "git",
+    "background_jobs",
+    "title",
+    "last_said",
+    "snapshot",
+    "ingest_cursor",
+    "next_revision",
+    "owes_report",
+    "lifecycle",
+    "filing",
+    "filed_at_ms",
+];
+
 /// What an absorb writes: the newest snapshot's envelope and the replica's
 /// block.
 pub(crate) const ABSORBED: &[&str] = &[

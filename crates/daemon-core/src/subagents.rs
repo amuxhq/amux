@@ -158,35 +158,23 @@ impl Daemon {
         Ok(())
     }
 
-    /// Its parent's model continued it: live and open again, its chat
-    /// carrying on. Its incarnation stays: nothing that reads incarnations
-    /// applies to a row that takes no reports or prompts.
+    /// Its parent's model continued it: the commit made it live and open
+    /// again, and its chat carries on. Its incarnation stays: nothing that
+    /// reads incarnations applies to a row that takes no reports or prompts.
     fn subagent_continued(
         &mut self,
         host: &AgentKey,
         key: &AgentKey,
         out: &mut Vec<Output>,
     ) -> Result<(), StoreError> {
-        let Some(mut row) = self.store.agent(key)? else {
-            return Ok(());
-        };
-        if row.lifecycle == Lifecycle::Live as i32 {
-            return Ok(());
-        }
-        row.lifecycle = Lifecycle::Live as i32;
-        row.exit_cause = ExitCause::Unspecified as i32;
-        row.exit_detail = None;
-        if row.is_closed() {
-            row.filing = wire::Filing::Open as i32;
-            row.filed_at_ms = self.timers.now_ms as i64;
-        }
-        self.put_own_row(&row, out)?;
+        self.publish_row(key, out)?;
+        self.recount_from(Some(host.clone()), out)?;
         self.follow_hosts_marker(host, key, out)
     }
 
-    /// It ended: marked exited as any agent is, which files a finished one
-    /// closed, and its session is current, since nothing more comes. A
-    /// close waiting on it is answered.
+    /// It ended: the commit marked it exited, filing a finished one closed.
+    /// What any agent's exit sets off follows, its session is current,
+    /// since nothing more comes, and a close waiting on it is answered.
     fn subagent_ended(
         &mut self,
         key: &AgentKey,
@@ -196,9 +184,6 @@ impl Daemon {
         let Some(row) = self.store.agent(key)? else {
             return Ok(());
         };
-        if row.lifecycle == Lifecycle::Exited as i32 {
-            return Ok(());
-        }
         self.record_exit(row, end, out)?;
         self.subagent_settled(key, out)
     }
@@ -798,8 +783,8 @@ mod tests {
     fn a_part_naming_no_subagent_of_the_host_is_skipped_and_counted() {
         let mut rig = rig();
         rig.live(CHILD, "helper", Some(HOST));
-        // No row, and no start to make one: a subagent retention reclaimed
-        // may still be reported ended, so this is no fault.
+        // No row, and no start to make one: a resumed provider may report
+        // the end of a subagent this store never held, so this is no fault.
         let out = rig.host_writes(&[with_parts(vec![part(SUB, &["lost"])])]);
         assert_eq!(ingested(&out).skipped, 1, "{out:?}");
         assert!(rig.row(SUB).is_none());

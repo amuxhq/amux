@@ -474,28 +474,16 @@ fn retention_keeps_a_live_parents_exited_children_and_frees_an_exited_parents() 
 
 /// A provider subagent is an agent its parent's provider started inside
 /// the parent's own process. A long-lived agent may start hundreds, so
-/// once one has ended it goes, oldest first, though its parent lives and
-/// though nobody closed it; an amux child of the same parent stays.
+/// once one has ended its rows go, oldest first, though its parent lives
+/// and though nobody closed it; an amux child of the same parent stays.
+/// Its row stays, so a continuation numbers on from it.
 #[test]
-fn retention_reclaims_ended_provider_subagents_oldest_first_while_their_host_lives() {
+fn retention_empties_ended_provider_subagents_oldest_first_while_their_host_lives() {
     let mut store = fresh();
     let host = own("host");
     add(&mut store, &host, 1, 1_000, true, None);
-    let ended = |store: &mut Sqlite, name: &str, at_ms: i64, closed: bool| {
-        let key = own(name);
-        add(store, &key, 2, at_ms, false, Some(&host));
-        let mut row = store.agent(&key).unwrap().unwrap();
-        row.native = Some(wire::NativeChild {
-            provider_child_id: name.into(),
-        });
-        if !closed {
-            row.filing = wire::Filing::Open as i32;
-        }
-        store.put_agent(&row).unwrap();
-        key
-    };
-    let older = ended(&mut store, "older-sub", 10, false);
-    let newer = ended(&mut store, "newer-sub", 20, true);
+    let older = ended_subagent(&mut store, &host, "older-sub", 10, false);
+    let newer = ended_subagent(&mut store, &host, "newer-sub", 20, true);
     let running = own("running-sub");
     add(&mut store, &running, 2, 5, true, Some(&host));
     let mut row = store.agent(&running).unwrap().unwrap();
@@ -507,17 +495,110 @@ fn retention_reclaims_ended_provider_subagents_oldest_first_while_their_host_liv
     // message it back to work.
     add(&mut store, &own("amux-child"), 2, 1, false, Some(&host));
 
-    // Over by one subagent's rows: the older goes first, alone.
+    // Over by one subagent's rows: the older's go first, alone.
     let pool = store.pool_bytes(true).unwrap();
     let sweep = store.sweep_own(pool - 2 * ROW, ROW, 1).unwrap();
-    assert_eq!(sweep.removed, vec![older.clone()], "{:?}", describe(&sweep));
+    assert_eq!(
+        sweep.steps,
+        [SweepStep::Trimmed {
+            agent: older.clone(),
+            rows: 2,
+            bytes: 2 * ROW,
+            from_order: 3,
+        }],
+        "{:?}",
+        describe(&sweep)
+    );
+    assert!(sweep.removed.is_empty(), "{:?}", describe(&sweep));
+    let page = store.page(&older, None, 10).unwrap();
+    assert!(page.items.is_empty());
+    assert_eq!(page.end, PageEnd::Exhausted);
 
     let sweep = store.sweep_own(0, ROW, 1).unwrap();
-    assert!(sweep.removed.contains(&newer), "{:?}", describe(&sweep));
-    for kept in [&host, &running, &own("amux-child")] {
-        assert!(!sweep.removed.contains(kept), "{:?}", describe(&sweep));
+    assert!(
+        store.page(&newer, None, 10).unwrap().items.is_empty(),
+        "{:?}",
+        describe(&sweep)
+    );
+    assert!(sweep.removed.is_empty(), "{:?}", describe(&sweep));
+    for kept in [&host, &older, &newer, &running, &own("amux-child")] {
         assert!(store.agent(kept).unwrap().is_some());
     }
+}
+
+/// Its parent's model may continue an emptied subagent under the same id.
+/// What it says then files above everything it held before, with later
+/// revisions, so a replica or subscriber holding the earlier rows takes it.
+#[test]
+fn a_continued_subagent_numbers_on_from_its_emptied_block() {
+    let mut store = fresh();
+    let host = own("host");
+    add(&mut store, &host, 1, 1_000, true, None);
+    let sub = ended_subagent(&mut store, &host, "sub", 10, true);
+    let held = store.agent(&sub).unwrap().unwrap();
+    store.sweep_own(0, ROW, 1).unwrap();
+    assert!(
+        store.page(&sub, None, 10).unwrap().items.is_empty(),
+        "emptied"
+    );
+
+    let step = Step {
+        agents: vec![wire::AgentStep {
+            agent_id: sub.agent.clone(),
+            start: Some(wire::NativeStart {
+                provider_child_id: "sub".into(),
+                ..Default::default()
+            }),
+            items: vec![Item {
+                key: "again".into(),
+                text: "carrying on".into(),
+                kind: wire::Kind::Codex as i32,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    store.commit(&host, &[(2, step)], CLOCK).unwrap();
+    let item = store.get(&sub, "again").unwrap().expect("filed");
+    assert_eq!(item.order, 3, "above the two it held");
+    assert!(item.revision >= held.next_revision, "{item:?} {held:?}");
+    let page = store.page(&sub, None, 10).unwrap();
+    assert_eq!(page.items.len(), 1);
+}
+
+#[test]
+fn retention_takes_a_subagent_with_its_host() {
+    let mut store = fresh();
+    let host = own("host");
+    add(&mut store, &host, 1, 1_000, false, None);
+    let sub = ended_subagent(&mut store, &host, "sub", 10, true);
+    let sweep = store.sweep_own(0, ROW, 1).unwrap();
+    assert!(sweep.removed.contains(&host), "{:?}", describe(&sweep));
+    assert!(sweep.removed.contains(&sub), "{:?}", describe(&sweep));
+    assert!(store.agent(&sub).unwrap().is_none());
+}
+
+/// An ended provider subagent of `host` with two rows, last active at
+/// `at_ms`.
+fn ended_subagent(
+    store: &mut Sqlite,
+    host: &AgentKey,
+    name: &str,
+    at_ms: i64,
+    closed: bool,
+) -> AgentKey {
+    let key = own(name);
+    add(store, &key, 2, at_ms, false, Some(host));
+    let mut row = store.agent(&key).unwrap().unwrap();
+    row.native = Some(wire::NativeChild {
+        provider_child_id: name.into(),
+    });
+    if !closed {
+        row.filing = wire::Filing::Open as i32;
+    }
+    store.put_agent(&row).unwrap();
+    key
 }
 
 #[test]

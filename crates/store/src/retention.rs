@@ -9,10 +9,15 @@
 //! looked at stays in their fleet. A closed child whose parent is live is
 //! kept too, since its parent can still continue it. A provider subagent
 //! (one Claude's Agent tool or a Codex child thread started inside its
-//! parent's process) is the exception: once it has ended it goes whole,
-//! oldest first with the rest, whether or not the person closed it and
-//! while its parent lives, since a long-lived agent may start hundreds and
-//! its own chat keeps each one's result on the call that started it.
+//! parent's process) is the exception: once it has ended its rows go, in
+//! the same least-recently-active order, whether or not the person closed
+//! it and while its parent lives, since a long-lived agent may start
+//! hundreds and its own chat keeps each one's result on the call that
+//! started it. Its agents row stays, with its next revision and an empty
+//! block above everything it held: its parent's model may continue it
+//! under the same id, and the chat that carries on must number on from
+//! what a replica or subscriber already holds, not from 1 again. The row
+//! goes with its parent.
 //! Replica rows are a cache, so
 //! agents nobody is following lose all their rows, least recently used
 //! first, keeping only their agents row, and the rest keep their newest rows
@@ -97,7 +102,8 @@ pub(crate) fn sweep_own(
 
 /// Removes closed, exited agents whole, least recently active first, until
 /// the pool fits. A parent goes with its descendants, as delete takes them;
-/// one with a descendant still kept stays.
+/// one with a descendant still kept stays. An ended provider subagent in
+/// that order is emptied rather than removed.
 fn remove_finished(
     tables: &Rows<'_>,
     budget: u64,
@@ -133,9 +139,9 @@ fn remove_finished(
     // closed, or pinned and idle) does not hold its closed children: a
     // long-lived agent's one-shot children close as they finish, and they
     // would otherwise never be reclaimed.
-    // A provider subagent is not held: should its parent's model continue
-    // one that is gone, it comes back as a new row under the same id, and
-    // the parent's chat already holds each earlier answer.
+    // A provider subagent is not held: the parent's chat already holds
+    // each earlier answer, and one continued carries on above its emptied
+    // block.
     let protected = |row: &AgentRow| {
         row.native.is_none()
             && row
@@ -164,6 +170,10 @@ fn remove_finished(
         if gone.contains(&row.agent) {
             continue;
         }
+        if row.native.is_some() {
+            pool = empty_subagent(tables, row, pool, sweep)?;
+            continue;
+        }
         let mut family = vec![row];
         family.extend(descendants(row));
         for member in family {
@@ -181,6 +191,34 @@ fn remove_finished(
         }
     }
     Ok(pool)
+}
+
+/// Removes an ended provider subagent's rows, keeping its agents row with a
+/// block that starts above them: a continuation files from there, and its
+/// revisions go on from the row's.
+fn empty_subagent(
+    tables: &Rows<'_>,
+    row: &AgentRow,
+    pool: u64,
+    sweep: &mut Sweep,
+) -> Result<u64, StoreError> {
+    let (bytes, count) = tables.agent_bytes(&row.agent)?;
+    let Some(top) = tables.max_position(&row.agent)? else {
+        return Ok(pool);
+    };
+    let from_order = top + 1;
+    tables.remove_items(&row.agent)?;
+    let mut row = row.clone();
+    row.complete_from_order = Some(from_order);
+    row.exhausted = true;
+    tables.upsert_agent(&row, &rows::update_of(BLOCK))?;
+    sweep.steps.push(SweepStep::Trimmed {
+        agent: row.agent,
+        rows: count,
+        bytes,
+        from_order,
+    });
+    Ok(pool.saturating_sub(bytes))
 }
 
 /// Trims the largest candidate with rows above its floor, a round at a

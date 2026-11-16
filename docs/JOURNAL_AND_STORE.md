@@ -194,7 +194,7 @@ processes the frames in journal order, inside one transaction:
 | Snapshot changing what its `notice` owes the person | Deletes the agent's pending `notifications` rows and, for a notice a top-level agent raised or any agent's ask, inserts one due after the push delay. Another ask is a change; another ask behind the same one is not. |
 | `turn_end` on an agent with a parent | Inserts a `deliveries` row carrying a copy of the turn's last message, the turn's outcome and whether it is the incarnation's `last`; a turn end marked last clears `owes_report`. |
 | `incarnation_end` | Copies the cause and its words onto the row as `exit_cause` and `exit_detail`. The row stays live until the daemon marks the agent exited, which keeps this cause, so a daemon that stops in between leaves it for the next one. |
-| A subagent's part (`agents`) | Files its items, appends and snapshot under the subagent's own row, with the subagent's own orders and revisions, as the host's are filed under the host. A start on a row that has ended clears its exit cause, and an end on a live one writes it, as `incarnation_end` does; the commit returns these in journal order for the registry. It never makes a delivery or sets `owes_report`. A snapshot leaves the row's title alone: a subagent's title is the registry's. A part naming no row, or a row that is not one of this agent's own subagents, is skipped and returned. |
+| A subagent's part (`agents`) | Files its items, appends and snapshot under the subagent's own row, with the subagent's own orders and revisions, as the host's are filed under the host. Its starts and ends are its lifecycle, written in the same transaction as the host's cursor, since there is no process whose exit the registry could see later: a start on a row that has ended makes it live and open again and clears its exit cause, and an end on a live one marks it exited with its cause, filing a finished one closed. The commit returns these in journal order for the registry. It never makes a delivery or sets `owes_report`. A snapshot leaves the row's title alone: a subagent's title is the registry's. A part naming no row, or a row that is not one of this agent's own subagents, is skipped and returned. |
 
 Then the row's `ingest_cursor` is set to the offset just past the last frame
 and the row is written, in the same transaction as the records it describes.
@@ -229,11 +229,15 @@ journal. Its host's interpreter writes its parts into the host's journal
   if taken), and titled with the provider's description. It is published and
   counted as a spawned child is, so a subscriber hears of it before anything
   in it.
-- **After the commit**, a start on a row that had ended is its parent's model
-  continuing it: live and open again, its chat carrying on, its incarnation
-  still 1. An end goes through the exit path every agent's takes, which files
-  a finished one closed; it makes no delivery, since a subagent's answer goes
-  back to its parent through the provider. An end for a row that has already
+- **Its starts and ends commit with its host's cursor.** A start on a row
+  that had ended is its parent's model continuing it: live and open again,
+  its chat carrying on, its incarnation still 1. An end marks it exited and
+  files a finished one closed. The commit writes both, so a daemon that
+  stops right after it leaves no row its next start would have to read the
+  step again to move. After the commit the registry publishes the change,
+  and an end goes through the exit path every agent's takes; it makes no
+  delivery, since a subagent's answer goes back to its parent through the
+  provider. An end for a row that has already
   ended changes nothing: a resumed Claude reports the subagents the last
   process left as stopped.
 - **It ends with its host.** When the host's process ends, every subagent of
@@ -253,8 +257,9 @@ journal. Its host's interpreter writes its parts into the host's journal
   no start to continue it (the items are kept), and a part naming an agent
   that has a row but is not one of the host's own subagents (skipped). A part
   naming no row at all, with no start, is skipped and counted
-  (`Ingested.skipped`) but is no fault, since retention may have reclaimed a
-  subagent its provider still reports ended.
+  (`Ingested.skipped`) but is no fault, since a resumed provider may report
+  the end of a subagent this store never held, such as one started before
+  the session ran under amux.
 
 Blobs a subagent attaches live in its host's directory, and `GetBlob` for a
 subagent reads them there. A push for a subagent's ask names it by its title.
@@ -612,13 +617,16 @@ the profile's own budget:
    whose parent is live is skipped, because its parent can still send to
    it; under an exited parent it goes, even one the person kept, so a
    long-lived agent's finished one-shot children are reclaimed. A provider
-   subagent that has ended goes whether or not the person closed it and
-   while its host lives, oldest first with the rest: a long-lived agent may
-   start hundreds, nothing but its parent's model can continue one, and the
-   call row in its parent's chat keeps each one's result. One its parent's
-   model continues after it went comes back as a new row under the same id.
-   A parent goes together with its descendants, and one with a descendant
-   still kept stays.
+   subagent that has ended loses its rows in the same order, whether or not
+   the person closed it and while its host lives: a long-lived agent may
+   start hundreds, and the call row in its parent's chat keeps each one's
+   result. Its agents row stays, with its block emptied and starting above
+   everything it held, because its parent's model may continue it under the
+   same id: what it says then is filed above that, with revisions going on
+   from the row's, so a replica or subscriber holding the earlier rows takes
+   it rather than seeing numbers it already passed. The row goes with its
+   host. A parent goes together with its descendants, and one with a
+   descendant still kept stays.
 2. If still over, trim the other agents in rounds: each round takes the
    largest and deletes its oldest rows until about one chunk of bytes is
    gone, then measures again. No agent is taken below its newest K rows.

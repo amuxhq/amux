@@ -2303,18 +2303,20 @@ fn first_spec(
 
 /// Whether the end a row's journal gave is one a machine shutting down can
 /// give before the daemon sees the process go: none at all, or the
-/// provider's own end. amux's stops and kills end with causes of their own,
-/// so a signalled provider was ended from outside. A clean exit counts too,
-/// since a provider that exits cleanly when the machine signals it reads as
-/// a person quitting it: the grace only defers it, and the next start takes
-/// it for a shutdown only if the machine restarted, recording a quit
-/// otherwise.
+/// provider's own end by a signal, killed by it or exiting with its status
+/// (see [`wire::provider_signalled`]). amux's stops and kills end with
+/// causes of their own, so a signalled provider was ended from outside. A
+/// clean exit counts too, since a provider that exits cleanly when the
+/// machine signals it reads as a person quitting it, but only with no turn
+/// under way (its last snapshot idle): a person who quit in a turn wanted it
+/// to end, so it is never continued. The grace only defers any of these,
+/// and the next start takes them for a shutdown only if the machine
+/// restarted, recording them as they are otherwise.
 fn shutdown_like(row: &AgentRow) -> bool {
     match ExitCause::try_from(row.exit_cause) {
-        Ok(ExitCause::Unspecified | ExitCause::Quit) => true,
-        Ok(ExitCause::ProviderExited) => {
-            row.exit_detail.as_deref() == Some(wire::PROVIDER_SIGNALLED)
-        }
+        Ok(ExitCause::Unspecified) => true,
+        Ok(ExitCause::Quit) => row.phase == wire::Phase::Idle as i32,
+        Ok(ExitCause::ProviderExited) => wire::provider_signalled(row.exit_detail.as_deref()),
         _ => false,
     }
 }
@@ -3341,34 +3343,62 @@ mod tests {
     }
 
     /// What the journal leaves on the row when the provider ended first.
-    fn provider_ended(rig: &mut Rig, agent: AgentId, cause: ExitCause, detail: Option<&str>) {
+    fn provider_ended(
+        rig: &mut Rig,
+        agent: AgentId,
+        phase: wire::Phase,
+        cause: ExitCause,
+        detail: Option<&str>,
+    ) {
         let mut row = rig.row(agent).unwrap();
         row.exit_cause = cause as i32;
         row.exit_detail = detail.map(str::to_owned);
         rig.daemon.store.put_agent(&row).unwrap();
+        rig.daemon.store.set_phase(&row.agent, phase, 0).unwrap();
     }
 
     /// A shutdown can end the provider before the agent process: the
-    /// journal then says the provider was signalled, or quit as a provider
-    /// does that exits cleanly when signalled. Either gets the grace a
-    /// causeless end gets, and is recorded as it is once the grace is up; a
-    /// provider that failed is no shutdown and is recorded at once.
+    /// journal then says the provider was signalled (killed by the signal,
+    /// or exiting 128 and its number, as headless Claude exits 143 on
+    /// SIGTERM), or quit with no turn under way, as a provider does that
+    /// exits cleanly when signalled. Each gets the grace a causeless end
+    /// gets and is recorded as it is once the grace is up. A provider that
+    /// failed, or a quit in a turn, is no shutdown and is recorded at once.
     #[test]
     fn a_provider_signalled_or_quitting_first_gets_the_grace_and_one_that_failed_does_not() {
-        for (cause, detail, grace) in [
+        let idle = wire::Phase::Idle;
+        let starting = wire::Phase::Starting;
+        for (phase, cause, detail, grace) in [
             (
+                idle,
                 ExitCause::ProviderExited,
                 Some(wire::PROVIDER_SIGNALLED),
                 true,
             ),
-            (ExitCause::Quit, None, true),
-            (ExitCause::ProviderExited, Some("exit code 1"), false),
+            (idle, ExitCause::ProviderExited, Some("exit code 143"), true),
+            (idle, ExitCause::ProviderExited, Some("exit code 129"), true),
+            (idle, ExitCause::ProviderExited, Some("exit code 130"), true),
+            (
+                starting,
+                ExitCause::ProviderExited,
+                Some("exit code 137"),
+                true,
+            ),
+            (idle, ExitCause::Quit, None, true),
+            (starting, ExitCause::Quit, None, false),
+            (idle, ExitCause::ProviderExited, Some("exit code 1"), false),
+            (
+                idle,
+                ExitCause::ProviderExited,
+                Some("exit code 134"),
+                false,
+            ),
         ] {
             let mut rig = suspension_rig(false);
             rig.step(Input::Swept);
             rig.live(PARENT, "lead", None);
             rig.live(CHILD, "scout", Some(PARENT));
-            provider_ended(&mut rig, PARENT, cause, detail);
+            provider_ended(&mut rig, PARENT, phase, cause, detail);
             let out = rig.step(Input::ControlClosed {
                 agent: PARENT,
                 ended: Ended::Exited,
@@ -3382,7 +3412,7 @@ mod tests {
                     }
                 )
             });
-            assert_eq!(armed, grace, "{cause:?} {detail:?}: {out:?}");
+            assert_eq!(armed, grace, "{phase:?} {cause:?} {detail:?}: {out:?}");
             if grace {
                 assert_eq!(rig.row(PARENT).unwrap().lifecycle, Lifecycle::Live as i32);
                 assert!(stops(&out, CHILD).is_empty(), "{out:?}");
@@ -3401,13 +3431,17 @@ mod tests {
 
     /// After a reboot, an agent whose provider the shutdown ended first is
     /// treated as one whose journal gave no cause: idle, suspended; cut off
-    /// in its turn, continued. A clean quit counts only because the machine
-    /// restarted: without a reboot it is the person's quit. A provider that
+    /// in its turn, continued. That holds for headless Claude, which exits
+    /// 143 on SIGTERM. A clean quit counts only because the machine
+    /// restarted, and only with no turn under way: without a reboot, or in a
+    /// turn, it is the person's quit and is never continued. A provider that
     /// failed stays failed either way.
     #[test]
     fn after_a_reboot_a_provider_ended_first_is_suspended_or_continued() {
         const BUSY: AgentId = AgentId(*b"busy-00000000000");
         const QUIT: AgentId = AgentId(*b"quit-00000000000");
+        const QUIT_BUSY: AgentId = AgentId(*b"quit-busy-000000");
+        const TERMED: AgentId = AgentId(*b"termed-000000000");
         const FAILED: AgentId = AgentId(*b"failed-000000000");
         let signalled = Some(wire::PROVIDER_SIGNALLED.to_owned());
         for rebooted in [true, false] {
@@ -3415,10 +3449,13 @@ mod tests {
             rig.left(PARENT, wire::Phase::Idle, ExitCause::ProviderExited);
             rig.left(BUSY, wire::Phase::Starting, ExitCause::ProviderExited);
             rig.left(QUIT, wire::Phase::Idle, ExitCause::Quit);
+            rig.left(QUIT_BUSY, wire::Phase::Starting, ExitCause::Quit);
+            rig.left(TERMED, wire::Phase::Idle, ExitCause::ProviderExited);
             rig.left(FAILED, wire::Phase::Idle, ExitCause::ProviderExited);
             for (agent, detail) in [
                 (PARENT, signalled.clone()),
                 (BUSY, signalled.clone()),
+                (TERMED, Some("exit code 143".to_owned())),
                 (FAILED, Some("exit code 1".to_owned())),
             ] {
                 let mut row = rig.row(agent).unwrap();
@@ -3426,7 +3463,7 @@ mod tests {
                 rig.daemon.store.put_agent(&row).unwrap();
             }
             let mut resumed = Vec::new();
-            for agent in [PARENT, BUSY, QUIT, FAILED] {
+            for agent in [PARENT, BUSY, QUIT, QUIT_BUSY, TERMED, FAILED] {
                 let out = rig.step(Input::ControlClosed {
                     agent,
                     ended: Ended::Away,
@@ -3443,18 +3480,25 @@ mod tests {
             let live = Lifecycle::Live as i32;
             let exited = Lifecycle::Exited as i32;
             if rebooted {
-                for agent in [PARENT, QUIT] {
+                for agent in [PARENT, QUIT, TERMED] {
                     assert_eq!(read(&rig, agent), (live, ExitCause::Suspended as i32));
                 }
                 assert_eq!(resumed, [BUSY], "cut off in its turn: continued");
             } else {
                 assert_eq!(read(&rig, QUIT), (exited, ExitCause::Quit as i32));
-                assert_eq!(
-                    read(&rig, PARENT),
-                    (exited, ExitCause::ProviderExited as i32)
-                );
+                for agent in [PARENT, TERMED] {
+                    assert_eq!(
+                        read(&rig, agent),
+                        (exited, ExitCause::ProviderExited as i32)
+                    );
+                }
                 assert!(resumed.is_empty(), "{resumed:?}");
             }
+            assert_eq!(
+                read(&rig, QUIT_BUSY),
+                (exited, ExitCause::Quit as i32),
+                "the person quit in a turn: never continued"
+            );
             assert_eq!(
                 read(&rig, FAILED),
                 (exited, ExitCause::ProviderExited as i32)

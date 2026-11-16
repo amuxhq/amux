@@ -329,13 +329,17 @@ experiment. When its sweep finds an agent's process gone, its journal giving
 no cause, and the machine booted since the daemon before (the boot id in
 `<data_dir>/generation`), it decides as below. A shutdown can end the
 provider before the agent process, and then the journal does give a cause,
-the provider's own end: killed by a signal (`PROVIDER_EXITED`, "killed by a
-signal"), which amux never sends a provider, since its own stops and kills
-end with causes of their own; or a clean exit (`QUIT`), as a provider that
-exits cleanly when signalled gives. Each counts as no cause here. A quit is
-the person's own only when the machine did not restart, and is recorded as
-one then. The interpreter's last snapshot after a provider's own end reads
-idle unless it cut a turn off, so the phase tells the two apart:
+the provider's own end: a signal, which amux never sends a provider, since
+its own stops and kills end with causes of their own (`PROVIDER_EXITED`,
+"killed by a signal", or the exit status 128 and the signal's number a
+provider that catches it gives: 129, 130, 137 or 143 for SIGHUP, SIGINT,
+SIGKILL and SIGTERM, as headless Claude exits 143); or a clean exit
+(`QUIT`) with no turn under way, as a provider that exits cleanly when
+signalled gives. Each counts as no cause here. A quit is the person's own
+when the machine did not restart, or when it came in a turn, which is
+never continued, and is recorded as one then. The interpreter's last
+snapshot after a provider's own end reads idle unless it cut a turn off, so
+the phase tells the two apart:
 
 - an agent the person closed was on its way out, and is marked exited as
   stopped;

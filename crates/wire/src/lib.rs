@@ -123,6 +123,27 @@ pub const SURFACE_HEADER: &str = "amux-surface";
 /// down. Released builds write these words, so they are read as written.
 pub const PROVIDER_SIGNALLED: &str = "killed by a signal";
 
+/// How an incarnation's end words a provider's exit status: "exit code 1".
+pub const PROVIDER_EXIT_CODE: &str = "exit code ";
+
+/// Whether a provider's own end, by its detail, was a signal: killed by one
+/// (see [`PROVIDER_SIGNALLED`]), or exiting with the status a shell gives for
+/// one, 128 and its number, as a provider that catches the signal does
+/// (headless Claude exits 143 on SIGTERM). Only the signals a machine
+/// shutting down or a closed terminal sends count: SIGHUP, SIGINT, SIGKILL
+/// and SIGTERM.
+pub fn provider_signalled(detail: Option<&str>) -> bool {
+    const SIGNALS: [i32; 4] = [1, 2, 9, 15];
+    let Some(detail) = detail else {
+        return false;
+    };
+    detail == PROVIDER_SIGNALLED
+        || detail
+            .strip_prefix(PROVIDER_EXIT_CODE)
+            .and_then(|code| code.parse::<i32>().ok())
+            .is_some_and(|code| SIGNALS.iter().any(|signal| code == 128 + signal))
+}
+
 /// What a caller says of a method its host does not have. gRPC's own answer
 /// to an unknown method has no words, and a caller's "could not start the
 /// agent: " would end at the colon.
@@ -483,6 +504,30 @@ mod tests {
     use prost_types::{DescriptorProto, FileDescriptorSet};
 
     use super::*;
+
+    #[test]
+    fn a_provider_ending_by_a_shutdowns_signal_reads_signalled() {
+        let signalled = [
+            PROVIDER_SIGNALLED,
+            "exit code 129",
+            "exit code 130",
+            "exit code 137",
+            "exit code 143",
+        ];
+        for detail in signalled {
+            assert!(provider_signalled(Some(detail)), "{detail}");
+        }
+        let not = [
+            None,
+            Some("exit code 1"),
+            Some("exit code 134"),
+            Some("exit code 15"),
+            Some("exit code x"),
+        ];
+        for detail in not {
+            assert!(!provider_signalled(detail), "{detail:?}");
+        }
+    }
 
     fn descriptor() -> FileDescriptorSet {
         FileDescriptorSet::decode(DESCRIPTOR_SET).expect("descriptor set should decode")

@@ -217,7 +217,7 @@ pub fn provider_exit(code: Option<i32>) -> wire::IncarnationEnd {
     wire::IncarnationEnd {
         cause: wire::ExitCause::ProviderExited as i32,
         detail: Some(match code {
-            Some(code) => format!("exit code {code}"),
+            Some(code) => format!("{}{code}", wire::PROVIDER_EXIT_CODE),
             None => wire::PROVIDER_SIGNALLED.to_owned(),
         }),
     }

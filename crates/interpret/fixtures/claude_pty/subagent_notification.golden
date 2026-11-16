@@ -26,6 +26,7 @@ agent sub-f1f23e64 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=
 ## 10 fact {"channel":"hook","json":{"agent_id":"ag1","agent_type":"general-purpose","hook_event_name":"PreToolUse","tool_input":{"command":"ls"},"tool_name":"Bash","tool_use_id":"toolu_sub1"}}
 ## 11 fact {"channel":"hook","json":{"agent_id":"ag1","agent_type":"general-purpose","amux_reply":1,"hook_event_name":"PermissionRequest","tool_input":{"command":"ls"},"tool_name":"Bash"}}
 agent sub-f1f23e64 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[ask:1->- permission:Bash] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+agent sub-f1f23e64 notice ask ask:1 run "ls" why="" more=0
 ## 12 fact {"channel":"hook","json":{"agent_id":"ag1","agent_type":"general-purpose","hook_event_name":"PostToolUse","tool_input":{"command":"ls"},"tool_name":"Bash","tool_response":{"stdout":"README.md"},"tool_use_id":"toolu_sub1"}}
 effect hook 1 released
 agent sub-f1f23e64 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]

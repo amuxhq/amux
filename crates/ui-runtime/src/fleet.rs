@@ -548,6 +548,9 @@ impl Fleet {
     /// the chat reopens empty. Saves to one agent go in order, and one
     /// overtaken before it is sent is never sent.
     pub fn keep_draft(&self, agent: &AgentKey, draft: wire::Draft) {
+        if self.native(agent) {
+            return;
+        }
         self.inner
             .drafts
             .keep(self.inner.client.clone(), agent, draft);
@@ -555,9 +558,20 @@ impl Fleet {
 
     /// The draft this machine's daemon keeps for an agent, read after every
     /// save to it asked for before; None when there is none, it is empty or
-    /// it cannot be read.
+    /// it cannot be read, and for a provider subagent.
     pub async fn kept_draft(&self, agent: &AgentKey) -> Option<wire::Draft> {
+        if self.native(agent) {
+            return None;
+        }
         self.inner.drafts.kept(&*self.inner.client, agent).await
+    }
+
+    /// A subagent its parent's provider runs, which takes no messages, so
+    /// has no draft to keep.
+    fn native(&self, agent: &AgentKey) -> bool {
+        self.state()
+            .agent(agent)
+            .is_some_and(|agent| agent.native.is_some())
     }
 
     /// Resolves once every draft save asked for before has been handed to

@@ -52,6 +52,7 @@ agent sub-615de637 item toolu_01U3HJ9aUUrsQqqJGjQ8HuUy tool final at=17947882855
 ## 110 recorded 109: fact Stream type=control_request
 agent sub-615de637 item ask:789f51d0-2b0b-430b-8b5a-8e446b95b159 ask final at=1794788285579 text="" form external open
 agent sub-615de637 snapshot NEEDS_YOU queue=[] working_on=- at=1794788285579 asks=[789f51d0-2b0b-430b-8b5a-8e446b95b159->ask:789f51d0-2b0b-430b-8b5a-8e446b95b159 form:external "Confirm the word ALBATROSS."] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Call ask_the_operator with ALBATROSS"@1794788281196]
+agent sub-615de637 notice ask 789f51d0-2b0b-430b-8b5a-8e446b95b159 other "external" "Confirm the word ALBATROSS." why="" more=0
 ## 112 recorded 111: input stdin-4
 effect reply stdin-4 rejected:CLOSED_ASK
 ## 116 recorded 115: fact Stream type=user uuid=cc3547b4-3df5-431f-891c-e405669b18e1

@@ -6,8 +6,18 @@
   composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
 ## 7 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"agentPath":"/a/lovelace","agentThreadId":"c1","id":"call-spawn","kind":"started","model":"gpt-6.1-sol","reasoningEffort":"low","type":"subAgentActivity"},"threadId":"t1","turnId":"turn-1"}}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 8 fact {"channel":"rpc","json":{"id":"amux-read-1","result":{"readState":null,"thread":{"agentNickname":"Lovelace","canAcceptDirectInput":false,"id":"c1","parentThreadId":"t1","threadSource":"subagent"}}}}
+  agents [sub-4453d686 "Lovelace" Working] groups []
+  [sub-4453d686] composer Native { stop: Offered { key: "c1" } } activity=Some(Working) phase=Working
 ## 10 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"agentsStates":{},"id":"call-wait","receiverThreadIds":[],"senderThreadId":"t1","status":"inProgress","tool":"wait","type":"collabAgentToolCall"},"threadId":"t1","turnId":"turn-1"}}}
   composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
+## 11 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"command":"/bin/zsh -lc 'sleep 97; echo LATE'","commandActions":[{"command":"sleep 97; echo LATE","type":"unknown"}],"cwd":"/work","id":"exec-1","processId":"4242","status":"inProgress","type":"commandExecution"},"threadId":"c1","turnId":"c-turn"}}}
+  [sub-4453d686] composer Native { stop: Offered { key: "c1" } } activity=Some(Running { key: "exec-1" }) phase=Working
+## 12 child_input {"child":"c1","id":"s1","stop_job":{"key":"c1"}}
+  [sub-4453d686] composer Native { stop: Stopping } activity=Some(Running { key: "exec-1" }) phase=Working
+## 18 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"aggregatedOutput":"","command":"/bin/zsh -lc 'sleep 97; echo LATE'","commandActions":[{"command":"sleep 97; echo LATE","type":"unknown"}],"cwd":"/work","durationMs":0,"exitCode":-1,"id":"exec-1","processId":"4242","status":"failed","type":"commandExecution"},"threadId":"c1","turnId":"c-turn"}}}
+  agents [sub-4453d686 "Lovelace" Exited { cause: Ended }] groups []
+  [sub-4453d686] composer Native { stop: Unavailable } activity=None phase=Exited { cause: Ended }
 ## 20 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"amux-told-5","content":[{"text":"I stopped the agent Lovelace you started; it will not answer. Stop waiting for it and go on without it.","text_elements":[],"type":"text"}],"id":"um-1","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 23 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","items":[],"status":"completed"}}}}
@@ -15,8 +25,8 @@
 == chat
      1 boundary:1 Hidden collapsed
      2 prompt:7031 Prompt { text: [Text("Start one agent that runs sleep 97, then wait for it.")], steered: false }
-     3 call-spawn Subagent { description: "", running: false, tool_count: 0, last_tool: "spawnAgent", answer: "", duration_ms: Some(0) } run[call-spawn..call-wait x2 recent=1] collapsed
-     4 call-wait Subagent { description: "", running: false, tool_count: 0, last_tool: "wait", answer: "", duration_ms: Some(0) } run[call-spawn..call-wait x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 2, other: 0 }]
+     3 call-spawn [opens=sub-4453d686] Subagent { description: "", continued: false, state: Succeeded, answer: "", duration_ms: Some(0) }
+     4 call-wait Hidden collapsed
      5 um-1 Prompt { text: [Text("I stopped the agent Lovelace you started; it will not answer. Stop waiting for it and go on without it.")], steered: true }
      6 msg-1 Prose { text: [Text("Stopped waiting.")], streaming: false, working_note: false }
      7 turn:1 TurnEnd { duration_ms: Some(0), failed: false }
@@ -28,3 +38,9 @@
   changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
   command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("GPT-6.1 Sol") effort=None permission=None mode=None
+== agent sub-4453d686 "Lovelace" started by host/call-spawn
+  composer Native { stop: Unavailable } phase=Exited { cause: Ended }
+== chat
+     1 exec-1 Background { command: "sleep 97; echo LATE", description: "", running: false, duration_ms: Some(0) } run[exec-1..exec-1 x1 recent=0 live shown RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }] attention
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+  changes: Changeability { model: NotOffered, effort: NotOffered, permission: NotOffered, mode: NotOffered } commands=0

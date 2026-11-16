@@ -12,6 +12,7 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 34 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"durationMs":4000,"id":"turn-1","status":"completed"}}}}
   composer Send activity=None queue=[] underway=[] refused=[]
+  [sub-f81c969d] composer Native { stop: Offered { key: "child-thread" } } activity=Some(Working) phase=Working
 ## 37 input {"id":"p2","prompt":{"text":"Run the tests."}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 40 fact {"channel":"rpc","json":{"method":"error","params":{"error":{"additionalDetails":"upstream returned 502","codexErrorInfo":{"responseStreamDisconnected":{"httpStatusCode":502}},"message":"Reconnecting... 1/3"},"threadId":"t1","turnId":"turn-2","willRetry":true}}}
@@ -42,3 +43,8 @@
   changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
   command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("GPT-5.6 Luna") effort=None permission=None mode=None
+== agent sub-f81c969d "" started by host/
+  composer Native { stop: Offered { key: "child-thread" } } phase=Working
+== chat
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+  changes: Changeability { model: NotOffered, effort: NotOffered, permission: NotOffered, mode: NotOffered } commands=0

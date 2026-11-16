@@ -54,6 +54,11 @@ pub struct FleetCard {
     pub filing: Filing,
     /// It has no parent, so it may be pinned.
     pub top_level: bool,
+    /// A subagent its parent's provider runs: it goes with its parent and
+    /// has no folder, terminal, settings or composer of its own, so it is
+    /// never offered a resume, a delete, a pin or a terminal of its own.
+    /// It is listed under its parent as any child is, by its title.
+    pub native: bool,
 }
 
 /// Home's sections, computed once for every client. Empty sections are
@@ -360,6 +365,7 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
             filing => filing,
         },
         top_level: agent.parent.is_none(),
+        native: agent.native.is_some(),
         agent: at,
     }
 }

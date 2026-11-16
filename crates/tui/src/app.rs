@@ -356,7 +356,10 @@ pub(crate) fn terminal_refusal(agent: &Agent, config: &TuiConfig) -> Option<&'st
 
 /// Why `agent` has no terminal on this machine at all, running or not.
 fn terminal_elsewhere(agent: &Agent, config: &TuiConfig) -> Option<&'static str> {
-    if agent.host_id != config.local_host {
+    if agent.native.is_some() {
+        // Its parent's provider runs it inside the parent's own process.
+        Some("a subagent has no terminal of its own")
+    } else if agent.host_id != config.local_host {
         Some("its terminal is on another machine")
     } else if agent.kind() == wire::Kind::ClaudeSdk {
         Some("headless Claude has no terminal")
@@ -1160,6 +1163,18 @@ impl App {
                 None => chat.view.toggle_expanded(&state),
             },
             KeyCode::Char(PANE_CHORD) => chat.view.pane_toggle_key(),
+            // Enter opens a chat on home; under the leader it opens the
+            // chat of the agent the focused row started. The panel's click
+            // comes as its character.
+            KeyCode::Enter | KeyCode::Char(OPEN_AGENT_CHORD) => {
+                let effects = chat.view.open_focused_agent(&state);
+                drop(state);
+                for effect in effects {
+                    if let Some(flow) = self.chat_effect(effect) {
+                        return flow;
+                    }
+                }
+            }
             KeyCode::Char('y') => {
                 if let Some(text) = chat.view.copy_text() {
                     drop(state);
@@ -1253,7 +1268,17 @@ impl App {
         let agent_id = chat.view.agent_id.clone();
         // The page reads the changes the header counts.
         let base = ui_view::diff_base(&state, chat.view.comparison);
+        let native = matches!(state.composer(), Composer::Native { .. });
         drop(state);
+        // A subagent works in its parent's folder: the changes are the
+        // parent's to review.
+        if native {
+            self.notice(
+                "a subagent's changes are reviewed from its parent",
+                Tone::Info,
+            );
+            return;
+        }
         if !writable {
             self.notice("review waits until the chat is current", Tone::Warn);
             return;
@@ -1657,6 +1682,13 @@ impl App {
                 let agent = chat.agent.clone();
                 return self.raw_attach(&agent);
             }
+            ChatEffect::OpenAgent(agent) => {
+                if self.fleet.state().agent(&agent).is_none() {
+                    self.notice("that agent is not listed yet", Tone::Info);
+                } else {
+                    self.open(agent);
+                }
+            }
             ChatEffect::Notice(words) => self.notice(words, Tone::Info),
             ChatEffect::Copy(text) => self.copy(&text, false),
         }
@@ -1974,6 +2006,7 @@ impl App {
                 chat.view.covered = self.report.is_some();
                 let page = {
                     let state = chat.session.state();
+                    chat.view.agents = ui_view::chat_agents(&state, &self.fleet.state());
                     chat.view
                         .draw(paint, area, &state, family.as_ref(), footer, now, theme)
                 };
@@ -2128,6 +2161,10 @@ fn sibling_setup(
 /// own; the leader's flyover leaves it out.
 const PANE_CHORD: char = '\u{f}';
 
+/// The leader's Enter as the panel hands it back when clicked: a chord is
+/// a character, and Enter's is the carriage return.
+const OPEN_AGENT_CHORD: char = '\r';
+
 impl App {
     /// Takes in a layout change the open chat made, and keeps it.
     fn keep_layout(&mut self) {
@@ -2184,6 +2221,12 @@ fn panel_entries() -> Vec<crate::chat::PanelEntry> {
         entry("this chat", "k", "focus an older row", 'k'),
         entry("this chat", "j", "focus a newer row", 'j'),
         entry("this chat", "o", "open the focused row", 'o'),
+        entry(
+            "this chat",
+            "enter",
+            "open the agent the focused row started",
+            OPEN_AGENT_CHORD,
+        ),
         entry("this chat", "y", "copy the focused row", 'y'),
     ]
 }
@@ -2207,7 +2250,10 @@ pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'
             "↑ in an empty composer",
             "the queued messages: enter sends one now, backspace withdraws it; with none queued, the last prompt again".into(),
         ),
-        ("ctrl+x", "interrupt: end the turn; the agent stays".into()),
+        (
+            "ctrl+x",
+            "interrupt: end the turn; the agent stays. In a subagent's chat, stop the subagent".into(),
+        ),
         ("ctrl+c", "clear the draft; twice on nothing quits".into()),
         ("ctrl+o", "the overview of what is in flight".into()),
         (
@@ -2253,7 +2299,7 @@ pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'
         ("Leader", String::new()),
     ]);
     // The leader's chords, by their whole keys.
-    let chords: [(&str, &str); 15] = [
+    let chords: [(&str, &str); 16] = [
         ("s", "home"),
         ("n", "new agent, starting from this chat's settings"),
         ("h", "hosts"),
@@ -2269,7 +2315,11 @@ pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'
             "settle the agent (a message resumes it); asks before cutting work short",
         ),
         ("k / j", "focus an older or newer row"),
-        ("o", "open the focused row or run"),
+        ("o", "open the focused row, run or group of subagents"),
+        (
+            "enter",
+            "open the chat of the agent the focused row started",
+        ),
         ("y", "copy the focused row"),
         ("?", "these keys"),
     ];

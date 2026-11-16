@@ -1,0 +1,34 @@
+
+  amux                                                                               2 working · 1 needs you
+
+  + New Agent
+
+
+  ▾ Needs you 1 ────────────────────────────────────────────────────────────────────────────────────────────
+
+  › ● lead ▾ 2  Claude · /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                                 [x]
+      2 subagents working
+
+      ● Check the journal's retention  Claude subagent                                                 now
+        wants to run du -sh ~/.local/share/amux/journal
+
+      ● Read the store's migrations  Claude subagent                                                   now
+        Working
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  enter open   a attach   / filter   n new   ? keys

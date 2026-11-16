@@ -875,3 +875,86 @@ async fn a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own() 
     );
     net.shutdown().await.unwrap();
 }
+
+/// Two subagents the agent starts together: the chat's two calls fold into
+/// one row, and how the subagents stand reaches the host from the fleet,
+/// as running and then finished, though no row changes when it does.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_chat_hands_over_how_the_subagents_its_rows_open_stand() {
+    use provider_fakes::script::Subagent;
+    let subagent = |task: &str| Subagent {
+        task: task.into(),
+        nickname: None,
+        await_read: false,
+        steps: vec![Step::Pause { ms: 500 }, text(&task.to_uppercase())],
+    };
+    let net = Net::start(
+        Topology::new().host("desk").agent(
+            AgentDecl::new("worker", "desk")
+                .kind(FakeKind::ClaudeSdk)
+                .steps(vec![
+                    Step::Subagents {
+                        agents: vec![subagent("red"), subagent("blue")],
+                    },
+                    text("both reported"),
+                    Step::TurnEnd,
+                ])
+                .prompt("delegate"),
+        ),
+    )
+    .await
+    .unwrap();
+    let (runtime, mut host) = open(&net).await;
+    let chat = opened(&runtime, &worker(&net), 50).await;
+    let wake = Wake::Chat(chat.id());
+    let mut running = false;
+    let mut finished = false;
+    tokio::time::timeout(PATIENCE, async {
+        while !finished {
+            host.next(wake).await;
+            let Some(agents) = chat.delta().and_then(|delta| delta.agents) else {
+                continue;
+            };
+            let Some(group) = agents.groups.first() else {
+                continue;
+            };
+            assert_eq!(group.state.agents, 2, "{agents:?}");
+            running |= group.state.running > 0;
+            finished = group.state.finished == 2;
+        }
+    })
+    .await
+    .expect("the group's subagents finish");
+    assert!(running, "the group read running before it finished");
+    let calls: Vec<_> = chat
+        .rows_for(&chat.keys())
+        .into_iter()
+        .filter(|row| row.opens.is_some())
+        .collect();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(
+        calls.iter().map(|row| row.collapsed).collect::<Vec<_>>(),
+        vec![false, true]
+    );
+    // Each call's agent is a fleet row under the worker, which a tap opens.
+    for call in &calls {
+        let card = runtime
+            .fleet_card(&chat.agents().agents[0].agent)
+            .expect("the subagent is in the fleet");
+        assert!(card.native);
+        assert!(call.group.as_ref().is_some_and(|group| !group.open));
+    }
+    chat.toggle_group(&calls[0].id);
+    host.next(wake).await;
+    let delta = chat.delta().expect("opening the group moves its rows");
+    assert!(
+        delta
+            .rows
+            .iter()
+            .filter(|row| row.opens.is_some())
+            .all(|row| !row.collapsed && row.group.as_ref().is_some_and(|group| group.open)),
+        "{:?}",
+        delta.rows
+    );
+    net.shutdown().await.unwrap();
+}

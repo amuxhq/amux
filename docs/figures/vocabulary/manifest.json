@@ -184,6 +184,34 @@
         132
       ],
       "sha256": "da841ecb36a4e23fdaec0edc713a4bca2590a6c470d7d1cb22a198597a8d8915"
+    },
+    {
+      "fixture": "row_subagent",
+      "file": "row_subagent.light.png",
+      "theme": "light",
+      "viewport": [
+        100,
+        13
+      ],
+      "pixels": [
+        1000,
+        286
+      ],
+      "sha256": "955fffcfd82a24ee7a4bc6eadd6b8f1571ffbc7764a11493f414cb25a7e8818b"
+    },
+    {
+      "fixture": "row_subagent_group",
+      "file": "row_subagent_group.light.png",
+      "theme": "light",
+      "viewport": [
+        100,
+        8
+      ],
+      "pixels": [
+        1000,
+        176
+      ],
+      "sha256": "5fe8bc060ffc1c9b5d9dda6fef82cb16ca7e1a9614c0e3b70502ab852a72a247"
     }
   ]
 }

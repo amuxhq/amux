@@ -783,7 +783,9 @@ impl State {
             phase,
             body: body.encode_to_vec(),
             working_on,
-            background_jobs: jobs.len() as u32,
+            // Its row counts the commands it runs in the background, not
+            // its own job, which its chat stops and which is the child.
+            background_jobs: child_jobs(&jobs),
             notice: notice.map(Box::new),
             last_said: said,
             ..Snapshot::default()
@@ -1008,4 +1010,12 @@ impl State {
         );
         emit.effect(Effect::ProviderWrite(bytes));
     }
+}
+
+/// The jobs a child's row counts: the commands it runs in the background,
+/// leaving out its own job.
+fn child_jobs(jobs: &[BackgroundJob]) -> u32 {
+    jobs.iter()
+        .filter(|job| job.kind != wire::BackgroundKind::Subagent as i32)
+        .count() as u32
 }

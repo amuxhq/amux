@@ -1,0 +1,238 @@
+{
+  "hosts": [
+    {
+      "name": "desk"
+    },
+    {
+      "name": "laptop"
+    }
+  ],
+  "links": [
+    {
+      "a": "desk",
+      "b": "laptop"
+    }
+  ],
+  "settle": true,
+  "agents": [
+    {
+      "name": "lead",
+      "host": "desk",
+      "kind": "claude_sdk",
+      "script": {
+        "steps": [
+          {
+            "text": {
+              "chunks": [
+                "The journal module keeps one file per agent and rotates it at 64 MB. Retention, redraws, migrations and fixtures each need a closer look."
+              ]
+            }
+          },
+          "turn_end",
+          {
+            "subagents": {
+              "agents": [
+                {
+                  "task": "Find every path that redraws the terminal client's screen, and say which events trigger each.",
+                  "nickname": "Survey the redraw paths",
+                  "steps": [
+                    {
+                      "thinking": {
+                        "text": "The redraw has to come from the app loop; the tick and the inventory events are the likely callers."
+                      }
+                    },
+                    {
+                      "tool": {
+                        "name": "Grep",
+                        "class": "exploration",
+                        "input": {
+                          "pattern": "fn draw\\(",
+                          "path": "crates"
+                        },
+                        "outcome": {
+                          "output": "crates/tui/src/app.rs:1935:    pub fn draw(&mut self, paint: &mut Paint<'_>) {\ncrates/tui/src/home.rs:1228:    pub fn draw("
+                        }
+                      }
+                    },
+                    {
+                      "text": {
+                        "chunks": [
+                          "Two paths redraw the screen: the 30 ms tick while anything animates, and every inventory event from the daemon."
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "task": "Look for test fixtures nothing reads any more.",
+                  "nickname": "Look for stale fixtures",
+                  "steps": [
+                    {
+                      "thinking": {
+                        "text": "A fixture nothing names in a test is stale."
+                      }
+                    },
+                    {
+                      "tool": {
+                        "name": "Grep",
+                        "class": "exploration",
+                        "input": {
+                          "pattern": "recorded_old_prompt",
+                          "path": "crates"
+                        },
+                        "outcome": {
+                          "output": ""
+                        }
+                      }
+                    },
+                    {
+                      "text": {
+                        "chunks": [
+                          "One fixture is stale: recorded_old_prompt.json, which no test reads."
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "task": "Check how long the journal keeps an agent's records once it is settled.",
+                  "nickname": "Check the journal's retention",
+                  "steps": [
+                    {
+                      "thinking": {
+                        "text": "Retention lives in the daemon; I should measure the journal directory first."
+                      }
+                    },
+                    {
+                      "tool": {
+                        "name": "Read",
+                        "class": "exploration",
+                        "input": {
+                          "file_path": "crates/daemon-core/src/retention.rs"
+                        },
+                        "outcome": {
+                          "output": "pub const SETTLED_KEEP_DAYS: u64 = 30;"
+                        }
+                      }
+                    },
+                    {
+                      "tool": {
+                        "name": "Read",
+                        "class": "exploration",
+                        "input": {
+                          "file_path": "crates/journal/src/lib.rs"
+                        },
+                        "outcome": {
+                          "output": "//! One journal per agent, rotated at 64 MB."
+                        }
+                      }
+                    },
+                    {
+                      "ask": {
+                        "permission": {
+                          "name": "Bash",
+                          "class": "consequential",
+                          "input": {
+                            "command": "du -sh ~/.local/share/amux/journal",
+                            "description": "Measure the journal directory"
+                          },
+                          "outcome": {
+                            "output": "412M\t/home/person/.local/share/amux/journal"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "text": {
+                        "chunks": [
+                          "Settled agents keep their journal for 30 days; the directory holds 412 MB today."
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "task": "Read the store's migrations and list any that rewrite a table.",
+                  "nickname": "Read the store's migrations",
+                  "steps": [
+                    {
+                      "thinking": {
+                        "text": "Each migration is a file under the store crate; I'll read them in order."
+                      }
+                    },
+                    {
+                      "tool": {
+                        "name": "Grep",
+                        "class": "exploration",
+                        "input": {
+                          "pattern": "ALTER TABLE",
+                          "path": "crates"
+                        },
+                        "outcome": {
+                          "output": "crates/store/migrations/0007_hosts.sql:3:ALTER TABLE hosts ADD COLUMN reach INTEGER;"
+                        }
+                      }
+                    },
+                    {
+                      "tool": {
+                        "name": "Read",
+                        "class": "exploration",
+                        "input": {
+                          "file_path": "crates/store/migrations/0001_init.sql"
+                        },
+                        "outcome": {
+                          "output": "CREATE TABLE agents (id BLOB PRIMARY KEY, name TEXT NOT NULL);"
+                        }
+                      }
+                    },
+                    {
+                      "tool": {
+                        "name": "Read",
+                        "class": "exploration",
+                        "input": {
+                          "file_path": "crates/store/migrations/0002_inputs.sql"
+                        },
+                        "outcome": {
+                          "output": "CREATE TABLE inputs (id BLOB PRIMARY KEY, agent BLOB NOT NULL);"
+                        }
+                      }
+                    },
+                    {
+                      "tool": {
+                        "name": "Bash",
+                        "class": "exploration",
+                        "wait_for": "migrations-never",
+                        "input": {
+                          "command": "sqlite3 store.db .schema",
+                          "description": "Dump the store's schema"
+                        },
+                        "outcome": {
+                          "output": ""
+                        }
+                      }
+                    },
+                    {
+                      "text": {
+                        "chunks": [
+                          "never said"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "text": {
+              "chunks": [
+                "Three of the four reported: redraws come from the tick and inventory events, settled journals stay 30 days, and one fixture is stale. The migrations survey was stopped."
+              ]
+            }
+          },
+          "turn_end"
+        ]
+      }
+    }
+  ]
+}

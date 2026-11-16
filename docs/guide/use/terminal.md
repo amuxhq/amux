@@ -142,6 +142,29 @@ the step it's on now under a line of what it has done so far. When Claude says
 what a command is for, the step reads as Claude's words, with the command
 itself faint underneath.
 
+### Subagents
+
+When Claude or Codex hands part of the work to a subagent of its own, such as
+Claude's Agent tool, the subagent gets its own chat. In the agent's chat the
+call that started it is one line saying how the subagent is doing right now:
+`● Running subagent Survey the redraw paths`, `waiting on you` in blue when it
+has a question for you, or `Ran subagent … · 1m 35s` once it's done.
+Subagents started together share one line, such as
+`▸ 4 subagents · 2 running · 1 waiting on you · 1 done`. Click it, or focus it
+and press Ctrl+A then `o`, to list each one.
+
+Click a subagent's line, or focus it with Ctrl+A then `j` or `k` and press
+Ctrl+A then Enter, to open its chat. There you can read everything it did and
+answer its questions, which show up there and under **Needs you** on home.
+You can't message a subagent: Claude or Codex talks to it for you, and the
+box where you'd type says so. To stop it, press **Ctrl+X**, then Enter to
+confirm. The agent that started it carries on without it. Claude's own
+terminal app doesn't let amux stop a single subagent, so there it isn't
+offered.
+
+On home, subagents are listed under the agent that started them, by what they
+were asked to do. They go with that agent: settling it settles them.
+
 Your unsent message belongs to the chat, not to the terminal. Close the
 terminal, or pick the chat up on your phone, and it's still there.
 
@@ -157,6 +180,8 @@ and pause, and the keys it offers appear above the key line.
 | Ctrl+A, then `r` | Review the agent's changes |
 | Ctrl+A, then `a` | Switch to the agent's own interface, for an agent on this machine |
 | Ctrl+A, then `x` | Settle the agent and go home, asking first if that would cut work short |
+| Ctrl+A, then `o` | Open or close the focused line: a step, a run of steps, or a group of subagents |
+| Ctrl+A, then Enter | Open the chat of the subagent the focused line started |
 | Ctrl+A, then `d` | Leave for the shell |
 | Ctrl+A, then `?` | Every key |
 

@@ -310,10 +310,28 @@ pub struct Committer {
 }
 
 impl Committer {
+    /// The agent's own part of a step, as the daemon files it under the
+    /// agent. Its subagents' parts go to a committer of their own each
+    /// ([`Committer::commit_agent`]), as the daemon files each under its
+    /// subagent with orders and revisions of its own.
     pub fn commit(&mut self, step: &Step) -> Vec<SessionEvent> {
+        self.commit_parts(&step.items, &step.appends, step.snapshot.as_ref())
+    }
+
+    /// One provider subagent's part of a step, under the subagent.
+    pub fn commit_agent(&mut self, part: &wire::AgentStep) -> Vec<SessionEvent> {
+        self.commit_parts(&part.items, &part.appends, part.snapshot.as_ref())
+    }
+
+    fn commit_parts(
+        &mut self,
+        items: &[Item],
+        appends: &[wire::Append],
+        snapshot: Option<&Snapshot>,
+    ) -> Vec<SessionEvent> {
         let event = |of| SessionEvent { of: Some(of) };
         let mut out = Vec::new();
-        for item in &step.items {
+        for item in items {
             self.revision += 1;
             let order = *self.orders.entry(item.key.clone()).or_insert_with(|| {
                 self.next_order += 1;
@@ -325,7 +343,7 @@ impl Committer {
             item.revision = self.revision;
             out.push(event(session_event::Of::Item(item)));
         }
-        for append in &step.appends {
+        for append in appends {
             self.revision += 1;
             let base = self
                 .revisions
@@ -336,7 +354,7 @@ impl Committer {
             append.revision = self.revision;
             out.push(event(session_event::Of::Append(append)));
         }
-        if let Some(snapshot) = &step.snapshot {
+        if let Some(snapshot) = snapshot {
             self.revision += 1;
             let mut snapshot = snapshot.clone();
             snapshot.revision = self.revision;

@@ -436,9 +436,20 @@ impl Conversation {
     /// it runs and what it says it is working on. Its title is left out:
     /// the start carries it, and the daemon keeps it from there.
     pub(crate) fn snapshot(&self, sub: &mut Subagent<'_, Ask>, jobs: Vec<BackgroundJob>) {
-        let count = jobs.len() as u32;
+        // What its row counts as running in the background leaves out its
+        // own job, which its chat stops and which is the subagent itself.
+        let count = jobs
+            .iter()
+            .filter(|job| job.kind != wire::BackgroundKind::Subagent as i32)
+            .count() as u32;
+        let asks = sub.asks().open_asks().to_vec();
+        // What it asks of the person, for its row to say, as a Codex
+        // child's and every agent's snapshot carries.
+        let notice = asks
+            .first()
+            .map(|head| Box::new(crate::notice::claude_ask(head, asks.len() as u32 - 1, "")));
         let body = ClaudeSnapshot {
-            asks: sub.asks().open_asks().to_vec(),
+            asks,
             model: self.model.clone(),
             model_name: self.model.as_deref().map(crate::claude_common::tidy_model),
             background_jobs: Some(wire::BackgroundJobs { known: true, jobs }),
@@ -450,6 +461,7 @@ impl Conversation {
             body,
             working_on: self.working_on.clone(),
             background_jobs: count,
+            notice,
             ..Default::default()
         });
     }

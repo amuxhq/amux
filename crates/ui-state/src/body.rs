@@ -96,10 +96,11 @@ impl ItemBody {
 /// and of its fields only those [`ItemBody::class`] reads, so the record
 /// draws every conclusion the model draws and holds nothing anybody wrote.
 /// Those fields are whether a message or thinking block is complete; a
-/// tool call's state, its parent's key, whether its subagent finished and
-/// whether its input is a task list; an error's retry, attempt, limit and
+/// tool call's state, its parent's key, whether its subagent finished,
+/// whether its input is a task list or a subagent, and the agent it opens; an error's retry, attempt, limit and
 /// time; headless Claude's status; whether Codex's safety check runs; and
-/// the arm of Codex's work. Every other field, text and value is emptied.
+/// the arm of Codex's work, with the agent a spawn opens and a collab
+/// call's tool. Every other field, text and value is emptied.
 /// A body this build cannot decode becomes an empty one, which reads the
 /// same.
 pub fn item_structure(kind: Kind, body: &[u8]) -> Vec<u8> {
@@ -179,10 +180,11 @@ fn codex_structure(kind: wire::codex_item::Kind) -> wire::codex_item::Kind {
 
 fn tool_structure(tool: wire::ToolCall) -> wire::ToolCall {
     use wire::tool_input::Of;
-    let task_list = matches!(
-        tool.input.as_ref().and_then(|input| input.of.as_ref()),
-        Some(Of::TaskList(_))
-    );
+    let input = match tool.input.as_ref().and_then(|input| input.of.as_ref()) {
+        Some(Of::TaskList(_)) => Some(Of::TaskList(wire::Empty {})),
+        Some(Of::Subagent(_)) => Some(Of::Subagent(Default::default())),
+        _ => None,
+    };
     wire::ToolCall {
         state: tool.state,
         parent_key: tool.parent_key,
@@ -190,10 +192,12 @@ fn tool_structure(tool: wire::ToolCall) -> wire::ToolCall {
             finished: progress.finished,
             ..Default::default()
         }),
-        input: task_list.then(|| wire::ToolInput {
-            of: Some(Of::TaskList(wire::Empty {})),
+        input: input.map(|of| wire::ToolInput {
+            of: Some(of),
             ..Default::default()
         }),
+        // An agent's id is made by amux, not written by anybody.
+        child_agent_id: tool.child_agent_id,
         ..Default::default()
     }
 }
@@ -204,10 +208,19 @@ fn work_structure(work: wire::Work) -> wire::Work {
         of: work.of.map(|of| match of {
             Of::Command(_) => Of::Command(Default::default()),
             Of::FileChange(_) => Of::FileChange(Default::default()),
-            Of::Mcp(_) => Of::Mcp(Default::default()),
+            // Agent ids are made by amux, and a collab tool's name is
+            // Codex's own vocabulary: neither is anybody's writing.
+            Of::Mcp(call) => Of::Mcp(wire::McpToolCall {
+                child_agent_id: call.child_agent_id,
+                ..Default::default()
+            }),
             Of::WebSearch(_) => Of::WebSearch(Default::default()),
             Of::Image(_) => Of::Image(Default::default()),
-            Of::Collab(_) => Of::Collab(Default::default()),
+            Of::Collab(collab) => Of::Collab(wire::CollabWork {
+                tool: collab.tool,
+                agent_ids: collab.agent_ids,
+                ..Default::default()
+            }),
         }),
         state: work.state,
         ..Default::default()
@@ -265,16 +278,22 @@ pub enum Fold {
     /// A tool step: it is what a run is made of.
     Step,
     /// Inside a run it neither counts nor ends it: thinking, a retry
-    /// notice, a subagent's own step, anything drawn by no client.
+    /// notice, a subagent's own step from history, anything drawn by no
+    /// client.
     Through,
     /// Anything else the agent or the person put in the transcript ends a
-    /// run: its text, an ask, a prompt, a turn's end.
+    /// run: its text, an ask, a prompt, a turn's end, a call that opens an
+    /// agent.
     Break,
 }
 
 impl ItemClass {
     pub fn fold(&self) -> Fold {
         match self {
+            // A call that opens an agent stands for that agent's work, which
+            // the person reaches through it: it is not folded away with the
+            // steps around it.
+            ItemClass::Tool(tool) if tool.opens => Fold::Break,
             ItemClass::Tool(tool) if tool.child || tool.hidden => Fold::Through,
             ItemClass::Tool(_) => Fold::Step,
             ItemClass::Thinking { .. } | ItemClass::Retrying { .. } | ItemClass::Silent => {
@@ -289,12 +308,16 @@ impl ItemClass {
 pub struct ToolFacts {
     /// Pending or running.
     pub in_flight: bool,
-    /// A subagent call whose child has not finished.
+    /// A subagent call still under way: the agent waits on its subagent.
     pub subagent: bool,
-    /// A subagent's own step, drawn under its subagent's call.
+    /// A subagent's own step, drawn under its subagent's call: only in
+    /// history, from before a subagent's steps went to its own chat.
     pub child: bool,
-    /// Claude's task-list bookkeeping, drawn by no client: the task list
-    /// shows what it did.
+    /// The call opens an agent: the provider subagent or amux child it
+    /// started or continues (see [`opens`]).
+    pub opens: bool,
+    /// Bookkeeping drawn by no client: Claude's task list, which the task
+    /// list shows, and Codex's calls on child threads that start none.
     pub hidden: bool,
 }
 
@@ -306,18 +329,20 @@ fn in_flight(state: i32) -> bool {
 }
 
 fn claude_tool(tool: &wire::ToolCall) -> ItemClass {
+    use wire::tool_input::Of;
+    let input = tool.input.as_ref().and_then(|input| input.of.as_ref());
+    // History's background subagent outlived its call; its progress said
+    // when it finished.
+    let finished = tool
+        .subagent
+        .as_ref()
+        .is_some_and(|progress| progress.finished);
     ItemClass::Tool(ToolFacts {
         in_flight: in_flight(tool.state),
-        subagent: tool
-            .subagent
-            .as_ref()
-            .is_some_and(|progress| !progress.finished)
-            && in_flight(tool.state),
+        subagent: matches!(input, Some(Of::Subagent(_))) && !finished && in_flight(tool.state),
         child: !tool.parent_key.is_empty(),
-        hidden: matches!(
-            tool.input.as_ref().and_then(|input| input.of.as_ref()),
-            Some(wire::tool_input::Of::TaskList(_))
-        ),
+        hidden: matches!(input, Some(Of::TaskList(_))),
+        opens: !tool.child_agent_id.is_empty(),
     })
 }
 
@@ -327,8 +352,51 @@ fn codex_work(work: &wire::Work) -> ItemClass {
         in_flight: in_flight(work.state),
         subagent: matches!(work.of, Some(Of::Collab(_))) && in_flight(work.state),
         child: false,
-        hidden: false,
+        // Waiting on, closing, interrupting or listing child threads draws
+        // nothing: the rows that opened those children say how they stand.
+        hidden: matches!(&work.of, Some(Of::Collab(collab))
+            if !OPENING_COLLAB_TOOLS.contains(&collab.tool.as_str())),
+        opens: codex_opened(work).is_some(),
     })
+}
+
+/// The agent a call opens: the provider subagent or amux child it started
+/// or continues, once the interpreter knows it. Headless and terminal
+/// Claude name it on the Agent call, on a SendMessage continuing it and on
+/// amux's spawn; Codex on a collab call that starts or continues a child
+/// thread, and on amux's spawn. A call from before amux knew it names none,
+/// and draws as it always did.
+pub fn opens(body: &ItemBody) -> Option<&[u8]> {
+    match body {
+        ItemBody::Claude(wire::claude_item::Kind::Tool(tool)) => {
+            Some(tool.child_agent_id.as_slice()).filter(|id| !id.is_empty())
+        }
+        ItemBody::Codex(wire::codex_item::Kind::Work(work)) => codex_opened(work),
+        _ => None,
+    }
+}
+
+/// Codex's collab tools that start or continue one child thread; the rest
+/// (waiting on, closing, interrupting or listing children) are the parent's
+/// bookkeeping on agents its spawns already open.
+const OPENING_COLLAB_TOOLS: &[&str] = &[
+    "spawnAgent",
+    "sendInput",
+    "resumeAgent",
+    "sendMessage",
+    "followupTask",
+];
+
+fn codex_opened(work: &wire::Work) -> Option<&[u8]> {
+    use wire::work::Of;
+    let id = match &work.of {
+        Some(Of::Collab(collab)) if OPENING_COLLAB_TOOLS.contains(&collab.tool.as_str()) => {
+            collab.agent_ids.first()?
+        }
+        Some(Of::Mcp(call)) => &call.child_agent_id,
+        _ => return None,
+    };
+    Some(id.as_slice()).filter(|id| !id.is_empty())
 }
 
 fn api_error(error: &wire::ApiError) -> ItemClass {

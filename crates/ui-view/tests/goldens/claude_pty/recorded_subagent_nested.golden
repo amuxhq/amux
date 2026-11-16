@@ -3,19 +3,33 @@
 ## 14 recorded 12: fact Transcript type=user uuid=cd65cd37-e718-42a9-88f5-9cb1ffa0d373
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 47 recorded 45: fact Transcript type=assistant uuid=19685f17-dd4c-4c0a-8921-3741a7581492
-  composer Send activity=Some(Running { key: "toolu_01Eg8rr4FVAEoB3eHY6GGFKi" }) queue=[] underway=[] refused=[]
-## 62 recorded 60: fact Hook hook_event_name=MessageDisplay
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
+  agents [sub-ff9065c1 "Run outer subagent" Working] groups []
+  [sub-ff9065c1] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
 ## 69 recorded 67: fact Transcript type=system subtype=turn_duration uuid=6fd28b33-1fd6-49a6-bbde-b96d772cb36a
   composer Send activity=None queue=[] underway=[] refused=[]
+## 78 recorded 76: fact SubagentTranscript type=assistant uuid=d65a396f-485b-438b-8363-53fcd8fe0c2f
+  [sub-ff9065c1] composer Native { stop: Unavailable } activity=Some(Subagents { count: 1 }) phase=Working
+  [sub-c4fe8dc9] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
+## 90 recorded 88: fact SubagentTranscript type=assistant uuid=93f60c0a-60a2-44e8-a477-134b17efcc27
+  [sub-c4fe8dc9] composer Native { stop: Unavailable } activity=Some(Running { key: "toolu_01UricQWi7EEBcsMdqdXbyjv" }) phase=Working
+## 92 recorded 90: fact SubagentTranscript type=user uuid=a5acfeb4-4d55-44b0-8448-eec706715ffd
+  [sub-c4fe8dc9] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
+## 103 recorded 101: fact Transcript type=queue-operation
+  [sub-ff9065c1] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
+## 106 recorded 104: fact SubagentTranscript type=assistant uuid=82365d5f-8a14-40c8-b486-9176ae902493
+  [sub-c4fe8dc9] composer Native { stop: Unavailable } activity=None phase=Exited { cause: Finished }
 ## 124 recorded 122: fact Transcript type=queue-operation
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 129 recorded 127: fact SubagentTranscript type=assistant uuid=adef3340-16af-4d52-923e-a190eaedf1f8
+  agents [sub-ff9065c1 "Run outer subagent" Exited { cause: Finished }] groups []
+  [sub-ff9065c1] composer Native { stop: Unavailable } activity=None phase=Exited { cause: Finished }
 ## 137 recorded 135: fact Transcript type=system subtype=turn_duration uuid=c13127ea-556d-4495-82f0-c190a195f2e0
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
      2 cd65cd37-e718-42a9-88f5-9cb1ffa0d373 Prompt { text: [Text("Launch the `outer` subagent and wait for it. When it has reported, reply with exactly what it said.")], steered: false }
-     3 toolu_01Eg8rr4FVAEoB3eHY6GGFKi Subagent { description: "Run outer subagent", running: true, tool_count: 0, last_tool: "", answer: "OUTER ALPHA", duration_ms: Some(7217) } run[toolu_01Eg8rr4FVAEoB3eHY6GGFKi..toolu_01Eg8rr4FVAEoB3eHY6GGFKi x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0 }]
+     3 toolu_01Eg8rr4FVAEoB3eHY6GGFKi [opens=sub-ff9065c1] Subagent { description: "Run outer subagent", continued: false, state: Succeeded, answer: "OUTER ALPHA", duration_ms: Some(7217) }
      4 stream:9450040c-6f2f-4aa6-9f8b-a36d5972519b Prose { text: [Text("The `outer` subagent is running in the background. I'll reply with its report once it finishes.")], streaming: false, working_note: false }
      5 turn:1 TurnEnd { duration_ms: Some(3488), failed: false }
      6 stream:de88e9ff-2798-4a0a-afe1-12e18fc4d7f7 Prose { text: [Text("OUTER ALPHA")], streaming: false, working_note: false }
@@ -32,3 +46,22 @@
   changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
   command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None
+== agent sub-ff9065c1 "Run outer subagent" started by host/toolu_01Eg8rr4FVAEoB3eHY6GGFKi
+  composer Native { stop: Unavailable } phase=Exited { cause: Finished }
+== chat
+     1 617b4f8f-b873-468d-8a3e-bd507f29aa10 Prompt { text: [Text("Delegate to the inner subagent and report its answer.")], steered: false }
+     2 toolu_01EQrtY2sxm9tUwe937bLkw4 [opens=sub-c4fe8dc9] Subagent { description: "Ask inner subagent for word", continued: false, state: Succeeded, answer: "ALPHA", duration_ms: Some(3335) }
+     3 msg_011Ch5eRkHJTCNWnG8Qs6fNg:0 Thinking { text: "", open: false, duration_ms: Some(2000) }
+     4 msg_011Ch5eRkHJTCNWnG8Qs6fNg:1 Prose { text: [Text("The inner subagent is still running in the background, so I don't have its answer yet. I'll reply with OUTER followed by its word once it finishes.")], streaming: false, working_note: false }
+     5 msg_011Ch5eRzWKMjQzYhnby7nU7:0 Prose { text: [Text("OUTER ALPHA")], streaming: false, working_note: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+  changes: Changeability { model: NotOffered, effort: NotOffered, permission: NotOffered, mode: NotOffered } commands=0
+== agent sub-c4fe8dc9 "Ask inner subagent for word" started by sub-ff9065c1/toolu_01EQrtY2sxm9tUwe937bLkw4
+  composer Native { stop: Unavailable } phase=Exited { cause: Finished }
+== chat
+     1 f1a39b99-20c2-480f-b413-c4002b04f63c Prompt { text: [Text("Please read the file a.txt and report back the word it contains. Reply with the word only. The file is located in <MACHINE_PATH> (use the absolute path to a.txt in that directory).")], steered: false }
+     2 toolu_01UricQWi7EEBcsMdqdXbyjv Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_01UricQWi7EEBcsMdqdXbyjv..toolu_01UricQWi7EEBcsMdqdXbyjv x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }]
+     3 msg_011Ch5eRrR9pTmjuViLvmQLH:0 Thinking { text: "", open: false, duration_ms: Some(1877) }
+     4 msg_011Ch5eRrR9pTmjuViLvmQLH:1 Prose { text: [Text("ALPHA")], streaming: false, working_note: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+  changes: Changeability { model: NotOffered, effort: NotOffered, permission: NotOffered, mode: NotOffered } commands=0

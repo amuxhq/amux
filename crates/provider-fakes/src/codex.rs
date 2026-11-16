@@ -1223,6 +1223,14 @@ impl Engine {
             self.status(None).await;
             self.speaking = None;
             self.item(turn, "item/completed", &started).await;
+            // A client reads the child's nickname as the spawn completes,
+            // and Codex answers before the child's turn starts.
+            if !self.eof {
+                tokio::select! {
+                    event = self.events.recv() => self.receive(event).await,
+                    () = tokio::time::sleep(std::time::Duration::from_millis(200)) => {}
+                }
+            }
             self.speaking = Some(thread.clone());
             self.status(Some(&[])).await;
             let mut value = self.turn_value(&child_turn, "inProgress", vec![]);

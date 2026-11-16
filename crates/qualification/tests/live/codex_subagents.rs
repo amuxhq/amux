@@ -310,6 +310,17 @@ impl Install {
                 "the child ran no command printing CHILD_RAN: {ran:?}"
             ));
         }
+        // The subagent's title is Codex's nickname for the child, which
+        // only amux's `thread/read` of it gets.
+        if !heard.iter().any(|(_, message)| {
+            let thread = &message["result"]["thread"];
+            thread["id"] == child.as_str()
+                && thread["agentNickname"]
+                    .as_str()
+                    .is_some_and(|nickname| !nickname.is_empty())
+        }) {
+            return Err("amux's read of the child came back with no nickname".to_owned());
+        }
         self.judged(scenario, &follow)
     }
 

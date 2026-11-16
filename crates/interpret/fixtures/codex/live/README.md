@@ -39,7 +39,7 @@ recorded it, except `turn_round_trip` (the `respond` scenario) and
 | `signed_out` | a turn with no login in the agent's Codex home |
 | `web_search` | a web search, with live search on in the agent's Codex config |
 | `subagent` | a child thread spawned and waited for |
-| `child_command` | a child thread that runs a command |
+| `child_command` | a child thread that runs a command, its nickname read by amux's `thread/read` |
 | `child_approval` | a child thread's command in a read-only sandbox, asked about and allowed from amux |
 | `child_stop` | a child stopped while its command runs: its turn interrupted and its command ended by another client, then a prompt steered into the parent's turn |
 | `child_continued` | a child sent a follow-up by its parent in a second turn |

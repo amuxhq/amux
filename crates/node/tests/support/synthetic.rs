@@ -75,6 +75,10 @@ impl Handed {
     }
 }
 
+/// An input handed on for a provider subagent: the subagent's id, and the
+/// input's.
+pub type ChildHanded = (Vec<u8>, Vec<u8>);
+
 pub struct SyntheticAgent {
     pub id: Uuid,
     pub name: String,
@@ -88,7 +92,7 @@ pub struct SyntheticAgent {
     /// The inputs among `inputs` the daemon handed on for one of the
     /// provider subagents this agent runs: the subagent's id, and the
     /// input's.
-    child_inputs: Arc<Mutex<Vec<(Vec<u8>, Vec<u8>)>>>,
+    child_inputs: Arc<Mutex<Vec<ChildHanded>>>,
     /// Set when the agent stops reading its control connection.
     wedged: Arc<tokio::sync::watch::Sender<bool>>,
     /// Set while the agent holds every answer back.
@@ -191,7 +195,7 @@ impl SyntheticAgent {
 
     /// The subagent each input handed on for a provider subagent was for,
     /// with the input's id, in the order they came.
-    pub fn child_inputs(&self) -> Vec<(Vec<u8>, Vec<u8>)> {
+    pub fn child_inputs(&self) -> Vec<ChildHanded> {
         self.child_inputs.lock().unwrap().clone()
     }
 

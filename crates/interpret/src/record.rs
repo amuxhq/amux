@@ -588,8 +588,15 @@ impl Alias {
         let alias = |name: &str| format!("name-{}", self.hash(name.as_bytes()));
         match name {
             Name::Own(name) if schema_name(name) => name.clone(),
+            // The server's name and the tool's apart, as the skeleton keeps
+            // them, so a replay tells which calls are that server's.
             Name::Server(name) if name.starts_with("mcp__") => {
-                format!("mcp__{}", alias(&name["mcp__".len()..]))
+                match name["mcp__".len()..].split_once("__") {
+                    Some((server, tool)) if !server.is_empty() && !tool.is_empty() => {
+                        format!("mcp__{}__{}", alias(server), alias(tool))
+                    }
+                    _ => format!("mcp__{}", alias(&name["mcp__".len()..])),
+                }
             }
             Name::Server(name) => name.split('/').map(alias).collect::<Vec<_>>().join("/"),
             Name::Own(name) => alias(name),

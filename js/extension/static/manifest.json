@@ -5,7 +5,12 @@
   "version": "0.1.0",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1YjHgoMfSjkdO5SW41QnpqTSy4J7+8pMKoLtv5mZQhUB2DrEu64ZjKzChJ/op6AdXQrFkYoHCUA2YWtcp0j7juRI3ZJ0Z1xBzDdGT7sBAQ5XpLZNlotoZYMgF7TRq2tHgDmH1coT9p6+DTV5znmbfOzrASJvS2jHtmTCH5QWmb/W9NAX1UZ0DhbBV57ZTPGzXyg4AtEgQYksCBm55kKMse43XtF7szB7W0I7Tti3ER6O8BL2be7Q8huCWFh1WSkvLUBg/ccMtRCjSeQIXeD5ta8zmCibl+g7PbjMmvL/ljXgwhPhzoBdTFmDBw0iyuysKrPq7dhflhu8vbGxuR6/XQIDAQAB",
   "minimum_chrome_version": "116",
-  "icons": { "16": "icon.png", "32": "icon.png", "48": "icon.png", "128": "icon.png" },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "action": { "default_title": "Review this page with amux" },
   "background": { "service_worker": "background.js", "type": "module" },
   "side_panel": { "default_path": "panel.html" },

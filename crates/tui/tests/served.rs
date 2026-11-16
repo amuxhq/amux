@@ -1032,20 +1032,40 @@ async fn a_message_typed_to_a_suspended_agent_wakes_it_and_never_reads_stopped()
                 !screen.contains("stopped") && !screen.contains("not sent"),
                 "the message to the suspended agent read as refused:\n{screen}"
             );
-            let chat = app.chat.as_ref().unwrap();
-            let state = chat.session.state();
-            let taken = state
-                .transcript()
-                .iter()
-                .any(|held| held.item.text.contains("wake up") && !held.item.input_id.is_empty());
-            if taken && ui_view::prompts_underway(&state).is_empty() {
+            // The session's state is a lock: let go of it before waiting,
+            // or the send it would block stalls the runtime's timers.
+            let done = {
+                let state = app.chat.as_ref().unwrap().session.state();
+                let taken = state.transcript().iter().any(|held| {
+                    held.item.text.contains("wake up") && !held.item.input_id.is_empty()
+                });
+                taken && ui_view::prompts_underway(&state).is_empty()
+            };
+            if done {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     })
     .await
-    .expect("the woken agent takes the message");
+    .unwrap_or_else(|_| {
+        let state = app.chat.as_ref().unwrap().session.state();
+        let items: Vec<String> = state
+            .transcript()
+            .iter()
+            .map(|held| format!("{:?} {:?}", held.item.key, held.item.text))
+            .collect();
+        let agent = state.agent();
+        panic!(
+            "the woken agent did not take the message: {} prompts underway, the inputs \
+             {:?}, the agent {:?} {:?} at incarnation {}, its items {items:?}",
+            ui_view::prompts_underway(&state).len(),
+            state.inputs(),
+            agent.lifecycle(),
+            agent.exit_cause(),
+            agent.incarnation,
+        );
+    });
     drop(app);
     tokio::time::timeout(Duration::from_secs(60), net.shutdown())
         .await

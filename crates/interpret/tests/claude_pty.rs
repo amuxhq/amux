@@ -1973,3 +1973,98 @@ fn a_first_prompt_is_drawn_while_terminal_claude_starts_and_typed_once() {
     );
     assert!(!Kind::typed_unrecorded(&state), "the prompt was reflected");
 }
+
+/// A subagent's ask can come before any row of its file: it opens in the
+/// subagent's own chat with no item, as the agent's own ask does before
+/// its call's row lands, and points at the call once the subagent's row
+/// for it is read. The agent itself holds no ask.
+#[test]
+fn a_subagents_ask_before_its_rows_opens_in_its_chat_and_binds_to_the_row() {
+    use prost::Message as _;
+    let (mut state, _) = started_claude();
+    let with = |extra: serde_json::Value| {
+        let mut value = serde_json::json!({
+            "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl",
+            "cwd": "/w", "prompt_id": "p1", "permission_mode": "default",
+        });
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        hook(value)
+    };
+    let subagent_row = |row: serde_json::Value| {
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::SubagentTranscript,
+            payload: row.to_string().into_bytes(),
+        })
+    };
+    let asks = |stepped: &interpret::Stepped| {
+        stepped
+            .step
+            .agents
+            .iter()
+            .find_map(|part| part.snapshot.as_ref())
+            .map(|snapshot| {
+                let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
+                let asks: Vec<String> = body.asks.iter().map(|ask| ask.item_key.clone()).collect();
+                (snapshot.phase(), asks)
+            })
+    };
+    let command = serde_json::json!({"command": "touch done.txt"});
+    for event in [
+        with(
+            serde_json::json!({"hook_event_name": "SubagentStart", "agent_id": "a1", "agent_type": "toucher"}),
+        ),
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::subagent_meta_fact(
+                "a1",
+                serde_json::json!({"toolUseId": "toolu_agent", "description": "Touch"}),
+            ),
+        }),
+        with(
+            serde_json::json!({"hook_event_name": "PreToolUse", "agent_id": "a1", "agent_type": "toucher",
+            "tool_name": "Bash", "tool_use_id": "toolu_sub", "tool_input": command}),
+        ),
+    ] {
+        ClaudePty::step(&mut state, event);
+    }
+    let asked = ClaudePty::step(
+        &mut state,
+        with(
+            serde_json::json!({"hook_event_name": "PermissionRequest", "agent_id": "a1",
+            "agent_type": "toucher", "tool_name": "Bash", "tool_input": command}),
+        ),
+    );
+    assert_eq!(
+        asks(&asked),
+        Some((wire::Phase::NeedsYou, vec![String::new()])),
+        "the subagent's ask, with no item yet, is not open in its chat"
+    );
+    if let Some((_, host)) = decoded(&asked) {
+        assert!(host.asks.is_empty(), "the agent holds its subagent's ask");
+    }
+    ClaudePty::step(
+        &mut state,
+        subagent_row(serde_json::json!({
+            "type": "user", "uuid": "su1", "timestamp": "2026-10-12T08:00:01.000Z",
+            "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+            "message": {"role": "user", "content": "Touch done.txt."},
+        })),
+    );
+    let drawn = ClaudePty::step(
+        &mut state,
+        subagent_row(serde_json::json!({
+            "type": "assistant", "uuid": "sa1", "timestamp": "2026-10-12T08:00:02.000Z",
+            "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+            "message": {"id": "msg_1", "role": "assistant", "model": "claude-haiku-5-5",
+                "content": [{"type": "tool_use", "id": "toolu_sub", "name": "Bash", "input": command}]},
+        })),
+    );
+    assert_eq!(
+        asks(&drawn),
+        Some((wire::Phase::NeedsYou, vec!["toolu_sub".to_owned()])),
+        "the ask does not point at its call once the call's row is read"
+    );
+}

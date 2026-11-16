@@ -367,7 +367,7 @@ Claude is started through `pty_host::spawn` with the spec's arguments plus:
   program and its arguments with no shell between, as the hook command for
   `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PermissionRequest`,
   `PermissionDenied`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
-  `Stop`, `SubagentStart`, `SubagentStop`, `Elicitation`, `MessageDisplay` and
+  `Stop`, `SubagentStart`, `Elicitation`, `MessageDisplay` and
   `PostModelSwitch`, the two that wait for a decision with a timeout of
   seven days, accepts messages from other sessions at once, and allows amux's own tools
   (all but `attach`, which asks like any read) and reading the agent's `blobs/` folder (where the files a person attaches

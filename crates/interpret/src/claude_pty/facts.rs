@@ -573,21 +573,15 @@ impl State {
                 )
             }
         };
-        // A subagent's ask is its own, in its own chat; one naming a
-        // subagent amux has not seen start starts following it.
+        // A subagent's ask is its own, in its own chat, with no item until
+        // the row of the call it gates lands in the subagent's file, as the
+        // agent's own ask has none until its row lands.
         let agent = request
             .common
             .agent_id
             .clone()
             .filter(|agent| !agent.is_empty())
-            .filter(|agent| {
-                let named = self.subagents.contains_key(agent)
-                    || self.subagent_named(emit, agent, "subagent");
-                if named {
-                    self.start_subagent(emit, agent);
-                }
-                named && self.shared.subagent_running(agent)
-            });
+            .filter(|agent| self.subagent_asking(emit, agent));
         let call = self.announced_call(name, input, agent.as_deref());
         let key = self.new_ask(AskMeta {
             tool_name: name.to_owned(),

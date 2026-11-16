@@ -629,7 +629,7 @@ Hooks carry only what the transcript never does:
 | `PostModelSwitch` | The model Claude switched to, as when plan mode moves to a bigger model, shown until the next assistant row names the model it ran. |
 | `Stop` | Lists the background jobs still running (see [background jobs](#background-jobs)), clears the running marks, and closes every ask still open with its outcome unknown, drawn dismissed until the call's result says how it went. A subagent's asks are its own and stay open. It does **not** end the turn. |
 | `SubagentStart` | Names a subagent, started or continued, whose own file the agent then follows (see [Claude's subagents](#claudes-subagents)). |
-| `SubagentStop` | Nothing: Claude raises it when a subagent's turn stops, which is not its end. |
+| `SubagentStop` | Not registered: Claude raises it when a subagent's turn stops, which is not its end. One a recording holds reads as nothing. |
 | `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | Mark a call running, and then not running, for the snapshot's running calls (the activity line while the call's row is on the way); `PreToolUse` also names the call an ask that follows is raised for. They never make a row, except `ExitPlanMode`'s, which opens the plan from its `PreToolUse` since Claude writes the plan's row only once it is decided. `PostToolUse`'s duration gives the call the time it began running, after any wait for approval (`started_at_ms`), which the call's result row carries. |
 | `UserPromptSubmit` | Input is live. |
 | `SessionEnd` | Closes every open ask with its outcome unknown. |

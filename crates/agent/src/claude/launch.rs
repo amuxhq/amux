@@ -183,7 +183,6 @@ pub const HOOK_EVENTS: &[&str] = &[
     "PostToolUseFailure",
     "Stop",
     "SubagentStart",
-    "SubagentStop",
     "Elicitation",
     "MessageDisplay",
     "PostModelSwitch",

@@ -242,6 +242,23 @@ impl State {
         }
     }
 
+    /// The subagent `child` raised an ask, so it runs: one amux has not
+    /// seen start starts, its file followed from now on, and one that
+    /// ended runs again, continued before its start hook said so. False
+    /// when the ask cannot be its own.
+    pub(super) fn subagent_asking(&mut self, emit: &mut Emit, child: &str) -> bool {
+        if !self.subagents.contains_key(child) && !self.subagent_named(emit, child, "subagent") {
+            return false;
+        }
+        if let Some(sub) = self.subagents.get_mut(child)
+            && sub.phase == Phase::Ended
+        {
+            sub.phase = Phase::Waiting;
+        }
+        self.start_subagent(emit, child);
+        self.shared.subagent_running(child)
+    }
+
     /// Claude named the subagent `child` (its start hook, or an ask): its
     /// file is followed from now on. False for one of Claude's internal
     /// helpers, which makes no agent.

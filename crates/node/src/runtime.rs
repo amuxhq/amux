@@ -217,6 +217,9 @@ pub enum RegistryError {
     /// A wake met an agent that is not suspended.
     #[error("agent {0} is not suspended")]
     NotSuspended(AgentId),
+    /// A wake met an agent the daemon is ending.
+    #[error("agent {0} is being stopped")]
+    Ending(AgentId),
     #[error("an agent id is 16 bytes, not {0}")]
     BadId(usize),
     #[error("a new agent names its kind")]
@@ -317,7 +320,7 @@ impl RegistryError {
         let code = match self {
             Self::NotFound(_) | Self::NoSpec(_) => ErrorCode::NotFound,
             Self::AlreadyExists(_) | Self::NameTaken(_) => ErrorCode::AlreadyExists,
-            Self::Live(_) | Self::NotSuspended(_) | Self::StillLocked(_) => {
+            Self::Live(_) | Self::NotSuspended(_) | Self::Ending(_) | Self::StillLocked(_) => {
                 ErrorCode::FailedPrecondition
             }
             Self::BadId(_)
@@ -2165,6 +2168,7 @@ fn registry_error(id: AgentId, error: CallError) -> RegistryError {
         Refusal::AlreadyExists => RegistryError::AlreadyExists(id),
         Refusal::Live => RegistryError::Live(id),
         Refusal::NotSuspended => RegistryError::NotSuspended(id),
+        Refusal::Ending => RegistryError::Ending(id),
         Refusal::NameTaken(name) => RegistryError::NameTaken(name),
         Refusal::HasParent => RegistryError::HasParent(id),
         Refusal::ParentEnded(parent) => RegistryError::ParentEnded(Uuid::from_bytes(parent.0)),

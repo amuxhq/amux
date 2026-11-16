@@ -274,6 +274,10 @@ pub enum Refusal {
     /// A wake met an agent that is not suspended: exited, or started by
     /// something else first.
     NotSuspended,
+    /// A wake met an agent the daemon is ending: a stop, close or delete
+    /// under way or waiting its turn, or the daemon on its way out. It is
+    /// answered at once rather than after the stop's deadline.
+    Ending,
     /// Another agent on this host has the name.
     NameTaken(String),
     /// Only an agent with no parent is pinned.
@@ -524,7 +528,36 @@ impl Daemon {
 
     pub(crate) fn resume(&mut self, call: CallId, resume: Box<Resume>, out: &mut Vec<Output>) {
         let agent = resume.agent;
+        if resume.if_suspended && self.ending(agent) {
+            self.reply(agent, Caller::Client(call), Err(Refusal::Ending), out);
+            return;
+        }
         self.registry_call(Caller::Client(call), agent, Op::Resume(resume), out);
+    }
+
+    /// Whether the daemon is ending the agent: a wake would only wait for
+    /// the end and then find nothing to wake.
+    fn ending(&self, agent: AgentId) -> bool {
+        let ends = |op: &Op| {
+            matches!(
+                op,
+                Op::Stop | Op::Kill | Op::Delete { .. } | Op::File(Filing::Closed)
+            )
+        };
+        self.families.stopping
+            || self
+                .families
+                .processes
+                .get(&agent)
+                .is_some_and(|process| process.stopping.is_some())
+            || self.families.lanes.get(&agent).is_some_and(|lane| {
+                lane.current.as_ref().is_some_and(|operation| {
+                    matches!(
+                        operation.doing,
+                        Doing::Ending { .. } | Doing::Removing { .. }
+                    )
+                }) || lane.queued.iter().any(|queued| ends(&queued.op))
+            })
     }
 
     pub(crate) fn file(
@@ -2998,8 +3031,8 @@ mod tests {
 
     /// A wake that meets an agent on its way out waits for the exit, then
     /// resumes it only if the exit left it suspended: typed as it was
-    /// suspending it starts again, typed as a stop was under way it does
-    /// not.
+    /// suspending it starts again, typed as a stop was under way it is
+    /// refused at once.
     #[test]
     fn a_wake_waiting_out_an_exit_resumes_a_suspension_and_not_a_stop() {
         let mut rig = rig();
@@ -3015,16 +3048,15 @@ mod tests {
         rig.live(CHILD, "scout", None);
         let (stop, _) = rig.call(ClientRequest::KillAgent { agent: CHILD });
         let (call, out) = rig.call(wake(CHILD, "go on"));
-        assert_eq!(job_of(&out), None, "it waits behind the stop: {out:?}");
+        assert_eq!(
+            refusal_of(&out, call),
+            Some(Refusal::Ending),
+            "refused, not waiting behind the stop: {out:?}"
+        );
         let gone = rig.suspend(CHILD);
         assert_eq!(
             answer_of(&gone, stop).map(|row| row.exit_cause),
             Some(ExitCause::Stopped as i32)
-        );
-        assert_eq!(
-            refusal_of(&gone, call),
-            Some(Refusal::NotSuspended),
-            "{gone:?}"
         );
         assert_eq!(job_of(&gone), None, "nothing starts: {gone:?}");
 
@@ -3062,6 +3094,32 @@ mod tests {
             "{out:?}"
         );
         assert_eq!(rig.row(OTHER).unwrap().lifecycle, Lifecycle::Exited as i32);
+    }
+
+    /// A wake for an agent the daemon is stopping, or about to, is refused
+    /// at once instead of waiting out the stop's deadline behind it.
+    #[test]
+    fn a_wake_for_an_agent_the_daemon_is_ending_is_refused_at_once() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        rig.call(ClientRequest::KillAgent { agent: PARENT });
+        let (call, out) = rig.call(wake(PARENT, "go on"));
+        assert_eq!(refusal_of(&out, call), Some(Refusal::Ending), "{out:?}");
+
+        rig.live(CHILD, "scout", None);
+        rig.step(Input::Exiting { agent: CHILD });
+        let (first, _) = rig.call(wake(CHILD, "go on"));
+        rig.call(ClientRequest::FileAgent {
+            agent: CHILD,
+            filing: Filing::Closed,
+        });
+        let (call, out) = rig.call(wake(CHILD, "and on"));
+        assert_eq!(
+            refusal_of(&out, call),
+            Some(Refusal::Ending),
+            "a close waits its turn: {out:?}"
+        );
+        assert_eq!(refusal_of(&out, first), None, "the first wake still waits");
     }
 
     /// Switched off or on, the start's sweep finds a suspended agent's

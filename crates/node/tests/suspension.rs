@@ -282,3 +282,58 @@ async fn a_persons_input_wakes_a_suspended_agent_and_not_a_stopped_one() {
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }
+
+/// A person's input that reaches the agent as it suspends, refused as
+/// exiting, waits for the exit and then wakes it with that input as its
+/// next incarnation's first: answered as taken, not "not sent".
+#[tokio::test(flavor = "multi_thread")]
+async fn a_persons_input_met_by_a_suspension_wakes_the_agent_with_it() {
+    let install = Install::new();
+    let mut napper = SyntheticAgent::new(&install, "napper", SEGMENTS);
+    napper.register(&install);
+    napper.write_spec();
+    napper.go_live();
+    napper.answer_with(Answer::Reject(wire::Refusal::Exiting));
+    let mut launch = install.launch(
+        "resumed",
+        vec![
+            support::text("awake"),
+            provider_fakes::script::Step::TurnEnd,
+        ],
+    );
+    launch.experiments = settings::experiments::Enabled::of(&[&settings::experiments::SUSPENSION]);
+    let daemon = install.start("boot-1", launch).await;
+    let runtime = runtime(&daemon, &install);
+    until_connected(&napper).await;
+
+    let sent = tokio::spawn({
+        let runtime = runtime.clone();
+        let request = typed(&napper, b"typed-1", "time to go on");
+        async move { runtime.send_input(&request).await }
+    });
+    // A window: an input waiting for the exit leaves no mark to wait on.
+    holds_for("the input to wait", Duration::from_millis(300), || async {
+        !sent.is_finished()
+    })
+    .await
+    .expect("the input waits for the exit instead of being refused");
+    napper.exit(ExitCause::Suspended, None).await;
+    let verdict = sent.await.unwrap().expect("the input is answered");
+    assert!(
+        matches!(verdict.of, Some(wire::send_input_response::Of::Accepted(_))),
+        "the suspending agent took it: {verdict:?}"
+    );
+    assert_eq!(runtime.agent(napper.id).await.unwrap().incarnation, 2);
+    let spec = std::fs::read(napper.dir.join("spec.2")).unwrap();
+    let spec = <wire::AgentSpec as prost::Message>::decode(spec.as_slice()).unwrap();
+    assert!(
+        matches!(
+            spec.bootstrap.and_then(|bootstrap| bootstrap.of),
+            Some(wire::bootstrap::Of::Prompt(prompt)) if prompt.input_id == b"typed-1"
+        ),
+        "the input is the first"
+    );
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}

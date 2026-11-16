@@ -214,8 +214,9 @@ impl ProfileRuntime {
     /// exited agent is answered here; one that refuses as exiting is from
     /// then on treated as leaving, so a resume waits for it. Every way a
     /// person sends input comes here, from this host's clients or forwarded
-    /// by another's, so this is where input to an agent with no process
-    /// wakes it if it is suspended (see [`Self::wake_with`]).
+    /// by another's, so this is where input to an agent with no process,
+    /// or to one leaving of its own accord, wakes it if it is or ends up
+    /// suspended (see [`Self::wake_with`]).
     pub async fn send_input(
         &self,
         request: &SendInputRequest,
@@ -240,14 +241,14 @@ impl ProfileRuntime {
                 ctl_frame::Of::Input(input.clone()),
             )
             .await?;
-        // Refused as exiting, it is answered at once rather than held for
-        // an exit a stop may take its whole deadline over: input typed as
-        // the agent suspends is refused, and the next wakes it.
         let verdict = match rejection(&verdict).map(Rejected::refusal) {
             Some(Refusal::Exited) => self.wake_with(id, input, verdict).await?,
+            // On its way out: as it suspends the input waits for the exit
+            // and wakes it. One the daemon is stopping is answered at once,
+            // not after the stop's deadline.
             Some(Refusal::Exiting) => {
                 self.mark_exiting(id);
-                verdict
+                self.wake_with(id, input, verdict).await?
             }
             _ => verdict,
         };
@@ -259,13 +260,14 @@ impl ProfileRuntime {
         Ok(verdict)
     }
 
-    /// Input the agent's process could not take, as it has none: a
-    /// suspended agent is woken by it. A prompt is the next incarnation's
-    /// first input, so the answer is that it was taken; any other input
-    /// goes to the new process once it is connected. The core decides the
-    /// agent is still suspended when the resume's turn comes, after any
-    /// exit it waits out, so input typed to an agent as it was stopped
-    /// starts nothing and is answered with the refusal it had.
+    /// Input the agent's process could not take, as it has none or is on
+    /// its way out: a suspended agent, or one suspending, is woken by it. A
+    /// prompt is the next incarnation's first input, so the answer is that
+    /// it was taken; any other input goes to the new process once it is
+    /// connected. The core decides: it waits out an exit the agent chose
+    /// and then wakes it only if the exit left it suspended, else the
+    /// input is refused as exited; an agent the daemon is stopping is
+    /// answered at once with the refusal the input had.
     async fn wake_with(
         &self,
         id: AgentId,
@@ -290,7 +292,10 @@ impl ProfileRuntime {
                 self.relay(id, input.input_id.clone(), ctl_frame::Of::Input(input))
                     .await
             }
-            Err(RegistryError::NotSuspended(_)) => Ok(refused),
+            Err(RegistryError::NotSuspended(_)) => Ok(rejected(Refusal::Exited)),
+            // The daemon is stopping it, or it did not let go of its
+            // directory in time: as refused.
+            Err(RegistryError::Ending(_) | RegistryError::StillLocked(_)) => Ok(refused),
             Err(error) => Err(RelayError::Wake(error)),
         }
     }

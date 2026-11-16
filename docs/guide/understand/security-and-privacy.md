@@ -147,7 +147,8 @@ amux.sh:
 
 ## The browser extension
 
-The amux extension for Chrome and browsers built on it reads a page only when
+The amux extension for Chrome and browsers built on it
+([Browser extension](../use/browser.md)) reads a page only when
 you ask it to: when you click its button, press its shortcut or use its menu
 on that page. It has no access to any other site.
 

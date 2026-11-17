@@ -37,8 +37,11 @@ screens made larger.
   its menu pins, settles, renames and deletes. A family's members hang off a
   line under the head's tile, each saying what it is doing; the head's count
   folds them. A subagent Claude or Codex runs for its parent hangs there by
-  its title too, but has no pin or Delete: it goes with its parent. The
-  settled agents sit
+  its title too, but has no pin or Delete: it goes with its parent. Delete
+  asks in a sheet rather than a system dialog, because its words change
+  once the agent's host has looked at the worktree: it says what goes in the
+  phone's words (`DeleteWords`, from the runtime's delete warning), with a
+  spinner while the host is checking. The settled agents sit
   behind one row anchored at the foot, which swaps the sidebar to them and
   back. Search narrows the list through the runtime's filter, and the arrow
   keys move the selection.

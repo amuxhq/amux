@@ -82,7 +82,7 @@ follows as soon as that machine is back.
 
 With the `workspaces` experiment on, deleting the last agent in a worktree
 amux made removes the worktree too. Before you confirm, the terminal and the
-iPhone app say so, with how many files have uncommitted changes and
+iPhone and Mac apps say so, with how many files have uncommitted changes and
 what becomes of its branch: it keeps its commits, or, when nothing was
 committed to it, it goes too. They ask the agent's machine how many commits
 the branch has that no other branch holds, so a branch you've merged

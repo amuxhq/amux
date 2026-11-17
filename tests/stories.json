@@ -160,6 +160,24 @@
       "why": "The phone deletes an agent from its chat, as chat.delete shows."
     },
     {
+      "name": "fleet.delete-changes",
+      "shows": "Asking before an agent is deleted whose worktree has uncommitted changes and whose branch keeps its commits.",
+      "clients": ["mac"],
+      "why": "The terminal asks in the agent list, as fleet.delete shows, and the phone from its chat, as chat.delete shows."
+    },
+    {
+      "name": "fleet.delete-clean",
+      "shows": "Asking before an agent is deleted whose worktree is clean and whose branch goes with it.",
+      "clients": ["mac"],
+      "why": "The terminal asks in the agent list, as fleet.delete shows, and the phone from its chat, as chat.delete shows."
+    },
+    {
+      "name": "fleet.delete-checking",
+      "shows": "Asking before an agent is deleted while its host checks the worktree for uncommitted changes.",
+      "clients": ["mac"],
+      "why": "The terminal asks in the agent list, as fleet.delete shows, and the phone from its chat, as chat.delete shows."
+    },
+    {
       "name": "fleet.rename",
       "shows": "Renaming an agent in place on its row in the agent list.",
       "clients": ["terminal"],

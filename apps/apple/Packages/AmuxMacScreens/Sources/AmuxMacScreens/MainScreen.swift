@@ -77,6 +77,8 @@ public struct MainActions {
     public var toggleFamily: @MainActor (AgentKey) -> Void
     /// Pins, settles, renames or deletes an agent.
     public var act: @MainActor (AgentAct, AgentKey) -> Void
+    /// What deleting an agent does to its workspace, for its confirmation.
+    public var deleteWarning: DeleteWarningAsk
     /// Takes the line saying something went wrong away.
     public var dismissProblem: @MainActor () -> Void
     /// The agent's own interface in Terminal.
@@ -93,6 +95,7 @@ public struct MainActions {
         search: @escaping @MainActor (String) -> Void = { _ in },
         toggleFamily: @escaping @MainActor (AgentKey) -> Void = { _ in },
         act: @escaping @MainActor (AgentAct, AgentKey) -> Void = { _, _ in },
+        deleteWarning: @escaping DeleteWarningAsk = { _ in .failure(DeleteUnasked()) },
         dismissProblem: @escaping @MainActor () -> Void = {},
         openTerminal: @escaping @MainActor (AgentKey) -> Void = { _ in }
     ) {
@@ -106,6 +109,7 @@ public struct MainActions {
         self.search = search
         self.toggleFamily = toggleFamily
         self.act = act
+        self.deleteWarning = deleteWarning
         self.dismissProblem = dismissProblem
         self.openTerminal = openTerminal
     }

@@ -193,12 +193,24 @@ fn a_clean_worktree_goes_with_its_empty_branch_and_a_dirty_one_stays_nobodys() {
     };
     let branches = || run_git(&place.repo(), &["branch", "--format=%(refname:short)"]);
 
+    // What a delete's warning says of the branch, from the host's count,
+    // is what the removal does with it.
+    let own_commits = |workspace: &Key| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(git_facts::own_commits(Path::new(&workspace.id)))
+            .unwrap()
+    };
+
     // Clean, nothing committed: the worktree and its branch go.
     let empty = make("empty");
     std::fs::create_dir_all(Path::new(&empty.id).join("target")).unwrap();
     std::fs::write(Path::new(&empty.id).join(".gitignore"), "target\n").unwrap();
     run_git(Path::new(&empty.id), &["add", ".gitignore"]);
     run_git(Path::new(&empty.id), &["stash", "-q"]);
+    assert_eq!(own_commits(&empty), Some(0));
     assert_eq!(backends.delete(&empty, false), Removal::Removed);
     assert!(!Path::new(&empty.id).exists());
     assert!(!branches().contains("empty"), "{}", branches());
@@ -208,6 +220,7 @@ fn a_clean_worktree_goes_with_its_empty_branch_and_a_dirty_one_stays_nobodys() {
     std::fs::write(Path::new(&worked.id).join("work.txt"), "work\n").unwrap();
     run_git(Path::new(&worked.id), &["add", "work.txt"]);
     run_git(Path::new(&worked.id), &["commit", "-q", "-m", "work"]);
+    assert_eq!(own_commits(&worked), Some(1));
     assert_eq!(backends.delete(&worked, false), Removal::Removed);
     assert!(!Path::new(&worked.id).exists());
     assert!(branches().contains("worked"));

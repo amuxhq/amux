@@ -280,8 +280,14 @@ Press `,` on home for settings:
   including a report from an agent it started, or when you open its
   terminal. It doesn't suspend while it's working, waiting for agents it
   started, running something in the background, holding a wake-up it
-  scheduled or a permission you gave it for the session, or while a
-  terminal is open on it. After the machine restarts, agents that were idle
+  scheduled or a permission you gave it for the session (a change of
+  permission mode, approving a plan included, doesn't count: it wakes up in
+  the mode it was in), or while a
+  terminal is open on it. A long conversation is first compacted while
+  the provider still has it cached, so it isn't read again in full when you
+  come back: with the 30-minute delay, a Codex agent compacts after 25
+  minutes and still suspends at 30, and a headless Claude agent compacts
+  after 55 minutes and suspends right after. After the machine restarts, agents that were idle
   stay that way until something reaches them, and one that was working
   carries on where it left off; its chat marks where with "Resumed · after
   the machine restarted".

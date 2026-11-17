@@ -272,7 +272,7 @@ final class StoreBundleSessionTests: XCTestCase {
     func testADeleteWarningIsAskedForTheAgentNamed() async {
         let agent = Cards.key(2)
         let counted = DeleteWarning.goes(
-            WorkspaceGoes(branch: "fix-scroll", uncommitted: ChangeTotals(files: 3, added: 42, removed: 7)))
+            WorkspaceGoes(branch: "fix-scroll", branchCommits: nil, uncommitted: ChangeTotals(files: 3, added: 42, removed: 7)))
         var asked: [AgentKey] = []
         let stores = bundle(account: "warning-\(UUID().uuidString)", warning: { agent in
             asked.append(agent)

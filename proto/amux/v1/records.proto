@@ -505,6 +505,12 @@ message Diff {
   string head = 3;
   optional string merge_base = 4;
   repeated DiffFile files = 5;
+  // Commits on the branch HEAD has checked out that no other branch, tag or
+  // remote-tracking ref holds, the branch's own upstream aside: what
+  // deleting the branch would lose, so a branch with none goes with an
+  // agent's workspace. Absent on a detached head, when it could not be
+  // counted, and from hosts before it, which a reader takes as not known.
+  optional uint32 own_commits = 6;
 }
 
 message DiffFile {

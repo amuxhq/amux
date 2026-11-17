@@ -643,7 +643,9 @@ async fn no_report_carries_a_word_and_an_agents_record_holds_what_its_interprete
 /// The daemon core's record holds where each workspace is, what it was
 /// made from, and the jobs that made and claim it: under the workspaces
 /// experiment no bundle carries the repository's folder, the workspace's
-/// or the agent's name in any of them.
+/// or the agent's name in any of them. The bundle's store is taken after
+/// the row's workspace entry reached it, so it holds the row, entry and
+/// all, until the dump's redaction clears it.
 #[tokio::test(flavor = "multi_thread")]
 async fn no_report_carries_a_workspaces_folder_or_its_repository() {
     const MARKER: &str = "PLANTEDmarkerphrase0007";
@@ -678,6 +680,29 @@ async fn no_report_carries_a_workspaces_folder_or_its_repository() {
     })
     .await
     .unwrap();
+    // The store a dump carries is the one as of the core's last checkpoint:
+    // one taken once the row holds its workspace entry carries the entry,
+    // so the dump's redaction is what keeps it out.
+    let key = store::AgentKey::new(
+        runtime.host().as_bytes().to_vec(),
+        id_of(&agent).as_bytes().to_vec(),
+    );
+    until("the row's workspace entry in the store", || async {
+        let key = key.clone();
+        runtime
+            .read_store(move |store| store.agent(&key).unwrap())
+            .await
+            .unwrap()
+            .filter(|row| {
+                row.experimental
+                    .contains_key(wire::experimental::WORKSPACE.version())
+            })
+            .map(|_| ())
+            .ok_or("not yet")
+    })
+    .await
+    .unwrap();
+    runtime.checkpoint().await.unwrap();
 
     let mut bundles = Vec::new();
     for (automatic, check) in [(false, ""), (true, "daemon.test")] {
@@ -693,10 +718,26 @@ async fn no_report_carries_a_workspaces_folder_or_its_repository() {
                 .unwrap(),
         );
     }
+    let host = runtime.host().as_bytes().to_vec();
     kill_all(&runtime).await;
     drop(runtime);
     daemon.shutdown().await.unwrap();
 
+    for bundle in &bundles {
+        let scratch = tempfile::tempdir().unwrap();
+        let copy = scratch.path().join("store.sqlite");
+        std::fs::copy(bundle.join("core/store.sqlite"), &copy).unwrap();
+        let copy = store::Sqlite::open(&copy, host.clone()).expect("the store copy opens");
+        let row = copy
+            .agent(&key)
+            .unwrap()
+            .expect("the bundle's store holds the agent's row");
+        assert!(
+            row.experimental.is_empty(),
+            "the row's experimental entries go: {:?}",
+            row.experimental.keys()
+        );
+    }
     for bundle in &bundles {
         for (name, _) in tree(bundle) {
             let bytes = std::fs::read(bundle.join(&name)).unwrap();

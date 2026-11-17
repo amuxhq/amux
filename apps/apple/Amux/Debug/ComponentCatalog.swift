@@ -1114,7 +1114,7 @@ enum CatalogFixtures {
 
     static let review = FrozenReview(
         diff: Diff(
-            head: "4f2a9c1", files: [], base: DiffBase(base: .head(Empty())), mergeBase: nil,
+            head: "4f2a9c1", files: [], base: DiffBase(base: .head(Empty())), mergeBase: nil, ownCommits: nil,
             patch: BlobRef(hash: [5, 5, 5], name: "patch", mime: "text/x-diff", size: UInt64(reviewPatch.utf8.count))),
         patch: reviewPatch)
 
@@ -1157,10 +1157,10 @@ enum CatalogFixtures {
         name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
         reach: .online(.direct), filing: .closed,
         workspaceGoes: WorkspaceGoes(
-            branch: closedSubject.branch, uncommitted: ChangeTotals(files: 3, added: 42, removed: 7)))
+            branch: closedSubject.branch, branchCommits: nil, uncommitted: ChangeTotals(files: 3, added: 42, removed: 7)))
     /// The host's count of what that worktree holds.
     static let counted = DeleteWarning.goes(
-        WorkspaceGoes(branch: closedSubject.branch, uncommitted: ChangeTotals(files: 3, added: 42, removed: 7)))
+        WorkspaceGoes(branch: closedSubject.branch, branchCommits: nil, uncommitted: ChangeTotals(files: 3, added: 42, removed: 7)))
     /// A host asked what a worktree holds that has not answered yet.
     static func unanswered() async -> Result<DeleteWarning?, RuntimeFailure> {
         try? await Task.sleep(for: .seconds(86_400))

@@ -5,7 +5,7 @@ use std::process::Command;
 
 use git_facts::{
     Change, ChangeTotals, Comparison, FileChange, GitError, GitFacts, Worktree, WorktreeError,
-    add_worktree, compare, facts, repository as repository_of,
+    add_worktree, compare, facts, own_commits, repository as repository_of,
 };
 
 fn git(cwd: &Path, args: &[&str]) -> String {
@@ -418,4 +418,52 @@ async fn a_worktree_is_refused_rather_than_reusing_a_branch_or_a_folder() {
             .count(),
         1
     );
+}
+
+/// A branch's own commits are those no other branch, tag or remote holds,
+/// its own upstream aside: none for a branch just made, or one merged
+/// elsewhere, and none to count on a detached head. Zero is exactly when a
+/// delete takes the branch with its workspace.
+#[tokio::test]
+async fn a_branch_counts_the_commits_no_other_ref_holds() {
+    let repo = repository();
+    let dir = repo.path();
+    git(dir, &["switch", "-q", "-c", "fix"]);
+    assert_eq!(own_commits(dir).await.unwrap(), Some(0), "just made");
+    for n in 0..3 {
+        write(dir, &format!("fix{n}.txt"), 1);
+        git(dir, &["add", "."]);
+        git(dir, &["commit", "-q", "-m", "fix"]);
+    }
+    assert_eq!(own_commits(dir).await.unwrap(), Some(3));
+    // Uncommitted work is not a commit.
+    write(dir, "draft.txt", 2);
+    assert_eq!(own_commits(dir).await.unwrap(), Some(3));
+    // A stash is not a ref that keeps them.
+    git(dir, &["stash", "-q", "-u"]);
+    assert_eq!(own_commits(dir).await.unwrap(), Some(3));
+    // Its upstream does not keep them either: deleting the branch would
+    // still lose them here.
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        dir,
+        &["remote", "add", "origin", &remote.path().to_string_lossy()],
+    );
+    git(dir, &["push", "-q", "-u", "origin", "fix"]);
+    assert_eq!(own_commits(dir).await.unwrap(), Some(3));
+    // Merged into another branch, they are held elsewhere.
+    git(dir, &["switch", "-q", "main"]);
+    git(dir, &["merge", "-q", "--ff-only", "fix"]);
+    git(dir, &["switch", "-q", "fix"]);
+    assert_eq!(own_commits(dir).await.unwrap(), Some(0), "merged");
+    // A tag holds a commit too.
+    write(dir, "more.txt", 1);
+    git(dir, &["add", "more.txt"]);
+    git(dir, &["commit", "-q", "-m", "more"]);
+    assert_eq!(own_commits(dir).await.unwrap(), Some(1));
+    git(dir, &["tag", "kept"]);
+    assert_eq!(own_commits(dir).await.unwrap(), Some(0), "tagged");
+    git(dir, &["switch", "-q", "--detach"]);
+    assert_eq!(own_commits(dir).await.unwrap(), None, "detached");
 }

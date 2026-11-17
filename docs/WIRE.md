@@ -624,7 +624,11 @@ branch for a branch base, so the branch's commits and its uncommitted work both
 count. The `Diff` value carries the base, `head` (empty before the first
 commit), the `merge_base` for a branch base, and `files`: each changed file's
 path, lines added and removed, whether it was created, deleted or changed, and
-whether it is binary. Only `with_patch` builds the patch and stores it as one of
+whether it is binary; and `own_commits`, how many commits the checked-out
+branch has that no other branch, tag or remote-tracking ref holds, its own
+upstream and the stash aside, which is what a delete's warning says of the
+branch (absent on a detached head, and from hosts before it, which a client
+reads as not known). Only `with_patch` builds the patch and stores it as one of
 that agent's blobs (`text/x-diff`), named in `patch`; without it the host writes
 nothing. An exited agent's folder is compared as it is now; another host's
 agent's diff is made on that host and forwarded.

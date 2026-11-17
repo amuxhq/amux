@@ -1,4 +1,5 @@
 import AmuxCore
+import AmuxWords
 import Foundation
 import XCTest
 @testable import AmuxFeatures
@@ -32,7 +33,7 @@ final class DeleteWordsTests: XCTestCase {
     }
 
     private let dirty = WorkspaceGoes(
-        branch: "fix-scroll", uncommitted: ChangeTotals(files: 3, added: 42, removed: 7))
+        branch: "fix-scroll", branchCommits: nil, uncommitted: ChangeTotals(files: 3, added: 42, removed: 7))
 
     /// The home's dialog once the host has said what goes.
     private func answered(_ row: FleetRow, _ answer: DeleteWarning?) -> Confirming {
@@ -45,35 +46,54 @@ final class DeleteWordsTests: XCTestCase {
         XCTAssertEqual(
             DeleteWords.lines(for: .goes(dirty))?.workspace,
             "Its worktree is removed too, with 3 uncommitted files (+42 \u{2212}7).")
-        XCTAssertEqual(DeleteWords.branch(dirty), "The branch fix-scroll keeps what was committed.")
+        XCTAssertEqual(DeleteWords.branch(dirty), "The branch fix-scroll stays if anything was committed to it.")
         XCTAssertEqual(
             answered(row(goes: dirty), .goes(dirty)).message,
             "Its chat is deleted on every device. Its worktree is removed too, with 3 uncommitted files "
-                + "(+42 \u{2212}7). The branch fix-scroll keeps what was committed.")
+                + "(+42 \u{2212}7). The branch fix-scroll stays if anything was committed to it.")
         XCTAssertEqual(
             answered(row(descendants: 2, goes: dirty), .goes(dirty)).message,
             "Its chat is deleted on every device, with its subagents. Its worktree is removed too, with 3 "
-                + "uncommitted files (+42 \u{2212}7). The branch fix-scroll keeps what was committed.")
+                + "uncommitted files (+42 \u{2212}7). The branch fix-scroll stays if anything was committed to it.")
+    }
+
+    /// What becomes of the branch is the host's count of its own commits:
+    /// it keeps them, or goes too when there are none. Until the host has
+    /// counted, the words are true either way.
+    func testTheBranchLineSaysWhatTheHostCounted() {
+        let counted = { (commits: UInt32?) in
+            WorkspaceGoes(branch: "fix-scroll", branchCommits: commits, uncommitted: nil)
+        }
+        XCTAssertEqual(
+            DeleteWords.branch(counted(0)), "The branch fix-scroll goes too, since nothing was committed to it.")
+        XCTAssertEqual(DeleteWords.branch(counted(1)), "The branch fix-scroll keeps its 1 commit.")
+        XCTAssertEqual(DeleteWords.branch(counted(3)), "The branch fix-scroll keeps its 3 commits.")
+        XCTAssertEqual(
+            DeleteWords.branch(counted(nil)), "The branch fix-scroll stays if anything was committed to it.")
+        XCTAssertEqual(
+            answered(row(goes: dirty), .goes(counted(2))).message,
+            "Its chat is deleted on every device. Its worktree is removed too. "
+                + "The branch fix-scroll keeps its 2 commits.")
     }
 
     func testOneUncommittedFileIsSingular() {
-        let one = WorkspaceGoes(branch: nil, uncommitted: ChangeTotals(files: 1, added: 0, removed: 4))
+        let one = WorkspaceGoes(branch: nil, branchCommits: nil, uncommitted: ChangeTotals(files: 1, added: 0, removed: 4))
         XCTAssertEqual(DeleteWords.workspace(one), "Its worktree is removed too, with 1 uncommitted file (\u{2212}4).")
-        let uncounted = WorkspaceGoes(branch: nil, uncommitted: ChangeTotals(files: 2, added: 0, removed: 0))
+        let uncounted = WorkspaceGoes(branch: nil, branchCommits: nil, uncommitted: ChangeTotals(files: 2, added: 0, removed: 0))
         XCTAssertEqual(DeleteWords.workspace(uncounted), "Its worktree is removed too, with 2 uncommitted files.")
     }
 
     func testACleanWorktreeOnlySaysItGoes() {
-        let clean = WorkspaceGoes(branch: "fix-scroll", uncommitted: nil)
+        let clean = WorkspaceGoes(branch: "fix-scroll", branchCommits: nil, uncommitted: nil)
         XCTAssertEqual(DeleteWords.workspace(clean), "Its worktree is removed too.")
         XCTAssertEqual(
             answered(row(goes: clean), .goes(clean)).message,
             "Its chat is deleted on every device. Its worktree is removed too. "
-                + "The branch fix-scroll keeps what was committed.")
+                + "The branch fix-scroll stays if anything was committed to it.")
     }
 
     func testABranchWithNothingOfItsOwnIsNotMentioned() {
-        let unbranched = WorkspaceGoes(branch: nil, uncommitted: ChangeTotals(files: 3, added: 42, removed: 7))
+        let unbranched = WorkspaceGoes(branch: nil, branchCommits: nil, uncommitted: ChangeTotals(files: 3, added: 42, removed: 7))
         XCTAssertNil(DeleteWords.branch(unbranched))
         XCTAssertEqual(
             answered(row(goes: unbranched), .goes(unbranched)).message,
@@ -94,13 +114,13 @@ final class DeleteWordsTests: XCTestCase {
     /// While the host is asked the dialog says so, with the branch the row
     /// names, and names no changes.
     func testACheckingConfirmationSaysSoAndNamesNoChanges() {
-        let opened = Confirming.deleting(row(goes: WorkspaceGoes(branch: "fix-scroll", uncommitted: nil)))
+        let opened = Confirming.deleting(row(goes: WorkspaceGoes(branch: "fix-scroll", branchCommits: nil, uncommitted: nil)))
         XCTAssertEqual(
             DeleteWords.lines(for: .checking(dirty))?.workspace, "Checking its worktree for uncommitted changes\u{2026}")
         XCTAssertEqual(
             opened.message,
             "Its chat is deleted on every device. Checking its worktree for uncommitted changes\u{2026} "
-                + "The branch fix-scroll keeps what was committed.")
+                + "The branch fix-scroll stays if anything was committed to it.")
         XCTAssertNotNil(opened.asking, "a dialog over a workspace that goes does not ask what it holds")
         XCTAssertNil(Confirming.deleting(row(goes: nil)).asking, "a workspace that stays is asked about")
     }
@@ -111,7 +131,7 @@ final class DeleteWordsTests: XCTestCase {
         let unknown = "Its worktree is removed too, but stays on disk if it has uncommitted changes, "
             + "which couldn\u{2019}t be checked."
         XCTAssertEqual(DeleteWords.lines(for: .unknown(dirty))?.workspace, unknown)
-        XCTAssertEqual(DeleteWords.lines(for: .unknown(dirty))?.branch, "The branch fix-scroll keeps what was committed.")
+        XCTAssertEqual(DeleteWords.lines(for: .unknown(dirty))?.branch, "The branch fix-scroll stays if anything was committed to it.")
         let asked = row(goes: dirty)
         let failed = Confirming.deleting(asked)
             .answered(.failure(RuntimeFailure("Studio cannot be reached")), for: asked.id)
@@ -124,7 +144,7 @@ final class DeleteWordsTests: XCTestCase {
     /// answers, or after it failed to, keeps changes; once the host has
     /// counted them, confirming agrees to lose them.
     func testASuspendedAgentsDeleteConsentsOnlyOnceItsHostHasCountedChanges() {
-        let suspended = row(goes: WorkspaceGoes(branch: "fix-scroll", uncommitted: nil))
+        let suspended = row(goes: WorkspaceGoes(branch: "fix-scroll", branchCommits: nil, uncommitted: nil))
         let opened = Confirming.deleting(suspended)
         XCTAssertEqual(opened.confirmed, .delete(suspended.id), "checking already agrees to lose changes")
 
@@ -134,7 +154,7 @@ final class DeleteWordsTests: XCTestCase {
         XCTAssertEqual(
             counted.message,
             "Its chat is deleted on every device. Its worktree is removed too, with 3 uncommitted files "
-                + "(+42 \u{2212}7). The branch fix-scroll keeps what was committed.")
+                + "(+42 \u{2212}7). The branch fix-scroll stays if anything was committed to it.")
 
         let failed = opened.answered(.failure(RuntimeFailure("Studio cannot be reached")), for: suspended.id)
         XCTAssertEqual(failed.confirmed, .delete(suspended.id), "a failed question agrees to lose changes")
@@ -153,12 +173,13 @@ final class DeleteWordsTests: XCTestCase {
         XCTAssertEqual(misdirected.confirmed, .delete(other.id), "another agent's answer agreed to lose changes")
         XCTAssertEqual(misdirected.message, opened.message)
 
-        let clean = WorkspaceGoes(branch: "fix-scroll", uncommitted: nil)
+        let clean = WorkspaceGoes(branch: "fix-scroll", branchCommits: nil, uncommitted: nil)
         let settled = opened.answered(.success(.goes(clean)), for: other.id)
         let again = settled.answered(.success(.goes(dirty)), for: other.id)
         XCTAssertEqual(again.confirmed, .delete(other.id), "a second answer replaced what the dialog drew")
         XCTAssertEqual(
-            DeleteWords.answered(.unknown(clean), with: .success(.goes(dirty))), .unknown(clean),
+            DeleteWords.answered(.unknown(clean), with: Result<DeleteWarning?, RuntimeFailure>.success(.goes(dirty))),
+            .unknown(clean),
             "an answer replaced a warning that was not checking")
     }
 
@@ -167,7 +188,7 @@ final class DeleteWordsTests: XCTestCase {
     func testOnlyNamedChangesAreDiscarded() {
         let dirtyRow = row(goes: dirty)
         XCTAssertEqual(answered(dirtyRow, .goes(dirty)).confirmed, .deleteDiscardingChanges(dirtyRow.id))
-        let cleanGoes = WorkspaceGoes(branch: "fix-scroll", uncommitted: nil)
+        let cleanGoes = WorkspaceGoes(branch: "fix-scroll", branchCommits: nil, uncommitted: nil)
         let cleanRow = row(goes: cleanGoes)
         XCTAssertEqual(answered(cleanRow, .goes(cleanGoes)).confirmed, .delete(cleanRow.id))
         let staysRow = row(goes: nil)
@@ -191,7 +212,7 @@ final class DeleteWordsTests: XCTestCase {
     /// Asked quickly enough, as the runtime answers for an agent with a
     /// process, the dialog goes up once, on the answer.
     func testAQuickAnswerPutsTheDialogUpOnceOnIt() async {
-        let suspended = row(goes: WorkspaceGoes(branch: "fix-scroll", uncommitted: nil))
+        let suspended = row(goes: WorkspaceGoes(branch: "fix-scroll", branchCommits: nil, uncommitted: nil))
         var shown: [Confirming?] = []
         await DeleteAsking(patience: .seconds(60), swap: .zero).run(
             .deleting(suspended), ask: { _ in .success(.goes(self.dirty)) },
@@ -204,7 +225,7 @@ final class DeleteWordsTests: XCTestCase {
     /// nothing, then is put away and the answered one put up in its place,
     /// because a dialog that is up keeps what it first said.
     func testASlowAnswerReplacesTheCheckingDialog() async {
-        let suspended = row(goes: WorkspaceGoes(branch: "fix-scroll", uncommitted: nil))
+        let suspended = row(goes: WorkspaceGoes(branch: "fix-scroll", branchCommits: nil, uncommitted: nil))
         var shown: [Confirming?] = []
         await DeleteAsking(patience: .milliseconds(10), swap: .milliseconds(10)).run(
             .deleting(suspended),
@@ -223,7 +244,7 @@ final class DeleteWordsTests: XCTestCase {
     /// Closed while checking, by Cancel or by Delete, the dialog stays
     /// closed when the answer comes.
     func testAnAnswerAfterTheDialogClosedPutsNothingUp() async {
-        let suspended = row(goes: WorkspaceGoes(branch: "fix-scroll", uncommitted: nil))
+        let suspended = row(goes: WorkspaceGoes(branch: "fix-scroll", branchCommits: nil, uncommitted: nil))
         var shown: [Confirming?] = []
         var up: Confirming?
         await DeleteAsking(patience: .milliseconds(10), swap: .zero).run(
@@ -240,7 +261,7 @@ final class DeleteWordsTests: XCTestCase {
     /// A host that cannot be asked: the dialog says the worktree stays if it
     /// has changes, and confirming agrees to lose none.
     func testAFailedAnswerPutsUpADialogThatKeepsChanges() async {
-        let suspended = row(goes: WorkspaceGoes(branch: "fix-scroll", uncommitted: nil))
+        let suspended = row(goes: WorkspaceGoes(branch: "fix-scroll", branchCommits: nil, uncommitted: nil))
         var shown: [Confirming?] = []
         await DeleteAsking(patience: .seconds(60), swap: .zero).run(
             .deleting(suspended), ask: { _ in .failure(RuntimeFailure("Studio cannot be reached")) },
@@ -266,7 +287,7 @@ final class DeleteWordsTests: XCTestCase {
     /// A question given up, as when the home goes away, puts nothing up,
     /// not even the checking dialog its patience would have.
     func testACancelledQuestionPutsNothingUp() async {
-        let suspended = row(goes: WorkspaceGoes(branch: "fix-scroll", uncommitted: nil))
+        let suspended = row(goes: WorkspaceGoes(branch: "fix-scroll", branchCommits: nil, uncommitted: nil))
         var shown: [Confirming?] = []
         let asking = Task { @MainActor in
             await DeleteAsking(patience: .milliseconds(50), swap: .zero).run(

@@ -54,12 +54,15 @@ struct FleetSidebar: View {
             Button("Rename") { actions.act(.rename(newName), row.card.agent) }
             Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog(
-            deleting.map { "Delete \($0.name)?" } ?? "", isPresented: isDeleting, presenting: deleting
-        ) { row in
-            Button("Delete", role: .destructive) { actions.act(.delete, row.card.agent) }
-        } message: { _ in
-            Text("Its chat is deleted on its host too. This cannot be undone.")
+        .sheet(isPresented: isDeleting) {
+            if let row = deleting {
+                DeleteSheet(card: row.card, ask: actions.deleteWarning) {
+                    deleting = nil
+                } confirm: { act in
+                    deleting = nil
+                    actions.act(act, row.card.agent)
+                }
+            }
         }
     }
 

@@ -25,6 +25,12 @@
 //! turn of its own), and is granted a permission for its session when the
 //! daemon answers an ask. The daemon resumes a suspended agent with a
 //! message: one it refused as it suspended, or a new one.
+//!
+//! Its interpreter may also housekeep while idle, as the providers'
+//! interpreters compact: once an idle stretch after a turn has lasted the
+//! housekeeping's own delay, shorter or longer than the suspension's, the
+//! wake timer the core armed fires, the interpreter starts it, and the
+//! provider finishes it when the model chooses.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::hash::{Hash, Hasher};
@@ -48,6 +54,11 @@ const DRAIN_MS: u64 = 30_000;
 /// The suspension delay, apart from the other timers' so a property can
 /// tell them apart.
 const SUSPEND_AFTER_MS: u64 = 90_000;
+/// How long a suspending agent's idle stretch lasts before its idle
+/// housekeeping starts, when it housekeeps before the suspension is due.
+pub const HOUSEKEEPS_EARLY_MS: u64 = SUSPEND_AFTER_MS / 2;
+/// The same when it housekeeps after the suspension would be due.
+pub const HOUSEKEEPS_LATE_MS: u64 = SUSPEND_AFTER_MS * 2;
 /// The one-shot child's spawn prompt.
 const SPAWN: &[u8] = b"spawn";
 
@@ -80,6 +91,9 @@ pub struct AgentLifecycle {
     pub wakeups: u8,
     /// Asks the daemon answers with a grant for the session, all told.
     pub grants: u8,
+    /// The interpreter housekeeps once an idle stretch after a turn has
+    /// lasted this long.
+    pub housekeeps_after: Option<u64>,
 }
 
 impl AgentLifecycle {
@@ -99,6 +113,7 @@ impl AgentLifecycle {
             jobs: 0,
             wakeups: 0,
             grants: 0,
+            housekeeps_after: None,
         }
     }
 
@@ -120,6 +135,7 @@ impl AgentLifecycle {
             jobs: 1,
             wakeups: 1,
             grants: 1,
+            housekeeps_after: None,
         }
     }
 
@@ -148,6 +164,20 @@ impl AgentLifecycle {
             jobs: 0,
             wakeups: 0,
             grants: 0,
+            housekeeps_after: None,
+        }
+    }
+
+    /// The suspending agent whose interpreter housekeeps while idle after
+    /// `after_ms`, with a terminal client to break its stretches: about
+    /// 217,000 states in under two seconds on an M-series Mac's cores.
+    pub const fn housekeeping(after_ms: u64) -> Self {
+        Self {
+            jobs: 0,
+            wakeups: 0,
+            grants: 0,
+            housekeeps_after: Some(after_ms),
+            ..Self::suspending()
         }
     }
 
@@ -245,6 +275,10 @@ pub enum Action {
     Grant,
     /// The suspension timer fires.
     SuspendExpires,
+    /// The wake timer fires.
+    WakeExpires,
+    /// The provider finishes the idle housekeeping it runs.
+    Housekept,
 }
 
 /// The provider, as the world sees it.
@@ -268,6 +302,8 @@ struct Provider {
     wakeups: BTreeSet<u8>,
     /// It holds a grant for its session.
     granted: bool,
+    /// It runs the idle housekeeping the interpreter asked of it.
+    housekeeping: bool,
 }
 
 impl Provider {
@@ -281,6 +317,7 @@ impl Provider {
         owes_turn: false,
         wakeups: BTreeSet::new(),
         granted: false,
+        housekeeping: false,
     };
 
     /// Nothing runs, nothing is asked, and it holds nothing that ending it
@@ -322,6 +359,16 @@ struct Decided {
     /// How long the world had been quiet, as the model sees it, when the
     /// action happened; none when it was not.
     quiet_for: Option<u64>,
+    /// When the action happened.
+    at_ms: u64,
+    /// The provider ran idle housekeeping when the action happened.
+    housekeeping_running: bool,
+    /// Idle housekeeping was due: a turn had ended in this incarnation
+    /// and none ran since.
+    housekeeping_due: bool,
+    /// When the stretch's housekeeping finished, if it did since the quiet
+    /// began.
+    housekept_in_stretch: Option<u64>,
 }
 
 /// What the properties judge, as it happened.
@@ -367,6 +414,13 @@ struct Seen {
     jobs: u8,
     wakeups: u8,
     grants: u8,
+    /// A turn ended in this incarnation and no idle housekeeping ran
+    /// since: what the interpreter owes the stretch.
+    housekeeping_due: bool,
+    /// When idle housekeeping last finished.
+    housekept_at: Option<u64>,
+    /// A suspension came after idle housekeeping finished in its stretch.
+    suspended_after_housekeeping: bool,
     /// A resume found the facts ring replaying to another interpreter than
     /// the one that recorded it.
     ring_diverged: bool,
@@ -527,6 +581,9 @@ impl AgentLifecycle {
             self.observe(state, output, &mut fed);
         }
         fed.push_back(fact(json!({"type": "ready"})));
+        if let Some(after) = self.housekeeps_after {
+            fed.push_back(fact(json!({"type": "housekeeping", "after": after})));
+        }
         self.drive(state, &mut agent, fed);
         state.agent = agent.value();
     }
@@ -638,6 +695,7 @@ impl AgentLifecycle {
                 state.provider.alive = false;
                 state.provider.turn = false;
                 state.provider.asking = false;
+                state.provider.housekeeping = false;
             }
             Output::Exit(cause) => {
                 // The process is gone, and its sockets and timers with it.
@@ -662,6 +720,10 @@ impl AgentLifecycle {
                 let Ok(written) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
                     return;
                 };
+                if written["type"] == "housekeep" {
+                    state.provider.housekeeping = true;
+                    return;
+                }
                 // An answer to the open ask, which the provider closes.
                 if written["type"] == "answer" {
                     if state.provider.asking {
@@ -744,6 +806,12 @@ impl Machine for AgentLifecycle {
         }
         if s.timers.contains_key(&TimerId::Suspend) {
             out.push(Action::SuspendExpires);
+        }
+        if self.housekeeps_after.is_some() && s.timers.contains_key(&TimerId::Wake) {
+            out.push(Action::WakeExpires);
+        }
+        if s.provider.alive && s.provider.housekeeping {
+            out.push(Action::Housekept);
         }
         let provider = &s.provider;
         if provider.alive {
@@ -856,6 +924,7 @@ impl AgentLifecycle {
             state.seen.decided = None;
             state.seen.exited = None;
             state.seen.resumed = true;
+            state.seen.housekeeping_due = false;
             let mut out = Vec::new();
             let agent = Agent::<Kind>::start(&spec, Some(resumed), state.now_ms, &mut out);
             self.started(&mut state, agent, out);
@@ -934,6 +1003,17 @@ impl AgentLifecycle {
                 state.now_ms = state.now_ms.max(at_ms);
                 VecDeque::from([Input::Timer(TimerId::Suspend)])
             }
+            Action::WakeExpires => {
+                let at_ms = state.timers.remove(&TimerId::Wake)?;
+                state.now_ms = state.now_ms.max(at_ms);
+                VecDeque::from([Input::Timer(TimerId::Wake)])
+            }
+            Action::Housekept => {
+                state.provider.housekeeping = false;
+                state.seen.housekeeping_due = false;
+                state.seen.housekept_at = Some(state.now_ms);
+                VecDeque::from([fact(json!({"type": "housekept"}))])
+            }
             Action::DaemonDials => {
                 state.daemon.dialled += 1;
                 let connection = ConnId(u64::from(state.daemon.dialled));
@@ -949,6 +1029,7 @@ impl AgentLifecycle {
             }
             Action::TurnEnd => {
                 state.provider.turn = false;
+                state.seen.housekeeping_due = self.housekeeps_after.is_some();
                 let mut fed = VecDeque::new();
                 // A cancelled turn ends with its ask.
                 if std::mem::take(&mut state.provider.asking) {
@@ -1030,8 +1111,13 @@ impl AgentLifecycle {
         };
         self.drive(&mut state, &mut agent, fed);
         if deciding && let Some(cause) = agent.exiting() {
+            let housekept_in_stretch = s
+                .seen
+                .housekept_at
+                .filter(|at| s.seen.quiet_since.is_some_and(|since| *at >= since));
             if *cause == ExitCause::Suspended {
                 state.seen.suspensions += 1;
+                state.seen.suspended_after_housekeeping |= housekept_in_stretch.is_some();
             }
             state.seen.decided = Some(Decided {
                 cause: cause.clone(),
@@ -1041,6 +1127,10 @@ impl AgentLifecycle {
                     .seen
                     .quiet_since
                     .map(|since| state.now_ms.saturating_sub(since)),
+                at_ms: state.now_ms,
+                housekeeping_running: s.provider.housekeeping,
+                housekeeping_due: s.seen.housekeeping_due,
+                housekept_in_stretch,
             });
         }
         state.agent = agent.value();
@@ -1107,6 +1197,37 @@ impl AgentLifecycle {
                         && s.seen.decided.as_ref().is_none_or(|decided| {
                             decided.cause != ExitCause::Suspended || !decided.turn_running
                         })
+                },
+            ),
+            Property::always(
+                "an agent never suspends while its idle housekeeping is due or running",
+                |_, s: &State| {
+                    s.seen.decided.as_ref().is_none_or(|decided| {
+                        decided.cause != ExitCause::Suspended
+                            || !(decided.housekeeping_running || decided.housekeeping_due)
+                    })
+                },
+            ),
+            Property::always(
+                "idle housekeeping does not restart the suspension delay: an agent suspends at the \
+                 later of the delay counted from its quiet's start and the end of the housekeeping \
+                 that ran in that quiet",
+                |_, s: &State| {
+                    s.seen.decided.as_ref().is_none_or(|decided| {
+                        let Some(quiet_for) = decided.quiet_for else {
+                            return decided.cause != ExitCause::Suspended;
+                        };
+                        let since = decided.at_ms - quiet_for;
+                        let due = (since + SUSPEND_AFTER_MS)
+                            .max(decided.housekept_in_stretch.unwrap_or(0));
+                        decided.cause != ExitCause::Suspended || decided.at_ms == due
+                    })
+                },
+            ),
+            Property::sometimes(
+                "an agent that housekeeps sometimes suspends after its housekeeping",
+                |model, s: &State| {
+                    model.housekeeps_after.is_none() || s.seen.suspended_after_housekeeping
                 },
             ),
             Property::always(

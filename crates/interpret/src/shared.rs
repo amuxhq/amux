@@ -1266,8 +1266,11 @@ impl<A: OpenAsk> Shared<A> {
         self.submitted.push(input_id.to_vec());
         if !self.turn_on_reflection {
             self.busy = true;
-            // Any turn takes the report of a job that ended before it.
+            // Any turn takes the report of a job that ended before it, and
+            // ends the idle stretch, its housekeeping with it.
             self.held.turn_owed = false;
+            self.idle_since_ms = None;
+            self.housekept = false;
             self.turn.begin(self.now_ms);
             // A turn that never reaches the model, as a local command's
             // doesn't, starts no provider turn to clear this.
@@ -1468,6 +1471,8 @@ impl<A: OpenAsk> Shared<A> {
             return;
         }
         self.busy = true;
+        self.idle_since_ms = None;
+        self.housekept = false;
         self.turn.begin(self.now_ms);
     }
 
@@ -1646,6 +1651,12 @@ impl<A: OpenAsk> Shared<A> {
 
     pub fn is_housekeeping(&self) -> bool {
         self.housekeeping
+    }
+
+    /// When the agent last finished a turn and went idle; None before its
+    /// first, and while a turn runs.
+    pub fn idle_since_ms(&self) -> Option<i64> {
+        self.idle_since_ms
     }
 
     /// The provider is gone: no turn runs and nothing is submitted. A turn

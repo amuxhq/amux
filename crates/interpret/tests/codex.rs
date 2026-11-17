@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use interpret::codex::{Codex, State};
-use interpret::{Channel, Effect, Event, Fact, Interpreter, run_golden};
+use interpret::{Channel, Effect, Event, Fact, Housekeeping, Interpreter, run_golden};
 use serde_json::{Value, json};
 
 fn fixtures() -> PathBuf {
@@ -3670,9 +3670,14 @@ fn an_idle_thread_is_compacted_inside_the_cache_lifetime() {
     let mut state = big_idle_codex(1_000);
     let due = 1_000 + 25 * MINUTE;
     assert_eq!(Codex::wake_at(&state), Some(due));
+    assert_eq!(
+        Codex::housekeeping(&state),
+        Housekeeping::Due { at_ms: due }
+    );
     let sent = writes(&Codex::step(&mut state, Event::Tick { at_ms: due }).effects);
     assert_eq!(sent.len(), 1, "{sent:?}");
     assert_eq!(sent[0]["method"], "thread/compact/start");
+    assert_eq!(Codex::housekeeping(&state), Housekeeping::Running);
     // Until its turn starts, only the deadline for starting it is awaited.
     assert_eq!(Codex::wake_at(&state), Some(due + 2 * MINUTE));
 
@@ -3725,6 +3730,7 @@ fn an_idle_thread_is_compacted_inside_the_cache_lifetime() {
         ),
     );
     assert_eq!(over.step.turn_end, None, "no turn ends for it");
+    assert_eq!(Codex::housekeeping(&state), Housekeeping::Settled);
     let released = writes(&over.effects);
     assert_eq!(released[0]["method"], "thread/inject_items", "{released:?}");
     assert!(is_empty_turn(&released[1]), "{released:?}");
@@ -3743,6 +3749,28 @@ fn no_idle_compaction_once_the_cache_has_gone() {
     );
     assert!(writes(&late.effects).is_empty());
     assert_eq!(Codex::wake_at(&state), None);
+    assert_eq!(Codex::housekeeping(&state), Housekeeping::Settled);
+}
+
+/// A small thread has nothing worth compacting: its housekeeping is
+/// settled from the turn's end.
+#[test]
+fn a_small_idle_thread_has_no_housekeeping_due() {
+    let mut state = idle_codex();
+    Codex::step(&mut state, prompt(b"p1", "count"));
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+        ),
+    );
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "completed"}}}),
+        ),
+    );
+    assert_eq!(Codex::housekeeping(&state), Housekeeping::Settled);
 }
 
 /// Codex accepting the compaction and never starting a turn for it would
@@ -4015,4 +4043,32 @@ fn a_spawns_late_completion_does_not_start_the_child_again() {
         stepped.step.agents
     );
     assert_eq!(agent.sub("child").starts.len(), 1);
+}
+
+/// Implementing a plan leaves plan mode for the default one, which the
+/// snapshot says and a resume starts in: nothing is held that a
+/// suspension would lose, so such an agent suspends like any other.
+#[test]
+fn implementing_a_plan_moves_the_mode_and_holds_nothing() {
+    use prost::Message as _;
+    let script = interpret::fixture_script::<Codex>(&fixtures().join("plans.json")).unwrap();
+    let (mut state, _) = Codex::initial(&script.spec);
+    let mut mode = None;
+    let mut approved = false;
+    for (_, event) in script.events {
+        let Some(event) = event else { continue };
+        approved |= matches!(&event, Event::Input(input) if input.input_id == b"a1");
+        let step = Codex::step(&mut state, event).step;
+        if let Some(snapshot) = &step.snapshot {
+            mode = wire::CodexSnapshot::decode(snapshot.body.as_slice())
+                .unwrap()
+                .mode;
+        }
+        if approved && step.turn_end.is_some() {
+            break;
+        }
+    }
+    assert!(approved, "the fixture approves its plan");
+    assert_eq!(mode.as_deref(), Some("default"));
+    assert!(Codex::holds(&state).nothing(), "{:?}", Codex::holds(&state));
 }

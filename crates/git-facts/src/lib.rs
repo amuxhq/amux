@@ -361,6 +361,41 @@ pub async fn compare(
     })
 }
 
+/// How many commits the branch `cwd` has checked out holds that no other
+/// ref does, its own upstream and the stash aside: what deleting the branch
+/// would lose. Zero exactly when its tip is reachable from another ref,
+/// which is when amux deletes a workspace's branch with it. None on a
+/// detached head, or before the first commit.
+pub async fn own_commits(cwd: &Path) -> Result<Option<u32>, GitError> {
+    let Some(branch) = answer(cwd, &["symbolic-ref", "--quiet", "--short", "HEAD"]).await? else {
+        return Ok(None);
+    };
+    let own = format!("refs/heads/{branch}");
+    if answer(cwd, &["rev-parse", "--verify", "--quiet", &own])
+        .await?
+        .is_none()
+    {
+        return Ok(None);
+    }
+    let upstream = answer(cwd, &["for-each-ref", "--format=%(upstream)", &own]).await?;
+    let refs = checked(cwd, None, &["for-each-ref", "--format=%(refname)"]).await?;
+    // Every other ref, negated, read from standard input: a repository may
+    // have more refs than an argument list holds.
+    let others: String = text(&refs)
+        .lines()
+        .filter(|name| *name != own && Some(*name) != upstream.as_deref() && *name != "refs/stash")
+        .map(|name| format!("^{name}\n"))
+        .collect();
+    let count = checked_with_input(
+        cwd,
+        None,
+        &["rev-list", "--count", &own, "--stdin"],
+        others.into_bytes(),
+    )
+    .await?;
+    Ok(text(&count).parse().ok())
+}
+
 /// The repository's default branch: what `origin/HEAD` names, else the
 /// configured default for new repositories, else `main` or `master`,
 /// whichever exists.

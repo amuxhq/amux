@@ -200,11 +200,11 @@ final class PhoneDecisionsTests: XCTestCase {
     private let suspendedInWorktree = ChatSubject(
         name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
         reach: .online(.direct), filing: .closed,
-        workspaceGoes: WorkspaceGoes(branch: "ada/refactor-auth", uncommitted: nil))
+        workspaceGoes: WorkspaceGoes(branch: "ada/refactor-auth", branchCommits: nil, uncommitted: nil))
 
     /// The host's count of what the suspended agent's worktree holds.
     private let counted = DeleteWarning.goes(
-        WorkspaceGoes(branch: "ada/refactor-auth", uncommitted: ChangeTotals(files: 3, added: 42, removed: 7)))
+        WorkspaceGoes(branch: "ada/refactor-auth", branchCommits: nil, uncommitted: ChangeTotals(files: 3, added: 42, removed: 7)))
 
     /// What the delete card says of the worktree, once it says `words`.
     private func deleteCardSays(_ words: String) async throws {

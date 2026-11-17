@@ -279,31 +279,58 @@ parent. See [agent tools](AGENT_TOOLS.md) for families.
 An agent without a parent ends itself only under the `suspension`
 experiment, whose daemon writes a delay into its spec
 (`AgentSpec.experimental["suspension/1"]`, from `[experiments.suspension]
-after`, 30 minutes unless set). The core arms a suspension timer for that
-delay the moment the agent is idle, and cancels it the moment it is not:
-idle is `Running` with no turn, nothing queued or pending, every child's last
-report taken, no provider subagent running (Claude's or Codex's own, which
-would die with the provider), no terminal client attached (the driver feeds
-the attached count as an input), and nothing the interpreter says the
-provider holds (`Interpreter::holds`: background jobs, a turn the provider
-owes for a job that ended between turns, a scheduled wake-up, or a
-permission amux granted for the session, none of which survive a kill and
-resume). A turn that begins and ends between two steps arms it afresh. When
-it fires the exit is the ordinary graceful one with cause `SUSPENDED`: there
-is no turn to cut short and nothing running in the background. A message
-arriving as it exits is refused `REFUSAL_EXITING`, as for a one-shot agent.
-A provider subagent has no process or spec of its own, so it never suspends;
-its parent suspends only once none runs.
+after`, 30 minutes unless set). The delay counts from the start of the
+agent's **idle stretch**. Idle is `Running` with no turn, nothing queued or
+pending, every child's last report taken, no provider subagent running
+(Claude's or Codex's own, which would die with the provider), no terminal
+client attached (the driver feeds the attached count as an input), and
+nothing the interpreter says the provider holds (`Interpreter::holds`:
+background jobs, a turn the provider owes for a job that ended between
+turns, a scheduled wake-up, or a rule or directory amux granted for the
+session, none of which survive a kill and resume; a permission mode set for
+the session, as approving a plan does, is not one, since the snapshot
+records it and the resume starts in it). The stretch starts the moment the
+agent is idle, which is the end of its last turn (a person's, another
+agent's, a wake-up's) or the moment one of those holds lets go, and again
+at a turn that begins and ends between two steps. Anything that makes the
+agent not idle ends the stretch, with one exception: the interpreter's own
+idle housekeeping.
 
-An [idle compaction](INTERPRETERS.md#idle-compaction) composes with it
-without a rule of its own. The compaction is nobody's turn, but the agent
-reads as working while it runs, so it holds the timer like a turn; once it
-is over the agent is idle again and the delay starts afresh. One runs per
-idle stretch, so it delays a suspension at most once. A suspended agent has
-no process to arm a wake timer, so it is never woken to compact. With the
-defaults a Codex agent compacts at 25 minutes idle and suspends half an hour
-after that; headless Claude's compaction, at 55 minutes, comes after the
-30-minute delay, so it runs only under a delay set longer than that.
+That housekeeping is an [idle compaction](INTERPRETERS.md#idle-compaction),
+which an interpreter runs at most once a stretch, at a time of its own. It
+is nobody's turn, though the agent reads as working while it runs, and it
+neither ends the stretch nor starts one. The interpreter reports where it
+stands (`Interpreter::housekeeping`): due at a time, running, or settled
+(done, or nothing worth doing: a small conversation, a cache gone cold or
+not one that outlives the wait). The core arms a suspension timer only
+while the agent is idle and the housekeeping settled, for the later of the
+stretch's start plus the delay and now, and cancels it the moment either is
+not so. So a suspension comes at the later of the delay and the
+housekeeping's end, whichever constant is the larger, and a compaction
+never restarts the delay. With the 30-minute default:
+
+| Conversation | Compacts | Suspends |
+|---|---|---|
+| Small, or not on a cache worth keeping | never | at 30 minutes |
+| Large, Codex | at 25 minutes | at 30 minutes |
+| Large, headless Claude on the hour cache | at 55 minutes | as the compaction ends |
+| Large, under a delay longer than the compaction point | at its time | at the delay |
+
+The core checks after every step that the timer runs only while the agent
+is idle (`agent.suspension_while_busy`), and that it never suspends, and its
+timer never runs, while the housekeeping is due or running
+(`agent.suspension_before_housekeeping`). A hold that lets go starts a new
+stretch, so the delay counts from its end: someone at the terminal, or a
+job or subagent at work, is the agent in use, which amux's own housekeeping
+is not. A suspended agent has no process to arm a wake timer, so it is
+never woken to compact, which is why it waits for a compaction that is
+due rather than leaving the conversation to go cold.
+
+When the timer fires the exit is the ordinary graceful one with cause
+`SUSPENDED`: there is no turn to cut short and nothing running in the
+background. A message arriving as it exits is refused `REFUSAL_EXITING`, as
+for a one-shot agent. A provider subagent has no process or spec of its
+own, so it never suspends; its parent suspends only once none runs.
 
 ### A suspended agent on its host
 
@@ -411,6 +438,17 @@ reaches. Each choice above follows from that, and these were rejected:
   core already knows every condition, its children included, and an input
   that meets the exit is already handled by the one-shot path: refused as
   exiting, then woken.
+- **Letting an idle compaction count as activity,** which cancelled the
+  timer and re-armed it from the compaction's end. Whether a conversation
+  was compacted before it went cold then depended on which constant was
+  larger: under the default delay a large headless Claude conversation
+  suspended at 30 minutes, before its compaction at 55, and was read
+  uncached on the next prompt.
+- **The core knowing each provider's compaction point,** to arm the timer
+  past it. The interpreter alone knows whether a compaction is worth
+  running (the conversation's size, which cache it is on, whether that has
+  expired), so it reports due, running or settled, and the core waits on
+  that.
 - **Recording a suspension as an exit,** a row that reads exited with a new
   cause newer clients draw as idle. Every older host and client would see an
   exited agent, stop its children and drop the reports owed to it, and a
@@ -977,7 +1015,7 @@ terminal. `amux agent` exits 0 whatever the cause; 1 means it could not start
 |---|---|---|
 | Grace after the daemon leaves | 5 minutes | `agent.grace_secs` in settings, copied into the spec's `grace_ms`; 5 minutes if the spec leaves it unset |
 | Drain deadline for an orphaned ask | 5 minutes | `agent.drain_secs`, copied into `drain_ms`; the same 5 minutes if the spec leaves it unset |
-| Idle before an agent without a parent suspends | 30 minutes, while the `suspension` experiment is on | `[experiments.suspension] after`, copied into the spec's `experimental["suspension/1"]`; never without that entry |
+| Idle before an agent without a parent suspends, counted from its idle stretch's start and never before its idle compaction settles | 30 minutes, while the `suspension` experiment is on | `[experiments.suspension] after`, copied into the spec's `experimental["suspension/1"]`; never without that entry |
 | Facts ring size, across its two segments | 4 MiB | `agent.facts_ring_mib`, copied into `facts_ring_bytes` |
 | A step of the agent's core, before it asks for a dump | 10 ms | the spec's `step_budget_micros` (`Launch.agent_step_budget_micros`, not a configuration key); `StepBudget::AGENT` in `agent-core` if the spec leaves it zero |
 | Journal segment size | 1 MiB | `JOURNAL_SEGMENT_BYTES` in `lib.rs` |

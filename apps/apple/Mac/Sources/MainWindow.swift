@@ -125,6 +125,10 @@ struct AppWindow: View {
             search: { model.stores?.filterFleet(FleetFilter(words: $0, only: nil)) },
             toggleFamily: { model.stores?.toggleFamily($0) },
             act: { act, agent in Task { await model.act(act, on: agent) } },
+            deleteWarning: { agent in
+                guard let stores = model.stores else { return .failure(RuntimeFailure("nothing is running")) }
+                return await stores.deleteWarning(agent).mapError { $0 }
+            },
             dismissProblem: { model.dismissProblem() },
             openTerminal: { model.openTerminal($0) })
     }

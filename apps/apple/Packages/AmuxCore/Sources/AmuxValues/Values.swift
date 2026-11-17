@@ -2432,7 +2432,10 @@ public enum DecisionView: String, Codable, Hashable, Sendable, CaseIterable {
 /// agent, and so what confirming it agrees to. The row's git facts are kept
 /// current only by the agent's process: for an agent without one,
 /// suspended or exited, the confirmation asks the agent's host for the
-/// workspace's changes against HEAD and says so until it answers.
+/// workspace's changes against HEAD and says so until it answers. Whether
+/// the branch has commits of its own the host is always asked, since a
+/// merge made anywhere else can take them away
+/// ([`DeleteWarning::asks_host`]).
 public enum DeleteWarning: Codable, Hashable, Sendable {
     /// What goes, from facts that are current: the row's while a process
     /// keeps them so, else the host's answer.
@@ -2492,13 +2495,20 @@ public struct Diff: Codable, Hashable, Sendable {
     public var files: [DiffFile]
     public var base: DiffBase?
     public var mergeBase: String?
+    /// Commits on the branch HEAD has checked out that no other branch, tag or
+    /// remote-tracking ref holds, the branch's own upstream aside: what
+    /// deleting the branch would lose, so a branch with none goes with an
+    /// agent's workspace. Absent on a detached head, when it could not be
+    /// counted, and from hosts before it, which a reader takes as not known.
+    public var ownCommits: UInt32?
     public var patch: BlobRef?
 
-    public init(head: String, files: [DiffFile], base: DiffBase?, mergeBase: String?, patch: BlobRef?) {
+    public init(head: String, files: [DiffFile], base: DiffBase?, mergeBase: String?, ownCommits: UInt32?, patch: BlobRef?) {
         self.head = head
         self.files = files
         self.base = base
         self.mergeBase = mergeBase
+        self.ownCommits = ownCommits
         self.patch = patch
     }
 
@@ -2507,6 +2517,7 @@ public struct Diff: Codable, Hashable, Sendable {
         case files
         case base
         case mergeBase = "merge_base"
+        case ownCommits = "own_commits"
         case patch
     }
 }
@@ -7831,19 +7842,26 @@ public struct Worked: Codable, Hashable, Sendable {
 /// uncommitted changes the row last reported. A client says so before
 /// confirming, and sends the delete with consent to discard them.
 public struct WorkspaceGoes: Codable, Hashable, Sendable {
-    /// The branch that keeps what was committed; none on a detached head
-    /// or before the row's git facts were read.
+    /// The workspace's branch; none on a detached head or before the row's
+    /// git facts were read.
     public var branch: String?
+    /// The commits on the branch that no other branch, tag or remote holds,
+    /// as the host counted them when asked: the branch keeps them, and with
+    /// none it goes with the workspace. None until the host answers, or
+    /// when it could not say.
+    public var branchCommits: UInt32?
     /// Its uncommitted changes, when it has any.
     public var uncommitted: ChangeTotals?
 
-    public init(branch: String?, uncommitted: ChangeTotals?) {
+    public init(branch: String?, branchCommits: UInt32?, uncommitted: ChangeTotals?) {
         self.branch = branch
+        self.branchCommits = branchCommits
         self.uncommitted = uncommitted
     }
 
     private enum CodingKeys: String, CodingKey {
         case branch
+        case branchCommits = "branch_commits"
         case uncommitted
     }
 }

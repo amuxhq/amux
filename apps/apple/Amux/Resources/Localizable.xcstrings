@@ -1345,14 +1345,50 @@
         }
       }
     },
-    "The branch %@ keeps what was committed." : {
+    "The branch %@ goes too, since nothing was committed to it." : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The branch %@ keeps what was committed."
+            "value" : "The branch %@ goes too, since nothing was committed to it."
+          }
+        }
+      }
+    },
+    "The branch %@ keeps its 1 commit." : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The branch %@ keeps its 1 commit."
+          }
+        }
+      }
+    },
+    "The branch %@ keeps its %@ commits." : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The branch %@ keeps its %@ commits."
+          }
+        }
+      }
+    },
+    "The branch %@ stays if anything was committed to it." : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The branch %@ stays if anything was committed to it."
           }
         }
       }

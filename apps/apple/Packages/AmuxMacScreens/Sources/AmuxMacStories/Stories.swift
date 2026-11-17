@@ -237,9 +237,32 @@ public enum Stories {
 
     private static let busy = FleetContent(sections: [pinned, needsYou, live, settled])
 
+    /// Deleting an agent whose worktree goes, once its host answers with
+    /// `answer`; a host that never answers when nil.
+    @MainActor private static func deleting(answer: DeleteWarning?) -> some View {
+        var agent = card(12, "Fix the scroll jump", on: machine, .idle, ago: 600)
+        agent.workspaceGoes = WorkspaceGoes(branch: "fix-scroll", branchCommits: nil, uncommitted: nil)
+        return DeleteSheet(card: agent, ask: { _ in
+            guard let answer else {
+                try? await Task.sleep(for: .seconds(86_400))
+                return .success(nil)
+            }
+            return .success(answer)
+        }, cancel: {}, confirm: { _ in })
+            .background(Color(nsColor: .windowBackgroundColor))
+    }
+
     private static let fleet = [
         Story("fleet.no-agents") { MainStory(MainContent(profiles: [signedIn, work], fleet: FleetContent(), thisMac: thisMac)) },
         Story("fleet.busy") { MainStory(MainContent(profiles: [signedIn, work], fleet: busy, thisMac: thisMac)) },
+        Story("fleet.delete-changes", window: .sheet) {
+            deleting(answer: .goes(WorkspaceGoes(
+                branch: "fix-scroll", branchCommits: 3, uncommitted: ChangeTotals(files: 3, added: 42, removed: 7))))
+        },
+        Story("fleet.delete-clean", window: .sheet) {
+            deleting(answer: .goes(WorkspaceGoes(branch: "fix-scroll", branchCommits: 0, uncommitted: nil)))
+        },
+        Story("fleet.delete-checking", window: .sheet) { deleting(answer: nil) },
         Story("fleet.finish-setup") {
             MainStory(
                 MainContent(

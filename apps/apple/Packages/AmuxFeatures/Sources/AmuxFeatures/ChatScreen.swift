@@ -1081,7 +1081,7 @@ private struct DeleteCard: View {
                 Consequence(lines.settled ? "xmark" : "ellipsis", kept: !lines.settled, lines.workspace)
                     .identified("chat.delete.workspace", label: lines.workspace)
                 if let branch = lines.branch {
-                    Consequence("checkmark", kept: true, branch)
+                    Consequence(lines.branchKept ? "checkmark" : "xmark", kept: lines.branchKept, branch)
                 }
             }
             ButtonPair {
@@ -1104,103 +1104,11 @@ private struct DeleteCard: View {
 
 }
 
-/// What deleting an agent says goes with it, in the words the home's dialog
-/// and the chat's card both use, and whether confirming agrees to lose
-/// uncommitted changes.
-///
-/// A confirmation opens on what the agent's row says goes, and asks the
-/// runtime for current facts: the uncommitted changes of an agent with no
-/// process are known only to its host. It says it is checking until the
-/// answer comes, and confirming before then keeps a worktree with changes
-/// on disk, because nothing it drew named them.
-enum DeleteWords {
+extension DeleteWords {
     /// Answers that the host could not be asked, for a screen given no way
     /// to ask: a worktree with changes then stays on disk.
     static func unasked() async -> Result<DeleteWarning?, RuntimeFailure> {
         .failure(RuntimeFailure("nothing can be asked"))
-    }
-
-    /// What a confirmation draws on opening, from what the row says goes:
-    /// checking, when a workspace goes at all.
-    static func asking(_ goes: WorkspaceGoes?) -> DeleteWarning? { goes.map(DeleteWarning.checking) }
-
-    /// Whether a confirmation drawing `warning` is waiting on an answer.
-    static func awaitsAnswer(_ warning: DeleteWarning?) -> Bool {
-        if case .checking? = warning { true } else { false }
-    }
-
-    /// What a confirmation draws once its question is answered. Only one
-    /// still checking takes the answer; an answer that is a failure reads as
-    /// a host that could not say.
-    static func answered(
-        _ drawn: DeleteWarning?, with answer: Result<DeleteWarning?, RuntimeFailure>
-    ) -> DeleteWarning? {
-        guard case .checking(let asked)? = drawn else { return drawn }
-        switch answer {
-        case .success(let warning): return warning
-        case .failure: return .unknown(asked)
-        }
-    }
-
-    /// What a confirmation says of the workspace: its line, the branch's
-    /// line when it names one, and whether what it says is settled rather
-    /// than still being checked. Nil when the workspace stays.
-    static func lines(for warning: DeleteWarning?) -> (workspace: String, branch: String?, settled: Bool)? {
-        switch warning {
-        case nil: nil
-        case .goes(let goes)?: (workspace(goes), branch(goes), true)
-        case .checking(let goes)?:
-            (String(localized: "Checking its worktree for uncommitted changes…"), branch(goes), false)
-        case .unknown(let goes)?:
-            (String(localized: "Its worktree is removed too, but stays on disk if it has uncommitted changes, which couldn’t be checked."),
-             branch(goes), true)
-        }
-    }
-
-    /// "Its worktree is removed too, with 3 uncommitted files (+42 −7).", or
-    /// "Its worktree is removed too." when nothing in it is uncommitted.
-    static func workspace(_ goes: WorkspaceGoes) -> String {
-        guard let uncommitted = goes.uncommitted else {
-            return String(localized: "Its worktree is removed too.")
-        }
-        let files = uncommitted.files
-        // Files can change with no line counted, a binary or a mode change,
-        // and then there are no counts to show.
-        let counts = ChatWords.counts(added: uncommitted.added, removed: uncommitted.removed)
-        switch (files == 1, counts.isEmpty) {
-        case (true, false): return String(localized: "Its worktree is removed too, with 1 uncommitted file (\(counts)).")
-        case (true, true): return String(localized: "Its worktree is removed too, with 1 uncommitted file.")
-        case (false, false):
-            return String(localized: "Its worktree is removed too, with \(files) uncommitted files (\(counts)).")
-        case (false, true): return String(localized: "Its worktree is removed too, with \(files) uncommitted files.")
-        }
-    }
-
-    /// "The branch fix-scroll keeps what was committed.", whenever the row
-    /// names a branch.
-    static func branch(_ goes: WorkspaceGoes) -> String? {
-        goes.branch.map { String(localized: "The branch \($0) keeps what was committed.") }
-    }
-
-    /// The home's dialog under "Delete name?": the chat and its subagents,
-    /// then what happens to the workspace.
-    static func message(descendants: UInt32, warning: DeleteWarning?) -> String {
-        guard let lines = lines(for: warning) else {
-            return descendants > 0
-                ? String(localized: "Its chat is deleted on every device, with its subagents. Its edits stay.")
-                : String(localized: "Its chat is deleted on every device. Its edits stay.")
-        }
-        let chat = descendants > 0
-            ? String(localized: "Its chat is deleted on every device, with its subagents.")
-            : String(localized: "Its chat is deleted on every device.")
-        return [chat, lines.workspace, lines.branch].compactMap { $0 }.joined(separator: " ")
-    }
-
-    /// Whether confirming agrees to lose uncommitted changes: only when the
-    /// confirmation drew them from current facts. A delete without that
-    /// consent keeps such a workspace on disk.
-    static func discards(_ warning: DeleteWarning?) -> Bool {
-        if case .goes(let goes)? = warning { goes.uncommitted != nil } else { false }
     }
 }
 

@@ -376,6 +376,9 @@ enum Request {
     /// into its running turn (`steered`), else an injected item.
     StopNote {
         thread: String,
+        /// What the note calls the child, for sending it again.
+        #[serde(default)]
+        name: String,
         steered: bool,
     },
 }
@@ -714,10 +717,18 @@ pub struct State {
     #[serde(default)]
     last_request_ms: Option<i64>,
     /// The child threads Codex runs for this agent, each a provider
-    /// subagent of its own, by thread id: kept past a child's end, so a
-    /// continuation names the call that started it.
+    /// subagent of its own, by thread id, from the first word of each until
+    /// its end: nothing of a finished child is kept.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     children: BTreeMap<String, children::Child>,
+    /// The child threads whose subagents ended in this incarnation, by
+    /// thread id alone. Codex keeps an ended child loaded, with its tool
+    /// servers, while this client is subscribed to it, and only that
+    /// subscription brings a follow-up's turn on it to this client: each
+    /// stays subscribed until `/clear` leaves it with the agent's old
+    /// thread. A new incarnation's connection holds none of them.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    ended_children: BTreeSet<String>,
     /// Threads the agent left (`/clear`'s old thread and its children),
     /// whose late notifications start no subagent.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
@@ -810,6 +821,7 @@ impl State {
             idle_compaction: None,
             last_request_ms: None,
             children: BTreeMap::new(),
+            ended_children: BTreeSet::new(),
             left: BTreeSet::new(),
             child_requests: 0,
             speaking: None,

@@ -656,9 +656,18 @@ impl State {
                 let result = result.map(drop).map_err(|error| error.message);
                 return self.child_interrupted(emit, &thread, result);
             }
-            Request::StopNote { thread, steered } => {
+            Request::StopNote {
+                thread,
+                name,
+                steered,
+            } => {
                 if result.is_err() && steered {
-                    self.tell_parent(emit, &thread, false);
+                    let name = if name.is_empty() {
+                        thread.clone()
+                    } else {
+                        name
+                    };
+                    self.send_stop_note(emit, &thread, name, false);
                 }
                 return;
             }
@@ -816,15 +825,13 @@ impl State {
         };
         // Codex keeps a thread loaded, with its tool servers, while a client
         // is subscribed: the agent leaves the old thread and the children it
-        // spawned, as Codex's own app does when it switches threads. Their
-        // subagents end here, since nothing more will be heard of them.
+        // spawned in this incarnation, running or ended, as Codex's own app
+        // does when it switches threads. Those still running end here, since
+        // nothing more will be heard of them.
+        let mut children: BTreeSet<String> = self.children.keys().cloned().collect();
         self.leave_children(emit);
-        let left: Vec<String> = self
-            .thread_id
-            .take()
-            .into_iter()
-            .chain(std::mem::take(&mut self.children).into_keys())
-            .collect();
+        children.append(&mut self.ended_children);
+        let left: Vec<String> = self.thread_id.take().into_iter().chain(children).collect();
         self.left.extend(left.iter().cloned());
         for thread_id in left {
             let bytes = self.request_as(

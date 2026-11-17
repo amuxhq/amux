@@ -562,11 +562,18 @@ pub struct State {
     jobs: Jobs,
     messages: Vec<PendingMessage>,
     /// The subagents Claude's Agent tool started, by Claude's agent id for
-    /// each: kept past each one's end, so a continuation names the call
-    /// that first started it. A checkpoint from before they were agents of
-    /// their own has none.
+    /// each, from when Claude names one until its end: nothing of a
+    /// finished subagent stays, so a long-lived agent's checkpoint does not
+    /// grow with every subagent it ever ran. A checkpoint from before they
+    /// were agents of their own has none.
     #[serde(default)]
     subagents: BTreeMap<String, subagents::Sub>,
+    /// How a finished subagent's last run ended, by its agent id, while the
+    /// SendMessage that continued it still waits for Claude's result: that
+    /// result is read after the notice, and the call hands back how the run
+    /// ended. Each goes once that call settles.
+    #[serde(default)]
+    ended_runs: BTreeMap<String, subagents::Outcome>,
     /// The background commands a subagent's calls started, by task id, and
     /// the subagent each is for.
     #[serde(default)]
@@ -695,6 +702,7 @@ impl State {
             jobs: Jobs::default(),
             messages: Vec::new(),
             subagents: BTreeMap::new(),
+            ended_runs: BTreeMap::new(),
             owned_tasks: BTreeMap::new(),
             slash: None,
             local_turn: false,
@@ -1728,6 +1736,7 @@ impl Interpreter for ClaudePty {
         state
             .submitted
             .retain(|prompt| awaiting.contains(&prompt.id));
+        state.drop_settled_runs();
         state.subagent_snapshots(&mut emit);
         let body = state.body();
         let notice = state.shared.notice(crate::notice::claude_ask);

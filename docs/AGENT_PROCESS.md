@@ -635,8 +635,8 @@ grows, and backs off to once a second while it does not, since one follows
 each subagent, finished ones included, until Claude exits. A file it can no
 longer read, or one now shorter than what it read, is reported once and its
 follower ends. The interpreter asks again at each `SubagentStart` for a
-subagent it already follows, as Claude fires one when its model continues a
-subagent: that wakes a follower to read at once and at its quick rate, or
+subagent, as Claude fires one when its model continues a subagent: that
+wakes a follower to read at once and at its quick rate, or
 starts anew, from the saved position, one that ended. Claude
 can tell the agent a subagent finished before writing its last rows, so the
 interpreter asks for the file to be drained (`DrainSubagent`): the follower

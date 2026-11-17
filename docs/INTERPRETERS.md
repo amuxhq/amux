@@ -255,9 +255,11 @@ sub.end(IncarnationEnd { cause: ExitCause::Finished as i32, detail: None });
 
 - `start` is written where the subagent starts and again where its parent's
   model continues it, in the step that writes the call row naming it. Its
-  `provider_child_id` is the view's own. `call_agent_id` is the host's id
-  (`Shared::agent_id`) for a subagent the host started, and the parent
-  subagent's id for a nested one.
+  `provider_child_id` is the view's own. `call_key` is the call that started
+  this run: the first call, or for a continuation the call that continued
+  it (a SendMessage, a Codex follow-up). `call_agent_id` is the chat that
+  holds that call: the host's id (`Shared::agent_id`) for a call the host
+  made, and the parent subagent's id for a nested one's.
 - `item`, `append`, `append_output`, `open_item` and `open_keys` follow the
   [step rule](#the-step-rule) within the subagent's own chat: its keys are
   its own, apart from the host's.
@@ -284,6 +286,18 @@ A part written outside a subagent's run (before its first start, or after
 its end with no new start), and an end with an item still streaming, break
 the `agent.subagent_run` check, as `agent.item_before_open` guards the
 agent's own items.
+
+**Nothing of a finished subagent is kept.** An interpreter lets go of its
+record of a subagent once its end is journaled and nothing more can arrive
+that needs it, so a long-lived agent's checkpoint does not grow with every
+subagent it ran. (Codex keeps an ended child's thread id, until `/clear`
+or the next incarnation, to unsubscribe from it.) A continuation after that starts it afresh: the same
+agent, as its id is derived, under the call that continued it, which the
+daemon reads as a continuation of the row that ended. Whatever else
+arrives later for it (a late frame, a stop, an answer, a notice) is treated
+as for any subagent not running. Keeping a bounded window of recent
+finished subagents was considered and rejected: no reader needs a
+finished subagent's record, and a window only moves the growth's limit.
 
 **A person's input to a subagent.** The daemon passes it to the host's
 process as `CtlFrame.child_input`, and the interpreter gets
@@ -316,16 +330,23 @@ started it.
   for one the agent started, under its parent subagent for one whose
   `parent_task_id` names another. Its title is the call's description. A
   tagged frame of a subagent no `task_started` began starts it under the
-  call the frame names; one of a subagent that ended is dropped, as a stopped
-  task still flushes the refused result of the call it was in.
+  call the frame names, in the chat that holds it. One of a subagent that
+  ended is dropped, as a stopped task still flushes the refused result of
+  the call it was in: a call that already opens its chat, or that no chat
+  holds, is the call of a run that ended.
 - A `task_started` naming a SendMessage call, for a task id that ended,
-  continues it: a new start on the same agent, under its first call, and
-  the SendMessage row opens its chat too.
+  continues it: a new start on the same agent, under the SendMessage call,
+  whose row opens its chat.
 - Its `task_notification` ends it: completed is finished, stopped or killed
   is stopped, failed is the provider's exit with the reason. Claude answers
   a notification with a turn of its own, so the agent reads working from
   that step on. A resumed Claude's notice for a subagent of an earlier
-  process changes nothing: that process's end ended it.
+  process ends nothing, as that process's end ended it, and settles the
+  call row still waiting on it.
+- Its record lasts while it runs and while a call row of the agent's own,
+  or of a running subagent's, still waits on it: an Agent call in the
+  foreground until its result hands back the subagent's last words, a
+  background row until its notice.
 - An interrupt that cuts a subagent run in the foreground gets no notice:
   the Agent call that started it returns refused. That result ends a
   subagent still running, as stopped (failed for another error, finished
@@ -349,8 +370,8 @@ parent subagent.
 - Claude's `SubagentStart` hook, which amux registers in its launch
   settings, names the subagent, and the interpreter asks the agent process
   to follow its file (`FollowSubagent`), and asks again at each later
-  `SubagentStart` for it, as for a continuation, so the agent process reads
-  the file at once. One with an empty `agent_type` is
+  `SubagentStart` for it, as when a nested subagent's notice wakes it, so
+  the agent process reads the file at once. One with an empty `agent_type` is
   Claude's own helper (a compaction's summary, a title) and is nothing amux
   shows. The agent process sends the meta first, then the file's user,
   assistant and system rows, on the `SubagentTranscript` channel; a file it
@@ -367,7 +388,13 @@ parent subagent.
   read the file to its end, or after two seconds. `SubagentStop` is no end:
   Claude raises it when a subagent's turn stops. A top-level subagent's
   notice opens the agent's turn, as Claude answers it with one.
-- `SubagentStart` again for the same id is a continuation: a new start.
+- Its record goes with its end. `SubagentStart` (or an ask) naming it
+  again while a SendMessage call to it is open (announced by its
+  `PreToolUse`, or drawn and not yet answered) is a continuation: a new
+  start at once, under that call, in the chat of whoever made it. Claude
+  can write the continued run's notice before its result of the
+  SendMessage; how the run ended is kept only until that result, which
+  hands it back.
 - Its asks come from `PermissionRequest` hooks carrying its `agent_id`, and
   its working-on line from its `PreToolUse` of amux's status tool.
 - Terminal Claude has no way to stop one subagent: it lists no job, and a
@@ -963,7 +990,7 @@ answer.
   | Command | What amux sends |
   |---|---|
   | `/compact` | `thread/compact/start`, which runs as a turn of its own |
-  | `/clear` | `thread/start` (ids `amux-clear-<n>`) in the agent's folder with the model and permission in force; the thread it answers becomes the agent's conversation, marked by a cleared boundary, named, and recorded for the next incarnation to resume. The agent then unsubscribes from the old thread and the child threads it spawned (`thread/unsubscribe`), which Codex otherwise keeps loaded with their tool servers. The new thread's first turn carries the mode and effort the agent ran with |
+  | `/clear` | `thread/start` (ids `amux-clear-<n>`) in the agent's folder with the model and permission in force; the thread it answers becomes the agent's conversation, marked by a cleared boundary, named, and recorded for the next incarnation to resume. The agent then unsubscribes from the old thread and the child threads it spawned in this incarnation, running or ended (`thread/unsubscribe`), which Codex otherwise keeps loaded with their tool servers. Of an ended child the interpreter keeps only its thread id, for this: unsubscribing a child at its end would free nothing while its parent is loaded, and a follow-up's turn on it would then reach amux only by subscribing again in time, which races the child's first events. The new thread's first turn carries the mode and effort the agent ran with |
   | `/review [instructions]` | `review/start` on the thread: the uncommitted changes, or the instructions given. The review runs as a turn |
   | `/init` | A turn with the prompt Codex's own `/init` sends (as Codex 0.161 words it), which writes an `AGENTS.md` unless one exists |
   | `/plan [prompt]` | Plan mode from the next turn, as choosing the mode does; the words after it, if any, are that turn's prompt |
@@ -1037,8 +1064,9 @@ answer.
     parent's chat, a collab `spawnAgent` or `sendInput` row naming the
     child's agent in `agent_ids`, and it starts or continues the subagent.
     The start names the chat holding the call (the agent's, or a
-    child's for a child's own child) and the spawn's key, which a follow-up
-    keeps. An older Codex's collab `spawnAgent` and follow-up calls start
+    child's for a child's own child) and the call's key: the spawn's, or
+    the follow-up's that continued it, since nothing of a child is kept
+    past its end. An older Codex's collab `spawnAgent` and follow-up calls start
     their receivers the same way; a child thread first heard from by a
     turn, an item or a request that no call named starts with its call
     unknown. No child sends `thread/started`.
@@ -1052,7 +1080,7 @@ answer.
     (`/root/<task>`).
   - **Its title.** The row takes its title from the subagent's first start
     alone, and Codex's nickname for the child (`agentNickname`) comes only
-    from `thread/read` on it, asked once. So the first start waits for the
+    from `thread/read` on it, asked at each start. So the first start waits for the
     read's answer, and every request and notification naming the child
     waits with it, to be read in order once the start is out; Codex answers
     within milliseconds, before the child's first word. If the answer has
@@ -1060,8 +1088,9 @@ answer.
     parent's turn ends first, the start goes out titled by the task name,
     or untitled where Codex gave none: a one-shot host's subagents have
     their rows by its turn end, and a recording with no answer still
-    replays. A follow-up's start does not wait. The subagent's snapshot
-    carries no title.
+    replays. A follow-up's start does not wait: the read's answer gives
+    its snapshot the thread's model and effort, which a follow-up's
+    activity does not name. The subagent's snapshot carries no title.
   - **Its chat.** Each child keeps its own copy of the per-thread item
     state; a child's notifications are read by the same rules as the
     agent's, with that copy swapped in and what they write going to the

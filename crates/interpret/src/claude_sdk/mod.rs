@@ -222,8 +222,10 @@ pub struct State {
     blocks: BTreeMap<String, u32>,
     tools: BTreeMap<String, Tool>,
     asks: BTreeMap<String, AskMeta>,
-    /// The subagents Claude's Agent tool started, by Claude's id for each.
-    /// A checkpoint from before they were agents of their own has none.
+    /// The subagents Claude's Agent tool started, by Claude's id for each,
+    /// while each runs and while a call row still waits on it; nothing of
+    /// one is kept past that. A checkpoint from before they were agents of
+    /// their own has none.
     #[serde(default)]
     subagents: BTreeMap<String, Sub>,
     /// The tasks a subagent's calls started (the shells it runs), by task
@@ -1189,6 +1191,7 @@ impl Interpreter for ClaudeSdk {
         if let Some(entry) = state.shared.next_queued() {
             state.submit(&mut emit, entry);
         }
+        state.forget_ended_subagents();
         state.subagent_snapshots(&mut emit);
         let body = state.body();
         let notice = state.shared.notice(crate::notice::claude_ask);

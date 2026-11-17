@@ -2430,3 +2430,231 @@ fn a_continuation_that_failed_before_its_result_is_read_hands_back_its_failure()
         );
     }
 }
+
+/// What the checkpoint holds of subagents: the records of those running,
+/// and how each finished one's last run ended while a SendMessage waits.
+fn subagents_held(state: &interpret::claude_pty::State) -> (Vec<String>, Vec<String>) {
+    let state = serde_json::to_value(state).unwrap();
+    let keys = |field: &str| {
+        state[field]
+            .as_object()
+            .map(|held| held.keys().cloned().collect())
+            .unwrap_or_default()
+    };
+    (keys("subagents"), keys("ended_runs"))
+}
+
+/// Nothing of a finished subagent stays in the checkpoint. Its parent's
+/// model continuing it with SendMessage starts it again as the same agent,
+/// under the SendMessage call in the agent's chat, which opens its chat.
+/// The notice of the continued run can be read before Claude's result of
+/// that call: how the run ended is kept only until that result settles the
+/// call, which hands it back.
+#[test]
+fn a_continuation_after_its_record_is_gone_links_and_lets_go_once_settled() {
+    const SEND: &str = "toolu_send";
+    let with = |extra: serde_json::Value| {
+        let mut value = serde_json::json!({
+            "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl",
+            "cwd": "/w", "prompt_id": "p1", "permission_mode": "default",
+        });
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        hook(value)
+    };
+    let assistant = |uuid: &str, call: &str, name: &str, input: serde_json::Value| {
+        transcript_row(serde_json::json!({
+            "type": "assistant", "uuid": uuid, "timestamp": "2026-10-12T08:00:01.000Z",
+            "sessionId": "s1", "isSidechain": false, "userType": "external",
+            "message": {
+                "id": format!("msg_{uuid}"), "type": "message", "role": "assistant",
+                "model": "claude-haiku-5-5",
+                "content": [{"type": "tool_use", "id": call, "name": name, "input": input}],
+                "stop_reason": "tool_use", "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        }))
+    };
+    let result = |uuid: &str, call: &str, content: &str, result: serde_json::Value| {
+        transcript_row(user_row(
+            uuid,
+            "",
+            serde_json::json!({
+                "message": {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": call, "content": content}]},
+                "toolUseResult": result,
+            }),
+        ))
+    };
+    let notice = |uuid: &str, status: &str, body: &str| {
+        transcript_row(user_row(
+            uuid,
+            &format!(
+                "<task-notification><task-id>a1</task-id><status>{status}</status>{body}</task-notification>"
+            ),
+            serde_json::json!({"origin": {"kind": "task-notification"}}),
+        ))
+    };
+    let subagent_said = |uuid: &str, text: &str| {
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::SubagentTranscript,
+            payload: serde_json::json!({
+                "type": "assistant", "uuid": uuid, "timestamp": "2026-10-12T08:00:02.000Z",
+                "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+                "message": {"id": format!("msg_{uuid}"), "role": "assistant",
+                    "model": "claude-haiku-5-5", "content": [{"type": "text", "text": text}]},
+            })
+            .to_string()
+            .into_bytes(),
+        })
+    };
+    let subagent_start = || {
+        with(
+            serde_json::json!({"hook_event_name": "SubagentStart", "agent_id": "a1", "agent_type": "counter"}),
+        )
+    };
+    let send_row = |stepped: &interpret::Stepped| {
+        use prost::Message as _;
+        stepped.step.items.iter().rev().find_map(|item| {
+            match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
+                wire::claude_item::Kind::Tool(tool) if item.key == SEND => Some(tool),
+                _ => None,
+            }
+        })
+    };
+    let child = interpret::subagent_id(b"agent", "a1");
+
+    let (mut state, _) = started_claude();
+    for event in [
+        subagent_start(),
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::subagent_meta_fact(
+                "a1",
+                serde_json::json!({"toolUseId": "toolu_agent", "description": "Count"}),
+            ),
+        }),
+        assistant(
+            "a1",
+            "toolu_agent",
+            "Agent",
+            serde_json::json!({"description": "Count", "prompt": "Count.", "subagent_type": "counter"}),
+        ),
+        result(
+            "r1",
+            "toolu_agent",
+            "Async agent launched successfully.",
+            serde_json::json!({"isAsync": true, "status": "async_launched", "agentId": "a1"}),
+        ),
+        subagent_said("sa1", "ONE TWO THREE"),
+        notice(
+            "n1",
+            "completed",
+            "<tool-use-id>toolu_agent</tool-use-id><summary>done</summary><result>ONE TWO THREE</result>",
+        ),
+    ] {
+        ClaudePty::step(&mut state, event);
+    }
+    assert_eq!(
+        subagents_held(&state),
+        (vec![], vec![]),
+        "the finished subagent is gone"
+    );
+
+    ClaudePty::step(
+        &mut state,
+        assistant(
+            "a2",
+            SEND,
+            "SendMessage",
+            serde_json::json!({"to": "a1", "message": "Please go on."}),
+        ),
+    );
+    let continued = ClaudePty::step(&mut state, subagent_start());
+    assert!(continued.broken.is_none(), "{:?}", continued.broken);
+    let part = continued
+        .step
+        .agents
+        .iter()
+        .find(|part| part.agent_id == child)
+        .expect("the same agent's part");
+    let start = part.start.clone().expect("it starts again");
+    assert_eq!(start.provider_child_id, "a1");
+    assert_eq!(start.call_key, SEND);
+    assert_eq!(start.call_agent_id, b"agent");
+    assert_eq!(
+        send_row(&continued).map(|tool| tool.child_agent_id),
+        Some(child.clone()),
+        "the SendMessage opens its chat in the start's step"
+    );
+
+    // Its end is read before Claude's result of the SendMessage.
+    for event in [
+        subagent_said("sa2", "FOUR FIVE SIX"),
+        notice(
+            "n2",
+            "completed",
+            "<tool-use-id>toolu_send</tool-use-id><summary>done</summary><result>FOUR FIVE SIX</result>",
+        ),
+    ] {
+        let stepped = ClaudePty::step(&mut state, event);
+        assert!(stepped.broken.is_none(), "{:?}", stepped.broken);
+    }
+    assert_eq!(
+        subagents_held(&state),
+        (vec![], vec!["a1".to_owned()]),
+        "only how the run ended, while the SendMessage waits"
+    );
+    let resumed = serde_json::json!({
+        "success": true, "message": "Resuming agent a1", "resumedAgentId": "a1",
+    });
+    let settled = ClaudePty::step(
+        &mut state,
+        result("r2", SEND, &resumed.to_string(), resumed),
+    );
+    let row = send_row(&settled).expect("the SendMessage settles");
+    assert_eq!(
+        (row.state(), row.outcome_text.as_str()),
+        (wire::ToolState::Succeeded, "FOUR FIVE SIX")
+    );
+    assert_eq!(subagents_held(&state), (vec![], vec![]));
+}
+
+/// A subagent's row that comes after its end, once nothing of it is kept,
+/// draws nothing, and starts nothing.
+#[test]
+fn a_late_row_of_a_finished_subagent_draws_nothing() {
+    let (mut state, _) = started_claude();
+    let hook_start = hook(serde_json::json!({
+        "hook_event_name": "SubagentStart", "agent_id": "a1", "agent_type": "counter",
+        "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
+    }));
+    let row = |uuid: &str, text: &str| {
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::SubagentTranscript,
+            payload: serde_json::json!({
+                "type": "assistant", "uuid": uuid, "timestamp": "2026-10-12T08:00:02.000Z",
+                "sessionId": "s1", "agentId": "a1", "isSidechain": true,
+                "message": {"id": format!("msg_{uuid}"), "role": "assistant",
+                    "model": "claude-haiku-5-5", "content": [{"type": "text", "text": text}]},
+            })
+            .to_string()
+            .into_bytes(),
+        })
+    };
+    for event in [
+        hook_start,
+        row("sa1", "DONE"),
+        transcript_row(user_row(
+            "n1",
+            "<task-notification><task-id>a1</task-id><status>completed</status><summary>done</summary><result>DONE</result></task-notification>",
+            serde_json::json!({"origin": {"kind": "task-notification"}}),
+        )),
+    ] {
+        ClaudePty::step(&mut state, event);
+    }
+    assert_eq!(subagents_held(&state), (vec![], vec![]));
+    let late = ClaudePty::step(&mut state, row("sa2", "AFTER"));
+    assert!(late.step.agents.is_empty(), "{:?}", late.step.agents);
+}

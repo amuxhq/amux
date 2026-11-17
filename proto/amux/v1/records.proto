@@ -158,11 +158,12 @@ message NativeStart {
   // The provider's own id for the subagent: Claude's agent id, Codex's
   // thread id.
   string provider_child_id = 1;
-  // The agent whose chat holds the call that started the subagent: the
-  // host, or a provider subagent that started a nested one.
+  // The agent whose chat holds the call that started this run of the
+  // subagent: the host, or a provider subagent that made the call.
   bytes call_agent_id = 2;
-  // That call's item key. A continuation names the original call, not the
-  // one that continued it.
+  // That call's item key. A continuation names the call that continued it
+  // (a SendMessage, a Codex follow-up), not the one that first started it:
+  // a host keeps nothing of a subagent past its end.
   string call_key = 3;
   // The provider's description of the subagent, which becomes the row's
   // title; empty when the provider gave none.

@@ -111,8 +111,8 @@ item toolu_0115dPdfaNpQp5uZ4Cdj5n7t tool final at=1794788094295 text="" SendMess
 item toolu_0115dPdfaNpQp5uZ4Cdj5n7t tool final at=1794788094295 text="" SendMessage TOOL_STATE_RUNNING input="{\"content\":\"Use Bash to run exactly this command: echo BETA\\…"
 ## 180 recorded 179: fact Stream type=system subtype=task_started uuid=33bbd551-94a7-4acd-afb2-27ef8641dbba tool_use_id=toolu_0115dPdfaNpQp5uZ4Cdj5n7t
 item toolu_0115dPdfaNpQp5uZ4Cdj5n7t tool final at=1794788094295 text="" SendMessage TOOL_STATE_RUNNING background opens=sub-8b600219 input="{\"content\":\"Use Bash to run exactly this command: echo BETA\\…"
-agent sub-8b600219 start child=aa8b33460d86493fd call=host/toolu_01F8e5YXiBSZPM3CvjhngKPs title="Run echo ALPHA"
-agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788094623 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run echo ALPHA"@1794788094623]
+agent sub-8b600219 start child=aa8b33460d86493fd call=host/toolu_0115dPdfaNpQp5uZ4Cdj5n7t title="Run echo ALPHA"
+agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788094623 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run echo ALPHA"@1794788094623]
 ## 187 recorded 186: fact Stream type=system subtype=status uuid=93a66e57-0bc3-4465-95c9-e8b3b65f1346
 item 93a66e57-0bc3-4465-95c9-e8b3b65f1346 status final at=1794788094635 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 189 recorded 188: fact Stream type=stream_event uuid=c58a50c2-a5b5-4d81-9e0b-a2c48938c5c1
@@ -150,6 +150,7 @@ snapshot IDLE queue=[] working_on="Use the Agent tool (subagent_type general-pur
 turn_end 2 last=msg_011Ch5eEMVHvSmowzgNSzANq:0
 ## 218 recorded 217: fact Stream type=assistant uuid=68b82405-3429-4a04-bed2-c548ff46704c
 agent sub-8b600219 item toolu_01M9Jnn7H9bt486EAP8wVk7L tool final at=1794788096217 text="" Bash TOOL_STATE_RUNNING input=shell:"echo BETA"
+agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788096217 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run echo ALPHA"@1794788094623]
 ## 222 recorded 221: fact Stream type=user uuid=2f13083f-2bb5-4185-86cf-0800e95e90f3
 agent sub-8b600219 item toolu_01M9Jnn7H9bt486EAP8wVk7L tool final at=1794788096217 text="" Bash TOOL_STATE_SUCCEEDED ended=1794788096233 input=shell:"echo BETA" out="BETA"
 ## 224 recorded 223: fact Stream type=assistant uuid=8363a342-7279-4e6a-a6ea-eef17dd4da17

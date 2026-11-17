@@ -207,9 +207,16 @@ comparison against `HEAD`, through the same changed-files call the review
 page uses, before it warns. A confirmation captures what it showed when it opened
 and sends consent only when that warning named changes, so a fleet that
 changed meanwhile, or a check that failed, never discards work the person
-was not shown. The branch is named whenever the row has one, since equal
-totals on the branch and uncommitted do not prove the branch has no commits
-of its own.
+was not shown. The branch is named whenever the row has one, and what
+becomes of it is always the host's answer, for an agent with a process too:
+the same call's `Diff.own_commits` counts the commits on the checked-out
+branch that no other ref holds (its upstream and the stash aside), the
+predicate the removal applies, zero exactly when the branch goes. A row's
+totals cannot say it (a line committed and changed again uncommitted gives
+equal totals over a commit of its own), and a merge made anywhere else takes
+the commits away without the agent's row changing. Until the host answers,
+or when it cannot, the warning says the branch stays if anything was
+committed to it, which is true either way.
 
 ## Where it lives
 

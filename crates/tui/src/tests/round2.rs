@@ -453,10 +453,12 @@ fn archive_in_worktree_as(
 }
 
 /// Decided: deleting the last agent in a worktree amux made says the
-/// worktree goes, with the uncommitted changes its row reports and the
-/// branch that keeps what was committed; confirming agrees to lose those
-/// changes. Without changes the worktree just goes, and nothing is
-/// discarded; the branch is named whenever the row has one.
+/// worktree goes, with the uncommitted changes its row reports, and what
+/// becomes of its branch, which the host is asked: it keeps its commits,
+/// or goes too when nothing was committed to it, and until the host has
+/// counted them the words are true either way. Confirming agrees to lose
+/// the changes drawn. Without changes the worktree just goes, and nothing
+/// is discarded.
 #[test]
 fn deleting_the_last_agent_in_a_worktree_warns_what_goes_and_confirming_discards_it() {
     let totals = |files, added, removed| {
@@ -466,53 +468,96 @@ fn deleting_the_last_agent_in_a_worktree_warns_what_goes_and_confirming_discards
             removed,
         })
     };
-    let confirm = |fleet: &FleetState| {
+    let archive = ui_state::AgentKey {
+        host: b"a".to_vec(),
+        agent: b"old".to_vec(),
+    };
+    let counted = |commits| wire::Diff {
+        own_commits: Some(commits),
+        ..Default::default()
+    };
+    // The window as it opens, and once the host has counted `commits`.
+    let confirm = |fleet: &FleetState, commits: u32| {
         let mut home = new_home();
         home_at(&mut home, fleet, W, H);
         focus(&mut home, fleet, "archive");
-        home.key(fleet, key(KeyCode::Char('x')));
+        let asked = home.key(fleet, key(KeyCode::Char('x')));
+        assert!(
+            matches!(asked.as_slice(), [FleetEffect::CheckChanges(agent)] if *agent == archive),
+            "the host is asked for the branch's commits: {asked:?}"
+        );
+        let opening = home_at(&mut home, fleet, W, H);
+        home.changes_checked(&archive, Ok(&counted(commits)));
         let screen = home_at(&mut home, fleet, W, H);
         let effects = home.key(fleet, key(KeyCode::Enter));
-        (screen, effects)
+        (opening, screen, effects)
     };
 
-    let (screen, effects) = confirm(&archive_in_worktree(wire::Git {
+    let dirty = archive_in_worktree(wire::Git {
         branch: Some("fix-scroll".into()),
         uncommitted: totals(3, 42, 7),
         on_branch: totals(4, 50, 7),
         ..Default::default()
-    }));
+    });
+    let (opening, screen, effects) = confirm(&dirty, 3);
     for line in [
         "Delete archive and its history?",
         "Its worktree goes too, with 3 uncommitted files (+42 \u{2212}7).",
-        "The branch fix-scroll keeps what was committed.",
+        "The branch fix-scroll stays if anything was committed to it.",
     ] {
-        assert!(screen.contains(line), "no {line:?} in:\n{screen}");
+        assert!(opening.contains(line), "no {line:?} in:\n{opening}");
     }
+    assert!(
+        screen.contains("The branch fix-scroll keeps its 3 commits."),
+        "{screen}"
+    );
     assert!(
         matches!(effects.as_slice(), [FleetEffect::Delete(agent, true)] if agent.agent == b"old"),
         "{effects:?}"
     );
-
-    let (screen, effects) = confirm(&archive_in_worktree(wire::Git {
-        branch: Some("fix-scroll".into()),
-        uncommitted: totals(0, 0, 0),
-        on_branch: totals(0, 0, 0),
-        ..Default::default()
-    }));
-    assert!(screen.contains("Its worktree goes too."), "{screen}");
+    let (_, screen, _) = confirm(&dirty, 1);
     assert!(
-        screen.contains("The branch fix-scroll keeps what was committed."),
-        "the row cannot say the branch has nothing committed:\n{screen}"
+        screen.contains("The branch fix-scroll keeps its 1 commit."),
+        "{screen}"
+    );
+
+    let (_, screen, effects) = confirm(
+        &archive_in_worktree(wire::Git {
+            branch: Some("fix-scroll".into()),
+            uncommitted: totals(0, 0, 0),
+            on_branch: totals(0, 0, 0),
+            ..Default::default()
+        }),
+        0,
+    );
+    assert!(screen.contains("Its worktree goes too."), "{screen}");
+    // The sentence is longer than the dialog is wide, so it is read across
+    // the rows it wraps over.
+    let words = screen
+        .replace('\u{2502}', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        words.contains("The branch fix-scroll goes too, since nothing was committed to it."),
+        "{screen}"
     );
     assert!(
         matches!(effects.as_slice(), [FleetEffect::Delete(_, false)]),
         "{effects:?}"
     );
 
-    // An agent in a folder of its own: the delete says nothing more.
-    let (screen, effects) = confirm(&home_fleet());
+    // An agent in a folder of its own: the delete asks nothing and says
+    // nothing more.
+    let fleet = home_fleet();
+    let mut home = new_home();
+    home_at(&mut home, &fleet, W, H);
+    focus(&mut home, &fleet, "archive");
+    let asked = home.key(&fleet, key(KeyCode::Char('x')));
+    assert!(asked.is_empty(), "{asked:?}");
+    let screen = home_at(&mut home, &fleet, W, H);
     assert!(!screen.contains("worktree"), "{screen}");
+    let effects = home.key(&fleet, key(KeyCode::Enter));
     assert!(
         matches!(effects.as_slice(), [FleetEffect::Delete(_, false)]),
         "{effects:?}"
@@ -629,6 +674,7 @@ fn a_delete_of_an_agent_without_a_process_warns_from_what_its_host_finds() {
                 ..Default::default()
             },
         ],
+        own_commits: Some(2),
         ..Default::default()
     };
     let old = |agent: &ui_state::AgentKey| agent.agent == b"old";
@@ -668,7 +714,7 @@ fn a_delete_of_an_agent_without_a_process_warns_from_what_its_host_finds() {
             "{screen}"
         );
         assert!(
-            screen.contains("The branch shopper keeps what was committed."),
+            screen.contains("The branch shopper keeps its 2 commits."),
             "{screen}"
         );
         let effects = home.key(&fleet, key(KeyCode::Enter));

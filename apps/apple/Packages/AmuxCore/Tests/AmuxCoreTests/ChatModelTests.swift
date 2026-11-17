@@ -722,7 +722,7 @@ final class ChatModelTests: XCTestCase {
         let pasted = DraftAttachment.text(name: "Pasted text", text: "line one\nline two\nline three")
         let patch = BlobRef(hash: [4, 2], name: "patch", mime: "text/x-diff", size: 120)
         let review = DraftAttachment.review(
-            diff: Diff(head: "abc123", files: [], base: nil, mergeBase: nil, patch: patch),
+            diff: Diff(head: "abc123", files: [], base: nil, mergeBase: nil, ownCommits: nil, patch: patch),
             comments: [ReviewComment(path: "src/lib.rs", line: 12, oldLine: 0, text: "Name this.")])
         source.drafts[[7]] = Draft(words: "Look at these.", attachments: [pasted, review])
         let model = ChatModel(source: source)

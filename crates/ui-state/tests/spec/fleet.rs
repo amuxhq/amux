@@ -436,6 +436,7 @@ fn a_delete_removes_the_workspace_only_with_its_last_member_counting_its_descend
         Some(ui_state::WorkspaceGoes {
             uncommitted: None,
             branch: None,
+            branch_commits: None,
         }),
         "the other host's agent is in another workspace; no git facts read yet"
     );
@@ -449,7 +450,8 @@ fn a_delete_removes_the_workspace_only_with_its_last_member_counting_its_descend
 /// Equal totals on the branch and uncommitted do not say the branch has no
 /// commits of its own: a line committed and then changed again uncommitted
 /// gives equal totals over a unique commit. The row carries no count of
-/// commits, so the branch is always named when the row has one.
+/// commits, so the branch is always named when the row has one, and its
+/// commits are the host's to count.
 #[test]
 fn the_branch_is_named_whenever_the_row_has_one() {
     use wire::experimental::WorkspaceKind::Git;
@@ -551,6 +553,10 @@ fn a_delete_warning_asks_the_host_when_no_process_keeps_the_row_current() {
         "{awake:?}"
     );
     assert!(awake.discards());
+    assert!(
+        awake.asks_host(),
+        "its branch's commits are not counted yet"
+    );
 
     for name in ["sleepy", "gone"] {
         let checking = fleet.delete_warning(&at("a", name)).unwrap();
@@ -559,6 +565,7 @@ fn a_delete_warning_asks_the_host_when_no_process_keeps_the_row_current() {
             "{checking:?}"
         );
         assert!(!checking.discards(), "nothing named yet");
+        assert!(checking.asks_host());
 
         let diff = wire::Diff {
             files: vec![
@@ -575,6 +582,7 @@ fn a_delete_warning_asks_the_host_when_no_process_keeps_the_row_current() {
                     ..Default::default()
                 },
             ],
+            own_commits: Some(2),
             ..Default::default()
         };
         let found = checking.clone().answered::<()>(Ok(&diff));
@@ -583,9 +591,11 @@ fn a_delete_warning_asks_the_host_when_no_process_keeps_the_row_current() {
             DeleteWarning::Goes(ui_state::WorkspaceGoes {
                 uncommitted: totals(2, 2, 0),
                 branch: Some("fix".into()),
+                branch_commits: Some(2),
             })
         );
         assert!(found.discards());
+        assert!(!found.asks_host(), "settled");
 
         let clean = checking.clone().answered::<()>(Ok(&wire::Diff::default()));
         assert!(
@@ -595,7 +605,74 @@ fn a_delete_warning_asks_the_host_when_no_process_keeps_the_row_current() {
         assert!(!clean.discards());
 
         let failed = checking.answered(Err("unreachable"));
-        assert!(matches!(failed, DeleteWarning::Unknown(_)), "{failed:?}");
+        assert!(
+            matches!(&failed, DeleteWarning::Unknown(goes) if goes.branch_commits.is_none()),
+            "{failed:?}"
+        );
         assert!(!failed.discards(), "no consent without an answer");
+        assert!(!failed.asks_host());
     }
+}
+
+/// Whether the branch has commits of its own is always the host's answer,
+/// even for an agent whose process keeps its row current: a merge made
+/// anywhere else takes them away, and the host deletes a branch with none.
+/// The answer counts them and changes nothing the warning already drew; a
+/// host that cannot say leaves them uncounted.
+#[test]
+fn a_delete_warning_takes_the_branchs_commits_from_the_host() {
+    use ui_state::DeleteWarning;
+    use wire::experimental::WorkspaceKind::Git;
+    let mut fleet = FleetState::new();
+    for msg in [
+        host("a"),
+        agent(in_workspace(
+            row("a", "awake", Phase::Idle, None),
+            Git,
+            "/w/awake",
+            true,
+            git("awake", totals(1, 2, 0), None),
+        )),
+        agent(in_workspace(
+            row("a", "detached", Phase::Idle, None),
+            Git,
+            "/w/detached",
+            true,
+            Some(wire::Git::default()),
+        )),
+        caught_up(),
+    ] {
+        fleet.update(msg);
+    }
+    let awake = fleet.delete_warning(&at("a", "awake")).unwrap();
+    let answer = |commits| wire::Diff {
+        own_commits: commits,
+        ..Default::default()
+    };
+    for commits in [0, 1, 3] {
+        let counted = awake.clone().answered::<()>(Ok(&answer(Some(commits))));
+        assert_eq!(
+            counted,
+            DeleteWarning::Goes(ui_state::WorkspaceGoes {
+                uncommitted: totals(1, 2, 0),
+                branch: Some("awake".into()),
+                branch_commits: Some(commits),
+            }),
+            "the row's uncommitted changes stay what was drawn"
+        );
+        assert!(!counted.asks_host());
+    }
+    let older = awake.clone().answered::<()>(Ok(&answer(None)));
+    assert!(
+        matches!(&older, DeleteWarning::Goes(goes) if goes.branch_commits.is_none()),
+        "a host before the count: {older:?}"
+    );
+    assert_eq!(awake.clone().answered(Err("unreachable")), awake);
+    let detached = fleet.delete_warning(&at("a", "detached")).unwrap();
+    assert!(!detached.asks_host(), "no branch to count");
+    let detached = detached.answered::<()>(Ok(&answer(Some(4))));
+    assert!(
+        matches!(&detached, DeleteWarning::Goes(goes) if goes.branch_commits.is_none()),
+        "{detached:?}"
+    );
 }

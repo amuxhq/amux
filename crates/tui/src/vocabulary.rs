@@ -697,6 +697,7 @@ index 0000000..3333333
                 binary: false,
             },
         ],
+        own_commits: None,
     };
     let mut page = ReviewPage::new(diff, patch.into());
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};

@@ -57,6 +57,7 @@ fn review(base: Option<Base>, merge_base: Option<&str>) -> Attachment {
                 head: "4f2a9c1".into(),
                 merge_base: merge_base.map(str::to_owned),
                 files: Vec::new(),
+                own_commits: None,
             }),
             comments: vec![
                 ReviewComment {

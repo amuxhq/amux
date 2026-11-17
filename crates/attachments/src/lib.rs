@@ -673,6 +673,8 @@ fn parse_element(text: &str, start: usize) -> Result<(Attachment, usize), Proble
                     merge_base,
                     // The patch names every file; the form does not repeat them.
                     files: Vec::new(),
+                    // Of the branch when the diff was taken, not the review's.
+                    own_commits: None,
                 }),
                 comments,
             })

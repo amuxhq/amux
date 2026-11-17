@@ -130,6 +130,11 @@ async fn without_a_patch_the_host_lists_the_files_and_stores_nothing() {
     assert_eq!(uncommitted.head, repo.head);
     assert_eq!(uncommitted.merge_base, None);
     assert_eq!(
+        uncommitted.own_commits,
+        Some(1),
+        "the branch's one commit, which no other ref holds"
+    );
+    assert_eq!(
         uncommitted.files,
         vec![
             file("kept.txt", 1, 0, DiffFileChange::Changed),

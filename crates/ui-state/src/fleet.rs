@@ -25,16 +25,24 @@ fn workspace_of(agent: &Agent) -> Option<AgentWorkspace> {
 pub struct WorkspaceGoes {
     /// Its uncommitted changes, when it has any.
     pub uncommitted: Option<ChangeTotals>,
-    /// The branch that keeps what was committed; none on a detached head
-    /// or before the row's git facts were read.
+    /// The workspace's branch; none on a detached head or before the row's
+    /// git facts were read.
     pub branch: Option<String>,
+    /// The commits on the branch that no other branch, tag or remote holds,
+    /// as the host counted them when asked: the branch keeps them, and with
+    /// none it goes with the workspace. None until the host answers, or
+    /// when it could not say.
+    pub branch_commits: Option<u32>,
 }
 
 /// What a delete's confirmation says about the workspace that goes with the
 /// agent, and so what confirming it agrees to. The row's git facts are kept
 /// current only by the agent's process: for an agent without one,
 /// suspended or exited, the confirmation asks the agent's host for the
-/// workspace's changes against HEAD and says so until it answers.
+/// workspace's changes against HEAD and says so until it answers. Whether
+/// the branch has commits of its own the host is always asked, since a
+/// merge made anywhere else can take them away
+/// ([`DeleteWarning::asks_host`]).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum DeleteWarning {
     /// What goes, from facts that are current: the row's while a process
@@ -53,15 +61,29 @@ impl DeleteWarning {
         matches!(self, DeleteWarning::Goes(goes) if goes.uncommitted.is_some())
     }
 
-    /// The warning once the host answered a `Checking` one with the
-    /// workspace's changes against HEAD, or failed to. Any other warning
-    /// stays as it is.
+    /// Whether the client asks the agent's host before the warning is
+    /// settled: when it is still checking what is uncommitted, or when it
+    /// names a branch whose own commits are not counted yet.
+    pub fn asks_host(&self) -> bool {
+        match self {
+            DeleteWarning::Checking(_) => true,
+            DeleteWarning::Goes(goes) => goes.branch.is_some() && goes.branch_commits.is_none(),
+            DeleteWarning::Unknown(_) => false,
+        }
+    }
+
+    /// The warning once the host answered with the workspace's changes
+    /// against HEAD, or failed to. A `Checking` one then says what is
+    /// uncommitted, or that the host could not say; any that names a branch
+    /// takes the host's count of its own commits. A failure leaves the
+    /// branch uncounted, which the warning says in words true either way.
     pub fn answered<E>(self, compared: Result<&wire::Diff, E>) -> DeleteWarning {
-        let DeleteWarning::Checking(goes) = self else {
-            return self;
+        let counted = |goes: WorkspaceGoes, diff: &wire::Diff| WorkspaceGoes {
+            branch_commits: goes.branch.as_ref().and(diff.own_commits),
+            ..goes
         };
-        match compared {
-            Ok(diff) => {
+        match (self, compared) {
+            (DeleteWarning::Checking(goes), Ok(diff)) => {
                 let totals = ChangeTotals {
                     files: diff.files.len() as u32,
                     added: diff.files.iter().map(|file| file.added).sum(),
@@ -69,10 +91,14 @@ impl DeleteWarning {
                 };
                 DeleteWarning::Goes(WorkspaceGoes {
                     uncommitted: (totals.files > 0).then_some(totals),
-                    ..goes
+                    ..counted(goes, diff)
                 })
             }
-            Err(_) => DeleteWarning::Unknown(goes),
+            (DeleteWarning::Checking(goes), Err(_)) => DeleteWarning::Unknown(goes),
+            // What is uncommitted stays the row's: it is what the warning
+            // already drew, and so what confirming it agrees to.
+            (DeleteWarning::Goes(goes), Ok(diff)) => DeleteWarning::Goes(counted(goes, diff)),
+            (warning, _) => warning,
         }
     }
 }
@@ -345,11 +371,12 @@ impl FleetState {
         // Named whenever the row has one: equal totals on the branch and
         // uncommitted do not prove it has no commits of its own (a line
         // committed, then changed again uncommitted), and the row carries
-        // no count of commits.
+        // no count of commits; the host's answer says how many.
         let branch = git.and_then(|git| git.branch.clone());
         Some(WorkspaceGoes {
             uncommitted,
             branch,
+            branch_commits: None,
         })
     }
 

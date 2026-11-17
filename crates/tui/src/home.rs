@@ -701,9 +701,10 @@ impl Home {
             return vec![FleetEffect::Close(agent)];
         }
         let warning = delete.then(|| fleet.delete_warning(&agent)).flatten();
-        // No process keeps the row's facts current: the host is asked what
-        // the workspace holds now.
-        let check = matches!(warning, Some(DeleteWarning::Checking(_)));
+        // The host is asked what the workspace holds now when no process
+        // keeps the row's facts current, and always how many commits its
+        // branch has of its own.
+        let check = warning.as_ref().is_some_and(DeleteWarning::asks_host);
         self.overlay = Some(Overlay::Confirm {
             name: entry.name.clone(),
             delete,
@@ -2164,15 +2165,14 @@ fn close_cuts(fleet: &FleetState, agent: &AgentKey) -> Option<String> {
 /// What asking before a delete says: the delete, then, when the agent's
 /// workspace goes with it, that the worktree goes with its uncommitted
 /// changes, while asking its host what they are, or that one with changes
-/// stays when the host could not say; and the branch that keeps what was
-/// committed.
+/// stays when the host could not say; and what becomes of its branch.
 fn delete_sentences(name: &str, warning: Option<&DeleteWarning>) -> Vec<String> {
     let mut sentences = vec![format!("Delete {name} and its history?")];
     let goes = match warning {
         None => return sentences,
-        Some(DeleteWarning::Checking(_)) => {
+        Some(DeleteWarning::Checking(goes)) => {
             sentences.push("Checking its worktree for uncommitted changes\u{2026}".to_owned());
-            return sentences;
+            goes
         }
         Some(DeleteWarning::Unknown(goes)) => {
             sentences.push(
@@ -2196,10 +2196,23 @@ fn delete_sentences(name: &str, warning: Option<&DeleteWarning>) -> Vec<String> 
             goes
         }
     };
-    if let Some(branch) = &goes.branch {
-        sentences.push(format!("The branch {branch} keeps what was committed."));
+    if let Some(branch) = branch_sentence(goes) {
+        sentences.push(branch);
     }
     sentences
+}
+
+/// What a delete does to the workspace's branch: the host deletes one with
+/// no commits of its own and keeps any other. Until the host has counted
+/// them, words true either way.
+fn branch_sentence(goes: &ui_state::WorkspaceGoes) -> Option<String> {
+    let branch = goes.branch.as_ref()?;
+    Some(match goes.branch_commits {
+        Some(0) => format!("The branch {branch} goes too, since nothing was committed to it."),
+        Some(1) => format!("The branch {branch} keeps its 1 commit."),
+        Some(commits) => format!("The branch {branch} keeps its {commits} commits."),
+        None => format!("The branch {branch} stays if anything was committed to it."),
+    })
 }
 
 /// Whether confirming a delete agrees to lose uncommitted changes: only

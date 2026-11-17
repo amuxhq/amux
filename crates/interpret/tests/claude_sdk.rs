@@ -2920,11 +2920,70 @@ fn a_permission_granted_for_the_session_is_held_until_the_process_ends() {
     let mut saved = state.clone_via_checkpoint();
     ClaudeSdk::step(&mut saved, allow(0));
     assert!(!ClaudeSdk::holds(&saved).session_grant);
+    // A mode for the session is the agent's permission from then on, which
+    // its snapshot says and a resume starts in: nothing is lost.
+    let mut moved = state.clone_via_checkpoint();
+    let stepped = ClaudeSdk::step(&mut moved, allow(2));
+    assert!(!ClaudeSdk::holds(&moved).session_grant);
+    let (_, snapshot) = sdk_snapshot(&stepped).expect("a snapshot");
+    assert_eq!(snapshot.permission.as_deref(), Some("acceptEdits"));
     let mut granted = state.clone_via_checkpoint();
     ClaudeSdk::step(&mut granted, allow(1));
     assert!(ClaudeSdk::holds(&granted).session_grant);
     ClaudeSdk::step(&mut granted, Event::ProviderExit { code: Some(0) });
     assert!(ClaudeSdk::holds(&granted).nothing());
+}
+
+/// Approving a plan moves Claude out of plan for the session. The move is
+/// the agent's permission from the answer on, before Claude reports it, so
+/// the snapshot a resume starts from says it, and nothing is held that a
+/// suspension would lose.
+#[test]
+fn an_approved_plan_moves_the_permission_and_holds_nothing() {
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 1,
+        provider_args: vec!["--permission-mode".into(), "plan".into()],
+        ..Default::default()
+    };
+    let (mut state, _) = ClaudeSdk::initial(&spec);
+    ClaudeSdk::step(
+        &mut state,
+        stream(
+            json!({"type": "system", "subtype": "init", "uuid": "i", "session_id": "s", "model": "claude-root", "permissionMode": "plan"}),
+        ),
+    );
+    let prompt = wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+        text: "plan it".into(),
+        ..Default::default()
+    });
+    ClaudeSdk::step(&mut state, sdk_input(b"p1", prompt));
+    ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "control_request", "request_id": "req-1",
+            "request": {"subtype": "can_use_tool", "tool_name": "ExitPlanMode",
+                "input": {"plan": "1. Do it."}, "tool_use_id": "t1"},
+        })),
+    );
+    let approve = sdk_input(
+        b"a1",
+        wire::claude_sdk_input::Of::Answer(wire::ClaudeAnswer {
+            ask_key: "req-1".into(),
+            of: Some(wire::claude_answer::Of::Plan(wire::PlanAnswer {
+                choice: wire::PlanChoice::Start as i32,
+                note: None,
+            })),
+        }),
+    );
+    let stepped = ClaudeSdk::step(&mut state, approve);
+    let (_, snapshot) = sdk_snapshot(&stepped).expect("a snapshot");
+    assert_eq!(snapshot.permission.as_deref(), Some("default"));
+    assert!(
+        ClaudeSdk::holds(&state).nothing(),
+        "{:?}",
+        ClaudeSdk::holds(&state)
+    );
 }
 
 trait CloneViaCheckpoint {

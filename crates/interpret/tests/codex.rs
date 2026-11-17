@@ -4044,3 +4044,31 @@ fn a_spawns_late_completion_does_not_start_the_child_again() {
     );
     assert_eq!(agent.sub("child").starts.len(), 1);
 }
+
+/// Implementing a plan leaves plan mode for the default one, which the
+/// snapshot says and a resume starts in: nothing is held that a
+/// suspension would lose, so such an agent suspends like any other.
+#[test]
+fn implementing_a_plan_moves_the_mode_and_holds_nothing() {
+    use prost::Message as _;
+    let script = interpret::fixture_script::<Codex>(&fixtures().join("plans.json")).unwrap();
+    let (mut state, _) = Codex::initial(&script.spec);
+    let mut mode = None;
+    let mut approved = false;
+    for (_, event) in script.events {
+        let Some(event) = event else { continue };
+        approved |= matches!(&event, Event::Input(input) if input.input_id == b"a1");
+        let step = Codex::step(&mut state, event).step;
+        if let Some(snapshot) = &step.snapshot {
+            mode = wire::CodexSnapshot::decode(snapshot.body.as_slice())
+                .unwrap()
+                .mode;
+        }
+        if approved && step.turn_end.is_some() {
+            break;
+        }
+    }
+    assert!(approved, "the fixture approves its plan");
+    assert_eq!(mode.as_deref(), Some("default"));
+    assert!(Codex::holds(&state).nothing(), "{:?}", Codex::holds(&state));
+}

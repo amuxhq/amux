@@ -1556,6 +1556,61 @@ mod headless_claude {
         }
     }
 
+    /// An agent whose plan was approved has left plan mode for its session.
+    /// That move is its permission from then on, which its snapshot says
+    /// and a resume starts in, so it holds nothing a suspension would lose:
+    /// it suspends at its delay, its last snapshot saying the mode it left
+    /// plan for.
+    #[test]
+    fn a_headless_claude_that_left_plan_mode_suspends_in_its_current_mode() {
+        const AFTER_MS: u64 = 30 * MINUTE;
+        let mut claude = Claude::suspending(AFTER_MS);
+        claude.says(json!({
+            "type": "control_request", "request_id": "req-1",
+            "request": {"subtype": "can_use_tool", "tool_name": "ExitPlanMode",
+                "input": {"plan": "1. Do it."}, "tool_use_id": "t1"},
+        }));
+        let approve = wire::Input::new(
+            b"a1".to_vec(),
+            wire::ClaudeSdkInput {
+                of: Some(wire::claude_sdk_input::Of::Answer(wire::ClaudeAnswer {
+                    ask_key: "req-1".into(),
+                    of: Some(wire::claude_answer::Of::Plan(wire::PlanAnswer {
+                        choice: wire::PlanChoice::Start as i32,
+                        note: None,
+                    })),
+                })),
+            },
+        );
+        let mut journaled = claude.on(Input::Control {
+            connection: DAEMON,
+            frame: CtlFrame {
+                of: Some(ctl_frame::Of::Input(approve)),
+            },
+        });
+        journaled.extend(claude.result("r1", "done"));
+        let ended = claude.now_ms;
+        assert_eq!(claude.suspension(), Some(ended + AFTER_MS));
+        let out = claude.at(ended + AFTER_MS, Input::Timer(TimerId::Suspend));
+        assert_eq!(
+            claude.agent.exiting(),
+            Some(&ExitCause::Suspended),
+            "{out:?}"
+        );
+        journaled.extend(out);
+        // The snapshot as a golden reads it, where `mode=` is the permission.
+        let last = journaled
+            .iter()
+            .filter_map(|output| match output {
+                Output::AppendJournal(step) => step.snapshot.as_ref(),
+                _ => None,
+            })
+            .next_back()
+            .map(|snapshot| ClaudeSdk::describe_snapshot(&snapshot.body).text)
+            .expect("a snapshot");
+        assert!(last.contains(" mode=default "), "{last}");
+    }
+
     /// Headless Claude starts the subagents its Agent tool asks for in the
     /// background: the call's result only says the subagent was launched,
     /// and the parent's turn ends while the subagent still works. A

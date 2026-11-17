@@ -708,6 +708,16 @@ impl State {
             .map(|(key, meta)| (key.clone(), meta.tool_use_id.clone()))
     }
 
+    /// The agent's permission once an allowance moved Claude's mode, as
+    /// terminal Claude's interpreter records it: at once, confirmed by
+    /// Claude's next report, so the snapshot a resume starts from says it
+    /// whether or not Claude reports it before the agent suspends.
+    fn moved_by(&mut self, result: &claude_protocol::stream::PermissionResult) {
+        if let Some(mode) = claude_answers::mode_set(result) {
+            self.permission_mode = Some(mode);
+        }
+    }
+
     /// Answers the open plan ask without the person deciding it.
     fn close_plan(
         &mut self,
@@ -722,6 +732,7 @@ impl State {
         if claude_answers::for_session(&result) {
             self.shared.granted_for_session();
         }
+        self.moved_by(&result);
         emit.effect(write(&claude_stream::Input::ControlResponse(
             ControlResponse::success(key, &result),
         )));
@@ -887,8 +898,12 @@ impl State {
         };
         let ask = self.answered(emit, who, id, &key);
         let meta = self.asks.remove(&key);
-        if matches!(&response, Answer::Permission(result) if claude_answers::for_session(result)) {
-            self.shared.granted_for_session();
+        if let Answer::Permission(result) = &response {
+            if claude_answers::for_session(result) {
+                self.shared.granted_for_session();
+            }
+            // Claude's mode is its session's, whichever thread asked.
+            self.moved_by(result);
         }
         emit.effect(write(&claude_stream::Input::ControlResponse(
             match response {

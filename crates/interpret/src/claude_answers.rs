@@ -92,17 +92,34 @@ pub(crate) enum Answer {
 }
 
 /// Whether an allowance changes Claude's permissions for the rest of its
-/// session (a rule, a directory or a mode with destination `session`):
-/// Claude keeps it only in its process, and no resume restores it, so an
-/// agent holding one must not be suspended.
+/// session in a way no resume restores (a rule or a directory with
+/// destination `session`): Claude keeps it only in its process, so an agent
+/// holding one must not be suspended. A mode for the session is not one:
+/// it is the agent's permission from then on ([`mode_set`]), which its
+/// snapshot says and a resume starts in.
 pub(crate) fn for_session(result: &PermissionResult) -> bool {
     matches!(
         result,
         PermissionResult::Allow {
             updated_permissions: Some(updates),
             ..
-        } if updates.iter().any(|update| update.destination() == Some("session"))
+        } if updates.iter().any(|update| update.destination() == Some("session")
+            && !matches!(update, PermissionUpdate::SetMode { .. }))
     )
+}
+
+/// The permission mode an allowance moves Claude to, if it moves it.
+pub(crate) fn mode_set(result: &PermissionResult) -> Option<String> {
+    match result {
+        PermissionResult::Allow {
+            updated_permissions: Some(updates),
+            ..
+        } => updates.iter().find_map(|update| match update {
+            PermissionUpdate::SetMode { mode, .. } => Some(mode.as_str().to_owned()),
+            _ => None,
+        }),
+        _ => None,
+    }
 }
 
 /// Claude's own words for a tool use the person rejected.

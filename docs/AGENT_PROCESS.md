@@ -286,8 +286,10 @@ pending, every child's last report taken, no provider subagent running
 client attached (the driver feeds the attached count as an input), and
 nothing the interpreter says the provider holds (`Interpreter::holds`:
 background jobs, a turn the provider owes for a job that ended between
-turns, a scheduled wake-up, or a permission amux granted for the session,
-none of which survive a kill and resume). The stretch starts the moment the
+turns, a scheduled wake-up, or a rule or directory amux granted for the
+session, none of which survive a kill and resume; a permission mode set for
+the session, as approving a plan does, is not one, since the snapshot
+records it and the resume starts in it). The stretch starts the moment the
 agent is idle, which is the end of its last turn (a person's, another
 agent's, a wake-up's) or the moment one of those holds lets go, and again
 at a turn that begins and ends between two steps. Anything that makes the

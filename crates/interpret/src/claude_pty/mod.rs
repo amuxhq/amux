@@ -107,13 +107,13 @@
 mod facts;
 mod recording;
 mod subagents;
-
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
 use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+pub(crate) use subagents::{CONTINUED_CLOSING, CONTINUED_PREAMBLE};
 use wire::{
     AgentSpec, Ask, AskClosed, Attachment, BoundaryKind, ClaudeAnswer, ClaudeGrant, ClaudeSnapshot,
     DecisionOutcome, Envelope, Input, KindInput, Refusal, RunningCall, Step, ToolDecision,
@@ -268,6 +268,19 @@ pub fn subagent_row_kept(row: &[u8]) -> bool {
     }
     serde_json::from_slice::<Typed>(row)
         .is_ok_and(|row| matches!(row.r#type, "user" | "assistant" | "system"))
+}
+
+/// What a row of a subagent's own transcript says, as the interpreter
+/// takes it for the subagent's last words; None for a row that says nothing.
+pub fn subagent_row_said(row: &[u8]) -> Option<String> {
+    subagents::row_said(row)
+}
+
+/// Whether `said`, from [`subagent_row_said`], is the last reply `reply`
+/// that a [`crate::Effect::DrainSubagent`] waits for, as the interpreter
+/// matches the two.
+pub fn subagent_said_is_reply(said: &str, reply: &str) -> bool {
+    subagents::is_last_reply(said, reply)
 }
 
 /// The fact that the subagent `agent_id`'s `meta.json` reads `meta`.

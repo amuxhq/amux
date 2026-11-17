@@ -61,9 +61,58 @@ use crate::{Effect, Emit, ItemDraft};
 
 /// How long a subagent's end waits for its file to be read to its end
 /// before it ends anyway: Claude writes a completed subagent's last reply
-/// about a tenth of a second after the parent learns of its end, and the
-/// agent process says much sooner than this once it has read the file.
+/// about a tenth of a second after the parent learns of its end. The end
+/// usually comes from reading that reply, here or in the agent process,
+/// which says the file is drained as soon as it has read it and gives up
+/// after the same time.
 pub(super) const DRAIN_WAIT_MS: i64 = 2_000;
+
+/// Who a subagent's prompt came from when its parent's SendMessage
+/// continued it, as Claude 2.1.326 marks the row.
+const COORDINATOR: &str = "coordinator";
+/// The lines Claude 2.1.326 wraps a continuing message in, for the model.
+pub(crate) const CONTINUED_PREAMBLE: &str =
+    "The coordinator sent a message while you were working:\n";
+pub(crate) const CONTINUED_CLOSING: &str = "\n\nAddress this before completing your current task.";
+
+/// The message a SendMessage continued a subagent with, from the row
+/// Claude writes for it in the subagent's file: a note to the model from
+/// the coordinator, wrapped in Claude's own lines, which are left out. A
+/// row of any other note is None.
+fn continuation_message(user: &transcript::UserRow) -> Option<String> {
+    if user.origin.as_ref()?.kind != COORDINATOR {
+        return None;
+    }
+    let text = crate::claude_common::message_text(&user.message.content);
+    let message = text
+        .trim_start()
+        .strip_prefix(CONTINUED_PREAMBLE)
+        .unwrap_or(&text);
+    let message = message.strip_suffix(CONTINUED_CLOSING).unwrap_or(message);
+    Some(message.to_owned())
+}
+
+/// Whether `said`, what a subagent last said, is `reply`, the last reply
+/// its parent's notice names.
+pub(super) fn is_last_reply(said: &str, reply: &str) -> bool {
+    said.trim() == reply.trim()
+}
+
+/// What a row of a subagent's own transcript says, as its conversation
+/// takes it for what the subagent last said: an assistant row's text, when
+/// it has any.
+pub(super) fn row_said(row: &[u8]) -> Option<String> {
+    let Ok(Row::Assistant(assistant)) = transcript::decode(row) else {
+        return None;
+    };
+    if assistant.is_api_error_message == Some(true) {
+        return None;
+    }
+    Some(crate::claude_common::blocks_text(
+        &assistant.message.content,
+    ))
+    .filter(|said| !said.is_empty())
+}
 
 /// Where a subagent is in its life; it has no record once it ended.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -739,7 +788,7 @@ impl State {
         }
         if reply
             .as_deref()
-            .is_some_and(|reply| reply.trim() == sub.conversation.last_said.trim())
+            .is_some_and(|reply| is_last_reply(&sub.conversation.last_said, reply))
         {
             return self.end_subagent(emit, child, end);
         }
@@ -829,11 +878,26 @@ impl State {
             .unwrap_or_else(|| self.shared.now_ms());
         match &row {
             Row::User(user) => {
-                // Claude's own notes to the model.
-                if user.is_meta == Some(true) || user.is_compact_summary == Some(true) {
+                // Claude's own notes to the model, but for the message a
+                // SendMessage continued the subagent with, which Claude
+                // writes as one: that is the prompt its run answers.
+                let continued_with = (user.is_meta == Some(true))
+                    .then(|| continuation_message(user))
+                    .flatten();
+                if (user.is_meta == Some(true) && continued_with.is_none())
+                    || user.is_compact_summary == Some(true)
+                {
                     return;
                 }
-                if let MessageContent::Blocks(blocks) = &user.message.content {
+                let continuing;
+                let content = match continued_with {
+                    Some(message) => {
+                        continuing = MessageContent::Text(message);
+                        &continuing
+                    }
+                    None => &user.message.content,
+                };
+                if let MessageContent::Blocks(blocks) = content {
                     for block in blocks {
                         if let ContentBlock::ToolResult {
                             tool_use_id,
@@ -865,7 +929,7 @@ impl State {
                 sub.conversation.user(
                     &mut view,
                     &user.envelope.uuid,
-                    &user.message.content,
+                    content,
                     user.tool_use_result.as_ref(),
                     &BTreeMap::new(),
                     &mut self.tasks,
@@ -916,7 +980,7 @@ impl State {
                 let replied = self.subagents.get(&child).and_then(|sub| {
                     let ending = sub.ending.as_ref()?;
                     let reply = ending.last_reply.as_deref()?;
-                    (reply.trim() == sub.conversation.last_said.trim()).then(|| ending.end())
+                    is_last_reply(&sub.conversation.last_said, reply).then(|| ending.end())
                 });
                 if let Some(end) = replied {
                     self.end_subagent(emit, &child, end);

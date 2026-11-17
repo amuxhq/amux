@@ -616,9 +616,17 @@ A hook reaches the agent like this:
 
 The transcript is found through the hooks. `SessionStart` names the
 transcript file; when the path changes (a start, a resume, `/clear`, a
-compaction) the interpreter asks the agent to follow it. A follower reads the
-file every 25 ms, passes on whole lines only, and records its position in
-`private/transcript-cursor` (the offset and the file's path) after every row.
+compaction) the interpreter asks the agent to follow it. A follower holds the
+file open and reads only what was written since it last looked, when the
+platform reports a change (kqueue on macOS, inotify on Linux, to the file
+once it exists and to the nearest folder above it until then) and at least
+once a second in case no report comes. It passes on whole lines only, keeps
+the start of a line still being written until its newline arrives, and
+records its position in `private/transcript-cursor` (the offset and the
+file's path) after every row. A file gone, shorter than what was read or
+replaced by another is followed no further. The files share one watcher, so
+a session's hundred subagents cost no more watchers than one; `tail.rs`
+holds the reader and its watch.
 A later incarnation following the same file continues from the saved
 position, so a resumed session's rows are not read twice.
 
@@ -630,18 +638,21 @@ has one follower, as a continued one writes on in the same file. Its follower se
 the meta first (rows wait up to half a second for it), then the user,
 assistant and system rows, on the `subagent_transcript` channel; Claude's
 attachment and bookkeeping rows are not sent. Each keeps its own position in
-`private/subagent-cursors/<id>`. A follower reads every 25 ms while its file
-grows, and backs off to once a second while it does not, since one follows
-each subagent, finished ones included, until Claude exits. A file it can no
+`private/subagent-cursors/<id>`. A follower reads its file as the
+transcript's does, and one follows each subagent, finished ones included,
+until Claude exits. A drained one lets its watch, its open file and its
+timers go and waits only to be asked again: Claude fires `SubagentStart`
+for a subagent its model continues before the subagent writes. A file it can no
 longer read, or one now shorter than what it read, is reported once and its
 follower ends. The interpreter asks again at each `SubagentStart` for a
 subagent, as Claude fires one when its model continues a subagent: that
-wakes a follower to read at once and at its quick rate, or
+wakes a follower to read at once, or
 starts anew, from the saved position, one that ended. Claude
 can tell the agent a subagent finished before writing its last rows, so the
 interpreter asks for the file to be drained (`DrainSubagent`): the follower
-reads it to its end, waits up to two seconds for a completed subagent's
-final reply, and reports it drained.
+reads it to its end and reports it drained: at once, or for a completed
+subagent as soon as it reads the final reply the interpreter names, giving
+up on it after two seconds.
 
 An agent message for terminal Claude goes onto Claude's messaging socket,
 which queues it the way Claude queues a peer's message. When the socket is
@@ -807,8 +818,8 @@ terminal. `amux agent` exits 0 whatever the cause; 1 means it could not start
 | Terminal log | 4 segments of 256 KiB | constants in `host.rs` |
 | Provider asked to finish, then killed | 10 s | `PROVIDER_STOP_MS` in `agent-core` |
 | Output collected after a child exits | 300 ms | `TRAILING_OUTPUT` in `provider.rs` |
-| Transcript poll | 25 ms | `TRANSCRIPT_POLL` in `provider.rs` |
-| A subagent's rows wait for its meta; a drain waits for its final reply | 500 ms; 2 s | `META_WAIT`, `DRAIN_WAIT` in `claude/subagents.rs` |
+| A followed transcript is looked at with no change reported | 1 s | `FALLBACK_POLL` in `tail.rs` |
+| A subagent's rows wait for its meta; a drain waits at most for its final reply | 500 ms; 2 s | `META_WAIT`, `DRAIN_WAIT` in `claude/subagents.rs` |
 | Terminal Claude's first screen: quiet, cap | 100 ms, 500 ms | `FIRST_SCREEN_QUIET`, `FIRST_SCREEN_WAIT` in `provider.rs` |
 | Codex view asked to end, then killed | 2 s | `VIEW_STOP` in `attach.rs` |
 | Tool server retry window | 5 s | `RETRY_WINDOW` in `tools.rs` |

@@ -100,6 +100,7 @@
 == agent sub-df8e53a5 "Run counter subagent" started by host/toolu_012VXWzW2WdrKc71g3eWUc4e
   composer Native { stop: Unavailable } phase=Exited { cause: Finished }
 == chat
-     1 msg_011CgZkUcTgnvFgTmE99hYH6:0 Prose { text: [Text("ONE TWO THREE")], streaming: false, working_note: false }
+     1 prompt:toolu_012VXWzW2WdrKc71g3eWUc4e Prompt { text: [Text("Count to three and report the result.")], steered: false }
+     2 msg_011CgZkUcTgnvFgTmE99hYH6:0 Prose { text: [Text("ONE TWO THREE")], streaming: false, working_note: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
   changes: Changeability { model: NotOffered, effort: NotOffered, permission: NotOffered, mode: NotOffered } commands=0

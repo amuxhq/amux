@@ -64,6 +64,7 @@
 == chat
      1 c1daf31c-1aff-421e-acf0-e22b3bca810c Prompt { text: [Text("Count and report as your task requires. Reply with your answer.")], steered: false }
      2 msg_011Ch5dxAGv3Tq7PYBjghU94:0 Prose { text: [Text("ONE TWO THREE")], streaming: false, working_note: false }
-     3 msg_011Ch5dxgTsB4rDbJb2st9jW:0 Prose { text: [Text("FOUR FIVE SIX")], streaming: false, working_note: false }
+     3 a9694a22-3d9a-4887-80ec-84035679f537 Prompt { text: [Text("Please go on.")], steered: false }
+     4 msg_011Ch5dxgTsB4rDbJb2st9jW:0 Prose { text: [Text("FOUR FIVE SIX")], streaming: false, working_note: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
   changes: Changeability { model: NotOffered, effort: NotOffered, permission: NotOffered, mode: NotOffered } commands=0

@@ -126,7 +126,10 @@ pub const VOCABULARY: &[(&str, &[&str])] = &[
             "subagent",
         ],
     ),
-    ("kind", &["task-notification", "human", "peer"]),
+    (
+        "kind",
+        &["task-notification", "human", "peer", "coordinator"],
+    ),
     ("commandMode", &["prompt", "bash"]),
     // What terminal Claude did to its queue of prompts.
     ("operation", &["enqueue", "dequeue", "remove"]),
@@ -408,6 +411,7 @@ pub const MARKERS: &[&str] = &[
     "The user doesn't want to proceed with this tool use.",
     "<cross-session-message",
     "Another Claude session sent a message:\n",
+    crate::claude_pty::CONTINUED_PREAMBLE,
     "<pasted_content id=\"",
     "<local-command-caveat>",
     "<local-command-stdout>",
@@ -440,6 +444,10 @@ const FRAMES: &[(&str, &str)] = &[
     (
         "Another Claude session sent a message:\n",
         "\n\nThis came from another Claude session",
+    ),
+    (
+        crate::claude_pty::CONTINUED_PREAMBLE,
+        crate::claude_pty::CONTINUED_CLOSING,
     ),
     (
         crate::claude_answers::REJECTED,

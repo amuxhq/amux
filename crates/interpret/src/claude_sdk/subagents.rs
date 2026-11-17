@@ -246,6 +246,8 @@ impl State {
         let Some(sub) = self.subagents.get_mut(child) else {
             return;
         };
+        // Claude streams a run's prompt, when it does, before its first word.
+        sub.prompt_drawn = None;
         let mut view = self.shared.subagent(emit, child);
         // An error Claude met on the subagent's request is the subagent's,
         // not the agent's sign-in or turn.
@@ -296,6 +298,16 @@ impl State {
         let Some(sub) = self.subagents.get_mut(child) else {
             return;
         };
+        // The prompt its run's start drew already, which Claude streams as
+        // well for a subagent it runs in the foreground.
+        let echo = sub.prompt_drawn.as_deref().is_some_and(|drawn| {
+            only_text(&user.message.content)
+                && crate::claude_common::message_text(&user.message.content).trim() == drawn.trim()
+        });
+        if echo {
+            sub.prompt_drawn = None;
+            return;
+        }
         let key = user.uuid.clone().unwrap_or_default();
         let mut view = self.shared.subagent(emit, child);
         sub.conversation.user(
@@ -412,10 +424,40 @@ impl State {
             &task.description,
             &call,
         );
+        if let Some(prompt) = task
+            .prompt
+            .as_deref()
+            .filter(|prompt| !prompt.trim().is_empty())
+        {
+            self.draw_prompt(emit, &task.task_id, &call, prompt);
+        }
         if task.is_backgrounded == Some(true) {
             self.backgrounded(emit, &call);
         }
         true
+    }
+
+    /// Draws `prompt`, what the call `call` asked of the subagent `child`,
+    /// as the prompt its run answers: the first run's and each
+    /// continuation's, which Claude streams as a frame of the subagent's
+    /// own only for some runs (one in the foreground), and never for a
+    /// continuation.
+    fn draw_prompt(&mut self, emit: &mut Emit, child: &str, call: &str, prompt: &str) {
+        let now = self.shared.now_ms();
+        let Some(sub) = self.subagents.get_mut(child).filter(|sub| sub.running) else {
+            return;
+        };
+        sub.prompt_drawn = Some(prompt.to_owned());
+        let mut view = self.shared.subagent(emit, child);
+        sub.conversation.user(
+            &mut view,
+            &format!("prompt:{call}"),
+            &MessageContent::Text(prompt.to_owned()),
+            None,
+            &BTreeMap::new(),
+            &mut self.tasks,
+            now,
+        );
     }
 
     /// Starts the subagent `child`, or starts it again, under its first
@@ -445,6 +487,7 @@ impl State {
                 running: false,
                 stopping: false,
                 stop_error: String::new(),
+                prompt_drawn: None,
                 conversation: Conversation::default(),
             });
         if !title.is_empty() && sub.title.is_empty() {
@@ -790,5 +833,15 @@ impl State {
             (false, Some(child), None) => Some(child),
             _ => None,
         }
+    }
+}
+
+/// Whether a user frame is only text: a prompt, not a call's results.
+fn only_text(content: &MessageContent) -> bool {
+    match content {
+        MessageContent::Text(_) => true,
+        MessageContent::Blocks(blocks) => blocks
+            .iter()
+            .all(|block| matches!(block, ContentBlock::Text { .. })),
     }
 }

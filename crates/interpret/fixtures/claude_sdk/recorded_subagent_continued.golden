@@ -29,6 +29,7 @@ snapshot WORKING queue=[] working_on="Use the Agent tool (subagent_type general-
 ## 51 recorded 50: fact Stream type=system subtype=task_started uuid=228675b6-fa6a-4db8-98c6-8616571e5a7c tool_use_id=toolu_01F8e5YXiBSZPM3CvjhngKPs
 item toolu_01F8e5YXiBSZPM3CvjhngKPs tool final at=1794788086993 text="" Agent TOOL_STATE_RUNNING background opens=sub-8b600219 input=subagent:"Run echo ALPHA"
 agent sub-8b600219 start child=aa8b33460d86493fd call=host/toolu_01F8e5YXiBSZPM3CvjhngKPs title="Run echo ALPHA"
+agent sub-8b600219 item prompt:toolu_01F8e5YXiBSZPM3CvjhngKPs prompt final at=1794788087583 text="Use the Bash tool to run exactly this command: echo ALPHA\nThen report back exactly what it printed."
 agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788087583 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run echo ALPHA"@1794788087583]
 ## 59 recorded 58: fact Stream type=rate_limit_event uuid=7cfb925d-d029-4983-b529-387ddd7bf444
 snapshot WORKING queue=[] working_on="Use the Agent tool (subagent_type general-purpose) to start one subagent whose task is: use Bash to run exactly `echo ALPHA` and report what it printed. When it has reported back, use the SendMessage tool to send that same subagent, by its agent id, this message: use Bash to run exactly `echo BETA` and report what it printed. When it has reported again, reply with the single word DONE." at=1794788087596 asks=[] session=81f8d83b-9624-4905-9fea-b57e666cd544 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=20660/? tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
@@ -112,6 +113,7 @@ item toolu_0115dPdfaNpQp5uZ4Cdj5n7t tool final at=1794788094295 text="" SendMess
 ## 180 recorded 179: fact Stream type=system subtype=task_started uuid=33bbd551-94a7-4acd-afb2-27ef8641dbba tool_use_id=toolu_0115dPdfaNpQp5uZ4Cdj5n7t
 item toolu_0115dPdfaNpQp5uZ4Cdj5n7t tool final at=1794788094295 text="" SendMessage TOOL_STATE_RUNNING background opens=sub-8b600219 input="{\"content\":\"Use Bash to run exactly this command: echo BETA\\…"
 agent sub-8b600219 start child=aa8b33460d86493fd call=host/toolu_0115dPdfaNpQp5uZ4Cdj5n7t title="Run echo ALPHA"
+agent sub-8b600219 item prompt:toolu_0115dPdfaNpQp5uZ4Cdj5n7t prompt final at=1794788094623 text="Use Bash to run exactly this command: echo BETA\nThen report back exactly what it printed."
 agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788094623 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run echo ALPHA"@1794788094623]
 ## 187 recorded 186: fact Stream type=system subtype=status uuid=93a66e57-0bc3-4465-95c9-e8b3b65f1346
 item 93a66e57-0bc3-4465-95c9-e8b3b65f1346 status final at=1794788094635 text="" SDK_STATUS_UNSPECIFIED requesting

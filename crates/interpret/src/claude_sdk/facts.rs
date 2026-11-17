@@ -28,6 +28,7 @@ use crate::claude_common::{
     permission_scopes, plan_ask, question_ask, question_ask_text, split_tool_name, tool_input,
     tool_result_text,
 };
+use crate::claude_subagent::{runs_subagent, subagent_answer};
 use crate::shared::{json_as_written, without_terminal_codes};
 use crate::{
     Channel, Effect, Emit, Fact, ItemDraft, Wakeup, ask_item, is_status_tool, status_working_on,
@@ -163,8 +164,24 @@ impl State {
                 &event.event,
                 event.parent_tool_use_id.as_deref().unwrap_or_default(),
             ),
-            Message::Assistant(assistant) => self.assistant(emit, &assistant),
-            Message::User(user) => self.user(emit, &user),
+            // A subagent's frame is its own, in its own chat; one of a
+            // subagent nothing started draws nothing.
+            Message::Assistant(assistant) => {
+                let call = written_opt(assistant.parent_tool_use_id.as_deref());
+                match self.frame_subagent(assistant.agent_id.as_deref(), call.as_deref()) {
+                    Some(child) => self.subagent_assistant(emit, &child, &assistant),
+                    None if call.is_some() => {}
+                    None => self.assistant(emit, &assistant),
+                }
+            }
+            Message::User(user) => {
+                let call = written_opt(user.parent_tool_use_id.as_deref());
+                match self.frame_subagent(user.agent_id.as_deref(), call.as_deref()) {
+                    Some(child) => self.subagent_user(emit, &child, &user),
+                    None if call.is_some() => {}
+                    None => self.user(emit, &user),
+                }
+            }
             Message::UserReplay(replay) => {
                 let whole = message_text(&replay.message.content);
                 if let Some(output) = local_output(&whole) {
@@ -271,6 +288,7 @@ impl State {
                             tokens_before: Some(metadata.pre_tokens),
                             tokens_after: after,
                             automatic: metadata.trigger == CompactTrigger::Auto,
+                            idle: self.idle_compaction.is_some(),
                         })),
                         complete: true,
                         ..Default::default()
@@ -365,6 +383,8 @@ impl State {
             Message::TaskStarted(task) if task.ambient == Some(true) => {
                 self.ambient.insert(task.task_id);
             }
+            Message::TaskStarted(task) if self.task_started(emit, &task) => {}
+            Message::TaskStarted(task) if self.owned_task_started(&task) => {}
             Message::TaskStarted(task) => self.task_event(
                 emit,
                 TaskReport {
@@ -377,7 +397,19 @@ impl State {
                 },
             ),
             // A task sent to the background after it started says so only
-            // here, as a patch.
+            // here, as a patch. A subagent's end is its notification.
+            Message::TaskUpdated(task) if self.subagents.contains_key(&task.task_id) => {
+                let call = self.subagents[&task.task_id].call.clone();
+                if task.patch.is_backgrounded == Some(true) {
+                    self.backgrounded(emit, &call);
+                }
+            }
+            Message::TaskUpdated(task) if self.owned_tasks.contains_key(&task.task_id) => {
+                if task.patch.is_backgrounded == Some(true) {
+                    let description = task.patch.description.clone().unwrap_or_default();
+                    self.owned_backgrounded(&task.task_id, None, &description);
+                }
+            }
             Message::TaskUpdated(task) => self.task_event(
                 emit,
                 TaskReport {
@@ -388,6 +420,11 @@ impl State {
                     ..Default::default()
                 },
             ),
+            // A subagent's progress is its own row's; its steps are its own
+            // items.
+            Message::TaskProgress(task)
+                if self.subagents.contains_key(&task.task_id)
+                    || self.owned_tasks.contains_key(&task.task_id) => {}
             Message::TaskProgress(task) => self.task_event(
                 emit,
                 TaskReport {
@@ -400,6 +437,8 @@ impl State {
                     ..Default::default()
                 },
             ),
+            Message::TaskNotification(task) if self.task_notified(emit, &task) => {}
+            Message::TaskNotification(task) if self.owned_task_notified(emit, &task) => {}
             Message::TaskNotification(task) => self.task_event(
                 emit,
                 TaskReport {
@@ -426,6 +465,7 @@ impl State {
                         }),
                         now,
                     );
+                    let jobs = self.host_jobs(jobs);
                     self.shared.set_jobs(jobs);
                 }
             }
@@ -433,8 +473,13 @@ impl State {
                 let note = without_terminal_codes(
                     &written_opt(denied.decision_reason.as_deref()).unwrap_or(denied.message),
                 );
-                self.decide(
+                let who = denied
+                    .agent_id
+                    .clone()
+                    .filter(|child| self.shared.subagent_running(child));
+                self.decide_as(
                     emit,
+                    who.as_deref(),
                     &denied.tool_use_id,
                     Decided::Tool(ToolDecisionState {
                         outcome: DecisionOutcome::Denied as i32,
@@ -445,14 +490,17 @@ impl State {
             }
             Message::ElicitationComplete(complete) => {
                 let elicitation = complete.elicitation_id;
-                for key in self.open_ask_keys() {
-                    let matches = self.shared.asks().get(&key).is_some_and(|ask| {
+                let keys: Vec<String> = self.asks.keys().cloned().collect();
+                for key in keys {
+                    let who = self.asker(&key);
+                    let matches = self.open_ask(who.as_deref(), &key).is_some_and(|ask| {
                         matches!(&ask.body, Some(wire::ask::Body::Link(link)) if link.url.contains(&elicitation))
                     }) || key == elicitation;
-                    if matches && let Some(ask) = self.shared.close_ask(&key) {
+                    if matches && let Some(ask) = self.close_open_ask(emit, &key) {
                         self.asks.remove(&key);
                         self.emit_ask(
                             emit,
+                            who.as_deref(),
                             &ask,
                             Some(ask_item::outcome(wire::AskOutcome::Answered)),
                         );
@@ -467,12 +515,15 @@ impl State {
 
     pub(super) fn exited(&mut self, emit: &mut Emit, exit: wire::IncarnationEnd) {
         emit.end_incarnation(exit.clone());
-        self.dismiss_asks(emit);
+        // The subagents it ran end with it, for its cause.
+        self.end_all_subagents(emit, &exit);
+        self.dismiss_own_asks(emit);
         self.shared.provider_exited_as(&exit);
         self.boundary(emit, BoundaryKind::Exited, exit);
         self.jobs.clear();
         self.exited = true;
         self.unanswered.clear();
+        self.idle_compaction = None;
         self.early_boundary = None;
         // A message Claude died streaming ends as far as it got.
         if let Some(message) = self.stream.take() {
@@ -480,15 +531,6 @@ impl State {
                 self.close_streamed(emit, key);
             }
         }
-    }
-
-    fn open_ask_keys(&self) -> Vec<String> {
-        self.shared
-            .asks()
-            .open_asks()
-            .iter()
-            .map(|ask| ask.key.clone())
-            .collect()
     }
 
     /// What a scheduling tool's result did to the wake-ups Claude holds.
@@ -760,20 +802,20 @@ impl State {
         let shell = task.shell;
         let summary = written_opt(report.summary);
         let key = task.tool_key.clone();
-        // A subagent that ended asks nothing more, and a job that ended
-        // leaves the list, whether or not its call was shown.
-        if wire.state != WireTaskState::Running as i32 {
-            self.task_asks_over(emit, &id, &key);
-            if let Some(jobs) = self.jobs.ended(&id) {
-                self.shared.set_jobs(jobs);
-                // A job that ran to its end between turns is reported in a
-                // turn Claude starts itself. One stopped is not, as far as
-                // the recordings show.
-                let ran_out = wire.state == WireTaskState::Completed as i32
-                    || wire.state == WireTaskState::Failed as i32;
-                if ran_out {
-                    self.shared.turn_owed();
-                }
+        // A job that ended leaves the list, whether or not its call was
+        // shown.
+        if wire.state != WireTaskState::Running as i32
+            && let Some(jobs) = self.jobs.ended(&id)
+        {
+            let jobs = self.host_jobs(jobs);
+            self.shared.set_jobs(jobs);
+            // A job that ran to its end between turns is reported in a turn
+            // Claude starts itself. One stopped is not, as far as the
+            // recordings show.
+            let ran_out = wire.state == WireTaskState::Completed as i32
+                || wire.state == WireTaskState::Failed as i32;
+            if ran_out {
+                self.shared.turn_owed();
             }
         }
         // A task of a call this interpreter showed is progress on that call,
@@ -781,34 +823,20 @@ impl State {
         // task was launched. The notification carries the task's answer.
         if let Some(tool) = self.tools.get_mut(&key) {
             let finished = wire.state != WireTaskState::Running as i32;
-            let subagent = tool
-                .of
-                .task
-                .as_ref()
-                .map_or(report.task_type == Some("local_agent"), |task| {
-                    task.subagent
-                });
-            tool.of.task = Some(super::TaskProgress {
-                subagent,
-                tool_count: wire.tool_count,
-                last_tool: wire.last_tool.clone(),
-                finished,
-            });
+            tool.of.task = Some(super::TaskProgress { finished });
             if report.backgrounded && !finished {
                 tool.background = true;
                 let kind = if shell {
                     wire::BackgroundKind::Shell
-                } else if subagent {
-                    wire::BackgroundKind::Subagent
                 } else {
                     wire::BackgroundKind::Other
                 };
                 let (command, at_ms) = (JobInput::command(&tool.input), tool.at_ms);
                 self.jobs.launched(&id, &key, command, at_ms, kind);
-                if let Some(jobs) = self.jobs.current() {
-                    self.shared.set_jobs(jobs);
-                }
             }
+            let Some(tool) = self.tools.get_mut(&key) else {
+                return;
+            };
             if !finished {
                 tool.state = ToolState::Running as i32;
                 tool.ended_at_ms = None;
@@ -822,6 +850,10 @@ impl State {
                 if let Some(summary) = summary {
                     tool.outcome_text = summary;
                 }
+            }
+            if let Some(jobs) = self.jobs.current() {
+                let jobs = self.host_jobs(jobs);
+                self.shared.set_jobs(jobs);
             }
             return self.emit_tool(emit, &key);
         }
@@ -852,6 +884,7 @@ impl State {
             StreamEvent::MessageStart { message, .. } => {
                 self.stream = written(&message.id);
                 self.streaming_calls.clear();
+                self.last_request_ms = Some(self.shared.now_ms());
                 self.usage_seen(&message.usage);
                 self.shared.turn_started();
             }
@@ -882,7 +915,7 @@ impl State {
                         );
                     }
                     ContentBlock::ToolUse { id, name, .. } => {
-                        self.tool_seen(emit, id, name, None, "");
+                        self.tool_seen(emit, id, name, None);
                     }
                     _ => {}
                 }
@@ -957,7 +990,7 @@ impl State {
         if line_ended {
             self.streaming_calls.remove(&index);
         }
-        self.tool_seen(emit, &id, &name, Some(&input), "");
+        self.tool_seen(emit, &id, &name, Some(&input));
     }
 
     fn open_block(&mut self, emit: &mut Emit, key: String, text: &str, thinking: bool) {
@@ -1023,6 +1056,15 @@ impl State {
             usage.cache_creation_input_tokens,
             usage.cache_read_input_tokens,
         );
+        // Only a request that wrote to the cache says how long it lives;
+        // one that only read it leaves what the last write said.
+        if let Some(created) = &usage.cache_creation {
+            let hour = created.ephemeral_1h_input_tokens.unwrap_or(0);
+            let minutes = created.ephemeral_5m_input_tokens.unwrap_or(0);
+            if hour + minutes > 0 {
+                self.cache_hour = Some(hour > 0);
+            }
+        }
     }
 
     /// The tokens a request sent: what the context holds now.
@@ -1064,20 +1106,6 @@ impl State {
 
     fn assistant(&mut self, emit: &mut Emit, assistant: &AssistantMessage) {
         let message = &assistant.message;
-        // A subagent's frame is its own: no turn, model, context, text or
-        // error of the main thread's, only its calls, under the call that
-        // started it.
-        if let Some(parent) = written_opt(assistant.parent_tool_use_id.as_deref()) {
-            for block in &message.content {
-                if let ContentBlock::ToolUse {
-                    id, name, input, ..
-                } = block
-                {
-                    self.tool_seen(emit, id, name, Some(input), &parent);
-                }
-            }
-            return;
-        }
         self.shared.turn_started();
         let message_id = message.id.clone();
         if let Some(model) = written(&message.model)
@@ -1156,7 +1184,7 @@ impl State {
                 ContentBlock::ToolUse {
                     id, name, input, ..
                 } => {
-                    self.tool_seen(emit, id, name, Some(input), "");
+                    self.tool_seen(emit, id, name, Some(input));
                 }
                 other => self.shared.item(
                     emit,
@@ -1174,14 +1202,7 @@ impl State {
         }
     }
 
-    fn tool_seen(
-        &mut self,
-        emit: &mut Emit,
-        id: &str,
-        name: &str,
-        input: Option<&Value>,
-        parent: &str,
-    ) {
+    fn tool_seen(&mut self, emit: &mut Emit, id: &str, name: &str, input: Option<&Value>) {
         if id.is_empty() {
             return;
         }
@@ -1195,10 +1216,10 @@ impl State {
         }
         let now = self.shared.now_ms();
         let planning = self.permission_mode.as_deref();
-        let tool = self.tools.entry(id.to_owned()).or_insert_with(|| Tool {
-            parent_key: parent.to_owned(),
-            ..Tool::running(name, now, planning, Call::default())
-        });
+        let tool = self
+            .tools
+            .entry(id.to_owned())
+            .or_insert_with(|| Tool::running(name, now, planning, Call::default()));
         if let Some(input) = input {
             tool.set_input(input);
         }
@@ -1228,9 +1249,7 @@ impl State {
         }
         // The compaction summary Claude writes back is its own; the SDK's
         // compaction row carries the counts.
-        if user.parent_tool_use_id.as_deref().is_none_or(str::is_empty)
-            && message_text(content).trim_start().starts_with(INTERRUPTED)
-        {
+        if message_text(content).trim_start().starts_with(INTERRUPTED) {
             self.interrupted = true;
         }
     }
@@ -1278,6 +1297,12 @@ impl State {
     ) {
         let output = tool_result_text(content);
         let now = self.shared.now_ms();
+        let said = self
+            .tools
+            .get(id)
+            .filter(|tool| !tool.child_agent_id.is_empty())
+            .and_then(|tool| self.last_said(&tool.child_agent_id));
+        self.call_returned(emit, id, is_error, &output, result);
         let Some(tool) = self.tools.get_mut(id) else {
             self.shared.result_without_call("a user message");
             return;
@@ -1310,10 +1335,14 @@ impl State {
         // is on the decision.
         tool.outcome_text = if denied && output.starts_with(crate::claude_answers::REJECTED) {
             String::new()
+        } else if tool.state == ToolState::Succeeded as i32 && runs_subagent(tool) {
+            subagent_answer(said.as_deref(), output)
         } else {
             output
         };
-        tool.take_result(emit, content, result);
+        for write in tool.take_result(content, result) {
+            emit.effect(write);
+        }
         // A question nothing here closed: Claude's own record says how.
         if tool.question && tool.asked.is_none() {
             tool.asked = Some(match result.map(AnsweredResult::deserialize) {
@@ -1385,10 +1414,16 @@ impl State {
         {
             self.context_window = Some(window);
         }
+        if let Some(common) = common
+            && self.idle_compaction_over(common)
+        {
+            return;
+        }
         if common.is_some_and(|common| self.foreign(common)) {
             return;
         }
-        self.dismiss_asks_but_background(emit);
+        // A subagent's asks are its own, and outlive the turn.
+        self.dismiss_own_asks(emit);
         // A command that ran a turn (a custom command or a skill) wrote no
         // output of its own; a later note is not its.
         self.slash = None;
@@ -1448,16 +1483,31 @@ impl State {
             },
         );
         // A call whose task outlives the turn is still open: its task's
-        // events are progress on it until the notification ends it. So are
-        // the calls of a subagent it runs, which finish after the turn.
-        let open: BTreeSet<String> = self
-            .tools
-            .keys()
-            .filter(|id| self.under_running_task(id))
-            .cloned()
-            .collect();
-        self.tools.retain(|id, _| open.contains(id));
+        // end finishes it.
+        self.tools
+            .retain(|_, tool| tool.of.task.as_ref().is_some_and(|task| !task.finished));
         self.blocks.clear();
+    }
+
+    /// Whether `result` answers the `/compact` amux sent while the agent
+    /// sat idle, however it went: it was nobody's turn, so it ends none,
+    /// and the queue moves again.
+    fn idle_compaction_over(&mut self, common: &ResultCommon) -> bool {
+        let Some(uuid) = self.idle_compaction.as_ref().map(|sent| sent.uuid.as_str()) else {
+            return false;
+        };
+        let answers = common.user_message_uuid.as_deref() == Some(uuid)
+            || common
+                .user_message_uuids
+                .iter()
+                .flatten()
+                .any(|named| named == uuid);
+        if answers {
+            self.unanswered.remove(uuid);
+            self.idle_compaction = None;
+            self.shared.housekeeping_ended();
+        }
+        answers
     }
 
     /// Whether `result` ends work of Claude's own while a message amux
@@ -1526,6 +1576,14 @@ impl State {
                         AnswerShape::Form,
                     )
                 };
+                // Claude names no agent on a tool server's form: it is the
+                // form of the one agent with a call to that server running.
+                let server = match &body {
+                    wire::ask::Body::Link(link) => link.server.clone(),
+                    wire::ask::Body::Form(form) => form.server.clone(),
+                    _ => String::new(),
+                };
+                let who = self.form_owner(&server);
                 self.asks.insert(
                     request_id.clone(),
                     AskMeta {
@@ -1533,7 +1591,7 @@ impl State {
                         input: String::new(),
                         suggestions: Vec::new(),
                         shape,
-                        agent: None,
+                        agent: who.clone(),
                     },
                 );
                 let ask = wire::Ask {
@@ -1542,8 +1600,11 @@ impl State {
                     body: Some(body),
                     opened_at_ms: self.shared.now_ms(),
                 };
-                self.emit_ask(emit, &ask, None);
-                self.shared.open_ask(ask);
+                self.emit_ask(emit, who.as_deref(), &ask, None);
+                match who {
+                    Some(child) => self.shared.subagent(emit, &child).open_ask(ask),
+                    None => self.shared.open_ask(ask),
+                }
             }
             other => emit.effect(super::write(&stream::Input::ControlResponse(
                 ControlResponse::error(
@@ -1558,16 +1619,25 @@ impl State {
         let name = &asked.tool_name;
         let input = &asked.input;
         let tool_use_id = asked.tool_use_id.clone();
-        // The call's row may not have been written yet: the request names
-        // it, so the ask always has an item to point at, under the call
-        // that started the subagent asking.
-        let parent = asked
+        // A subagent's ask is its own, in its own chat.
+        let who = asked
             .agent_id
-            .as_ref()
-            .and_then(|agent| self.active_tasks.get(agent))
-            .map(|task| task.tool_key.clone())
-            .unwrap_or_default();
-        self.tool_seen(emit, &tool_use_id, name, Some(input), &parent);
+            .clone()
+            .filter(|child| !child.is_empty())
+            .filter(|child| self.subagent_runs(child));
+        // The call's row may not have been written yet: the request names
+        // it, so the ask always has an item to point at.
+        match &who {
+            Some(child) => {
+                let now = self.shared.now_ms();
+                if let Some(sub) = self.subagents.get_mut(child) {
+                    let mut view = self.shared.subagent(emit, child);
+                    sub.conversation
+                        .tool_seen(&mut view, &tool_use_id, name, Some(input), now);
+                }
+            }
+            None => self.tool_seen(emit, &tool_use_id, name, Some(input)),
+        }
         let (server, tool) = split_tool_name(name);
         // An ask Claude says may offer no persistent rule offers no scope:
         // a rule sent back would be narrowed or dropped, and amux would
@@ -1601,7 +1671,9 @@ impl State {
                 )
             }
             PLAN_TOOL if server.is_empty() => {
-                if let Some(plan) = crate::claude_common::plan_text(input) {
+                if who.is_none()
+                    && let Some(plan) = crate::claude_common::plan_text(input)
+                {
                     self.shared.plan_written(&plan);
                 }
                 let switch = crate::claude_common::plan_switch(self.offers_auto(), self.never_ask)
@@ -1660,19 +1732,30 @@ impl State {
                     })
                     .collect(),
                 shape,
-                agent: asked.agent_id.clone(),
+                agent: who.clone(),
             },
         );
-        let drawn = self
-            .tools
-            .get(&tool_use_id)
-            .is_some_and(|tool| !tool.hidden);
-        self.shared.open_ask(wire::Ask {
+        let drawn = match &who {
+            Some(child) => self
+                .subagents
+                .get(child)
+                .and_then(|sub| sub.conversation.tools.get(&tool_use_id))
+                .is_some_and(|tool| !tool.hidden),
+            None => self
+                .tools
+                .get(&tool_use_id)
+                .is_some_and(|tool| !tool.hidden),
+        };
+        let ask = wire::Ask {
             key: request_id.to_owned(),
             item_key: if drawn { tool_use_id } else { String::new() },
             body: Some(body),
             opened_at_ms: self.shared.now_ms(),
-        });
+        };
+        match who {
+            Some(child) => self.shared.subagent(emit, &child).open_ask(ask),
+            None => self.shared.open_ask(ask),
+        }
     }
 
     /// Asks Claude what it applied from its settings and this session's
@@ -1698,9 +1781,7 @@ impl State {
             Some(Request::Mode(mode)) if ok => self.permission_mode = Some(mode),
             Some(Request::StopJob(task)) if !ok => {
                 let error = response.response.error.as_deref().unwrap_or_default();
-                if let Some(jobs) = self.jobs.stop_refused(&task, without_terminal_codes(error)) {
-                    self.shared.set_jobs(jobs);
-                }
+                self.stop_refused(&task, without_terminal_codes(error));
             }
             Some(Request::Title) => {
                 if ok

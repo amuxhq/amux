@@ -1,7 +1,6 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 5 recorded 4: fact Rpc "{\"id\":\"agent-thread\",\"result\":{\"activePermissionProfile\":{\"extends\":n…
-effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"01a191cf-a9c6-78f1-ab06-127b7943a6b3\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1793447668181 text="" BOUNDARY_KIND_STARTED
@@ -21,7 +20,7 @@ snapshot IDLE queue=[] working_on=- at=1793447668184 asks=[] thread=01a191cf-a9c
 ## 14 recorded 13: fact Rpc method=mcpServer/startupStatus/updated
 snapshot IDLE queue=[] working_on=- at=1793447668185 asks=[] thread=01a191cf-a9c6-78f1-ab06-127b7943a6b3 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
 ## 19 recorded 18: fact Rpc method=deprecationNotice
-item warning:2 error final at=1793447668187 text="Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." deprecationNotice "Full-history hydration is deprecated for paginated threads; omit `includeTurns` …" retry=false 0/0
+effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
 ## 22 recorded 21: input stdin-8-mode
 effect reply stdin-8-mode accepted
 snapshot IDLE queue=[] working_on=- at=1793447668223 asks=[] thread=01a191cf-a9c6-78f1-ab06-127b7943a6b3 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=plan approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?

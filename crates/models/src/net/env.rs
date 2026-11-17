@@ -141,6 +141,10 @@ fn judge_step(
         let what = format!("{name} answered {row} on {kind} before its store held it");
         return Some((COMMIT_BEFORE_BROADCAST, what));
     }
+    if let Some(broken) = crate::subagents::judge(daemon, out) {
+        let what = format!("{name} after {kind}: {}", broken.detail);
+        return Some((broken.promise, what));
+    }
     for &(other, other_name) in others {
         let now = daemon.presence().view(other);
         // No relay in the net refuses a host for the account's plan.
@@ -1574,6 +1578,9 @@ impl Transition<'_> {
                 .unwrap_or_default()
                 .into_iter()
                 .filter(|row| row.agent.host == id.0 && row.lifecycle == Lifecycle::Live as i32)
+                // As the runtime's sweep does: a provider subagent has no
+                // process to find, and ends with its host.
+                .filter(|row| row.native.is_none())
                 .filter_map(|row| AgentId::from_slice(&row.agent.agent))
                 .collect();
             for agent in live {
@@ -2298,8 +2305,8 @@ impl Transition<'_> {
                 return;
             }
             match output {
-                // Nothing reads back the facts ring or the blobs.
-                Out::Record(_) | Out::WriteBlob { .. } => {}
+                // Nothing reads back the facts ring, the blobs or the log.
+                Out::Record(_) | Out::WriteBlob { .. } | Out::Log { .. } => {}
                 // A process playing a recorded journal writes that instead.
                 Out::AppendJournal(_)
                     if self.plan.recorded.contains_key(&self.w.processes[p].agent) => {}

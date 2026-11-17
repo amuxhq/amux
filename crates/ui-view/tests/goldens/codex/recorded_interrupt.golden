@@ -10,11 +10,10 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
-     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
-     3 prompt:371a4613dac3420287c72563ba7f65d9 Prompt { text: [Text("Count from 1 to 1000, one number per line, in plain text.")], steered: false }
-     4 rs_00906630d0cd1898016ae5d6f3e484819180ec63c967033dab Thinking { text: "", open: false, duration_ms: Some(3421) }
-     5 msg_00906630d0cd1898016ae5d6f3e47881919300aa6b2ca6f026 Prose { text: [Text("1\n2\n3\n4\n")], streaming: false, working_note: false }
-     6 turn:1 Stopped
+     2 prompt:371a4613dac3420287c72563ba7f65d9 Prompt { text: [Text("Count from 1 to 1000, one number per line, in plain text.")], steered: false }
+     3 rs_00906630d0cd1898016ae5d6f3e484819180ec63c967033dab Thinking { text: "", open: false, duration_ms: Some(3421) }
+     4 msg_00906630d0cd1898016ae5d6f3e47881919300aa6b2ca6f026 Prose { text: [Text("1\n2\n3\n4\n")], streaming: false, working_note: false }
+     5 turn:1 Stopped
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

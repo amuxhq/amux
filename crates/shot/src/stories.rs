@@ -235,6 +235,8 @@ pub fn all() -> Vec<Story> {
         story("chat.asking", || {
             chat(Kind::ClaudeSdk, "recorded_question_asked", Pick::Asking)
         }),
+        story("chat.subagents", || subagents(None)),
+        story("chat.subagent", || subagents(Some(0))),
         story("chat.plan", || {
             chat(Kind::ClaudeSdk, "recorded_plan_reviewed", Pick::LastAsking)
         }),
@@ -486,6 +488,139 @@ fn replayed(kind: Kind, fixture: &str) -> Vec<(SessionState, i64)> {
             .unwrap_or(at)
             .max(at);
         out.push((state.clone(), at));
+    }
+    out
+}
+
+/// Three subagents a headless Claude started in one turn, recorded while
+/// all three run: the parent's chat with them folded into one row, or
+/// (`Some(n)`) the chat of the `n`th to start, at work, with its Stop.
+fn subagents(sub: Option<usize>) -> Scene {
+    let family = family(Kind::ClaudeSdk, "recorded_subagents_parallel");
+    let (parent, subs, fleet, now) = family
+        .into_iter()
+        .find(|(_, subs, fleet, _)| {
+            subs.len() == 3
+                && subs.iter().all(|sub| {
+                    ui_view::opened_agent(fleet, &sub.agent().agent_id)
+                        .is_some_and(|opened| opened.phase == PhaseView::Working)
+                })
+                && subs[0].transcript().len() > 1
+        })
+        .expect("recorded_subagents_parallel: three subagents at work");
+    let state = match sub {
+        Some(n) => subs[n].clone(),
+        None => parent,
+    };
+    let mut view = ChatView::new(state.agent().agent_id.clone(), now, false);
+    view.agents = ui_view::chat_agents(&state, &fleet);
+    Scene::Chat(Box::new(ChatScene { view, state, now }))
+}
+
+/// A recorded family, frame by frame: the agent's own part of each step
+/// filed under it, each provider subagent's under a session of its own
+/// with its row in the fleet, made at its start, following its snapshots'
+/// phases and ended with it, as the daemon files them.
+fn family(kind: Kind, fixture: &str) -> Vec<(SessionState, Vec<SessionState>, FleetState, i64)> {
+    let dir = match kind {
+        Kind::ClaudePty => "claude_pty",
+        Kind::ClaudeSdk => "claude_sdk",
+        _ => "codex",
+    };
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../interpret/fixtures")
+        .join(dir)
+        .join(format!("{fixture}.json"));
+    let frames: Vec<Replayed> = match kind {
+        Kind::ClaudePty => replay::<ClaudePty>(&path),
+        Kind::ClaudeSdk => replay::<ClaudeSdk>(&path),
+        _ => replay::<Codex>(&path),
+    }
+    .unwrap_or_else(|error| panic!("{dir}/{fixture}: {error}"));
+    let listed = |agent: &wire::Agent| {
+        FleetMsg::Event(Box::new(wire::InventoryEvent {
+            of: Some(wire::inventory_event::Of::Agent(agent.clone())),
+        }))
+    };
+    let host = agent(kind);
+    let mut state = SessionState::new(host.clone(), tui::chat::layout::CAP as usize);
+    state.update(Msg::Connection(Connection::Live));
+    let mut committer = Committer::default();
+    let mut fleet = FleetState::new();
+    fleet.update(listed(&host));
+    let mut subs: Vec<(wire::Agent, SessionState, Committer)> = Vec::new();
+    let mut out = Vec::new();
+    let mut at = 0;
+    for (index, frame) in frames.iter().enumerate() {
+        if let Some(input) = &frame.input {
+            state.update(Msg::Send(input.clone()));
+        }
+        for event in committer.commit(&frame.step) {
+            state.update(Msg::Event(event));
+        }
+        if index == 0 {
+            state.update(caught_up(committer.revision));
+        }
+        for part in &frame.step.agents {
+            let known = subs
+                .iter()
+                .position(|(row, ..)| row.agent_id == part.agent_id);
+            let at_sub = match (known, &part.start) {
+                (Some(at), _) => at,
+                (None, Some(start)) => {
+                    let hex = interpret::to_hex(&part.agent_id);
+                    let row = wire::Agent {
+                        agent_id: part.agent_id.clone(),
+                        host_id: host.host_id.clone(),
+                        kind: kind as i32,
+                        name: format!("sub-{}", &hex[..hex.len().min(8)]),
+                        title: Some(start.title.clone()).filter(|title| !title.is_empty()),
+                        lifecycle: wire::Lifecycle::Live as i32,
+                        phase: wire::Phase::Working as i32,
+                        incarnation: 1,
+                        parent: Some(wire::AgentRef {
+                            host_id: host.host_id.clone(),
+                            agent_id: host.agent_id.clone(),
+                        }),
+                        native: Some(wire::NativeChild {
+                            provider_child_id: start.provider_child_id.clone(),
+                        }),
+                        ..wire::Agent::default()
+                    };
+                    let mut sub = SessionState::new(row.clone(), tui::chat::layout::CAP as usize);
+                    sub.update(Msg::Connection(Connection::Live));
+                    sub.update(caught_up(0));
+                    subs.push((row, sub, Committer::default()));
+                    subs.len() - 1
+                }
+                (None, None) => continue,
+            };
+            let (row, sub, sub_committer) = &mut subs[at_sub];
+            for event in sub_committer.commit_agent(part) {
+                sub.update(Msg::Event(event));
+            }
+            if let Some(snapshot) = &part.snapshot {
+                row.phase = snapshot.phase;
+            }
+            if let Some(end) = &part.end {
+                row.lifecycle = wire::Lifecycle::Exited as i32;
+                row.exit_cause = end.cause;
+                row.exit_detail = end.detail.clone();
+            }
+            sub.update(Msg::Entry(row.clone()));
+            fleet.update(listed(row));
+        }
+        at = frame
+            .step
+            .items
+            .iter()
+            .chain(frame.step.agents.iter().flat_map(|part| &part.items))
+            .map(|item| item.at_ms)
+            .max()
+            .unwrap_or(at)
+            .max(at);
+        let held = subs.iter().map(|(_, sub, _)| sub.clone()).collect();
+        out.push((state.clone(), held, fleet.clone(), at));
     }
     out
 }

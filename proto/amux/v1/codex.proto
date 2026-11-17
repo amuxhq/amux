@@ -120,6 +120,9 @@ message McpToolCall {
   string error = 5;
   // The call's first string argument, the one fact its row shows.
   string subject = 6;
+  // On amux's own spawn: the child it made, whose chat the call's row
+  // opens. Empty on any other call, and before the spawn answered.
+  bytes child_agent_id = 7;
 }
 
 message WebSearch {
@@ -149,6 +152,10 @@ message CollabWork {
   string tool = 1;
   repeated string thread_ids = 2;
   string prompt = 3;
+  // The amux agent each child thread is, in the order of `thread_ids`, so
+  // the row opens the child's chat. Empty on work from before child threads
+  // were agents of their own.
+  repeated bytes agent_ids = 4;
 }
 
 // An automatic reviewer's verdict on an action.

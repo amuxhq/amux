@@ -32,9 +32,12 @@ mod asks;
 mod attach;
 mod capture;
 mod codex_corpus;
+mod codex_subagents;
 mod corpus;
 mod offers;
 mod pty;
+mod pty_subagents;
+mod subagents;
 mod terminal;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -141,10 +144,33 @@ pub enum Scenario {
     TerminalAllow,
     TerminalEscape,
     TerminalQuestion,
+    SubagentsParallel,
+    SubagentNested,
+    SubagentAsk,
+    SubagentStopped,
+    SubagentContinued,
+    SubagentResumed,
+    SubagentAmuxTools,
+    SubagentElicitation,
+    ChildCommand,
+    ChildApproval,
+    ChildStop,
+    ChildContinued,
+    ChildResume,
+    ChildTools,
+    PtySubagentsParallel,
+    PtySubagentNested,
+    PtySubagentAsk,
+    PtySubagentStopped,
+    PtySubagentStoppedForeground,
+    PtySubagentContinued,
+    PtySubagentResumed,
+    PtySubagentAmuxTools,
+    PtySubagentElicitation,
 }
 
 /// Every scenario, in the order a run takes them.
-pub const SCENARIOS: [Scenario; 62] = [
+pub const SCENARIOS: [Scenario; 85] = [
     Scenario::Initialize,
     Scenario::Respond,
     Scenario::Decide,
@@ -207,6 +233,29 @@ pub const SCENARIOS: [Scenario; 62] = [
     Scenario::TerminalAllow,
     Scenario::TerminalEscape,
     Scenario::TerminalQuestion,
+    Scenario::SubagentsParallel,
+    Scenario::SubagentNested,
+    Scenario::SubagentAsk,
+    Scenario::SubagentStopped,
+    Scenario::SubagentContinued,
+    Scenario::SubagentResumed,
+    Scenario::SubagentAmuxTools,
+    Scenario::SubagentElicitation,
+    Scenario::ChildCommand,
+    Scenario::ChildApproval,
+    Scenario::ChildStop,
+    Scenario::ChildContinued,
+    Scenario::ChildResume,
+    Scenario::ChildTools,
+    Scenario::PtySubagentsParallel,
+    Scenario::PtySubagentNested,
+    Scenario::PtySubagentAsk,
+    Scenario::PtySubagentStopped,
+    Scenario::PtySubagentStoppedForeground,
+    Scenario::PtySubagentContinued,
+    Scenario::PtySubagentResumed,
+    Scenario::PtySubagentAmuxTools,
+    Scenario::PtySubagentElicitation,
 ];
 
 impl Scenario {
@@ -274,6 +323,29 @@ impl Scenario {
             Scenario::TerminalAllow => "terminal_allow",
             Scenario::TerminalEscape => "terminal_escape",
             Scenario::TerminalQuestion => "terminal_question",
+            Scenario::SubagentsParallel => "subagents_parallel",
+            Scenario::SubagentNested => "subagent_nested",
+            Scenario::SubagentAsk => "subagent_ask",
+            Scenario::SubagentStopped => "subagent_stopped",
+            Scenario::SubagentContinued => "subagent_continued",
+            Scenario::SubagentResumed => "subagent_resumed",
+            Scenario::SubagentAmuxTools => "subagent_amux_tools",
+            Scenario::SubagentElicitation => "subagent_elicitation",
+            Scenario::ChildCommand => "child_command",
+            Scenario::ChildApproval => "child_approval",
+            Scenario::ChildStop => "child_stop",
+            Scenario::ChildContinued => "child_continued",
+            Scenario::ChildResume => "child_resume",
+            Scenario::ChildTools => "child_tools",
+            Scenario::PtySubagentsParallel => "subagents_parallel",
+            Scenario::PtySubagentNested => "subagent_nested",
+            Scenario::PtySubagentAsk => "subagent_ask",
+            Scenario::PtySubagentStopped => "subagent_stopped",
+            Scenario::PtySubagentStoppedForeground => "subagent_stopped_foreground",
+            Scenario::PtySubagentContinued => "subagent_continued",
+            Scenario::PtySubagentResumed => "subagent_resumed",
+            Scenario::PtySubagentAmuxTools => "subagent_amux_tools",
+            Scenario::PtySubagentElicitation => "subagent_elicitation",
         }
     }
 
@@ -313,7 +385,15 @@ impl Scenario {
             | Scenario::ElicitationDeclined
             | Scenario::ElicitationCancelled
             | Scenario::ElicitationLinkAccepted
-            | Scenario::FailedToolServer => kind == Kind::ClaudeSdk,
+            | Scenario::FailedToolServer
+            | Scenario::SubagentsParallel
+            | Scenario::SubagentNested
+            | Scenario::SubagentAsk
+            | Scenario::SubagentStopped
+            | Scenario::SubagentContinued
+            | Scenario::SubagentResumed
+            | Scenario::SubagentAmuxTools
+            | Scenario::SubagentElicitation => kind == Kind::ClaudeSdk,
             Scenario::MultiTurn
             | Scenario::Compacted
             | Scenario::Cleared
@@ -355,7 +435,24 @@ impl Scenario {
             | Scenario::ToolServerForm
             | Scenario::AccessGrant
             | Scenario::AutomaticReview
-            | Scenario::ApprovalScopes => kind == Kind::Codex,
+            | Scenario::ApprovalScopes
+            | Scenario::ChildCommand
+            | Scenario::ChildApproval
+            | Scenario::ChildStop
+            | Scenario::ChildContinued
+            | Scenario::ChildResume
+            | Scenario::ChildTools => kind == Kind::Codex,
+            // Terminal Claude's own subagents, named as headless Claude's
+            // are (pty_subagents.rs).
+            Scenario::PtySubagentsParallel
+            | Scenario::PtySubagentNested
+            | Scenario::PtySubagentAsk
+            | Scenario::PtySubagentStopped
+            | Scenario::PtySubagentStoppedForeground
+            | Scenario::PtySubagentContinued
+            | Scenario::PtySubagentResumed
+            | Scenario::PtySubagentAmuxTools
+            | Scenario::PtySubagentElicitation => kind == Kind::ClaudePty,
         }
     }
 }
@@ -560,18 +657,31 @@ async fn run(driver: &Driver, selected: &[Scenario], report: &mut Report) {
         }
     };
     for scenario in selected {
-        let verdict = match tokio::time::timeout(SCENARIO, install.scenario(*scenario)).await {
+        let mut verdict = match tokio::time::timeout(SCENARIO, install.scenario(*scenario)).await {
             Ok(Ok(verdict)) => verdict,
             Ok(Err(why)) => Verdict::Fail(why),
             Err(_) => Verdict::Fail(format!("did not finish within {SCENARIO:?}")),
         };
-        eprintln!("{} {}: {verdict}", driver.tag(), scenario.name());
         // Whatever the verdict, an agent's traffic is kept for a look.
-        if install.has_agent(*scenario)
-            && let Err(why) = install.collect(*scenario)
-        {
-            eprintln!("{} {}: no recording: {why}", driver.tag(), scenario.name());
+        if install.has_agent(*scenario) {
+            match install.collect(*scenario) {
+                Ok(fixture) => {
+                    // amux draws no deprecation notice and the agent only
+                    // logs one, so the run is where the next one is heard.
+                    let notices = capture::deprecation_notices(&fixture);
+                    if !notices.is_empty() && matches!(verdict, Verdict::Pass) {
+                        verdict = Verdict::Fail(format!(
+                            "Codex sent a deprecation notice: {}",
+                            notices.join(" | ")
+                        ));
+                    }
+                }
+                Err(why) => {
+                    eprintln!("{} {}: no recording: {why}", driver.tag(), scenario.name())
+                }
+            }
         }
+        eprintln!("{} {}: {verdict}", driver.tag(), scenario.name());
         report.results.push((*scenario, verdict));
     }
     if let Some(model) = install.model.lock().unwrap().clone() {
@@ -759,7 +869,8 @@ impl Install {
         })
         .await
         .ok_or("its front door never answered")?;
-        let profile = InstallationServiceClient::new(door)
+        let mut door = InstallationServiceClient::new(door);
+        let profile = door
             .list_profiles(wire::ListProfilesRequest {})
             .await
             .map_err(|status| status.to_string())?
@@ -768,6 +879,16 @@ impl Install {
             .into_iter()
             .next()
             .ok_or("it has no profile")?;
+        // An installation set up long ago, as a person's is: the client
+        // opens on its agents, not on setting up.
+        door.answer_onboarding(wire::AnswerOnboardingRequest {
+            profile_id: Vec::new(),
+            answer: Some(wire::answer_onboarding_request::Answer::Dismiss(
+                wire::Empty {},
+            )),
+        })
+        .await
+        .map_err(|status| status.to_string())?;
         let client = wire::client_stubs(
             channel(Path::new(&profile.socket_path))
                 .await
@@ -807,7 +928,7 @@ impl Install {
                     .lines()
                     .any(|line| line.split_whitespace().next() == Some(name.as_str()))
                 {
-                    let _ = self.amux(&["stop", &name]).await;
+                    let _ = self.amux(&["settle", &name]).await;
                 }
             }
         }
@@ -1227,6 +1348,29 @@ impl Install {
             Scenario::TerminalAllow => self.terminal_allow().await,
             Scenario::TerminalEscape => self.terminal_escape().await,
             Scenario::TerminalQuestion => self.terminal_question().await,
+            Scenario::SubagentsParallel => self.subagents_parallel().await,
+            Scenario::SubagentNested => self.subagent_nested().await,
+            Scenario::SubagentAsk => self.subagent_ask().await,
+            Scenario::SubagentStopped => self.subagent_stopped().await,
+            Scenario::SubagentContinued => self.subagent_continued().await,
+            Scenario::SubagentResumed => self.subagent_resumed().await,
+            Scenario::SubagentAmuxTools => self.subagent_amux_tools().await,
+            Scenario::SubagentElicitation => self.subagent_elicitation().await,
+            Scenario::ChildCommand => self.child_command().await,
+            Scenario::ChildApproval => self.child_approval().await,
+            Scenario::ChildStop => self.child_stop().await,
+            Scenario::ChildContinued => self.child_continued().await,
+            Scenario::ChildResume => self.child_resume().await,
+            Scenario::ChildTools => self.child_tools().await,
+            Scenario::PtySubagentsParallel => self.pty_subagents_parallel().await,
+            Scenario::PtySubagentNested => self.pty_subagent_nested().await,
+            Scenario::PtySubagentAsk => self.pty_subagent_ask().await,
+            Scenario::PtySubagentStopped => self.pty_subagent_stopped().await,
+            Scenario::PtySubagentStoppedForeground => self.pty_subagent_stopped_foreground().await,
+            Scenario::PtySubagentContinued => self.pty_subagent_continued().await,
+            Scenario::PtySubagentResumed => self.pty_subagent_resumed().await,
+            Scenario::PtySubagentAmuxTools => self.pty_subagent_amux_tools().await,
+            Scenario::PtySubagentElicitation => self.pty_subagent_elicitation().await,
         }
     }
 
@@ -1417,8 +1561,8 @@ impl Install {
             .state(self.kind)
             .provider_session
             .ok_or("the first incarnation reported no provider session")?;
-        self.amux(&["stop", name]).await?;
-        self.listed(name, "exited").await?;
+        self.amux(&["settle", name]).await?;
+        self.listed(name, "settled").await?;
         let mark = follow.snapshot().items.len();
         let before = follow.snapshot();
         // Resumed bare, then prompted once it takes input, as the recording
@@ -1805,10 +1949,6 @@ fn item_token(kind: Kind, item: &Item) -> Option<String> {
             Codex::Prompt(_) => Some("prompt".into()),
             Codex::Steer(_) => Some("steer".into()),
             Codex::Work(work) => Some(tool(work.state, work.decision.as_ref())),
-            // Codex answers amux's read of a fresh thread's history with a
-            // deprecation notice whenever it gets to it, before or after the
-            // first prompt; it says nothing about what the scenario did.
-            Codex::Error(error) if error.error_kind == "deprecationNotice" => None,
             Codex::Error(_) => Some("error".into()),
             Codex::AgentMessage(_) => Some("agent message".into()),
             Codex::Ask(item) => Some(ask(&item)),

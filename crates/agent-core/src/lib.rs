@@ -18,8 +18,8 @@
 //!   drain deadline and then exits "orphaned while waiting for you".
 //! - A stop cancels the turn the provider's way and drains the same way; a
 //!   kill, the daemon's escalation past its stop deadline, ends the process
-//!   group at once and writes nothing. A draining agent answers new input as
-//!   `REFUSAL_DRAINING`.
+//!   group at once and writes nothing. A draining agent answers new input,
+//!   its own or one of its provider subagents', as `REFUSAL_DRAINING`.
 //! - Every decision to end goes through one action: the interpreter writes
 //!   the final boundary, the provider is asked to finish, and the agent
 //!   waits for it to exit, killing it past a deadline.
@@ -84,6 +84,8 @@ pub enum TimerId {
     ProviderStop,
     /// The agent has been idle for its suspension delay.
     Suspend,
+    /// The time the interpreter asked to be woken at has come.
+    Wake,
 }
 
 /// A job the driver runs; its outcome returns as [`Input::JobDone`].
@@ -178,11 +180,12 @@ pub enum Output {
         hash: Vec<u8>,
         bytes: Vec<u8>,
     },
-    /// Append the step to the journal.
-    AppendJournal(Step),
+    /// Append the step to the journal. Boxed: a step is several times the
+    /// size of every other output, which would otherwise all take its room.
+    AppendJournal(Box<Step>),
     /// Hand the provider what the interpreter asked of it: bytes, keys, an
-    /// injected message, a transcript to follow. Never a reply, a blob or
-    /// an exit, which are outputs of their own.
+    /// injected message, a transcript to follow. Never a reply, a blob, a
+    /// log line or an exit, which are outputs of their own.
     WriteProvider(Effect),
     WriteControl {
         connection: ConnId,
@@ -207,6 +210,11 @@ pub enum Output {
     /// The process exits; the cause is the journal's last step, except
     /// after a kill or a write that failed, which write nothing.
     Exit(ExitCause),
+    /// Write a line to the agent's own log: what the interpreter noted for
+    /// amux's developers, which a debug report carries.
+    Log {
+        line: String,
+    },
     /// Take a dump: the core saw something it must not carry on from.
     Dump {
         reason: DumpReason,
@@ -485,6 +493,14 @@ struct Life {
     ask: Option<OpenAsk>,
     turn: Turn,
     awaited: Awaited,
+    /// The provider subagents this process's provider runs that have
+    /// started and not ended, by agent id, as the steps this core journaled
+    /// say: a part with a start makes one live, a part with an end ends it.
+    /// Read from the journal's own parts rather than from each provider's
+    /// events, so the one-shot rule below holds the same for every
+    /// interpreter. A new incarnation starts with none: its provider is a
+    /// new process, and whatever the last one ran died with it.
+    subagents: BTreeSet<Vec<u8>>,
     /// The interpreter asked the process to exit.
     asked_to_exit: Option<ExitCause>,
     /// Terminal clients attached to the agent's terminal.
@@ -496,6 +512,8 @@ struct Life {
     next_job: u64,
     /// The process exits: nothing more happens to this incarnation.
     exited: Option<ExitCause>,
+    /// When the wake timer is armed for, as the interpreter last asked.
+    wake: Option<u64>,
 }
 
 impl<I: Interpreter> Agent<I> {
@@ -527,12 +545,14 @@ impl<I: Interpreter> Agent<I> {
                 ask: None,
                 turn: Turn::default(),
                 awaited: Awaited::default(),
+                subagents: BTreeSet::new(),
                 asked_to_exit: None,
                 attached: 0,
                 suspend: None,
                 git: GitReads::default(),
                 next_job: 0,
                 exited: None,
+                wake: None,
             },
             touched: Touched::default(),
         };
@@ -566,6 +586,7 @@ impl<I: Interpreter> Agent<I> {
             self.take_input(input, out);
             if self.life.exited.is_none() {
                 self.settle(out);
+                self.rearm_wake(out);
             }
         }
         let checked = self.check_step_invariants();
@@ -598,6 +619,7 @@ impl<I: Interpreter> Agent<I> {
             "phase": life.turn.phase as i32,
             "children_owe_reports": !life.awaited.none(),
             "spawns_unsettled": life.awaited.unsettled(),
+            "subagents_live": life.subagents.len(),
             "asked_to_exit": life.asked_to_exit.as_ref().map(cause),
             "suspends_after_ms": life.params.suspend_after_ms,
             "attached": life.attached,
@@ -822,6 +844,18 @@ impl<I: Interpreter> Agent<I> {
                 let id = input.input_id.clone();
                 self.take(id, Event::Input(input), out);
             }
+            // A person's input to a provider subagent this agent's provider
+            // runs: the interpreter answers the provider for it, and the
+            // reply goes back keyed by the input id as any input's does. A
+            // frame without an input carries no id to answer, so it is
+            // dropped.
+            Some(ctl_frame::Of::ChildInput(wire::ChildInput {
+                agent_id,
+                input: Some(input),
+            })) => {
+                let id = input.input_id.clone();
+                self.take(id, Event::ChildInput { agent_id, input }, out);
+            }
             Some(ctl_frame::Of::AgentMessage(envelope)) => {
                 let id = envelope.id.clone();
                 // Kept even before the daemon names the child: the report
@@ -946,7 +980,43 @@ impl<I: Interpreter> Agent<I> {
                 // Settling after the step cancels one that is no longer due.
                 _ => {}
             },
+            TimerId::Wake => {
+                self.life.wake = None;
+                // The interpreter hears the time it asked for; what it
+                // does then is its own. A draining or exiting agent starts
+                // nothing new.
+                if self.life.mode == Mode::Running {
+                    self.tick(out);
+                }
+            }
         }
+    }
+
+    /// Arms the wake timer for when the interpreter now asks, or cancels
+    /// it when it asks for nothing.
+    fn rearm_wake(&mut self, out: &mut Vec<Output>) {
+        // A time no later than the last tick the interpreter heard, it has
+        // already seen: asking for it again would wake it to nothing, at
+        // once and without end.
+        let heard = self.life.ticked.unwrap_or(0);
+        let wanted = if self.life.mode == Mode::Running {
+            I::wake_at(&self.interpreter)
+                .map(|at| u64::try_from(at).unwrap_or(0))
+                .filter(|at| *at > heard)
+        } else {
+            None
+        };
+        if wanted == self.life.wake {
+            return;
+        }
+        self.life.wake = wanted;
+        out.push(match wanted {
+            Some(at_ms) => Output::ArmTimer {
+                id: TimerId::Wake,
+                at_ms,
+            },
+            None => Output::CancelTimer { id: TimerId::Wake },
+        });
     }
 
     /// A write to the agent directory failed, which in practice is a full
@@ -1105,12 +1175,18 @@ impl<I: Interpreter> Agent<I> {
 
     /// No accepted agent message waits to be consumed, no typed prompt
     /// waits for the provider to record it, no child asked for is still
-    /// unsettled, and no child's last report is still to come. A prompt
+    /// unsettled, no child's last report is still to come, and no provider
+    /// subagent runs. A provider subagent hands its answer back through the
+    /// provider, as a later turn of this agent (Claude's task notification)
+    /// or within the running one (Codex's wait), so a one-shot agent that
+    /// left while one ran would kill it and report the launch as its
+    /// answer. A prompt
     /// typed into one of terminal Claude's own
     /// screens is never recorded, so a one-shot child stays, idle, until a
     /// later prompt row takes it, a stop ends it or its daemon is lost.
     fn nothing_pending(&self) -> bool {
         self.life.awaited.none()
+            && self.life.subagents.is_empty()
             && I::pending_messages(&self.interpreter).is_empty()
             && !I::typed_unrecorded(&self.interpreter)
     }
@@ -1176,13 +1252,18 @@ impl<I: Interpreter> Agent<I> {
     /// after a tick when the clock moved since the interpreter last heard
     /// it.
     fn feed(&mut self, event: Event, out: &mut Vec<Output>) {
+        self.tick(out);
+        self.feed_one(event, out);
+    }
+
+    /// The clock to the interpreter, when it moved since it last heard it.
+    fn tick(&mut self, out: &mut Vec<Output>) {
         let now = self.life.now_ms;
         if self.life.ticked.is_none_or(|ticked| now > ticked) {
             self.life.ticked = Some(now);
             let at_ms = i64::try_from(now).unwrap_or(i64::MAX);
             self.feed_one(Event::Tick { at_ms }, out);
         }
-        self.feed_one(event, out);
     }
 
     fn feed_one(&mut self, event: Event, out: &mut Vec<Output>) {
@@ -1201,6 +1282,10 @@ impl<I: Interpreter> Agent<I> {
         let Stepped {
             mut step, effects, ..
         } = stepped;
+        // Before the turn end is judged: a subagent that ends in the same
+        // step as the turn no longer holds the agent, and one that starts
+        // in it does.
+        let last_subagent_ended = self.track_subagents(&step);
         // Marked here, not by the interpreter: only the process knows its
         // children and whether it is leaving.
         if step.turn_end.is_some() {
@@ -1236,10 +1321,19 @@ impl<I: Interpreter> Agent<I> {
                 .map(|item| item.input_id.clone()),
         );
         let turn_ended = step.turn_end.is_some();
+        // The last subagent ending outside a turn end leaves no turn end to
+        // judge: a one-shot agent it leaves idle with nothing else to wait
+        // for has finished, as one whose spawn turned out to make no child
+        // has. A provider that answers with a turn of its own (Claude's task
+        // notification) has started that turn by then, so the agent is not
+        // idle and the turn's end decides.
+        if last_subagent_ended && !turn_ended {
+            self.settled();
+        }
         // The journal skips an empty step, and an empty step tells the
         // daemon nothing.
         if step != Step::default() {
-            out.push(Output::AppendJournal(step));
+            out.push(Output::AppendJournal(Box::new(step)));
             self.send(ctl_frame::Of::Nudge(Nudge {}), out);
         }
         if turn_ended {
@@ -1258,9 +1352,30 @@ impl<I: Interpreter> Agent<I> {
                         .asked_to_exit
                         .get_or_insert(ExitCause::Interpreter(cause));
                 }
+                Effect::Log { line } => out.push(Output::Log { line }),
                 effect => out.push(Output::WriteProvider(effect)),
             }
         }
+    }
+
+    /// Follows which provider subagents run from a step's parts. A part
+    /// may both start and end one, for a subagent that ran its whole course
+    /// within one step; a start on an id that ended is its parent's model
+    /// continuing it, live again; an end for an id never started here is a
+    /// subagent of the last incarnation the provider reports stopped, and
+    /// changes nothing. Returns whether the step ended the last one that
+    /// ran.
+    fn track_subagents(&mut self, step: &Step) -> bool {
+        let ran = !self.life.subagents.is_empty();
+        for part in &step.agents {
+            if part.start.is_some() {
+                self.life.subagents.insert(part.agent_id.clone());
+            }
+            if part.end.is_some() {
+                self.life.subagents.remove(&part.agent_id);
+            }
+        }
+        ran && self.life.subagents.is_empty()
     }
 
     fn read_git(&mut self, out: &mut Vec<Output>) {

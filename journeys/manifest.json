@@ -165,6 +165,13 @@
       "claim": "A first `amux` on a new installation opens setting up before home, on connecting an iPhone: the whole pairing code, which pairs the phone that scans it, beside the six digits. Another machine pairs with the six digits it shows, and it says so and asks how to keep the machine connected. Signing in opens the browser at the account service's approval page with the code to check; approved, the machine just paired is offered the account and takes it. The repository Claude Code ran in lately is offered ticked and kept beside a typed folder. Quit half way, the next `amux` opens at the first step still to do, and once later skips it, the steps done are not asked again. An agent the other machine starts on the desk lands home selected, with Finish setting up offered for the step skipped; the desk keeps every answer."
     },
     {
+      "id": "provider-subagents",
+      "stage": 17,
+      "clients": ["terminal"],
+      "topology": "journeys/topologies/terminal-subagents.json",
+      "claim": "A headless Claude agent starts four subagents in one turn. Its chat keeps the earlier turn in view and folds the four calls into one row with their combined state, two finished, one waiting on the person and one running; opened, each call reads its own subagent's state, the asking one waiting on you. The finished subagent's chat shows its own prompt, steps and answer under a composer that takes no messages. The asking subagent's permission is answered in its own chat and reaches Claude as that subagent's answer. Stop in another subagent's chat asks first, then reaches Claude as a stop of that subagent's task, which ends stopped while the parent's turn goes on to its reply."
+    },
+    {
       "id": "account-sign-in",
       "stage": 16,
       "clients": ["phone"],

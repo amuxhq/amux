@@ -1,0 +1,10 @@
+{
+  "about": "The parent and its child each call amux's status tool and another tool server's tool: each thread starts the servers it calls, and the child's calls run as the parent's agent.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "recording": {
+    "path": "live/child_tools/io.jsonl",
+    "format": "codex_io"
+  }
+}

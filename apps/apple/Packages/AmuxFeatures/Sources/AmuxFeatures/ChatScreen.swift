@@ -1,5 +1,6 @@
 import AmuxCore
 import AmuxDesign
+import AmuxWords
 import QuickLook
 import SwiftUI
 
@@ -33,11 +34,16 @@ public struct ChatSubject: Equatable, Sendable {
     /// The workspace that deleting it removes, as its fleet row says; nil
     /// when the workspace stays.
     public let workspaceGoes: WorkspaceGoes?
+    /// A subagent its parent's provider runs: it goes with its parent, has
+    /// no folder and cannot be messaged, so it is never deleted on its own
+    /// and has no address to copy.
+    public let native: Bool
 
     public init(
         name: String, host: String, directory: String, branch: String? = nil, reach: Reach,
         connecting: Bool = false, descendants: Int = 0, backgroundJobs: Int = 0, closeHeld: Bool = false,
-        filing: Filing = .open, topLevel: Bool = true, workspaceGoes: WorkspaceGoes? = nil
+        filing: Filing = .open, topLevel: Bool = true, workspaceGoes: WorkspaceGoes? = nil,
+        native: Bool = false
     ) {
         self.name = name
         self.host = host
@@ -51,6 +57,7 @@ public struct ChatSubject: Equatable, Sendable {
         self.filing = filing
         self.topLevel = topLevel
         self.workspaceGoes = workspaceGoes
+        self.native = native
     }
 
     public var reachable: Bool { reach.online }
@@ -435,8 +442,10 @@ public struct ChatScreen: View {
                 Label("Overview", systemImage: "list.bullet.rectangle")
             }
             Button { choose { showing = .rename } } label: { Label("Rename", systemImage: "pencil") }
-            Button { choose { actions(.copyAddress) } } label: {
-                Label("Copy Address", systemImage: "doc.on.doc")
+            if !subject.native {
+                Button { choose { actions(.copyAddress) } } label: {
+                    Label("Copy Address", systemImage: "doc.on.doc")
+                }
             }
             if subject.topLevel && !closed {
                 if subject.filing == .pinned {
@@ -456,8 +465,11 @@ public struct ChatScreen: View {
                 Button { choose { actions(.reopen) } } label: {
                     Label("Un-settle", systemImage: "tray.and.arrow.up")
                 }
-                Button(role: .destructive) { choose { showing = .delete } } label: {
-                    Label("Delete Agent", systemImage: "trash")
+                // A provider subagent goes with its parent.
+                if !subject.native {
+                    Button(role: .destructive) { choose { showing = .delete } } label: {
+                        Label("Delete Agent", systemImage: "trash")
+                    }
                 }
             } else {
                 Button { choose { close() } } label: {
@@ -491,7 +503,7 @@ public struct ChatScreen: View {
     /// and keeps the bottom while they follow. The rows it hosts are the
     /// SwiftUI views below.
     private var feed: some View {
-        TranscriptList(model: model, notices: notices, landings: landings)
+        TranscriptList(model: model, notices: notices, landings: landings) { actions(.open($0)) }
     }
 
     /// After the newest row: this client's prompts that land there.
@@ -806,7 +818,11 @@ public struct ChatStanding: View {
         }
         let matches = model.slashMatches
         if !matches.isEmpty { SlashRows(matches: matches, pick: model.pick) }
-        if let signIn = model.frame?.signIn {
+        if let stop = model.frame?.composer.mode.nativeStop {
+            NativeComposer(
+                model: model, stop: stop, activity: model.frame?.composer.activity,
+                activitySubject: activitySubject)
+        } else if let signIn = model.frame?.signIn {
             let kind = model.frame?.kind
             FootCard(
                 kind: "sign-in", title: ChatWords.needsSignIn(kind),
@@ -835,7 +851,7 @@ public struct ChatStanding: View {
             $0.blocked ? ChatWords.limitReached($0, now: Date()) : nil
         }
         return ChatWords.placeholder(
-            model.frame?.composer.mode, agent: subject.name, host: subject.host,
+            model.frame?.composer.mode, host: subject.host,
             reach: subject.reach, connecting: subject.connecting, working: working, limit: limit)
     }
 
@@ -862,6 +878,8 @@ public struct ChatStanding: View {
 struct RowCellView: View {
     let cell: RowCell
     let model: ChatModel
+    /// Opens the chat of an agent this row's call started.
+    var openAgent: @MainActor (AgentKey) -> Void = { _ in }
 
     var body: some View {
         if let row = cell.row, model.shows(row) {
@@ -871,8 +889,12 @@ struct RowCellView: View {
                 placement: RunPlacement.of(
                     row, open: row.run?.open ?? false,
                     counts: { row.run.flatMap(model.counts(of:)) }),
+                opened: model.opened(by: row),
+                groupState: row.group.flatMap(model.state(of:)),
                 toggle: { model.toggle(row.id) },
-                toggleRun: { if let run = row.run { model.toggleRun(run) } })
+                toggleRun: { if let run = row.run { model.toggleRun(run) } },
+                toggleGroup: { if let group = row.group { model.toggleGroup(group) } },
+                openAgent: { openAgent($0) })
             .environment(\.attachmentRevision, cell.attachmentRevision)
         } else {
             Color.clear.frame(height: 0)

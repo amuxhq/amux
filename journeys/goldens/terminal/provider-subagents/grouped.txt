@@ -1,0 +1,34 @@
+
+  lead │ /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                                   1 │ [Diff] │ [Home]
+  2 subagents · 1 needs you
+
+
+
+
+
+
+
+
+
+
+    Look over the journal module.                                                                    hh:mm
+
+
+    The journal module keeps one file per agent and rotates it at 64 MB. Retention, redraws, migrations and
+    fixtures each need a closer look.
+
+    Worked <t>
+
+
+    Survey the four areas in parallel.                                                               hh:mm
+
+
+  ▸ 4 subagents · 1 running · 1 waiting on you · 2 done
+
+    2 subagents · 1 running · 1 waiting on you
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ › Message lead                                                                                         │
+  ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
+
+  enter queue   ctrl+x interrupt   shift+tab permission   ctrl+a more

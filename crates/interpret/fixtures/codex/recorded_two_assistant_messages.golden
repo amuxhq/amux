@@ -1,7 +1,6 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 6 recorded 5: fact Rpc "{\"id\":\"agent-thread\",\"result\":{\"activePermissionProfile\":{\"extends\":n…
-effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"01a191d0-caa6-7810-8571-1d3c1c3b4228\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1793447742152 text="" BOUNDARY_KIND_STARTED
@@ -21,7 +20,7 @@ effect catalogue e24fe0b2 models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},
 snapshot catalogue e24fe0b2
 snapshot IDLE queue=[] working_on=- at=1793447742163 asks=[] thread=01a191d0-caa6-7810-8571-1d3c1c3b4228 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 20 recorded 19: fact Rpc method=deprecationNotice
-item warning:2 error final at=1793447742169 text="Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." deprecationNotice "Full-history hydration is deprecated for paginated threads; omit `includeTurns` …" retry=false 0/0
+effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
 ## 24 recorded 23: input 0x415f4caf366b4137a2b96eb5513c3eda
 effect reply 0x415f4caf366b4137a2b96eb5513c3eda accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"415f4caf366b4137a2b96eb5513c3eda\",\"input\":[{\"text\":\"Send two separate assistant messages in this turn: first exactly FIRST_NOTE in commentary, then exactly SECOND_ANSWER as the final answer.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a191d0-caa6-7810-8571-1d3c1c3b4228\"}}"

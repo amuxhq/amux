@@ -16,7 +16,9 @@ use crate::ask::{QuestionView, Scope, lift_rule, lifted, question, scope_of};
 use crate::review::LineKind;
 use crate::run::Run;
 use crate::segments::{Segment, segments};
+use crate::subagents::{Groups, SubagentGroup};
 use crate::text::{terminal_text, within, without_direction_controls};
+use crate::turn::{TurnPart, TurnPlace, Turns};
 
 /// How many lines of a command's output a row carries.
 pub const OUTPUT_HEAD_LINES: usize = 3;
@@ -37,9 +39,23 @@ pub struct Row {
     pub decision: Option<Decision>,
     /// Drawn in the attention ink: an open ask points at it, or it failed.
     pub attention: bool,
-    /// A subagent's own step: collapsed under the subagent's row, which
-    /// opens to it.
+    /// A subagent's own step from history: collapsed under the subagent's
+    /// row, which opens to it. Steps written since a subagent became an
+    /// agent of its own are in its own chat, and carry none.
     pub parent: Option<Key>,
+    /// The agent this call started or continues, by its id: a provider
+    /// subagent or a child amux's spawn made. Every client opens that
+    /// agent's chat from the row, a gesture apart from expanding it, and
+    /// reads how the agent stands from its fleet row
+    /// ([`crate::opened_agent`]), never from the call.
+    pub opens: Option<Vec<u8>>,
+    /// The calls that opened agents in this row's turn, when they opened
+    /// more than one: they fold into one row (see [`SubagentGroup`]).
+    pub group: Option<SubagentGroup>,
+    /// Where it stands in its finished turn, when the client folds turns
+    /// ([`ToolRows::Turns`]); None in the turn under way and for every
+    /// other fold.
+    pub turn: Option<TurnPlace>,
 }
 
 /// Whether tool steps show, hide, or fold into their runs.
@@ -54,6 +70,14 @@ pub enum ToolRows<'a> {
     /// step (see [`crate::run_is_open`]).
     Collapse {
         open: &'a HashSet<Key>,
+    },
+    /// Each finished turn folds to its prompt, the line over its work, and
+    /// its answer, keeping in view what the reader must see; one `turns`
+    /// holds the end of shows its work, each run folded as `Collapse`
+    /// folds it. The turn under way folds as `Collapse` does.
+    Turns {
+        runs: &'a HashSet<Key>,
+        turns: &'a HashSet<Key>,
     },
 }
 
@@ -123,11 +147,21 @@ pub enum RowKind {
         /// the file itself, which the row does not carry.
         result: String,
     },
+    /// A call that started or continued a subagent its provider runs:
+    /// Claude's Agent call or a SendMessage to its subagent, Codex's spawn
+    /// or follow-up of a child thread. The row opens the subagent's chat
+    /// ([`Row::opens`]); how the subagent stands is its fleet row's, since a
+    /// call can return while its subagent runs on. Only a call from history
+    /// opens nothing, and then `state` is all there is to say.
     Subagent {
+        /// What the call asked for: a new subagent's description, or the
+        /// message a continuation sent; empty when the provider gave none
+        /// (Codex), when the subagent's own title names it.
         description: String,
-        running: bool,
-        tool_count: u32,
-        last_tool: String,
+        /// It continued a subagent started earlier.
+        continued: bool,
+        state: CallPhase,
+        /// What the subagent handed back, once the call returned it.
         answer: String,
         duration_ms: Option<i64>,
     },
@@ -161,6 +195,8 @@ pub enum RowKind {
         tokens_before: Option<u64>,
         tokens_after: Option<u64>,
         automatic: bool,
+        /// amux compacted the conversation while the agent sat idle.
+        idle: bool,
     },
     Error {
         error_kind: String,
@@ -351,6 +387,7 @@ impl Row {
         match &self.kind {
             RowKind::ToolCall { state, .. }
             | RowKind::Child { state, .. }
+            | RowKind::Subagent { state, .. }
             | RowKind::FileChange { state, .. }
             | RowKind::Command { state, .. }
             | RowKind::Explore { state, .. } => Some(*state),
@@ -455,36 +492,74 @@ pub fn chat_rows_for(state: &SessionState, keys: &[Key], tools: ToolRows) -> Vec
     let mut held: Vec<&Held> = keys.iter().filter_map(|key| transcript.get(key)).collect();
     held.sort_by_key(|held| held.item.order);
     held.dedup_by_key(|held| held.item.order);
+    let mut turns = Turns::default();
+    let mut groups = Groups::default();
     held.into_iter()
-        .map(|held| row(state, held, tools))
+        .map(|held| row(state, held, tools, &mut turns, &mut groups))
         .collect()
 }
 
-fn row(state: &SessionState, held: &Held, tools: ToolRows) -> Row {
+fn row(
+    state: &SessionState,
+    held: &Held,
+    tools: ToolRows,
+    turns: &mut Turns,
+    groups: &mut Groups,
+) -> Row {
     let item = &held.item;
     let (kind, decision, failed) = kind_of(state, held);
     let mut run = crate::run::run_of(state, held, &kind, failed);
-    if let (ToolRows::Collapse { open }, Some(run)) = (tools, run.as_mut()) {
+    if let (ToolRows::Collapse { open } | ToolRows::Turns { runs: open, .. }, Some(run)) =
+        (tools, run.as_mut())
+    {
         run.open = crate::run::run_is_open(state, item.order, open);
     }
     let step = held.class.fold() == Fold::Step;
     let kept = run.as_ref().is_some_and(|run| run.unresolved_failure);
+    let run_folded = || {
+        run.as_ref().is_some_and(|run| {
+            let shown = if run.live {
+                run.live_shown
+            } else {
+                run.is_last() || kept
+            };
+            !shown && !run.open
+        })
+    };
+    let turn = match tools {
+        ToolRows::Turns { turns: open, .. } => turns.place(state, held, &kind, kept, open),
+        _ => None,
+    };
     let collapsed = matches!(kind, RowKind::Hidden)
         || match tools {
             ToolRows::ShowAll => false,
             ToolRows::Hide => step && !kept,
-            ToolRows::Collapse { .. } => run.as_ref().is_some_and(|run| {
-                let shown = if run.live {
-                    run.live_shown
-                } else {
-                    run.is_last() || kept
-                };
-                !shown && !run.open
-            }),
+            ToolRows::Collapse { .. } => run_folded(),
+            ToolRows::Turns { .. } => match &turn {
+                Some(TurnPlace {
+                    open: false,
+                    part: TurnPart::Work,
+                    ..
+                }) => true,
+                // Closed, a turn keeps its failure in view without the
+                // run that held it.
+                Some(TurnPlace {
+                    open: false,
+                    part: TurnPart::Kept,
+                    ..
+                }) => false,
+                _ => run_folded(),
+            },
         };
     let asked = asked(state, held);
     let parent = parent_of(held);
-    let collapsed = collapsed || parent.is_some();
+    let opens = ui_state::opens(&held.body).map(<[u8]>::to_vec);
+    let group = opens.as_ref().and_then(|_| groups.of(state, held, tools));
+    // A folded group draws as its first call; the rest wait for it to open.
+    let grouped_away = group
+        .as_ref()
+        .is_some_and(|group| !group.open && group.first != item.key);
+    let collapsed = collapsed || parent.is_some() || grouped_away;
     Row {
         id: item.key.clone(),
         order: item.order,
@@ -495,6 +570,9 @@ fn row(state: &SessionState, held: &Held, tools: ToolRows) -> Row {
         decision,
         attention: asked || failed,
         parent,
+        opens,
+        group,
+        turn,
     }
 }
 
@@ -659,11 +737,17 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             Claude::Message(m) => plain(prose(held, m.complete, false)),
             Claude::Thinking(t) => plain(thinking(state, held, t.complete)),
             Claude::Tool(tool) => claude_tool(state, held, tool),
+            // History: a task headless Claude reported without its call.
             Claude::Task(task) => plain(RowKind::Subagent {
                 description: task.description.clone(),
-                running: task.state() == wire::TaskState::Running,
-                tool_count: task.tool_count,
-                last_tool: task.last_tool.clone(),
+                continued: false,
+                state: match task.state() {
+                    wire::TaskState::Running if !exited(state) => CallPhase::Running,
+                    wire::TaskState::Running => CallPhase::Cancelled,
+                    wire::TaskState::Failed => CallPhase::Failed,
+                    wire::TaskState::Stopped => CallPhase::Cancelled,
+                    _ => CallPhase::Succeeded,
+                },
                 answer: String::new(),
                 duration_ms: None,
             }),
@@ -710,6 +794,13 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             Codex::Turn(turn) => plain(turn_row(state, held, turn)),
             Codex::Boundary(b) => plain(boundary(b, Provider::Codex)),
             Codex::AgentMessage(m) => plain(agent_message(held, m)),
+            // Codex telling a client it will stop supporting something the
+            // client sends: words for amux's developers, which the agent
+            // logs, not for the person chatting. Earlier builds kept them
+            // as error items, so a history may still hold one.
+            Codex::Error(e) if e.error_kind == ui_state::body::CODEX_DEPRECATION_NOTICE => {
+                plain(RowKind::Hidden)
+            }
             Codex::Error(e) => error(e),
             Codex::Unrecognized(u) => plain(unrecognized(u)),
             Codex::Verdict(v) => plain(RowKind::AutoReview {
@@ -974,6 +1065,7 @@ fn compaction(c: &wire::Compaction) -> RowKind {
         tokens_before: c.tokens_before,
         tokens_after: c.tokens_after,
         automatic: c.automatic,
+        idle: c.idle,
     }
 }
 
@@ -1016,6 +1108,7 @@ fn boundary(b: &wire::Boundary, provider: Provider) -> RowKind {
             tokens_before: None,
             tokens_after: None,
             automatic: false,
+            idle: b.idle,
         },
         BoundaryKind::Unspecified
         | BoundaryKind::Started
@@ -1233,10 +1326,23 @@ fn claude_tool(
                     state: view,
                 }
             }
-            Some(tool_input::Of::Subagent(_)) => {
-                subagent(tool, named, view, exited(state), duration_ms)
-            }
+            Some(tool_input::Of::Subagent(_)) => RowKind::Subagent {
+                description: named.to_owned(),
+                continued: false,
+                state: view,
+                answer: tool.outcome_text.clone(),
+                duration_ms,
+            },
             Some(tool_input::Of::TaskList(_)) => RowKind::Hidden,
+            // A SendMessage to a subagent it started: the call that
+            // continues it, opening the same chat.
+            _ if !tool.child_agent_id.is_empty() => RowKind::Subagent {
+                description: named.to_owned(),
+                continued: true,
+                state: view,
+                answer: tool.outcome_text.clone(),
+                duration_ms,
+            },
             _ => RowKind::ToolCall {
                 server: String::new(),
                 tool: tool.name.clone(),
@@ -1353,25 +1459,6 @@ fn explore_verb(class: i32) -> Option<ExploreVerb> {
     }
 }
 
-fn subagent(
-    tool: &ToolCall,
-    description: &str,
-    view: CallPhase,
-    exited: bool,
-    duration_ms: Option<i64>,
-) -> RowKind {
-    let progress = tool.subagent.clone().unwrap_or_default();
-    // A background subagent outlives its call, but not its agent's exit.
-    RowKind::Subagent {
-        description: description.to_owned(),
-        running: view.in_flight() || (tool.background && !progress.finished && !exited),
-        tool_count: progress.tool_count,
-        last_tool: progress.last_tool,
-        answer: tool.outcome_text.clone(),
-        duration_ms,
-    }
-}
-
 fn codex_work(
     state: &SessionState,
     held: &Held,
@@ -1458,14 +1545,32 @@ fn codex_work(
                 path: image.path.clone(),
                 generated: image.generated,
             },
-            Some(Of::Collab(collab)) => RowKind::Subagent {
-                description: collab.prompt.clone(),
-                running: view.in_flight(),
-                tool_count: 0,
-                last_tool: collab.tool.clone(),
-                answer: String::new(),
-                duration_ms,
-            },
+            // Waiting on, closing, interrupting or listing child threads is
+            // the parent's bookkeeping on agents its spawns open; a spawn
+            // from history that names no agent still draws.
+            Some(Of::Collab(collab))
+                if ui_state::opens(&held.body).is_some() || collab.tool == "spawnAgent" =>
+            {
+                let spawns = collab.tool == "spawnAgent";
+                // A spawn that opens its child is named by the child's
+                // title; the task Codex also puts on the call opens the
+                // child's own chat. A follow-up says what it sent. Each
+                // call returns at once while the child works on, so its
+                // own time is not the child's.
+                let named_by_child = spawns && ui_state::opens(&held.body).is_some();
+                RowKind::Subagent {
+                    description: if named_by_child {
+                        String::new()
+                    } else {
+                        collab.prompt.clone()
+                    },
+                    continued: !spawns,
+                    state: view,
+                    answer: String::new(),
+                    duration_ms: None,
+                }
+            }
+            Some(Of::Collab(_)) => RowKind::Hidden,
             None => RowKind::Unrecognized {
                 what: "work".into(),
                 summary: String::new(),

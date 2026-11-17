@@ -1,3 +1,4 @@
+@testable import AmuxWords
 import Foundation
 import XCTest
 @testable import AmuxCore

@@ -21,9 +21,10 @@ a change keeps them:
   warning, so a config a release accepted never stops amux starting.
 - **Commands amux runs on itself.** `amux supervise`, `amux daemon`,
   `amux relay`, the `--config` option, and `amux internal mcp`, `hook`,
-  `ssh-pair` and `ssh-link` keep their names and arguments. A login item or
-  service unit, a supervisor handing over to the release it installed, a
-  running agent's provider and a paired host at another version call them
+  `ssh-pair`, `ssh-link` and `browser` keep their names and arguments, and
+  `browser` its message framing. A login item or service unit, a supervisor
+  handing over to the release it installed, a running agent's provider, a
+  browser's native messaging host and a paired host at another version call them
   long after the build that wrote the call. The command-line test in
   `crates/amux/src/main.rs` parses each one. Commands a person types change
   freely.

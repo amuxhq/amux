@@ -159,13 +159,13 @@ public struct SetupScreen: View {
         VStack(spacing: 0) {
             VStack(spacing: 10) {
                 Image(systemName: symbol(step))
-                    .font(.system(size: 46, weight: .light))
+                    .font(.ui(.hero, weight: .light))
                     .foregroundStyle(.tint)
                     .symbolRenderingMode(.hierarchical)
                     .frame(height: 56)
                     .padding(.bottom, 6)
                 Text(title(step))
-                    .font(.system(size: 26, weight: .bold))
+                    .font(.ui(.display, weight: .bold))
                     .multilineTextAlignment(.center)
             }
             .padding(.top, 44)
@@ -175,7 +175,7 @@ public struct SetupScreen: View {
                 .padding(.top, 22)
             if let error = content.error {
                 Text(error)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.failure)
                     .font(.callout)
                     .multilineTextAlignment(.center)
                     .textSelection(.enabled)
@@ -322,11 +322,11 @@ private struct PairPhone: View {
         let pairing = content.pairing
         if let why = pairing.failed {
             Label("Pairing could not open: \(why)", systemImage: "exclamationmark.triangle")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Palette.caution)
                 .font(.callout)
         } else if pairing.lockedOut {
             HStack(spacing: 10) {
-                Text("Closed after too many wrong codes.").foregroundStyle(.orange)
+                Text("Closed after too many wrong codes.").foregroundStyle(Palette.caution)
                 Button("New Code") { actions.newCode() }
             }
             .font(.callout)
@@ -350,7 +350,7 @@ private struct PairPhone: View {
                 .frame(width: 196, height: 196)
                 .accessibilityLabel("A code that opens amux on your iPhone, or the App Store")
         } else {
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: Radius.sheet)
                 .fill(.quaternary)
                 .frame(width: 196, height: 196)
                 .overlay { ProgressView() }
@@ -420,8 +420,8 @@ private struct QRCode: View {
                 .resizable()
                 .scaledToFit()
                 .padding(12)
-                .background(.white, in: RoundedRectangle(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.separator))
+                .background(.white, in: RoundedRectangle(cornerRadius: Radius.sheet))
+                .overlay(RoundedRectangle(cornerRadius: Radius.sheet).strokeBorder(.separator))
         }
     }
 
@@ -450,7 +450,7 @@ private struct KeepReachable: View {
                 Label {
                     Text("Paired with \(phone.name)")
                 } icon: {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.accent)
                 }
                 .font(.title3.weight(.medium))
                 .frame(maxWidth: .infinity)

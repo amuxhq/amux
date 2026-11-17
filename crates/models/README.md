@@ -336,7 +336,18 @@ model judges it by, over the same stores and cores:
 - presence from links: a host reads online exactly while a link of its
   own is up, and hosts on a working link read each other online once the
   world rests;
-- an accepted prompt keeping its row on its host.
+- an accepted prompt keeping its row on its host;
+- provider subagents: a subagent's row exists before its first item, none is
+  live after its host's process ends, none gets a delivery or owes a report,
+  and (as the daemon core's own checks, so as dumps) a subagent's end comes
+  after its last item and each frame's parts name agents the host runs. One
+  configuration's agent calls Claude's Agent tool, whose subagent the test
+  kind writes into the agent's journal as it runs and ends, through a
+  daemon kill; it must sometimes see the subagent finish holding its reply.
+
+These are judged as a dump's replay judges each step
+(`single_daemon::judge_step` and the net's own step judge both call
+`subagents::judge`).
 
 The environment judges the promises about a step as it makes the step, so
 the simulated mode keeps them too. Beside them are the promises that hold

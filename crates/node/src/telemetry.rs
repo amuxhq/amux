@@ -85,10 +85,37 @@ pub(crate) fn kind_coded(code: i32) -> Option<Kind> {
 
 /// What a person's input is, as analytics counts it: a prompt or an answer
 /// to an ask. Keys, interrupts and settings are not counted.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum InputShape {
-    Prompt(Kind),
+    /// A prompt, with the page reviews it carries.
+    Prompt(Kind, Vec<PageCounts>),
     Answer(Kind, Ask),
+}
+
+/// A page review as analytics counts it: comments, and how many were on a
+/// phrase or a region.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PageCounts {
+    comments: u32,
+    quotes: u32,
+    regions: u32,
+}
+
+/// The page reviews among a prompt's attachments.
+pub(crate) fn pages(prompt: &wire::PromptInput) -> Vec<PageCounts> {
+    let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+    prompt
+        .attachments
+        .iter()
+        .filter_map(|attachment| match &attachment.of {
+            Some(wire::attachment::Of::Page(page)) => Some(PageCounts {
+                comments: count(page.comments.len()),
+                quotes: count(page.comments.iter().filter(|c| !c.quote.is_empty()).count()),
+                regions: count(page.comments.iter().filter(|c| c.image.is_some()).count()),
+            }),
+            _ => None,
+        })
+        .collect()
 }
 
 impl InputShape {
@@ -101,7 +128,7 @@ impl InputShape {
             KindInput::ClaudePty(input) => {
                 use wire::claude_pty_input::Of;
                 match input.of? {
-                    Of::Prompt(_) => Self::Prompt(Kind::ClaudePty),
+                    Of::Prompt(prompt) => Self::Prompt(Kind::ClaudePty, pages(&prompt)),
                     Of::Answer(answer) => Self::Answer(Kind::ClaudePty, claude_ask(&answer)?),
                     _ => return None,
                 }
@@ -109,7 +136,7 @@ impl InputShape {
             KindInput::ClaudeSdk(input) => {
                 use wire::claude_sdk_input::Of;
                 match input.of? {
-                    Of::Prompt(_) => Self::Prompt(Kind::ClaudeSdk),
+                    Of::Prompt(prompt) => Self::Prompt(Kind::ClaudeSdk, pages(&prompt)),
                     Of::Answer(answer) => Self::Answer(Kind::ClaudeSdk, claude_ask(&answer)?),
                     _ => return None,
                 }
@@ -117,7 +144,7 @@ impl InputShape {
             KindInput::Codex(input) => {
                 use wire::codex_input::Of;
                 match input.of? {
-                    Of::Prompt(_) => Self::Prompt(Kind::Codex),
+                    Of::Prompt(prompt) => Self::Prompt(Kind::Codex, pages(&prompt)),
                     Of::Answer(answer) => Self::Answer(Kind::Codex, codex_ask(&answer)?),
                     _ => return None,
                 }
@@ -126,11 +153,26 @@ impl InputShape {
     }
 
     /// The event once the input was accepted.
-    pub(crate) fn event(self, on: On, queued: bool) -> Event {
-        match self {
-            Self::Prompt(kind) => Event::PromptSent { kind, on, queued },
+    pub(crate) fn event(&self, on: On, queued: bool) -> Event {
+        match *self {
+            Self::Prompt(kind, _) => Event::PromptSent { kind, on, queued },
             Self::Answer(kind, ask) => Event::AskAnswered { kind, on, ask },
         }
+    }
+
+    /// An event per page review the prompt carried, once it was accepted.
+    pub(crate) fn page_reviews(&self) -> Vec<Event> {
+        let Self::Prompt(_, pages) = self else {
+            return Vec::new();
+        };
+        pages
+            .iter()
+            .map(|page| Event::PageReviewSent {
+                comments: page.comments,
+                quotes: page.quotes,
+                regions: page.regions,
+            })
+            .collect()
     }
 }
 
@@ -281,6 +323,56 @@ mod tests {
 
     fn input(of: impl Into<wire::KindInput>) -> wire::Input {
         wire::Input::new(Vec::new(), of)
+    }
+
+    #[test]
+    fn a_prompt_counts_each_page_review_it_carries() {
+        let comment = |quote: &str, image: bool| wire::PageComment {
+            quote: quote.into(),
+            image: image.then(wire::BlobRef::default),
+            ..Default::default()
+        };
+        let page = |comments| wire::Attachment {
+            of: Some(wire::attachment::Of::Page(wire::PageReview {
+                comments,
+                ..Default::default()
+            })),
+        };
+        let prompt = input(wire::ClaudeSdkInput {
+            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+                text: "\u{FFFC}\u{FFFC}".into(),
+                attachments: vec![
+                    page(vec![
+                        comment("", false),
+                        comment("annual", false),
+                        comment("", true),
+                    ]),
+                    page(vec![comment("", true)]),
+                ],
+            })),
+        });
+        let shape = InputShape::of(&prompt).unwrap();
+        assert_eq!(
+            shape.page_reviews(),
+            [
+                Event::PageReviewSent {
+                    comments: 3,
+                    quotes: 1,
+                    regions: 1
+                },
+                Event::PageReviewSent {
+                    comments: 1,
+                    quotes: 0,
+                    regions: 1
+                },
+            ]
+        );
+        let words = input(wire::ClaudeSdkInput {
+            of: Some(wire::claude_sdk_input::Of::Prompt(
+                wire::PromptInput::default(),
+            )),
+        });
+        assert_eq!(InputShape::of(&words).unwrap().page_reviews(), []);
     }
 
     #[test]

@@ -17,6 +17,10 @@ pub struct Thread {
     /// The thread this one was forked from.
     #[serde(default)]
     pub forked_from_id: Option<String>,
+    /// The name Codex gives a thread one of its agents started, such as
+    /// "Lovelace"; null on a thread a person started.
+    #[serde(default)]
+    pub agent_nickname: Option<String>,
     /// The version of Codex that made the thread.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cli_version: Option<String>,

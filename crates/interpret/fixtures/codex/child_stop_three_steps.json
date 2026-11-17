@@ -1,0 +1,431 @@
+{
+  "about": "The person stops a Codex subagent from its chat in the three steps Codex 0.166.0 needs, as the fake plays them: its turn interrupted (its command runs on, so the subagent stays, listing it), the command listed on its thread and ended, and the parent's running turn steered with a note so its wait ends. The subagent reads stopping until its command ends, then ends stopped.",
+  "spec": {
+    "created_at_ms": 1800000000000
+  },
+  "events": [
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "id": 2,
+          "result": {
+            "thread": {
+              "id": "t1",
+              "cliVersion": "0.166.0",
+              "turns": []
+            },
+            "model": "gpt-6.1-sol",
+            "approvalPolicy": "on-request",
+            "sandbox": {
+              "type": "workspaceWrite"
+            }
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "id": "p1",
+        "prompt": {
+          "text": "Start one agent that runs sleep 97, then wait for it."
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "id": "amux-1",
+          "result": {
+            "turn": {
+              "id": "turn-1",
+              "status": "inProgress"
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "turn/started",
+          "params": {
+            "threadId": "t1",
+            "turn": {
+              "id": "turn-1",
+              "status": "inProgress"
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "item/completed",
+          "params": {
+            "threadId": "t1",
+            "turnId": "turn-1",
+            "item": {
+              "type": "userMessage",
+              "id": "um-0",
+              "clientId": "7031",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Start one agent that runs sleep 97, then wait for it.",
+                  "text_elements": []
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "item/started",
+          "params": {
+            "threadId": "t1",
+            "turnId": "turn-1",
+            "item": {
+              "type": "subAgentActivity",
+              "id": "call-spawn",
+              "kind": "started",
+              "agentThreadId": "c1",
+              "agentPath": "/a/lovelace",
+              "model": "gpt-6.1-sol",
+              "reasoningEffort": "low"
+            }
+          }
+        }
+      },
+      "note": "The spawn: the parent's collab row names the subagent, which starts from it and is read for its nickname."
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "item/completed",
+          "params": {
+            "threadId": "t1",
+            "turnId": "turn-1",
+            "item": {
+              "type": "subAgentActivity",
+              "id": "call-spawn",
+              "kind": "started",
+              "agentThreadId": "c1",
+              "agentPath": "/a/lovelace",
+              "model": "gpt-6.1-sol",
+              "reasoningEffort": "low"
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "id": "amux-read-1",
+          "result": {
+            "readState": null,
+            "thread": {
+              "id": "c1",
+              "agentNickname": "Lovelace",
+              "canAcceptDirectInput": false,
+              "parentThreadId": "t1",
+              "threadSource": "subagent"
+            }
+          }
+        }
+      },
+      "note": "Codex answers the read with the child's nickname, its title from the next snapshot."
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "turn/started",
+          "params": {
+            "threadId": "c1",
+            "turn": {
+              "id": "c-turn",
+              "status": "inProgress",
+              "rootTurnId": "turn-1"
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "item/started",
+          "params": {
+            "threadId": "t1",
+            "turnId": "turn-1",
+            "item": {
+              "type": "collabAgentToolCall",
+              "id": "call-wait",
+              "tool": "wait",
+              "status": "inProgress",
+              "senderThreadId": "t1",
+              "receiverThreadIds": [],
+              "agentsStates": {}
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "item/started",
+          "params": {
+            "threadId": "c1",
+            "turnId": "c-turn",
+            "item": {
+              "type": "commandExecution",
+              "id": "exec-1",
+              "command": "/bin/zsh -lc 'sleep 97; echo LATE'",
+              "cwd": "/work",
+              "processId": "4242",
+              "status": "inProgress",
+              "commandActions": [
+                {
+                  "type": "unknown",
+                  "command": "sleep 97; echo LATE"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "child_input": {
+        "child": "c1",
+        "id": "s1",
+        "stop_job": {
+          "key": "c1"
+        }
+      },
+      "expect": {
+        "reply": "accepted"
+      },
+      "note": "The person stops the subagent from its chat: step one, its turn is interrupted."
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "id": "amux-interrupt-2",
+          "result": {}
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "turn/completed",
+          "params": {
+            "threadId": "c1",
+            "turn": {
+              "id": "c-turn",
+              "status": "interrupted",
+              "rootTurnId": "turn-1",
+              "items": []
+            }
+          }
+        }
+      },
+      "note": "Its turn ends interrupted; its command runs on, so it stays."
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "id": "amux-child-jobs-3-1",
+          "result": {
+            "data": [
+              {
+                "itemId": "exec-1",
+                "processId": "4242",
+                "command": "sleep 97; echo LATE",
+                "cwd": "/work",
+                "cpuPercent": null,
+                "osPid": null,
+                "rssKb": null
+              }
+            ],
+            "nextCursor": null
+          }
+        }
+      },
+      "note": "Step two: the command its turn left is listed on its thread and ended; step three, the parent's turn is steered."
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "id": "amux-child-jobs-4-1",
+          "result": {
+            "data": [
+              {
+                "itemId": "exec-1",
+                "processId": "4242",
+                "command": "sleep 97; echo LATE",
+                "cwd": "/work",
+                "cpuPercent": null,
+                "osPid": null,
+                "rssKb": null
+              }
+            ],
+            "nextCursor": null
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "id": "amux-stop-4242",
+          "result": {
+            "terminated": true
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "item/completed",
+          "params": {
+            "threadId": "c1",
+            "turnId": "c-turn",
+            "item": {
+              "type": "commandExecution",
+              "id": "exec-1",
+              "command": "/bin/zsh -lc 'sleep 97; echo LATE'",
+              "cwd": "/work",
+              "processId": "4242",
+              "status": "failed",
+              "commandActions": [
+                {
+                  "type": "unknown",
+                  "command": "sleep 97; echo LATE"
+                }
+              ],
+              "exitCode": -1,
+              "durationMs": 0,
+              "aggregatedOutput": ""
+            }
+          }
+        }
+      },
+      "note": "The command ends killed: nothing of the subagent's runs, and it ends stopped."
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "id": "amux-told-5",
+          "result": {
+            "turnId": "turn-1"
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "item/completed",
+          "params": {
+            "threadId": "t1",
+            "turnId": "turn-1",
+            "item": {
+              "type": "userMessage",
+              "id": "um-1",
+              "clientId": "amux-told-5",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "I stopped the agent Lovelace you started; it will not answer. Stop waiting for it and go on without it.",
+                  "text_elements": []
+                }
+              ]
+            }
+          }
+        }
+      },
+      "note": "The note reaches the parent's turn as a steer, and its wait ends."
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "item/completed",
+          "params": {
+            "threadId": "t1",
+            "turnId": "turn-1",
+            "item": {
+              "type": "collabAgentToolCall",
+              "id": "call-wait",
+              "tool": "wait",
+              "status": "completed",
+              "senderThreadId": "t1",
+              "receiverThreadIds": [],
+              "agentsStates": {}
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "item/completed",
+          "params": {
+            "threadId": "t1",
+            "turnId": "turn-1",
+            "item": {
+              "type": "agentMessage",
+              "id": "msg-1",
+              "text": "Stopped waiting.",
+              "phase": "final_answer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "method": "turn/completed",
+          "params": {
+            "threadId": "t1",
+            "turn": {
+              "id": "turn-1",
+              "status": "completed",
+              "items": []
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -3,7 +3,6 @@ snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? model=? model_name
 ## 5 recorded 4: fact Rpc method=account/updated
 snapshot STARTING queue=[] working_on=- at=1793447651790 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 7 recorded 6: fact Rpc "{\"id\":\"agent-thread\",\"result\":{\"activePermissionProfile\":null,\"approva…
-effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"01a191cf-68dc-7721-8b2d-9b42c449f138\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1793447652676 text="" BOUNDARY_KIND_STARTED
@@ -23,7 +22,7 @@ snapshot IDLE queue=[] working_on=- at=1793447652681 asks=[] thread=01a191cf-68d
 ## 17 recorded 16: fact Rpc method=mcpServer/startupStatus/updated
 snapshot IDLE queue=[] working_on=- at=1793447652683 asks=[] thread=01a191cf-68dc-7721-8b2d-9b42c449f138 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=medium permission=default mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 22 recorded 21: fact Rpc method=deprecationNotice
-item warning:2 error final at=1793447652689 text="Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." deprecationNotice "Full-history hydration is deprecated for paginated threads; omit `includeTurns` …" retry=false 0/0
+effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
 ## 25 recorded 24: input 0xe5ad0b2d1e864117901dc667cc10b364
 effect reply 0xe5ad0b2d1e864117901dc667cc10b364 accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"e5ad0b2d1e864117901dc667cc10b364\",\"input\":[{\"text\":\"Reply with the single word pong and nothing else.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a191cf-68dc-7721-8b2d-9b42c449f138\"}}"

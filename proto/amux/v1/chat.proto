@@ -83,6 +83,11 @@ message ToolCall {
   ToolInput input = 16;
   // A file edit or write that finished: the hunks Claude says it changed.
   repeated PatchHunk patch = 17;
+  // The agent this call started or continues, whose chat the call's row
+  // opens: a provider subagent on Claude's Agent call and on a later
+  // SendMessage call to the same subagent, or the child amux's own spawn
+  // made. Empty on any other call, and on a call from before amux knew it.
+  bytes child_agent_id = 18;
 }
 
 // What a Claude call was asked to do, read once by the interpreter from the
@@ -258,6 +263,10 @@ message Boundary {
   // For EXITED: why, and the cause's own words.
   ExitCause cause = 2;
   optional string cause_detail = 3;
+  // For COMPACTED: amux compacted the conversation on its own while the
+  // agent sat idle, before the provider's prompt cache expired. False for a
+  // compaction somebody asked for or the provider started, as before.
+  bool idle = 4;
 }
 
 enum BoundaryKind {
@@ -319,6 +328,10 @@ message Compaction {
   optional uint64 tokens_before = 1;
   optional uint64 tokens_after = 2;
   bool automatic = 3;
+  // amux compacted the conversation on its own while the agent sat idle,
+  // before the provider's prompt cache expired. False for a compaction
+  // somebody asked for or the provider started, as before.
+  bool idle = 4;
 }
 
 message ApiError {

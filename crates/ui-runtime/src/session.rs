@@ -354,6 +354,11 @@ impl Inner {
         }
         let (wanted, held) = {
             let model = self.model();
+            // A provider subagent runs on its parent's settings and offers
+            // nothing to pick: its parent's chat has the catalogue.
+            if model.state.native() {
+                return;
+            }
             (
                 model.state.agent_state().catalogue.clone(),
                 model.state.held_catalogue().map(<[u8]>::to_vec),

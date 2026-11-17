@@ -1,30 +1,29 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 32 recorded 31: fact Rpc method=turn/started
+## 27 recorded 26: fact Rpc method=turn/started
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 42 recorded 41: fact Rpc method=item/started
-  composer Send activity=Some(Running { key: "exec-5788e0c2-60be-4442-a34d-bc1463f128c2" }) queue=[] underway=[] refused=[]
-## 43 recorded 42: fact Rpc method=item/commandExecution/requestApproval
-  ask 0 -> "exec-5788e0c2-60be-4442-a34d-bc1463f128c2" 1/1 Open
+## 35 recorded 34: fact Rpc method=item/started
+  composer Send activity=Some(Running { key: "exec-2d74c8d2-f98f-433a-b917-7bc6fe9eebd6" }) queue=[] underway=[] refused=[]
+## 36 recorded 35: fact Rpc method=item/commandExecution/requestApproval
+  ask 0 -> "exec-2d74c8d2-f98f-433a-b917-7bc6fe9eebd6" 1/1 Open
     choices AllowOnce*, AllowSimilar { prefix: ["touch", "attached.txt"] }, Deny, DenyAndStop
-    body Command { command: "touch attached.txt", cwd: "<MACHINE_PATH>", reason: "May I create attached.txt with the requested command?", description: "" }
+    body Command { command: "touch attached.txt", cwd: "<MACHINE_PATH>", reason: "May I create attached.txt in the read-only workspace?", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 45 recorded 44: input stdin-8
+## 38 recorded 37: input stdin-7
   ask none
-  composer Send activity=Some(Running { key: "exec-5788e0c2-60be-4442-a34d-bc1463f128c2" }) queue=[] underway=[] refused=[]
-## 50 recorded 49: fact Rpc method=item/completed
+  composer Send activity=Some(Running { key: "exec-2d74c8d2-f98f-433a-b917-7bc6fe9eebd6" }) queue=[] underway=[] refused=[]
+## 43 recorded 42: fact Rpc method=item/completed
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 65 recorded 64: fact Rpc method=turn/completed
+## 57 recorded 56: fact Rpc method=turn/completed
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
-     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
-     3 01a191cd-4ac4-77e2-958d-0112a7af705d Prompt { text: [Text("Run exactly this shell command once, with your shell tool, and nothing else: touch attached.txt. The sandbox is read-only, so request escalated permissions for it; I will approve. Then reply with the single word done.")], steered: false }
-     4 exec-5788e0c2-60be-4442-a34d-bc1463f128c2 Command { command: "touch attached.txt", description: "", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-5788e0c2-60be-4442-a34d-bc1463f128c2..exec-5788e0c2-60be-4442-a34d-bc1463f128c2 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lis…
-     5 msg_098f0eb5c12a77bf016ae5d65d369c81918ab3ef97e1911e9b Prose { text: [Text("done")], streaming: false, working_note: false }
-     6 turn:1 TurnEnd { duration_ms: Some(4765), failed: false }
+     2 01a1e6ae-d912-7eb3-a32d-e56379f7f86e Prompt { text: [Text("Run exactly this shell command once, with your shell tool, and nothing else: touch attached.txt. The sandbox is read-only, so request escalated permissions for it; I will approve. Then reply with the single word done.")], steered: false }
+     3 exec-2d74c8d2-f98f-433a-b917-7bc6fe9eebd6 Command { command: "touch attached.txt", description: "", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-2d74c8d2-f98f-433a-b917-7bc6fe9eebd6..exec-2d74c8d2-f98f-433a-b917-7bc6fe9eebd6 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lis…
+     4 msg_0c68d36f77b24d87016afb9128267c87d296f2bcf7fad1c49a Prose { text: [Text("done")], streaming: false, working_note: false }
+     5 turn:1 TurnEnd { duration_ms: Some(12051), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context Some(ContextView { used_tokens: 15020, window_tokens: Some(475000), percent: Some(3), near_full: false }) sign-in None
+== context Some(ContextView { used_tokens: 15080, window_tokens: Some(475000), percent: Some(3), near_full: false }) sign-in None
 == settings
   model* gpt-6.1-sol "GPT-6.1-Sol" efforts=[low,medium,high,xhigh,max,ultra] default=low
   model  gpt-6-astra "GPT-6-Astra" efforts=[low,medium,high,xhigh,max,ultra] default=medium
@@ -55,6 +54,7 @@
   command /review source="codex" hint="[instructions]" "Review the uncommitted changes, or what the instructions say"
   command /init source="codex" hint="" "Write an AGENTS.md with instructions for Codex"
   command /plan source="codex" hint="[prompt]" "Switch to plan mode"
+  command /amux-reports source="user" hint="" "Look at bug reports people and amux's own checks have sent to the account service. Use when asked to look at recent or new reports, what has been reported, or to investigate a sent report by id."
   command /autopilot source="user" hint="" "Execute confirmed software work on an unattended loop of fresh agents when it spans contexts or must continue while the operator is away. Requires an approved plan; decline work that fits one sitting unless explicitly requested."
   command /delegate source="user" hint="" "Resolve or diagnose agent staffing by mapping a requested role and effort through the operator-owned roster to a mind and dispatch specification. Use when an agent or driver will dispatch work, or when a binding cannot launch. Do not use merely because ordinary work is being discussed or performed locally."
   command /frontend-design source="user" hint="" "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.…

@@ -4,12 +4,12 @@ use std::collections::BTreeSet;
 
 use codex_protocol::client::{
     BackgroundTerminalsListParams, BackgroundTerminalsTerminateParams, CommandApprovalResponse,
-    ElicitationAction, ModelListParams, SkillsListParams, ThreadIdParams, ThreadReadParams,
-    ThreadResumeParams, ThreadSetNameParams, TurnInterruptParams,
+    ElicitationAction, ModelListParams, SkillsListParams, ThreadIdParams, ThreadResumeParams,
+    ThreadSetNameParams, TurnInterruptParams,
 };
 use codex_protocol::items::{
-    CommandAction, FileUpdateChange, McpToolCallItem, MessagePhase, PatchChangeKind, ThreadItem,
-    UserInput, WebSearchAction, WebSearchItem,
+    CommandAction, FileUpdateChange, McpToolCallItem, MessagePhase, PatchChangeKind,
+    SubAgentActivityKind, ThreadItem, UserInput, WebSearchAction, WebSearchItem,
 };
 use codex_protocol::server::{
     AccountReadResponse, AutoApprovalReview, BackgroundTerminalTerminateResponse,
@@ -34,9 +34,9 @@ use wire::{
 };
 
 use super::{
-    AskMeta, DROPPED_NOTIFICATIONS, FRESH_THREAD_REQUEST, ListedSkill, Proposed, RESUME_REQUEST,
-    Request, State, Streamed, WorkState, ask_key, client_message_id, elicitation_response,
-    item_body, work_ask, work_complete,
+    AskMeta, DROPPED_NOTIFICATIONS, FRESH_THREAD_REQUEST, IdleCompaction, ListedSkill, Proposed,
+    RESUME_REQUEST, Request, State, Streamed, WorkState, ask_key, client_message_id,
+    elicitation_response, item_body, work_ask, work_complete,
 };
 use crate::claude_common::compact_json;
 use crate::shared::{Output, json_as_written, patch_first_change};
@@ -260,7 +260,7 @@ fn attempts(message: &str) -> (u32, u32) {
 /// The kind Codex gives a turn refused for a spent limit.
 const USAGE_LIMIT_EXCEEDED: &str = "usageLimitExceeded";
 
-fn error_kind(error: &TurnError) -> String {
+pub(super) fn error_kind(error: &TurnError) -> String {
     error
         .codex_error_info
         .as_ref()
@@ -277,7 +277,7 @@ fn unauthorized(error: &TurnError) -> bool {
 }
 
 /// What an error says: its details when it has them, else its headline.
-fn error_message(error: &TurnError) -> String {
+pub(super) fn error_message(error: &TurnError) -> String {
     some_of(error.additional_details.as_deref()).unwrap_or_else(|| error.message.clone())
 }
 
@@ -307,6 +307,21 @@ impl State {
             }
             Err(_) => return self.unrecognized(emit, "unparsed", "a line that is not JSON"),
         };
+        // What a child says while its start waits for its title waits too.
+        let about = match &message {
+            ServerMessage::Request { request, .. } => Some(request.thread_id()),
+            ServerMessage::Notification {
+                notification: ServerNotification::ServerRequestResolved(_),
+                ..
+            } => None,
+            ServerMessage::Notification { notification, .. } => about_thread(notification),
+            _ => None,
+        };
+        if let Some(thread) = about.filter(|thread| self.thread_id.as_deref() != Some(*thread))
+            && self.hold(emit, thread, &fact.payload)
+        {
+            return;
+        }
         match message {
             ServerMessage::Request { id, request, .. } => {
                 self.server_request(emit, &id, request, &fact.payload)
@@ -420,7 +435,7 @@ impl State {
         self.shared.stopped_by(why);
     }
 
-    fn error_item(&mut self, emit: &mut Emit, key: String, error: ApiError) {
+    pub(super) fn error_item(&mut self, emit: &mut Emit, key: String, error: ApiError) {
         self.emit_item(
             emit,
             ItemDraft {
@@ -460,13 +475,7 @@ impl State {
     /// A thread answer: the handshake's, the resume after an unarchive, or
     /// the new thread started in place of one with no history. False when
     /// the answer names no thread.
-    fn thread_answered(
-        &mut self,
-        emit: &mut Emit,
-        result: &Value,
-        resumed: bool,
-        fresh: bool,
-    ) -> bool {
+    fn thread_answered(&mut self, emit: &mut Emit, result: &Value, fresh: bool) -> bool {
         let Ok(response) = codex_protocol::result::<ThreadResponse>(result) else {
             return false;
         };
@@ -476,11 +485,6 @@ impl State {
         self.thread_started(emit, &response.thread, Some(&response), fresh);
         if self.thread_id.as_ref() == Some(&response.thread.id) {
             self.name_thread(emit);
-            // A resume leaves the turns out, so an empty list says nothing
-            // about a resumed thread, which Codex has already written.
-            if !resumed && response.thread.turns.is_empty() {
-                self.persist_thread(emit);
-            }
         }
         self.list_offers(emit);
         true
@@ -558,6 +562,13 @@ impl State {
             RequestId::Integer(_) => None,
         };
         let Some((id, request)) = tracked else {
+            // Every request the interpreter makes is tracked until answered,
+            // so an answer to one of its own ids it does not track is to a
+            // request an earlier build made and this one no longer does, as
+            // a recording of that build holds: nothing of this agent's.
+            if matches!(id, RequestId::String(id) if id.starts_with("amux-")) {
+                return;
+            }
             // The agent process's own handshake.
             let resumed = matches!(id, RequestId::String(id) if id == RESUME_REQUEST);
             let result = match result {
@@ -569,7 +580,7 @@ impl State {
                 Err(error) if is_agent_request(id) => return self.refused_to_start(emit, &error),
                 Err(_) => return,
             };
-            if !self.thread_answered(emit, &result, resumed, false) {
+            if !self.thread_answered(emit, &result, false) {
                 self.account_answered(&result);
             }
             return;
@@ -579,8 +590,7 @@ impl State {
                 return match result {
                     Ok(_) if request == Request::Unarchive => self.resume(emit),
                     Ok(result) => {
-                        let fresh = request == Request::Fresh;
-                        self.thread_answered(emit, &result, !fresh, fresh);
+                        self.thread_answered(emit, &result, request == Request::Fresh);
                     }
                     Err(error) => self.refused_to_start(emit, &error),
                 };
@@ -611,10 +621,59 @@ impl State {
             }
             return;
         }
-        if let Request::Jobs { page, listed } = request {
-            return self.jobs_listed(emit, page, listed, result.ok().as_ref());
+        if let Request::Jobs {
+            page,
+            listed,
+            child,
+        } = request
+        {
+            let page_result = result.ok();
+            return match child {
+                Some(child) if self.children.contains_key(&child) => {
+                    let lists = |state: &Self| {
+                        state
+                            .requests
+                            .values()
+                            .filter(|request| matches!(request, Request::Jobs { child: Some(asked), .. } if *asked == child))
+                            .count()
+                    };
+                    let before = lists(self);
+                    self.as_child(&child, |state| {
+                        state.jobs_listed(emit, page, listed, page_result.as_ref())
+                    });
+                    // Whole unless this page asked for the next.
+                    if lists(self) == before {
+                        self.child_jobs_listed(emit, &child);
+                    }
+                }
+                Some(_) => {}
+                None => self.jobs_listed(emit, page, listed, page_result.as_ref()),
+            };
         }
-        if let Request::StopJob { key } = request {
+        match request {
+            Request::ChildRead { thread } => return self.child_read(emit, &thread, result.ok()),
+            Request::ChildInterrupt { thread } => {
+                let result = result.map(drop).map_err(|error| error.message);
+                return self.child_interrupted(emit, &thread, result);
+            }
+            Request::StopNote {
+                thread,
+                name,
+                steered,
+            } => {
+                if result.is_err() && steered {
+                    let name = if name.is_empty() {
+                        thread.clone()
+                    } else {
+                        name
+                    };
+                    self.send_stop_note(emit, &thread, name, false);
+                }
+                return;
+            }
+            _ => {}
+        }
+        if let Request::StopJob { key, child } = request {
             // Ended, the command's item completes and takes the job off
             // the list; refused, the job runs on and says why.
             let refused = match result {
@@ -627,7 +686,16 @@ impl State {
                 Err(error) => Some(error.message),
             };
             if let Some(error) = refused {
-                self.stop_refused(&key, error);
+                match child {
+                    Some(child) if self.children.contains_key(&child) => {
+                        self.as_child(&child, |state| state.stop_refused(&key, error.clone()));
+                        if let Some(child) = self.children.get_mut(&child) {
+                            child.stop_error = error;
+                        }
+                    }
+                    Some(_) => {}
+                    None => self.stop_refused(&key, error),
+                }
             }
             return;
         }
@@ -665,6 +733,7 @@ impl State {
                         self.interrupt_pending = false;
                         self.shared.turn_abandoned();
                     }
+                    Request::IdleCompact => self.idle_compaction_over(emit),
                     Request::Steer { .. } => {}
                     Request::Inject { envelope_id, .. } => {
                         self.shared.message_consumed(&envelope_id);
@@ -682,7 +751,10 @@ impl State {
                     | Request::Unarchive
                     | Request::Resume
                     | Request::Fresh
-                    | Request::Unsubscribe => {}
+                    | Request::Unsubscribe
+                    | Request::ChildRead { .. }
+                    | Request::ChildInterrupt { .. }
+                    | Request::StopNote { .. } => {}
                 }
                 return;
             }
@@ -724,6 +796,7 @@ impl State {
             Request::Steer { .. }
             | Request::Interrupt
             | Request::Compact
+            | Request::IdleCompact
             | Request::Models { .. }
             | Request::Name
             | Request::TitleConfig
@@ -736,7 +809,10 @@ impl State {
             | Request::Unarchive
             | Request::Resume
             | Request::Fresh
-            | Request::Unsubscribe => {}
+            | Request::Unsubscribe
+            | Request::ChildRead { .. }
+            | Request::ChildInterrupt { .. }
+            | Request::StopNote { .. } => {}
         }
     }
 
@@ -758,23 +834,6 @@ impl State {
         }
     }
 
-    /// The child threads the agent's thread spawned, from its subagent
-    /// calls.
-    fn spawned_threads(&self) -> Vec<String> {
-        let mut threads: Vec<String> = self
-            .works
-            .values()
-            .filter_map(|state| match state.work.as_ref()?.of.as_ref()? {
-                work::Of::Collab(collab) => Some(collab.thread_ids.clone()),
-                _ => None,
-            })
-            .flatten()
-            .collect();
-        threads.sort();
-        threads.dedup();
-        threads
-    }
-
     /// `/clear`'s thread: from now on it is this agent's conversation.
     /// The old thread's turn state and jobs stay with it.
     fn cleared(&mut self, emit: &mut Emit, response: &ThreadResponse) {
@@ -784,13 +843,14 @@ impl State {
         };
         // Codex keeps a thread loaded, with its tool servers, while a client
         // is subscribed: the agent leaves the old thread and the children it
-        // spawned, as Codex's own app does when it switches threads.
-        let left: Vec<String> = self
-            .thread_id
-            .take()
-            .into_iter()
-            .chain(self.spawned_threads())
-            .collect();
+        // spawned in this incarnation, running or ended, as Codex's own app
+        // does when it switches threads. Those still running end here, since
+        // nothing more will be heard of them.
+        let mut children: BTreeSet<String> = self.children.keys().cloned().collect();
+        self.leave_children(emit);
+        children.append(&mut self.ended_children);
+        let left: Vec<String> = self.thread_id.take().into_iter().chain(children).collect();
+        self.left.extend(left.iter().cloned());
         for thread_id in left {
             let bytes = self.request_as(
                 format!("amux-unsubscribe-{thread_id}"),
@@ -832,7 +892,6 @@ impl State {
             wire::IncarnationEnd::default(),
         );
         self.name_thread(emit);
-        self.persist_thread(emit);
     }
 
     /// A page of `model/list`: the next page is asked for while the server
@@ -917,31 +976,56 @@ impl State {
 
     /// Asks Codex which commands it runs in the background, the first page
     /// without a cursor.
-    fn list_jobs(
+    pub(super) fn list_jobs(
         &mut self,
         emit: &mut Emit,
         page: u32,
         cursor: Option<String>,
         listed: Vec<BackgroundJob>,
     ) {
-        if page == 1 {
-            self.jobs_asked += 1;
-        }
+        // A child's lists are named apart, so the agent's own keep the ids
+        // they always had.
+        let id = match self.speaking.clone() {
+            None => {
+                if page == 1 {
+                    self.jobs_asked += 1;
+                }
+                format!("amux-jobs-{}-{page}", self.jobs_asked)
+            }
+            Some(child) => {
+                if page == 1 {
+                    let asked = self.child_request_id("child-jobs");
+                    if let Some(child) = self.children.get_mut(&child) {
+                        child.jobs_list = asked;
+                    }
+                }
+                let list = self
+                    .children
+                    .get(&child)
+                    .map(|child| child.jobs_list.clone())
+                    .unwrap_or_default();
+                format!("{list}-{page}")
+            }
+        };
         let bytes = self.request_as(
-            format!("amux-jobs-{}-{page}", self.jobs_asked),
+            id,
             ClientRequest::BackgroundTerminalsList(BackgroundTerminalsListParams {
-                thread_id: self.thread(),
+                thread_id: self.thread_here(),
                 cursor,
                 extra: Default::default(),
             }),
-            Request::Jobs { page, listed },
+            Request::Jobs {
+                page,
+                listed,
+                child: self.speaking.clone(),
+            },
         );
         emit.effect(Effect::ProviderWrite(bytes));
     }
 
     /// A page of Codex's background commands: each is a job of the
     /// command item it names. The last page publishes the list.
-    fn jobs_listed(
+    pub(super) fn jobs_listed(
         &mut self,
         emit: &mut Emit,
         number: u32,
@@ -955,7 +1039,7 @@ impl State {
         };
         let now = self.shared.now_ms();
         // A stop sent or refused stands across a new list of the same job.
-        let held = self.shared.jobs().jobs;
+        let held = self.jobs().jobs;
         listed.extend(page.data.iter().map(|terminal| {
             let before = held.iter().find(|job| job.key == terminal.process_id);
             BackgroundJob {
@@ -975,7 +1059,7 @@ impl State {
             Some(cursor) if !page.data.is_empty() => {
                 self.list_jobs(emit, number + 1, Some(cursor), listed)
             }
-            _ => self.shared.set_jobs(listed),
+            _ => self.set_jobs(listed),
         }
     }
 
@@ -999,29 +1083,30 @@ impl State {
                 process_id: key.clone(),
                 extra: Default::default(),
             }),
-            Request::StopJob { key },
+            Request::StopJob { key, child: None },
         );
         emit.effect(Effect::ProviderWrite(bytes));
         self.shared.accept(emit, id, false);
     }
 
     /// Codex did not stop the job keyed `key`, saying `error`.
-    fn stop_refused(&mut self, key: &str, error: String) {
-        let mut jobs = self.shared.jobs().jobs;
+    pub(super) fn stop_refused(&mut self, key: &str, error: String) {
+        let mut jobs = self.jobs().jobs;
         if let Some(job) = jobs.iter_mut().find(|job| job.key == key) {
             job.stopping = false;
             job.stop_error = error;
-            self.shared.set_jobs(jobs);
+            self.set_jobs(jobs);
         }
     }
 
-    /// A command Codex ran in the background finished: it leaves the list.
+    /// A command Codex ran in the background finished: it leaves the list
+    /// of the thread being read.
     fn job_ended(&mut self, key: &str) {
-        let jobs = self.shared.jobs();
+        let jobs = self.jobs();
         if jobs.known && jobs.jobs.iter().any(|job| job.item_key == key) {
             let mut jobs = jobs.jobs;
             jobs.retain(|job| job.item_key != key);
-            self.shared.set_jobs(jobs);
+            self.set_jobs(jobs);
         }
     }
 
@@ -1038,9 +1123,9 @@ impl State {
     }
 
     /// Gives the thread the agent's name, so Codex's own app shows the name
-    /// amux does. Naming a thread that has not run a turn lets another
-    /// client resume it plainly, but not Codex's own app, which resumes
-    /// from history on disk; `persist_thread` is what lets the app attach.
+    /// amux does. Naming also has Codex write a thread that has run no turn
+    /// to disk (codex-cli 0.161 onwards), which Codex's own app resumes
+    /// from, so the app can attach before the first turn.
     pub(super) fn name_thread(&mut self, emit: &mut Emit) {
         if self.name.is_empty() {
             return;
@@ -1057,23 +1142,6 @@ impl State {
                 extra: Default::default(),
             }),
             Request::Name,
-        );
-        emit.effect(Effect::ProviderWrite(bytes));
-    }
-
-    /// Has Codex write a thread that has run no turn to disk. Codex's own
-    /// app resumes a thread from its history on disk, which Codex writes at
-    /// the first turn, so until then the app cannot attach; reading the
-    /// loaded thread with its turns makes Codex write it.
-    fn persist_thread(&mut self, emit: &mut Emit) {
-        let bytes = self.request_as(
-            "amux-persist".into(),
-            ClientRequest::ThreadRead(ThreadReadParams {
-                thread_id: self.thread(),
-                include_turns: Some(true),
-                extra: Default::default(),
-            }),
-            Request::Persist,
         );
         emit.effect(Effect::ProviderWrite(bytes));
     }
@@ -1161,7 +1229,36 @@ impl State {
 
     // --- requests from the server ----------------------------------------
 
+    /// A request from the server: an ask of the agent's own thread, or of
+    /// a child thread's, which opens in that subagent's chat and points at
+    /// its own work.
     fn server_request(
+        &mut self,
+        emit: &mut Emit,
+        id: &RequestId,
+        request: ServerRequest,
+        payload: &[u8],
+    ) {
+        let thread = request.thread_id().to_owned();
+        if !self.is_child(&thread) {
+            return self.thread_request(emit, id, request, payload);
+        }
+        if self.child_heard(emit, &thread, true) {
+            self.begin_child(emit, &thread);
+            return self.as_child(&thread, |state| {
+                state.thread_request(emit, id, request, payload)
+            });
+        }
+        // A thread the agent left: nobody will answer here.
+        let refusal = RpcError {
+            code: -32600,
+            message: "amux left this thread".to_owned(),
+            extra: Default::default(),
+        };
+        self.respond(emit, &ask_key(id), Err(refusal));
+    }
+
+    fn thread_request(
         &mut self,
         emit: &mut Emit,
         id: &RequestId,
@@ -1171,30 +1268,20 @@ impl State {
         let key = ask_key(id);
         let method = request.method();
         let thread = request.thread_id().to_owned();
-        // A child thread's request is the child's: its work is no row of the
-        // agent's turn, so the ask points at none.
-        let child = self.is_child(&thread);
         let (item_key, body, decisions) = match request {
-            ServerRequest::CommandApproval(params) => self.command_approval(emit, params, child),
+            ServerRequest::CommandApproval(params) => self.command_approval(emit, params),
             ServerRequest::FileChangeApproval(params) => {
-                let changes = if child {
-                    self.child_changes
-                        .get(&params.item_id)
-                        .map(|work| work.changes.clone())
-                        .unwrap_or_default()
-                } else {
-                    match self
-                        .works
-                        .get(&params.item_id)
-                        .and_then(|state| state.work.as_ref())
-                        .and_then(|work| work.of.as_ref())
-                    {
-                        Some(work::Of::FileChange(change)) => change.changes.clone(),
-                        _ => Vec::new(),
-                    }
+                let changes = match self
+                    .works
+                    .get(&params.item_id)
+                    .and_then(|state| state.work.as_ref())
+                    .and_then(|work| work.of.as_ref())
+                {
+                    Some(work::Of::FileChange(change)) => change.changes.clone(),
+                    _ => Vec::new(),
                 };
                 (
-                    if child { String::new() } else { params.item_id },
+                    params.item_id,
                     codex_ask::Body::FileChange(FileChangeApproval {
                         reason: params.reason.unwrap_or_default(),
                         grant_root: params.grant_root.unwrap_or_default(),
@@ -1269,7 +1356,7 @@ impl State {
                 );
             }
             ServerRequest::Elicitation(params) => {
-                return self.elicitation(emit, key, method, params, payload, child);
+                return self.elicitation(emit, key, method, params, payload);
             }
         };
         let (decisions, responses) = decisions
@@ -1302,12 +1389,11 @@ impl State {
         &mut self,
         emit: &mut Emit,
         params: CommandApprovalParams,
-        child: bool,
     ) -> (String, codex_ask::Body, Vec<CommandDecision>) {
-        let item_id = if child { String::new() } else { params.item_id };
+        let item_id = params.item_id;
         let command = shown_command(&params.command.unwrap_or_default());
         let cwd = params.cwd.unwrap_or_default();
-        if !child && !self.works.contains_key(&item_id) {
+        if !self.works.contains_key(&item_id) {
             let at_ms = params.started_at_ms.unwrap_or(self.shared.now_ms());
             self.works.insert(
                 item_id.clone(),
@@ -1375,7 +1461,7 @@ impl State {
             self.emit_ask(emit, &ask, meta.at_ms, None);
         }
         self.asks.insert(ask.key.clone(), meta);
-        self.shared.open_ask(ask);
+        self.open_ask(emit, ask);
     }
 
     /// The running call an elicitation of `server` belongs to, and its tool:
@@ -1408,7 +1494,7 @@ impl State {
 
     /// Whether `thread` is a child thread on the agent's server, not the
     /// agent's own.
-    fn is_child(&self, thread: &str) -> bool {
+    pub(super) fn is_child(&self, thread: &str) -> bool {
         !thread.is_empty() && self.thread_id.as_deref().is_some_and(|ours| ours != thread)
     }
 
@@ -1419,7 +1505,6 @@ impl State {
         method: &str,
         params: ElicitationParams,
         payload: &[u8],
-        child: bool,
     ) {
         let thread = params.thread_id.clone();
         let meta = params.meta.unwrap_or_default();
@@ -1444,10 +1529,9 @@ impl State {
         }
         let message = params.message.unwrap_or_default();
         let named_tool = meta.tool_name.clone().unwrap_or_default();
-        let (item_key, call_server, tool) = match self.running_tool_call(&server, &named_tool) {
-            Some(call) if !child => call,
-            _ => (String::new(), server.clone(), named_tool),
-        };
+        let (item_key, call_server, tool) = self
+            .running_tool_call(&server, &named_tool)
+            .unwrap_or_else(|| (String::new(), server.clone(), named_tool));
         let (body, offered): (_, Vec<(Decision, ClientResponse)>) = if approval {
             let mut offered = vec![(
                 Decision::Approve,
@@ -1528,13 +1612,30 @@ impl State {
     }
 
     /// An ask the server resolved without an answer from here: withdrawn
-    /// when amux interrupted its turn, else answered by another client.
+    /// when amux interrupted its turn, else answered by another client. A
+    /// child thread's is its subagent's.
     fn ask_resolved(&mut self, emit: &mut Emit, key: &str) {
-        let Some(ask) = self.shared.close_ask(key) else {
+        let child = self
+            .asks
+            .get(key)
+            .map(|meta| meta.thread.clone())
+            .filter(|thread| self.is_child(thread) && self.children.contains_key(thread));
+        match child {
+            Some(child) => self.as_child(&child, |state| state.thread_ask_resolved(emit, key)),
+            None => self.thread_ask_resolved(emit, key),
+        }
+    }
+
+    fn thread_ask_resolved(&mut self, emit: &mut Emit, key: &str) {
+        let Some(ask) = self.close_ask(emit, key) else {
             return;
         };
         let meta = self.asks.remove(key);
-        if self.interrupted_here {
+        let withdrawn = match &self.speaking {
+            None => self.interrupted_here,
+            Some(child) => self.children.get(child).is_some_and(|child| child.stopping),
+        };
+        if withdrawn {
             self.dismiss(emit, &ask, meta);
         } else {
             self.answered_elsewhere(emit, &ask, meta);
@@ -1551,26 +1652,13 @@ impl State {
         if self.title_notified(emit, &notification) {
             return;
         }
-        // A child thread's activity on the same server is its own; the
-        // collaboration item reports it here. Its file changes are kept for
-        // its approvals to show.
+        // A child thread's activity on the same server is its subagent's.
         if let (Some(ours), Some(theirs)) = (self.thread_id.as_deref(), about_thread(&notification))
             && ours != theirs
         {
             let theirs = theirs.to_owned();
             self.other_thread(&theirs, &notification);
-            if let ServerNotification::ItemStarted(started)
-            | ServerNotification::ItemCompleted(started) = &notification
-                && let ThreadItem::FileChange(change) = &started.item
-            {
-                self.child_changes.insert(
-                    change.id.clone(),
-                    wire::FileChangeWork {
-                        changes: file_changes(&change.changes, false),
-                    },
-                );
-            }
-            return;
+            return self.child_notification(emit, &theirs, notification);
         }
         match notification {
             // Not the agent's name and not the title amux gave it: a person
@@ -1586,6 +1674,24 @@ impl State {
             }
             ServerNotification::ThreadStarted(started) => {
                 self.thread_started(emit, &started.thread, None, false);
+            }
+            // The turn Codex runs an idle compaction in is nobody's: no
+            // turn of the agent's starts or ends for it.
+            ServerNotification::TurnStarted(started)
+                if matches!(self.idle_compaction, Some(IdleCompaction::Requested { .. }))
+                    && !self.shared.is_busy() =>
+            {
+                self.idle_compaction = Some(IdleCompaction::Running {
+                    turn: started.turn.id.clone(),
+                });
+            }
+            ServerNotification::TurnCompleted(completed)
+                if matches!(
+                    &self.idle_compaction,
+                    Some(IdleCompaction::Running { turn }) if *turn == completed.turn.id
+                ) =>
+            {
+                self.idle_compaction_over(emit);
             }
             ServerNotification::TurnStarted(started) => {
                 self.plan_overtaken(emit);
@@ -1610,35 +1716,18 @@ impl State {
             ServerNotification::TurnCompleted(completed) => {
                 self.turn_completed(emit, &completed.turn);
             }
-            ServerNotification::ItemStarted(started) => self.item_event(
-                emit,
-                &started.item,
-                &started.turn_id,
-                started.started_at_ms,
-                started.completed_at_ms,
-                false,
-            ),
-            ServerNotification::ItemCompleted(completed) => self.item_event(
-                emit,
-                &completed.item,
-                &completed.turn_id,
-                completed.started_at_ms,
-                completed.completed_at_ms,
-                true,
-            ),
-            ServerNotification::AgentMessageDelta(delta)
-            | ServerNotification::PlanDelta(delta)
-            | ServerNotification::ReasoningTextDelta(delta) => {
-                self.extend(emit, &delta.item_id, &delta.delta);
-            }
-            ServerNotification::CommandOutputDelta(delta) => {
-                self.command_output(emit, &delta.item_id, &delta.delta);
-            }
-            ServerNotification::ReasoningSummaryPartAdded(part) => {
-                self.summary_delta(emit, &part.item_id, part.summary_index, "");
-            }
-            ServerNotification::ReasoningSummaryTextDelta(delta) => {
-                self.summary_delta(emit, &delta.item_id, delta.summary_index, &delta.delta);
+            notification @ (ServerNotification::ItemStarted(_)
+            | ServerNotification::ItemCompleted(_)
+            | ServerNotification::AgentMessageDelta(_)
+            | ServerNotification::PlanDelta(_)
+            | ServerNotification::ReasoningTextDelta(_)
+            | ServerNotification::CommandOutputDelta(_)
+            | ServerNotification::ReasoningSummaryPartAdded(_)
+            | ServerNotification::ReasoningSummaryTextDelta(_)
+            | ServerNotification::Error(_)
+            | ServerNotification::AutoApprovalReviewStarted(_)
+            | ServerNotification::AutoApprovalReviewCompleted(_)) => {
+                self.thread_notification(emit, notification)
             }
             ServerNotification::TurnPlanUpdated(updated) => {
                 self.plan = Some(
@@ -1657,6 +1746,7 @@ impl State {
                 );
             }
             ServerNotification::ThreadTokenUsageUpdated(updated) => {
+                self.last_request_ms = Some(self.shared.now_ms());
                 let usage = updated.token_usage;
                 self.context_tokens = Some(usage.last.total_tokens as u64);
                 if let Some(window) = usage.model_context_window {
@@ -1709,13 +1799,6 @@ impl State {
                 }
             }
             ServerNotification::McpServerStatusUpdated(updated) => self.server_status(updated),
-            ServerNotification::Error(error) => self.api_error(emit, error),
-            ServerNotification::AutoApprovalReviewStarted(review) => {
-                self.review(emit, review, false)
-            }
-            ServerNotification::AutoApprovalReviewCompleted(review) => {
-                self.review(emit, review, true)
-            }
             ServerNotification::ThreadSettingsUpdated(updated) => {
                 let settings = updated.thread_settings;
                 if let Some(model) = some(&settings.model) {
@@ -1748,9 +1831,12 @@ impl State {
                 self.warning(emit, "configWarning", notice_words(warning))
             }
             // Codex's own app shows each of these as a warning line.
-            ServerNotification::DeprecationNotice(notice) => {
-                self.warning(emit, "deprecationNotice", notice_words(notice))
-            }
+            // Codex will stop supporting something amux sends: news for
+            // amux's developers, logged where a debug report finds it.
+            // Codex's own app keeps it out of the chat too.
+            ServerNotification::DeprecationNotice(notice) => emit.effect(Effect::Log {
+                line: format!("Codex deprecation notice: {}", notice_words(notice)),
+            }),
             ServerNotification::Warning(warning) => self.warning(emit, "warning", warning.message),
             // An approved review's warning repeats its verdict row, so
             // Codex's own app leaves it out too.
@@ -1786,6 +1872,57 @@ impl State {
             ServerNotification::ThreadClosed(_) => emit.effect(Effect::Exit {
                 cause: "Codex closed the agent's thread".into(),
             }),
+        }
+    }
+
+    /// What a thread's own conversation says: its items and their
+    /// streams, its errors and the reviews of its actions. Read alike for
+    /// the agent's own thread and, with its item state swapped in, a child
+    /// thread's.
+    pub(super) fn thread_notification(
+        &mut self,
+        emit: &mut Emit,
+        notification: ServerNotification,
+    ) {
+        match notification {
+            ServerNotification::ItemStarted(started) => self.item_event(
+                emit,
+                &started.item,
+                &started.turn_id,
+                started.started_at_ms,
+                started.completed_at_ms,
+                false,
+            ),
+            ServerNotification::ItemCompleted(completed) => self.item_event(
+                emit,
+                &completed.item,
+                &completed.turn_id,
+                completed.started_at_ms,
+                completed.completed_at_ms,
+                true,
+            ),
+            ServerNotification::AgentMessageDelta(delta)
+            | ServerNotification::PlanDelta(delta)
+            | ServerNotification::ReasoningTextDelta(delta) => {
+                self.extend(emit, &delta.item_id, &delta.delta);
+            }
+            ServerNotification::CommandOutputDelta(delta) => {
+                self.command_output(emit, &delta.item_id, &delta.delta);
+            }
+            ServerNotification::ReasoningSummaryPartAdded(part) => {
+                self.summary_delta(emit, &part.item_id, part.summary_index, "");
+            }
+            ServerNotification::ReasoningSummaryTextDelta(delta) => {
+                self.summary_delta(emit, &delta.item_id, delta.summary_index, &delta.delta);
+            }
+            ServerNotification::Error(error) => self.api_error(emit, error),
+            ServerNotification::AutoApprovalReviewStarted(review) => {
+                self.review(emit, review, false)
+            }
+            ServerNotification::AutoApprovalReviewCompleted(review) => {
+                self.review(emit, review, true)
+            }
+            _ => {}
         }
     }
 
@@ -1888,7 +2025,9 @@ impl State {
             (0, 0)
         };
         let message = error_message(&error);
-        if !will_retry {
+        // A subagent's error is its own: the agent goes on.
+        let own = self.speaking.is_none();
+        if !will_retry && own {
             self.gave_up(&error);
         }
         let turn = notification.turn_id;
@@ -1904,7 +2043,9 @@ impl State {
                 retry_at_ms: None,
             },
         );
-        self.final_error = (!will_retry).then_some(turn);
+        if own {
+            self.final_error = (!will_retry).then_some(turn);
+        }
     }
 
     fn review(&mut self, emit: &mut Emit, review: AutoApprovalReview, completed: bool) {
@@ -1979,10 +2120,16 @@ impl State {
                     self.user_message(emit, &id, message.client_id.as_deref(), &message.content);
                 }
             }
+            // A plan is the agent's own business with the person; a
+            // subagent's reads as what it wrote.
+            ThreadItem::Plan(plan) if self.speaking.is_some() => {
+                self.streamed.insert(id.clone(), Streamed::Message);
+                self.message_item(emit, &id, &plan.text, Streamed::Message, at_ms, completed);
+            }
             ThreadItem::Plan(plan) => {
                 self.streamed.insert(id.clone(), Streamed::Plan);
-                let text = match self.shared.open_item(&id) {
-                    Some(open) if !completed => open.text.clone(),
+                let text = match self.open_item(emit, &id) {
+                    Some(open) if !completed => open.text,
                     _ => plan.text.clone(),
                 };
                 let proposed = self.proposed.take().filter(|proposed| proposed.key == id);
@@ -2018,32 +2165,7 @@ impl State {
                     },
                 );
                 self.streamed.insert(id.clone(), kind.clone());
-                let complete = |complete| wire::Text { complete };
-                let body = match kind {
-                    Streamed::WorkingNote => codex_item::Kind::WorkingNote(complete(completed)),
-                    _ => codex_item::Kind::Message(complete(completed)),
-                };
-                let (text, attachments) = match self.shared.open_item(&id) {
-                    Some(open) if !completed => (open.text.clone(), Vec::new()),
-                    _ if completed => crate::shared::parse_reply(message.text.clone()),
-                    _ => (message.text.clone(), Vec::new()),
-                };
-                self.emit_item(
-                    emit,
-                    ItemDraft {
-                        key: id.clone(),
-                        text,
-                        attachments,
-                        body: item_body(body),
-                        at_ms,
-                        complete: completed,
-                        ..Default::default()
-                    },
-                );
-                if completed && kind == Streamed::Message {
-                    self.shared.note_message(&id);
-                    self.shared.reply_said(emit, &id);
-                }
+                self.message_item(emit, &id, &message.text, kind, at_ms, completed);
             }
             ThreadItem::Reasoning(reasoning) => {
                 let summary = reasoning.summary.clone().unwrap_or_default();
@@ -2059,20 +2181,30 @@ impl State {
             }
             ThreadItem::ContextCompaction(_) => {
                 if completed {
-                    self.boundary(
+                    let idle = matches!(
+                        &self.idle_compaction,
+                        Some(IdleCompaction::Running { turn: running }) if running == turn
+                    );
+                    self.boundary_item(
                         emit,
-                        wire::BoundaryKind::Compacted,
-                        wire::IncarnationEnd::default(),
+                        wire::Boundary {
+                            kind: wire::BoundaryKind::Compacted as i32,
+                            idle,
+                            ..Default::default()
+                        },
                     );
                 }
+            }
+            ThreadItem::CollabAgentToolCall(call) => {
+                self.collab_call(emit, &id, call, completed);
+                self.work_item(emit, &id, item, turn, at_ms, ended_at_ms, completed)
             }
             ThreadItem::CommandExecution(_)
             | ThreadItem::FileChange(_)
             | ThreadItem::McpToolCall(_)
             | ThreadItem::WebSearch(_)
             | ThreadItem::ImageView(_)
-            | ThreadItem::ImageGeneration(_)
-            | ThreadItem::CollabAgentToolCall(_) => {
+            | ThreadItem::ImageGeneration(_) => {
                 self.work_item(emit, &id, item, turn, at_ms, ended_at_ms, completed)
             }
             // Codex's own app prints a review's start and end as lines of
@@ -2086,11 +2218,13 @@ impl State {
             ThreadItem::ExitedReviewMode(_) => {
                 self.review_line(emit, id, at_ms, "Code review finished".to_owned())
             }
+            ThreadItem::SubAgentActivity(activity) => {
+                self.subagent_activity(emit, activity, turn, at_ms, ended_at_ms, completed)
+            }
             // Read for what they carry elsewhere: a hook's prompt reaches the
-            // conversation, a child's activity its own subagent row; a sleep
-            // or a raw call output shows nothing in Codex's own app.
+            // conversation; a sleep or a raw call output shows nothing in
+            // Codex's own app.
             ThreadItem::HookPrompt(_)
-            | ThreadItem::SubAgentActivity(_)
             | ThreadItem::Sleep(_)
             | ThreadItem::FunctionCallOutput(_) => {}
             other => {
@@ -2112,6 +2246,52 @@ impl State {
         }
     }
 
+    /// A message the thread being read wrote: a working note or an
+    /// answer, streaming or whole. The agent's own complete answer is its
+    /// turn's newest message and the line its row quotes; a subagent's is
+    /// the line its row quotes.
+    fn message_item(
+        &mut self,
+        emit: &mut Emit,
+        id: &str,
+        whole: &str,
+        kind: Streamed,
+        at_ms: Option<i64>,
+        completed: bool,
+    ) {
+        let complete = |complete| wire::Text { complete };
+        let body = match kind {
+            Streamed::WorkingNote => codex_item::Kind::WorkingNote(complete(completed)),
+            _ => codex_item::Kind::Message(complete(completed)),
+        };
+        let (text, attachments) = match self.open_item(emit, id) {
+            Some(open) if !completed => (open.text, Vec::new()),
+            _ if completed => crate::shared::parse_reply(whole.to_owned()),
+            _ => (whole.to_owned(), Vec::new()),
+        };
+        self.emit_item(
+            emit,
+            ItemDraft {
+                key: id.to_owned(),
+                text: text.clone(),
+                attachments: attachments.clone(),
+                body: item_body(body),
+                at_ms,
+                complete: completed,
+                ..Default::default()
+            },
+        );
+        if completed && kind == Streamed::Message {
+            match self.speaking.clone() {
+                None => {
+                    self.shared.note_message(id);
+                    self.shared.reply_said(emit, id);
+                }
+                Some(child) => self.child_said(&child, &text, &attachments),
+            }
+        }
+    }
+
     fn emit_reasoning(
         &mut self,
         emit: &mut Emit,
@@ -2122,12 +2302,13 @@ impl State {
         let Some(Streamed::Reasoning(summary)) = self.streamed.get(key).cloned() else {
             return;
         };
-        let text = full_text.unwrap_or_else(|| {
-            self.shared
-                .open_item(key)
-                .map(|open| open.text.clone())
-                .unwrap_or_default()
-        });
+        let text = match full_text {
+            Some(text) => text,
+            None => self
+                .open_item(emit, key)
+                .map(|open| open.text)
+                .unwrap_or_default(),
+        };
         self.emit_item(
             emit,
             ItemDraft {
@@ -2157,6 +2338,35 @@ impl State {
         client_id: Option<&str>,
         content: &[UserInput],
     ) {
+        // A subagent's task comes from its parent's model, never a person:
+        // drawn as the prompt it is, unless it is the echo of the prompt
+        // its parent's call already drew in its chat.
+        if let Some(thread) = self.speaking.clone() {
+            let text = content
+                .iter()
+                .filter_map(|part| match part {
+                    UserInput::Text(text) => Some(text.text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            if let Some(child) = self.children.get_mut(&thread)
+                && child.prompt_drawn.as_deref() == Some(text.as_str())
+            {
+                child.prompt_drawn = None;
+                return;
+            }
+            return self.emit_item(
+                emit,
+                ItemDraft {
+                    key: id.to_owned(),
+                    text,
+                    body: item_body(codex_item::Kind::Prompt(wire::Prompt {})),
+                    complete: true,
+                    ..Default::default()
+                },
+            );
+        }
         let first_in_turn = !std::mem::replace(&mut self.turn_prompted, true);
         let typed = content
             .iter()
@@ -2221,7 +2431,7 @@ impl State {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn work_item(
+    pub(super) fn work_item(
         &mut self,
         emit: &mut Emit,
         id: &str,
@@ -2232,10 +2442,19 @@ impl State {
         completed: bool,
     ) {
         if let ThreadItem::McpToolCall(call) = item {
+            // Called on a child's thread, it is the subagent saying what it
+            // works on, not the agent.
             if is_status_tool(&call.server, &call.tool) {
                 let arguments = compact_json(&call.arguments);
                 if let Some(working_on) = status_working_on(arguments.as_bytes()) {
-                    self.shared.set_working_on(working_on);
+                    match self
+                        .speaking
+                        .clone()
+                        .and_then(|child| self.children.get_mut(&child))
+                    {
+                        Some(child) => child.working_on = working_on,
+                        None => self.shared.set_working_on(working_on),
+                    }
                 }
                 return;
             }
@@ -2253,6 +2472,9 @@ impl State {
             ThreadItem::McpToolCall(call) => call.status.as_str(),
             ThreadItem::CollabAgentToolCall(call) => call.status.as_str(),
             ThreadItem::ImageGeneration(image) => image.status.as_str(),
+            // The spawn or follow-up returns at once; the subagent's own
+            // state is its row's.
+            ThreadItem::SubAgentActivity(_) => "",
             _ => "",
         };
         let mut state = match status {
@@ -2340,6 +2562,26 @@ impl State {
                     tool: call.tool.as_str().to_owned(),
                     thread_ids: call.receiver_thread_ids.clone(),
                     prompt: call.prompt.clone().unwrap_or_default(),
+                    agent_ids: call
+                        .receiver_thread_ids
+                        .iter()
+                        .map(|thread| self.shared.subagent_id(thread))
+                        .collect(),
+                }),
+                ToolClass::Consequential,
+            ),
+            // Codex 0.166.0's spawn and follow-up: the call row that opens
+            // the subagent's chat.
+            ThreadItem::SubAgentActivity(activity) => (
+                work::Of::Collab(wire::CollabWork {
+                    tool: match activity.kind {
+                        SubAgentActivityKind::Interacted => "sendInput",
+                        _ => "spawnAgent",
+                    }
+                    .to_owned(),
+                    thread_ids: vec![activity.agent_thread_id.clone()],
+                    prompt: String::new(),
+                    agent_ids: vec![self.shared.subagent_id(&activity.agent_thread_id)],
                 }),
                 ToolClass::Consequential,
             ),
@@ -2460,11 +2702,15 @@ impl State {
         if delta.is_empty() {
             return;
         }
-        let Some(state) = self.works.get_mut(id) else {
+        if !self.works.contains_key(id) {
             return self.extend(emit, id, delta);
+        }
+        let output = self.append_output(emit, id, delta);
+        let Some(state) = self.works.get_mut(id) else {
+            return;
         };
         state.text.push_str(delta);
-        match self.shared.append_output(emit, id, delta) {
+        match output {
             Output::Appended => {}
             Output::Cut { dropped } => {
                 state.text.drain(..dropped as usize);
@@ -2521,7 +2767,7 @@ impl State {
             .entry(id.to_owned())
             .or_insert_with(|| at_ms.unwrap_or_else(|| self.shared.now_ms()));
         let at_ms = *at_ms;
-        self.shared.item(
+        self.emit_item(
             emit,
             ItemDraft {
                 key: id.to_owned(),
@@ -2575,25 +2821,10 @@ impl State {
             );
         }
         self.final_error = None;
-        // Work whose approval was still open never ran. A child thread's
-        // asks are the child's, and stay open past the agent's turn.
+        self.begin_children(emit);
+        // Work whose approval was still open never ran.
         let mut unapproved = BTreeSet::new();
-        let own: Vec<String> = self
-            .shared
-            .asks()
-            .open_asks()
-            .iter()
-            .map(|ask| ask.key.clone())
-            .filter(|key| {
-                self.asks
-                    .get(key)
-                    .is_none_or(|meta| !self.is_child(&meta.thread))
-            })
-            .collect();
-        for key in own {
-            let Some(ask) = self.shared.close_ask(&key) else {
-                continue;
-            };
+        for ask in self.shared.close_all_asks() {
             if let Some(codex_ask::Body::Plan(_)) = ask.body {
                 self.decide_plan(emit, wire::PlanVerdict::Dismissed, None);
                 continue;
@@ -2670,7 +2901,12 @@ impl State {
     /// was cut short, as is one still waiting for its approval
     /// (`unapproved`, by item key), which never ran; any other open item
     /// is finished as it stands.
-    fn settle_open(&mut self, emit: &mut Emit, completed: bool, unapproved: &BTreeSet<String>) {
+    pub(super) fn settle_open(
+        &mut self,
+        emit: &mut Emit,
+        completed: bool,
+        unapproved: &BTreeSet<String>,
+    ) {
         let open = self
             .works
             .iter()
@@ -2707,7 +2943,7 @@ impl State {
                     .is_some_and(|set| set.contains(key))
         });
         for (key, kind) in std::mem::take(&mut self.streamed) {
-            let Some(open) = self.shared.open_item(&key).cloned() else {
+            let Some(open) = self.open_item(emit, &key) else {
                 continue;
             };
             let (body, (text, attachments)) = match kind {
@@ -2735,7 +2971,7 @@ impl State {
                     (open.text, Vec::new()),
                 ),
             };
-            self.shared.item(
+            self.emit_item(
                 emit,
                 ItemDraft {
                     key,
@@ -2752,6 +2988,9 @@ impl State {
 
     pub(super) fn exited(&mut self, emit: &mut Emit, exit: wire::IncarnationEnd) {
         emit.end_incarnation(exit.clone());
+        // The subagents went with the process that ran them.
+        self.end_children(emit, &exit);
+        self.idle_compaction = None;
         self.offers_asked = false;
         // The next server is asked afresh; this one will answer nothing.
         self.skills_asked = 0;
@@ -2857,6 +3096,7 @@ fn mcp_work(call: &McpToolCallItem) -> wire::McpToolCall {
             .map(|error| error.message.clone())
             .unwrap_or_default(),
         subject: crate::shared::first_string(&call.arguments),
+        child_agent_id: Vec::new(),
     }
 }
 

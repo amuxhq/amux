@@ -1717,6 +1717,7 @@ pub fn from_wire(agent: &Agent) -> AgentRow {
     row.filed_at_ms = agent.filed_at_ms;
     row.title = agent.title.clone();
     row.last_said = agent.last_said.clone();
+    row.native = agent.native.clone();
     // What the origin says under each experiment, whole and undecoded,
     // whatever this host runs: a client of this host, the phone's above
     // all, shows them though this host can switch none of them on.
@@ -2532,5 +2533,24 @@ mod tests {
             (UNKNOWN, Some("a newer daemon's words")),
             "listed with its cause, not unspecified"
         );
+    }
+
+    /// A replica row keeps what marks a provider subagent, so every host
+    /// that follows the agent draws it as one.
+    #[test]
+    fn an_inventory_row_carries_a_provider_subagents_mark_both_ways() {
+        let mut row = AgentRow::new(
+            AgentKey::new(b"origin".to_vec(), b"subagent".to_vec()),
+            wire::Kind::Codex,
+            "/",
+        );
+        row.native = Some(wire::NativeChild {
+            provider_child_id: "019a-thread".into(),
+        });
+        let listed = crate::serve::to_wire(&row);
+        assert_eq!(listed.native, row.native);
+        assert_eq!(from_wire(&listed).native, row.native);
+        row.native = None;
+        assert_eq!(from_wire(&crate::serve::to_wire(&row)).native, None);
     }
 }

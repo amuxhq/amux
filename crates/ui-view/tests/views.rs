@@ -337,6 +337,41 @@ fn a_folded_run_draws_at_its_newest_step_and_opens_by_any_step() {
     }
 }
 
+/// Codex's deprecation notices are for amux's developers, and the agent
+/// logs them; a history from a build that kept them as error items draws
+/// nothing for one, and it asks for no attention.
+#[test]
+fn an_old_codex_deprecation_notice_draws_nothing() {
+    let mut state = SessionState::new(agent(Kind::Codex, Phase::Idle), CAP);
+    state.update(snapshot(Kind::Codex, Phase::Idle, vec![], vec![]));
+    let notice = wire::CodexItem {
+        kind: Some(wire::codex_item::Kind::Error(wire::ApiError {
+            error_kind: "deprecationNotice".into(),
+            message: "Full-history hydration is deprecated for paginated threads".into(),
+            ..Default::default()
+        })),
+    };
+    state.update(event(session_event::Of::Item(Item {
+        key: "warning:2".into(),
+        order: 1,
+        revision: 1,
+        kind: Kind::Codex as i32,
+        body: notice.encode_to_vec(),
+        ..Item::default()
+    })));
+    state.update(event(session_event::Of::Item(item(
+        Kind::Codex,
+        2,
+        2,
+        None,
+    ))));
+    let rows = rows_in(&state, 1..=2, ToolRows::ShowAll);
+    let notice = rows.iter().find(|row| row.order == 1).unwrap();
+    assert_eq!(notice.kind, RowKind::Hidden);
+    assert!(notice.collapsed && !notice.attention, "{notice:?}");
+    assert!(rows.iter().any(|row| row.order == 2 && !row.collapsed));
+}
+
 #[test]
 fn attachments_keep_their_positions() {
     let image = wire::Attachment {

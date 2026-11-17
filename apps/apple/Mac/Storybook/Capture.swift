@@ -43,10 +43,10 @@ enum Capture {
         for story in stories {
             let shows = listed.first { $0.name == story.name }?.shows ?? ""
             index += "## \(story.name)\n\n\(shows)\n\n"
-            let sizes: [StorySize] = story.window == .settings ? [.regular] : StorySize.allCases
+            let sizes: [StorySize] = story.window != .main ? [.regular] : StorySize.allCases
             for size in sizes {
                 for (name, appearance) in appearances {
-                    let file = story.window == .settings
+                    let file = story.window != .main
                         ? "\(story.name).\(name).png" : "\(story.name).\(size.rawValue).\(name).png"
                     let key = "\(story.window)-\(size)-\(name)"
                     if empty[key] == nil {
@@ -98,7 +98,9 @@ enum Capture {
 
     /// Glass finishes on the window server's schedule, so a picture counts
     /// once it has held for half a second. A spinner never holds, and takes
-    /// whatever three seconds leave.
+    /// whatever three seconds leave. A window redrawing every frame is
+    /// sometimes caught between frames with no picture at all, so the last
+    /// picture taken stands.
     private static func settled(_ window: NSWindow) async -> CGImage? {
         try? await Task.sleep(for: .milliseconds(400))
         let deadline = ContinuousClock.now + .seconds(3)
@@ -106,7 +108,7 @@ enum Capture {
         var held = 0
         while held < 5, ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(100))
-            let now = image(of: window)
+            guard let now = image(of: window) else { continue }
             held = same(last, now) ? held + 1 : 0
             last = now
         }

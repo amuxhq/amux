@@ -8,7 +8,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-use crate::playback::{self, Channel, Process, transcript_files};
+use crate::playback::{self, Channel, Process, subagent_files, transcript_files};
 use crate::{Kind, PLAYBACK_ENV};
 
 /// How long one recorded process may take to play back. Recordings replay
@@ -315,7 +315,7 @@ async fn terminal(binary: &Path, recording: &Path, process: &Process) -> Result<
                     ));
                 }
             }
-            Channel::Transcript | Channel::Hook => {}
+            Channel::Transcript | Channel::Hook | Channel::Subagent => {}
             Channel::Exit => {
                 return Err(format!("event {index}: corpora end with EOF, not an exit"));
             }
@@ -362,6 +362,27 @@ async fn terminal(binary: &Path, recording: &Path, process: &Process) -> Result<
                 .unwrap_or(written.len().min(recorded.len()));
             return Err(format!(
                 "transcript {session} differs at byte {at} ({} written, {} recorded)",
+                written.len(),
+                recorded.len()
+            ));
+        }
+    }
+    // Each subagent's transcript and meta.json, beside its session's.
+    for (session, relative, recorded) in subagent_files(&process.events) {
+        let path = playback::subagent_path(
+            &playback::transcript_path(&config, &cwd, &session),
+            &relative,
+        );
+        let written = std::fs::read(&path)
+            .map_err(|error| format!("reading subagent file {}: {error}", path.display()))?;
+        if written != recorded {
+            let at = written
+                .iter()
+                .zip(&recorded)
+                .position(|(a, b)| a != b)
+                .unwrap_or(written.len().min(recorded.len()));
+            return Err(format!(
+                "subagent file {relative} of {session} differs at byte {at} ({} written, {} recorded)",
                 written.len(),
                 recorded.len()
             ));

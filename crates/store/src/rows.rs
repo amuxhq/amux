@@ -23,7 +23,7 @@ const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, name, cwd, parent_host
     lifecycle, exit_cause, exit_detail, phase, working_on, phase_since_ms, git, snapshot, \
     ingest_cursor, next_revision, source_cursor, source_generation, \
     complete_from_order, exhausted, owes_report, created_at_ms, incarnation, background_jobs, \
-    descendants, filing, filed_at_ms, title, name_given, last_said, experimental";
+    descendants, filing, filed_at_ms, title, name_given, last_said, native, experimental";
 
 const ITEM_COLUMNS: &str =
     "key, position, revision, at_ms, input_id, text, kind, attachments, body";
@@ -51,6 +51,7 @@ const REGISTRY: &[&str] = &[
     "filed_at_ms",
     "title",
     "name_given",
+    "native",
 ];
 
 /// What a replica's inventory row carries of its newest snapshot. Not its
@@ -89,6 +90,28 @@ pub(crate) const COMMITTED: &[&str] = &[
     "ingest_cursor",
     "next_revision",
     "owes_report",
+];
+
+/// What a commit writes of a provider subagent: what it writes of any
+/// agent, and the lifecycle its parts' starts and ends move, which for an
+/// agent with a process of its own is the registry's.
+pub(crate) const SUBAGENT_COMMITTED: &[&str] = &[
+    "exit_cause",
+    "exit_detail",
+    "phase",
+    "working_on",
+    "phase_since_ms",
+    "git",
+    "background_jobs",
+    "title",
+    "last_said",
+    "snapshot",
+    "ingest_cursor",
+    "next_revision",
+    "owes_report",
+    "lifecycle",
+    "filing",
+    "filed_at_ms",
 ];
 
 /// What an absorb writes: the newest snapshot's envelope and the replica's
@@ -155,9 +178,15 @@ pub(crate) fn registry_update(own: bool) -> String {
     }
 }
 
-/// An agents row with its snapshot, git and experimental columns still
-/// encoded.
-type RawAgent = (AgentRow, Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
+/// An agents row with its snapshot, git, native and experimental columns
+/// still encoded.
+type RawAgent = (
+    AgentRow,
+    Option<Vec<u8>>,
+    Option<Vec<u8>>,
+    Option<Vec<u8>>,
+    Option<Vec<u8>>,
+);
 
 /// The `experimental` column: a protobuf message whose one field is the
 /// row's map, `map<string, bytes> entries = 1`. A map field encodes each
@@ -228,16 +257,20 @@ fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
             title: row.get(28)?,
             name_given: row.get(29)?,
             last_said: row.get(30)?,
+            native: None,
             experimental: Default::default(),
         },
         row.get(14)?,
         row.get(13)?,
         row.get(31)?,
+        row.get(32)?,
     ))
 }
 
 /// Decodes the message columns `agent_row` leaves as bytes.
-fn finish_agent((mut row, snapshot, git, experimental): RawAgent) -> Result<AgentRow, StoreError> {
+fn finish_agent(
+    (mut row, snapshot, git, native, experimental): RawAgent,
+) -> Result<AgentRow, StoreError> {
     let corrupt = |error: prost::DecodeError| StoreError::Corrupt(error.to_string());
     row.snapshot = snapshot
         .map(|bytes| Snapshot::decode(bytes.as_slice()))
@@ -245,6 +278,10 @@ fn finish_agent((mut row, snapshot, git, experimental): RawAgent) -> Result<Agen
         .map_err(corrupt)?;
     row.git = git
         .map(|bytes| wire::Git::decode(bytes.as_slice()))
+        .transpose()
+        .map_err(corrupt)?;
+    row.native = native
+        .map(|bytes| wire::NativeChild::decode(bytes.as_slice()))
         .transpose()
         .map_err(corrupt)?;
     row.experimental = decode_experimental(experimental.as_deref()).map_err(corrupt)?;
@@ -397,7 +434,7 @@ impl Rows<'_> {
             .prepare_cached(&format!(
                 "INSERT INTO agents ({AGENT_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, \
                  ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, \
-                 ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
+                 ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
             ))?
             .execute(params![
                 row.agent.host,
@@ -433,6 +470,7 @@ impl Rows<'_> {
                 row.title,
                 row.name_given,
                 row.last_said,
+                row.native.as_ref().map(|native| native.encode_to_vec()),
                 encode_experimental(&row.experimental),
             ])?;
         Ok(())

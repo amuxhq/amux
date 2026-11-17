@@ -217,6 +217,17 @@ fn attachment(held: Attachment, hashes: &mut Hashes) -> Attachment {
                 }),
                 ..Default::default()
             }),
+            Of::Page(page) => Of::Page(wire::PageReview {
+                comments: page
+                    .comments
+                    .into_iter()
+                    .map(|comment| wire::PageComment {
+                        image: comment.image.map(&mut blob),
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            }),
         }),
     }
 }
@@ -358,6 +369,7 @@ fn agent(agent: Agent) -> Agent {
         background_jobs: agent.background_jobs,
         filing: agent.filing,
         filed_at_ms: agent.filed_at_ms,
+        native: agent.native,
         // An experiment's entry may name folders; none is kept.
         experimental: Default::default(),
     }

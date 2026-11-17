@@ -822,3 +822,87 @@ fn an_own_rows_entries_are_written_by_its_experiments_alone() {
         "the entries went with the row"
     );
 }
+
+/// A provider subagent's row keeps what marks it through a reopen, and a
+/// commit, which does not own the column, leaves it as it was.
+#[test]
+fn a_provider_subagents_row_reads_back_marked() {
+    let dir = tempfile::tempdir().unwrap();
+    let key = AgentKey::new(OWN, b"subagent".to_vec());
+    let native = wire::NativeChild {
+        provider_child_id: "a1795690345bfafb1".into(),
+    };
+    {
+        let mut store = open(&dir);
+        let mut row = AgentRow::new(key.clone(), wire::Kind::ClaudeSdk, "/");
+        row.name = "sub-1a2b3c4d".into();
+        row.parent = Some(AgentKey::new(OWN, b"host".to_vec()));
+        row.native = Some(native.clone());
+        store.put_agent(&row).unwrap();
+        store.commit(&key, &[(10, step(&["a"]))], CLOCK).unwrap();
+    }
+    let store = open(&dir);
+    let row = store.agent(&key).unwrap().expect("the row is held");
+    assert_eq!(row.native, Some(native));
+    let unmarked = AgentKey::new(OWN, b"started-by-amux".to_vec());
+    let mut store = store;
+    store
+        .put_agent(&AgentRow::new(unmarked.clone(), wire::Kind::Codex, "/"))
+        .unwrap();
+    assert_eq!(store.agent(&unmarked).unwrap().unwrap().native, None);
+}
+
+/// A provider subagent has no process for the registry to see exit: its
+/// end and its continuation are its host's parts, and the commit that
+/// moves the host's cursor past them moves the row too. A daemon stopping
+/// right after the commit then leaves no live row whose end it will not
+/// read again.
+#[test]
+fn a_commit_moves_a_provider_subagents_lifecycle_with_its_hosts_cursor() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = AgentKey::new(OWN, b"host".to_vec());
+    let sub = AgentKey::new(OWN, b"subagent".to_vec());
+    let mut store = open(&dir);
+    store
+        .put_agent(&AgentRow::new(host.clone(), wire::Kind::ClaudeSdk, "/"))
+        .unwrap();
+    let mut row = AgentRow::new(sub.clone(), wire::Kind::ClaudeSdk, "/");
+    row.parent = Some(host.clone());
+    row.native = Some(wire::NativeChild {
+        provider_child_id: "a1795690345bfafb1".into(),
+    });
+    store.put_agent(&row).unwrap();
+    let part = |end: bool| Step {
+        agents: vec![wire::AgentStep {
+            agent_id: sub.agent.clone(),
+            start: (!end).then(|| wire::NativeStart {
+                provider_child_id: "a1795690345bfafb1".into(),
+                ..Default::default()
+            }),
+            end: end.then_some(wire::IncarnationEnd {
+                cause: wire::ExitCause::Finished as i32,
+                detail: None,
+            }),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let clock = CommitClock {
+        now_ms: 7_000,
+        ..CLOCK
+    };
+
+    store.commit(&host, &[(10, part(true))], clock).unwrap();
+    let ended = open(&dir).agent(&sub).unwrap().unwrap();
+    assert_eq!(ended.lifecycle, wire::Lifecycle::Exited as i32);
+    assert_eq!(ended.exit_cause, wire::ExitCause::Finished as i32);
+    assert!(ended.is_closed(), "one that did its work is filed closed");
+    assert_eq!(ended.filed_at_ms, 7_000);
+
+    store.commit(&host, &[(20, part(false))], clock).unwrap();
+    let continued = open(&dir).agent(&sub).unwrap().unwrap();
+    assert_eq!(continued.lifecycle, wire::Lifecycle::Live as i32);
+    assert_eq!(continued.exit_cause, wire::ExitCause::Unspecified as i32);
+    assert!(!continued.is_closed(), "open again");
+    assert_eq!(store.cursor(&host).unwrap(), 20);
+}

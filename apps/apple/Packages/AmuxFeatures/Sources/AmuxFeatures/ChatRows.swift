@@ -1,5 +1,6 @@
 import AmuxCore
 import AmuxDesign
+import AmuxWords
 import ImageIO
 import SwiftUI
 
@@ -19,20 +20,34 @@ public struct ChatRowView: View {
     let expanded: Bool
     let rail: RailJoin
     let placement: RunPlacement
+    /// The agent this row's call opens, as the fleet has it: nil when the
+    /// row opens none or the fleet does not hold it yet.
+    let opened: OpenedAgent?
+    /// What the group this call heads comes to, by the fleet.
+    let groupState: GroupState?
     let toggle: () -> Void
     let toggleRun: () -> Void
+    let toggleGroup: () -> Void
+    let openAgent: (AgentKey) -> Void
 
     public init(
         row: Row, expanded: Bool, rail: RailJoin = .none, placement: RunPlacement = .own,
+        opened: OpenedAgent? = nil, groupState: GroupState? = nil,
         toggle: @escaping () -> Void = {},
-        toggleRun: @escaping () -> Void = {}
+        toggleRun: @escaping () -> Void = {},
+        toggleGroup: @escaping () -> Void = {},
+        openAgent: @escaping (AgentKey) -> Void = { _ in }
     ) {
         self.row = row
         self.expanded = expanded
         self.rail = rail
         self.placement = placement
+        self.opened = opened
+        self.groupState = groupState
         self.toggle = toggle
         self.toggleRun = toggleRun
+        self.toggleGroup = toggleGroup
+        self.openAgent = openAgent
     }
 
     public var body: some View {
@@ -41,6 +56,25 @@ public struct ChatRowView: View {
 
     @ViewBuilder
     private var content: some View {
+        if let group = row.group, row.id == group.first {
+            // The calls of a turn that opened several agents: folded, the
+            // first draws the group's one line; open, that line heads the
+            // calls, each drawn as itself.
+            if group.open {
+                VStack(alignment: .leading, spacing: 0) {
+                    groupLine(group, rail: RailJoin(continues: true, nested: rail.nested))
+                    kindView
+                }
+            } else {
+                groupLine(group, rail: rail)
+            }
+        } else {
+            placed
+        }
+    }
+
+    @ViewBuilder
+    private var placed: some View {
         switch placement {
         case .own:
             kindView
@@ -63,6 +97,53 @@ public struct ChatRowView: View {
             }
         case .failed:
             kindView.environment(\.unresolvedFailure, true)
+        }
+    }
+
+    /// "4 subagents · 2 running · 1 waiting on you": a group's one line,
+    /// which opens to its calls. Opening one of their agents is the calls'
+    /// own rows, a gesture apart.
+    private func groupLine(_ group: SubagentGroup, rail: RailJoin) -> some View {
+        let standing = groupState.map(ChatWords.subagentGroupStanding)
+        return GridRow(
+            kind: "subagent-group", glyph: standing == .needsYou ? "hand.raised" : "arrow.triangle.branch",
+            accented: standing == .needsYou, failed: standing == .failed, rail: rail,
+            verb: ChatWords.subagentGroup(groupState?.agents ?? UInt32(group.agents.count)),
+            meta: groupState.map(RowMeta.group) ?? RowMeta(),
+            opens: true, open: group.open, toggle: toggleGroup)
+    }
+
+    /// A call that started or continued a subagent. One that names its
+    /// agent opens the agent's chat and says how the agent stands, from the
+    /// fleet: the call may have returned while its subagent runs on. Its
+    /// answer, once given, reads under it; the whole of the subagent's work
+    /// is in its own chat. A call from history names no agent, says what
+    /// the call itself came to and opens to the steps filed under it.
+    @ViewBuilder
+    private func subagent(
+        _ description: String, continued: Bool, state: CallPhase, answer: String, durationMs: Int64?
+    ) -> some View {
+        let standing = AgentStanding.of(opened, call: state)
+        let verb = continued ? String(localized: "Continued") : String(localized: "Subagent")
+        if row.opens != nil {
+            let subject = description.isEmpty ? opened?.name ?? "" : ChatWords.firstLine(description)
+            GridRow(
+                kind: "subagent", glyph: standing == .needsYou ? "hand.raised" : "arrow.triangle.branch",
+                accented: standing == .needsYou, failed: standing == .failed, rail: rail,
+                verb: verb, subject: subject, subjectFace: .text, meta: .standing(standing),
+                truncation: .tail,
+                detail: standing.live || answer.isEmpty ? nil : answer, detailFace: .text, detailLines: 2,
+                opens: opened != nil, pushes: true, value: standing.words,
+                toggle: { if let opened { openAgent(opened.agent) } })
+        } else {
+            GridRow(
+                kind: "subagent", glyph: "arrow.triangle.branch", rail: rail,
+                verb: verb, subject: ChatWords.firstLine(description), subjectFace: .text,
+                meta: RowMeta.standing(standing).then(
+                    standing.live ? "" : durationMs.map(ChatWords.duration) ?? ""),
+                truncation: .tail,
+                detail: standing.live || answer.isEmpty ? nil : answer, detailFace: .text,
+                detailLines: expanded ? nil : 2, opens: true, open: expanded, toggle: toggle)
         }
     }
 
@@ -115,14 +196,28 @@ public struct ChatRowView: View {
                 doing: String(localized: "Stopping"), done: String(localized: "Stopped"))
             }
             let who = name.isEmpty ? String(localized: "a subagent") : name
-            GridRow(
-                kind: "child", glyph: glyph(state, action == .start ? "person.badge.plus" : "person.badge.minus"),
-                accented: accented(state), failed: state == .failed,
-                rail: rail, verb: verb, subject: host.isEmpty ? who : String(localized: "\(who) on \(host)"),
-                meta: RowMeta(ChatWords.meta([kind], row, verbPhase: state, note: false)),
-                quote: denialNote,
-                detail: expanded && !result.isEmpty ? result : nil,
-                opens: !result.isEmpty, open: expanded, toggle: toggle)
+            if let opened {
+                // The agent this spawn started, as the fleet has it: the row
+                // opens its chat, and says how it stands now.
+                let standing = AgentStanding(opened.phase)
+                GridRow(
+                    kind: "child", glyph: standing == .needsYou ? "hand.raised" : glyph(state, "person.badge.plus"),
+                    accented: standing == .needsYou || accented(state), failed: state == .failed,
+                    rail: rail, verb: verb, subject: host.isEmpty ? who : String(localized: "\(who) on \(host)"),
+                    meta: RowMeta(ChatWords.meta([kind], row, verbPhase: state, note: false))
+                        .then(standing.words),
+                    quote: denialNote, opens: true, pushes: true, value: standing.words,
+                    toggle: { openAgent(opened.agent) })
+            } else {
+                GridRow(
+                    kind: "child", glyph: glyph(state, action == .start ? "person.badge.plus" : "person.badge.minus"),
+                    accented: accented(state), failed: state == .failed,
+                    rail: rail, verb: verb, subject: host.isEmpty ? who : String(localized: "\(who) on \(host)"),
+                    meta: RowMeta(ChatWords.meta([kind], row, verbPhase: state, note: false)),
+                    quote: denialNote,
+                    detail: expanded && !result.isEmpty ? result : nil,
+                    opens: !result.isEmpty, open: expanded, toggle: toggle)
+            }
         case .fileChange(let files, let state):
             fileChange(files, state)
         case .command(
@@ -161,15 +256,8 @@ public struct ChatRowView: View {
                 truncation: .head, quote: denialNote,
                 detail: expanded && !result.isEmpty ? result : nil,
                 opens: !result.isEmpty, open: expanded, toggle: toggle)
-        case .subagent(let description, let running, let toolCount, let lastTool, let answer, let durationMs):
-            GridRow(
-                kind: "subagent", glyph: "arrow.triangle.branch", rail: rail,
-                verb: String(localized: "Agent"), subject: ChatWords.firstLine(description),
-                meta: RowMeta(ChatWords.subagent(toolCount: toolCount, durationMs: durationMs)),
-                truncation: .tail,
-                note: running && !lastTool.isEmpty ? "└ \(lastTool)" : nil,
-                detail: !running && !answer.isEmpty ? answer : nil, detailFace: .text,
-                detailLines: expanded ? nil : 2, opens: true, open: expanded, toggle: toggle)
+        case .subagent(let description, let continued, let state, let answer, let durationMs):
+            subagent(description, continued: continued, state: state, answer: answer, durationMs: durationMs)
         case .background(let command, let description, let running, _):
             let said = ChatWords.described(description)
             GridRow(
@@ -212,10 +300,11 @@ public struct ChatRowView: View {
             GridRow(
                 kind: "stopped", glyph: "stop", rail: rail,
                 verb: String(localized: "You stopped it"), quiet: true)
-        case .compaction(let automatic, let after, let before):
+        case .compaction(let automatic, let idle, let after, let before):
             FeedRule(
                 kind: "compaction",
-                label: ChatWords.compaction(before: before, after: after, automatic: automatic))
+                label: ChatWords.compaction(
+                    before: before, after: after, automatic: automatic, idle: idle))
         case .error(let errorKind, let message, let attempts, let gaveUp):
             let detailed = !errorKind.isEmpty && !message.isEmpty
             GridRow(
@@ -355,37 +444,6 @@ public struct ChatRowView: View {
     }
 }
 
-/// How a grid row joins the rail: whether the next row drawn below it is on
-/// the rail too, and whether it is a subagent's step, set in under its
-/// parent's text.
-public struct RailJoin: Equatable, Sendable {
-    public var continues = false
-    public var nested = false
-
-    public init(continues: Bool = false, nested: Bool = false) {
-        self.continues = continues
-        self.nested = nested
-    }
-
-    public static let none = RailJoin()
-
-    /// The join for `row` with `next` drawn below it.
-    public static func of(_ row: Row, next: Row?) -> RailJoin {
-        guard onRail(row) else { return .none }
-        return RailJoin(continues: next.map(onRail) ?? false, nested: row.parent != nil)
-    }
-
-    /// Everything drawn on the grid hangs off the rail; what is read rather
-    /// than scanned — the prompt, the prose — and the rules and footers that
-    /// close a turn break it.
-    public static func onRail(_ row: Row) -> Bool {
-        switch row.kind {
-        case .prompt, .prose, .turnEnd, .compaction, .boundary, .hidden: false
-        default: true
-        }
-    }
-}
-
 /// The grid's measures, shared by every row on it.
 enum RowGrid {
     /// The glyph cell: wide enough for the widest glyph, and no wider.
@@ -405,7 +463,7 @@ enum RowGrid {
 /// A row's meta: plain words, or a change's counts in the added and removed
 /// colours.
 struct RowMeta: Equatable {
-    enum Ink: Equatable { case faint, added, removed }
+    enum Ink: Equatable { case faint, added, removed, accent }
     struct Run: Equatable {
         let text: String
         let ink: Ink
@@ -427,6 +485,32 @@ struct RowMeta: Equatable {
         return meta
     }
 
+    /// Where an agent stands: in the accent while it waits on the person,
+    /// as everything that does is, and in the removed ink when it failed.
+    static func standing(_ standing: AgentStanding) -> RowMeta {
+        var meta = RowMeta()
+        meta.runs = [Run(text: standing.words, ink: ink(standing))]
+        return meta
+    }
+
+    /// What a group's agents come to, each standing inked as its own row's.
+    static func group(_ state: GroupState) -> RowMeta {
+        var meta = RowMeta()
+        for (index, part) in ChatWords.subagentGroupParts(state).enumerated() {
+            if index > 0 { meta.runs.append(Run(text: " · ", ink: .faint)) }
+            meta.runs.append(Run(text: "\(part.count) \(part.standing.words)", ink: ink(part.standing)))
+        }
+        return meta
+    }
+
+    private static func ink(_ standing: AgentStanding) -> Ink {
+        switch standing {
+        case .needsYou: .accent
+        case .failed: .removed
+        case .running, .idle, .done, .stopped: .faint
+        }
+    }
+
     /// This meta with more words after it.
     func then(_ text: String) -> RowMeta {
         guard !text.isEmpty else { return self }
@@ -446,6 +530,7 @@ struct RowMeta: Equatable {
             case .faint: design.inkFaint.color
             case .added: design.added.color
             case .removed: design.removed.color
+            case .accent: design.accent.color
             }
             text += piece
         }
@@ -496,6 +581,12 @@ struct GridRow: View {
     /// Whether an opening row says so at its trailing edge; a run's line
     /// says it with its own mark instead.
     var trailingChevron = true
+    /// The row opens another page, the chat of the agent it names, rather
+    /// than its own detail: its trailing mark points onward.
+    var pushes = false
+    /// What the row reads as to the driving door, in place of open or
+    /// folded.
+    var value: String?
     var toggle: () -> Void = {}
     @Environment(\.unresolvedFailure) private var unresolvedFailure
 
@@ -515,7 +606,7 @@ struct GridRow: View {
             "chat.row.\(kind)",
             label: [verb, subject, spokenNote ?? "", meta.string, quote ?? ""].filter { !$0.isEmpty }
                 .joined(separator: ", "),
-            value: opens ? (open ? "open" : "folded") : nil)
+            value: value ?? (opens ? (open ? "open" : "folded") : nil))
         .reclaimingThumbTarget(y: opens ? GridRow.reach : 0)
         .padding(.bottom, rail.continues ? RowGrid.inRun : RowGrid.afterRun)
         .padding(.leading, rail.nested ? RowGrid.text : 0)
@@ -564,7 +655,7 @@ struct GridRow: View {
                         }
                     }
                     if opens && trailingChevron {
-                        Image(systemName: open ? "chevron.up" : "chevron.down")
+                        Image(systemName: pushes ? "chevron.right" : open ? "chevron.up" : "chevron.down")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(design.inkFaint.color)
                     }
@@ -1444,46 +1535,6 @@ private struct AskRowView: View {
         case .sentBack: String(localized: "Plan sent back")
         case .dismissed: String(localized: "Plan dismissed")
         }
-    }
-}
-
-/// Where a row stands in its run of tool steps, placed as the terminal
-/// places it from the same shared fold.
-public enum RunPlacement: Equatable {
-    /// Outside a run, or a step of an opened run with no line above it:
-    /// drawn as itself.
-    case own
-    /// A step drawn as itself under its run's line: the opened run's first
-    /// step, or the oldest of a live run's newest steps.
-    case step(header: Header)
-    /// A finished run's newest step, which draws as the run's one line.
-    case folded(words: String)
-    /// A step a folded run keeps in view: a failure its turn never fixed.
-    case failed
-
-    public struct Header: Equatable {
-        public let words: String
-        public let open: Bool
-    }
-
-    /// The placement of a row the chat draws: `open` is whether its run is
-    /// open, `counts` what the run's steps did.
-    public static func of(_ row: Row, open: Bool, counts: () -> RunCounts?) -> RunPlacement {
-        guard let run = row.run else { return .own }
-        if open {
-            // Opened, a run lists every step on its own line, under the
-            // line that folds it again.
-            guard row.id == run.first else { return .own }
-            return .step(header: Header(words: ChatWords.run(run, counts: counts()), open: true))
-        }
-        if run.live {
-            // Under way: the newest step and any still running, under what
-            // the steps it no longer shows did.
-            guard let hidden = run.hidden else { return .own }
-            return .step(header: Header(words: ChatWords.run(run, counts: hidden), open: false))
-        }
-        if run.recent == 0 { return .folded(words: ChatWords.run(run, counts: counts())) }
-        return .failed
     }
 }
 

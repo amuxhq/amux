@@ -100,7 +100,8 @@ impl FamilyState {
                     | Doing::Making { .. }
                     | Doing::AwaitLaunch { .. }
                     | Doing::AwaitExit { .. }
-                    | Doing::Ending { .. } => {}
+                    | Doing::Ending { .. }
+                    | Doing::StoppingSubagent { .. } => {}
                 }
             }
         }
@@ -298,6 +299,10 @@ pub enum Refusal {
     Directory(String),
     /// The store failed, in its own words.
     Store(String),
+    /// The agent is a provider subagent, which cannot do this, in words
+    /// saying why: it has no process or directory of its own and goes with
+    /// the agent that runs it.
+    Subagent(String),
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -380,7 +385,7 @@ struct Operation {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-enum Doing {
+pub(crate) enum Doing {
     /// A create waits for its worktree, with the name it chose.
     Worktree {
         job: JobId,
@@ -419,6 +424,10 @@ enum Doing {
     Ending { phase: Phase, then: Then },
     /// A delete removed the rows; the directory goes.
     Removing { job: JobId },
+    /// A close asked a provider subagent's host to stop it, and waits for
+    /// its end; the filing it had is restored should the stop deadline
+    /// pass first.
+    StoppingSubagent { filing: i32, filed_at_ms: i64 },
 }
 
 impl Doing {
@@ -438,14 +447,15 @@ impl Doing {
             | Doing::Making { .. }
             | Doing::AwaitLaunch { .. }
             | Doing::AwaitExit { .. }
-            | Doing::Ending { .. } => None,
+            | Doing::Ending { .. }
+            | Doing::StoppingSubagent { .. } => None,
         }
     }
 }
 
 /// How far ending a process has gone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-enum Phase {
+pub(crate) enum Phase {
     /// The stop was asked; the stop deadline is armed.
     Asked,
     /// The kill was asked of the agent; its patience is armed.
@@ -457,7 +467,7 @@ enum Phase {
 
 /// What an ended process leads to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-enum Then {
+pub(crate) enum Then {
     /// The caller hears the agent's row.
     Answer,
     /// The agent's rows and directory go; `discard` as the delete said.
@@ -465,11 +475,11 @@ enum Then {
 }
 
 /// What an operation came to, for its caller.
-type Outcome = Result<Option<Agent>, Refusal>;
+pub(crate) type Outcome = Result<Option<Agent>, Refusal>;
 
 /// How beginning an operation went: it waits on something, or it is
 /// already over.
-enum Began {
+pub(crate) enum Began {
     Waiting(Doing),
     Finished(Box<Outcome>),
 }
@@ -598,13 +608,16 @@ impl Daemon {
                 self.families.lanes.remove(&agent);
                 return;
             };
-            let began = match op {
-                Op::Create(create) => self.begin_create(create, out),
-                Op::Resume(resume) => self.begin_resume(resume, out),
-                Op::Stop => self.begin_ending(agent, false, Then::Answer, out),
-                Op::Kill => self.begin_ending(agent, true, Then::Answer, out),
-                Op::Delete { discard } => self.begin_delete(agent, discard, out),
-                Op::File(filing) => self.begin_file(agent, filing, out),
+            let began = match self.subagent_operation(agent, call, &op, out) {
+                Some(began) => began,
+                None => match op {
+                    Op::Create(create) => self.begin_create(create, out),
+                    Op::Resume(resume) => self.begin_resume(resume, out),
+                    Op::Stop => self.begin_ending(agent, false, Then::Answer, out),
+                    Op::Kill => self.begin_ending(agent, true, Then::Answer, out),
+                    Op::Delete { discard } => self.begin_delete(agent, discard, out),
+                    Op::File(filing) => self.begin_file(agent, filing, out),
+                },
             };
             match began {
                 Ok(Began::Waiting(doing)) => {
@@ -621,7 +634,7 @@ impl Daemon {
 
     /// Ends the agent's operation under way with `outcome`, and begins the
     /// next.
-    fn finish(&mut self, agent: AgentId, outcome: Outcome, out: &mut Vec<Output>) {
+    pub(crate) fn finish(&mut self, agent: AgentId, outcome: Outcome, out: &mut Vec<Output>) {
         let call = self
             .families
             .lanes
@@ -668,7 +681,7 @@ impl Daemon {
     }
 
     /// The agent's row as the inventory carries it, or that it has none.
-    fn row_outcome(&self, agent: AgentId) -> Outcome {
+    pub(crate) fn row_outcome(&self, agent: AgentId) -> Outcome {
         match self.store.agent(&self.own_key(agent))? {
             Some(row) => Ok(Some(to_wire(&row))),
             None => Err(Refusal::NotFound),
@@ -1225,7 +1238,11 @@ impl Daemon {
                     Ok(Began::Finished(Box::new(self.row_outcome(agent))))
                 }
                 Then::Delete { discard } => {
-                    self.remove_agent(agent, discard, out).map(Began::Waiting)
+                    self.remove_agent(agent, discard, out)
+                        .map(|doing| match doing {
+                            Some(doing) => Began::Waiting(doing),
+                            None => Began::Finished(Box::new(Ok(None))),
+                        })
                 }
             };
         }
@@ -1317,10 +1334,13 @@ impl Daemon {
         agent: AgentId,
         discard: bool,
         out: &mut Vec<Output>,
-    ) -> Result<Doing, Refusal> {
+    ) -> Result<Option<Doing>, Refusal> {
         let key = self.own_key(agent);
+        let mut native = false;
         let removed = (|| {
-            let parent = self.store.agent(&key)?.and_then(|row| row.parent);
+            let row = self.store.agent(&key)?;
+            native = row.as_ref().is_some_and(|row| row.native.is_some());
+            let parent = row.and_then(|row| row.parent);
             // Rows first: a crash between the two leaves a directory with
             // no row, which the next sweep removes.
             self.store.delete_agent(&key)?;
@@ -1339,6 +1359,12 @@ impl Daemon {
             return Err(error.into());
         }
         self.journal_readers.remove(&agent);
+        // A provider subagent has no directory: its files are its host's.
+        if native {
+            self.answers.unmute(&key);
+            self.forget_draft(&agent.0);
+            return Ok(None);
+        }
         let job = self.pending.mint();
         out.push(Output::Job {
             id: job,
@@ -1346,7 +1372,7 @@ impl Daemon {
                 path: self.agent_dir(agent),
             },
         });
-        Ok(Doing::Removing { job })
+        Ok(Some(Doing::Removing { job }))
     }
 
     /// Lets the agent's changes reach subscribers again, telling them the
@@ -1435,6 +1461,9 @@ impl Daemon {
     /// The start's sweep found a process holding the agent's directory that
     /// has not answered yet: the driver keeps dialing it.
     pub(crate) fn adopted(&mut self, agent: AgentId, out: &mut Vec<Output>) {
+        if self.is_subagent(agent) {
+            return;
+        }
         self.families.processes.entry(agent).or_default();
         out.push(Output::DialAgent { agent });
     }
@@ -1450,6 +1479,12 @@ impl Daemon {
     /// The agent's process is gone: what its journal holds past the cursor
     /// is read, and then its exit recorded.
     pub(crate) fn control_closed(&mut self, agent: AgentId, ended: Ended, out: &mut Vec<Output>) {
+        // A provider subagent has no process: one reported ended is a
+        // driver's mistake, and its host's process is what ends it.
+        if self.is_subagent(agent) {
+            tracing::warn!(agent = %crate::hex(&agent.0), "a provider subagent was reported ended");
+            return;
+        }
         self.families.processes.entry(agent).or_default().ended = Some(ended);
         self.ingest(agent, out);
     }
@@ -1727,7 +1762,8 @@ impl Daemon {
                         self.finish(agent, outcome, out);
                     }
                     Then::Delete { discard } => match self.remove_agent(agent, discard, out) {
-                        Ok(doing) => self.set_doing(agent, doing),
+                        Ok(Some(doing)) => self.set_doing(agent, doing),
+                        Ok(None) => self.finish(agent, Ok(None), out),
                         Err(refusal) => self.finish(agent, Err(refusal), out),
                     },
                 }
@@ -1739,7 +1775,8 @@ impl Daemon {
                 | Doing::AwaitLaunch { .. }
                 | Doing::AwaitUnlock { .. }
                 | Doing::AwaitSpec { .. }
-                | Doing::Removing { .. },
+                | Doing::Removing { .. }
+                | Doing::StoppingSubagent { .. },
             )
             | None => {}
         }
@@ -1789,6 +1826,10 @@ impl Daemon {
                     then,
                 }) => self.stop_timed_out(agent, then, out),
                 Some(Doing::AwaitExit { .. }) => self.finish(agent, Err(Refusal::StillLocked), out),
+                Some(Doing::StoppingSubagent {
+                    filing,
+                    filed_at_ms,
+                }) => self.subagent_stop_timed_out(agent, filing, filed_at_ms, out),
                 _ => {}
             },
             TimerId::Grace(agent) => {
@@ -1893,7 +1934,8 @@ impl Daemon {
             Doing::Starting
             | Doing::Making { .. }
             | Doing::AwaitLaunch { .. }
-            | Doing::AwaitExit { .. } => {}
+            | Doing::AwaitExit { .. }
+            | Doing::StoppingSubagent { .. } => {}
         }
         true
     }
@@ -1908,7 +1950,7 @@ impl Daemon {
         }
     }
 
-    fn doing(&self, agent: AgentId) -> Option<&Doing> {
+    pub(crate) fn doing(&self, agent: AgentId) -> Option<&Doing> {
         Some(&self.families.lanes.get(&agent)?.current.as_ref()?.doing)
     }
 
@@ -1993,7 +2035,7 @@ impl Daemon {
     }
 
     /// The names this host's own agents hold, exited ones included.
-    fn own_names(&self) -> Result<BTreeSet<String>, StoreError> {
+    pub(crate) fn own_names(&self) -> Result<BTreeSet<String>, StoreError> {
         let own = self.store.own_host();
         Ok(self
             .store
@@ -2007,7 +2049,11 @@ impl Daemon {
     /// Writes an own row's registry fields and tells inventory subscribers.
     /// A lifecycle or incarnation change can make a waiting delivery
     /// deliverable, or stale.
-    fn put_own_row(&mut self, row: &AgentRow, out: &mut Vec<Output>) -> Result<(), StoreError> {
+    pub(crate) fn put_own_row(
+        &mut self,
+        row: &AgentRow,
+        out: &mut Vec<Output>,
+    ) -> Result<(), StoreError> {
         self.store.put_agent(row)?;
         self.deliveries_due();
         self.publish_row(&row.agent, out)?;
@@ -2030,6 +2076,8 @@ impl Daemon {
         };
         if !if_live || row.lifecycle != Lifecycle::Exited as i32 {
             self.record_exit(row, fallback, out)?;
+        } else {
+            self.end_subagents_of(&row, out)?;
         }
         // Nothing more comes, so its journal's file is not held open: a
         // daemon may hold the history of many agents that have ended.
@@ -2083,7 +2131,7 @@ impl Daemon {
     /// The row keeps the cause its journal's last step put there at commit;
     /// `fallback` is the daemon's own, for an incarnation whose journal
     /// stops without saying why.
-    fn record_exit(
+    pub(crate) fn record_exit(
         &mut self,
         mut row: AgentRow,
         fallback: wire::IncarnationEnd,
@@ -2104,7 +2152,24 @@ impl Daemon {
             cause: row.exit_cause,
             detail: row.exit_detail.clone(),
         };
-        self.put_own_row(&row, out)?;
+        // The provider subagents its process ran end with it, in the same
+        // write: none outlives the process that ran it, even for a moment
+        // a subscriber could see.
+        let subagents = match row.native {
+            None => self.subagents_ending_with(&row.agent, &cause)?,
+            Some(_) => Vec::new(),
+        };
+        if subagents.is_empty() {
+            self.put_own_row(&row, out)?;
+        } else {
+            let mut rows = vec![row.clone()];
+            rows.extend(subagents.iter().cloned());
+            self.store.put_agents(&rows)?;
+            self.deliveries_due();
+            self.publish_row(&row.agent, out)?;
+            self.subagents_ended_with_host(&row.agent, &subagents, out)?;
+            self.recount_from(row.parent.clone(), out)?;
+        }
         self.parent_changed(&row.agent, ParentSays::Exited, out)?;
         self.store.remove_notifications(&row.agent.agent)?;
         let Some(parent) = &row.parent else {
@@ -2114,7 +2179,9 @@ impl Daemon {
         // As committed: the phase at exit says nothing here, since a
         // provider's exit leaves it starting whether or not the turn ended.
         let held = self.store.agent(&row.agent)?.unwrap_or(row.clone());
-        if !held.owes_report {
+        // A provider subagent's answer went back through its parent's
+        // provider: it never owes a report.
+        if !held.owes_report || held.native.is_some() {
             return Ok(());
         }
         // Zero when the parent's row is not held: stamped by the drain.
@@ -2227,9 +2294,12 @@ impl Daemon {
     /// child is the store's to say from then on.
     fn children_of(&mut self, agent: AgentId) -> Result<Vec<(Vec<u8>, u32)>, StoreError> {
         let rows = self.store.agents_of_parent(&self.own_key(agent))?;
+        // A provider subagent sends no report, so a parent told of one would
+        // wait for it forever; the parent's own process follows those it
+        // runs from its journal.
         let mut children: Vec<(Vec<u8>, u32)> = rows
             .iter()
-            .filter(|row| row.lifecycle == Lifecycle::Live as i32)
+            .filter(|row| row.lifecycle == Lifecycle::Live as i32 && row.native.is_none())
             .map(|row| (row.agent.agent.clone(), row.incarnation))
             .collect();
         if let Some(process) = self.families.processes.get_mut(&agent) {

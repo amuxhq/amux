@@ -3,6 +3,7 @@
 //! the host's next turn, and the views the host asks for by row key.
 
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use tokio::task::JoinHandle;
@@ -38,6 +39,11 @@ pub struct Chat {
     /// The runs the reader opened, each held by one of its steps: rows
     /// fold every other run to its newest step.
     open_runs: Mutex<HashSet<Key>>,
+    /// Whether the host folds each finished turn to its answer, as the Mac
+    /// does, rather than only its runs.
+    folds_turns: AtomicBool,
+    /// The finished turns the reader opened, each held by its end.
+    open_turns: Mutex<HashSet<Key>>,
     /// The draft this device's daemon kept for the agent when the chat
     /// opened.
     kept: Option<Draft>,
@@ -62,6 +68,9 @@ impl Chat {
         // that lands before the watcher first runs, so the watcher must not
         // mark the channel seen itself.
         let mut changed = session.changed();
+        // The fleet moving changes no row, but it moves how each agent a
+        // row opens stands, which the delta carries.
+        let mut fleet_changed = fleet.upgrade().map(|fleet| fleet.changed());
         let chat = Arc::new(Chat {
             id,
             agent,
@@ -72,6 +81,8 @@ impl Chat {
             clock,
             changed_files: Mutex::new(None),
             open_runs: Mutex::new(HashSet::new()),
+            folds_turns: AtomicBool::new(false),
+            open_turns: Mutex::new(HashSet::new()),
             kept,
             sent: Mutex::new(None),
         });
@@ -79,13 +90,38 @@ impl Chat {
         // chat; it ends when the chat is dropped or the session ends.
         let watched = Arc::downgrade(&chat);
         let watcher = tokio::spawn(async move {
-            while changed.changed().await.is_ok() {
-                let Some(chat) = watched.upgrade() else {
-                    return;
+            loop {
+                let fleet_moved = async {
+                    match fleet_changed.as_mut() {
+                        Some(fleet) => fleet.changed().await.is_ok(),
+                        None => std::future::pending().await,
+                    }
                 };
-                let changes = chat.session.take_changes();
-                chat.changes
-                    .push(changes.keys, changes.reloaded, changes.session);
+                tokio::select! {
+                    moved = changed.changed() => {
+                        if moved.is_err() {
+                            return;
+                        }
+                        let Some(chat) = watched.upgrade() else {
+                            return;
+                        };
+                        let changes = chat.session.take_changes();
+                        chat.changes
+                            .push(changes.keys, changes.reloaded, changes.session);
+                    }
+                    moved = fleet_moved => {
+                        if !moved {
+                            fleet_changed = None;
+                            continue;
+                        }
+                        let Some(chat) = watched.upgrade() else {
+                            return;
+                        };
+                        if chat.opens_agents() {
+                            chat.changes.push(Vec::new(), false, true);
+                        }
+                    }
+                }
             }
         });
         let _ = chat.watcher.set(watcher);
@@ -127,14 +163,78 @@ impl Chat {
     }
 
     /// Rows for these keys, in order, skipping keys not held, each run
-    /// folded to its newest step unless the reader opened it.
+    /// folded to its newest step unless the reader opened it, and with
+    /// [`Chat::fold_turns`] each finished turn folded to its answer unless
+    /// the reader opened it.
     pub fn rows_for(&self, keys: &[Key]) -> Vec<Row> {
-        let open = self.open_runs.lock().unwrap();
-        ui_view::chat_rows_for(
-            &self.session.state(),
-            keys,
-            ToolRows::Collapse { open: &open },
-        )
+        let runs = self.open_runs.lock().unwrap();
+        let turns = self.open_turns.lock().unwrap();
+        ui_view::chat_rows_for(&self.session.state(), keys, self.tools(&runs, &turns))
+    }
+
+    fn tools<'a>(&self, runs: &'a HashSet<Key>, turns: &'a HashSet<Key>) -> ToolRows<'a> {
+        if self.folds_turns.load(Ordering::Relaxed) {
+            ToolRows::Turns { runs, turns }
+        } else {
+            ToolRows::Collapse { open: runs }
+        }
+    }
+
+    /// Folds each finished turn to its answer, or only its runs; the next
+    /// delta carries every row drawn so.
+    pub fn fold_turns(&self, on: bool) {
+        if self.folds_turns.swap(on, Ordering::Relaxed) != on {
+            self.changes.push(self.keys(), false, false);
+        }
+    }
+
+    /// Opens or closes the finished turn `end` closes; the next delta
+    /// carries its rows drawn so.
+    pub fn toggle_turn(&self, end: &str) {
+        let end = end.to_owned();
+        {
+            let mut open = self.open_turns.lock().unwrap();
+            if !open.remove(&end) {
+                open.insert(end.clone());
+            }
+        }
+        let keys = ui_view::turn_keys(&self.session.state(), &end);
+        self.changes.push(keys, false, false);
+    }
+
+    /// Whether any held row opens an agent, whose state a fleet change may
+    /// have moved.
+    fn opens_agents(&self) -> bool {
+        self.session
+            .state()
+            .transcript()
+            .iter()
+            .any(|held| ui_state::opens(&held.body).is_some())
+    }
+
+    /// How each agent the held rows open stands, and each group of them,
+    /// from the fleet; empty once the fleet is gone.
+    pub fn agents(&self) -> ui_view::ChatAgents {
+        match self.fleet.upgrade() {
+            Some(fleet) => ui_view::chat_agents(&self.session.state(), &fleet.state()),
+            None => ui_view::ChatAgents::default(),
+        }
+    }
+
+    /// Opens or closes the group of calls that opened agents `member`
+    /// belongs to; the next delta carries the group's rows drawn so. A
+    /// group is held open in the same set as runs.
+    pub fn toggle_group(&self, member: &str) {
+        let calls: Vec<Key> = {
+            let mut open = self.open_runs.lock().unwrap();
+            let state = self.session.state();
+            let member = member.to_owned();
+            ui_view::toggle_group(&state, &member, &mut open);
+            std::iter::once(member.clone())
+                .chain(ui_view::subagent_rows_moved(&state, &[member]))
+                .collect()
+        };
+        self.changes.push(calls, false, false);
     }
 
     /// Opens or closes the run `member` belongs to; the next delta carries
@@ -220,7 +320,8 @@ impl Chat {
             || delta.frame.is_some()
             || delta.ask.is_some()
             || delta.overview.is_some()
-            || delta.settings.is_some();
+            || delta.settings.is_some()
+            || delta.agents.is_some();
         moved.then_some(delta)
     }
 
@@ -236,8 +337,29 @@ impl Chat {
         if !open.is_empty() && (reloaded || !changed.is_empty()) {
             ui_view::keep_open_runs(&state, &mut open);
         }
+        // Folding turns, a change moves the place in its turn of rows it
+        // does not touch itself; and a call joining a group, or a cut
+        // taking its first, moves the group's other calls.
+        let widened: Vec<Key>;
+        let changed = if !reloaded && !changed.is_empty() {
+            let turns = if self.folds_turns.load(Ordering::Relaxed) {
+                ui_view::turn_rows_moved(&state, changed)
+            } else {
+                Vec::new()
+            };
+            widened = changed
+                .iter()
+                .cloned()
+                .chain(turns)
+                .chain(ui_view::subagent_rows_moved(&state, changed))
+                .collect();
+            &widened[..]
+        } else {
+            changed
+        };
         let (keys, wanted) = sent.keys_moved(state.transcript(), reloaded, changed);
-        let rows = ui_view::chat_rows_for(&state, &wanted, ToolRows::Collapse { open: &open });
+        let turns = self.open_turns.lock().unwrap();
+        let rows = ui_view::chat_rows_for(&state, &wanted, self.tools(&open, &turns));
         let frame = frame(&state, self.clock.now_ms(), ended);
         ChatDelta {
             chat: self.id,
@@ -249,6 +371,10 @@ impl Chat {
                 .map(|card| AskMoved { card }),
             overview: sent.overview(ui_view::overview(&state, files.as_ref())),
             settings: sent.settings(ui_view::settings(&state)),
+            agents: sent.agents(match self.fleet.upgrade() {
+                Some(fleet) => ui_view::chat_agents(&state, &fleet.state()),
+                None => ui_view::ChatAgents::default(),
+            }),
         }
     }
 

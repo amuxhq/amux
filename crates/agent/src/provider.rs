@@ -33,6 +33,7 @@ use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, oneshot};
 use wire::{AgentSpec, Attachment};
 
+use crate::tail::{Tail, Watch};
 use crate::terminal::{self, KeyStep};
 use crate::{dir, tree};
 
@@ -56,8 +57,6 @@ const CODEX_LISTEN_WAIT: Duration = Duration::from_secs(30);
 const CODEX_WRITER_WAIT: Duration = Duration::from_secs(30);
 /// The pause before asking again for a thread another server holds.
 const CODEX_WRITER_RETRY: Duration = Duration::from_millis(250);
-/// How often a followed transcript is read for new rows.
-const TRANSCRIPT_POLL: Duration = Duration::from_millis(25);
 
 /// What the provider did.
 #[derive(Debug)]
@@ -145,6 +144,10 @@ pub struct Provider {
     dir: PathBuf,
     events: mpsc::Sender<ProviderEvent>,
     followers: Vec<Follower>,
+    /// The transcript followed last, beside which Claude writes its
+    /// subagents' files.
+    transcript: Option<PathBuf>,
+    subagents: crate::claude::subagents::Followers,
     /// Every process below the provider when it was asked to finish, killed
     /// once it has exited if still running (see the tree module).
     census: Vec<tree::Descendant>,
@@ -301,18 +304,25 @@ impl Provider {
             dir: dir.to_owned(),
             events,
             followers: Vec::new(),
+            transcript: None,
+            subagents: Default::default(),
             census: Vec::new(),
         };
         // Claude reports nothing until it is asked; its answer is what says
         // it takes input. amux's interrupt ends the turn and leaves
         // background work running on every kind; Claude spares background
         // subagents on an interrupt, as it spares background shells, only
-        // for a host that says it can stop each task on its own.
+        // for a host that says it can stop each task on its own. The two
+        // forwarding options put every subagent's whole conversation in the
+        // stream, nested subagents' included; without them Claude streams
+        // only direct subagents' tool calls.
         let initialize = claude_stream::ControlRequest::new(
             "agent-initialize",
             claude_stream::ControlRequestBody::Initialize(
                 claude_stream::control::InitializeRequestBody {
                     per_task_stop_affordance: Some(true),
+                    forward_subagent_text: Some(true),
+                    forward_nested_subagent_tool_calls: Some(true),
                     ..Default::default()
                 },
             ),
@@ -570,6 +580,8 @@ impl Provider {
             dir: dir.to_owned(),
             events,
             followers: Vec::new(),
+            transcript: None,
+            subagents: Default::default(),
             census: Vec::new(),
         })
     }
@@ -720,6 +732,8 @@ impl Provider {
             dir: dir.to_owned(),
             events,
             followers: Vec::new(),
+            transcript: None,
+            subagents: Default::default(),
             census: Vec::new(),
         })
     }
@@ -763,7 +777,22 @@ impl Provider {
                 if let Some(session) = path.file_stem().and_then(|stem| stem.to_str()) {
                     self.adopt_session(session).await;
                 }
+                self.transcript = Some(path.clone());
                 self.follow(path);
+                Ok(())
+            }
+            Effect::FollowSubagent { agent_id } => {
+                if let Some(transcript) = &self.transcript {
+                    self.subagents
+                        .follow(&self.dir, transcript, &agent_id, &self.events);
+                }
+                Ok(())
+            }
+            Effect::DrainSubagent {
+                agent_id,
+                last_reply,
+            } => {
+                self.subagents.drain(&agent_id, last_reply, &self.events);
                 Ok(())
             }
             Effect::Terminal(input) => {
@@ -814,11 +843,10 @@ impl Provider {
     fn content(&self, text: &str, attachments: &[Attachment]) -> claude_stream::MessageContent {
         use attachments::Piece;
         use claude_stream::{ContentBlock, ImageSource, ImageSourceType};
-        use wire::attachment::Of;
 
         let images = attachments
             .iter()
-            .any(|attachment| matches!(attachment.of, Some(Of::Image(_))));
+            .any(|attachment| !attachments::images(attachment).is_empty());
         if !images {
             return claude_stream::MessageContent::Text(self.with_attachments(text, attachments));
         }
@@ -832,37 +860,38 @@ impl Provider {
         };
         let mut blocks = Vec::new();
         let mut prose = String::new();
-        for piece in attachments::pieces(&positioned, &self.dir.join(dir::BLOBS)) {
+        let blobs = self.dir.join(dir::BLOBS);
+        for piece in attachments::pieces(&positioned, &blobs) {
             match piece {
                 Piece::Text(text) => prose.push_str(text),
                 Piece::Element {
                     element,
                     attachment,
-                    path,
+                    ..
                 } => {
                     prose.push_str(&element);
-                    let Some(Of::Image(_)) = &attachment.of else {
-                        continue;
-                    };
-                    // The element names the file, so a model can still
-                    // read an image whose bytes cannot be inlined, or are
-                    // not an image Claude reads.
-                    let Some(bytes) = path.and_then(|path| std::fs::read(path).ok()) else {
-                        continue;
-                    };
-                    let Some(media_type) = attachments::native_image(&bytes) else {
-                        continue;
-                    };
-                    blocks.push(text_block(std::mem::take(&mut prose)));
-                    blocks.push(ContentBlock::Image {
-                        source: ImageSource {
-                            r#type: ImageSourceType::Base64,
-                            media_type: media_type.to_owned(),
-                            data: base64::engine::general_purpose::STANDARD.encode(&bytes),
+                    for image in attachments::images(attachment) {
+                        // The element names the file, so a model can still
+                        // read an image whose bytes cannot be inlined, or
+                        // are not an image Claude reads.
+                        let path = blobs.join(interpret::to_hex(&image.hash));
+                        let Ok(bytes) = std::fs::read(path) else {
+                            continue;
+                        };
+                        let Some(media_type) = attachments::native_image(&bytes) else {
+                            continue;
+                        };
+                        blocks.push(text_block(std::mem::take(&mut prose)));
+                        blocks.push(ContentBlock::Image {
+                            source: ImageSource {
+                                r#type: ImageSourceType::Base64,
+                                media_type: media_type.to_owned(),
+                                data: base64::engine::general_purpose::STANDARD.encode(&bytes),
+                                extensions: Default::default(),
+                            },
                             extensions: Default::default(),
-                        },
-                        extensions: Default::default(),
-                    });
+                        });
+                    }
                 }
             }
         }
@@ -961,55 +990,29 @@ impl Provider {
     /// resumed session's old rows are not read twice; any other from its
     /// start. The position is kept in private/ after every row.
     fn follow(&mut self, path: PathBuf) {
-        let cursor = Cursor {
-            file: self.dir.join(dir::PRIVATE).join(dir::TRANSCRIPT_CURSOR),
-            offset: Arc::new(std::sync::Mutex::new(saved_cursor(
-                &self.dir.join(dir::PRIVATE).join(dir::TRANSCRIPT_CURSOR),
-                &path,
-            ))),
-            path,
-        };
-        let events = self.events.clone();
-        let reading = cursor.clone();
-        let task = tokio::spawn(async move {
-            loop {
-                for row in reading.new_rows() {
-                    let length = row.len() + 1;
-                    if row.is_empty() {
-                        if !reading.advance(&events, length).await {
-                            return;
-                        }
-                        continue;
-                    }
-                    let fact = Fact {
-                        channel: Channel::Transcript,
-                        payload: row,
-                    };
-                    // Sending is where an abort lands; the row counts as read
-                    // only once it is sent.
-                    if events.send(ProviderEvent::Fact(fact)).await.is_err() {
-                        return;
-                    }
-                    if !reading.advance(&events, length).await {
-                        return;
-                    }
-                }
-                tokio::time::sleep(TRANSCRIPT_POLL).await;
-            }
-        });
-        self.followers.push(Follower { cursor, task });
+        let file = self.dir.join(dir::PRIVATE).join(dir::TRANSCRIPT_CURSOR);
+        let tail = Tail::new(file, path);
+        let task = tokio::spawn(follow_transcript(
+            tail.clone(),
+            tail.watch(),
+            self.events.clone(),
+        ));
+        self.followers.push(Follower { tail, task });
     }
 
-    /// Stops following and returns the rows the followers had not read:
-    /// the provider has exited, so its transcripts are complete, and rows
-    /// it wrote just before exiting must not be lost to the poll interval.
+    /// Stops following and returns the rows the followers had not read,
+    /// the agent's own and then its subagents': the provider has exited, so
+    /// its transcripts are complete, and rows it wrote just before exiting
+    /// must not be lost to the poll interval.
     pub async fn finish_transcripts(&mut self) -> Vec<Fact> {
         let mut rows = Vec::new();
         for follower in std::mem::take(&mut self.followers) {
             follower.task.abort();
             let _ = follower.task.await;
-            for row in follower.cursor.new_rows() {
-                follower.cursor.advance(&self.events, row.len() + 1).await;
+            // A file that cannot be read on has no rows to add; its
+            // follower said why when it ended.
+            for row in follower.tail.unread().unwrap_or_default() {
+                follower.tail.advance(&self.events, row.len() + 1).await;
                 if row.is_empty() {
                     continue;
                 }
@@ -1019,6 +1022,7 @@ impl Provider {
                 });
             }
         }
+        rows.extend(self.subagents.finish(&self.events).await);
         rows
     }
 
@@ -1171,13 +1175,10 @@ fn codex_turn_input(
         // Every attachment is introduced by its element, which names it: a
         // bare local image reaches the model as "Image #1", and it cannot
         // tell which attached file is which.
-        input.push(UserInput::text(attachments::element(
-            attachment,
-            attachments::blob_path(attachment, blobs).as_deref(),
-        )));
+        input.push(UserInput::text(attachments::element_in(attachment, blobs)));
         // Codex reads only some image types and swaps any other for a note
         // the person never sees; the element names that file instead.
-        if let Some(wire::attachment::Of::Image(blob)) = &attachment.of {
+        for blob in attachments::images(attachment) {
             let path = blobs.join(interpret::to_hex(&blob.hash));
             if attachments::native_image_at(&path).is_some() {
                 input.push(UserInput::LocalImage(LocalImageInput {
@@ -1192,74 +1193,42 @@ fn codex_turn_input(
 
 /// A followed transcript and the task reading it.
 struct Follower {
-    cursor: Cursor,
+    tail: Tail,
     task: tokio::task::JoinHandle<()>,
 }
 
-/// How far a transcript has been read, kept in private/ as it moves.
-#[derive(Clone)]
-struct Cursor {
-    path: PathBuf,
-    file: PathBuf,
-    offset: Arc<std::sync::Mutex<usize>>,
-}
-
-impl Cursor {
-    /// The whole rows written past the cursor; a row still being written
-    /// waits for the next read.
-    fn new_rows(&self) -> Vec<Vec<u8>> {
-        let offset = *self.offset.lock().expect("cursor lock");
-        let Ok(bytes) = std::fs::read(&self.path) else {
-            return Vec::new();
+/// Sends a transcript's rows as `watch` says it grew, until the agent
+/// stops reading or the file cannot be read on.
+async fn follow_transcript(tail: Tail, mut watch: Watch, events: mpsc::Sender<ProviderEvent>) {
+    loop {
+        let rows = match tail.unread() {
+            Ok(rows) => rows,
+            Err(error) => {
+                eprintln!(
+                    "amux agent: following {} no further: {error}",
+                    tail.path().display()
+                );
+                return;
+            }
         };
-        let Some(unread) = bytes.get(offset..) else {
-            return Vec::new();
-        };
-        let Some(end) = unread.iter().rposition(|byte| *byte == b'\n') else {
-            return Vec::new();
-        };
-        unread[..end]
-            .split(|byte| *byte == b'\n')
-            .map(<[u8]>::to_vec)
-            .collect()
-    }
-
-    /// Moves past one row and its newline; an empty row is skipped the
-    /// same way, and never sent. The position is the state a resumed
-    /// session reads on from, so a position that cannot be kept ends the
-    /// incarnation; false says it could not be.
-    async fn advance(&self, events: &mpsc::Sender<ProviderEvent>, length: usize) -> bool {
-        let saved = {
-            let mut offset = self.offset.lock().expect("cursor lock");
-            *offset += length;
-            format!("{offset}\n{}", self.path.display())
-        };
-        if let Err(error) = std::fs::write(&self.file, saved) {
-            let _ = events
-                .send(ProviderEvent::WriteFailed {
-                    path: self.file.clone(),
-                    error,
-                })
-                .await;
-            return false;
+        for row in rows {
+            let length = row.len() + 1;
+            if !row.is_empty() {
+                let fact = Fact {
+                    channel: Channel::Transcript,
+                    payload: row,
+                };
+                // Sending is where an abort lands; the row counts as read
+                // only once it is sent.
+                if events.send(ProviderEvent::Fact(fact)).await.is_err() {
+                    return;
+                }
+            }
+            if !tail.advance(&events, length).await {
+                return;
+            }
         }
-        true
-    }
-}
-
-/// Where an earlier follower of `path` stopped; the start for any other
-/// file, or one that is shorter now.
-fn saved_cursor(cursor: &Path, path: &Path) -> usize {
-    let Ok(saved) = std::fs::read_to_string(cursor) else {
-        return 0;
-    };
-    let Some((offset, saved_path)) = saved.split_once('\n') else {
-        return 0;
-    };
-    let length = std::fs::metadata(path).map_or(0, |metadata| metadata.len() as usize);
-    match offset.parse::<usize>() {
-        Ok(offset) if Path::new(saved_path) == path && offset <= length => offset,
-        _ => 0,
+        watch.changed().await;
     }
 }
 
@@ -1596,6 +1565,58 @@ fn environment(command: &mut tokio::process::Command, spec: &AgentSpec) {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+    use std::time::Duration;
+
+    use interpret::Channel;
+    use tokio::sync::mpsc;
+
+    use crate::provider::ProviderEvent;
+    use crate::tail::{Tail, Watch};
+
+    /// A transcript made after following began, in a folder that did not
+    /// exist either, is read as it appears and as it grows, each row once,
+    /// whole and in order however its writes split it, on the watcher's
+    /// reports alone: the fallback is an hour.
+    #[tokio::test]
+    async fn a_transcript_made_after_following_began_is_read_as_it_is_written() {
+        use std::io::Write as _;
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("project").join("s1.jsonl");
+        let tail = Tail::new(root.path().join("cursor"), path.clone());
+        let watch = Watch::with_fallback(path.clone(), Duration::from_secs(3600));
+        let (events, mut sent) = mpsc::channel(4);
+        let follower = tokio::spawn(super::follow_transcript(tail, watch, events));
+        let append = |text: &str| {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .unwrap()
+                .write_all(text.as_bytes())
+                .unwrap();
+        };
+        let mut next = async || match tokio::time::timeout(patience::PATIENCE, sent.recv())
+            .await
+            .expect("a row in time")
+            .expect("the follower running")
+        {
+            ProviderEvent::Fact(fact) => {
+                assert_eq!(fact.channel, Channel::Transcript);
+                String::from_utf8(fact.payload).unwrap()
+            }
+            other => panic!("not a row: {other:?}"),
+        };
+
+        std::fs::create_dir(root.path().join("project")).unwrap();
+        append("{\"a\":");
+        append("1}\n");
+        assert_eq!(next().await, "{\"a\":1}");
+        append("{\"b\":2}\n\n{\"c\"");
+        assert_eq!(next().await, "{\"b\":2}", "an empty row is not sent");
+        append(":3}\n");
+        assert_eq!(next().await, "{\"c\":3}");
+        follower.abort();
+    }
 
     /// amux's line joins a prompt the agent's own arguments append, in
     /// either spelling of the flag, and stands alone otherwise.
@@ -1673,6 +1694,60 @@ mod tests {
             input[3]["path"],
             blobs.join("ab".repeat(32)).display().to_string()
         );
+    }
+
+    /// A page review's screenshots go after its element as local images,
+    /// and the element names each one's path.
+    #[test]
+    fn codex_sees_a_page_reviews_screenshots() {
+        let blobs = tempfile::tempdir().unwrap();
+        std::fs::write(blobs.path().join("ab".repeat(32)), b"\x89PNG\r\n\x1a\n").unwrap();
+        let comment = |text: &str, image: Option<wire::BlobRef>| wire::PageComment {
+            text: text.into(),
+            element: Some(wire::PageElement {
+                selector: "main".into(),
+                ..Default::default()
+            }),
+            quote: String::new(),
+            image,
+        };
+        let page = wire::Attachment {
+            of: Some(wire::attachment::Of::Page(wire::PageReview {
+                url: "http://localhost:5173/".into(),
+                title: "Home".into(),
+                comments: vec![
+                    comment("words only", None),
+                    comment(
+                        "this gap",
+                        Some(wire::BlobRef {
+                            hash: vec![0xab; 32],
+                            name: "region-2.png".into(),
+                            mime: "image/png".into(),
+                            size: 8,
+                        }),
+                    ),
+                ],
+            })),
+        };
+        let request = br#"{"id":"amux-1","method":"turn/start","params":{"threadId":"t1","input":[{"type":"text","text":"fix","text_elements":[]}]}}"#;
+        let written =
+            super::codex_turn_input(request, std::slice::from_ref(&page), blobs.path()).unwrap();
+        let written: serde_json::Value = serde_json::from_slice(&written).unwrap();
+        let input = written["params"]["input"].as_array().unwrap();
+        let path = blobs.path().join("ab".repeat(32)).display().to_string();
+        assert_eq!(
+            input[1]["text"],
+            attachments::element_in(&page, blobs.path())
+        );
+        assert!(
+            input[1]["text"]
+                .as_str()
+                .unwrap()
+                .contains(&format!("image-path: {path}"))
+        );
+        assert_eq!(input[2]["type"], "localImage");
+        assert_eq!(input[2]["path"], path);
+        assert_eq!(input.len(), 3);
     }
 
     /// Codex gets a local image only for bytes it reads natively: an SVG

@@ -10,6 +10,7 @@ members = [
     "crates/agent-dir",
     "crates/amux",
     "crates/attachments",
+    "crates/browser-core",
     "crates/preview",
     "crates/claude-protocol",
     "crates/client",
@@ -224,6 +225,14 @@ codegen-units = 1
 debug = "line-tables-only"
 panic = "abort"
 incremental = false
+
+# The browser extension's WebAssembly: small, since it ships inside the
+# extension, and with nothing to symbolicate it against.
+[profile.wasm]
+inherits = "release"
+opt-level = "s"
+debug = false
+strip = true
 
 [profile.full-debug]
 inherits = "dev"

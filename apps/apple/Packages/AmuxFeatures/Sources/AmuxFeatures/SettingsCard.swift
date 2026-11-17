@@ -1,5 +1,6 @@
 import AmuxCore
 import AmuxDesign
+import AmuxWords
 import SwiftUI
 
 /// What the agent offers to change, as the settings view lists it: the

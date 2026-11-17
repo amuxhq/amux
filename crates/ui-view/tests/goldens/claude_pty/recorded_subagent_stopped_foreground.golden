@@ -1,0 +1,43 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 14 recorded 12: fact Transcript type=user uuid=7f3fe9ea-cae2-4e48-b415-139326dbfb5e
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 47 recorded 45: fact Transcript type=assistant uuid=782c5409-808d-453f-8638-04c45b9efb7e
+  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
+  agents [sub-fb65f3c5 "Run sleeper subagent in foreground" Working] groups []
+  [sub-fb65f3c5] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
+## 54 recorded 52: fact SubagentTranscript type=assistant uuid=a04a79bb-5716-45da-b47e-713f586c6479
+  [sub-fb65f3c5] composer Native { stop: Unavailable } activity=Some(Running { key: "toolu_01QvPxcnTwgmdRpgVZVcKFCw" }) phase=Working
+## 56 recorded 54: fact Transcript type=user uuid=f45676d8-ee2e-4906-88ee-c28600828bbf
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 60 recorded 58: fact Transcript type=user uuid=440e6326-7535-4fc9-bf7d-0e6c737e62bc
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 70 recorded 68: fact SubagentTranscript type=user uuid=3398fb1c-4746-44a0-b2b0-7e1241183b6e
+  [sub-fb65f3c5] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
+## 72 recorded 70: fact Agent type=subagent_drained
+  agents [sub-fb65f3c5 "Run sleeper subagent in foreground" Exited { cause: Ended }] groups []
+  [sub-fb65f3c5] composer Native { stop: Unavailable } activity=None phase=Exited { cause: Ended }
+== chat
+     1 boundary:1 Hidden collapsed
+     2 7f3fe9ea-cae2-4e48-b415-139326dbfb5e Prompt { text: [Text("Launch the `sleeper` subagent in the foreground, with run_in_background set to false, and wait for its answer. Then reply with exactly what it said.")], steered: false }
+     3 toolu_01Dd4XtL7LSAFAXjdZCWLXy8 [opens=sub-fb65f3c5] Subagent { description: "Run sleeper subagent in foreground", continued: false, state: Cancelled, answer: "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.", duration…
+     4 turn:1 Stopped
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 33953, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None
+== agent sub-fb65f3c5 "Run sleeper subagent in foreground" started by host/toolu_01Dd4XtL7LSAFAXjdZCWLXy8
+  composer Native { stop: Unavailable } phase=Exited { cause: Ended }
+== chat
+     1 bab1936e-0250-4e2d-b35c-d5027285b23a Prompt { text: [Text("Wait a long time, then report.")], steered: false }
+     2 toolu_01QvPxcnTwgmdRpgVZVcKFCw Command { command: "python3 -c 'import select; select.select([], [], [], 120)'; echo WOKE", description: "Sleep 120 seconds then print WOKE", state: Cancelled, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are do…
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+  changes: Changeability { model: NotOffered, effort: NotOffered, permission: NotOffered, mode: NotOffered } commands=0

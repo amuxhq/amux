@@ -23,6 +23,7 @@ every command goes through `just ios <recipe>` (`just --list ios`).
 | --- | --- |
 | `AmuxCore` | The Swift side of the bridge (`Runtime`, `Profile`, `Chat`), the observable stores screens read (`RuntimeCoordinator`, `StoreBundle`, `ChatModel`, `FleetStore`, `HostsStore`, `AccountRegistry`), the account service and App Store adapters, web sign-in, local-network discovery, report assembly and signposts; builds for macOS too, for the [Mac app](MAC.md) |
 | `AmuxCore/AmuxValues` | Swift mirrors of every value the bridge carries, generated from the Rust definitions; never edited by hand |
+| `AmuxCore/AmuxWords` | How the Apple clients word and place those values: a fleet row's state and second line, the chat's typed facts, how a run of tool steps folds and joins the rail, the agent's markdown parsed into blocks, places and ages. Shared with the [Mac app](MAC.md) so both say the same words, and free of the bridge so the Mac's storybook can link it |
 | `AmuxCore/LaunchClock` | The one piece of C in the app: an image initialiser that marks the end of dynamic loading for the cold-start split |
 | `AmuxDesign` | Light and dark tokens, bundled faces, type scaling, glass, motion and thumb-target geometry |
 | `AmuxFeatures` | The screens, as functions of the state and actions they are handed, plus the registered UIKit leaves |
@@ -161,6 +162,25 @@ thread. A chat is a `ChatModel` over an open `Chat`:
 - A multi-select question sends the options ticked and any words typed as
   "Something else" together; typing does not untick anything. A
   single-choice question sends one or the other.
+- A call that started one of Claude's or Codex's own subagents names that
+  agent in the row's `opens`, and where it stands (running, waiting on you,
+  done, stopped) is read from the fleet row the delta's `agents` carries for
+  it, not from the call, which can return while the agent runs on and never
+  sees the agent's asks. The call's own state stands in only when this
+  phone's fleet does not hold the agent. When `agents` changes, only cells
+  whose row opens an agent or heads a group are re-stamped.
+- Calls the shared view folds into a `group` draw one row at the group's
+  first call, "4 subagents" with what they come to ("2 running · 1 waiting
+  on you · 1 done"); the others arrive `collapsed`. A tap on that row asks
+  the session to open or close the group (`toggleGroup`), which comes back
+  in the next delta as a run's does; a tap on a call that opens an agent
+  pushes that agent's chat. The two gestures never share a target.
+- A provider subagent's own chat has `Composer.native` in place of a text
+  field: the provider lets only the parent's model talk to it, so the
+  composer says who runs it ("Claude runs this subagent") and offers Stop
+  while the frame's `JobStop` is offered or refused, stopping the job that
+  runs it (`stopJob`). Its menu has no address to copy and no Delete, as the
+  fleet offers no pin or delete for it: it goes with its parent.
 
 A bundle keeps every chat a page shows open, plus chats viewed in the last
 five minutes, plus a chat a push is bringing current.

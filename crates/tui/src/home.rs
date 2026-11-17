@@ -692,6 +692,11 @@ impl Home {
             return vec![];
         };
         let delete = entry.filing() == wire::Filing::Closed;
+        // A provider subagent goes with its parent: it is settled, never
+        // deleted on its own.
+        if delete && entry.native.is_some() {
+            return vec![];
+        }
         if !delete && close_cuts(fleet, &agent).is_none() {
             return vec![FleetEffect::Close(agent)];
         }
@@ -801,7 +806,12 @@ impl Home {
             KeyCode::Home | KeyCode::Char('g') => self.step(&targets, isize::MIN),
             KeyCode::End | KeyCode::Char('G') => self.step(&targets, isize::MAX),
             KeyCode::Enter | KeyCode::Char('a') if ctrl || key.code != KeyCode::Enter => {
-                return agent.map(FleetEffect::Attach).into_iter().collect();
+                // A provider subagent has no terminal to attach to.
+                return agent
+                    .filter(|agent| !is_native(fleet, agent))
+                    .map(FleetEffect::Attach)
+                    .into_iter()
+                    .collect();
             }
             KeyCode::Enter => return self.activate(current),
             KeyCode::Char('/') => {
@@ -1338,7 +1348,10 @@ impl Home {
             }
         }
         laid.resize_with(height - 1, Laid::default);
-        let (hint, at) = self.hint_line(footer, width, theme, section_folded);
+        // A provider subagent has no terminal, so no attach is offered on it.
+        let native =
+            matches!(&self.selected, Some(Target::Agent(agent)) if is_native(fleet, agent));
+        let (hint, at) = self.hint_line(footer, width, theme, section_folded, native);
         if let Some(col) = at {
             cursor = Some((col, height - 1));
         }
@@ -1976,6 +1989,7 @@ impl Home {
         width: usize,
         theme: Theme,
         section_folded: bool,
+        native: bool,
     ) -> (Laid, Option<usize>) {
         let mut line = Line::from(Span::raw(" ".repeat(MARGIN)));
         let key = |code| Hit::Key(plain_key(code));
@@ -2089,7 +2103,7 @@ impl Home {
                     Some(Target::Section(_)) => vec![("enter", "hide", key(KeyCode::Enter))],
                     _ => vec![("enter", "open", key(KeyCode::Enter))],
                 };
-                if matches!(self.selected, Some(Target::Agent(_))) {
+                if matches!(self.selected, Some(Target::Agent(_))) && !native {
                     hints.push(("a", "attach", key(KeyCode::Char('a'))));
                 }
                 if self.needle().is_some() {
@@ -2200,8 +2214,22 @@ fn discards(shown: Option<&DeleteWarning>) -> bool {
 fn close_sentence(fleet: &FleetState, agent: &AgentKey, name: &str) -> String {
     match close_cuts(fleet, agent) {
         Some(cuts) => format!("{name} {cuts}. Settling stops it now."),
+        // A provider subagent takes no messages, so nothing resumes it.
+        None if fleet
+            .agent(agent)
+            .is_some_and(|entry| entry.native.is_some()) =>
+        {
+            format!("Settle {name}?")
+        }
         None => format!("Settle {name}? A message resumes it."),
     }
+}
+
+/// Whether `agent` is a subagent its parent's provider runs.
+fn is_native(fleet: &FleetState, agent: &AgentKey) -> bool {
+    fleet
+        .agent(agent)
+        .is_some_and(|entry| entry.native.is_some())
 }
 
 /// The live agents under `agent` in this fleet, at any depth.
@@ -2491,10 +2519,21 @@ fn said_words(said: &Said, kind: Kind, now_ms: i64) -> String {
 }
 
 /// The step a working agent is on, as the chat's activity line names it:
-/// the step's own subject when it is running one.
-fn step_words(line: &ActivityLine) -> String {
+/// the step's own subject when it is running one, and while it waits on
+/// its subagents and one of them waits on the person, how they stand, in
+/// their group row's words.
+fn step_words(line: &ActivityLine, theme: Theme) -> String {
     match (&line.activity.kind, &line.step) {
         (ActivityKind::Running { .. }, Some(step)) => text::first_line(step).to_owned(),
+        (ActivityKind::Subagents { .. }, _)
+            if let Some(live) = line.subagents.as_ref().filter(|live| live.needs_you > 0) =>
+        {
+            crate::chat::feed::group_words(live, theme)
+                .into_iter()
+                .map(|(words, _)| words)
+                .collect::<Vec<_>>()
+                .join(" · ")
+        }
         (kind, _) => crate::chat::activity_words(kind),
     }
 }
@@ -2531,7 +2570,10 @@ fn second_words(
         let count = format!("{jobs} background job{}", if jobs == 1 { "" } else { "s" });
         return Some(match line {
             SecondLine::LastSaid(said) => (format!("{count} · {said}"), theme.muted()),
-            SecondLine::Step(step) => (format!("{count} · {}", step_words(step)), theme.muted()),
+            SecondLine::Step(step) => (
+                format!("{count} · {}", step_words(step, theme)),
+                theme.muted(),
+            ),
             _ => (format!("{count} running"), theme.muted()),
         });
     }
@@ -2541,7 +2583,7 @@ fn second_words(
             (said_words(said, row.card.kind, now_ms), theme.text())
         }
         SecondLine::Said(said) => (said_words(said, row.card.kind, now_ms), theme.warning()),
-        SecondLine::Step(step) => (step_words(step), theme.muted()),
+        SecondLine::Step(step) => (step_words(step, theme), theme.muted()),
         SecondLine::LastSaid(said) => (said.clone(), theme.muted()),
         // The Settled heading already says what a settled agent is.
         SecondLine::Exited(ExitCause::Finished | ExitCause::Ended)
@@ -2600,7 +2642,10 @@ fn agent_lines(
     first.spans.push(Span::styled(glyph, glyph_style));
     pad_to(&mut first, NAME_COL + indent);
     // The right edge: the age, or on the highlighted row its `[x]`.
-    let right = if chosen {
+    // A settled provider subagent is not deleted on its own, so it offers
+    // no `[x]`.
+    let closable = !(card.native && card.filing == wire::Filing::Closed);
+    let right = if chosen && closable {
         CLOSE.to_owned()
     } else {
         text::age(now_ms, card.phase_since_ms)
@@ -2659,11 +2704,21 @@ fn agent_lines(
     let used = text::line_width(&first) + 2;
     if right_at > used + 1 {
         pad_to(&mut first, used);
-        let meta = where_it_runs(card.kind, &card.cwd, elsewhere, right_at - used - 1);
+        let meta = if card.native {
+            // It has no folder: it works in its parent's.
+            let who = if card.kind == Kind::Codex {
+                "Codex"
+            } else {
+                "Claude"
+            };
+            text::ellipsize(&format!("{who} subagent"), right_at - used - 1)
+        } else {
+            where_it_runs(card.kind, &card.cwd, elsewhere, right_at - used - 1)
+        };
         first.spans.push(Span::styled(meta, theme.faint()));
     }
     pad_to(&mut first, right_at);
-    if chosen {
+    if chosen && closable {
         first.spans.push(Span::styled(right, theme.text()));
         spots.push((Some((right_at, end)), Hit::Close(card.agent.clone())));
     } else {

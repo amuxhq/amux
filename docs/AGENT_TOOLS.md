@@ -112,7 +112,10 @@ Every agent in the fleet, own and replicated from paired hosts. Each row has
 `working_on`, `exit_cause` (how an exited agent ended: the cause's name, then
 its own words when it has any, as `finished`, `stopped` or
 `provider_exited: exit code 1`), `parent`
-(the parent's name), and `you: true` on the caller's own row. Both read-only tools are marked with MCP's
+(the parent's name), and `you: true` on the caller's own row. Provider
+subagents (Claude's Agent tool, Codex's child threads) are left out: neither
+provider lets anything but the parent's model reach one, so none can be
+messaged. Both read-only tools are marked with MCP's
 `readOnlyHint`.
 
 ### hosts
@@ -154,6 +157,10 @@ any of its names) it is the caller's own working directory, and omitted on
 another host the spawn is refused in words that name that host and ask for
 a folder on it: no folder there is a safe guess, so the caller asks the
 person or uses a path it knows. The caller becomes the child's parent; the request cannot name any other parent.
+The tool server knows its caller only by the socket the call came on, so a
+provider subagent that spawns spawns as the agent whose process runs it: the
+new agent is that agent's child, and its report reaches that agent's main
+conversation, as the tool's description says for every caller.
 [Families](#families) describes what a child is.
 
 ### stop
@@ -293,6 +300,13 @@ process rather than exceed it.
 
 ## Families
 
+A provider subagent is a child too: its parent is always the agent whose
+process runs it, its host, so every parent edge points at an agent with a
+process. It counts under its host, closes and is deleted with it, and ends
+with its host's process; it sends no report, so its host is never told of it
+as a child to wait for, and a one-shot host waits for it from its own
+journal instead ([one-shot](#families) below).
+
 An agent spawned by an agent is its child. The edge is the child's `parent`,
 a host id and an agent id, on its inventory row and in every spec the daemon
 writes for it, so a restart or a resume keeps it. The child never acts on its
@@ -317,13 +331,19 @@ parent hears that it failed.
 **One-shot.** An agent with a parent exits when a turn ends with nothing
 queued, nothing running, no accepted message still pending, no prompt typed
 into terminal Claude still waiting for Claude to record it, no child it
-asked for still unsettled, and no child of its still to send its last
-report; its exit cause is `FINISHED`, which its journal's last step
+asked for still unsettled, no child of its still to send its last
+report, and no provider subagent of its own (Claude's Agent tool, a Codex
+child thread) still running; its exit cause is `FINISHED`, which its journal's last step
 records, and that turn's report is marked `last`. A subagent whose own child
 still works therefore stays: each report the child sends starts its next
 turn, and it reports up as usual. It waits for each child incarnation's last
 report: a mid-way report from a child that waits on its own child, or the
-report of an earlier child, never stands in for it. An unreachable child's
+report of an earlier child, never stands in for it. A provider subagent
+hands its answer back through the provider, as a later turn of its host (a
+Claude task notification) or within the running one (a Codex wait), so the
+host stays until every subagent it started has ended, and the turn on the
+last answer is its last; a last end that leaves it idle with no such turn
+ends it there. An unreachable child's
 host leaves it waiting, and stopping it (or its own parent's exit) ends it.
 Input that arrives while it exits is answered `REFUSAL_EXITING`. Its
 transcript and its parent edge stay.

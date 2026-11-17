@@ -5,8 +5,9 @@
 //! theme and animation belong to each renderer.
 //!
 //! Rows are items: the row id is the item key and never moves, and a run of
-//! tool steps is an attribute on its members, so paging and streaming only
-//! ever add ids at the two edges.
+//! tool steps is an attribute on its members, as is a group of calls that
+//! opened agents, so paging and streaming only ever add ids at the two
+//! edges.
 
 mod ask;
 mod composer;
@@ -14,12 +15,15 @@ mod fleet;
 mod form;
 mod onboarding;
 mod overview;
+mod repository;
 mod review;
 mod rows;
 mod run;
 mod segments;
 mod settings;
+mod subagents;
 mod text;
+mod turn;
 
 pub use ask::{
     Answer, AskBody, AskCard, CardState, Choice, ChoiceOutcome, OptionView, QuestionResponse,
@@ -48,6 +52,7 @@ pub use overview::{
     TaskLine, TaskMark, TasksView, UsageLabel, UsageView, UsageWindowView, changes, diff_base,
     overview, usage_windows,
 };
+pub use repository::{REPOSITORY_TINTS, Repository};
 pub use review::{DiffLine, FileStatus, Hunk, LineKind, ReviewDoc, ReviewFile, review_doc};
 pub use rows::{
     AnswerView, AskRow, CONTINUED_WORDS, CallPhase, ChildAction, Decision, DecisionView, EditLine,
@@ -62,6 +67,11 @@ pub use settings::{
     SettingsView, Slash, controls, new_agent_pick, new_agent_settings, setting_input, settings,
     slash, typed_setting,
 };
+pub use subagents::{
+    ChatAgents, GroupState, GroupView, OpenedAgent, SubagentGroup, chat_agents, group_state,
+    opened_agent, subagent_rows_moved, toggle_group,
+};
+pub use turn::{TurnPart, TurnPlace, Worked, turn_keys, turn_rows_moved};
 /// Why an input was refused, which every client words.
 pub use ui_state::Refusal;
 /// The most an attachment may hold, which every client checks before it

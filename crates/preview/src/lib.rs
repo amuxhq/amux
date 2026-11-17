@@ -40,6 +40,8 @@ fn attachment_name(attachment: &Attachment) -> Option<String> {
         Of::Image(blob) | Of::File(blob) => &blob.name,
         Of::Text(text) => &text.name,
         Of::Review(review) => &review.diff.as_ref()?.patch.as_ref()?.name,
+        Of::Page(page) if page.title.is_empty() => &page.url,
+        Of::Page(page) => &page.title,
     };
     (!name.is_empty()).then(|| without_direction_controls(name))
 }

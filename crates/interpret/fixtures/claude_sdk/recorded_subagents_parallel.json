@@ -1,0 +1,10 @@
+{
+  "about": "Three subagents run at once, each running a command; Claude runs them while the parent waits, tagging each one's whole conversation with its id. Today they fold under their calls.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "recording": {
+    "path": "live/subagents_parallel/io.jsonl",
+    "format": "claude_sdk_io"
+  }
+}

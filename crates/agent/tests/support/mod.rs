@@ -675,6 +675,17 @@ impl Daemon {
         self.verdict(id, ctl_frame::Of::Input(input)).await
     }
 
+    /// A person's input to one of the agent's provider subagents, as the
+    /// daemon passes it on.
+    pub async fn child_input(&mut self, agent_id: Vec<u8>, input: Input) -> Verdict {
+        let id = input.input_id.clone();
+        let of = ctl_frame::Of::ChildInput(wire::ChildInput {
+            agent_id,
+            input: Some(input),
+        });
+        self.verdict(id, of).await
+    }
+
     /// Tells the agent it was renamed, as the daemon does.
     pub async fn rename(&mut self, name: &str) {
         self.send(ctl_frame::Of::Rename(wire::Rename {
@@ -874,6 +885,28 @@ impl Log {
                 .collect(),
             other => panic!("no snapshot reader for {other:?}"),
         }
+    }
+
+    /// The provider subagents' parts, in journal order.
+    pub fn subagent_parts(&self) -> Vec<wire::AgentStep> {
+        self.steps
+            .iter()
+            .flat_map(|step| step.agents.iter().cloned())
+            .collect()
+    }
+
+    /// The background jobs the newest snapshot of the subagent `agent_id`
+    /// lists.
+    pub fn subagent_jobs(&self, agent_id: &[u8]) -> Vec<wire::BackgroundJob> {
+        self.subagent_parts()
+            .iter()
+            .rev()
+            .filter(|part| part.agent_id == agent_id)
+            .find_map(|part| part.snapshot.as_ref())
+            .and_then(|snapshot| wire::CodexSnapshot::decode(snapshot.body.as_slice()).ok())
+            .and_then(|body| body.background_jobs)
+            .map(|jobs| jobs.jobs)
+            .unwrap_or_default()
     }
 
     /// The background jobs the newest snapshot lists.

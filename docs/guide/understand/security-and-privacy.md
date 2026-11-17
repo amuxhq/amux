@@ -145,4 +145,23 @@ amux.sh:
 - **Problem reports,** only when you send one, or automatically if you turned
   that on. One you send includes the screen you froze, chat text and all. See [What amux sends](what-amux-sends.md#problem-reports).
 
+## The browser extension
+
+The amux extension for Chrome and browsers built on it
+([Browser extension](../use/browser.md)) reads a page only when
+you ask it to: when you click its button, press its shortcut or use its menu
+on that page. It has no access to any other site.
+
+When you comment on a page, it keeps the address and title of the page, the
+text of what you comment on, the phrase you select and a picture of any box
+you drag, with your comments, in your browser until you send them or close the
+tab. It also remembers which agent you last sent to from each site.
+
+It sends nothing anywhere until you press Send, and then only to amux on the
+same computer, which delivers it to the agent you chose, the same way a
+message you type does. That agent's AI provider (Anthropic for Claude, OpenAI
+for Codex) receives it as part of your prompt. The extension makes no network
+requests of its own, sends nothing to amux.sh, and doesn't sell or share what
+it handles with anyone.
+
 For how the connection itself works, see the [protocol](../../PROTOCOL.md).

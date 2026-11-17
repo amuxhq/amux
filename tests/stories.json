@@ -126,6 +126,12 @@
       "clients": ["phone", "terminal", "mac"]
     },
     {
+      "name": "fleet.subagents",
+      "shows": "A family opened to its subagents: Claude's subagents listed under the parent that runs them, by the titles Claude gave them, one waiting on the person.",
+      "clients": ["phone"],
+      "why": "The Mac's sidebar lists them under their parent in chat.subagents; the terminal's storybook does not draw it yet."
+    },
+    {
       "name": "fleet.filter",
       "shows": "The agent list narrowed to the agents whose names match a word.",
       "clients": ["phone", "terminal"]
@@ -166,6 +172,12 @@
       "why": "The phone has no setup steps left to finish once it is paired."
     },
     {
+      "name": "fleet.settled",
+      "shows": "The settled agents listed in the sidebar in place of the rest, with the way back.",
+      "clients": ["mac"],
+      "why": "Only the Mac draws its settled list as a story so far; the phone's settled page and the terminal's settled agents are not in their catalogues."
+    },
+    {
       "name": "fleet.large-text",
       "shows": "The busy list at the largest accessibility text size.",
       "clients": ["phone"],
@@ -174,12 +186,12 @@
     {
       "name": "hosts.list",
       "shows": "Every paired machine, each saying how it is reached, one away, with one found nearby and not paired.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "hosts.empty",
       "shows": "Hosts with no other machine paired or found.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "hosts.network-refused",
@@ -250,12 +262,12 @@
     {
       "name": "new-agent.claude",
       "shows": "Starting a Claude agent: the host, the folder, the name, the model, effort and permission.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "new-agent.browsing",
       "shows": "Choosing the folder a new agent starts in: recent ones, and a typed path.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "new-agent.terminal",
@@ -272,7 +284,7 @@
     {
       "name": "chat.loading",
       "shows": "A chat opening with nothing of it held yet.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "chat.not-opened",
@@ -283,12 +295,12 @@
     {
       "name": "chat.working",
       "shows": "A turn at work: what it has said so far and the step it is on.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "chat.conversation",
       "shows": "A finished conversation of several turns: prompts, steps, replies and the composer.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "chat.formatted",
@@ -299,7 +311,17 @@
     {
       "name": "chat.asking",
       "shows": "A chat whose agent is asking: the ask stands in the composer's place.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
+    },
+    {
+      "name": "chat.subagents",
+      "shows": "A parent whose turn started several subagents at once: one row saying how many and where they stand (2 running · 1 waiting on you · 1 done), opening to each call, and each call opening its subagent's chat.",
+      "clients": ["phone", "terminal", "mac"]
+    },
+    {
+      "name": "chat.subagent",
+      "shows": "A subagent's own chat: the task its parent gave it, its steps and answer, and in the composer's place what runs it, that it takes no messages, and its Stop.",
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "chat.plan",
@@ -329,7 +351,7 @@
     {
       "name": "chat.overview",
       "shows": "What runs around a chat: background jobs, the uncommitted changes by folder, and the usage windows.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "chat.overview-stop",

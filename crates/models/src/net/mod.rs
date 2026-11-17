@@ -42,7 +42,7 @@ use crate::single_daemon::{
     COMMIT_BEFORE_BROADCAST, GENERATION_BUMPS_AFTER_UNCLEAN, GENERATION_BUMPS_ONLY_AFTER_UNCLEAN,
     RECLAIMED_BELOW_CURSOR, reclaimed_below_cursor,
 };
-use crate::{Machine, Property};
+use crate::{Machine, Property, subagents};
 
 /// The hosts, links and agents a net starts with.
 #[derive(Clone, Debug)]
@@ -219,7 +219,7 @@ impl ComposedNet {
     }
 
     /// A person sends a prompt and asks for a stop while either daemon may
-    /// be killed and started again: 202,965 states in 97 s on 12 threads.
+    /// be killed and started again: 263,288 states in 130 s on 12 threads.
     pub fn calls_through_a_crash() -> Self {
         Self {
             kills: 1,
@@ -229,10 +229,37 @@ impl ComposedNet {
         }
     }
 
+    /// The agent's turn calls Claude's Agent tool, whose provider subagent
+    /// runs inside the agent's process and ends before the call returns,
+    /// while the agent's host may be killed and started again: 12,482 states
+    /// in 7 s on 12 threads.
+    pub fn subagent_through_a_crash() -> Self {
+        let mut topology = Self::two_hosts();
+        topology.agents[0].script.insert(
+            0,
+            Step::Tool(provider_fakes::script::Tool {
+                name: Some("Agent".to_owned()),
+                class: provider_fakes::script::ToolClass::Exploration,
+                input: None,
+                outcome: provider_fakes::script::Outcome::default(),
+                wait_for: None,
+            }),
+        );
+        Self {
+            topology,
+            kills: 1,
+            ..Self::quiet()
+        }
+    }
+
     /// The configurations `just test` explores exhaustively.
-    pub fn ci() -> [(&'static str, Self); 3] {
+    pub fn ci() -> [(&'static str, Self); 4] {
         [
             ("a reset while presence flips", Self::reset_while_flipping()),
+            (
+                "a subagent through a crash",
+                Self::subagent_through_a_crash(),
+            ),
             ("lost messages", Self::lost_messages()),
             (
                 "a person's calls through a crash",
@@ -347,6 +374,9 @@ struct Judged {
     /// Nothing is left to deliver, and every link that is up has each end
     /// reading the other online over it.
     online: bool,
+    /// A provider subagent of the agent ran its course on the agent's own
+    /// host: its row says it finished, and holds what it said.
+    subagent_finished: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -397,6 +427,11 @@ impl State {
                         .iter()
                         .any(|id| origin.item_by_input(&key, id).unwrap().is_none()),
                     online: false,
+                    subagent_finished: origin.agents_of_parent(&key).unwrap().iter().any(|row| {
+                        row.native.is_some()
+                            && row.exit_cause == wire::ExitCause::Finished as i32
+                            && !origin.page(&row.agent, None, 1).unwrap().items.is_empty()
+                    }),
                 }
             });
         judged.online = self.quiet()
@@ -677,6 +712,15 @@ impl Machine for ComposedNet {
             Property::always(PRESENCE_FROM_LINKS, |_, s: &State| {
                 !s.net.broke(PRESENCE_FROM_LINKS)
             }),
+            Property::always(subagents::ROW_BEFORE_ITEMS, |_, s: &State| {
+                !s.net.broke(subagents::ROW_BEFORE_ITEMS)
+            }),
+            Property::always(subagents::NONE_OUTLIVES_ITS_HOST, |_, s: &State| {
+                !s.net.broke(subagents::NONE_OUTLIVES_ITS_HOST)
+            }),
+            Property::always(subagents::NO_REPORTS, |_, s: &State| {
+                !s.net.broke(subagents::NO_REPORTS)
+            }),
             Property::always(
                 "a replica reads an agent exited only once the agent's own host does: the order \
                  a far host's family listing relies on, with no family here to act on it",
@@ -712,6 +756,16 @@ impl Machine for ComposedNet {
         ];
         // What each configuration's faults and calls should reach, so no
         // promise above passes on paths that never get there.
+        let calls_agent = self.topology.agents[0]
+            .script
+            .iter()
+            .any(|step| matches!(step, Step::Tool(tool) if tool.name.as_deref() == Some("Agent")));
+        if calls_agent {
+            properties.push(Property::sometimes(
+                "a provider subagent runs its course: its row reads finished and holds its reply",
+                |_, s: &State| s.judged.subagent_finished,
+            ));
+        }
         if self.reboots > 0 {
             properties.push(Property::sometimes(
                 "a replica takes the origin's next generation",

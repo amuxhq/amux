@@ -1,0 +1,81 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 13 recorded 11: fact Transcript type=user uuid=bb73d140-8392-4409-9e57-ad2d64a8c20f
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 47 recorded 45: fact Transcript type=assistant uuid=b245af3c-1cba-452d-b9f7-d91bb2bccd2f
+  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
+  agents [sub-c8ed6646 "Launch sleeper subagent" Working] groups []
+  [sub-c8ed6646] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
+## 68 recorded 66: fact Transcript type=system subtype=turn_duration uuid=a70c0866-ac37-401a-8207-f38d90021ec6
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 77 recorded 75: fact Transcript type=user uuid=11b8d12c-8f47-4a1c-ad23-4d535492c85b
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 79 recorded 77: fact SubagentTranscript type=assistant uuid=625ccaf4-5857-4ece-b4d4-cbf927db5880
+  [sub-c8ed6646] composer Native { stop: Unavailable } activity=Some(Running { key: "toolu_01EUTiGSEoNcribSDAnyffWQ" }) phase=Working
+## 83 recorded 81: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01Eg8uM6rSnYT66qgPAXf9jL
+  composer Send activity=Some(Running { key: "toolu_01Eg8uM6rSnYT66qgPAXf9jL" }) queue=[] underway=[] refused=[]
+## 87 recorded 85: fact Transcript type=user uuid=0e8f3c1c-2633-4ca8-a746-bddc1eefd742
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 88 recorded 86: fact Transcript type=user uuid=2d5ef7e1-ae24-470b-b70b-8b871f1c6356
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 94 recorded 92: fact Transcript type=user uuid=f4db3dd5-df93-40f7-9d18-ac167d2978dd
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 97 recorded 95: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01M5jjKhNPN2ERzSYKEd4pqy
+  composer Send activity=Some(Running { key: "toolu_01M5jjKhNPN2ERzSYKEd4pqy" }) queue=[] underway=[] refused=[]
+## 99 recorded 97: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01M5jjKhNPN2ERzSYKEd4pqy
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 104 recorded 102: fact Transcript type=assistant uuid=8f49da0e-2b33-47ab-a677-34e4b8b9a7f3
+  composer Send activity=Some(Running { key: "toolu_01M5jjKhNPN2ERzSYKEd4pqy" }) queue=[] underway=[] refused=[]
+## 105 recorded 103: fact Transcript type=user uuid=2d75e454-73ad-4353-925f-045acb4006b8
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 114 recorded 112: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01QE4P7o4R99GDdCYde3gFZS
+  composer Send activity=Some(Running { key: "toolu_01QE4P7o4R99GDdCYde3gFZS" }) queue=[] underway=[] refused=[]
+## 116 recorded 114: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01QE4P7o4R99GDdCYde3gFZS
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 123 recorded 121: fact Transcript type=assistant uuid=2f267a8c-57f0-4726-b631-175963ab928c
+  composer Send activity=Some(Running { key: "toolu_01QE4P7o4R99GDdCYde3gFZS" }) queue=[] underway=[] refused=[]
+## 125 recorded 123: fact Transcript type=user uuid=e2b95041-65a7-4ddf-9576-bdcd6e3284e6
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 129 recorded 127: fact SubagentTranscript type=user uuid=8cc47b2a-3d91-4888-8d9c-02a435206721
+  [sub-c8ed6646] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
+## 132 recorded 130: fact Agent type=subagent_drained
+  agents [sub-c8ed6646 "Launch sleeper subagent" Exited { cause: Ended }] groups []
+  [sub-c8ed6646] composer Native { stop: Unavailable } activity=None phase=Exited { cause: Ended }
+## 144 recorded 142: fact Transcript type=system subtype=turn_duration uuid=c72e10eb-3534-4847-9efa-9360d83cfc0c
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Hidden collapsed
+     2 bb73d140-8392-4409-9e57-ad2d64a8c20f Prompt { text: [Text("Launch the `sleeper` subagent in the background, then reply with exactly LAUNCHED and do nothing else.")], steered: false }
+     3 1100f81a-be2f-403f-a0e1-298d4043ef6a Thinking { text: "", open: false, duration_ms: Some(1817) }
+     4 toolu_01RgtxpCXZsRTUUBSsXUeK3N [opens=sub-c8ed6646] Subagent { description: "Launch sleeper subagent", continued: false, state: Cancelled, answer: "Agent \"Launch sleeper subagent\" was stopped by Claude", duration_ms: Some(11691) }
+     5 stream:8300966b-e5d1-41ef-bb99-45a6aa883d87 Prose { text: [Text("LAUNCHED")], streaming: false, working_note: false }
+     6 turn:1 TurnEnd { duration_ms: Some(3317), failed: false }
+     7 11b8d12c-8f47-4a1c-ad23-4d535492c85b Prompt { text: [Text("Use Bash to run exactly: python3 -c 'import select; select.select([], [], [], 30)'; echo SECOND. Do nothing else.")], steered: false }
+     8 toolu_01Eg8uM6rSnYT66qgPAXf9jL Command { command: "python3 -c 'import select; select.select([], [], [], 30)'; echo SECOND", description: "Wait 30 seconds then echo SECOND", state: Cancelled, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are do…
+     9 turn:2 Stopped
+    10 f4db3dd5-df93-40f7-9d18-ac167d2978dd Prompt { text: [Text("Stop the `sleeper` subagent now, with your tool for stopping a background task. Then reply with exactly STOPPED.")], steered: false }
+    11 42e4ead4-1631-4a37-963b-e89f7b714f9e Thinking { text: "", open: false, duration_ms: Some(1519) }
+    12 toolu_01M5jjKhNPN2ERzSYKEd4pqy Explore { verb: Search, subject: "select:TaskStop", state: Succeeded, result: "" } run[toolu_01M5jjKhNPN2ERzSYKEd4pqy..toolu_01QE4P7o4R99GDdCYde3gFZS x2 recent=1] collapsed
+    13 toolu_01QE4P7o4R99GDdCYde3gFZS ToolCall { server: "", tool: "TaskStop", fact: "abdeaa3cc37c1b730", state: Succeeded, result: "{\"message\":\"Successfully stopped task: abdeaa3cc37c1b730 (Launch sleeper subagent)\",\"task_id\":\"abdeaa3cc37c1b730\",\"task_type\":\"local_agent\",\"command\":\"Launch sleeper subagent\"}" } run[toolu_01M5jjKhNPN2ERzSYKEd4pqy..toolu_01QE4P7o4R99GDdCYde3gFZS x2 rec…
+    14 stream:d2752819-6aa4-4bc3-a0da-83f898c48928 Prose { text: [Text("STOPPED")], streaming: false, working_note: false }
+    15 1d9e8672-abca-46f4-b8f4-6ae90ee9df11 Thinking { text: "", open: false, duration_ms: None }
+    16 turn:3 TurnEnd { duration_ms: Some(15383), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 38169, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None
+== agent sub-c8ed6646 "Launch sleeper subagent" started by host/toolu_01RgtxpCXZsRTUUBSsXUeK3N
+  composer Native { stop: Unavailable } phase=Exited { cause: Ended }
+== chat
+     1 87839e17-235c-47ff-b481-67139cd7e78a Prompt { text: [Text("Wait a long time, then report.")], steered: false }
+     2 toolu_01EUTiGSEoNcribSDAnyffWQ Command { command: "python3 -c 'import select; select.select([], [], [], 120)'; echo WOKE", description: "Wait 120 seconds via select, then print WOKE", state: Cancelled, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what…
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+  changes: Changeability { model: NotOffered, effort: NotOffered, permission: NotOffered, mode: NotOffered } commands=0

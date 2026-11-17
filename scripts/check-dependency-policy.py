@@ -71,6 +71,9 @@ ALLOWED_LOCAL = {
     "ui-state": {"wire"},
     "ui-view": {"attachments", "preview", "ui-state", "wire"},
     "ui-runtime": {"client", "ui-state", "ui-view", "wire"},
+    # The browser extension's WebAssembly: the pure client crates, with no
+    # runtime, socket or driver, since the extension does its own I/O.
+    "browser-core": {"attachments", "ui-state", "ui-view", "wire"},
     # The phone's chats and fleet over the local runtime, with no node.
     "app-runtime": {"client", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The daemon's profile runtime hosted in the phone's process.

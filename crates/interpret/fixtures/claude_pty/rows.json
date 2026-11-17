@@ -1,5 +1,5 @@
 {
-  "about": "Rows no recording shows: thinking with its text kept, a message with several blocks, an API error written as an assistant row, an unknown content block made visible, the status tool setting working_on without a row, background shells counted from the Stop hook. A tool-server call is a tool row under its server and tool.",
+  "about": "Rows no recording shows: thinking with its text kept, a message with several blocks, an API error written as an assistant row, an unknown content block made visible, the status tool setting working_on without a row, background shells counted from the Stop hook, a subagent in its list not among them. A tool-server call is a tool row under its server and tool.",
   "spec": {
     "created_at_ms": 1800000000000
   },
@@ -372,6 +372,12 @@
               "description": "npm run dev"
             },
             {
+              "id": "b3",
+              "type": "shell",
+              "status": "running",
+              "description": "cargo watch"
+            },
+            {
               "id": "b2",
               "type": "subagent",
               "status": "running",
@@ -383,7 +389,7 @@
       "expect": {
         "silent": false
       },
-      "note": "Claude lists two jobs at the turn's end: the shell t3 started, and a task no call here is known to have started, shown by its description."
+      "note": "Claude lists three tasks at the turn's end: the shell t3 started, a shell no call here is known to have started, shown by its description, and a subagent, which is an agent of its own and none of this agent's jobs."
     },
     {
       "fact": {

@@ -85,8 +85,10 @@ codex = { mark = "full", carriers = ["item:work.mcp"], golden = [" work final ",
 [[row]]
 id = "C10"
 item = "Subagent"
-claude_pty = { mark = "partial", carriers = ["item:tool", "item:tool.subagent"], golden = ["\" Agent TOOL_STATE_SUCCEEDED", " subagent=1 ", " finished ", " out=\""] }
-claude_sdk = { mark = "full", carriers = ["item:tool", "snapshot:active_tasks"], golden = [" Agent TOOL_STATE_", " subagent="] }
+# Each Claude subagent is an agent of its own, which the call that started
+# it opens. Terminal Claude offers no way to stop one.
+claude_pty = { mark = "partial", carriers = ["item:tool", "item:tool.child_agent_id"], golden = ["\" Agent TOOL_STATE_SUCCEEDED", " opens=sub-", " out=\""] }
+claude_sdk = { mark = "full", carriers = ["item:tool", "item:tool.child_agent_id"], golden = [" Agent TOOL_STATE_", " opens=sub-"] }
 codex = { mark = "partial", carriers = ["item:work.collab"], golden = [" work ", " collab "] }
 
 [[row]]

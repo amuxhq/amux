@@ -26,6 +26,7 @@ final class StageWindow: NSWindow {
     var offDisplay = false
 
     private static let settingsSize = CGSize(width: 540, height: 760)
+    private static let sheetSize = CGSize(width: 540, height: 640)
 
     init() {
         super.init(
@@ -47,13 +48,30 @@ final class StageWindow: NSWindow {
     func show(_ story: Story, size: StorySize) {
         let top = frame.maxY
         let left = frame.minX
-        styleMask = story.window == .settings ? [.titled, .closable, .fullSizeContentView] : Self.mainStyle
+        styleMask =
+            switch story.window {
+            case .main: Self.mainStyle
+            case .settings: [.titled, .closable, .fullSizeContentView]
+            // A sheet has no title bar of its own; it hangs from its window's.
+            case .sheet: [.borderless]
+            }
         title = story.window == .settings ? "Settings" : "Amux"
         let host = NSHostingController(rootView: story.view())
         host.sceneBridgingOptions = [.toolbars, .title]
-        host.sizingOptions = []
+        // The main window's least size comes from its content, as the app's
+        // does (it sizes its window by `.contentMinSize`), so the smallest
+        // story is drawn at the size the app can really reach.
+        host.sizingOptions = story.window == .main ? [.minSize] : []
         contentViewController = host
-        setContentSize(story.window == .settings ? Self.settingsSize : size.points)
+        host.view.layoutSubtreeIfNeeded()
+        let content: CGSize =
+            switch story.window {
+            case .main: size.points
+            case .settings: Self.settingsSize
+            case .sheet: Self.sheetSize
+            }
+        setContentSize(
+            CGSize(width: max(content.width, contentMinSize.width), height: max(content.height, contentMinSize.height)))
         setFrameTopLeftPoint(NSPoint(x: left, y: top))
     }
 }

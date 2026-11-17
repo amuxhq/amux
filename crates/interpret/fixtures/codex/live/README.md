@@ -39,6 +39,12 @@ recorded it, except `turn_round_trip` (the `respond` scenario) and
 | `signed_out` | a turn with no login in the agent's Codex home |
 | `web_search` | a web search, with live search on in the agent's Codex config |
 | `subagent` | a child thread spawned and waited for |
+| `child_command` | a child thread that runs a command, its nickname read by amux's `thread/read` |
+| `child_approval` | a child thread's command in a read-only sandbox, asked about and allowed from amux |
+| `child_stop` | a child stopped while its command runs: its turn interrupted and its command ended by another client, then a prompt steered into the parent's turn |
+| `child_continued` | a child sent a follow-up by its parent in a second turn |
+| `child_resume` | a child started, the agent settled and resumed from amux, then the child sent a follow-up |
+| `child_tools` | the parent and its child each calling amux's `status` tool and another tool server's |
 | `background_terminal` | a command left running, written to and read |
 | `tool_server_form` | a tool server's tool approved, its form accepted and its link cancelled |
 | `plan` | a plan for a one-line change, approved from amux, and the change made |
@@ -53,7 +59,17 @@ scratch Codex home's `config.toml` for as long as it runs, as a person's
 own config would hold it. The tool server the form scenario configures is
 `codex-probe` run as one (`codex-probe __tool-server`): its one tool asks
 the person to confirm a word with a form, or, for the word `LINK`, with a
-link.
+link. The one `child_tools` configures (`codex-probe __meta-server`) keeps
+every request it is sent, with its process id, beside the live run's
+recording, so a run shows which threads start a server and what `_meta` a
+call from each carries.
+
+amux has no input that addresses a child thread, so `child_stop` sends
+the stop's first two requests (`turn/interrupt` and
+`thread/backgroundTerminals/terminate`, on the child's thread) from a
+second client on the agent's Codex socket, as Codex's own app would: they
+reach amux as what Codex tells it. The live run writes what each step did
+beside the recording as `steps.txt`.
 
 Each folder is sanitized like a recording: `io.jsonl`, `spawn.jsonl` and a
 `manifest.json` naming the Codex version and model the capture shows. Only

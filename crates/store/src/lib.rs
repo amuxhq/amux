@@ -139,6 +139,11 @@ pub struct AgentRow {
     /// A person or a parent chose the name, so the provider does not title
     /// the agent.
     pub name_given: bool,
+    /// Set on a provider subagent, an agent its parent's provider started
+    /// inside the parent's own process; None on an agent amux started, and
+    /// on every row written before the column existed. The registry owns
+    /// it; a replica copies its origin's.
+    pub native: Option<wire::NativeChild>,
     /// What the row says to everyone under each experiment, by version
     /// (`workspaces/1`), as the wire's `Agent.experimental` carries it. The
     /// store never decodes an entry. A replica's is its origin's, replaced
@@ -195,6 +200,7 @@ impl AgentRow {
             title: None,
             last_said: None,
             name_given: false,
+            native: None,
             experimental: std::collections::BTreeMap::new(),
         }
     }
@@ -231,9 +237,38 @@ pub struct CommitClock {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Committed {
+    /// The committing agent's own records.
     pub records: Vec<Record>,
     /// The journal offset the row is now committed through.
     pub cursor: u64,
+    /// The records of each provider subagent the frames carried parts for,
+    /// filed under the subagent's own row with its own orders and
+    /// revisions, by subagent in the order the parts first named them.
+    pub subagents: Vec<(AgentKey, Vec<Record>)>,
+    /// What the parts said of each subagent's life, in journal order: the
+    /// registry writes the lifecycle these call for once the commit is in.
+    pub changes: Vec<SubagentChange>,
+    /// The agent ids of parts that were not filed, once per part: no row
+    /// names them, or the row is not one of the committing agent's own
+    /// provider subagents.
+    pub skipped: Vec<Vec<u8>>,
+    /// Each subagent a part gave items or appends while it had ended, with
+    /// no start to continue it: what its end said was its last came
+    /// before more of it. They are filed all the same, so nothing the
+    /// provider said is lost; the daemon judges the interpreter that wrote
+    /// them.
+    pub after_end: Vec<AgentKey>,
+}
+
+/// A change a commit found in a provider subagent's life. A start on a row
+/// with no row behind it is not one: the registry makes the row before the
+/// commit, live.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SubagentChange {
+    /// A start on a row that had ended: its parent's model continued it.
+    Continued(AgentKey),
+    /// It ended, and why. Its cause is on its row already.
+    Ended(AgentKey, wire::IncarnationEnd),
 }
 
 /// The one write primitive for replica rows. Built per call and consumed at

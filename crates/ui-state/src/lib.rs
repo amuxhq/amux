@@ -17,7 +17,9 @@ mod model;
 mod session;
 mod transcript;
 
-pub use body::{AgentState, Fold, ItemBody, ItemClass, OpenAsk, ToolFacts, Usage, decode_snapshot};
+pub use body::{
+    AgentState, Fold, ItemBody, ItemClass, OpenAsk, ToolFacts, Usage, decode_snapshot, opens,
+};
 pub use fleet::{
     AgentKey, Attention, DeleteWarning, ExitCause, Families, FleetMsg, FleetState, HostId,
     WorkspaceGoes, agent_key, attention, exit_cause, exit_words, has_process, parent_key,
@@ -28,7 +30,7 @@ pub use inputs::{
 };
 pub use model::Key;
 pub use session::{
-    Activity, ActivityKind, BlobStatus, Composer, Connection, Msg, Outcome, PhaseView, QueueRow,
-    SessionState, Waiting, record,
+    Activity, ActivityKind, BlobStatus, Composer, Connection, JobStop, Msg, Outcome, PhaseView,
+    QueueRow, SessionState, Waiting, record,
 };
 pub use transcript::{Held, Run, RunIndex, Transcript};

@@ -25,6 +25,7 @@ pub mod relay;
 pub mod replication;
 pub mod single_daemon;
 pub mod socket;
+pub mod subagents;
 pub mod supervisor;
 pub mod workspaces;
 pub use client::ClientModel;

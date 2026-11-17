@@ -61,7 +61,8 @@ pub fn sign_in(state: &SessionState) -> Option<SignInView> {
 }
 
 /// The composer as the chat draws it: Send, Resume for an exited agent,
-/// or waiting while drafting continues; with the activity line inside it.
+/// waiting while drafting continues, or no text box at all for a subagent
+/// its parent's provider runs; with the activity line inside it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct ComposerView {
     pub mode: Composer,

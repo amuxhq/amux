@@ -10,12 +10,12 @@ use ui_state::{Key, Msg, SessionState};
 use ui_view::{Row, Run, RunCounts, ToolRows, keep_open_runs, run_is_open, toggle_run};
 use wire::{Item, Kind, Phase, SessionEvent, ToolClass, ToolState, session_event};
 
-fn event(of: session_event::Of) -> Msg {
+pub(crate) fn event(of: session_event::Of) -> Msg {
     Msg::Event(SessionEvent { of: Some(of) })
 }
 
 /// What one authored item is.
-enum It {
+pub(crate) enum It {
     Prompt(&'static str),
     Say(&'static str),
     Think,
@@ -29,7 +29,7 @@ enum It {
     Turn,
 }
 
-fn item(order: u64, it: &It) -> Item {
+pub(crate) fn item(order: u64, it: &It) -> Item {
     use wire::claude_item::Kind as K;
     let tool = |name: &str, input: String, state: ToolState, reads: bool, exit: Option<i32>| {
         K::Tool(wire::ToolCall {
@@ -128,13 +128,13 @@ fn item(order: u64, it: &It) -> Item {
     }
 }
 
-fn session(items: &[It]) -> SessionState {
+pub(crate) fn session(items: &[It]) -> SessionState {
     session_from(1, 200, items)
 }
 
 /// A session whose window holds `items` from order `first`, under `cap`:
 /// from past order one, older history exists below it.
-fn session_from(first: u64, cap: usize, items: &[It]) -> SessionState {
+pub(crate) fn session_from(first: u64, cap: usize, items: &[It]) -> SessionState {
     let agent = wire::Agent {
         agent_id: b"agent".to_vec(),
         host_id: b"host".to_vec(),

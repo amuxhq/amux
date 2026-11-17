@@ -1,6 +1,6 @@
 # Releasing amux
 
-*For maintainers cutting a release of the iPhone app, the Mac app or the `amux` binary, and developers working on how installed daemons find and verify new builds.*
+*For maintainers cutting a release of the iPhone app, the Mac app, the browser extension or the `amux` binary, and developers working on how installed daemons find and verify new builds.*
 
 Each product that ships from this repository has its own `just` module and
 the same two commands, on its own schedule:
@@ -15,6 +15,11 @@ the same two commands, on its own schedule:
 | The iPhone app | `just ios release`: archive, validate, upload to App Store Connect | `just ios deploy <version>`: submit it for review, or give it to TestFlight's external testers | `ios-v<version>-b<build>` |
 | The `amux` binary | `just amux release <version>`: the Release workflow builds the pushed tag | `just amux deploy <version>`: sign the channel manifest and publish it to amux.sh | `v<version>` |
 | The Mac app | `just mac release <version>`: build, sign with Developer ID, make the update zip and the disk image ([MAC](MAC.md#releases)) | `just mac deploy <version>`: sign the channel's Mac feed and publish it with the disk image | `mac-v<version>` |
+| The browser extension | `just browser release <version>`: raise the manifest's version, build, zip, and keep the zip as the tag's GitHub Release asset | `just browser deploy <version>`: upload that zip to the Chrome Web Store and submit it for review | `browser-v<version>` |
+
+An extension version can meet an `amux` of any version, and needs nothing of
+it beyond `amux.v1` and the bridge
+([Browser extension](BROWSER.md#how-it-connects)).
 
 ## The iPhone app
 
@@ -606,6 +611,86 @@ the arrangement works end to end.
 
 None of the values above — the key, its id, the issuer id or the Team ID —
 appear in any committed file, and none of them should be pasted into one.
+
+## The browser extension
+
+The extension is listed on the Chrome Web Store as item
+`omnhphmiepghpgpbfgjebeaajfppkhie`, which is also its extension ID: the ID
+the host manifests amux writes allow. The ID comes from the public key in
+the manifest. The first upload carried the matching private key, so the
+store took that ID and now holds the key itself. Store builds therefore
+leave the manifest's `key` out (the store refuses a package with one), and
+development builds keep it, so an unpacked copy has the same ID.
+
+```sh
+just browser release 0.2.0           # version, build, zip, commit, tag, push, GitHub Release
+just browser deploy 0.2.0 --dry-run  # what the store holds and what deploying would do
+just browser deploy 0.2.0            # upload and submit; published once review approves
+just browser deploy 0.2.0 --staged   # held after approval ...
+just browser deploy 0.2.0            # ... until this publishes it
+just browser status                  # the published and submitted versions
+```
+
+`release` refuses a tree with changes, a version not above the manifest's
+(the store refuses one not above what it holds), and a Mac without the
+service account's key, since a release nobody can deploy is a tag for
+nothing. It commits only the manifest, and pushes the branch and the
+`browser-v<version>` tag, which starts no workflow. The zip goes up as the
+tag's GitHub Release, marked not latest so the `amux` binary's release stays
+the repository's latest. `deploy` downloads that zip rather than building
+again, so the store gets the bytes the tag recorded. It refuses a zip whose
+manifest has another version or a key.
+
+Before uploading, `deploy` reads what the store holds:
+
+- A version the store already publishes, or a later one, is refused.
+- A submission waiting for review, or approved and staged, is refused. A new
+  upload would replace it, so cancel it in the dashboard first if that is
+  what you want.
+- The same version approved and staged is published without uploading again.
+- A rejected or cancelled submission is replaced.
+
+Review usually takes from a few hours to a few days. Browsers then update on
+their own schedule, within a few hours. The listing's visibility, regions,
+description and images are set in the dashboard. A deploy publishes with
+whatever visibility the listing has, and once someone changes visibility in
+the dashboard the store refuses API publishes until a person publishes once
+there.
+
+The listing has no beta channel through the API. A preview would be a second
+listing with its own ID, which every host manifest would have to allow.
+
+### One-time setup
+
+The store API cannot create a listing. The first version was uploaded, and
+the listing and privacy tabs filled in, by hand in the
+[developer dashboard](https://chrome.google.com/webstore/devconsole). After
+that the API needs a service account:
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), pick
+   or create a project and enable the **Chrome Web Store API** (search for it
+   under **APIs & Services → Library**).
+2. Under [**IAM & Admin → Service
+   Accounts**](https://console.cloud.google.com/iam-admin/serviceaccounts),
+   create a service account. It needs no roles.
+3. On the account's **Keys** tab, **Add key → Create new key → JSON**.
+   Store the download where the recipes look, and never in this repository:
+
+   ```sh
+   mkdir -p ~/.chromewebstore
+   mv ~/Downloads/<project>-<id>.json ~/.chromewebstore/service-account.json
+   chmod 600 ~/.chromewebstore/service-account.json
+   ```
+
+4. In the developer dashboard's **Account** page, add the service account's
+   email (`<name>@<project>.iam.gserviceaccount.com`). A publisher can have
+   only one service account.
+5. Run `just browser status`. It answers with the published version, or an
+   error that names what is missing.
+
+The key gives access to this publisher's listings and nothing
+else. If it leaks, delete it on the service account's **Keys** tab and make
+another one.
 
 ## The amux binary
 

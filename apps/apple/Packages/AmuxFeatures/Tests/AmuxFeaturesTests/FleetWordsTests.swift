@@ -1,6 +1,7 @@
 import AmuxCore
 import AmuxPush
 import AmuxValues
+import AmuxWords
 import Foundation
 import XCTest
 
@@ -45,17 +46,37 @@ final class FleetWordsTests: XCTestCase {
         XCTAssertEqual(with(.blank, 3), "3 background jobs running")
         let thinking = Activity(kind: .thinking, sinceMs: 0, elapsedMs: 0, turnElapsedMs: 0)
         XCTAssertEqual(
-            with(.step(AmuxValues.ActivityLine(activity: thinking, step: nil)), 2),
-            "2 background jobs · \(said(.step(AmuxValues.ActivityLine(activity: thinking, step: nil)))!)")
+            with(.step(AmuxValues.ActivityLine(activity: thinking, step: nil, subagents: nil)), 2),
+            "2 background jobs · \(said(.step(AmuxValues.ActivityLine(activity: thinking, step: nil, subagents: nil)))!)")
         XCTAssertEqual(with(asks(.plan(title: "")), 2), "Has a plan for you to decide")
         XCTAssertEqual(with(.lastSaid("Done."), 0), "Done.")
     }
 
     func testAWorkingAgentNamesItsStep() {
         let running = Activity(kind: .running(key: "s1"), sinceMs: 0, elapsedMs: 0, turnElapsedMs: 0)
-        XCTAssertEqual(said(.step(AmuxValues.ActivityLine(activity: running, step: "npm test\nmore"))), "npm test")
+        XCTAssertEqual(said(.step(AmuxValues.ActivityLine(activity: running, step: "npm test\nmore", subagents: nil))), "npm test")
         let thinking = Activity(kind: .thinking, sinceMs: 0, elapsedMs: 0, turnElapsedMs: 0)
-        XCTAssertEqual(said(.step(AmuxValues.ActivityLine(activity: thinking, step: nil))), "Thinking")
+        XCTAssertEqual(said(.step(AmuxValues.ActivityLine(activity: thinking, step: nil, subagents: nil))), "Thinking")
+    }
+
+    /// A parent waiting on its subagents says how they stand once one of
+    /// them waits on the person, as its chat's activity line does, and
+    /// that they work otherwise.
+    func testAParentSaysASubagentWaitsOnYouAsItsChatDoes() {
+        let waits = Activity(kind: .subagents(count: 3), sinceMs: 0, elapsedMs: 0, turnElapsedMs: 0)
+        func live(running: UInt32, needsYou: UInt32) -> GroupState {
+            GroupState(
+                agents: running + needsYou, running: running, needsYou: needsYou, idle: 0, finished: 0,
+                ended: 0, failed: 0, unknown: 0)
+        }
+        XCTAssertEqual(
+            said(.step(AmuxValues.ActivityLine(
+                activity: waits, step: nil, subagents: live(running: 2, needsYou: 1)))),
+            "3 subagents · 2 running · 1 waiting on you")
+        XCTAssertEqual(
+            said(.step(AmuxValues.ActivityLine(
+                activity: waits, step: nil, subagents: live(running: 3, needsYou: 0)))),
+            "3 subagents working")
     }
 
     func testAStuckAgentWarnsAndSaysWhenItCanGoOn() {

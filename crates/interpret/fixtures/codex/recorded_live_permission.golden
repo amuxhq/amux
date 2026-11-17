@@ -1,7 +1,6 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 5 recorded 4: fact Rpc "{\"id\":\"agent-thread\",\"result\":{\"activePermissionProfile\":{\"extends\":n…
-effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"01a191d0-28f9-7212-a48e-3d3518822d53\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1793447700744 text="" BOUNDARY_KIND_STARTED
@@ -21,7 +20,7 @@ snapshot IDLE queue=[] working_on=- at=1793447700747 asks=[] thread=01a191d0-28f
 ## 14 recorded 13: fact Rpc method=mcpServer/startupStatus/updated
 snapshot IDLE queue=[] working_on=- at=1793447700748 asks=[] thread=01a191d0-28f9-7212-a48e-3d3518822d53 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
 ## 18 recorded 17: fact Rpc method=deprecationNotice
-item warning:2 error final at=1793447700749 text="Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." deprecationNotice "Full-history hydration is deprecated for paginated threads; omit `includeTurns` …" retry=false 0/0
+effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
 ## 22 recorded 21: input stdin-8-permission
 effect reply stdin-8-permission accepted
 ## 23 recorded 22: input 0x72ba50cf8e92456bacbd5f182c798ebc

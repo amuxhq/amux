@@ -262,6 +262,17 @@ fn play(process: &Process, args: &Args) -> Result<Option<i32>, String> {
                 )
                 .map_err(|error| format!("event {index}: transcript: {error}"))?;
             }
+            Channel::Subagent => {
+                let (relative, named, write) = playback::subagent_write(&event.bytes)
+                    .ok_or_else(|| format!("event {index}: a subagent line names no file"))?;
+                let session = named.as_deref().unwrap_or(&session);
+                playback::write_subagent(
+                    &playback::transcript_path(&config, &cwd, session),
+                    &relative,
+                    &write,
+                )
+                .map_err(|error| format!("event {index}: subagent file: {error}"))?;
+            }
             Channel::Exit => return Ok(Some(playback::exit_code(event))),
             Channel::Hook => {
                 if let Some(named) = playback::row_session(&event.bytes) {

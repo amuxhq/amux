@@ -13,7 +13,7 @@ use crate::Key;
 use crate::body::{AgentState, ItemClass, OpenAsk};
 use crate::inputs::{InputId, InputOutcome, InputState, InputWhat, Inputs, SentInput};
 pub use crate::model::{
-    Activity, ActivityKind, BlobStatus, Composer, Connection, PhaseView, Waiting,
+    Activity, ActivityKind, BlobStatus, Composer, Connection, JobStop, PhaseView, Waiting,
 };
 use crate::transcript::{Appended, Changed, Held, Transcript};
 
@@ -401,13 +401,51 @@ impl SessionState {
 
     /// Caught up and the entry says live: whether a send goes now. Drafting
     /// is never gated; while the chat is not current a client refuses a
-    /// send at once and keeps the draft (see [`Composer::Waiting`]).
+    /// send at once and keeps the draft (see [`Composer::Waiting`]). A
+    /// subagent its parent's provider runs takes nothing from a composer.
     pub fn can_send(&self) -> bool {
-        self.caught_up && !self.exited()
+        self.caught_up && !self.exited() && !self.native()
+    }
+
+    /// A subagent its parent's provider runs: no process, folder, terminal,
+    /// settings or composer of its own (see [`Composer::Native`]).
+    pub fn native(&self) -> bool {
+        self.agent.native.is_some()
+    }
+
+    /// Stopping a provider subagent from its own chat: its own job, which
+    /// its snapshot lists under the provider's id for it while it can be
+    /// stopped. Terminal Claude stops no single subagent, so lists none.
+    pub fn native_stop(&self) -> JobStop {
+        let Some(native) = &self.agent.native else {
+            return JobStop::Unavailable;
+        };
+        let own = self.state.background.jobs.iter().find(|job| {
+            job.kind() == wire::BackgroundKind::Subagent && job.key == native.provider_child_id
+        });
+        match own {
+            _ if self.exited() || self.kind() == Kind::ClaudePty => JobStop::Unavailable,
+            None => JobStop::Unavailable,
+            Some(job) if job.key.is_empty() => JobStop::Unavailable,
+            Some(job) if job.stopping => JobStop::Stopping,
+            Some(job) if !job.stop_error.is_empty() => JobStop::Refused {
+                key: job.key.clone(),
+                error: job.stop_error.clone(),
+            },
+            Some(job) => JobStop::Offered {
+                key: job.key.clone(),
+            },
+        }
     }
 
     pub fn composer(&self) -> Composer {
-        if self.exited() {
+        // Whatever else holds, a provider subagent never takes a draft:
+        // saying so beats saying the draft waits.
+        if self.native() {
+            Composer::Native {
+                stop: self.native_stop(),
+            }
+        } else if self.exited() {
             Composer::Resume
         } else if self.caught_up {
             Composer::Send
@@ -991,6 +1029,11 @@ fn references(item: &Item, hash: &[u8]) -> bool {
                 .as_ref()
                 .and_then(|diff| diff.patch.as_ref())
                 .is_some_and(|patch| patch.hash == hash),
+            Some(Of::Page(page)) => page
+                .comments
+                .iter()
+                .filter_map(|comment| comment.image.as_ref())
+                .any(|image| image.hash == hash),
             Some(Of::Text(_)) | None => false,
         })
 }

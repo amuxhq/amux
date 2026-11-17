@@ -1192,9 +1192,9 @@ async fn the_asking_agents_record_goes_first_and_what_finds_no_room_is_counted()
     })
     .await
     .unwrap();
-    let bundle = std::fs::read_dir(install.data_dir.join(node::REPORTS))
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
+    let bundle = install
+        .bundles()
+        .into_iter()
         .find(|path| path.join(MANIFEST).is_file())
         .unwrap();
     let manifest: serde_json::Value =

@@ -817,18 +817,6 @@
         }
       }
     },
-    "Grep INVALID_PIN" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Grep INVALID_PIN"
-          }
-        }
-      }
-    },
     "Grouped list" : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState" : "manual",
@@ -1281,18 +1269,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Read the parser"
-          }
-        }
-      }
-    },
-    "Read wire/src/codes.rs" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Read wire/src/codes.rs"
           }
         }
       }
@@ -5349,6 +5325,582 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Run the whole suite"
+          }
+        }
+      }
+    },
+    "row.%@" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "row.%@"
+          }
+        }
+      }
+    },
+    "subagent-opens-running" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "subagent-opens-running"
+          }
+        }
+      }
+    },
+    "a6" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "a6"
+          }
+        }
+      }
+    },
+    "Survey the relay’s retry path" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Survey the relay’s retry path"
+          }
+        }
+      }
+    },
+    "subagent-opens-waiting" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "subagent-opens-waiting"
+          }
+        }
+      }
+    },
+    "a7" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "a7"
+          }
+        }
+      }
+    },
+    "Check the Windows build" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check the Windows build"
+          }
+        }
+      }
+    },
+    "subagent-opens-done" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "subagent-opens-done"
+          }
+        }
+      }
+    },
+    "a8" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "a8"
+          }
+        }
+      }
+    },
+    "subagent-group" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "subagent-group"
+          }
+        }
+      }
+    },
+    "d04" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "d04"
+          }
+        }
+      }
+    },
+    "native" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "native"
+          }
+        }
+      }
+    },
+    "toolu_02" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toolu_02"
+          }
+        }
+      }
+    },
+    "native-stopping" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "native-stopping"
+          }
+        }
+      }
+    },
+    "native-refused" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "native-refused"
+          }
+        }
+      }
+    },
+    "Claude could not stop the task: it already finished." : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude could not stop the task: it already finished."
+          }
+        }
+      }
+    },
+    "native-ended" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "native-ended"
+          }
+        }
+      }
+    },
+    "subagents-open" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "subagents-open"
+          }
+        }
+      }
+    },
+    "Read the pairing spec" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read the pairing spec"
+          }
+        }
+      }
+    },
+    "d01" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "d01"
+          }
+        }
+      }
+    },
+    "Split the pairing audit four ways and report back." : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split the pairing audit four ways and report back."
+          }
+        }
+      }
+    },
+    "d02" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "d02"
+          }
+        }
+      }
+    },
+    "d03" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "d03"
+          }
+        }
+      }
+    },
+    "Starting four subagents, one per area." : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starting four subagents, one per area."
+          }
+        }
+      }
+    },
+    "d0%@" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "d0%@"
+          }
+        }
+      }
+    },
+    "s01" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "s01"
+          }
+        }
+      }
+    },
+    "Survey the relay’s retry path: where a dropped link is retried, and what bounds it." : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Survey the relay’s retry path: where a dropped link is retried, and what bounds it."
+          }
+        }
+      }
+    },
+    "s02" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "s02"
+          }
+        }
+      }
+    },
+    "The retry lives in the link layer, so start at the dialler." : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The retry lives in the link layer, so start at the dialler."
+          }
+        }
+      }
+    },
+    "s03" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "s03"
+          }
+        }
+      }
+    },
+    "retry_after" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "retry_after"
+          }
+        }
+      }
+    },
+    "s04" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "s04"
+          }
+        }
+      }
+    },
+    "crates/relay-core/src/dial.rs" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "crates/relay-core/src/dial.rs"
+          }
+        }
+      }
+    },
+    "s05" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "s05"
+          }
+        }
+      }
+    },
+    "cargo test -p relay-core retry" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cargo test -p relay-core retry"
+          }
+        }
+      }
+    },
+    "s06" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "s06"
+          }
+        }
+      }
+    },
+    "The dialler retries a dropped link with backoff capped at 30 s, and gives up after the link’s deadline. The cap is `MAX_BACKOFF` in dial.rs." : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The dialler retries a dropped link with backoff capped at 30 s, and gives up after the link’s deadline. The cap is `MAX_BACKOFF` in dial.rs."
+          }
+        }
+      }
+    },
+    "s07" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "s07"
+          }
+        }
+      }
+    },
+    "crates/relay-core/src/link.rs" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "crates/relay-core/src/link.rs"
+          }
+        }
+      }
+    },
+    "sub-3f9a01c2" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sub-3f9a01c2"
+          }
+        }
+      }
+    },
+    "pairing-audit" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "pairing-audit"
+          }
+        }
+      }
+    },
+    "/Users/ada/src/amux" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "/Users/ada/src/amux"
+          }
+        }
+      }
+    },
+    "Port the schema to the new store" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Port the schema to the new store"
+          }
+        }
+      }
+    },
+    "cargo test -p store" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cargo test -p store"
+          }
+        }
+      }
+    },
+    "Check the old migrations still apply" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check the old migrations still apply"
+          }
+        }
+      }
+    },
+    "sub-81c4d2e7" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sub-81c4d2e7"
+          }
+        }
+      }
+    },
+    "sqlite3 fleet.db .schema" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sqlite3 fleet.db .schema"
+          }
+        }
+      }
+    },
+    "/Users/ada/src/%@" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "/Users/ada/src/%@"
           }
         }
       }

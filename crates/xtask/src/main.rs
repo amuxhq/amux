@@ -40,6 +40,9 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.OfferedMode",
     "amux.v1.OfferedModel",
     "amux.v1.OfferedPermission",
+    "amux.v1.PageComment",
+    "amux.v1.PageElement",
+    "amux.v1.PageReview",
     "amux.v1.Platform",
     "amux.v1.Provider",
     "amux.v1.Refusal",
@@ -144,6 +147,7 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
     // prost derives neither for a message with a map, though a BTreeMap of
     // strings and bytes is both; rows are compared and hashed.
     config.type_attribute("amux.v1.Agent", "#[derive(Eq, Hash)]");
+    config.type_attribute("amux.v1.PageReview", "#[derive(Eq)]");
     tonic_prost_build::configure()
         // Keep generated clients, but omit tonic's `connect(uri)`
         // constructors: every client is built on a channel its caller dials

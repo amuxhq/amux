@@ -161,7 +161,7 @@ private struct SettingsForm: View {
             }
 
             if let problem {
-                Text(problem).foregroundStyle(.red).textSelection(.enabled)
+                Text(problem).foregroundStyle(Palette.failure).textSelection(.enabled)
             }
         }
         .formStyle(.grouped)

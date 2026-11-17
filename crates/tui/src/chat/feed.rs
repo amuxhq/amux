@@ -16,15 +16,16 @@ use std::collections::BTreeMap;
 
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ui_state::Key;
+use ui_state::{AgentKey, Key, PhaseView};
 use ui_view::{
-    AnswerView, AskRow, AttachmentView, CallPhase, ChildAction, DecisionView, FileChangeView,
-    PlanVerdict, QuestionView, Resolution, Row, RowKind, Run, RunCounts, Segment,
+    AnswerView, AskRow, AttachmentView, CallPhase, ChildAction, DecisionView, ExitCause,
+    FileChangeView, GroupState, OpenedAgent, PlanVerdict, QuestionView, Resolution, Row, RowKind,
+    Run, RunCounts, Segment,
 };
 use wire::BlobRef;
 
 use super::rows::{
-    self, RowFacts, RowShape, call_verb, chip, detail, explore_verb, markdown_copy,
+    self, GroupLine, RowFacts, RowShape, call_verb, chip, detail, explore_verb, markdown_copy,
     markdown_linked, patch_gutter, patch_lines, segment_rows, state_meta,
 };
 use super::selection::{Join, LineText};
@@ -53,6 +54,10 @@ pub enum FeedHit {
     Attachment(BlobRef),
     /// One line of an image's thumbnail, `row` lines below its top.
     Thumbnail { blob: BlobRef, row: u16 },
+    /// Open the chat of the agent a call started.
+    Agent(AgentKey),
+    /// Fold or unfold the group of subagents this call belongs to.
+    Group(Key),
 }
 
 /// Clickable places on one feed line: column ranges, `None` for the whole
@@ -71,6 +76,10 @@ pub enum Placement {
     /// hidden run; `blank` closes it with a blank line, where no folded
     /// line follows.
     Failed { blank: bool },
+    /// A call that opens an agent: not a step, so in no run. It draws a
+    /// folded group's one line when [`RowFacts::group`] says so; `joined`
+    /// keeps an open group's next call right under it.
+    Call { joined: bool },
     /// A step drawn on its own line.
     Step {
         /// The run's line drawn above this, its first drawn step.
@@ -252,6 +261,19 @@ pub fn row_lines(
                 header_line(&mut drawn, header, width, theme);
             }
             step(&mut drawn, row, expanded, *current, facts, width, theme)?;
+            if !joined {
+                drawn.blank();
+            }
+        }
+        Placement::Call { joined } => {
+            if let Some(group) = &facts.group {
+                group_line(&mut drawn, row, group, width, theme);
+                if !group.open {
+                    drawn.blank();
+                    return Some(drawn);
+                }
+            }
+            step(&mut drawn, row, expanded, false, facts, width, theme)?;
             if !joined {
                 drawn.blank();
             }
@@ -1157,7 +1179,7 @@ fn failure(drawn: &mut Drawn, row: &Row, width: usize, theme: Theme) {
     pad_to(&mut line, EDGE);
     push(&mut line, "✗", theme.error(), width);
     pad_to(&mut line, WORDS);
-    let (verb, subject, meta) = step_words(row);
+    let (verb, subject, meta) = step_words(row, None);
     push(&mut line, verb.clone(), theme.error(), width);
     if !subject.is_empty() {
         if !verb.is_empty() {
@@ -1241,6 +1263,16 @@ fn described_phase(state: CallPhase) -> Option<&'static str> {
     }
 }
 
+/// A live run's line alone, with the blank that parts it from what
+/// follows: what its steps did, where the step it would sit above is
+/// drawn elsewhere.
+pub(crate) fn header_only(header: &Header, width: usize, theme: Theme) -> Drawn {
+    let mut drawn = Drawn::default();
+    header_line(&mut drawn, header, width, theme);
+    drawn.blank();
+    drawn
+}
+
 /// The line above an open or live run's steps.
 fn header_line(drawn: &mut Drawn, header: &Header, width: usize, theme: Theme) {
     let mut line = Line::default();
@@ -1261,8 +1293,86 @@ fn header_line(drawn: &mut Drawn, header: &Header, width: usize, theme: Theme) {
     drawn.hit_line(line, FeedHit::Run(header.run.last.clone()));
 }
 
+/// Where an agent a call started stands, in the words its row and its
+/// group's line use; None where nothing need be said (an agent amux has
+/// not heard from yet is starting, which the row's verb says).
+pub(crate) fn phase_word(phase: &PhaseView) -> Option<&'static str> {
+    Some(match phase {
+        PhaseView::Starting => return None,
+        PhaseView::Working => "running",
+        PhaseView::NeedsYou => "waiting on you",
+        PhaseView::Idle => "idle",
+        PhaseView::Exited { cause } => match cause {
+            ExitCause::Finished => "done",
+            ExitCause::Ended => "stopped",
+            ExitCause::Failed(_) => "failed",
+        },
+    })
+}
+
+/// "4 subagents · 2 running · 1 waiting on you · 1 done": a group's size,
+/// then how many stand where, each part with its ink.
+pub(crate) fn group_words(state: &GroupState, theme: Theme) -> Vec<(String, Style)> {
+    let mut parts = vec![(
+        format!(
+            "{} subagent{}",
+            state.agents,
+            if state.agents == 1 { "" } else { "s" }
+        ),
+        if state.running > 0 || state.needs_you > 0 {
+            theme.bright()
+        } else {
+            theme.muted()
+        },
+    )];
+    for (count, word, ink) in [
+        (state.running, "running", theme.muted()),
+        (state.needs_you, "waiting on you", theme.attention()),
+        (state.idle, "idle", theme.faint()),
+        (state.finished, "done", theme.faint()),
+        (state.ended, "stopped", theme.faint()),
+        (state.failed, "failed", theme.error()),
+    ] {
+        if count > 0 {
+            parts.push((format!("{count} {word}"), ink));
+        }
+    }
+    parts
+}
+
+/// A group's line at its first call: folded, all the group shows; open,
+/// it heads the calls listed under it and folds them again.
+fn group_line(drawn: &mut Drawn, row: &Row, group: &GroupLine, width: usize, theme: Theme) {
+    let mut line = Line::default();
+    pad_to(&mut line, EDGE);
+    // The fold's mark, in the attention ink while one of them waits on you.
+    let ink = if group.state.needs_you > 0 {
+        theme.attention()
+    } else {
+        theme.faint()
+    };
+    push(&mut line, if group.open { "▾" } else { "▸" }, ink, width);
+    pad_to(&mut line, WORDS);
+    let width = width.saturating_sub(2);
+    for (at, (words, ink)) in group_words(&group.state, theme).into_iter().enumerate() {
+        if at > 0 {
+            push(&mut line, " · ", theme.faint(), width);
+        }
+        push(&mut line, words, ink, width);
+    }
+    drawn.copy.insert(
+        drawn.lines.len(),
+        LineText {
+            from: WORDS,
+            to: LineText::of(&line).to,
+            ..LineText::default()
+        },
+    );
+    drawn.hit_line(line, FeedHit::Group(row.id.clone()));
+}
+
 /// A step's verb, subject and meta, in words.
-fn step_words(row: &Row) -> (String, String, String) {
+fn step_words(row: &Row, opened: Option<&OpenedAgent>) -> (String, String, String) {
     match &row.kind {
         RowKind::Command {
             command,
@@ -1353,10 +1463,16 @@ fn step_words(row: &Row) -> (String, String, String) {
             if !host.is_empty() {
                 subject.push_str(&format!(" on {host}"));
             }
-            let meta: Vec<String> = (!kind.is_empty())
+            let mut meta: Vec<String> = (!kind.is_empty())
                 .then(|| kind.clone())
                 .into_iter()
                 .collect();
+            // The agent it started stands as its fleet row says.
+            meta.extend(
+                opened
+                    .and_then(|opened| phase_word(&opened.phase))
+                    .map(str::to_owned),
+            );
             let meta = decided(meta, row, *state == CallPhase::Denied);
             (verb.to_owned(), subject, meta)
         }
@@ -1394,30 +1510,43 @@ fn step_words(row: &Row) -> (String, String, String) {
             let meta = decided(vec![meta], row, *state == CallPhase::Denied);
             (verb.to_owned(), subject, meta)
         }
+        // How the subagent stands is its fleet row's: the call can return
+        // while it runs on, and only the fleet knows of an ask it waits
+        // on. A call the fleet holds no agent for says its own state.
         RowKind::Subagent {
             description,
-            running,
-            tool_count,
+            continued,
+            state,
             duration_ms,
             ..
         } => {
-            let mut meta = vec![format!(
-                "{tool_count} tool{}",
-                if *tool_count == 1 { "" } else { "s" }
-            )];
-            if !*running && let Some(ms) = duration_ms {
+            let subject = if !description.trim().is_empty() {
+                first_line(description).to_owned()
+            } else if let Some(opened) = opened {
+                opened.name.clone()
+            } else {
+                "a subagent".to_owned()
+            };
+            let running = match opened {
+                Some(opened) => !matches!(opened.phase, PhaseView::Exited { .. } | PhaseView::Idle),
+                None => state.in_flight(),
+            };
+            let verb = match (running, continued) {
+                (true, false) => "Running subagent",
+                (true, true) => "Continuing subagent",
+                (false, false) => "Ran subagent",
+                (false, true) => "Continued subagent",
+            };
+            let mut meta: Vec<String> = opened
+                .and_then(|opened| phase_word(&opened.phase))
+                .filter(|word| *word != "running" && *word != "done")
+                .map(str::to_owned)
+                .into_iter()
+                .collect();
+            if !running && let Some(ms) = duration_ms {
                 meta.push(text::duration(*ms));
             }
-            let verb = if *running {
-                "Running subagent"
-            } else {
-                "Ran subagent"
-            };
-            (
-                verb.to_owned(),
-                first_line(description).to_owned(),
-                meta.join(" · "),
-            )
+            (verb.to_owned(), subject, meta.join(" · "))
         }
         // A command like any other, where it runs said after it.
         RowKind::Background {
@@ -1505,18 +1634,36 @@ fn step(
     width: usize,
     theme: Theme,
 ) -> Option<()> {
-    let (verb, subject, meta) = step_words(row);
+    let opened = facts.opened.as_ref();
+    let (verb, subject, meta) = step_words(row, opened);
     if verb.is_empty() && subject.is_empty() {
         return None;
     }
     let heading_from = drawn.lines.len();
     // An open ask points at this step: it waits on the person, so it reads
     // as the step under way, marked in the attention ink, and nothing it has not
-    // done yet is said about it.
-    let asking = row.call_phase() == Some(CallPhase::Asking);
+    // done yet is said about it. A call that started an agent is marked
+    // as that agent stands instead: waiting on you, at work, or failed.
+    let (asking, failed, current) = match opened {
+        Some(opened) => (
+            false,
+            matches!(
+                opened.phase,
+                PhaseView::Exited {
+                    cause: ExitCause::Failed(_)
+                }
+            ),
+            current || matches!(opened.phase, PhaseView::Starting | PhaseView::Working),
+        ),
+        None => (
+            row.call_phase() == Some(CallPhase::Asking),
+            row.call_phase() == Some(CallPhase::Failed),
+            current,
+        ),
+    };
+    let waits = asking || opened.is_some_and(|opened| opened.phase == PhaseView::NeedsYou);
     let meta = if asking { String::new() } else { meta };
-    let failed = row.call_phase() == Some(CallPhase::Failed);
-    let current = current || asking;
+    let current = current || waits;
     let (words, subject_style) = if failed {
         (theme.error(), theme.error())
     } else if current {
@@ -1528,7 +1675,7 @@ fn step(
     pad_to(&mut line, EDGE);
     if failed {
         push(&mut line, "✗", theme.error(), width);
-    } else if asking {
+    } else if waits {
         push(&mut line, "●", theme.attention(), width);
     } else if current {
         push(&mut line, "●", theme.text(), width);
@@ -1587,16 +1734,25 @@ fn step(
         }
     }
     if !meta.is_empty() {
-        push(&mut line, format!(" · {meta}"), theme.faint(), width);
+        // An agent waiting on you says so in the attention ink.
+        let ink = if waits && opened.is_some() {
+            theme.attention()
+        } else {
+            theme.faint()
+        };
+        push(&mut line, format!(" · {meta}"), ink, width);
     }
     let image = match &row.kind {
         RowKind::Image { image, .. } => image.as_ref(),
         _ => None,
     };
     // An image's line opens the image; it has no detail of its own to show.
-    let hits = match image {
-        Some(blob) => vec![(None, FeedHit::Attachment(blob.clone()))],
-        None => vec![(None, FeedHit::Step(row.id.clone()))],
+    // A call that started an agent opens that agent's chat, as a tap does
+    // on the phone; its detail opens from the leader's open.
+    let hits = match (image, opened) {
+        (Some(blob), _) => vec![(None, FeedHit::Attachment(blob.clone()))],
+        (None, Some(opened)) => vec![(None, FeedHit::Agent(opened.agent.clone()))],
+        (None, None) => vec![(None, FeedHit::Step(row.id.clone()))],
     };
     drawn.lines.push(line);
     drawn.hits.push(hits);

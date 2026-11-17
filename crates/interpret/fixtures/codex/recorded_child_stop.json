@@ -1,0 +1,10 @@
+{
+  "about": "A child thread stopped in three steps while its command runs: another client interrupts the child's turn (it ends interrupted, its command running on) and ends its background command by process id; then amux steers a prompt into the parent's turn, which ends the parent's wait and its turn.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "recording": {
+    "path": "live/child_stop/io.jsonl",
+    "format": "codex_io"
+  }
+}

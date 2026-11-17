@@ -172,6 +172,25 @@ impl Capture {
     }
 }
 
+/// The words of every `deprecationNotice` Codex sent amux in the recording
+/// beside `fixture`, in order.
+pub fn deprecation_notices(fixture: &Path) -> Vec<String> {
+    read_lines(&fixture.with_file_name("io.jsonl"))
+        .iter()
+        .filter(|line| line["dir"] == "stdout")
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line["line"].as_str()?).ok())
+        .filter(|message| message["method"] == "deprecationNotice")
+        .map(|message| {
+            let params = &message["params"];
+            let summary = params["summary"].as_str().unwrap_or_default();
+            match params["details"].as_str() {
+                Some(details) if !details.is_empty() => format!("{summary} ({details})"),
+                _ => summary.to_owned(),
+            }
+        })
+        .collect()
+}
+
 fn read_lines(path: &Path) -> Vec<serde_json::Value> {
     std::fs::read_to_string(path)
         .unwrap_or_default()

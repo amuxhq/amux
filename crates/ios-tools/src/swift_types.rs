@@ -58,6 +58,7 @@ pub fn definitions() -> Map<String, Value> {
         ui_view::QueuedRow,
         ui_view::SentPrompt,
         ui_view::RefusedPrompt,
+        ui_view::ChatAgents,
         ui_view::FleetView,
         ui_view::FleetFilter,
         ui_view::FleetRow,

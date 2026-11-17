@@ -24,6 +24,12 @@ pub enum Entry {
     Input {
         hex: String,
     },
+    /// The encoded `wire::ChildInput`: a person's input to one of the
+    /// provider subagents the agent runs. A ring from before subagents were
+    /// agents of their own has none.
+    ChildInput {
+        hex: String,
+    },
     /// The encoded `wire::Envelope`.
     AgentMessage {
         hex: String,
@@ -70,6 +76,15 @@ impl Entry {
             Event::Input(input) => Entry::Input {
                 hex: crate::to_hex(&input.encode_to_vec()),
             },
+            Event::ChildInput { agent_id, input } => Entry::ChildInput {
+                hex: crate::to_hex(
+                    &wire::ChildInput {
+                        agent_id: agent_id.clone(),
+                        input: Some(input.clone()),
+                    }
+                    .encode_to_vec(),
+                ),
+            },
             Event::AgentMessage(envelope) => Entry::AgentMessage {
                 hex: crate::to_hex(&envelope.encode_to_vec()),
             },
@@ -101,6 +116,14 @@ impl Entry {
             }),
             Entry::Input { hex } => {
                 Event::Input(wire::Input::decode(crate::from_hex(&hex).ok()?.as_slice()).ok()?)
+            }
+            Entry::ChildInput { hex } => {
+                let child =
+                    wire::ChildInput::decode(crate::from_hex(&hex).ok()?.as_slice()).ok()?;
+                Event::ChildInput {
+                    agent_id: child.agent_id,
+                    input: child.input?,
+                }
             }
             Entry::AgentMessage { hex } => Event::AgentMessage(
                 wire::Envelope::decode(crate::from_hex(&hex).ok()?.as_slice()).ok()?,
@@ -167,10 +190,22 @@ mod tests {
                 channel: Channel::Stream,
                 payload: vec![0xff, 0x00],
             }),
+            Event::Fact(Fact {
+                channel: Channel::SubagentTranscript,
+                payload: br#"{"agentId":"a1","type":"user"}"#.to_vec(),
+            }),
             Event::Input(wire::Input {
                 input_id: b"i1".to_vec(),
                 ..Default::default()
             }),
+            Event::ChildInput {
+                agent_id: vec![7; 16],
+                input: wire::Input {
+                    input_id: b"i2".to_vec(),
+                    body: vec![1, 2, 3],
+                    ..Default::default()
+                },
+            },
             Event::Tick { at_ms: 5 },
             Event::ProviderExit { code: Some(3) },
             Event::DaemonLost,
@@ -194,6 +229,57 @@ mod tests {
             let entry: Entry = serde_json::from_slice(&line).unwrap();
             assert_eq!(entry.event(), Some(event));
         }
+    }
+
+    /// The channel names a ring line carries are part of the facts file
+    /// on disk: a line an earlier build wrote reads as it did, and a
+    /// subagent's transcript row is written under a name of its own.
+    #[test]
+    fn channel_names_on_disk_hold() {
+        let line = br#"{"event":"fact","channel":"transcript","text":"{}"}"#;
+        let entry: Entry = serde_json::from_slice(line).unwrap();
+        assert_eq!(
+            entry.event(),
+            Some(Event::Fact(Fact {
+                channel: Channel::Transcript,
+                payload: b"{}".to_vec(),
+            }))
+        );
+        let written = serde_json::to_string(&Entry::of(&Event::Fact(Fact {
+            channel: Channel::SubagentTranscript,
+            payload: b"{}".to_vec(),
+        })))
+        .unwrap();
+        assert_eq!(
+            written,
+            r#"{"event":"fact","channel":"subagent_transcript","text":"{}"}"#
+        );
+    }
+
+    /// A person's input to a subagent is a ring line of its own, under a
+    /// name an older ring simply lacks; its body is the encoded
+    /// `ChildInput`, so it reads back whole.
+    #[test]
+    fn a_child_input_line_on_disk_holds() {
+        let line = br#"{"event":"child_input","hex":"0a02070712040a026932"}"#;
+        let entry: Entry = serde_json::from_slice(line).unwrap();
+        let event = entry.event().unwrap();
+        let Event::ChildInput { agent_id, input } = &event else {
+            panic!("{event:?}");
+        };
+        assert_eq!(agent_id, &[7, 7]);
+        assert_eq!(input.input_id, b"i2");
+        let written = serde_json::to_string(&Entry::of(&event)).unwrap();
+        assert!(
+            written.starts_with(r#"{"event":"child_input","hex":""#),
+            "{written}"
+        );
+        // A child input that carries no input is a line this build cannot
+        // read, skipped as any other.
+        let empty = Entry::ChildInput {
+            hex: crate::to_hex(&wire::ChildInput::default().encode_to_vec()),
+        };
+        assert_eq!(empty.event(), None);
     }
 
     /// Entries this build cannot read are skipped and named; every other

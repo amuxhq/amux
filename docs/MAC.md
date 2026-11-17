@@ -10,9 +10,154 @@ profile, sign-in and agent it shows is the daemon's. Quitting it, or deleting
 it, leaves amux running.
 
 The window shows the path every desktop client takes: install, attach, set
-the Mac up, sign in, switch profiles, list a profile's agents. Apart from
-setting up and Settings, its screens are a placeholder until the desktop gets
-a design of its own.
+the Mac up, sign in, switch profiles, then the profile's agents and hosts.
+
+## The main window
+
+The main window is laid out like the developer tools it sits beside (Codex,
+Claude, T3 Code): a flush, full-height sidebar with the window's buttons on
+it, the open thing in the centre, and a pane on the right for an agent's
+changes. It is designed as a desktop app — menus, shortcuts, hover, drag and
+drop, the person's own Terminal, Finder and editor — not as the phone's
+screens made larger.
+
+- **The rail** down the left edge, a step darker than the sidebar, carries
+  amux's mark and switches between surfaces: Agents and Hosts today, with
+  room for more. Its foot holds Settings and the open profile's picture,
+  whose menu signs in or out and switches profiles. A coral count on Agents
+  says how many agents need the person.
+- **The agents sidebar** opens with New Agent (⌘N) and Search (⌘F) as plain
+  rows, then every agent in the runtime's sections and order (pinned,
+  needing the person, the rest). A row is its repository's tile, then its
+  name and age over where it works ("amux · build-box"). What it is doing
+  is a badge on the tile: a blue arc while it works, a coral dot when it
+  needs the person, a red dot when it failed, a cloud when its host cannot
+  be reached. A row that needs the person, or failed, says why in place of
+  where it works. Hovering a row swaps its age for pin and settle buttons;
+  its menu pins, settles, renames and deletes. A family's members hang off a
+  line under the head's tile, each saying what it is doing; the head's count
+  folds them. A subagent Claude or Codex runs for its parent hangs there by
+  its title too, but has no pin or Delete: it goes with its parent. The
+  settled agents sit
+  behind one row anchored at the foot, which swaps the sidebar to them and
+  back. Search narrows the list through the runtime's filter, and the arrow
+  keys move the selection.
+- **The hosts sidebar** lists this Mac, then the machines the profile trusts,
+  each saying how this Mac reaches it. Picking one opens its page in the
+  centre: its platform, version, which providers are signed in, its
+  addresses, what being away or offline means for its agents, and the
+  agents on it, each opening its chat. A paired machine's page ends with
+  Stop Trusting, which revokes it after a confirmation.
+- **New Agent** is the empty centre, not a sheet: a heading naming the
+  folder, a composer for the first message, and chips under it for the
+  host (this Mac to begin with; an unreachable one cannot be picked), the
+  folder (the host's recent folders and repositories, and a popover that
+  searches as typed and takes a path), the agent with the model, effort and
+  mode its host offers and a new worktree, and the permission. Return
+  starts the agent on the host the placeholder names, opens its chat, and
+  sends the message as its first prompt once the chat is ready for it. A
+  refusal is said under the composer in the host's words.
+- **The top bars** are the title bar's height, so the window's buttons centre
+  in the sidebar's. The sidebar's bar holds the sidebar toggle and back and
+  forward through the agents opened (⌘[ and ⌘]). The centre's names the open
+  agent by its folder and name, with a menu to open it in Terminal, pin and
+  settle it; then Open in Terminal (⇧⌘T), which runs
+  `amux attach <agent> --in native` in Terminal for the agent's own
+  interface; then the changes toggle (⌥⌘I). A hidden sidebar's buttons move
+  into it.
+- **The chat** fills the centre down a reading width. A finished turn reads
+  answer first: the prompt, a "Worked for …" line summarising the steps,
+  then the agent's final words, with the steps folded under the line; an
+  error, and a failed step the turn never fixed, stay in view. The fold is
+  the shared view's (`ToolRows::Turns`, docs/CLIENT.md), which the app turns
+  on as it opens a chat; the app draws the places it is handed. Under the answer sit copy and, when the turn changed
+  files, their count, which opens the changes. The turn still running shows
+  its steps as they happen, on one grid of glyph, verb, subject and meta.
+  Code blocks name their language and copy on hover. Under the feed stands
+  one thing at a time, as on the phone: an open ask in the composer's place
+  until it is answered, the chat's ending once it ended, or the composer
+  with the queue above it. The ask card shows what is asked in full with the
+  provider's answers as buttons, the expected one drawn solid and on Return;
+  a question's options to pick, and Reply Instead where the agent takes a
+  reply; and a note for an answer that takes one.
+- **Subagents** a turn started through Claude's or Codex's own tool fold to
+  one line, "4 subagents", saying what they come to ("2 running · 1 waiting
+  on you · 1 done", the waiting count in coral); a click on it unfolds the
+  calls. Each call names its subagent with where that agent stands, read
+  from its fleet row rather than the call, and a click on the call, or its
+  arrow, opens that subagent's chat. Unfolding and opening are separate
+  targets. The subagent's chat has no composer, since the provider lets only
+  the parent's model talk to it: a bar says who runs it and offers Stop
+  (⌘.), which stops the job running it.
+- **The composer** grows with the draft; Return sends, Shift-Return starts a
+  line, ⌘. stops the turn, and a long paste becomes an attachment. Under it:
+  + attaches files (dropping them on it does too), the permission the agent
+  works under as a menu (orange when it never asks), and the model and
+  effort as a menu of what the agent offers, each changing the agent as
+  picked.
+- **The floating card** at the chat's top right, while the changes pane is
+  closed, names the host, folder (its full path on hover) and branch; the
+  changes, opening the pane; the agent's parent and children as Lineage,
+  each opening its chat; and Open in Terminal, and for an agent on this Mac,
+  Show in Finder and Open in the first editor installed (VS Code, Cursor,
+  Zed, Sublime Text, Xcode). It floats in the margin when the margin holds
+  it, moves the chat left to make room while the chat stays readable, and
+  otherwise folds to a pill of the change counts. A subagent its provider
+  runs has no folder or terminal of its own, so its card shows neither the
+  changes nor the Terminal, Finder and editor actions, and the title bar
+  hides Open in Terminal and the changes toggle.
+- **The changes pane** on the right shows the changes as the host freezes
+  them, against the last commit or the branch's base (a menu in its bar),
+  a file at a time, with their counts, reload and close. A click picks a
+  line to comment on and Shift-click takes in more, and the written comments
+  go into the draft for the next message. In a window too narrow for all
+  three columns the pane gives way to its narrowest, then the sidebar steps
+  aside while it is open.
+- **The menu bar** carries what the window does: New Agent (⌘N); Show or
+  Hide Sidebar (⌃⌘S) and Changes (⌥⌘I), Agents (⌘1) and Hosts (⌘2) in View;
+  Back and Forward in Go; Open in Terminal in Agent.
+
+**Repository tiles** come from the runtime's fleet card, the same on every
+client: the repository's name is the last segment of its origin remote (else
+the folder's name), the tile shows that name's first and last letter, and its
+tint is one of eight picked by a hash of the remote. Checkouts of one
+repository — worktrees, and the same repository on another machine — share a
+tile because they share a remote; a fork has its own.
+
+**Colour** follows one rule, taken from the app icon: a cool blue-black
+ground in three steps (rail, sidebar, content), blue for amux itself
+(selection, the action to take, work under way), coral for whatever needs the
+person and nothing else, red for failure only, amber for a permission that
+never asks, and green and red otherwise only in diffs. Tile tints avoid all of
+those, so identity never reads as state. The palette is `Palette` in
+`Chrome.swift`.
+
+**Sizes** come from `Tokens.swift`: every text size is a step of `TextSize`
+(`Font.ui` and `Font.mono`; monospaced text takes the half steps, since it
+reads larger at the same size), every corner radius a `Radius`, and every
+shadow one of two `Elevation`s. The page gutter and a round control's size
+are in `Metrics`. Change how a kind of text or surface reads there, not where
+it is drawn. The chat's composer and the New Agent page share one frame,
+`ComposerShell`, with `RoundButton` and `ChipLabel` under the field.
+
+The icons are [Lucide](https://lucide.dev)'s, under the ISC licence, bundled
+as SVG in `AmuxMacScreens/Icons` with that licence beside them and drawn as
+template images, so they take the text colour. Add one by copying its SVG
+there with the stroke set to `#000` and its width to 1.75.
+
+The window is one `Place`: the surface, the agent or host open, whether the
+sidebar shows the settled agents, whether the changes pane is open, and the
+agents opened before and after the one in view. The storybook
+puts a story anywhere by handing one in.
+
+The screens read a chat through `ChatSurface` and a review through
+`ReviewSurface`, protocols the app's `MacChat` and `MacReview` answer by
+reading the shared `ChatModel` and `ReviewModel` directly, so a view that
+reads one row redraws when that row moves. New Agent reads the shared
+`NewAgentStore` through `NewAgentSurface` in the same way, with what leaves
+the Mac — listing a host's directories, asking what it offers, starting the
+agent — sent through the `StoreBundle`. The storybook answers each of them
+with one that holds still.
 
 ## Setting up
 
@@ -74,7 +219,10 @@ generated values (`AmuxValues`), which build for macOS as well as iOS:
   the Mac's.
 
 Screens, navigation and layout are the desktop's own; nothing from
-`AmuxFeatures` or `AmuxShell` is linked. They live in the `AmuxMacScreens`
+`AmuxFeatures` or `AmuxShell` is linked. The words are shared: rows and chats
+say what the phone says through `AmuxWords`, and the app's model draws from
+the same `StoreBundle` (fleet, hosts, chats, starting an agent) the phone
+does. They live in the `AmuxMacScreens`
 package, drawn from values and reporting through actions; the app's models in
 `Mac/Sources` hold the state and fill those values in.
 
@@ -145,7 +293,8 @@ files, with an `index.md`, without putting anything on the desktop, so an
 agent can look at a screen while somebody works at the Mac. Each story's
 window is real but sits past the edge of every display, and the window server
 photographs it. Drawing a view into a bitmap would not do: that leaves glass
-and sidebars blank. The window is never active, so its traffic lights are grey
+and sidebars blank. A sheet's story is drawn alone, without a window around
+it, at one size. The window is never active, so its traffic lights are grey
 and its selection muted. A capture fails when a story's window comes out empty.
 
 The stories are `Packages/AmuxMacScreens/Sources/AmuxMacStories/Stories.swift`.
@@ -217,5 +366,6 @@ staged rollout for the Mac app.
 
 ## Not yet
 
-- The app's real screens beyond setting up and Settings, and its copy in the
-  string catalogue.
+- Pairing another phone or host after setting up, and a host's fingerprint
+  on its page.
+- The app's copy in the string catalogue.

@@ -914,6 +914,10 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                         "exit_cause": (agent.lifecycle() == wire::Lifecycle::Exited)
                             .then(|| agent.exit_cause().as_str_name().trim_start_matches("EXIT_CAUSE_").to_owned()),
                         "exit_detail": agent.exit_detail,
+                        "title": agent.title,
+                        // A provider subagent's own id at its provider,
+                        // which a stop of it names.
+                        "native_child": agent.native.as_ref().map(|native| native.provider_child_id.clone()),
                     })
                 })
                 .collect();
@@ -1098,6 +1102,22 @@ fn attachment(attachment: &wire::Attachment) -> Value {
                 })).collect::<Vec<_>>(),
             })
         }
+        Some(Of::Page(page)) => json!({
+            "kind": "page",
+            "url": page.url,
+            "title": page.title,
+            "comments": page.comments.iter().map(|comment| {
+                let element = comment.element.clone().unwrap_or_default();
+                json!({
+                    "text": comment.text,
+                    "selector": element.selector,
+                    "element": element.text,
+                    "source": element.source,
+                    "quote": comment.quote,
+                    "image": comment.image.as_ref().map(|image| hex(&image.hash)),
+                })
+            }).collect::<Vec<_>>(),
+        }),
         None => json!({ "kind": "none" }),
     }
 }

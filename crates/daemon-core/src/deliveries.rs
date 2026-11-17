@@ -633,6 +633,15 @@ impl Daemon {
             .store
             .agent(&self.own_key(agent))?
             .ok_or(refused(MessageRefusal::NoAgent))?;
+        // Neither provider lets anything but the parent's model reach one of
+        // its subagents: Claude has no channel, and Codex refuses input to a
+        // child thread.
+        if recipient.native.is_some() {
+            return Err(refused(MessageRefusal::Rejected(wire::Rejected {
+                refusal: wire::Refusal::Unsupported as i32,
+                detail: Some(crate::subagents::NO_MESSAGES.to_owned()),
+            })));
+        }
         let (sender, from_agent) = match from {
             MessageFrom::Person | MessageFrom::PeerPerson => (sender::Value::Human(Human {}), None),
             MessageFrom::Agent(caller) => {

@@ -1,0 +1,20 @@
+{
+  "about": "A subagent calls amux's status and agents tools.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "live/subagent_amux_tools/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

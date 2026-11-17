@@ -78,10 +78,9 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
         name: name.into(),
         state: state as i32,
         class: class(name, explore),
-        subagent: subagent.then(|| wire::SubagentProgress {
-            tool_count: 1,
-            last_tool: "Read".into(),
-            finished: false,
+        input: subagent.then(|| wire::ToolInput {
+            of: Some(wire::tool_input::Of::Subagent(wire::Empty {})),
+            ..wire::ToolInput::default()
         }),
         ..wire::ToolCall::default()
     };

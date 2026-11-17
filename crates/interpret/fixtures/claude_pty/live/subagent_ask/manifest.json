@@ -1,0 +1,24 @@
+{
+  "spec": "subagent_ask",
+  "recorded": {
+    "provider": "claude",
+    "version": "2.1.325",
+    "model": "claude-haiku-5-5",
+    "at": "2026-11-16T00:28:12.703914Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:c29bb3efa5916ddaad46b6500b1ba676cc2e213e8412edee6ca817d447af3121",
+    "spawn.jsonl": "sha256:aee6aca796811ce692f012c1f7a84a5931e932c8ae59a68581aca47a25f09902"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 100,
+    "personal_identifiers": 6
+  },
+  "session_ids": [
+    "5b75ebef-f349-424a-84c4-a069db75643c"
+  ],
+  "provider_extra": {
+    "driven_by": "amux's interpreter, in the live qualification lane"
+  }
+}

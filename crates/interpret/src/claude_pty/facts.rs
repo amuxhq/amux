@@ -17,7 +17,7 @@ use wire::{Ask, BoundaryKind, DecisionOutcome, PermissionAsk, ToolState, Turn, T
 
 use super::{
     AgentFact, Announced, AskMeta, AskShape, Call, Decision, HeldDisplay, HookRow, PendingMessage,
-    Running, Slash, State, Stream, Subagent, Tool,
+    Running, Slash, State, Stream, Tool,
 };
 use crate::claude_answers::AnswerShape;
 use crate::claude_common::{
@@ -32,8 +32,9 @@ use crate::{Channel, Emit, Fact, ItemDraft, ask_item, is_status_tool, status_wor
 const REJECTED: &str = "The user doesn't want to proceed with this tool use.";
 const REJECTED_NOTE: &str = "the user said:\n";
 const INTERRUPTED: &str = "[Request interrupted by user";
-/// The tool that starts a subagent.
-const AGENT_TOOL: &str = "Agent";
+use crate::claude_subagent::{
+    AGENT_TOOL, SEND_MESSAGE_TOOL, resumed_in_background, runs_subagent, subagent_answer,
+};
 /// How many ended turns' prompts a late reply batch is checked against.
 const ENDED_PROMPTS: usize = 8;
 const TRUST_QUESTION: &str = "Do you trust the files in this folder?";
@@ -47,17 +48,12 @@ const TRUST_NO: &str = "Exit";
 struct AgentLaunch {
     #[serde(default)]
     is_async: bool,
-    #[serde(default)]
-    agent_id: Option<String>,
 }
 
-/// The agent id of a subagent Claude launched in the background, from the
-/// Agent call's immediate result.
-fn launched_in_background(result: &Value) -> Option<String> {
-    AgentLaunch::deserialize(result)
-        .ok()
-        .filter(|launch| launch.is_async)?
-        .agent_id
+/// Whether an Agent call's immediate result says Claude launched its
+/// subagent in the background.
+fn launched_in_background(result: &Value) -> bool {
+    AgentLaunch::deserialize(result).is_ok_and(|launch| launch.is_async)
 }
 
 #[derive(Deserialize)]
@@ -168,6 +164,7 @@ impl State {
                     self.agent_fact(emit, fact);
                 }
             }
+            Channel::SubagentTranscript => self.subagent_row(emit, &fact.payload),
             Channel::Stream | Channel::Rpc => {}
         }
     }
@@ -192,6 +189,16 @@ impl State {
             AgentFact::ToolsWithheld => {
                 self.provider.tools_withheld = true;
                 return;
+            }
+            AgentFact::SubagentMeta { agent_id, meta } => {
+                let meta = serde_json::from_value(meta).unwrap_or_default();
+                return self.subagent_meta(emit, &agent_id, meta);
+            }
+            AgentFact::SubagentDrained { agent_id } => {
+                return self.subagent_drained(emit, &agent_id);
+            }
+            AgentFact::SubagentUnreadable { agent_id, error } => {
+                return self.subagent_unreadable(emit, &agent_id, &error);
             }
         };
         let provider = &mut self.provider;
@@ -241,6 +248,8 @@ impl State {
 
     pub(super) fn exited(&mut self, emit: &mut Emit, exit: wire::IncarnationEnd) {
         emit.end_incarnation(exit.clone());
+        // The subagents it ran end with it, for its cause.
+        self.end_all_subagents(emit, &exit);
         self.running.clear();
         self.close_all_unknown(emit);
         // A reply Claude died drawing ends as it was drawn.
@@ -280,6 +289,11 @@ impl State {
                 });
             }
             return;
+        }
+        if let Payload::SubagentStart(start) = payload {
+            let agent_type = start.agent_type.as_deref().unwrap_or_default();
+            let child = common.agent_id.clone().unwrap_or_default();
+            return self.subagent_start_hook(emit, &child, agent_type);
         }
         if let Some(mode) = &common.permission_mode {
             self.permission_seen(emit, mode.as_str());
@@ -338,17 +352,23 @@ impl State {
                 self.call_ran(tool_use_id)
             }
             // Auto mode's refusal names its rule; the call's row says it
-            // was refused.
+            // was refused, in the chat of whoever made the call. A row not
+            // read yet takes it when it lands.
             Payload::PermissionDenied(denied) => {
                 let id = denied.tool_use_id.clone();
-                match self.tools.get_mut(&id) {
-                    Some(tool) => {
-                        tool.decision = Some(Decision::refused(&denied.reason).to_wire());
-                        self.emit_tool(emit, &id);
-                    }
-                    None => {
-                        self.refused.insert(id, denied.reason.clone());
-                    }
+                let who = denied
+                    .common
+                    .agent_id
+                    .clone()
+                    .filter(|child| self.subagents.contains_key(child));
+                let held = match &who {
+                    Some(child) => self.subagents[child].conversation.holds(&id),
+                    None => self.tools.contains_key(&id),
+                };
+                if held {
+                    self.decide_as(emit, who.as_deref(), &id, Decision::refused(&denied.reason));
+                } else {
+                    self.refused.insert(id, denied.reason.clone());
                 }
             }
             Payload::Elicitation(elicitation) => self.elicitation(emit, elicitation),
@@ -356,7 +376,7 @@ impl State {
             Payload::PostModelSwitch(switch) if !switch.to_model.is_empty() => {
                 self.provider.model = Some(switch.to_model.clone());
             }
-            Payload::PostModelSwitch(_) | Payload::Notification(_) => {}
+            Payload::PostModelSwitch(_) | Payload::Notification(_) | Payload::SubagentStart(_) => {}
             Payload::Stop(stop) => {
                 if let Some(tasks) = &stop.background_tasks {
                     let now = self.shared.now_ms();
@@ -370,6 +390,7 @@ impl State {
                         }),
                         now,
                     );
+                    let jobs = self.host_jobs(jobs);
                     self.shared.set_jobs(jobs);
                 }
                 // Claude's word on its wake-ups at each turn's end, which
@@ -386,26 +407,11 @@ impl State {
                     }));
                 }
                 self.running.clear();
-                self.close_main_threads_asks(emit);
+                self.close_own_asks(emit);
             }
-            // A subagent finished: it leaves the background list, and a
-            // dialog it left open is over.
-            Payload::SubagentStop(stop) => {
-                let Some(agent) = stop.common.agent_id.clone() else {
-                    return;
-                };
-                if let Some(jobs) = self.jobs.ended(&agent) {
-                    self.shared.set_jobs(jobs);
-                    // One that ran in the background between turns is
-                    // reported in a turn Claude starts itself.
-                    self.shared.turn_owed();
-                }
-                for key in self.open_ask_keys() {
-                    if self.asks.get(&key).and_then(|meta| meta.agent.as_ref()) == Some(&agent) {
-                        self.close(emit, &key, Decision::unknown());
-                    }
-                }
-            }
+            // A subagent's turn stopped. It is no end: Claude writes its last
+            // row after this, and its parent's record of it ends it.
+            Payload::SubagentStop(_) => {}
             Payload::Unknown(_) => {}
         }
     }
@@ -472,22 +478,18 @@ impl State {
         }
     }
 
-    /// A call inside a subagent: a step on its Agent row, and an ask it
-    /// raises or answers. What a subagent writes is not drawn as it goes:
-    /// its Agent call's result carries its answer.
+    /// A hook a subagent raised: a call it is about to make (and what it
+    /// says it works on, with amux's status tool), an ask, or a call it
+    /// finished, which closes the ask raised for it. What it writes is in
+    /// its own transcript.
     fn subagent_hook(&mut self, emit: &mut Emit, agent: &str, payload: &Payload) {
-        let row = self.agent_row(agent);
         match payload {
             Payload::PermissionRequest(request) => self.permission_request(emit, request),
             Payload::PreToolUse(call) => {
                 self.announce(call, Some(agent));
-                if let Some(subagent) = row
-                    .as_ref()
-                    .and_then(|id| self.tools.get_mut(id))
-                    .and_then(|tool| tool.of.subagent.as_mut())
-                {
-                    subagent.tool_count += 1;
-                    subagent.last_tool = split_tool_name(&call.tool_name).1;
+                let (server, name) = split_tool_name(&call.tool_name);
+                if is_status_tool(&server, &name) {
+                    self.subagent_status(agent, &call.tool_input);
                 }
             }
             Payload::PostToolUse(PostToolUse { tool_use_id, .. })
@@ -499,59 +501,65 @@ impl State {
                     .find(|(_, meta)| meta.call.as_deref() == Some(tool_use_id.as_str()))
                     .map(|(key, _)| key.clone());
                 if let Some(key) = answered
-                    && self.shared.asks().get(&key).is_some()
+                    && self.wire_ask(&key).is_some()
                 {
                     self.close(emit, &key, Decision::elsewhere(DecisionOutcome::Allowed));
                 }
             }
             _ => {}
         }
-        if let Some(id) = row {
-            self.emit_tool(emit, &id);
-        }
-    }
-
-    /// The Agent call a subagent belongs to. A background subagent is known
-    /// by the id its launch returned; a foreground one's calls come while its
-    /// Agent call runs, so the newest running Agent call not yet claimed.
-    fn agent_row(&mut self, agent: &str) -> Option<String> {
-        if let Some(id) = self.agents.get(agent) {
-            return self.tools.contains_key(id).then(|| id.clone());
-        }
-        let claimed = self.agents.values().cloned().collect::<Vec<_>>();
-        let id = self
-            .tools
-            .iter()
-            .filter(|(id, tool)| {
-                tool.of.subagent.is_some() && !tool.of.finished && !claimed.contains(id)
-            })
-            .max_by_key(|(_, tool)| tool.of.seq)
-            .map(|(id, _)| id.clone())?;
-        self.agents.insert(agent.to_owned(), id.clone());
-        Some(id)
     }
 
     /// The Agent call returned before its subagent finished: the row stays
-    /// running until the task notification.
+    /// running until the subagent's end.
     fn agent_launched(&mut self, id: &str, result: Option<&Value>) -> bool {
-        let Some(agent) = result.and_then(launched_in_background) else {
+        if !result.is_some_and(launched_in_background) {
+            return false;
+        }
+        let Some(tool) = self.tools.get_mut(id).filter(|tool| tool.of.agent_call) else {
             return false;
         };
+        tool.of.awaiting_notification = true;
+        tool.background = true;
+        true
+    }
+
+    /// Whether the call `id` is a SendMessage whose result says only that it
+    /// resumed the subagent it opens in the background. Then the call stays
+    /// running, as a background Agent call does, until the subagent's end
+    /// finishes it with what the subagent said; one whose run's end was read
+    /// first (the notice can come before Claude's result) finishes now, as
+    /// that run ended.
+    fn continuation_launched(&mut self, id: &str, result: Option<&Value>, output: &str) -> bool {
+        if !resumed_in_background(result, output) {
+            return false;
+        }
+        let Some(child) = self
+            .tools
+            .get(id)
+            .filter(|tool| tool.name == SEND_MESSAGE_TOOL && !tool.child_agent_id.is_empty())
+            .and_then(|tool| self.subagent_opened(&tool.child_agent_id))
+        else {
+            return false;
+        };
+        let ended = self.run_outcome(&child);
+        let now = self.shared.now_ms();
         let Some(tool) = self.tools.get_mut(id) else {
             return false;
         };
-        if tool.of.subagent.is_none() {
-            return false;
-        }
-        tool.of.awaiting_notification = true;
         tool.background = true;
-        let (command, at_ms) = (JobInput::command(&tool.input), tool.at_ms);
-        self.jobs
-            .launched(&agent, id, command, at_ms, wire::BackgroundKind::Subagent);
-        if let Some(jobs) = self.jobs.current() {
-            self.shared.set_jobs(jobs);
+        match ended {
+            Some(outcome) => {
+                tool.of.finished = true;
+                tool.state = outcome.state;
+                tool.outcome_text = outcome.text;
+                tool.ended_at_ms.get_or_insert(now);
+            }
+            None => {
+                tool.of.awaiting_notification = true;
+                tool.state = ToolState::Running as i32;
+            }
         }
-        self.agents.insert(agent, id.to_owned());
         true
     }
 
@@ -625,11 +633,15 @@ impl State {
                 )
             }
         };
+        // A subagent's ask is its own, in its own chat, with no item until
+        // the row of the call it gates lands in the subagent's file, as the
+        // agent's own ask has none until its row lands.
         let agent = request
             .common
             .agent_id
             .clone()
-            .filter(|agent| !agent.is_empty());
+            .filter(|agent| !agent.is_empty())
+            .filter(|agent| self.subagent_asking(emit, agent));
         let call = self.announced_call(name, input, agent.as_deref());
         let key = self.new_ask(AskMeta {
             tool_name: name.to_owned(),
@@ -650,17 +662,15 @@ impl State {
             hook: hook_number(&request.extensions),
             asked: None,
         });
-        let item_key = match &agent {
-            // Shown on the subagent's Agent row, which takes no decision.
-            Some(agent) => self.agent_row(agent),
-            None => None,
-        };
-        self.shared.open_ask(Ask {
-            key,
-            item_key: item_key.unwrap_or_default(),
-            body: Some(body),
-            opened_at_ms: self.shared.now_ms(),
-        });
+        self.put_ask(
+            emit,
+            Ask {
+                key,
+                item_key: String::new(),
+                body: Some(body),
+                opened_at_ms: self.shared.now_ms(),
+            },
+        );
         // Claude writes the gated call's row at the decision, which points
         // the ask at it; a plan's row is already open from its PreToolUse.
         if let Some(id) = call.filter(|id| agent.is_none() && self.tools.contains_key(id)) {
@@ -756,6 +766,45 @@ impl State {
                 AnswerShape::Form,
             ),
         };
+        // Claude names no agent on a tool server's form: it is the form of
+        // the one agent with a call to that server running. In a
+        // subagent's chat it is drawn at once, raised for that call.
+        let who = self.form_owner(&elicitation.mcp_server_name);
+        if let Some(child) = who {
+            let prefix = format!("mcp__{}__", elicitation.mcp_server_name);
+            let call = self
+                .announced
+                .iter()
+                .rev()
+                .find(|call| {
+                    call.agent.as_deref() == Some(&child) && call.name.starts_with(&prefix)
+                })
+                .map(|call| call.id.clone());
+            let key = self.new_ask(AskMeta {
+                tool_name: String::new(),
+                input: String::new(),
+                suggestions: Vec::new(),
+                shape: AskShape::Answer(shape),
+                call,
+                bound: None,
+                closed: None,
+                agent: Some(child),
+                hook: hook_number(&elicitation.extensions),
+                asked: None,
+            });
+            let ask = Ask {
+                item_key: ask_item::key(&key),
+                key,
+                body: Some(body),
+                opened_at_ms: self.shared.now_ms(),
+            };
+            self.put_ask(emit, ask.clone());
+            self.emit_ask_item(emit, &ask, None);
+            if self.watched {
+                self.leave_to_terminal(emit, &ask.key);
+            }
+            return;
+        }
         // A tool server asks while one of its calls runs; that call's
         // result ends the dialog. A call only a PreToolUse hook announced
         // has its row on the way: the ask's item waits for that row, so it
@@ -1010,7 +1059,7 @@ impl State {
             let call = Call {
                 seq: self.next_seq(),
                 message_id: message_id.to_owned(),
-                subagent: (server.is_empty() && tool_name == AGENT_TOOL).then(Subagent::default),
+                agent_call: server.is_empty() && tool_name == AGENT_TOOL,
                 ..Call::default()
             };
             let mut tool =
@@ -1032,6 +1081,8 @@ impl State {
         self.emit_tool(emit, id);
         self.bind_asks_for(emit, id);
         self.emit_dialog_items_for(emit, id);
+        // A subagent waiting on this call starts with it.
+        self.start_waiting(emit);
     }
 
     /// One tool_result block of a user row; `result` is the row's
@@ -1055,6 +1106,15 @@ impl State {
             self.close_for_tool(emit, &id, DecisionOutcome::Allowed);
             return self.emit_tool(emit, &id);
         }
+        // A subagent that ran under this call in the foreground ended with
+        // it; a SendMessage names the subagent it continued.
+        self.call_returned(emit, None, &id, is_error, &output, result);
+        // A SendMessage that resumed a subagent in the background: its
+        // result is for the model, and the call waits for the subagent's end.
+        if !is_error && self.continuation_launched(&id, result, &output) {
+            self.close_for_tool(emit, &id, DecisionOutcome::Allowed);
+            return self.emit_tool(emit, &id);
+        }
         // A shell started in the background: Claude lists it by this id at
         // the turn's end.
         if let Some(task) = result.and_then(shell_in_background)
@@ -1064,6 +1124,7 @@ impl State {
             self.jobs
                 .launched(&task, &id, command, at_ms, wire::BackgroundKind::Shell);
             if let Some(jobs) = self.jobs.current() {
+                let jobs = self.host_jobs(jobs);
                 self.shared.set_jobs(jobs);
             }
         }
@@ -1107,8 +1168,16 @@ impl State {
         } else {
             ToolState::Succeeded as i32
         };
-        tool.outcome_text = output;
-        tool.take_result(emit, content, result);
+        // A subagent's file is read apart from this one, so its last words
+        // may not be read yet: its report comes out of Claude's frame.
+        tool.outcome_text = if tool.state == ToolState::Succeeded as i32 && runs_subagent(tool) {
+            subagent_answer(None, output)
+        } else {
+            output
+        };
+        for write in tool.take_result(content, result) {
+            emit.effect(write);
+        }
         if tool.ended_at_ms.is_none() {
             tool.ended_at_ms = at_ms.or(Some(self.shared.now_ms()));
         }
@@ -1180,6 +1249,15 @@ impl State {
                 {
                     let prompt = unwrap_pasted(&message_text(&queued.prompt));
                     self.joined_prompt(emit, row.envelope.uuid.clone(), prompt, at_ms);
+                }
+            }
+            // Claude queues a background task's notification for the model
+            // the moment the task ends: for a subagent, its end.
+            Row::QueueOperation(row) => {
+                if row.operation.as_deref() == Some("enqueue")
+                    && let Some(content) = row.content.as_deref()
+                {
+                    self.notification_seen(emit, content);
                 }
             }
             Row::AiTitle(row) => self.shared.provider_titled(&row.ai_title),
@@ -1392,7 +1470,7 @@ impl State {
         // after the hook that opened one, since rows are read by polling.
         // Any other prompt means the call under the ask is over.
         if self.shared.awaiting_reflection().is_empty() {
-            self.close_main_threads_asks(emit);
+            self.close_own_asks(emit);
         }
         // The submission began a turn, but another may have run and ended
         // since: a background task's notification answered first.
@@ -1550,14 +1628,17 @@ impl State {
     /// Agent call that launched it and carries its answer; the model answers
     /// the notification in a turn of its own.
     fn task_notification(&mut self, emit: &mut Emit, text: &str, at_ms: Option<i64>) {
+        // For a subagent, its end, unless its queued copy said so first.
+        self.notification_seen(emit, text);
         // The task it reports on is over: it leaves the background list,
-        // and the dialogs it left with the main thread's.
+        // and the dialogs the agent's own turn left with it.
         if let Some(task) = between(text, "task-id")
             && let Some(jobs) = self.jobs.ended(task)
         {
+            let jobs = self.host_jobs(jobs);
             self.shared.set_jobs(jobs);
         }
-        self.close_main_threads_asks(emit);
+        self.close_own_asks(emit);
         self.local_turn = false;
         self.shared.turn_started();
         let Some(id) = between(text, "tool-use-id") else {
@@ -1590,7 +1671,7 @@ impl State {
 
     fn interrupted(&mut self, emit: &mut Emit, key: String, at_ms: Option<i64>) {
         self.running.clear();
-        self.close_main_threads_asks(emit);
+        self.close_own_asks(emit);
         // Claude hands prompts still in its own queue back to its composer.
         self.shared.steers_lost();
         // A subagent in the background outlives the interrupted turn.
@@ -1653,8 +1734,6 @@ impl State {
         // subagents still running in the background.
         self.tools
             .retain(|_, tool| tool.of.awaiting_notification && !tool.of.finished);
-        let tools = &self.tools;
-        self.agents.retain(|_, id| tools.contains_key(id));
         let open = self.open_ask_keys();
         self.asks.retain(|key, _| open.contains(key));
     }
@@ -1812,7 +1891,7 @@ impl State {
                 {
                     return;
                 }
-                self.close_main_threads_asks(emit);
+                self.close_own_asks(emit);
                 let duration = turn.duration_ms.map(|duration| duration as i64);
                 self.end_turn(emit, TurnOutcome::Completed, at_ms, duration);
             }
@@ -1830,6 +1909,10 @@ impl State {
                             tokens_before: metadata.pre_tokens,
                             tokens_after: after,
                             automatic: metadata.trigger == CompactTrigger::Auto,
+                            // Claude's terminal compacts an idle
+                            // conversation itself; its transcript row is
+                            // not known to say so apart from any other.
+                            idle: false,
                         })),
                         at_ms,
                         complete: true,

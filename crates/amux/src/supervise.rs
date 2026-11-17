@@ -23,6 +23,24 @@ fn policy(config: &InstallationConfig) -> Result<UpdatePolicy> {
     Ok(UpdatePolicy { auto, source })
 }
 
+/// Lets the browsers on this machine start the amux extension's bridge,
+/// when this is the installed binary. A failure only costs the extension
+/// its way in, so it is logged and the supervisor carries on.
+fn register_browsers(config_path: Option<&Path>) {
+    let named = config_path.filter(|path| *path != InstallationConfig::default_path());
+    let Some(hosts) = crate::browser_host::installed(named) else {
+        return;
+    };
+    match hosts.register() {
+        Ok(written) => {
+            for file in written {
+                tracing::info!(file = %file.display(), "registered the browser extension's host");
+            }
+        }
+        Err(error) => tracing::warn!(%error, "registering the browser extension's host"),
+    }
+}
+
 pub fn run(
     config: &InstallationConfig,
     config_path: Option<&Path>,
@@ -37,6 +55,7 @@ pub fn run(
         .map(|state| Inherited::parse(state).context("--inherit is not a handed-over state"))
         .transpose()?;
     crate::server::log_to(&config.root.join(SUPERVISOR_LOG))?;
+    register_browsers(config_path);
     let started = policy(config)?;
     if started.source.is_none() {
         tracing::warn!(

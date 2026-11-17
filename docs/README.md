@@ -64,6 +64,8 @@ paths to the `.md` files, so they work both here and on the site.
 - [Terminal client](TERMINAL.md) — screens, keys, the leader, raw attach and the CLI verbs.
 - [iPhone app](IOS.md) — packages, the chat and fleet, driving the app, snapshots and journeys.
 - [Mac app](MAC.md) — a client of the daemon: installing and attaching, sign-in, building and running.
+- [Browser extension](BROWSER.md) — commenting on web pages for an agent: the overlay and its hosts, the native
+  messaging bridge and its registration, the page review attachment, and WebAssembly as a convenience.
 - [Embedding](EMBEDDED.md) — app-runtime, app-embedded, app-ffi, the generated Swift types and the seams.
 - [iPhone copy](IOS_COPY.md) — the rules the app's words follow and the lint that holds them.
 - [Cloud](CLOUD.md) — what the app and daemon ask of amux.sh.

@@ -1,0 +1,20 @@
+[package]
+name = "browser-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The amux client crates the browser extension runs as WebAssembly"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+attachments = { workspace = true }
+base64 = "0.22"
+prost = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ui-state = { workspace = true }
+ui-view = { workspace = true }
+wire = { workspace = true }

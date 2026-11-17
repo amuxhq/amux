@@ -17,6 +17,15 @@ pub(super) async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let program = command.next().ok_or("a wrapped hook names its command")?;
         return super::capture::hook(&program, &command.collect::<Vec<_>>());
     }
+    #[cfg(unix)]
+    if std::env::args().nth(1).as_deref() == Some(super::capture::MCP_TAP) {
+        let mut command = std::env::args().skip(2);
+        let name = command.next().ok_or("a tapped tool server has a name")?;
+        let program = command
+            .next()
+            .ok_or("a tapped tool server names its command")?;
+        return super::capture::tool_server(&name, &program, &command.collect::<Vec<_>>());
+    }
     // The tool server the live lane's form scenarios hand Claude; it runs
     // under the capture proxy's environment, so it is told apart first.
     if std::env::args().nth(1).as_deref() == Some("__tool-server") {
@@ -62,29 +71,54 @@ fn scrub_settings(events: &mut [qualification::recording::IoEvent]) -> io::Resul
     Ok(())
 }
 
+/// Numbers each transcript a terminal recording names, `<TRANSCRIPT_1>`
+/// on, and names each subagent file by its session's transcript:
+/// `<TRANSCRIPT_1>/subagents/agent-<id>.jsonl`, as Claude lays them out
+/// beside `<session>.jsonl`. A player puts them where its own session's
+/// transcript is.
 fn stabilize_pty_transcript_paths(
     events: &mut [qualification::recording::IoEvent],
 ) -> io::Result<()> {
     let mut labels = BTreeMap::<String, String>::new();
+    fn label(labels: &mut BTreeMap<String, String>, path: &str) -> String {
+        let next = labels.len() + 1;
+        labels
+            .entry(path.to_owned())
+            .or_insert_with(|| format!("<TRANSCRIPT_{next}>"))
+            .clone()
+    }
     for event in events {
-        let path_key = match event.transport_id.as_deref() {
-            Some("hook") => "transcript_path",
-            Some("transcript") => "path",
+        let keys: &[&str] = match event.transport_id.as_deref() {
+            Some("hook") => &["transcript_path", "agent_transcript_path"],
+            Some("transcript" | "subagent") => &["path"],
             _ => continue,
         };
+        let subagent_file = event.transport_id.as_deref() == Some("subagent");
         let mut frame: serde_json::Value =
             serde_json::from_str(&event.line).map_err(io::Error::other)?;
-        let path = frame.get_mut(path_key);
-        if let Some(serde_json::Value::String(path)) = path {
-            let next = labels.len() + 1;
-            let label = labels
-                .entry(path.clone())
-                .or_insert_with(|| format!("<TRANSCRIPT_{next}>"));
-            *path = label.clone();
+        for key in keys {
+            let Some(serde_json::Value::String(path)) = frame.get_mut(*key) else {
+                continue;
+            };
+            if subagent_file || *key == "agent_transcript_path" {
+                // `<folder>/<session>/subagents/<file>`.
+                if let Some((session, file)) = path.clone().split_once("/subagents/") {
+                    let session = label(&mut labels, &format!("{session}.jsonl"));
+                    *path = format!("{session}/subagents/{file}");
+                }
+            } else {
+                *path = label(&mut labels, path);
+            }
         }
         event.line = serde_json::to_string(&frame).map_err(io::Error::other)?;
     }
     Ok(())
+}
+
+/// Whether a terminal capture's transport is the session's own: its
+/// terminal, transcript, subagent files, hooks and tool servers.
+fn session_transport(id: &str) -> bool {
+    matches!(id, "pty" | "transcript" | "subagent" | "hook") || id.starts_with("mcp:")
 }
 
 /// Join one live qualification capture to the live corpus as
@@ -122,7 +156,7 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
         let beside: Vec<String> = events
             .iter()
             .filter_map(|event| event.transport_id.clone())
-            .filter(|id| !matches!(id.as_str(), "pty" | "transcript" | "hook"))
+            .filter(|id| !session_transport(id))
             .collect();
         events.retain(|event| {
             event

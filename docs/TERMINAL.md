@@ -123,6 +123,11 @@ keys alike, and it shows `[x]` in place of its age to settle the agent, or delet
 A terminal that gives no background to tint marks it with `›` instead. `+ New Agent` and the section headings
 highlight the same way, tinted or marked, so a keyboard user always sees where Enter lands.
 
+A subagent Claude or Codex runs for an agent (Claude's Agent tool, a Codex child thread) is listed under that agent
+like any child, by the title the provider gave it, with `Claude subagent` or `Codex subagent` where a folder would
+be: it works in its parent's folder and has none of its own. It has no terminal, so `a` offers nothing on it, and it
+goes with its parent, so once settled it shows no `[x]` and `x` does not delete it.
+
 On a row, `r` renames it in place (Enter saves, Esc cancels), `p` pins or unpins an agent with no parent, and `x`
 settles it, or deletes it once it is settled. Settling asks first in a small window (Enter confirms, Esc cancels)
 only when it would cut work short, naming what: a turn under way or an ask open, background jobs, subagents.
@@ -208,6 +213,14 @@ Enter on a row opens its chat. From top to bottom:
   - while the agent is at a run, its newest step shows, bright while it runs, with any other step still running
     beside it, under a faint line of what the rest did so far; when the agent speaks again the run folds to its
     line. The running turn ends in `Working · 33s`, which becomes a faint `Worked 6m` when the turn ends;
+  - a call that started another agent (a subagent Claude or Codex runs, or an agent amux started for it) is a line
+    of its own, never folded into a run, and says how that agent stands now, from the fleet rather than from the
+    call: `● Running subagent Survey the redraw paths`, `· waiting on you` in the attention ink while the subagent
+    asks in its own chat, `Ran subagent … · 1m 35s` once done, `· stopped`, or `✗ … · failed`. Clicking it, or the
+    leader then Enter on it, opens that agent's chat; the leader then `o` opens its answer in place. The calls of
+    one turn that started several agents fold into one line, `▸ 4 subagents · 2 running · 1 waiting on you · 1
+    done`; clicking it or the leader then `o` lists each call under `▾`, and the leader then Enter on the folded
+    line opens it too, to pick one;
   - a plan is drawn as the agent's text under a landmark that folds like a run (`▾ Plan · Move the
     journal`), and once decided folds to `▸ Plan · Move the journal · approved` or `· sent back` with the note
     under it;
@@ -235,6 +248,15 @@ Enter on a row opens its chat. From top to bottom:
   (`shift+tab mode` for an agent with modes), `enter queue · ctrl+x
   interrupt` added while the agent works, `enter resume` once it has exited, `enter can't send until the host is
   back` while the host is away (or until caught up, until amux is back, until this machine signs in). What everyone knows (Enter sends, pasting attaches) is not said.
+
+A subagent Claude or Codex runs has no composer to type in: in its place a box says `Claude runs this subagent ·
+it takes no messages` (or Codex), with the model on its edge, and nothing typed lands and Enter sends nothing. Where
+the provider stops one subagent on request (headless Claude and Codex, while it runs), the key line offers `ctrl+x
+stop`, which asks first in the Stop window (`Stop <name>? Its parent carries on.`), as a background job's stop does;
+the box then reads `Stopping…` until it ends, or the provider's refusal in red (`Could not stop it: …`) with Stop
+offered again. Terminal Claude stops no single subagent, so its subagents offer none. A subagent's asks take the box
+as any ask does, with `ctrl+x stop` in place of `ctrl+x interrupt`. Its header has no `[Diff]`: its changes are its
+parent's.
 
 The composer takes a draft at any time. Enter sends while the chat is current and the agent is live; while the
 agent works it queues the prompt behind the running turn; when the agent has exited it resumes it with the draft as
@@ -299,7 +321,8 @@ selects instead.
 
 When the agent waits on you, the ask takes over the composer's box, its edge in the attention ink; the draft waits
 behind it and comes back after. For half a second after an ask is first drawn, keys still go to the draft (Enter
-does nothing), so a digit or Enter typed as it appears never answers what was not read. An ask the agent says must not
+does nothing), so a digit or Enter typed as it appears never answers what was not read. A subagent's chat has no
+draft, so there those keys do nothing; nothing typed, pasted or quoted there is kept anywhere. An ask the agent says must not
 be approved by one stray key opens on its refusal and takes no digit. The plan or the call it is
 about stays in the feed above. A typed answer or note shows its own line breaks, its last four lines at most.
 
@@ -492,7 +515,7 @@ stops the agent or answers an ask; clearing a field and stopping the agent are n
 | Shift+Enter, or Ctrl+J in any terminal | New line |
 | Ctrl+V | Attach an image or file from the clipboard |
 | ↑ in an empty composer | Into the queue |
-| Ctrl+X | Stop the turn; the agent stays live and idle, and the draft is untouched |
+| Ctrl+X | Stop the turn; the agent stays live and idle, and the draft is untouched. In a subagent's chat, stop the subagent, asking first |
 | Shift+Tab | The agent's next mode, or where it has none its next permission |
 | Ctrl+S then `m`, `e` or `p` | The agent's model, effort or permission, where it can change from here |
 | Ctrl+O | The overview |
@@ -561,7 +584,8 @@ clicked.
 | `<leader> r` | Review the working tree; comments go in the draft |
 | `<leader> a` | Attach to the agent's own terminal, when it is on this machine |
 | `<leader> k`, `<leader> j` | Focus an older or newer row |
-| `<leader> o` | Open or close the focused row or run |
+| `<leader> o` | Open or close the focused row, run or group of subagents |
+| `<leader> enter` | Open the chat of the agent the focused row started; on a folded group, open the group |
 | `<leader> y` | Copy the focused row |
 
 During raw attach the leader is read out of the bytes you type: `<leader> d` detaches to the shell, `<leader> s`

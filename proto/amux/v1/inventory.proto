@@ -178,12 +178,24 @@ message Agent {
   // snapshot envelope, so a row says it with no stream open: an agent that
   // has stopped keeps no stream.
   optional string last_said = 21;
+  // Set on a provider subagent: an agent that Claude's Agent tool or a Codex
+  // child thread started inside its parent's provider process. It has no
+  // process, directory or composer of its own, its parent is always the
+  // agent whose process runs it, and it takes no messages. Absent on every
+  // agent amux started itself.
+  optional NativeChild native = 22;
   // What experiments say about the agent, each entry keyed by an
   // experiment's version (e.g. "workspaces/1") and holding an encoded
   // amux.experimental message. A build reads and writes only the entries of
   // the versions it implements and has on, and ignores every other key.
   // The map is promised; its entries are not. Empty outside experiments.
   map<string, bytes> experimental = 1000;
+}
+
+// What marks a provider subagent's row.
+message NativeChild {
+  // The provider's own id for it: Claude's agent id, Codex's thread id.
+  string provider_child_id = 1;
 }
 
 enum Filing {

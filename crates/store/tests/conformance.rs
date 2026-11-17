@@ -260,6 +260,7 @@ fn snapshots_copy_their_envelope_onto_the_row() {
             removed: 3,
         }),
         on_branch: None,
+        remote: Some("github.com/amuxhq/amux".into()),
     };
     let step = Step {
         items: vec![item("m1", "hi")],
@@ -1194,4 +1195,35 @@ fn an_inventory_put_keeps_a_replicas_last_activity() {
         (row.phase, row.phase_since_ms),
         (Phase::Working as i32, Some(4_500))
     );
+}
+
+/// A provider subagent's title is its registry row's, on its host and on
+/// every replica: its host's interpreter does not name it, so a snapshot
+/// that carries no title leaves the one the inventory gave.
+#[test]
+fn a_replica_of_a_provider_subagent_keeps_the_registrys_title_through_a_snapshot() {
+    let store = fresh();
+    let agent = peer("sub");
+    let mut store = with_agent(store, &agent);
+    let mut row = store.agent(&agent).unwrap().unwrap();
+    row.title = Some("Look at the logs".into());
+    row.native = Some(wire::NativeChild {
+        provider_child_id: "a1795690345bfafb1".into(),
+    });
+    store.put_agent(&row).unwrap();
+    store
+        .absorb(
+            &agent,
+            Absorb::Delta {
+                events: vec![Record::Snapshot(Snapshot {
+                    revision: 5,
+                    ..snapshot(Phase::Working, Some("reading"), 1)
+                })],
+                live: true,
+            },
+        )
+        .unwrap();
+    let row = store.agent(&agent).unwrap().unwrap();
+    assert_eq!(row.working_on.as_deref(), Some("reading"), "absorbed");
+    assert_eq!(row.title.as_deref(), Some("Look at the logs"));
 }

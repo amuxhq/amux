@@ -1,4 +1,4 @@
-# gitleaks reads this from the repository root: its default rules, less two
+# gitleaks reads this from the repository root: its default rules, less the
 # kinds of string the generic-key rule mistakes for keys.
 
 [extend]
@@ -12,6 +12,14 @@ description = "Session identifiers in recorded fixtures and goldens"
 condition = "AND"
 paths = ['''(^|/)(fixtures|goldens?)/''']
 regexes = ['''^(exec-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''']
+
+# Claude names each subagent it runs `a` and sixteen hex digits, and a
+# subagent's stop is keyed by that name. Only in recordings, as above.
+[[allowlists]]
+description = "Claude subagent ids in recorded fixtures and goldens"
+condition = "AND"
+paths = ['''(^|/)(fixtures|goldens?)/''']
+regexes = ['''^a[0-9a-f]{16}$''']
 
 # Tests that prove redaction plant fake credentials and mark them so.
 [[allowlists]]

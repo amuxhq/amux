@@ -477,6 +477,72 @@ fn a_draining_agent_refuses_new_input() {
     );
 }
 
+fn child_answer(child: &str, id: &str, ask: &str) -> ctl_frame::Of {
+    ctl_frame::Of::ChildInput(wire::ChildInput {
+        agent_id: interpret::subagent_id(b"agent", child),
+        input: interpret::claude_sdk_input(
+            id.as_bytes().to_vec(),
+            &FixtureInput::Answer {
+                ask: ask.to_owned(),
+                answer: json!({"allow": {}}),
+            },
+        ),
+    })
+}
+
+/// A person's answer to a provider subagent's ask reaches the interpreter
+/// through the facts ring as an event of its own, and its verdict goes
+/// back keyed by the input id; the subagent's parts are journaled in the
+/// agent's own step.
+#[test]
+fn a_child_input_reaches_the_interpreter_and_is_answered_by_its_id() {
+    let mut run = Run::start(&spec(false, None));
+    run.on(Input::DaemonDials { connection: DAEMON });
+    run.fact(json!({"type": "ready"}));
+    run.prompt("p1", "hello");
+    run.reflect("p1");
+    run.fact(json!({"type": "sub_start", "child": "c1", "call": "call-1"}));
+    let out = run.fact(json!({"type": "sub_ask", "child": "c1", "id": "ask-1"}));
+    let parts: Vec<_> = out
+        .iter()
+        .filter_map(|output| match output {
+            Output::AppendJournal(step) => Some(step.agents.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0][0].agent_id, interpret::subagent_id(b"agent", "c1"));
+
+    let out = run.frame(child_answer("c1", "a1", "ask-1"));
+    assert!(
+        out.iter()
+            .any(|output| matches!(output, Output::Record(Entry::ChildInput { .. })))
+    );
+    assert_eq!(
+        verdicts(&out),
+        vec![(b"a1".to_vec(), reply::accepted(false))]
+    );
+    assert_eq!(
+        provider_writes(&out),
+        vec![r#"{"ask":"ask-1","child":"c1","type":"answer"}"#]
+    );
+}
+
+#[test]
+fn a_draining_agent_refuses_a_child_input() {
+    let mut run = Run::start(&spec(false, None));
+    run.on(Input::DaemonDials { connection: DAEMON });
+    run.fact(json!({"type": "ready"}));
+    run.prompt("p1", "hello");
+    run.reflect("p1");
+    run.frame(ctl_frame::Of::Stop(wire::Stop { kill: false }));
+    let out = run.frame(child_answer("c1", "a1", "ask-1"));
+    assert_eq!(
+        verdicts(&out),
+        vec![(b"a1".to_vec(), reply::rejected(wire::Refusal::Draining))]
+    );
+}
+
 #[test]
 fn a_provider_that_will_not_finish_is_killed_at_its_deadline() {
     let mut run = one_shot_working();
@@ -861,4 +927,577 @@ fn json_fact(fact: serde_json::Value) -> Input {
         channel: Channel::Stream,
         payload: serde_json::to_vec(&fact).expect("json"),
     })
+}
+
+fn journaled_keys(out: &[Output]) -> Vec<String> {
+    out.iter()
+        .filter_map(|output| match output {
+            Output::AppendJournal(step) => Some(step),
+            _ => None,
+        })
+        .flat_map(|step| step.items.iter().map(|item| item.key.clone()))
+        .collect()
+}
+
+#[test]
+fn the_interpreter_is_woken_when_it_asked_and_never_again_for_a_time_it_heard() {
+    let mut run = Run::start(&spec(false, None));
+    run.on(Input::DaemonDials { connection: DAEMON });
+    let out = run.fact(json!({"type": "wake", "at": 5_000}));
+    assert!(out.contains(&Output::ArmTimer {
+        id: TimerId::Wake,
+        at_ms: 5_000,
+    }));
+    // The timer's fire is the tick it asked for, and nothing is armed
+    // after it.
+    let out = run.at(5_000, Input::Timer(TimerId::Wake));
+    assert_eq!(journaled_keys(&out), vec!["woke:5000".to_owned()]);
+    let arms_wake = |out: &[Output]| {
+        out.iter().any(|output| {
+            matches!(
+                output,
+                Output::ArmTimer {
+                    id: TimerId::Wake,
+                    ..
+                }
+            )
+        })
+    };
+    assert!(!arms_wake(&out));
+    // A time the interpreter's last tick already passed is never armed,
+    // which would fire at once and without end; the next event's tick
+    // reaches it.
+    let out = run.fact(json!({"type": "wake", "at": 4_000}));
+    assert!(!arms_wake(&out));
+    let out = run.fact(json!({"type": "model", "model": "m"}));
+    assert_eq!(journaled_keys(&out), vec![format!("woke:{}", run.now_ms)]);
+}
+
+#[test]
+fn a_draining_agent_is_not_woken() {
+    let mut run = Run::start(&spec(false, None));
+    run.on(Input::DaemonDials { connection: DAEMON });
+    run.fact(json!({"type": "wake", "at": 50_000}));
+    let out = run.frame(ctl_frame::Of::Stop(wire::Stop { kill: false }));
+    assert!(out.contains(&Output::CancelTimer { id: TimerId::Wake }));
+}
+
+/// The core around headless Claude's own interpreter, for rules that hang
+/// on what Claude's stream says rather than on the stand-in's.
+mod headless_claude {
+    use interpret::claude_sdk::ClaudeSdk;
+
+    use super::*;
+
+    struct Claude {
+        agent: Agent<ClaudeSdk>,
+        now_ms: u64,
+    }
+
+    impl Claude {
+        /// A one-shot headless Claude started on its spawn prompt, with its
+        /// daemon connected.
+        fn one_shot(prompt: &str) -> Self {
+            let mut out = Vec::new();
+            let agent = Agent::<ClaudeSdk>::start(&spec(true, Some(prompt)), None, 1_000, &mut out);
+            let mut claude = Self {
+                agent,
+                now_ms: 1_000,
+            };
+            claude.on(Input::DaemonDials { connection: DAEMON });
+            claude
+        }
+
+        fn on(&mut self, input: Input) -> Vec<Output> {
+            self.now_ms += 1;
+            let mut out = Vec::new();
+            self.agent.step(
+                Input::Tick {
+                    now_ms: self.now_ms,
+                },
+                &mut out,
+            );
+            self.agent.step(input, &mut out);
+            out
+        }
+
+        /// One line of Claude's stream-json output.
+        fn says(&mut self, line: serde_json::Value) -> Vec<Output> {
+            self.on(Input::Provider(Fact {
+                channel: Channel::Stream,
+                payload: serde_json::to_vec(&line).expect("json"),
+            }))
+        }
+
+        /// A main-thread assistant message.
+        fn assistant(&mut self, uuid: &str, content: serde_json::Value) -> Vec<Output> {
+            self.says(json!({
+                "type": "assistant", "uuid": uuid, "session_id": "s", "parent_tool_use_id": null,
+                "message": {
+                    "id": format!("msg-{uuid}"), "type": "message", "role": "assistant",
+                    "model": "claude-test", "content": content,
+                    "usage": {"input_tokens": 10, "output_tokens": 5},
+                },
+            }))
+        }
+
+        /// The result that ends the main thread's turn.
+        fn result(&mut self, uuid: &str, text: &str) -> Vec<Output> {
+            self.says(json!({
+                "type": "result", "subtype": "success", "uuid": uuid, "session_id": "s",
+                "is_error": false, "duration_ms": 10, "num_turns": 1, "result": text,
+            }))
+        }
+    }
+
+    /// Headless Claude starts the subagents its Agent tool asks for in the
+    /// background: the call's result only says the subagent was launched,
+    /// and the parent's turn ends while the subagent still works. A
+    /// one-shot agent that left then would kill the subagent and report
+    /// "launched" as its answer. It stays until the subagent's
+    /// notification has started Claude's follow-up turn and that turn has
+    /// ended, and only then finishes.
+    #[test]
+    fn a_one_shot_headless_claude_stays_while_a_background_subagent_it_started_runs() {
+        let mut claude = Claude::one_shot("count the files with a subagent");
+        claude.says(json!({"type": "system", "subtype": "init", "uuid": "i1", "session_id": "s", "model": "claude-test"}));
+        claude.assistant(
+            "a1",
+            json!([{"type": "tool_use", "id": "toolu_agent", "name": "Agent",
+                "input": {"description": "count", "prompt": "Count the files.", "subagent_type": "general-purpose"}}]),
+        );
+        claude.says(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1task", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "count", "is_backgrounded": true,
+        }));
+        claude.says(json!({
+            "type": "user", "uuid": "u1", "session_id": "s", "parent_tool_use_id": null,
+            "message": {"role": "user", "content": [{
+                "type": "tool_result", "tool_use_id": "toolu_agent", "is_error": false,
+                "content": [{"type": "text", "text": "Async agent launched successfully.\nagentId: a1task\nThe agent is working in the background. You will be notified automatically when it completes."}],
+            }]},
+        }));
+        claude.assistant(
+            "a2",
+            json!([{"type": "text", "text": "The subagent is running in the background."}]),
+        );
+        let out = claude.result("r1", "The subagent is running in the background.");
+        assert_eq!(
+            marked_last(&out),
+            Some(false),
+            "the turn that launched a running subagent is not the agent's last"
+        );
+        assert!(
+            !closes(&out),
+            "the agent left while its subagent was running"
+        );
+        assert_eq!(exit_of(&out), None);
+
+        // The subagent works on, then finishes.
+        let out = claude.says(json!({
+            "type": "system", "subtype": "task_progress", "uuid": "t2", "session_id": "s",
+            "task_id": "a1task", "tool_use_id": "toolu_agent", "description": "count",
+            "last_tool_name": "Bash", "usage": {"total_tokens": 100, "tool_uses": 1, "duration_ms": 5},
+        }));
+        assert!(!closes(&out));
+        let out = claude.says(json!({
+            "type": "system", "subtype": "task_notification", "uuid": "t3", "session_id": "s",
+            "task_id": "a1task", "tool_use_id": "toolu_agent", "status": "completed",
+            "output_file": "/tmp/claude/tasks/a1task.output", "summary": "There are 3 files.",
+        }));
+        assert!(
+            !closes(&out),
+            "the notification starts Claude's follow-up turn"
+        );
+
+        // Claude's follow-up turn on the notification is the last.
+        claude.says(json!({"type": "system", "subtype": "init", "uuid": "i2", "session_id": "s", "model": "claude-test"}));
+        claude.assistant(
+            "a3",
+            json!([{"type": "text", "text": "Done: there are 3 files."}]),
+        );
+        let out = claude.result("r2", "Done: there are 3 files.");
+        assert_eq!(marked_last(&out), Some(true));
+        assert!(closes(&out));
+        let out = claude.on(Input::ProviderExited { code: Some(0) });
+        assert_eq!(exit_of(&out), Some(&ExitCause::Finished));
+    }
+
+    /// An interrupt that cuts a turn while a subagent runs in the
+    /// foreground gets no `task_notification` from Claude: the Agent call
+    /// that started it returns refused, as Claude refuses any call an
+    /// interrupt cuts. That result is the subagent's end, so a one-shot
+    /// host is not left waiting on a subagent Claude no longer runs.
+    #[test]
+    fn a_foreground_subagent_cut_by_an_interrupt_ends_and_a_one_shot_host_finishes() {
+        let mut claude = Claude::one_shot("count the files with a subagent");
+        claude.says(json!({"type": "system", "subtype": "init", "uuid": "i1", "session_id": "s", "model": "claude-test"}));
+        claude.assistant(
+            "a1",
+            json!([{"type": "tool_use", "id": "toolu_agent", "name": "Agent",
+                "input": {"description": "count", "prompt": "Count the files.", "subagent_type": "general-purpose"}}]),
+        );
+        let out = claude.says(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1task", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "count",
+        }));
+        let started = out.iter().any(|output| {
+            matches!(output, Output::AppendJournal(step)
+                if step.agents.iter().any(|part| part.start.is_some()))
+        });
+        assert!(started, "{out:?}");
+        claude.says(json!({
+            "type": "assistant", "uuid": "sa1", "session_id": "s",
+            "agent_id": "a1task", "parent_tool_use_id": "toolu_agent",
+            "message": {
+                "id": "msg-sa1", "type": "message", "role": "assistant", "model": "claude-test",
+                "content": [{"type": "text", "text": "Counting."}],
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            },
+        }));
+
+        // The interrupt: the Agent call returns refused, and no notice.
+        let out = claude.says(json!({
+            "type": "user", "uuid": "u1", "session_id": "s", "parent_tool_use_id": null,
+            "message": {"role": "user", "content": [{
+                "type": "tool_result", "tool_use_id": "toolu_agent", "is_error": true,
+                "content": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.",
+            }]},
+            "tool_use_result": "User rejected tool use",
+        }));
+        let ends: Vec<i32> = out
+            .iter()
+            .filter_map(|output| match output {
+                Output::AppendJournal(step) => Some(step),
+                _ => None,
+            })
+            .flat_map(|step| step.agents.iter().filter_map(|part| part.end.as_ref()))
+            .map(|end| end.cause)
+            .collect();
+        assert_eq!(ends, vec![wire::ExitCause::Stopped as i32], "{out:?}");
+
+        claude.says(json!({
+            "type": "user", "uuid": "u2", "session_id": "s", "parent_tool_use_id": null,
+            "message": {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user for tool use]"}]},
+        }));
+        let out = claude.says(json!({
+            "type": "result", "subtype": "error_during_execution", "uuid": "r1", "session_id": "s",
+            "is_error": true, "duration_ms": 10, "num_turns": 1, "errors": [],
+        }));
+        assert_eq!(marked_last(&out), Some(true), "{out:?}");
+        assert!(closes(&out), "the host waited on a subagent that had ended");
+    }
+}
+
+/// The one-shot rule over provider subagents, from the parts the agent
+/// journals alone: the test kind, where any fact may also carry `starts`
+/// or `ends` naming a subagent, which adds that subagent's start or end to
+/// the fact's step, as a provider's interpreter does when its provider
+/// starts or ends one.
+mod hosting {
+    use interpret::shape::{InputShape, Structure};
+    use interpret::{ItemView, SnapshotView, Stepped};
+
+    use super::*;
+
+    struct Hosting;
+
+    impl Interpreter for Hosting {
+        type State = <Kind as Interpreter>::State;
+        const KIND: wire::Kind = Kind::KIND;
+
+        fn initial(spec: &AgentSpec) -> (Self::State, Step) {
+            Kind::initial(spec)
+        }
+
+        fn step(state: &mut Self::State, event: Event) -> Stepped {
+            let part = match &event {
+                Event::Fact(fact) if fact.channel == Channel::Stream => {
+                    serde_json::from_slice::<serde_json::Value>(&fact.payload).ok()
+                }
+                _ => None,
+            };
+            let mut stepped = Kind::step(state, event);
+            let Some(fact) = part else {
+                return stepped;
+            };
+            let named = |field: &str| fact[field].as_str().map(|id| id.as_bytes().to_vec());
+            let (starts, ends) = (named("starts"), named("ends"));
+            let mut parts: Vec<wire::AgentStep> = Vec::new();
+            if let Some(id) = starts {
+                parts.push(wire::AgentStep {
+                    agent_id: id,
+                    start: Some(wire::NativeStart::default()),
+                    ..Default::default()
+                });
+            }
+            if let Some(id) = ends {
+                let end = Some(wire::IncarnationEnd {
+                    cause: wire::ExitCause::Finished as i32,
+                    detail: None,
+                });
+                match parts.iter_mut().find(|part| part.agent_id == id) {
+                    Some(part) => part.end = end,
+                    None => parts.push(wire::AgentStep {
+                        agent_id: id,
+                        end,
+                        ..Default::default()
+                    }),
+                }
+            }
+            stepped.step.agents.extend(parts);
+            stepped
+        }
+
+        fn reincarnate(state: Self::State, spec: &AgentSpec) -> (Self::State, Step) {
+            Kind::reincarnate(state, spec)
+        }
+
+        fn unknown_snapshot() -> Vec<u8> {
+            Kind::unknown_snapshot()
+        }
+
+        fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {
+            Kind::pending_messages(state)
+        }
+
+        fn typed_unrecorded(state: &Self::State) -> bool {
+            Kind::typed_unrecorded(state)
+        }
+
+        fn wake_at(state: &Self::State) -> Option<i64> {
+            Kind::wake_at(state)
+        }
+
+        fn holds(state: &Self::State) -> interpret::Holds {
+            Kind::holds(state)
+        }
+
+        fn describe_item(body: &[u8]) -> ItemView {
+            Kind::describe_item(body)
+        }
+
+        fn input_shape(input: &wire::Input) -> InputShape {
+            Kind::input_shape(input)
+        }
+
+        fn structure(state: &Self::State) -> Structure {
+            Kind::structure(state)
+        }
+
+        fn describe_snapshot(body: &[u8]) -> SnapshotView {
+            Kind::describe_snapshot(body)
+        }
+
+        fn fixture_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<wire::Input> {
+            Kind::fixture_input(input_id, input)
+        }
+    }
+
+    struct Host {
+        agent: Agent<Hosting>,
+        now_ms: u64,
+    }
+
+    impl Host {
+        /// A one-shot agent started on its spawn prompt, its daemon
+        /// connected and its provider running the prompt as a turn.
+        fn one_shot_working() -> Self {
+            let mut out = Vec::new();
+            let agent =
+                Agent::<Hosting>::start(&spec(true, Some("do the thing")), None, 1_000, &mut out);
+            let mut host = Self {
+                agent,
+                now_ms: 1_000,
+            };
+            host.on(Input::DaemonDials { connection: DAEMON });
+            host.fact(json!({"type": "ready"}));
+            host.fact(json!({"type": "user", "id": "p1", "text": "p1"}));
+            host
+        }
+
+        fn on(&mut self, input: Input) -> Vec<Output> {
+            self.now_ms += 1;
+            let mut out = Vec::new();
+            self.agent.step(
+                Input::Tick {
+                    now_ms: self.now_ms,
+                },
+                &mut out,
+            );
+            self.agent.step(input, &mut out);
+            out
+        }
+
+        fn fact(&mut self, fact: serde_json::Value) -> Vec<Output> {
+            self.on(Input::Provider(Fact {
+                channel: Channel::Stream,
+                payload: serde_json::to_vec(&fact).expect("json"),
+            }))
+        }
+
+        /// A step of the provider's that starts the subagent and nothing
+        /// else of the host's.
+        fn starts(&mut self, id: &str) -> Vec<Output> {
+            self.fact(json!({"type": "progress", "starts": id}))
+        }
+
+        fn ends(&mut self, id: &str) -> Vec<Output> {
+            self.fact(json!({"type": "progress", "ends": id}))
+        }
+
+        fn turn_end(&mut self) -> Vec<Output> {
+            self.fact(json!({"type": "turn_end"}))
+        }
+
+        /// The subagent's end comes with the turn the provider runs on its
+        /// answer, started before the end is told: the turn's end, not the
+        /// subagent's, decides.
+        fn ends_into_a_turn(&mut self, id: &str) -> Vec<Output> {
+            self.fact(json!({"type": "turn_start"}));
+            let out = self.ends(id);
+            assert!(!closes(&out), "a turn runs on its answer: {out:?}");
+            self.turn_end()
+        }
+
+        fn exits(&mut self) -> Option<ExitCause> {
+            exit_of(&self.on(Input::ProviderExited { code: Some(0) })).cloned()
+        }
+    }
+
+    /// A turn that ends while a subagent it started runs is not the last:
+    /// the agent stays. When the provider answers with a turn of its own,
+    /// started before the subagent's end is told, that turn's end is the
+    /// last.
+    #[test]
+    fn a_one_shot_host_stays_while_a_subagent_runs_and_ends_after_the_turn_on_its_answer() {
+        let mut host = Host::one_shot_working();
+        host.starts("sub-a");
+        let out = host.turn_end();
+        assert_eq!(marked_last(&out), Some(false), "{out:?}");
+        assert!(!closes(&out), "it left while its subagent ran");
+        assert_eq!(host.agent.summary()["subagents_live"], 1);
+
+        let out = host.ends_into_a_turn("sub-a");
+        assert_eq!(host.agent.summary()["subagents_live"], 0);
+        assert_eq!(marked_last(&out), Some(true));
+        assert!(closes(&out));
+        assert_eq!(host.exits(), Some(ExitCause::Finished));
+    }
+
+    /// The last subagent ending while the agent is idle, with nothing
+    /// queued or awaited and no turn of the provider's to follow, ends a
+    /// one-shot agent there: no turn end will come to decide it.
+    #[test]
+    fn a_one_shot_host_left_idle_by_its_last_subagents_end_finishes() {
+        let mut host = Host::one_shot_working();
+        host.starts("sub-a");
+        host.starts("sub-b");
+        assert_eq!(marked_last(&host.turn_end()), Some(false));
+
+        let out = host.ends("sub-a");
+        assert!(!closes(&out), "sub-b still runs: {out:?}");
+        let out = host.ends("sub-b");
+        assert!(
+            closes(&out),
+            "the last one ended with the agent idle: {out:?}"
+        );
+        assert_eq!(host.exits(), Some(ExitCause::Finished));
+    }
+
+    /// An agent that is not one-shot (a person's, with no parent) stays
+    /// when its last subagent ends while it is idle.
+    #[test]
+    fn a_hosts_last_subagent_ending_leaves_an_agent_with_no_parent_running() {
+        let mut out = Vec::new();
+        let agent =
+            Agent::<Hosting>::start(&spec(false, Some("do the thing")), None, 1_000, &mut out);
+        let mut host = Host {
+            agent,
+            now_ms: 1_000,
+        };
+        host.on(Input::DaemonDials { connection: DAEMON });
+        host.fact(json!({"type": "ready"}));
+        host.fact(json!({"type": "user", "id": "p1", "text": "p1"}));
+        host.starts("sub-a");
+        host.turn_end();
+        let out = host.ends("sub-a");
+        assert!(!closes(&out), "{out:?}");
+        assert_eq!(exit_of(&out), None);
+    }
+
+    /// With two subagents, each notification turn reports up, and only the
+    /// one after the last subagent ended is the last.
+    #[test]
+    fn only_the_turn_after_the_last_subagent_ends_is_a_one_shot_hosts_last() {
+        let mut host = Host::one_shot_working();
+        host.starts("sub-a");
+        host.starts("sub-b");
+        assert_eq!(marked_last(&host.turn_end()), Some(false));
+
+        let out = host.ends_into_a_turn("sub-a");
+        assert_eq!(marked_last(&out), Some(false), "sub-b still runs");
+        assert!(!closes(&out));
+
+        let out = host.ends_into_a_turn("sub-b");
+        assert_eq!(marked_last(&out), Some(true));
+        assert!(closes(&out));
+    }
+
+    /// A subagent that ends in the step that ends the turn, as a foreground
+    /// subagent's end comes within its parent's turn, holds nothing; nor
+    /// does one that starts and ends within one step.
+    #[test]
+    fn a_subagent_ended_in_the_turns_own_step_holds_nothing() {
+        let mut host = Host::one_shot_working();
+        host.fact(json!({"type": "progress", "starts": "sub-a", "ends": "sub-a"}));
+        assert_eq!(host.agent.summary()["subagents_live"], 0);
+        host.starts("sub-b");
+        let out = host.fact(json!({"type": "turn_end", "ends": "sub-b"}));
+        assert_eq!(marked_last(&out), Some(true), "{out:?}");
+        assert!(closes(&out));
+    }
+
+    /// A subagent that starts in the step that ends the turn holds the
+    /// agent, as Claude's background subagent launching just before the
+    /// parent's result does.
+    #[test]
+    fn a_subagent_started_in_the_turns_own_step_holds_the_host() {
+        let mut host = Host::one_shot_working();
+        let out = host.fact(json!({"type": "turn_end", "starts": "sub-a"}));
+        assert_eq!(marked_last(&out), Some(false), "{out:?}");
+        assert!(!closes(&out));
+    }
+
+    /// A parent's model continuing a subagent that ended makes it live
+    /// again, and an end for a subagent this incarnation never started (the
+    /// provider reporting one of its last process stopped) changes nothing.
+    #[test]
+    fn a_continued_subagent_holds_the_host_again_and_an_unknown_end_changes_nothing() {
+        let mut host = Host::one_shot_working();
+        host.starts("sub-a");
+        host.ends("sub-a");
+        host.ends("from-before");
+        host.starts("sub-a");
+        let out = host.turn_end();
+        assert_eq!(
+            marked_last(&out),
+            Some(false),
+            "the continued subagent runs"
+        );
+        assert_eq!(marked_last(&host.ends_into_a_turn("sub-a")), Some(true));
+    }
+
+    /// The live set is part of the core's value, so a restored core judges
+    /// the next turn end as the original does.
+    #[test]
+    fn a_restored_host_still_waits_for_its_subagent() {
+        let mut host = Host::one_shot_working();
+        host.starts("sub-a");
+        let value = host.agent.value();
+        host.agent = Agent::<Hosting>::from_value(&value).expect("the value restores");
+        assert_eq!(marked_last(&host.turn_end()), Some(false));
+    }
 }

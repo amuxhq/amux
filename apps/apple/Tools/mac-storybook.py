@@ -27,6 +27,7 @@ WATCHED = [
     MAC / "Storybook",
     ROOT / "apps/apple/Packages/AmuxMacScreens",
     ROOT / "apps/apple/Packages/AmuxCore/Sources/AmuxValues",
+    ROOT / "apps/apple/Packages/AmuxCore/Sources/AmuxWords",
     SPEC,
     LIST,
 ]

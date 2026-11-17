@@ -92,12 +92,17 @@ const TEXT: &[(&str, Text)] = &[
     ("branch", Text::Alias("branch")),
     ("branches", Text::Alias("branch")),
     ("base_branch", Text::Alias("branch")),
+    // Where a repository's origin points, which names it.
+    ("remote", Text::Alias("path")),
     // Ids and keys the core matches rows by.
     ("id", Text::Kept),
     ("key", Text::Kept),
     ("item_key", Text::Kept),
     ("ask_key", Text::Kept),
     ("parent_key", Text::Kept),
+    ("call_key", Text::Kept),
+    // A provider's id for a subagent, from which its agent id is derived.
+    ("provider_child_id", Text::Kept),
     ("last_message_key", Text::Kept),
     ("check", Text::Kept),
     // The network's addresses, which the core parses and dials.

@@ -74,7 +74,14 @@ impl Attacher {
     /// chat, which reaches every agent.
     pub fn refusal(&self, agent: &Agent) -> Option<String> {
         let name = agent.name.clone();
-        if agent.host_id != self.local_host {
+        if agent.native.is_some() {
+            // It runs inside its parent's provider process, whose terminal
+            // is the parent's: there is no terminal of its own to attach.
+            Some(format!(
+                "{name} is a subagent its parent's provider runs, with no terminal of its own; \
+                 `amux attach {name} --in amux` opens its chat"
+            ))
+        } else if agent.host_id != self.local_host {
             Some(format!(
                 "{name} runs on another host, and its own interface opens only on its own \
                  machine; `amux attach {name} --in amux` opens its chat"

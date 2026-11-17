@@ -162,7 +162,8 @@ joining, locked out after wrong PINs, the device paired) as it moves, until
 A fleet and a chat each open with the whole of what they show, and then
 hear what moved. `amux_fleet_opening(profile)` answers a `FleetDelta` with
 home's sections and every host; `amux_session_opening(chat)` a `ChatDelta`
-with every key, the frame, the head ask, the overview and the settings. No
+with every key, the frame, the head ask, the overview, the settings and the
+agents its rows open. No
 step hands over a delta for either before its opening. After it, a step
 carries a delta for each that moved, with only the fields that moved, and
 at most one per view: however many updates land in between, the host hears
@@ -177,10 +178,19 @@ over every key. A delta's `rows` are the rows that changed among those the
 host held; a row new at either edge, or held through a reload, is read with
 `amux_session_rows_for` when it is drawn.
 
+A row that opens an agent (a subagent's or a child's call) carries its id
+in `opens`; the delta's `agents` says how each such agent stands, from the
+fleet, and what each group of them comes to, and moves when the fleet does,
+though no row changes. Tapping the row opens that agent's chat with
+`amux_session_open`; it is a gesture apart from expanding.
+
 What a view folds is held in Rust, so a read needs nothing passed in: a chat
-draws each run folded to its newest step until `amux_session_toggle_run`
-opens it, and keeps an open run open as it grows, pages in older steps or
-trims its oldest; a fleet lists a family's members under its root once
+draws the calls of one turn that opened several agents as one row until
+`amux_session_toggle_group` opens it, and draws each run folded to its
+newest step until `amux_session_toggle_run` opens it, and keeps an open run open as it grows, pages in older steps or
+trims its oldest; after `amux_session_fold_turns(chat, true)` it also folds
+each finished turn to its prompt, the line over its work and its answer,
+until `amux_session_toggle_turn` opens it; a fleet lists a family's members under its root once
 `amux_fleet_toggle_family` opens it, narrowed by the last `amux_fleet_filter`.
 Each change is handed over by the next step.
 

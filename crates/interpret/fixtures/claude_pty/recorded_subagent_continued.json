@@ -1,0 +1,20 @@
+{
+  "about": "A subagent that answered, continued by its parent with SendMessage.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "live/subagent_continued/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

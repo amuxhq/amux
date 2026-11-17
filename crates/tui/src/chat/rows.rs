@@ -33,6 +33,21 @@ pub struct RowFacts {
     pub leader: char,
     /// This terminal draws images, so an image leaves room for one.
     pub thumbnails: bool,
+    /// The agent the row opens, as the fleet has it: how it stands is the
+    /// agent's, never the call's, since a call can return while its
+    /// subagent runs on. None when the row opens nothing or the fleet does
+    /// not hold the agent, and then the call's own state is drawn.
+    pub opened: Option<ui_view::OpenedAgent>,
+    /// The folded group of subagents this row draws for, with where its
+    /// agents stand; or, on an open group's first call, the line above it.
+    pub group: Option<GroupLine>,
+}
+
+/// The line a group of subagents draws at its first call.
+#[derive(Clone, Debug)]
+pub struct GroupLine {
+    pub state: ui_view::GroupState,
+    pub open: bool,
 }
 
 impl Default for RowFacts {
@@ -41,6 +56,8 @@ impl Default for RowFacts {
             patch: None,
             leader: 'a',
             thumbnails: false,
+            opened: None,
+            group: None,
         }
     }
 }
@@ -211,6 +228,12 @@ pub fn chip(view: &AttachmentView) -> String {
         AttachmentView::Review { comments, .. } => match comments {
             1 => "[review · 1 comment]".into(),
             n => format!("[review · {n} comments]"),
+        },
+        AttachmentView::Page {
+            title, comments, ..
+        } => match comments {
+            1 => format!("[{title} · 1 comment]"),
+            n => format!("[{title} · {n} comments]"),
         },
         AttachmentView::Empty => "[attachment]".into(),
     }
@@ -411,8 +434,13 @@ fn body(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'sta
             tokens_before,
             tokens_after,
             automatic,
+            idle,
         } => {
-            let mut words = String::from("Compacted");
+            let mut words = String::from(if *idle {
+                "Compacted while idle"
+            } else {
+                "Compacted"
+            });
             if let (Some(before), Some(after)) = (tokens_before, tokens_after) {
                 words.push_str(&format!(
                     " · {} → {}",
@@ -420,7 +448,7 @@ fn body(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'sta
                     text::tokens(*after)
                 ));
             }
-            if *automatic {
+            if *automatic && !*idle {
                 words.push_str(" · automatic");
             }
             vec![rule(&words, width, theme)]

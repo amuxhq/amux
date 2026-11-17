@@ -33,6 +33,7 @@
 //! depends on whether a running turn drains injected items or parks them
 //! for the next turn: [`CODEX_INJECT_CONSUMPTION`].
 
+mod children;
 mod facts;
 mod recording;
 mod title;
@@ -262,6 +263,31 @@ enum Titling {
     Over,
 }
 
+/// An idle compaction under way: asked for, then running as a turn of
+/// Codex's own that is nobody's turn.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+enum IdleCompaction {
+    Requested { at_ms: i64 },
+    Running { turn: String },
+}
+
+/// How long Codex sits idle before amux compacts it: inside the half hour
+/// OpenAI's prompt cache keeps a conversation by default, so the summary is
+/// written from the cache and the next prompt sends the summary rather than
+/// the whole thread uncached.
+const IDLE_COMPACT_AFTER_MS: i64 = 25 * 60 * 1000;
+/// How long the cache is sure to last past the last request; later, the
+/// conversation would be read uncached, which saves nothing.
+const CACHE_LIFETIME_MS: i64 = 30 * 60 * 1000;
+/// The smallest thread worth compacting while idle: below this the next
+/// prompt costs little either way, and Codex compacts on its own near the
+/// top of its window.
+const IDLE_COMPACT_MIN_TOKENS: u64 = 100_000;
+/// How long an accepted idle compaction may go without Codex starting the
+/// turn it runs in before amux stops waiting for it: the queue waits on it,
+/// and a Codex that compacted some other way would hold it forever.
+const IDLE_COMPACT_START_MS: i64 = 2 * 60 * 1000;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 enum Request {
     /// `turn/start`. Agent messages that leave the pending set at its
@@ -278,6 +304,8 @@ enum Request {
     },
     Interrupt,
     Compact,
+    /// `thread/compact/start` amux sent while the agent sat idle.
+    IdleCompact,
     /// `thread/start` for `/clear`.
     Clear,
     /// `thread/unarchive` for the thread a resume found archived.
@@ -312,21 +340,46 @@ enum Request {
     TitleThread,
     /// The hidden thread's one turn.
     TitleTurn,
-    /// `thread/read` with turns, to have the thread written to disk.
+    /// `thread/read` with turns, which earlier builds sent to have a thread
+    /// that had run no turn written to disk. None is sent now (naming the
+    /// thread writes it); the variant stays so a checkpoint written while
+    /// one was pending still opens, and its answer is ignored.
     Persist,
     /// `skills/list`.
     Skills,
     /// A page of `thread/backgroundTerminals/list`, with the jobs earlier
-    /// pages listed.
+    /// pages listed: the agent's own thread's, or a child thread's.
     Jobs {
         page: u32,
         #[serde(with = "serde_pb::msgs")]
         listed: Vec<BackgroundJob>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        child: Option<String>,
     },
     /// `thread/backgroundTerminals/terminate` for the job with this key,
-    /// Codex's process id.
+    /// Codex's process id, on the agent's own thread or a child thread.
     StopJob {
         key: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        child: Option<String>,
+    },
+    /// `thread/read` on a child thread, for its nickname.
+    ChildRead {
+        thread: String,
+    },
+    /// `turn/interrupt` on a child thread's turn: the first step of the
+    /// person's stop of that subagent.
+    ChildInterrupt {
+        thread: String,
+    },
+    /// The note to the parent that the person stopped a subagent: a steer
+    /// into its running turn (`steered`), else an injected item.
+    StopNote {
+        thread: String,
+        /// What the note calls the child, for sending it again.
+        #[serde(default)]
+        name: String,
+        steered: bool,
     },
 }
 
@@ -344,13 +397,13 @@ struct AskMeta {
     /// When it opened, for the item of an ask that is the work.
     at_ms: i64,
     /// The thread that asked: the agent's own, or a child thread's on the
-    /// same server, which the agent's turn end leaves open.
+    /// same server, whose subagent the ask is open in.
     thread: String,
 }
 
 /// A unit of work as last emitted.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-struct WorkState {
+pub(super) struct WorkState {
     at_ms: i64,
     #[serde(with = "serde_pb::opt_msg")]
     work: Option<Work>,
@@ -361,7 +414,7 @@ struct WorkState {
 /// A text item streaming from Codex: a message, a working note, a plan or
 /// reasoning.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-enum Streamed {
+pub(super) enum Streamed {
     Message,
     WorkingNote,
     Plan,
@@ -621,11 +674,11 @@ pub struct State {
     /// Agent messages accepted while no thread was running.
     #[serde(with = "serde_pb::msgs")]
     held: Vec<Envelope>,
+    /// The thread being read's units of work, by item id. This and
+    /// `streamed`, `sent` and `background` are one thread's item state:
+    /// the agent's own, except while a child thread's notification is read,
+    /// when that child's is swapped in (see `children`).
     works: BTreeMap<String, WorkState>,
-    /// Child threads' file changes, by item id, which their approvals show:
-    /// the rest of a child's work is drawn by its own subagent row.
-    #[serde(with = "serde_pb::msg_map")]
-    child_changes: BTreeMap<String, wire::FileChangeWork>,
     /// When each amux send call started, so its completion keeps the time.
     sent: BTreeMap<String, i64>,
     streamed: BTreeMap<String, Streamed>,
@@ -660,6 +713,41 @@ pub struct State {
     cwd: String,
     /// How many times `/clear` started a thread, which names each request.
     clears: u32,
+    /// The compaction amux asked for while the agent sat idle, until the
+    /// turn Codex runs it in completes.
+    #[serde(default)]
+    idle_compaction: Option<IdleCompaction>,
+    /// When Codex last reported a request's tokens, which keeps the
+    /// thread's cache alive from then.
+    #[serde(default)]
+    last_request_ms: Option<i64>,
+    /// The child threads Codex runs for this agent, each a provider
+    /// subagent of its own, by thread id, from the first word of each until
+    /// its end: nothing of a finished child is kept.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    children: BTreeMap<String, children::Child>,
+    /// The child threads whose subagents ended in this incarnation, by
+    /// thread id alone. Codex keeps an ended child loaded, with its tool
+    /// servers, while this client is subscribed to it, and only that
+    /// subscription brings a follow-up's turn on it to this client: each
+    /// stays subscribed until `/clear` leaves it with the agent's old
+    /// thread. A new incarnation's connection holds none of them.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    ended_children: BTreeSet<String>,
+    /// Threads the agent left (`/clear`'s old thread and its children),
+    /// whose late notifications start no subagent.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    left: BTreeSet<String>,
+    /// How many requests were sent about child threads, which names each:
+    /// by number, never by thread id, which a record's redaction rewrites
+    /// apart from the answer naming it.
+    #[serde(default)]
+    child_requests: u64,
+    /// The child thread whose notification is being read, its item state
+    /// swapped in: what is written goes to that subagent's part of the
+    /// step. None between steps.
+    #[serde(skip)]
+    speaking: Option<String>,
 }
 
 fn item_body(kind: codex_item::Kind) -> Vec<u8> {
@@ -719,7 +807,6 @@ impl State {
             started_drawn: false,
             held: Vec::new(),
             works: BTreeMap::new(),
-            child_changes: BTreeMap::new(),
             sent: BTreeMap::new(),
             streamed: BTreeMap::new(),
             asks: BTreeMap::new(),
@@ -737,6 +824,13 @@ impl State {
             proposed: None,
             cwd: spec.cwd.clone(),
             clears: 0,
+            idle_compaction: None,
+            last_request_ms: None,
+            children: BTreeMap::new(),
+            ended_children: BTreeSet::new(),
+            left: BTreeSet::new(),
+            child_requests: 0,
+            speaking: None,
         }
     }
 
@@ -855,9 +949,127 @@ impl State {
     }
 
     // --- items -----------------------------------------------------------
+    //
+    // What is written goes to the chat of the thread being read: the
+    // agent's own, or, while a child thread's notification is read
+    // (`speaking`), that subagent's.
 
     fn emit_item(&mut self, emit: &mut Emit, draft: ItemDraft) {
-        self.shared.item(emit, draft);
+        match self.speaking.clone() {
+            None => self.shared.item(emit, draft),
+            Some(child) => self.shared.subagent(emit, &child).item(draft),
+        }
+    }
+
+    /// One of the thread being read's open items, at its current state.
+    fn open_item(&mut self, emit: &mut Emit, key: &str) -> Option<wire::Item> {
+        match self.speaking.clone() {
+            None => self.shared.open_item(key).cloned(),
+            Some(child) => self.shared.subagent(emit, &child).open_item(key).cloned(),
+        }
+    }
+
+    fn append_text(&mut self, emit: &mut Emit, key: &str, text: &str) -> bool {
+        match self.speaking.clone() {
+            None => self.shared.append(emit, key, text),
+            Some(child) => self.shared.subagent(emit, &child).append(key, text),
+        }
+    }
+
+    fn append_output(&mut self, emit: &mut Emit, key: &str, text: &str) -> crate::shared::Output {
+        match self.speaking.clone() {
+            None => self.shared.append_output(emit, key, text),
+            Some(child) => self.shared.subagent(emit, &child).append_output(key, text),
+        }
+    }
+
+    // --- asks of the thread being read ------------------------------------
+
+    fn ask(&mut self, emit: &mut Emit, key: &str) -> Option<CodexAsk> {
+        match self.speaking.clone() {
+            None => self.shared.asks().get(key).cloned(),
+            Some(child) => self.shared.subagent(emit, &child).asks().get(key).cloned(),
+        }
+    }
+
+    fn open_ask(&mut self, emit: &mut Emit, ask: CodexAsk) {
+        match self.speaking.clone() {
+            None => self.shared.open_ask(ask),
+            Some(child) => self.shared.subagent(emit, &child).open_ask(ask),
+        }
+    }
+
+    fn close_ask(&mut self, emit: &mut Emit, key: &str) -> Option<CodexAsk> {
+        match self.speaking.clone() {
+            None => self.shared.close_ask(key),
+            Some(child) => self.shared.subagent(emit, &child).close_ask(key),
+        }
+    }
+
+    fn close_all_asks(&mut self, emit: &mut Emit) -> Vec<CodexAsk> {
+        match self.speaking.clone() {
+            None => self.shared.close_all_asks(),
+            Some(child) => self.shared.subagent(emit, &child).close_all_asks(),
+        }
+    }
+
+    /// The stale-answer rule for an ask of the thread being read.
+    fn answer_ask(&mut self, emit: &mut Emit, id: &[u8], key: &str) -> Option<CodexAsk> {
+        match self.speaking.clone() {
+            None => self.shared.answer(emit, id, key),
+            Some(child) => self.shared.subagent(emit, &child).answer(id, key),
+        }
+    }
+
+    fn accept(&mut self, emit: &mut Emit, id: &[u8]) {
+        match self.speaking.clone() {
+            None => self.shared.accept(emit, id, false),
+            Some(child) => self.shared.subagent(emit, &child).accept(id),
+        }
+    }
+
+    fn reject(&mut self, emit: &mut Emit, id: &[u8], refusal: Refusal) {
+        match self.speaking.clone() {
+            None => self.shared.reject(emit, id, refusal),
+            Some(child) => self.shared.subagent(emit, &child).reject(id, refusal),
+        }
+    }
+
+    /// The thread being read's own background commands.
+    fn jobs(&self) -> wire::BackgroundJobs {
+        match self
+            .speaking
+            .as_ref()
+            .and_then(|child| self.children.get(child))
+        {
+            None => self.shared.jobs(),
+            Some(child) => wire::BackgroundJobs {
+                known: true,
+                jobs: child.jobs.clone(),
+            },
+        }
+    }
+
+    fn set_jobs(&mut self, jobs: Vec<BackgroundJob>) {
+        match self.speaking.clone() {
+            None => self.shared.set_jobs(jobs),
+            Some(child) => {
+                if let Some(child) = self.children.get_mut(&child) {
+                    child.jobs = jobs;
+                }
+            }
+        }
+    }
+
+    /// The id of the next request about a child thread: `amux-<what>-<n>`.
+    fn child_request_id(&mut self, what: &str) -> String {
+        self.child_requests += 1;
+        format!("amux-{what}-{}", self.child_requests)
+    }
+
+    /// The id of the thread being read.
+    fn thread_here(&self) -> String {
+        self.speaking.clone().unwrap_or_else(|| self.thread())
     }
 
     /// Extends an open item's text with an append; an item not open is
@@ -866,11 +1078,11 @@ impl State {
         if delta.is_empty() {
             return;
         }
-        if self.shared.append(emit, key, delta) {
+        if self.append_text(emit, key, delta) {
             return;
         }
-        if let Some(open) = self.shared.open_item(key).cloned() {
-            self.shared.item(
+        if let Some(open) = self.open_item(emit, key) {
+            self.emit_item(
                 emit,
                 ItemDraft {
                     key: key.to_owned(),
@@ -978,6 +1190,19 @@ impl State {
     /// Cancels the running turn; one still starting is cancelled as soon
     /// as Codex names it.
     fn interrupt(&mut self, emit: &mut Emit) {
+        // A stop cancels an idle compaction's turn too; its completion ends
+        // it, and no turn of anybody's was interrupted.
+        if let Some(IdleCompaction::Running { turn }) = self.idle_compaction.clone() {
+            return self.request(
+                emit,
+                ClientRequest::TurnInterrupt(TurnInterruptParams {
+                    thread_id: self.thread(),
+                    turn_id: turn,
+                    extra: Default::default(),
+                }),
+                Request::Interrupt,
+            );
+        }
         if self.shared.is_busy() {
             self.interrupted_here = true;
         }
@@ -997,20 +1222,78 @@ impl State {
     }
 
     fn boundary(&mut self, emit: &mut Emit, kind: wire::BoundaryKind, exit: wire::IncarnationEnd) {
+        self.boundary_item(
+            emit,
+            wire::Boundary {
+                kind: kind as i32,
+                cause: exit.cause,
+                cause_detail: exit.detail,
+                idle: false,
+            },
+        );
+    }
+
+    fn boundary_item(&mut self, emit: &mut Emit, boundary: wire::Boundary) {
         self.next_boundary += 1;
         self.emit_item(
             emit,
             ItemDraft {
                 key: format!("boundary:{}", self.next_boundary),
-                body: item_body(codex_item::Kind::Boundary(wire::Boundary {
-                    kind: kind as i32,
-                    cause: exit.cause,
-                    cause_detail: exit.detail,
-                })),
+                body: item_body(codex_item::Kind::Boundary(boundary)),
                 complete: true,
                 ..Default::default()
             },
         );
+    }
+
+    /// When an idle compaction falls due: the thread is big enough and the
+    /// agent has done nothing since its last turn. None once the cache has
+    /// run out.
+    fn idle_compact_at(&self) -> Option<i64> {
+        if let Some(IdleCompaction::Requested { at_ms }) = &self.idle_compaction {
+            return Some(at_ms + IDLE_COMPACT_START_MS);
+        }
+        let big = self
+            .context_tokens
+            .is_some_and(|tokens| tokens >= IDLE_COMPACT_MIN_TOKENS);
+        if !big || self.thread_id.is_none() || !self.held.is_empty() {
+            return None;
+        }
+        let last = self.last_request_ms?;
+        let at = self.shared.idle_wake(last, IDLE_COMPACT_AFTER_MS)?;
+        (self.shared.now_ms() < last + CACHE_LIFETIME_MS).then_some(at)
+    }
+
+    /// Asks Codex to compact when an idle compaction is due. Nobody asked
+    /// for it: nothing draws a prompt, and the turn Codex runs it in starts
+    /// and ends none of the agent's.
+    fn compact_if_idle(&mut self, emit: &mut Emit) {
+        let now = self.shared.now_ms();
+        if self.idle_compact_at().is_none_or(|at| at > now) {
+            return;
+        }
+        if self.idle_compaction.is_some() {
+            // Asked for and never started: stop waiting for it.
+            return self.idle_compaction_over(emit);
+        }
+        self.shared.housekeeping_started();
+        self.idle_compaction = Some(IdleCompaction::Requested { at_ms: now });
+        self.request(
+            emit,
+            ClientRequest::ThreadCompactStart(ThreadIdParams {
+                thread_id: self.thread(),
+                extra: Default::default(),
+            }),
+            Request::IdleCompact,
+        );
+    }
+
+    /// The idle compaction is over, however it ended: what waited for it
+    /// goes on.
+    fn idle_compaction_over(&mut self, emit: &mut Emit) {
+        self.idle_compaction = None;
+        self.shared.housekeeping_ended();
+        self.release_held(emit);
     }
 
     // --- inputs ----------------------------------------------------------
@@ -1378,7 +1661,9 @@ impl State {
                 ..Default::default()
             },
         );
-        if !self.shared.is_started() {
+        // An idle compaction runs as a turn of Codex's own, which nothing
+        // should join: the message waits for it to end.
+        if !self.shared.is_started() || self.shared.is_housekeeping() {
             self.held.push(envelope);
             return self.shared.accept(emit, &id, true);
         }
@@ -1479,16 +1764,18 @@ impl State {
         self.submit(emit, entry, consumes);
     }
 
+    /// A person's answer to an ask of the thread being read: the agent's
+    /// own, or a subagent's, answered alike.
     fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: CodexAnswer) {
         let key = answer.ask_key;
-        let Some(ask) = self.shared.asks().get(&key).cloned() else {
-            return self.shared.reject(emit, id, Refusal::ClosedAsk);
+        let Some(ask) = self.ask(emit, &key) else {
+            return self.reject(emit, id, Refusal::ClosedAsk);
         };
         let parsed = answer.of;
         if let Some(codex_ask::Body::Plan(_)) = ask.body {
             return match parsed {
                 Some(codex_answer::Of::Plan(plan)) => self.answer_plan(emit, id, &key, plan),
-                _ => self.shared.reject(emit, id, Refusal::Unsupported),
+                _ => self.reject(emit, id, Refusal::Unsupported),
             };
         }
         if let Some(codex_answer::Of::Approve(decision)) = parsed {
@@ -1497,19 +1784,24 @@ impl State {
         if let (Some(codex_ask::Body::Question(asked)), Some(codex_answer::Of::Reply(reply))) =
             (&ask.body, &parsed)
         {
+            // Replying instead sends the words as a message, and a
+            // subagent takes none.
+            if self.speaking.is_some() {
+                return self.reject(emit, id, Refusal::Unsupported);
+            }
             return self.reply_instead(emit, id, &ask, asked, reply);
         }
         let Some((meta, parsed)) = self.asks.get(&key).cloned().zip(parsed) else {
-            return self.shared.reject(emit, id, Refusal::Unsupported);
+            return self.reject(emit, id, Refusal::Unsupported);
         };
         let Some((response, closed)) = codex_answer_response(&ask, &meta, parsed) else {
-            return self.shared.reject(emit, id, Refusal::Unsupported);
+            return self.reject(emit, id, Refusal::Unsupported);
         };
-        self.shared.answer(emit, id, &key);
+        self.answer_ask(emit, id, &key);
         self.asks.remove(&key);
         self.respond(emit, &meta.id, Ok(response));
         self.emit_ask(emit, &ask, meta.at_ms, Some(closed));
-        self.shared.accept(emit, id, false);
+        self.accept(emit, id);
     }
 
     /// An approval: only a decision the request offered is sent, as the
@@ -1517,7 +1809,7 @@ impl State {
     fn approve(&mut self, emit: &mut Emit, id: &[u8], ask: &CodexAsk, decision: i32) {
         let key = ask.key.clone();
         let Some(meta) = self.asks.get(&key).cloned() else {
-            return self.shared.reject(emit, id, Refusal::Unsupported);
+            return self.reject(emit, id, Refusal::Unsupported);
         };
         let Some(response) = ask
             .decisions
@@ -1526,9 +1818,9 @@ impl State {
             .and_then(|at| meta.responses.get(at))
             .and_then(|response| serde_json::from_str::<ClientResponse>(response).ok())
         else {
-            return self.shared.reject(emit, id, Refusal::Unsupported);
+            return self.reject(emit, id, Refusal::Unsupported);
         };
-        self.shared.answer(emit, id, &key);
+        self.answer_ask(emit, id, &key);
         self.asks.remove(&key);
         let decision = Decision::try_from(decision).unwrap_or_default();
         let granted = granted(decision, &response);
@@ -1552,7 +1844,7 @@ impl State {
                 granted: granted.map(tool_decision::Granted::Codex),
             },
         );
-        self.shared.accept(emit, id, false);
+        self.accept(emit, id);
     }
 }
 
@@ -1907,6 +2199,7 @@ impl Interpreter for Codex {
     }
 
     fn reincarnate(mut state: State, spec: &AgentSpec) -> (State, Step) {
+        state.children_went();
         state.shared.reincarnate(spec);
         state.incarnation = spec.incarnation;
         state.name = spec.name.clone();
@@ -1921,9 +2214,14 @@ impl Interpreter for Codex {
     fn step(state: &mut State, event: Event) -> Stepped {
         let mut emit = Emit::default();
         match event {
-            Event::Tick { at_ms } => state.shared.tick(at_ms),
+            Event::Tick { at_ms } => {
+                state.shared.tick(at_ms);
+                state.begin_overdue(&mut emit);
+                state.compact_if_idle(&mut emit);
+            }
             Event::Fact(fact) => state.fact(&mut emit, fact),
             Event::Input(input) => state.input(&mut emit, input),
+            Event::ChildInput { agent_id, input } => state.child_input(&mut emit, &agent_id, input),
             Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
             Event::Rename { name } => state.rename(&mut emit, name),
             Event::ProviderExit { code } => state.exited(&mut emit, crate::provider_exit(code)),
@@ -1946,6 +2244,7 @@ impl Interpreter for Codex {
         if let Some(entry) = state.shared.next_queued() {
             state.submit(&mut emit, entry, Vec::new());
         }
+        state.child_snapshots(&mut emit);
         let body = state.body();
         let notice = state.shared.notice(crate::notice::codex_ask);
         state.shared.finish(emit, body, notice)
@@ -1953,6 +2252,10 @@ impl Interpreter for Codex {
 
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>> {
         state.shared.pending_messages().iter().cloned().collect()
+    }
+
+    fn wake_at(state: &Self::State) -> Option<i64> {
+        state.idle_compact_at()
     }
 
     fn typed_unrecorded(state: &Self::State) -> bool {
@@ -2074,10 +2377,21 @@ fn describe_work(work: &Work) -> String {
             image.path
         ),
         Some(work::Of::Collab(collab)) => format!(
-            "collab {} threads=[{}] prompt={}",
+            "collab {} threads=[{}] prompt={}{}",
             collab.tool,
             collab.thread_ids.join(","),
-            clip(&collab.prompt, 40)
+            clip(&collab.prompt, 40),
+            if collab.agent_ids.is_empty() {
+                String::new()
+            } else {
+                // Named as the golden printer names a subagent's part.
+                let agents: Vec<String> = collab
+                    .agent_ids
+                    .iter()
+                    .map(|id| format!("sub-{}", &serde_pb::to_hex(id)[..8]))
+                    .collect();
+                format!(" agents=[{}]", agents.join(","))
+            }
         ),
         None => "none".to_owned(),
     };

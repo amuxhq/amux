@@ -39,6 +39,7 @@ tagged_enum! {
         "file-history-delta" => FileHistoryDelta(FileHistoryDeltaRow),
         "tools-used" => ToolsUsed(ToolsUsedRow),
         "cost-state" => CostState(CostStateRow),
+        "session-owner" => SessionOwner(SessionOwnerRow),
     }
 }
 
@@ -79,6 +80,7 @@ impl Row {
             Self::LastPrompt(row) => Some(&row.session_id),
             Self::QueueOperation(row) => Some(&row.session_id),
             Self::CostState(row) => Some(&row.session_id),
+            Self::SessionOwner(row) => Some(&row.session_id),
             Self::System(SystemRow::Unknown(raw)) | Self::Unknown(raw) => {
                 raw.field("sessionId")?.as_str()
             }
@@ -153,6 +155,9 @@ pub struct Envelope {
     /// The session's plan-file name, once it has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slug: Option<String>,
+    /// On every row of a subagent's own transcript: the subagent's id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
 }
 
 /// A person's prompt, tool results, or text Claude adds on the person's
@@ -485,6 +490,15 @@ pub struct CostStateRow {
     pub extensions: Extensions,
 }
 
+/// The account and organization the session belongs to (Claude 2.1.325).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionOwnerRow {
+    pub session_id: String,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
 /// The newest prompt, for Claude's resume list.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -500,6 +514,13 @@ pub struct LastPromptRow {
 pub struct QueueOperationRow {
     pub session_id: String,
     pub timestamp: String,
+    /// `enqueue`, `dequeue` or `remove`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation: Option<String>,
+    /// What an `enqueue` queued: a prompt, or a background task's
+    /// notification for the model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

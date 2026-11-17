@@ -1,0 +1,34 @@
+
+  Check the journal's retention │ /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                       [Home]
+  ↑ lead
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    Check how long the journal keeps an agent's records once it is settled.                          hh:mm
+
+
+  ▸ Read 2 files
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ● Wants to run                                                                                         │
+  │ du -sh ~/.local/share/amux/journal                                                                     │
+  │ Measure the journal directory                                                                          │
+  │                                                                                                        │
+  │ › 1. Yes                                                                                               │
+  │   2. Yes, and always allow Bash in this project                                                        │
+  │   3. No  esc · tab to add a note                                                                       │
+  ╰─────────────────────────────────────────────────────────────────────────────────────────────── Fake 1 ─╯
+
+  enter choose   ctrl+x stop   ctrl+a more

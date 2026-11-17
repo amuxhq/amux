@@ -185,13 +185,30 @@ fn said(rejected: &Rejected) -> String {
     .to_owned()
 }
 
-/// The blob an attachment's bytes are, for the kinds that have one.
-fn blob_of(attachment: &wire::Attachment) -> Option<&wire::BlobRef> {
-    use wire::attachment::Of;
-    match attachment.of.as_ref()? {
-        Of::Image(blob) | Of::File(blob) => Some(blob),
-        Of::Review(review) => review.diff.as_ref()?.patch.as_ref(),
-        Of::Text(_) => None,
+/// Whether a provider subagent takes this input through its host: an
+/// answer to one of its asks, or a stop of a job, its own included. A body
+/// that does not decode is not one.
+fn passes_to_subagent(input: &wire::Input) -> bool {
+    use prost::Message as _;
+    let body = input.body.as_slice();
+    match input.kind() {
+        wire::Kind::ClaudeSdk => wire::ClaudeSdkInput::decode(body).is_ok_and(|input| {
+            matches!(
+                input.of,
+                Some(
+                    wire::claude_sdk_input::Of::Answer(_) | wire::claude_sdk_input::Of::StopJob(_)
+                )
+            )
+        }),
+        wire::Kind::ClaudePty => wire::ClaudePtyInput::decode(body)
+            .is_ok_and(|input| matches!(input.of, Some(wire::claude_pty_input::Of::Answer(_)))),
+        wire::Kind::Codex => wire::CodexInput::decode(body).is_ok_and(|input| {
+            matches!(
+                input.of,
+                Some(wire::codex_input::Of::Answer(_) | wire::codex_input::Of::StopJob(_))
+            )
+        }),
+        wire::Kind::Unspecified => false,
     }
 }
 
@@ -230,6 +247,9 @@ impl ProfileRuntime {
             .ok_or(RelayError::NoAgent)?;
         if row.lifecycle == Lifecycle::Exited as i32 {
             return Ok(rejected(Refusal::Exited));
+        }
+        if row.native.is_some() {
+            return self.send_subagent_input(&row, input).await;
         }
         // Only a person changes a chat's model or effort, so it is the same
         // act as picking them for a new agent, and sticks the same way.
@@ -327,6 +347,39 @@ impl ProfileRuntime {
             }
         }
         Ok(refused)
+    }
+
+    /// A person's input to a provider subagent, which has no process: an
+    /// answer to its ask or a stop of its own job goes to the process of
+    /// the agent that runs it, whose interpreter answers the provider for
+    /// it, and that process's verdict is the answer. Anything else is
+    /// refused here, since neither provider lets anything but the parent's
+    /// model talk to a subagent.
+    async fn send_subagent_input(
+        &self,
+        row: &store::AgentRow,
+        input: wire::Input,
+    ) -> Result<SendInputResponse, RelayError> {
+        if !passes_to_subagent(&input) {
+            return Ok(SendInputResponse {
+                of: Some(send_input_response::Of::Rejected(Rejected {
+                    refusal: Refusal::Unsupported as i32,
+                    detail: Some(daemon_core::subagents::NO_MESSAGES.to_owned()),
+                })),
+            });
+        }
+        let host = row
+            .parent
+            .as_ref()
+            .and_then(|parent| Uuid::from_slice(&parent.agent).ok())
+            .ok_or(RelayError::NoAgent)?;
+        let input_id = input.input_id.clone();
+        let child = wire::ChildInput {
+            agent_id: row.agent.agent.clone(),
+            input: Some(input),
+        };
+        self.relay(host, input_id, ctl_frame::Of::ChildInput(child))
+            .await
     }
 
     /// Hands an input or an agent message to the agent over its control
@@ -511,7 +564,7 @@ impl ProfileRuntime {
         let Some(envelope::Body::Message(message)) = &envelope.body else {
             return Ok(());
         };
-        for blob in message.attachments.iter().filter_map(blob_of) {
+        for blob in message.attachments.iter().flat_map(attachments::blobs) {
             let name = if blob.name.is_empty() {
                 crate::blobs::hex(&blob.hash)
             } else {

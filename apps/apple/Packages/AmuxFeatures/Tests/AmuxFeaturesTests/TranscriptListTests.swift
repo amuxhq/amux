@@ -272,21 +272,21 @@ private func row(_ id: String, _ order: UInt64, collapsed: Bool = false) -> Row 
     Row(
         id: id, order: order, atMs: 0,
         kind: .prose(text: [.text(id)], streaming: false, workingNote: false),
-        collapsed: collapsed, attention: false, decision: nil, parent: nil, run: nil)
+        collapsed: collapsed, attention: false, decision: nil, group: nil, opens: nil, parent: nil, run: nil, turn: nil)
 }
 
 private func prose(_ id: String, _ order: UInt64, _ text: String) -> Row {
     Row(
         id: id, order: order, atMs: 0,
         kind: .prose(text: [.text(text)], streaming: false, workingNote: false),
-        collapsed: false, attention: false, decision: nil, parent: nil, run: nil)
+        collapsed: false, attention: false, decision: nil, group: nil, opens: nil, parent: nil, run: nil, turn: nil)
 }
 
 /// A step on the rail: a finished background command.
 private func step(_ id: String, _ order: UInt64) -> Row {
     Row(
         id: id, order: order, atMs: 0, kind: .background(command: id, description: "", running: false, durationMs: nil),
-        collapsed: false, attention: false, decision: nil, parent: nil, run: nil)
+        collapsed: false, attention: false, decision: nil, group: nil, opens: nil, parent: nil, run: nil, turn: nil)
 }
 
 /// A chat that holds its rows and answers nothing else.
@@ -303,13 +303,13 @@ private final class StubChat: ChatSource, @unchecked Sendable {
     func land(_ row: Row) -> ChatDelta {
         ordered.append(row)
         return ChatDelta(
-            chat: 0, rows: [row], ask: nil, frame: nil, keys: .edges(above: [row.id], below: [], dropped: 0),
+            chat: 0, rows: [row], agents: nil, ask: nil, frame: nil, keys: .edges(above: [row.id], below: [], dropped: 0),
             overview: nil, settings: nil)
     }
 
     func opening() -> ChatDelta {
         ChatDelta(
-            chat: 0, rows: [], ask: AskMoved(card: nil), frame: frame(), keys: .reload(ordered.map(\.id)),
+            chat: 0, rows: [], agents: nil, ask: AskMoved(card: nil), frame: frame(), keys: .reload(ordered.map(\.id)),
             overview: nil, settings: nil)
     }
 
@@ -330,6 +330,9 @@ private final class StubChat: ChatSource, @unchecked Sendable {
     func answer(_ ask: String, responses: [QuestionResponse]) async -> ActOutcome? { nil }
     func replyInstead(_ ask: String, text: String, soFar: [QuestionResponse]) async -> ActOutcome? { nil }
     func toggleRun(_ member: String) {}
+    func toggleGroup(_ member: String) {}
+    func foldTurns(_ on: Bool) {}
+    func toggleTurn(_ end: String) {}
     func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome? { nil }
     func withdraw(_ input: [UInt8]) async -> ActOutcome? { nil }
     func draft(of input: [UInt8]) -> Draft? { nil }

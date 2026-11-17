@@ -6,11 +6,10 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
-     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
-     3 prompt:d98b66cba80349fda2db2fe70921e474 Prompt { text: [Text("Reply with exactly UNREACHABLE.")], steered: false }
-     4 warning:3 Error { error_kind: "warning", message: "Model metadata for `amux-live-no-such-model` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.", attempts: 0, gave_up: true } attention
-     5 error:01a191d1-a0dc-7373-869d-d445e306eb0a Error { error_kind: "modelNotFound", message: "The 'amux-live-no-such-model' model is not supported when using Codex with a ChatGPT account.", attempts: 0, gave_up: true } attention
-     6 turn:1 TurnEnd { duration_ms: Some(1434), failed: true }
+     2 prompt:d98b66cba80349fda2db2fe70921e474 Prompt { text: [Text("Reply with exactly UNREACHABLE.")], steered: false }
+     3 warning:2 Error { error_kind: "warning", message: "Model metadata for `amux-live-no-such-model` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.", attempts: 0, gave_up: true } attention
+     4 error:01a191d1-a0dc-7373-869d-d445e306eb0a Error { error_kind: "modelNotFound", message: "The 'amux-live-no-such-model' model is not supported when using Codex with a ChatGPT account.", attempts: 0, gave_up: true } attention
+     5 turn:1 TurnEnd { duration_ms: Some(1434), failed: true }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

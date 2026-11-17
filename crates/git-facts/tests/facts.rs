@@ -68,6 +68,7 @@ async fn a_clean_default_branch_has_nothing_uncommitted_or_on_the_branch() {
             base_branch: Some("main".into()),
             uncommitted: totals(0, 0, 0),
             on_branch: totals(0, 0, 0),
+            remote: None,
         })
     );
 }
@@ -162,6 +163,15 @@ async fn a_clone_takes_its_default_branch_from_origin() {
     let found = facts(&clone, None).await.unwrap().unwrap();
     assert_eq!(found.base_branch.as_deref(), Some("trunk"));
     assert_eq!(found.on_branch, totals(1, 7, 0));
+    let upstream_path = upstream.path().to_string_lossy();
+    assert_eq!(
+        found.remote.as_deref(),
+        Some(upstream_path.trim_end_matches('/'))
+    );
+    assert_eq!(
+        facts(upstream.path(), None).await.unwrap().unwrap().remote,
+        None
+    );
 }
 
 #[tokio::test]

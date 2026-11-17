@@ -44,6 +44,9 @@ mod ios 'apps/apple/justfile'
 # The Mac app's recipes: `just mac build`, `just mac run` (`just --list mac`).
 mod mac 'apps/apple/Mac/justfile'
 
+# The browser extension's recipes: `just browser build`, `just browser test`, ... (`just --list browser`).
+mod browser 'js/extension/justfile'
+
 # Build the desktop product binaries.
 build:
     {{bounded}} 900 cargo build --locked -p amux --bins
@@ -341,6 +344,7 @@ premerge: no-update-flags fmt-check codegen-check proto-compat store-check depen
     {{just_executable()}} ios script-tests
     {{just_executable()}} test -- -p interpret -p replay-support -p tui -p ui-view
     {{just_executable()}} journey terminal all
+    if git diff --quiet "$(git merge-base HEAD origin/main)" -- js; then echo "js: unchanged since main"; else {{just_executable()}} browser check; fi
 
 # Run the same task sequence exercised across continuous-integration jobs.
 ci: no-update-flags lint fmt-check codegen-check proto-compat store-check dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test doctest release-check mobile-check

@@ -1,0 +1,10 @@
+{
+  "about": "A subagent in the background stopped from amux by its task id while its command runs; the parent hears it stopped in a turn of its own. Today the subagent's steps fold under its call.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "recording": {
+    "path": "live/subagent_stopped/io.jsonl",
+    "format": "claude_sdk_io"
+  }
+}

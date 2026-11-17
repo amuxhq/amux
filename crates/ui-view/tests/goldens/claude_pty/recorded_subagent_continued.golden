@@ -1,0 +1,70 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 14 recorded 12: fact Transcript type=user uuid=e7a23bcf-f670-43bc-ac6d-edf9594a46c0
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 47 recorded 45: fact Transcript type=assistant uuid=0b121dfc-2b2e-4a44-89d8-c533c8920562
+  composer Send activity=Some(Subagents { count: 1 }) queue=[] underway=[] refused=[]
+  agents [sub-96dfec72 "Run counter subagent" Working] groups []
+  [sub-96dfec72] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
+## 74 recorded 72: fact Transcript type=system subtype=turn_duration uuid=fa516b06-e1ba-467f-bc1d-421652a8bc89
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 76 recorded 74: fact Transcript type=queue-operation
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 78 recorded 76: fact SubagentTranscript type=assistant uuid=a486719d-8062-427c-84c7-b445e3313f76
+  agents [sub-96dfec72 "Run counter subagent" Exited { cause: Finished }] groups []
+  [sub-96dfec72] composer Native { stop: Unavailable } activity=None phase=Exited { cause: Finished }
+## 87 recorded 85: fact Transcript type=system subtype=turn_duration uuid=18cfa1ec-6113-4f16-8871-7119897cd383
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 96 recorded 94: fact Transcript type=user uuid=2cc29ee4-a6a6-4558-8016-c683f2e26f33
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 99 recorded 97: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01FToX5ZAtVt7pWXpZtBpjTu
+  composer Send activity=Some(Running { key: "toolu_01FToX5ZAtVt7pWXpZtBpjTu" }) queue=[] underway=[] refused=[]
+## 105 recorded 103: fact Hook hook_event_name=SubagentStart
+  agents [sub-96dfec72 "Run counter subagent" Working] groups []
+  [sub-96dfec72] composer Native { stop: Unavailable } activity=Some(Working) phase=Working
+## 113 recorded 111: fact Hook hook_event_name=MessageDisplay
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 120 recorded 118: fact Transcript type=system subtype=turn_duration uuid=8308f3de-377e-4554-a10b-ffe5b6fcc36f
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 128 recorded 126: fact Transcript type=queue-operation
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 131 recorded 129: fact SubagentTranscript type=assistant uuid=9d6e2a8f-9bf7-436a-9f7c-628648b3f49c
+  agents [sub-96dfec72 "Run counter subagent" Exited { cause: Finished }] groups []
+  [sub-96dfec72] composer Native { stop: Unavailable } activity=None phase=Exited { cause: Finished }
+## 141 recorded 139: fact Transcript type=system subtype=turn_duration uuid=a2933709-a9f0-473b-addb-08546ca83848
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Hidden collapsed
+     2 e7a23bcf-f670-43bc-ac6d-edf9594a46c0 Prompt { text: [Text("Launch the `counter` subagent and wait for its answer. Then reply with exactly what it said.")], steered: false }
+     3 toolu_01ScajtpGUSxJ5wGGDbyi5mj [opens=sub-96dfec72] Subagent { description: "Run counter subagent", continued: false, state: Succeeded, answer: "ONE TWO THREE", duration_ms: Some(1575) }
+     4 stream:bcad12a6-f2a9-4d67-8a44-5619385676f0 Prose { text: [Text("The `counter` subagent is running in the background. I'll give you its exact reply once it finishes.")], streaming: false, working_note: false }
+     5 turn:1 TurnEnd { duration_ms: Some(3634), failed: false }
+     6 a4c53b98-67b6-4857-82b3-b2047bba1a02 Prose { text: [Text("ONE TWO THREE")], streaming: false, working_note: false }
+     7 turn:2 TurnEnd { duration_ms: Some(5366), failed: false }
+     8 2cc29ee4-a6a6-4558-8016-c683f2e26f33 Prompt { text: [Text("Continue that same `counter` subagent, the one that already answered (send it a message by its agent id, do not launch a new one), asking it to go on. Wait for its answer, then reply with exactly what it said.")], steered: false }
+     9 toolu_01FToX5ZAtVt7pWXpZtBpjTu [opens=sub-96dfec72] Subagent { description: "Please go on.", continued: true, state: Succeeded, answer: "FOUR FIVE SIX", duration_ms: Some(3293) }
+    10 stream:d64c21f0-c030-44f9-ba85-25a084e09faa Prose { text: [Text("The `counter` subagent is resumed and working on your message. I'll give you its exact reply when its completion notification arrives.")], streaming: false, working_note: false }
+    11 turn:3 TurnEnd { duration_ms: Some(3571), failed: false }
+    12 stream:416ba2a2-43fb-44d6-a1ea-f2211e80fb1b Prose { text: [Text("FOUR FIVE SIX")], streaming: false, working_note: false }
+    13 turn:4 TurnEnd { duration_ms: Some(7404), failed: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 37933, window_tokens: None, percent: None, near_full: false }) sign-in None
+== settings
+  model* unlisted claude-haiku-5-5 "Haiku 5.5" efforts=[]
+  effort* unlisted medium
+  permission* "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission  "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Haiku 5.5") effort=Some("medium") permission=None mode=None
+== agent sub-96dfec72 "Run counter subagent" started by host/toolu_01ScajtpGUSxJ5wGGDbyi5mj
+  composer Native { stop: Unavailable } phase=Exited { cause: Finished }
+== chat
+     1 c1daf31c-1aff-421e-acf0-e22b3bca810c Prompt { text: [Text("Count and report as your task requires. Reply with your answer.")], steered: false }
+     2 msg_011Ch5dxAGv3Tq7PYBjghU94:0 Prose { text: [Text("ONE TWO THREE")], streaming: false, working_note: false }
+     3 a9694a22-3d9a-4887-80ec-84035679f537 Prompt { text: [Text("Please go on.")], steered: false }
+     4 msg_011Ch5dxgTsB4rDbJb2st9jW:0 Prose { text: [Text("FOUR FIVE SIX")], streaming: false, working_note: false }
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+  changes: Changeability { model: NotOffered, effort: NotOffered, permission: NotOffered, mode: NotOffered } commands=0

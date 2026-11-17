@@ -23,6 +23,11 @@ pub enum Channel {
     Transcript,
     /// A payload the provider handed a hook command on stdin.
     Hook,
+    /// What terminal Claude wrote for one of its subagents: a row appended
+    /// to `<session>/subagents/agent-<id>.jsonl`, or the whole of the
+    /// `meta.json` beside it. The bytes are the recorder's line, which names
+    /// the file; [`subagent_write`] reads it.
+    Subagent,
     /// The provider process ended here with the exit code in the bytes,
     /// as when a provider dies mid-turn. Host-side fixtures write it as
     /// `{"dir":"exit","line":"<code>"}`; recorded corpora end with the
@@ -138,6 +143,10 @@ pub fn load(dir: &Path) -> Result<Vec<Process>, LoadError> {
             ),
             "transcript" => (Channel::Transcript, "pty"),
             "hook" => (Channel::Hook, "pty"),
+            "subagent" => (Channel::Subagent, "pty"),
+            // What passed between terminal Claude and a tool server: a
+            // record of what the server was told, which no fake plays.
+            other if other.starts_with("mcp:") => continue,
             other => (
                 if dir == "stdin" {
                     Channel::Input
@@ -252,29 +261,161 @@ pub fn transcript_path(config_dir: &Path, cwd: &Path, session: &str) -> PathBuf 
 /// A recorded hook payload as a fake hands it over on this machine: a
 /// transcript path the recorder sanitised (as a machine path, or as a
 /// numbered transcript by newer recorders) becomes the file the fake writes
-/// that session's rows to, so a host following the path reads them.
+/// that session's rows to, so a host following the path reads them; a
+/// subagent's transcript (`<TRANSCRIPT_n>/subagents/<file>`) becomes the
+/// file beside it the fake writes that subagent's rows to.
 pub fn localize_hook(payload: &[u8], transcript: &Path) -> Vec<u8> {
-    const KEY: &str = r#""transcript_path":""#;
+    let localized = localize_key(payload, "transcript_path", |recorded| {
+        let sanitised = recorded == "<MACHINE_PATH>" || transcript_label(recorded).is_some();
+        sanitised.then(|| transcript.to_owned())
+    });
+    localize_key(&localized, "agent_transcript_path", |recorded| {
+        let (label, relative) = recorded.split_once('/')?;
+        transcript_label(label)?;
+        Some(subagent_path(transcript, relative))
+    })
+}
+
+/// `n` of a numbered transcript, `<TRANSCRIPT_n>`.
+fn transcript_label(text: &str) -> Option<&str> {
+    text.strip_prefix("<TRANSCRIPT_")
+        .and_then(|rest| rest.strip_suffix('>'))
+        .filter(|number| !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+/// Replaces the string value of `key` in a payload, cut from the text so the
+/// rest keeps its bytes, where `local` says what it is here.
+fn localize_key(payload: &[u8], key: &str, local: impl Fn(&str) -> Option<PathBuf>) -> Vec<u8> {
+    let key = format!("\"{key}\":\"");
     let Ok(text) = std::str::from_utf8(payload) else {
         return payload.to_vec();
     };
-    let Some(start) = text.find(KEY).map(|at| at + KEY.len()) else {
+    let Some(start) = text.find(&key).map(|at| at + key.len()) else {
         return payload.to_vec();
     };
     let Some(end) = text[start..].find('"').map(|len| start + len) else {
         return payload.to_vec();
     };
-    let recorded = &text[start..end];
-    let sanitised = recorded == "<MACHINE_PATH>"
-        || recorded
-            .strip_prefix("<TRANSCRIPT_")
-            .and_then(|rest| rest.strip_suffix('>'))
-            .is_some_and(|number| number.bytes().all(|byte| byte.is_ascii_digit()));
-    if !sanitised {
+    let Some(path) = local(&text[start..end]) else {
         return payload.to_vec();
-    }
-    let local = Value::String(transcript.display().to_string()).to_string();
+    };
+    let local = Value::String(path.display().to_string()).to_string();
     format!("{}{local}{}", &text[..start - 1], &text[end + 1..]).into_bytes()
+}
+
+/// Where Claude keeps a file of a session's subagents: `relative`
+/// (`subagents/agent-<id>.jsonl`) beside the session's transcript, in the
+/// folder named after the session.
+pub fn subagent_path(transcript: &Path, relative: &str) -> PathBuf {
+    transcript.with_extension("").join(relative)
+}
+
+/// What a [`Channel::Subagent`] event writes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SubagentWrite {
+    /// A row appended to a subagent's transcript, as recorded.
+    Row(Vec<u8>),
+    /// A `meta.json`'s whole contents, as recorded.
+    Meta(Vec<u8>),
+}
+
+/// The file a subagent event writes, relative to its session's folder
+/// (`subagents/agent-<id>.jsonl`), the session its row names if it names
+/// one, and what it writes: the recorder's `{"path":…,"row":…}` or
+/// `{"path":…,"meta":…}`, the value cut from the text so the provider's
+/// number formatting survives.
+pub fn subagent_write(line: &[u8]) -> Option<(String, Option<String>, SubagentWrite)> {
+    let text = std::str::from_utf8(line).ok()?;
+    let wrapper: Value = serde_json::from_str(text).ok()?;
+    let recorded = wrapper.get("path")?.as_str()?;
+    let path = serde_json::to_string(wrapper.get("path")?).ok()?;
+    let relative = match recorded.split_once('/') {
+        Some((label, relative)) if transcript_label(label).is_some() => relative.to_owned(),
+        // An unsanitised capture names the file where it was.
+        _ => recorded
+            .rsplit_once("/subagents/")
+            .map(|(_, file)| format!("subagents/{file}"))?,
+    };
+    // The value as recorded where it follows the path, as the recorder
+    // writes it; else as it parses (a sanitised line has its keys sorted).
+    let value = |key: &str| {
+        text.strip_prefix(&format!("{{\"path\":{path},\"{key}\":"))
+            .and_then(|rest| rest.strip_suffix('}'))
+            .map(|value| value.as_bytes().to_vec())
+            .or_else(|| serde_json::to_vec(wrapper.get(key)?).ok())
+    };
+    if wrapper.get("meta").is_some() {
+        return Some((relative, None, SubagentWrite::Meta(value("meta")?)));
+    }
+    let row = value("row")?;
+    Some((relative, row_session(&row), SubagentWrite::Row(row)))
+}
+
+/// Writes a subagent event beside `transcript`, its session's transcript:
+/// a row appended, a `meta.json` replaced.
+pub fn write_subagent(
+    transcript: &Path,
+    relative: &str,
+    write: &SubagentWrite,
+) -> std::io::Result<()> {
+    let path = subagent_path(transcript, relative);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    match write {
+        SubagentWrite::Row(row) => {
+            use std::io::Write as _;
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)?;
+            let mut line = row.clone();
+            line.push(b'\n');
+            file.write_all(&line)
+        }
+        SubagentWrite::Meta(meta) => std::fs::write(&path, meta),
+    }
+}
+
+/// A recording's subagent files as a fake leaves them: each session's
+/// files, relative to its folder, with their contents at the end.
+pub fn subagent_files(events: &[Event]) -> Vec<(String, String, Vec<u8>)> {
+    let mut files: Vec<(String, String, Vec<u8>)> = Vec::new();
+    let mut current = String::from("unnamed");
+    for event in events {
+        match event.channel {
+            Channel::Hook | Channel::Transcript => {
+                if let Some(session) = row_session(&event.bytes) {
+                    current = session;
+                }
+                continue;
+            }
+            Channel::Subagent => {}
+            _ => continue,
+        }
+        let Some((relative, session, write)) = subagent_write(&event.bytes) else {
+            continue;
+        };
+        let session = session.unwrap_or_else(|| current.clone());
+        let at = match files
+            .iter()
+            .position(|(s, r, _)| *s == session && *r == relative)
+        {
+            Some(at) => at,
+            None => {
+                files.push((session, relative, Vec::new()));
+                files.len() - 1
+            }
+        };
+        match write {
+            SubagentWrite::Row(row) => {
+                files[at].2.extend_from_slice(&row);
+                files[at].2.push(b'\n');
+            }
+            SubagentWrite::Meta(meta) => files[at].2 = meta,
+        }
+    }
+    files
 }
 
 /// Every hook payload of a recorded process, localized as the fake hands

@@ -88,8 +88,9 @@ const SPAWN: &str = "Start a child agent with a first prompt: claude or codex. I
 this host unless you name \
 another trusted host, in your working directory unless you give one. On another host, give \
 a folder there: ask the person which one if you do not know one. The child does \
-its work and stops; you are sent its last message when it finishes, and a later send to it \
-resumes it.";
+its work and stops. When it finishes, its last message arrives as a new message in the main \
+conversation of the amux agent these tools belong to: a subagent that spawns one is not sent \
+it, its top-level agent is. A later send to the child resumes it.";
 const STOP: &str = "Stop one of your own child agents now, done with it: its turn is \
 cancelled, it ends, and so do the agents it started. Its history stays, and a later send from \
 you resumes it.";
@@ -272,10 +273,12 @@ impl Server {
         };
         // The person is done with a closed agent, so it is not offered as
         // one to work with; naming it still answers why it will not take a
-        // message.
+        // message. A provider subagent (Claude's Agent tool, a Codex child
+        // thread) takes no messages at all: only its parent's model reaches
+        // it, through the provider's own tools, so it is not listed.
         let rows = agents
             .iter()
-            .filter(|agent| agent.filing() != Filing::Closed)
+            .filter(|agent| agent.filing() != Filing::Closed && agent.native.is_none())
             .map(|agent| {
                 let mut row = json!({
                     "name": agent.name,
@@ -577,29 +580,20 @@ impl Server {
     /// over [`wire::ATTACHMENT_SIZE_LIMIT`], in the words a person's
     /// over-large file gets.
     fn within_limit(&self, attachment: &Attachment) -> Result<(), Refusal> {
-        use wire::attachment::Of;
-        let blob = match attachment.of.as_ref() {
-            Some(Of::Image(blob) | Of::File(blob)) => blob,
-            Some(Of::Review(review)) => {
-                match review.diff.as_ref().and_then(|diff| diff.patch.as_ref()) {
-                    Some(blob) => blob,
-                    None => return Ok(()),
-                }
+        for blob in attachments::blobs(attachment) {
+            let stored = self
+                .dir
+                .join(dir::BLOBS)
+                .join(interpret::to_hex(&blob.hash));
+            let size = std::fs::metadata(&stored).map_or(0, |meta| meta.len());
+            if size > wire::ATTACHMENT_SIZE_LIMIT as u64 {
+                let name = if blob.name.is_empty() {
+                    "the attachment"
+                } else {
+                    &blob.name
+                };
+                return Err(too_large_words(name).into());
             }
-            Some(Of::Text(_)) | None => return Ok(()),
-        };
-        let stored = self
-            .dir
-            .join(dir::BLOBS)
-            .join(interpret::to_hex(&blob.hash));
-        let size = std::fs::metadata(&stored).map_or(0, |meta| meta.len());
-        if size > wire::ATTACHMENT_SIZE_LIMIT as u64 {
-            let name = if blob.name.is_empty() {
-                "the attachment"
-            } else {
-                &blob.name
-            };
-            return Err(too_large_words(name).into());
         }
         Ok(())
     }

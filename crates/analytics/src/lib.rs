@@ -242,6 +242,10 @@ mod tests {
                 "sign_in_offer",
                 json!({"role": "receiver", "outcome": "accepted"}),
             ),
+            (
+                "page_review_sent",
+                json!({"comments": 4, "quotes": 1, "regions": 2}),
+            ),
         ];
         assert_eq!(examples, expected);
     }

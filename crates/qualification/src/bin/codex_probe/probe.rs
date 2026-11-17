@@ -1,7 +1,8 @@
 //! `codex-probe`: the capture proxy the live lane puts in front of Codex,
-//! the tool server its form scenario configures, and `join`, which
-//! sanitizes a passing capture into the corpus.
+//! the tool servers its form and subagent-tools scenarios configure, and
+//! `join`, which sanitizes a passing capture into the corpus.
 
+use std::io::{BufRead as _, Write as _};
 use std::path::Path;
 
 use qualification::recording::live::{self, Captured, owner_home};
@@ -22,6 +23,13 @@ pub(super) async fn main() -> Result<(), Box<dyn std::error::Error>> {
         live::serve_ask_tool(TOOL_SERVER);
         return Ok(());
     }
+    if std::env::args().nth(1).as_deref() == Some("__meta-server") {
+        let log = std::env::args()
+            .nth(2)
+            .ok_or("usage: __meta-server <log>")?;
+        serve_meta_tool(Path::new(&log));
+        return Ok(());
+    }
     #[cfg(unix)]
     if std::env::var_os(super::capture::PROXY_ENV).is_some() {
         return super::capture::run().await;
@@ -30,6 +38,74 @@ pub(super) async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match args.as_slice() {
         [command, capture, name] if command == "join" => join(Path::new(capture), name),
         _ => Err("usage: codex-probe join <capture dir> <name>".into()),
+    }
+}
+
+/// A tool server that keeps what it was sent: each request Codex writes it
+/// is appended to `log` with the server's process id, so a scenario can
+/// read which threads started a server of their own and what `_meta` a
+/// call from each thread carries. Its one tool, `whoami`, answers with the
+/// process id that heard it.
+fn serve_meta_tool(log: &Path) {
+    let pid = std::process::id();
+    let keep = |line: &str| {
+        let row = serde_json::json!({"pid": pid, "line": line});
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log)
+        {
+            let _ = file.write_all(format!("{row}\n").as_bytes());
+        }
+    };
+    let mut stdout = std::io::stdout();
+    for line in std::io::stdin().lock().lines() {
+        let Ok(line) = line else { break };
+        keep(&line);
+        let Ok(message) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+            continue;
+        };
+        let Some(id) = message.get("id").cloned() else {
+            continue;
+        };
+        let result = match message.get("method").and_then(serde_json::Value::as_str) {
+            Some("initialize") => serde_json::json!({
+                "protocolVersion": message.pointer("/params/protocolVersion")
+                    .cloned()
+                    .unwrap_or_else(|| "2025-06-18".into()),
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "meta", "version": "1.0.0"},
+            }),
+            Some("tools/list") => serde_json::json!({
+                "tools": [{
+                    "name": "whoami",
+                    "description": "Says which tool-server process answered.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"caller": {"type": "string"}},
+                        "required": ["caller"],
+                    },
+                }],
+            }),
+            Some("tools/call") => {
+                let caller = message
+                    .pointer("/params/arguments/caller")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("nobody");
+                serde_json::json!({
+                    "content": [{"type": "text", "text": format!("process {pid} heard {caller}")}],
+                })
+            }
+            _ => serde_json::json!(null),
+        };
+        let answer = if result.is_null() {
+            serde_json::json!({"jsonrpc": "2.0", "id": id,
+                "error": {"code": -32601, "message": "method not found"}})
+        } else {
+            serde_json::json!({"jsonrpc": "2.0", "id": id, "result": result})
+        };
+        let _ = writeln!(stdout, "{answer}");
+        let _ = stdout.flush();
     }
 }
 

@@ -1,0 +1,20 @@
+{
+  "about": "A subagent in the background outlives an interrupted turn, then the parent stops it with TaskStop.",
+  "spec": {
+    "created_at_ms": 0
+  },
+  "prelude": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch"
+        }
+      }
+    }
+  ],
+  "recording": {
+    "path": "live/subagent_stopped/io.jsonl",
+    "format": "claude_pty_io"
+  }
+}

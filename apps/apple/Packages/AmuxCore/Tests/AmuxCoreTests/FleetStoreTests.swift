@@ -27,8 +27,8 @@ enum Cards {
                 phaseSinceMs: Int64(now.addingTimeInterval(-60 * minutesAgo)
                     .timeIntervalSince1970 * 1000),
                 host: "desk", hostReach: reach, children: children,
-                familyAttention: family ?? attention, members: members, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: filing, topLevel: true,
-                branch: nil, exitCause: attention == .exited ? .ended : nil, workspaceGoes: nil),
+                familyAttention: family ?? attention, members: members, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: filing, topLevel: true, native: false,
+                branch: nil, exitCause: attention == .exited ? .ended : nil, repository: nil, workspaceGoes: nil),
             depth: depth, expanded: expanded, secondLine: .blank, loud: loud)
     }
 

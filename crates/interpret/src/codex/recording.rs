@@ -26,7 +26,7 @@
 use std::collections::BTreeMap;
 
 use codex_protocol::client::{ElicitationAction, GrantScope, InjectedContent, InjectedItem};
-use codex_protocol::server::{CommandDecision, Decision as Offered};
+use codex_protocol::server::{CommandDecision, Decision as Offered, ThreadResponse};
 use codex_protocol::{
     ClientMessage, ClientRequest, ClientResponse, RequestId, ServerMessage, ServerNotification,
     ServerRequest,
@@ -107,6 +107,9 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
     let mut replied = std::collections::BTreeSet::<usize>::new();
     // The plan item Codex completed since the host last started a turn.
     let mut planned = None::<String>;
+    // The agent's own thread: an answer to another thread's request is
+    // the person's input to that child thread's subagent.
+    let mut ours = None::<String>;
     for (at, recorded) in lines.iter().enumerate() {
         if replied.contains(&at) {
             continue;
@@ -125,7 +128,15 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
         let message = match line {
             Line::Server(mut message) => {
                 match &mut message {
-                    ServerMessage::Response { id, .. } => {
+                    ServerMessage::Response { id, result, .. } => {
+                        let names_ours = matches!(&*id, RequestId::String(asked)
+                            if super::starts_a_thread(asked) || asked == super::RESUME_REQUEST);
+                        if names_ours
+                            && let Ok(result) = result
+                            && let Ok(answer) = codex_protocol::result::<ThreadResponse>(result)
+                        {
+                            ours = Some(answer.thread.id);
+                        }
                         if let Some(ours) = renumbered.get(&key(id)) {
                             *id = RequestId::String(ours.clone());
                         }
@@ -374,13 +385,21 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                 } => {
                     let key = key(&id);
                     responded.insert(key.clone());
-                    match asked
-                        .get(&key)
-                        .and_then(|asked| answer(asked, key, &response))
-                    {
-                        Some(arm) => arm,
-                        None => continue,
+                    let Some(request) = asked.get(&key) else {
+                        continue;
+                    };
+                    let thread = request.thread_id().to_owned();
+                    let Some(arm) = answer(request, key, &response) else {
+                        continue;
+                    };
+                    if ours.as_ref().is_some_and(|ours| *ours != thread) && !thread.is_empty() {
+                        push(Event::ChildInput {
+                            agent_id: thread.into_bytes(),
+                            input: Input::new(input_id, CodexInput { of: Some(arm) }),
+                        });
+                        continue;
                     }
+                    arm
                 }
                 _ => continue,
             };

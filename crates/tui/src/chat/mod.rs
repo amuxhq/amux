@@ -27,7 +27,8 @@ use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ui_state::{
-    ActivityKind, Composer, InputState, InputWhat, Key, PhaseView, Refusal, SessionState, Waiting,
+    ActivityKind, Composer, InputState, InputWhat, JobStop, Key, PhaseView, Refusal, SessionState,
+    Waiting,
 };
 pub use ui_view::Comparison;
 use ui_view::{
@@ -143,6 +144,8 @@ pub enum ChatEffect {
     Copy(String),
     /// amux's rename of this chat's agent: `/rename <name>`.
     Rename(String),
+    /// Open the chat of an agent a call in this one started.
+    OpenAgent(ui_state::AgentKey),
 }
 
 /// What the reader has dragged over.
@@ -306,6 +309,9 @@ pub struct ChatView {
     /// How this machine reaches the agent's host, kept current by the app
     /// from the fleet.
     pub reach: Reach,
+    /// How the agents this chat's rows started stand, kept current by the
+    /// app from the fleet before each frame.
+    pub agents: ui_view::ChatAgents,
     /// The feed's images, on terminals that can draw them.
     pub thumbs: thumbs::Thumbs,
     /// The app is drawing something of its own over the chat this frame.
@@ -472,6 +478,7 @@ impl ChatView {
             // Nothing is known against the host until the app reads the
             // fleet, before the chat is first drawn.
             reach: Reach::Online(wire::RouteKind::Unspecified),
+            agents: ui_view::ChatAgents::default(),
             leader: 'a',
             open_runs: HashSet::new(),
             tools: ToolSteps::Collapse,
@@ -556,6 +563,7 @@ impl ChatView {
             asking: self.asking.as_ref(),
             tail: &self.feed_tail,
             thumbnails: self.thumbs.enabled() && self.feed.0 >= thumbs::LEAST_FEED_WIDTH,
+            agents: &self.agents,
         }
     }
 
@@ -693,7 +701,7 @@ impl ChatView {
             self.ask.paste_box_note(&card, text);
             return;
         }
-        if self.tray.is_none() {
+        if self.tray.is_none() && has_draft(state) {
             self.editor.paste(text);
             self.focus = None;
         }
@@ -780,6 +788,19 @@ impl ChatView {
                     vec![]
                 };
             }
+            // A provider subagent has no turn of its own to interrupt: its
+            // one stop ends it, so the Stop window asks first, as for a job.
+            KeyCode::Char('x') if ctrl && let Composer::Native { stop } = state.composer() => {
+                if let Some(key) = stop.key() {
+                    self.stop_ask = Some(StopAsk {
+                        key: key.to_owned(),
+                        command: ui_state::shown_name(state.agent()).to_owned(),
+                        stop: true,
+                        subagent: true,
+                    });
+                }
+                return vec![];
+            }
             KeyCode::Char('x') if ctrl => {
                 let stops = ui_view::ask_card(state).is_some_and(|card| card.stops_turn);
                 return if state.phase() == PhaseView::Working || stops {
@@ -831,8 +852,9 @@ impl ChatView {
         if let Some(card) = self.card_takes_keys(state) {
             if !self.arm_ask(&card, now_ms, quiet_since) {
                 // Words typed as the ask appears are still the draft's; Enter
-                // neither sends the draft nor answers what was not read.
-                if key.code != KeyCode::Enter && self.editor.key(key) {
+                // neither sends the draft nor answers what was not read. A
+                // chat with no draft drops them: the ask was not read either.
+                if key.code != KeyCode::Enter && has_draft(state) && self.editor.key(key) {
                     self.not_sent = None;
                 }
                 return vec![];
@@ -845,6 +867,14 @@ impl ChatView {
         }
         // Signing in happens elsewhere; the draft waits behind the box.
         if ui_view::sign_in(state).is_some() {
+            return vec![];
+        }
+        // A provider subagent takes no messages: there is no field to type
+        // in, and Enter sends nothing.
+        if matches!(state.composer(), Composer::Native { .. }) {
+            if key.code == KeyCode::Esc {
+                self.escape();
+            }
             return vec![];
         }
         if let Some(selected) = self.tray {
@@ -1101,6 +1131,8 @@ impl ChatView {
             return vec![];
         }
         match state.composer() {
+            // A provider subagent takes no messages at all.
+            Composer::Native { .. } => vec![],
             // Not current, nothing goes: the draft stays in the composer,
             // whose top edge says why, until it can.
             Composer::Waiting(_) => {
@@ -1419,6 +1451,7 @@ impl ChatView {
                         key: job_key.to_owned(),
                         command: text::first_line(&job.command).to_owned(),
                         stop: true,
+                        subagent: false,
                     });
                 }
             }
@@ -1965,7 +1998,7 @@ impl ChatView {
                 self.clear_selection();
                 Some(vec![])
             }
-            KeyCode::Char('r') if plain && in_feed => {
+            KeyCode::Char('r') if plain && in_feed && has_draft(state) => {
                 let words = self.selected_words(state, theme);
                 self.editor.quote(&words);
                 self.focus = None;
@@ -2000,7 +2033,7 @@ impl ChatView {
         if !self.copy_on_select && !self.copied {
             pairs.push(("c", "copy"));
         }
-        if in_feed {
+        if in_feed && has_draft(state) {
             pairs.push(("r", "reply"));
         }
         pairs.push(("esc", "clear"));
@@ -2096,7 +2129,7 @@ impl ChatView {
         // where it is: the feed holds its top line, so an opened fold grows
         // downward from the line that was clicked. Following the newest row,
         // it keeps following.
-        if matches!(hit, FeedHit::Run(_) | FeedHit::Step(_))
+        if matches!(hit, FeedHit::Run(_) | FeedHit::Step(_) | FeedHit::Group(_))
             && self.anchor != Anchor::Bottom
             && let Some(top) = self.laid.blocks.first()
         {
@@ -2114,6 +2147,9 @@ impl ChatView {
                     _ => ChatEffect::OpenAttachment(blob),
                 }];
             }
+            FeedHit::Agent(agent) => return vec![ChatEffect::OpenAgent(agent)],
+            // A group is held open in the set that holds open runs.
+            FeedHit::Group(member) => ui_view::toggle_group(state, &member, &mut self.open_runs),
             FeedHit::Run(member) => ui_view::toggle_run(state, &member, &mut self.open_runs),
             FeedHit::Step(key) => {
                 // A run opens from any member and closes as a whole.
@@ -2198,10 +2234,10 @@ impl ChatView {
         })
     }
 
-    /// `<leader> o`: a folded run opens, an open run's first step folds it
-    /// again, and any other step opens its detail. With no row focused, the
-    /// newest run on screen opens or folds, so a run is never out of the
-    /// keyboard's reach.
+    /// `<leader> o`: a folded run or group of subagents opens, an open
+    /// one's first row folds it again, and any other step opens its detail.
+    /// With no row focused, the newest run or group on screen opens or
+    /// folds, so neither is ever out of the keyboard's reach.
     pub fn toggle_expanded(&mut self, state: &SessionState) {
         let Some(key) = self.focus.clone() else {
             let newest = self
@@ -2210,17 +2246,22 @@ impl ChatView {
                 .iter()
                 .rev()
                 .find_map(|block| match &block.toggle {
-                    Toggle::Run(id) => Some(id.clone()),
+                    Toggle::Run(id) => Some(FeedHit::Run(id.clone())),
+                    Toggle::Group(id) => Some(FeedHit::Group(id.clone())),
                     _ => None,
                 });
-            if let Some(id) = newest {
-                self.feed_hit(state, FeedHit::Run(id));
+            if let Some(hit) = newest {
+                self.feed_hit(state, hit);
             }
             return;
         };
         if let Some(block) = self.laid.blocks.iter().find(|block| block.key == key) {
             match block.toggle.clone() {
                 Toggle::Row => {}
+                Toggle::Group(member) => {
+                    self.feed_hit(state, FeedHit::Group(member));
+                    return;
+                }
                 Toggle::Run(id) => {
                     self.feed_hit(state, FeedHit::Run(id));
                     return;
@@ -2269,6 +2310,31 @@ impl ChatView {
                 }
             }
         }
+    }
+
+    /// `<leader> enter`: the chat of the agent the focused row's call
+    /// started, or with no row focused the newest such row's on screen. A
+    /// folded group stands for several agents, so it unfolds instead, to
+    /// pick one from. Opening an agent and opening a row in place are kept
+    /// apart: `<leader> o` opens the row.
+    pub fn open_focused_agent(&mut self, state: &SessionState) -> Vec<ChatEffect> {
+        let block =
+            match &self.focus {
+                Some(key) => self.laid.blocks.iter().find(|block| &block.key == key),
+                None => self.laid.blocks.iter().rev().find(|block| {
+                    block.opens.is_some() || matches!(block.toggle, Toggle::Group(_))
+                }),
+            };
+        let Some(block) = block else {
+            return vec![];
+        };
+        if let Some(agent) = &block.opens {
+            return vec![ChatEffect::OpenAgent(agent.clone())];
+        }
+        if let Toggle::Group(member) = block.toggle.clone() {
+            self.feed_hit(state, FeedHit::Group(member));
+        }
+        vec![]
     }
 
     /// `<leader> y`: the focused row's words, or the newest row's.
@@ -2466,9 +2532,12 @@ impl ChatView {
 #[derive(Clone, Debug)]
 struct StopAsk {
     key: String,
+    /// The job's command, or the subagent's name.
     command: String,
     /// Stop has the focus, else Cancel.
     stop: bool,
+    /// It stops the subagent whose chat this is, not one of its jobs.
+    subagent: bool,
 }
 
 /// The Stop window, centred over the chat: "Stop cargo test? The agent
@@ -2484,7 +2553,12 @@ fn stop_window(paint: &mut Paint<'_>, area: Rect, ask: &StopAsk, theme: Theme) {
         &[("←→", "choose"), ("enter", "press"), ("esc", "cancel")],
         theme,
     );
-    let rest = "? The agent keeps running.";
+    // A subagent's stop ends it, and the agent that started it goes on.
+    let rest = if ask.subagent {
+        "? Its parent carries on."
+    } else {
+        "? The agent keeps running."
+    };
     let inner = (text::str_width("Stop ") + text::str_width(&ask.command) + text::str_width(rest))
         .max(crate::panel::content_width(std::slice::from_ref(&legend)))
         .clamp(36, 60)
@@ -2601,7 +2675,12 @@ impl ChatView {
             tail.extend(feed::pending_prompt(&prompt.text, &when, feed_width, theme));
         }
         if let Some(activity) = &view.activity {
-            tail.push(quiet_activity(activity, feed_width, theme));
+            tail.push(quiet_activity(
+                activity,
+                &self.agents.live,
+                feed_width,
+                theme,
+            ));
             tail.push(Line::default());
         }
         // An exited agent's feed ends saying so, like a session boundary,
@@ -2802,10 +2881,13 @@ impl ChatView {
                 }
                 ask_box = Some((at, drawn.spots));
                 bottom.extend(lines);
-                let stop: &[(&str, &str)] = if card.stops_turn {
-                    &[("ctrl+x", "interrupt")]
-                } else {
-                    &[]
+                // In a subagent's chat Ctrl+X stops the subagent, where it
+                // can be stopped; it has no turn of its own to interrupt.
+                let stop: &[(&str, &str)] = match state.composer() {
+                    Composer::Native { stop } if stop.key().is_some() => &[("ctrl+x", "stop")],
+                    Composer::Native { .. } => &[],
+                    _ if card.stops_turn => &[("ctrl+x", "interrupt")],
+                    _ => &[],
                 };
                 let more = format!("ctrl+{}", self.leader);
                 let more = &[(more.as_str(), "more")];
@@ -2834,6 +2916,10 @@ impl ChatView {
                 }
                 bottom.extend(lines);
                 hint = Hint::Keys(keys(&[(&format!("ctrl+{}", self.leader), "more")]));
+            }
+            _ if let Composer::Native { stop } = state.composer() => {
+                bottom.extend(native_box(state.kind(), &stop, &summary, width, theme));
+                hint = native_hint(&stop, self.leader);
             }
             _ => {
                 plain_box = Some(bottom.len());
@@ -3489,16 +3575,18 @@ impl ChatView {
             theme.muted()
         };
         let mut controls = Vec::new();
-        for (spans, control) in [
+        // A provider subagent works in its parent's folder, so its changes
+        // are the parent's to review: it has no [Diff] of its own.
+        let diff = (!state.native()).then(|| {
             (
                 diff_spans(state, self.comparison, diff_hovered, theme),
                 HeaderControl::Diff,
-            ),
-            (
-                vec![Span::styled("[Home]", home_style)],
-                HeaderControl::Home,
-            ),
-        ] {
+            )
+        });
+        for (spans, control) in diff.into_iter().chain([(
+            vec![Span::styled("[Home]", home_style)],
+            HeaderControl::Home,
+        )]) {
             gap(&mut right);
             let columns = spans
                 .iter()
@@ -3758,6 +3846,80 @@ fn sign_in_box(
     (lines, mode)
 }
 
+/// Who runs a provider subagent, by its kind.
+fn provider_name(kind: wire::Kind) -> &'static str {
+    match kind {
+        wire::Kind::Codex => "Codex",
+        _ => "Claude",
+    }
+}
+
+/// A provider subagent's composer: no field, since it takes no messages,
+/// only who runs it, and how its stop stands once one went (stopping, or
+/// the provider's refusal).
+fn native_box(
+    kind: wire::Kind,
+    stop: &JobStop,
+    controls: &ui_view::ControlsSummary,
+    width: usize,
+    theme: Theme,
+) -> Vec<Line<'static>> {
+    const MARGIN: usize = 2;
+    let inner = width.saturating_sub(2 * MARGIN + 4).max(1);
+    let said = format!(
+        "{} runs this subagent · it takes no messages",
+        provider_name(kind)
+    );
+    let mut body = vec![Line::from(Span::styled(
+        text::ellipsize(&said, inner),
+        theme.muted(),
+    ))];
+    match stop {
+        JobStop::Stopping => body.push(Line::from(Span::styled("Stopping…", theme.faint()))),
+        JobStop::Refused { error, .. } => {
+            let words = format!("Could not stop it: {}", text::first_line(error));
+            body.extend(
+                text::wrap(&words, inner)
+                    .into_iter()
+                    .map(|line| Line::from(Span::styled(line, theme.error()))),
+            );
+        }
+        JobStop::Offered { .. } | JobStop::Unavailable => {}
+    }
+    framed(body, theme.hairline(), &ROUNDED, controls, width, theme).0
+}
+
+/// The keys under a subagent's composer: its stop while one can go.
+fn native_hint(stop: &JobStop, leader: char) -> Hint {
+    let more = format!("ctrl+{leader}");
+    let mut pairs = Vec::new();
+    if stop.key().is_some() {
+        pairs.push(("ctrl+x", "stop"));
+    }
+    pairs.push((more.as_str(), "more"));
+    Hint::Keys(keys(&pairs))
+}
+
+/// A provider subagent's composer and the keys under it, its edge naming
+/// `model`, as the component catalogue draws it.
+#[cfg(feature = "fixtures")]
+pub(crate) fn native_composer_lines(
+    kind: wire::Kind,
+    stop: &JobStop,
+    model: &str,
+    width: usize,
+    theme: Theme,
+) -> Vec<Line<'static>> {
+    let edge = ui_view::ControlsSummary {
+        model: Some(model.to_owned()),
+        ..Default::default()
+    };
+    let mut lines = native_box(kind, stop, &edge, width, theme);
+    lines.push(Line::default());
+    lines.push(hint_line(&native_hint(stop, 'a'), width, theme).0);
+    lines
+}
+
 /// The sign-in box alone, its edge naming `model`, as the component
 /// catalogue draws it.
 #[cfg(feature = "fixtures")]
@@ -3870,7 +4032,8 @@ fn waiting_words(composer: &Composer, host: &str, reach: Reach) -> Option<String
         // that daemon gone, never the agent's host, as home says it.
         Composer::Waiting(Waiting::Reconnecting) => "reconnecting to amux".to_owned(),
         Composer::Waiting(Waiting::CatchingUp) => "catching up".to_owned(),
-        Composer::Send | Composer::Resume => return None,
+        // Its box says who runs it, in place of a field.
+        Composer::Native { .. } | Composer::Send | Composer::Resume => return None,
     })
 }
 
@@ -3954,6 +4117,14 @@ pub(crate) fn refusal_words(refusal: &Refusal) -> String {
     .to_owned()
 }
 
+/// Whether the chat has a draft to type into. A provider subagent's has
+/// none: its composer is no text box, so a key, a paste or a quote there
+/// would land in a draft nobody sees, one that later swallows Ctrl+C and
+/// `?` while the screen shows nothing to clear.
+fn has_draft(state: &SessionState) -> bool {
+    !matches!(state.composer(), Composer::Native { .. })
+}
+
 /// What an agent is doing, as the activity line names it.
 pub(crate) fn activity_words(kind: &ActivityKind) -> String {
     match kind {
@@ -3981,14 +4152,35 @@ pub(crate) fn activity_words(kind: &ActivityKind) -> String {
 /// While the agent works, one quiet line that it is, and for how long, in
 /// whole seconds once there is one. What it is doing shows as live steps in
 /// the feed, so a call in flight is the turn's work, timed with the turn.
-fn quiet_activity(activity: &ui_state::Activity, width: usize, theme: Theme) -> Line<'static> {
+/// While the agent waits on its subagents and one of them waits on the
+/// person, the line says how they stand, as their group's row does, from
+/// `live`: the subagents the chat's rows opened that are still live.
+fn quiet_activity(
+    activity: &ui_state::Activity,
+    live: &ui_view::GroupState,
+    width: usize,
+    theme: Theme,
+) -> Line<'static> {
     let ms = match activity.kind {
         ActivityKind::Working | ActivityKind::Running { .. } => activity.turn_elapsed_ms,
         _ => activity.elapsed_ms,
     };
-    let words = activity_words(&activity.kind);
     let mut line = Line::from(Span::raw("    "));
-    push(&mut line, words, theme.muted(), width);
+    if matches!(activity.kind, ActivityKind::Subagents { .. }) && live.needs_you > 0 {
+        for (at, (words, ink)) in feed::group_words(live, theme).into_iter().enumerate() {
+            if at > 0 {
+                push(&mut line, " · ", theme.faint(), width);
+            }
+            push(&mut line, words, ink, width);
+        }
+    } else {
+        push(
+            &mut line,
+            activity_words(&activity.kind),
+            theme.muted(),
+            width,
+        );
+    }
     if let ActivityKind::Retrying { retry_at_ms, .. } = activity.kind {
         // How long until the next attempt says more than how long since the
         // last. The activity's own clock is since plus elapsed.
@@ -4259,6 +4451,7 @@ fn turn_hint(state: &SessionState, editor: &Editor, reach: Reach, leader: char) 
             pairs.extend(shift_tab);
         }
         Composer::Resume => pairs.push(("enter", "resume")),
+        Composer::Native { .. } => {}
         Composer::Waiting(Waiting::Detached) if reach == Reach::Offline(Offline::SignedOut) => {
             return waits("can't send until this machine signs in");
         }
@@ -4655,13 +4848,18 @@ mod tests {
             elapsed_ms,
             turn_elapsed_ms: elapsed_ms,
         };
-        quiet_activity(&activity, 80, Theme::default())
-            .spans
-            .iter()
-            .map(|span| span.content.as_ref())
-            .collect::<String>()
-            .trim()
-            .to_owned()
+        quiet_activity(
+            &activity,
+            &ui_view::GroupState::default(),
+            80,
+            Theme::default(),
+        )
+        .spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect::<String>()
+        .trim()
+        .to_owned()
     }
 
     /// A retry counts down to its next attempt, and once that moment has

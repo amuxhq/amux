@@ -26,7 +26,8 @@ final class DeleteWordsTests: XCTestCase {
                 kind: .claudeSdk, attention: .exited, cwd: "~/src/amux", phaseSinceMs: 0,
                 host: "Studio.local", hostReach: .online(.direct), children: 0,
                 familyAttention: .exited, members: 1, descendants: descendants, backgroundJobs: 0, closeHeld: false,
-                filing: .closed, topLevel: true, branch: "fix-scroll", exitCause: .ended, workspaceGoes: goes),
+                filing: .closed, topLevel: true, native: false, branch: "fix-scroll", exitCause: .ended,
+                repository: nil, workspaceGoes: goes),
             depth: 0, expanded: false, secondLine: .blank, loud: nil)
     }
 

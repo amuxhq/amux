@@ -86,7 +86,15 @@ mod claude_sdk {
         resumed => "resumed",
         sign_in_problem => "sign_in_problem",
         steer_folded => "steer_folded",
+        subagent_amux_tools => "subagent_amux_tools",
+        subagent_ask => "subagent_ask",
+        subagent_continued => "subagent_continued",
+        subagent_elicitation => "subagent_elicitation",
+        subagent_nested => "subagent_nested",
+        subagent_resumed => "subagent_resumed",
+        subagent_stopped => "subagent_stopped",
         subagent_task => "subagent_task",
+        subagents_parallel => "subagents_parallel",
         task_list => "task_list",
         text_turn => "text_turn",
         usage => "usage",
@@ -126,13 +134,47 @@ mod claude_pty {
         resumed => "resumed",
         sign_in_problem => "sign_in_problem",
         steer_folded => "steer_folded",
+        subagent_amux_tools => "subagent_amux_tools",
+        subagent_ask => "subagent_ask",
+        subagent_continued => "subagent_continued",
+        subagent_elicitation => "subagent_elicitation",
+        subagent_nested => "subagent_nested",
+        subagent_resumed => "subagent_resumed",
+        subagent_stopped => "subagent_stopped",
+        subagent_stopped_foreground => "subagent_stopped_foreground",
         subagent_task => "subagent_task",
+        subagents_parallel => "subagents_parallel",
         task_list => "task_list",
         terminal_allow => "terminal_allow",
         terminal_escape => "terminal_escape",
         terminal_question => "terminal_question",
         text_turn => "text_turn",
     });
+
+    /// What terminal Claude wrote for its subagents is among what a played
+    /// recording is held to: each one's transcript and its meta.json, as
+    /// they were left.
+    #[test]
+    fn a_recordings_subagent_files_are_played() {
+        let recording = root("interpret/fixtures/claude_pty/live").join("subagents_parallel");
+        let process = provider_fakes::playback::process(&recording, "pty").unwrap();
+        let files = provider_fakes::playback::subagent_files(&process.events);
+        let names: Vec<&str> = files.iter().map(|(_, file, _)| file.as_str()).collect();
+        assert_eq!(
+            names.len(),
+            6,
+            "three subagents, a transcript and a meta each: {names:?}"
+        );
+        for (_, file, contents) in &files {
+            assert!(file.starts_with("subagents/agent-"), "{file}");
+            if file.ends_with(".meta.json") {
+                let meta: serde_json::Value = serde_json::from_slice(contents).unwrap();
+                assert_eq!(meta["finished"], true, "{file} as Claude left it");
+            } else {
+                assert!(contents.ends_with(b"\n") && contents.len() > 1000, "{file}");
+            }
+        }
+    }
 }
 
 // Unix only: these were recorded over Codex's socket, which amux uses only on
@@ -151,6 +193,12 @@ mod codex {
         attach => "attach",
         automatic_review => "automatic_review",
         background_terminal => "background_terminal",
+        child_approval => "child_approval",
+        child_command => "child_command",
+        child_continued => "child_continued",
+        child_resume => "child_resume",
+        child_stop => "child_stop",
+        child_tools => "child_tools",
         compaction => "compaction",
         exploring => "exploring",
         failing_command => "failing_command",

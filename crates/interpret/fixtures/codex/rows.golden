@@ -1,7 +1,6 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 1 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
-effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"t1\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
@@ -56,6 +55,7 @@ snapshot WORKING queue=[] working_on="Splitting the lexer" at=1800000000000 asks
 item rv-1 command_output final at=1800000000000 text="Code review started: current changes" review
 ## 28 fact {"channel":"rpc","json":{"method":"thread/started","params":{"thread":{"cliVersion":"0.157.0","id":"child-thread"},"threadId":"t1"}}}
 ## 29 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"child-thread","turn":{"id":"child-turn"}}}}
+effect write "{\"id\":\"amux-read-1\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":false,\"threadId\":\"child-thread\"}}"
 ## 30 fact {"channel":"rpc","json":{"method":"item/somethingNew","params":{"itemId":"x","threadId":"t1"}}}
 item unrecognized:3 unrecognized final at=1800000000000 text="" item/somethingNew "a notification amux does not read"
 ## 31 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"id":"msg-1","phase":"final_answer","text":"","type":"agentMessage"},"startedAtMs":null,"threadId":"t1","turnId":"turn-1"}}}
@@ -71,6 +71,8 @@ item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED starte
 snapshot said "The lexer is split."
 snapshot IDLE queue=[] working_on="Splitting the lexer" at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=48000/258400 plan=[1:TASK_LIST_STATUS_COMPLETED:"Read the parser",2:TASK_LIST_STATUS_IN_PROGRESS:"Split the lexer",3:TASK_LIST_STATUS_PENDING:"Run the tests"] usage=blocked 5h:100%(blocked) 7d:40%(ok) credits=0 servers=[docs:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 turn_end 1 last=msg-1
+agent sub-f81c969d start child=child-thread call=host/- title=""
+agent sub-f81c969d snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=child-thread model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=[-:"subagent"@1800000000000]
 ## 35 fact {"channel":"rpc","json":{"id":"amux-jobs-1-1","result":{"data":[{"command":"/bin/zsh -lc 'cargo watch'","cpuPercent":null,"cwd":"/work","itemId":"cmd-1","osPid":null,"processId":"91","rssKb":null}],"nextCursor":null}}}
 snapshot IDLE queue=[] working_on="Splitting the lexer" at=1800000000000 asks=[] thread=t1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request context=48000/258400 plan=[1:TASK_LIST_STATUS_COMPLETED:"Read the parser",2:TASK_LIST_STATUS_IN_PROGRESS:"Split the lexer",3:TASK_LIST_STATUS_PENDING:"Run the tests"] usage=blocked 5h:100%(blocked) 7d:40%(ok) credits=0 servers=[docs:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[cmd-1:"/bin/zsh -lc 'cargo watch'"@1800000001000]
 ## 36 fact {"channel":"rpc","json":{"method":"item/completed","params":{"completedAtMs":1800000010000,"item":{"aggregatedOutput":"[watching]\n[done]\n","command":"/bin/zsh -lc 'cargo watch'","commandActions":[{"command":"cargo watch","type":"unknown"}],"cwd":"/work","durationMs":9000,"exitCode":0,"id":"cmd-1","status":"completed","type":"commandExecution"},"threadId":"t1","turnId":"turn-1"}}}

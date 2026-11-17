@@ -15,7 +15,11 @@ let package = Package(
     targets: [
         // The shell is the only place that navigates. Screens are functions of
         // state and say what happened; where that leads is decided here.
-        .target(name: "AmuxShell", dependencies: ["AmuxCore", "AmuxDesign", "AmuxFeatures"]),
+        .target(
+            name: "AmuxShell",
+            dependencies: [
+                "AmuxCore", "AmuxDesign", "AmuxFeatures", .product(name: "AmuxWords", package: "AmuxCore"),
+            ]),
         .testTarget(name: "AmuxShellTests", dependencies: ["AmuxShell"]),
     ],
     swiftLanguageModes: [.v6]

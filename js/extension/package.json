@@ -1,0 +1,13 @@
+{
+  "name": "@amux/extension",
+  "private": true,
+  "type": "module",
+  "description": "The amux browser extension: comment on any page and send the comments to an agent",
+  "scripts": {
+    "build": "node build.ts"
+  },
+  "dependencies": {
+    "@amux/page-review": "*",
+    "preact": "^11.2.0"
+  }
+}

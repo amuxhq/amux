@@ -1,4 +1,5 @@
 import AmuxCore
+import AmuxMacScreens
 import AmuxValues
 import SwiftUI
 
@@ -27,6 +28,7 @@ struct AmuxMacApp: App {
                 .frame(minWidth: 680, minHeight: 560)
         }
         .windowResizability(.contentMinSize)
+        .commands { AppCommands(model: model) }
         Settings {
             SettingsWindow(model: model)
         }
@@ -74,4 +76,49 @@ private final class QuitReply {
         sender?.reply(toApplicationShouldTerminate: true)
         sender = nil
     }
+}
+
+/// The menu bar's commands, each with the shortcut the tools beside this
+/// app use for it.
+private struct AppCommands: Commands {
+    @Bindable var model: AppModel
+
+    var body: some Commands {
+        // One window holds the whole app, so ⌘N starts an agent.
+        CommandGroup(replacing: .newItem) {
+            Button("New Agent") { model.newAgent() }
+                .keyboardShortcut("n")
+                .disabled(!ready || (model.place.surface == .agents && model.place.agent == nil))
+        }
+        CommandGroup(before: .toolbar) {
+            Button(model.place.sidebar ? "Hide Sidebar" : "Show Sidebar") { model.place.sidebar.toggle() }
+                .keyboardShortcut("s", modifiers: [.control, .command])
+            Button(model.changesShown ? "Hide Changes" : "Show Changes") { model.place.changes.toggle() }
+                .keyboardShortcut("i", modifiers: [.option, .command])
+                .disabled(!ready || model.place.agent.flatMap { model.stores?.fleet.row($0) }.map { $0.native } ?? true)
+            Divider()
+            Button("Agents") { model.place.surface = .agents }
+                .keyboardShortcut("1")
+            Button("Hosts") { model.place.surface = .hosts }
+                .keyboardShortcut("2")
+            Divider()
+        }
+        CommandMenu("Go") {
+            Button("Back") { model.place.goBack(where: exists) }
+                .keyboardShortcut("[")
+                .disabled(!model.place.canGoBack)
+            Button("Forward") { model.place.goForward(where: exists) }
+                .keyboardShortcut("]")
+                .disabled(!model.place.canGoForward)
+        }
+        CommandMenu("Agent") {
+            Button("Open in Terminal") { if let agent = model.place.agent { model.openTerminal(agent) } }
+                .keyboardShortcut("t", modifiers: [.shift, .command])
+                .disabled(!ready || model.place.agent.flatMap { model.stores?.fleet.row($0) }.map { $0.native } ?? true)
+        }
+    }
+
+    private var ready: Bool { model.stores != nil && model.setup?.content == nil }
+
+    private func exists(_ agent: AgentKey) -> Bool { model.stores?.fleet.row(agent) != nil }
 }

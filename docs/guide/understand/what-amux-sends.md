@@ -94,7 +94,7 @@ a field for free text.
 | `updated` | amux starts on a newer version than last time. | `from_version`, `to_version` |
 | `update_rolled_back` | amux starts on an older version than last time, because the newer one was put back. | `from_version`, `to_version` |
 | `daemon_crashed` | amux starts and finds that its last run stopped without shutting down, with the machine still up. | `crashed_version`: the version that stopped. |
-| `client_opened` | The terminal client starts, the Mac app opens, or the iPhone app comes to the front; at most once an hour. | `surface`: `terminal`, `mac` or `phone`. |
+| `client_opened` | The terminal client starts, the Mac app opens, the iPhone app comes to the front, or the browser extension connects; at most once an hour. | `surface`: `terminal`, `mac`, `phone` or `browser`. |
 | `agent_created` | A new agent is started. | `kind`; `on`: `this_host` or `paired_host`, with `remote_host` for a paired one; `by`: `person` or `agent` (an agent starting a helper). |
 | `prompt_sent` | A prompt you sent is accepted. | `kind`; `on` and `remote_host` as above; `queued`: whether it waits behind a turn already running. |
 | `ask_answered` | Your answer to an agent's question or request is accepted. | `kind`; `on` and `remote_host` as above; `ask`: `question`, `permission`, `plan`, `form`, `link` or `grant`. |
@@ -110,6 +110,7 @@ a field for free text.
 | `purchase_started` | The iPhone app starts a purchase with the App Store. | `interval`: `monthly` or `yearly`. |
 | `onboarding_step` | A step of the first-run setup is shown, confirmed or skipped. | `step`: `pair_phone`, `keep_reachable`, `sign_in`, `repositories`, `improve` or `first_agent`. `outcome`: `shown`, `done` or `skipped`. `surface`: `terminal`, `mac` or `phone`. |
 | `repositories_chosen` | The repositories step is confirmed. | `kept`: how many folders were kept; `suggested`: how many were suggested. Numbers only, never the folders. |
+| `page_review_sent` | Comments on a web page, made in the browser extension, are sent to an agent. | `comments`: how many comments; `quotes`: how many were on selected text; `regions`: how many were on a dragged box. Numbers only, never the page, its address or the comments. |
 | `check_failed` | One of amux's internal checks broke: a rule the daemon, an agent process, the relay or a connection's path choice holds after every step failed, a step took longer than allowed, or a chat's transcript failed its own check on a client. At most once per check every ten minutes. | `core`: `daemon`, `agent`, `relay`, `path` or `transcript`. `check`: which check, as the name amux's code gives it, such as `daemon.generation_fell`. `cause`: `invariant` or `over_budget`. `held_back`: how many more times the same check broke since the last one was sent. |
 
 A prompt or answer sent to another machine's agent is counted once, by the

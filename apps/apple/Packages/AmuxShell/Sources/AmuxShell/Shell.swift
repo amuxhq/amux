@@ -1,6 +1,7 @@
 import AmuxCore
 import AmuxDesign
 import AmuxFeatures
+import AmuxWords
 import PhotosUI
 import StoreKit
 import SwiftUI
@@ -588,7 +589,8 @@ private struct ChatPage: View {
             closeHeld: card?.closeHeld ?? false,
             filing: card?.filing ?? .open,
             topLevel: card?.topLevel ?? true,
-            workspaceGoes: card?.workspaceGoes)
+            workspaceGoes: card?.workspaceGoes,
+            native: card?.native ?? false)
         return Standing(subject: subject, family: stores.profile?.family(agent), listed: row != nil)
     }
 

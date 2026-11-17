@@ -17,13 +17,10 @@
 //! request; any joined client may answer a request, and all are told when
 //! it is resolved. A client that leaves takes nothing with it: the turn
 //! goes on and its pending request stays open for the others, and one that
-//! joins later is sent the requests still pending. A second client's resume
-//! must find the thread: a plain resume once it has been named or has run a
-//! turn, and Codex's own app, which resumes without the turns
-//! (`excludeTurns`) and pages them from the history on disk, only once that
-//! history is written. Codex writes it at the first turn, or when a client
-//! reads the loaded thread with its turns (`thread/read` with
-//! `includeTurns`) or resumes it with them. Asked to finish (SIGTERM), it
+//! joins later is sent the requests still pending. A second client's resume,
+//! Codex's own app's among them, must find the thread on disk, which Codex
+//! writes when the thread is named or runs its first turn (codex-cli 0.161
+//! onwards). Asked to finish (SIGTERM), it
 //! finishes the running turn and exits, as a stdio server does at the end of
 //! its input; a script's `exit_ms` holds it that much longer first.
 //!
@@ -35,20 +32,20 @@
 //! is refused with Codex's own error, `thread <id> already has an active
 //! writer` (codex-cli 0.161.0, recorded in a QA run).
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
 use crate::clients::{ClientId, Event, Listen, Writer};
 use crate::playback::{Channel, Process};
-use crate::script::{Ask, OfferedCommand, OfferedModel, Question, Script, Step, Tool};
+use crate::script::{Ask, OfferedCommand, OfferedModel, Question, Script, Step, Subagent, Tool};
 use crate::{DRIFT_EXIT, Mode};
 
 /// The asks Codex can raise.
 pub const RAISES: &[&str] = &["permission", "question", "plan", "form", "link", "grant"];
 /// The provider-specific steps Codex can play.
-pub const PLAYS: &[&str] = &["usage", "auth_failed"];
+pub const PLAYS: &[&str] = &["usage", "auth_failed", "subagents"];
 
 /// The Codex version the fake reports: the newest the corpus shows.
 pub const VERSION: &str = "0.157.0";
@@ -158,7 +155,7 @@ async fn play(
                 }
             }
             Channel::Exit => return Ok(Some(crate::playback::exit_code(event))),
-            Channel::Transcript | Channel::Hook => {
+            Channel::Transcript | Channel::Hook | Channel::Subagent => {
                 return Err(format!(
                     "event {index}: Codex has no {:?} channel",
                     event.channel
@@ -212,11 +209,8 @@ struct Engine {
     skills: Vec<OfferedCommand>,
     cwd: String,
     thread: Option<String>,
-    /// Whether a plain resume by another client finds the thread.
+    /// Whether the thread is on disk, which another client's resume needs.
     materialized: bool,
-    /// Whether the thread's history is on disk, which a resume without its
-    /// turns needs.
-    persisted: bool,
     name: Option<String>,
     /// The running turn's id.
     turn: Option<String>,
@@ -245,10 +239,41 @@ struct Engine {
     /// The lock that makes this process its thread's writer, held until it
     /// exits.
     writer: Option<std::fs::File>,
-    /// Commands run in the background that still run, as (turn, item),
-    /// each carrying its process id.
-    terminals: Vec<(String, Value)>,
+    /// Commands run in the background that still run, as (thread, turn,
+    /// item), each carrying its process id.
+    terminals: Vec<(String, String, Value)>,
+    /// The child thread whose step plays now, its items and asks naming
+    /// it; None while the agent's own thread plays.
+    speaking: Option<String>,
+    /// The child threads the agent's subagents run in, by thread id.
+    children: BTreeMap<String, ChildThread>,
+    /// The child threads a client has read and been answered about.
+    children_read: BTreeSet<String>,
+    /// Child threads whose running turn a client interrupted.
+    interrupted_children: BTreeSet<String>,
+    /// A client steered or injected into the running turn since its
+    /// subagents started: what tells a parent left waiting on a stopped
+    /// subagent.
+    told: bool,
 }
+
+/// A subagent's thread, as Codex reads it back.
+struct ChildThread {
+    nickname: String,
+    /// The child's turn running now, if one is.
+    turn: Option<String>,
+}
+
+/// The nicknames Codex gives subagents, in the order the fake hands them
+/// out when a script names none.
+const NICKNAMES: &[&str] = &[
+    "Poincare", "Noether", "Turing", "Lovelace", "Euler", "Hopper",
+];
+
+/// Codex's refusal of a turn addressed to a subagent's thread, as 0.166.0
+/// words it.
+const CHILD_INPUT_REFUSED: &str =
+    "direct app-server input is not allowed for multi-agent v2 sub-agents";
 
 impl Engine {
     fn new(script: Script, listen: Listen, events: mpsc::UnboundedReceiver<Event>) -> Self {
@@ -269,7 +294,6 @@ impl Engine {
                 .unwrap_or_default(),
             thread: None,
             materialized: false,
-            persisted: false,
             name: None,
             turn: None,
             starts: VecDeque::new(),
@@ -290,6 +314,11 @@ impl Engine {
             terminated: false,
             writer: None,
             terminals: Vec::new(),
+            speaking: None,
+            children: BTreeMap::new(),
+            children_read: BTreeSet::new(),
+            interrupted_children: BTreeSet::new(),
+            told: false,
         }
     }
 
@@ -458,6 +487,12 @@ impl Engine {
         self.thread.clone().unwrap_or_default()
     }
 
+    /// The thread the step playing now reports on: a subagent's while its
+    /// step plays, the agent's own otherwise.
+    fn on_thread(&self) -> String {
+        self.speaking.clone().unwrap_or_else(|| self.thread_id())
+    }
+
     async fn handle(&mut self, client: ClientId, frame: Value) {
         let Some(method) = frame["method"].as_str().map(str::to_owned) else {
             // A response to one of our requests: the first answer wins.
@@ -509,7 +544,6 @@ impl Engine {
                 self.thread = Some(thread);
                 // A resumed thread was read from disk.
                 self.materialized = method == "thread/resume";
-                self.persisted = self.materialized;
                 let result = if method == "thread/start" {
                     self.thread_result(params)
                 } else {
@@ -523,6 +557,14 @@ impl Engine {
                         .await;
                 }
             }
+            // A subagent takes input only from its parent's model.
+            "turn/start"
+                if params["threadId"]
+                    .as_str()
+                    .is_some_and(|thread| self.children.contains_key(thread)) =>
+            {
+                self.refuse(client, &id, -32600, CHILD_INPUT_REFUSED).await
+            }
             "turn/start" => {
                 if self.turn.is_some() {
                     self.refuse(client, &id, -32600, "a turn is already running")
@@ -535,6 +577,7 @@ impl Engine {
                 let expected = params["expectedTurnId"].as_str();
                 match self.turn.clone() {
                     Some(turn) if expected.is_none_or(|expected| expected == turn) => {
+                        self.told = true;
                         self.respond(client, &id, json!({ "turnId": turn })).await;
                         self.user_message(&turn, params).await;
                     }
@@ -544,6 +587,23 @@ impl Engine {
                     }
                 }
             }
+            // A subagent's turn ends interrupted; what it was running runs
+            // on, and its parent goes on waiting, as Codex 0.166.0 does.
+            "turn/interrupt"
+                if params["threadId"]
+                    .as_str()
+                    .is_some_and(|thread| self.children.contains_key(thread)) =>
+            {
+                let thread = params["threadId"].as_str().unwrap_or_default().to_owned();
+                if self
+                    .children
+                    .get(&thread)
+                    .is_some_and(|child| child.turn.is_some())
+                {
+                    self.interrupted_children.insert(thread);
+                }
+                self.respond(client, &id, json!({})).await;
+            }
             "turn/interrupt" => {
                 if self.turn.is_some() {
                     self.interrupted = true;
@@ -552,15 +612,23 @@ impl Engine {
             }
             // Drained by a running turn, held for the next by an idle one;
             // either way nothing is reported.
-            "thread/inject_items" => self.respond(client, &id, json!({})).await,
+            "thread/inject_items" => {
+                self.told |= self.turn.is_some();
+                self.respond(client, &id, json!({})).await
+            }
+            // Each thread lists its own: a subagent's commands under its
+            // thread, not the agent's.
             "thread/backgroundTerminals/list" => {
+                let asked = params["threadId"].as_str().map(str::to_owned);
                 let data: Vec<Value> = self
                     .terminals
                     .iter()
-                    .map(|(_, item)| {
+                    .filter(|(thread, _, _)| asked.as_ref().is_none_or(|asked| asked == thread))
+                    .map(|(_, _, item)| {
                         json!({
                             "itemId": item["id"], "processId": item["processId"],
                             "command": item["command"], "cwd": item["cwd"],
+                            "cpuPercent": null, "osPid": null, "rssKb": null,
                         })
                     })
                     .collect();
@@ -573,24 +641,37 @@ impl Engine {
                 let at = self
                     .terminals
                     .iter()
-                    .position(|(_, item)| item["processId"] == params["processId"]);
+                    .position(|(_, _, item)| item["processId"] == params["processId"]);
                 self.respond(client, &id, json!({ "terminated": at.is_some() }))
                     .await;
                 if let Some(at) = at {
-                    let (turn, mut item) = self.terminals.remove(at);
+                    let (thread, turn, mut item) = self.terminals.remove(at);
                     item["status"] = json!("failed");
                     item["exitCode"] = json!(143);
                     item["durationMs"] = json!(0);
                     item["aggregatedOutput"] = json!("");
+                    let speaking = self.speaking.replace(thread);
                     self.item(&turn, "item/completed", &item).await;
+                    self.speaking = speaking;
                 }
             }
-            // Read with its turns, the loaded thread is written to disk.
+            // A subagent's thread reads back as Codex's does: its nickname,
+            // its parent, and that it takes no direct input.
+            "thread/read"
+                if params["threadId"]
+                    .as_str()
+                    .is_some_and(|thread| self.children.contains_key(thread)) =>
+            {
+                let thread = params["threadId"].as_str().unwrap_or_default().to_owned();
+                let child = self.child_value(&thread);
+                self.respond(client, &id, json!({ "readState": null, "thread": child }))
+                    .await;
+                self.children_read.insert(thread);
+            }
             "thread/read" if self.thread.as_deref() == params["threadId"].as_str() => {
                 // Read with its turns, Codex warns that full-history reads
                 // are deprecated, as it has since 0.160.
                 if params["includeTurns"] == true {
-                    self.persisted = true;
                     self.notify(
                         "deprecationNotice",
                         json!({ "details": null, "summary": FULL_HISTORY_DEPRECATED }),
@@ -763,13 +844,6 @@ impl Engine {
             let message = format!("no rollout found for thread id {asked}");
             return self.refuse(client, id, -32600, &message).await;
         }
-        if params["excludeTurns"] == true && !self.persisted {
-            let message =
-                format!("invalid paginated history lineage for {asked}: missing source rollout");
-            return self.refuse(client, id, -32600, &message).await;
-        }
-        // Resumed with its turns, the thread is written out to give them.
-        self.persisted = true;
         let result = self.resume_result(params);
         self.join_thread(client);
         self.respond(client, id, result).await;
@@ -826,6 +900,54 @@ impl Engine {
         })
     }
 
+    /// A subagent's thread as `thread/read` answers it.
+    fn child_value(&self, thread: &str) -> Value {
+        let parent = self.thread_id();
+        let nickname = self
+            .children
+            .get(thread)
+            .map(|child| child.nickname.clone())
+            .unwrap_or_default();
+        let mut value = self.thread_value();
+        let status = if self
+            .children
+            .get(thread)
+            .is_some_and(|child| child.turn.is_some())
+        {
+            json!({ "type": "active", "activeFlags": [] })
+        } else {
+            json!({ "type": "idle" })
+        };
+        for (key, field) in [
+            ("id", json!(thread)),
+            ("agentNickname", json!(nickname)),
+            ("canAcceptDirectInput", json!(false)),
+            ("forkedFromId", json!(parent)),
+            ("name", Value::Null),
+            ("parentThreadId", json!(parent)),
+            (
+                "path",
+                json!(format!("{}/.codex/sessions/{thread}.jsonl", self.cwd)),
+            ),
+            ("sessionId", json!(parent)),
+            (
+                "source",
+                json!({ "subAgent": { "thread_spawn": {
+                    "agent_nickname": nickname,
+                    "agent_path": child_path(&nickname),
+                    "agent_role": null,
+                    "depth": 1,
+                    "parent_thread_id": parent,
+                }}}),
+            ),
+            ("status", status),
+            ("threadSource", json!("subagent")),
+        ] {
+            value[key] = field;
+        }
+        value
+    }
+
     fn turn_value(&self, turn: &str, status: &str, items: Vec<Value>) -> Value {
         let done = status != "inProgress";
         json!({
@@ -849,7 +971,7 @@ impl Engine {
     /// Reports an item started or completed, with the times Codex 0.166
     /// puts on the item itself.
     async fn item(&mut self, turn: &str, phase: &str, item: &Value) {
-        let thread = self.thread_id();
+        let thread = self.on_thread();
         let mut item = item.clone();
         let started = item["startedAtMs"].as_i64().unwrap_or_else(now_ms);
         item["startedAtMs"] = json!(started);
@@ -898,7 +1020,7 @@ impl Engine {
             Some(flags) => json!({ "type": "active", "activeFlags": flags }),
             None => json!({ "type": "idle" }),
         };
-        let thread = self.thread_id();
+        let thread = self.on_thread();
         self.notify(
             "thread/status/changed",
             json!({ "status": status, "threadId": thread }),
@@ -935,7 +1057,6 @@ impl Engine {
         let thread = self.thread_id();
         self.turn = Some(turn.clone());
         self.materialized = true;
-        self.persisted = true;
         self.interrupted = false;
         self.last_message = None;
         if let Some(mode) = params
@@ -1002,6 +1123,7 @@ impl Engine {
                     return None;
                 }
                 Step::Repeat { .. } => unreachable!("next_step unrolls repeats"),
+                Step::Subagents { agents } => self.subagents(&turn, agents).await,
             }
         };
         if exit.is_some() {
@@ -1037,6 +1159,230 @@ impl Engine {
         .await;
         self.turn = None;
         None
+    }
+
+    /// Subagents started together and waited for, as Codex runs them: each
+    /// in a child thread its items and asks name, started on the parent by
+    /// a `subAgentActivity` item, the parent holding a `wait` until the last
+    /// has ended. Their steps take turns, one each, so their items
+    /// interleave. A child interrupted by a client ends its turn
+    /// interrupted with nothing said on the parent, and what it left
+    /// running runs on; the parent's wait then holds until a client steers
+    /// or injects into its turn, as Codex 0.166.0's parent waits on.
+    async fn subagents(&mut self, turn: &str, agents: Vec<Subagent>) {
+        struct Running {
+            thread: String,
+            turn: String,
+            steps: VecDeque<Step>,
+            said: Option<Value>,
+        }
+        let parent = self.thread_id();
+        self.told = false;
+        let mut running = Vec::new();
+        for agent in agents {
+            let thread = uuid::Uuid::new_v4().to_string();
+            let child_turn = uuid::Uuid::new_v4().to_string();
+            let nickname = agent
+                .nickname
+                .clone()
+                .unwrap_or_else(|| NICKNAMES[self.children.len() % NICKNAMES.len()].to_owned());
+            let started = json!({
+                "agentPath": child_path(&nickname),
+                "agentThreadId": thread,
+                "id": self.item_id("call_"),
+                "kind": "started",
+                "model": self.model,
+                "reasoningEffort": "low",
+                "type": "subAgentActivity",
+            });
+            self.children.insert(
+                thread.clone(),
+                ChildThread {
+                    nickname,
+                    turn: Some(child_turn.clone()),
+                },
+            );
+            // Codex reports the child's thread idle as the spawn makes it,
+            // then active as its turn starts.
+            self.item(turn, "item/started", &started).await;
+            self.speaking = Some(thread.clone());
+            self.status(None).await;
+            self.speaking = None;
+            self.item(turn, "item/completed", &started).await;
+            // Read as the spawn completes, the nickname's answer comes
+            // before the child's turn starts.
+            if agent.await_read {
+                while !self.eof && !self.children_read.contains(&thread) {
+                    let event = self.events.recv().await;
+                    self.receive(event).await;
+                }
+            }
+            self.speaking = Some(thread.clone());
+            self.status(Some(&[])).await;
+            let mut value = self.turn_value(&child_turn, "inProgress", vec![]);
+            value["rootTurnId"] = json!(turn);
+            self.notify("turn/started", json!({ "threadId": thread, "turn": value }))
+                .await;
+            self.speaking = None;
+            let mut steps = VecDeque::from(agent.steps);
+            if steps.is_empty() {
+                steps.push_back(Step::Text {
+                    chunks: vec![format!("Done: {}", agent.task)],
+                });
+            }
+            running.push(Running {
+                thread,
+                turn: child_turn,
+                steps,
+                said: None,
+            });
+        }
+        let mut wait = json!({
+            "agentsStates": {},
+            "id": self.item_id("call_"),
+            "model": null,
+            "prompt": null,
+            "reasoningEffort": null,
+            "receiverThreadIds": [],
+            "senderThreadId": parent,
+            "status": "inProgress",
+            "tool": "wait",
+            "type": "collabAgentToolCall",
+        });
+        self.item(turn, "item/started", &wait).await;
+        let mut stopped = false;
+        while !running.is_empty() && !self.interrupted {
+            let mut at = 0;
+            while at < running.len() && !self.interrupted {
+                self.drain().await;
+                let thread = running[at].thread.clone();
+                let interrupted = self.interrupted_children.remove(&thread);
+                let step = if interrupted {
+                    None
+                } else {
+                    crate::script::next_step(&mut running[at].steps)
+                };
+                let Some(step) = step else {
+                    let child = running.remove(at);
+                    stopped |= interrupted;
+                    let status = if interrupted {
+                        "interrupted"
+                    } else {
+                        "completed"
+                    };
+                    self.child_ended(turn, &child.thread, &child.turn, status, child.said)
+                        .await;
+                    continue;
+                };
+                let child_turn = running[at].turn.clone();
+                let parents = self.last_message.take();
+                self.speaking = Some(thread);
+                self.child_step(&child_turn, step).await;
+                self.speaking = None;
+                if let Some(said) = std::mem::replace(&mut self.last_message, parents) {
+                    running[at].said = Some(said);
+                }
+                at += 1;
+            }
+        }
+        // The parent's own turn was interrupted: its children end with it.
+        for child in running {
+            self.child_ended(turn, &child.thread, &child.turn, "interrupted", None)
+                .await;
+        }
+        while stopped && !self.told && !self.interrupted && !self.eof {
+            self.pump().await;
+        }
+        wait["status"] = json!("completed");
+        self.item(turn, "item/completed", &wait).await;
+    }
+
+    /// One step of a subagent, on its thread.
+    async fn child_step(&mut self, turn: &str, step: Step) {
+        match step {
+            Step::Text { chunks } => self.text(turn, &chunks).await,
+            Step::Thinking { text } => self.reasoning(turn, &text).await,
+            Step::Tool(tool) => self.tool(turn, &tool, None).await,
+            Step::Ask(ask) => self.ask(turn, ask).await,
+            Step::WaitFor { path } => {
+                while !path.exists() && !self.stopping() {
+                    self.pump().await;
+                }
+            }
+            Step::Pause { ms } => {
+                let until = tokio::time::Instant::now() + std::time::Duration::from_millis(ms);
+                while tokio::time::Instant::now() < until && !self.stopping() {
+                    self.pump().await;
+                }
+            }
+            Step::Spawn { command } => crate::script::spawn_detached(&command),
+            // Refused when the script loaded.
+            Step::TurnEnd
+            | Step::Exit { .. }
+            | Step::Usage(_)
+            | Step::AuthFailed { .. }
+            | Step::Repeat { .. }
+            | Step::Subagents { .. } => {}
+        }
+    }
+
+    /// The turn playing now was interrupted: the agent's own, or the
+    /// subagent's whose step plays.
+    fn stopping(&self) -> bool {
+        self.interrupted
+            || self
+                .speaking
+                .as_ref()
+                .is_some_and(|thread| self.interrupted_children.contains(thread))
+    }
+
+    /// A subagent's turn ends with `status`. One that finished is reported
+    /// on the parent around its turn's end, as Codex does; one interrupted
+    /// is not.
+    async fn child_ended(
+        &mut self,
+        turn: &str,
+        thread: &str,
+        child_turn: &str,
+        status: &str,
+        said: Option<Value>,
+    ) {
+        let completed = status == "completed";
+        let activity = json!({
+            "agentPath": child_path(
+                &self.children.get(thread).map(|child| child.nickname.clone()).unwrap_or_default()
+            ),
+            "agentThreadId": thread,
+            "id": format!("subagent-completed-{child_turn}"),
+            "kind": "completed",
+            "model": null,
+            "reasoningEffort": null,
+            "type": "subAgentActivity",
+        });
+        if completed {
+            self.item(turn, "item/started", &activity).await;
+        }
+        self.speaking = Some(thread.to_owned());
+        self.status(None).await;
+        let items = if completed {
+            said.into_iter().collect()
+        } else {
+            vec![]
+        };
+        let mut done = self.turn_value(child_turn, status, items);
+        done["rootTurnId"] = json!(turn);
+        self.notify(
+            "turn/completed",
+            json!({ "threadId": thread, "turn": done }),
+        )
+        .await;
+        self.speaking = None;
+        if let Some(child) = self.children.get_mut(thread) {
+            child.turn = None;
+        }
+        if completed {
+            self.item(turn, "item/completed", &activity).await;
+        }
     }
 
     /// A turn that names a collaboration mode changes the thread's settings
@@ -1079,7 +1425,7 @@ impl Engine {
     /// Reasoning with its summary streamed as one part.
     async fn reasoning(&mut self, turn: &str, text: &str) {
         let id = self.item_id("rs_");
-        let thread = self.thread_id();
+        let thread = self.on_thread();
         let mut item = json!({ "content": [], "id": id, "summary": [], "type": "reasoning" });
         self.item(turn, "item/started", &item).await;
         let at = json!({ "itemId": id, "summaryIndex": 0, "threadId": thread, "turnId": turn });
@@ -1169,7 +1515,7 @@ impl Engine {
 
     async fn text(&mut self, turn: &str, chunks: &[String]) {
         let id = self.item_id("msg_");
-        let thread = self.thread_id();
+        let thread = self.on_thread();
         let mut item = json!({
             "delivery": null,
             "id": id,
@@ -1184,7 +1530,7 @@ impl Engine {
             if at > 0 && self.chunk_ms > 0 {
                 let until =
                     tokio::time::Instant::now() + std::time::Duration::from_millis(self.chunk_ms);
-                while tokio::time::Instant::now() < until && !self.interrupted {
+                while tokio::time::Instant::now() < until && !self.stopping() {
                     self.pump().await;
                 }
             }
@@ -1210,13 +1556,13 @@ impl Engine {
             if let Some(answer) = self.answers.remove(&id.to_string()) {
                 break Some(answer);
             }
-            if self.interrupted || self.eof {
+            if self.stopping() || self.eof {
                 break None;
             }
             self.pump().await;
         };
         self.pending.remove(&id.to_string());
-        let thread = self.thread_id();
+        let thread = self.on_thread();
         self.notify(
             "serverRequest/resolved",
             json!({ "requestId": id, "threadId": thread }),
@@ -1228,7 +1574,7 @@ impl Engine {
     /// A call: a command, or a file change when named `apply_patch`. With
     /// `approval` the call waits for the host's decision first.
     async fn tool(&mut self, turn: &str, tool: &Tool, approval: Option<()>) {
-        let thread = self.thread_id();
+        let thread = self.on_thread();
         if let Some((server, name)) = tool
             .name
             .as_deref()
@@ -1369,7 +1715,8 @@ impl Engine {
         // A command run in the background runs on past its turn, under a
         // process id, until it is terminated.
         if background {
-            self.terminals.push((turn.to_owned(), item));
+            self.terminals
+                .push((self.on_thread(), turn.to_owned(), item));
             return;
         }
         // A command printing in pieces prints them while it runs; any other
@@ -1405,7 +1752,7 @@ impl Engine {
     }
 
     async fn ask(&mut self, turn: &str, ask: Ask) {
-        let thread = self.thread_id();
+        let thread = self.on_thread();
         match ask {
             Ask::Permission(tool) => self.tool(turn, &tool, Some(())).await,
             Ask::Question { questions } => {
@@ -1551,14 +1898,14 @@ impl Engine {
     }
 
     /// A call held until its file exists keeps taking the host's frames
-    /// while it runs; an interrupt stops waiting for it.
+    /// while it runs; an interrupt of its turn stops waiting for it.
     async fn run_tool(&mut self, tool: &Tool) {
         let until = tool.outcome.until();
-        while tokio::time::Instant::now() < until && !self.interrupted {
+        while tokio::time::Instant::now() < until && !self.stopping() {
             self.pump().await;
         }
         let Some(path) = &tool.wait_for else { return };
-        while !path.exists() && !self.interrupted {
+        while !path.exists() && !self.stopping() {
             self.pump().await;
         }
     }
@@ -1582,8 +1929,8 @@ impl Engine {
         });
         self.item(turn, "item/started", &item).await;
         // Codex asks to allow the call before the server's own ask reaches
-        // the host, both as elicitations.
-        let thread = self.thread_id();
+        // the host, both as elicitations, on the thread making the call.
+        let thread = self.on_thread();
         let approval = json!({
             "_meta": {
                 "codex_approval_kind": "mcp_tool_call",
@@ -1631,6 +1978,11 @@ impl Engine {
         item["status"] = json!("completed");
         self.item(turn, "item/completed", &item).await;
     }
+}
+
+/// Where Codex says a subagent runs: a path of its own under `/root`.
+fn child_path(nickname: &str) -> String {
+    format!("/root/{}", nickname.to_lowercase())
 }
 
 fn key(id: &Value) -> String {

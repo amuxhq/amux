@@ -1,0 +1,55 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=1000 asks=[] model=?
+## 1 fact {"channel":"stream","json":{"type":"ready"}}
+snapshot IDLE queue=[] working_on=- at=1000 asks=[] model=?
+## 2 input {"id":"p1","prompt":{"text":"survey the code"}}
+effect reply p1 accepted
+effect write "{\"text\":\"survey the code\",\"type\":\"user\"}"
+snapshot WORKING queue=[] working_on="survey the code" at=1000 asks=[] model=?
+## 3 fact {"channel":"stream","json":{"id":"u1","text":"survey the code","type":"user"}}
+item u1 prompt final input=p1 at=1000 text="survey the code"
+## 4 fact {"channel":"stream","json":{"id":"call-1","name":"Agent","type":"tool"}}
+item call-1 tool final at=1000 text="" Agent TOOL_STATE_RUNNING
+## 5 fact {"channel":"stream","json":{"call":"call-1","child":"c1","title":"Survey the code","type":"sub_start"}}
+agent sub-b659ad36 start child=c1 call=host/call-1 title="Survey the code"
+agent sub-b659ad36 snapshot WORKING queue=[] working_on=- at=1000 asks=[] model=?
+## 6 fact {"channel":"stream","json":{"child":"c1","delta":"Look","id":"m1","type":"sub_text"}}
+agent sub-b659ad36 item m1 message open at=1000 text="Look"
+## 7 fact {"channel":"stream","json":{"child":"c1","delta":"ing","id":"m1","type":"sub_text"}}
+agent sub-b659ad36 append m1 "ing"
+## 8 resume
+snapshot WORKING queue=[] working_on="survey the code" at=1000 asks=[] model=?
+agent sub-b659ad36 item m1 message open at=1000 text="Looking"
+agent sub-b659ad36 snapshot WORKING queue=[] working_on=- at=1000 asks=[] model=?
+## 9 fact {"channel":"stream","json":{"child":"c1","id":"ask-1","tool":"m1","tool_name":"Bash","type":"sub_ask"}}
+agent sub-b659ad36 snapshot NEEDS_YOU queue=[] working_on=- at=1000 asks=[ask-1] model=?
+## 10 child_input {"answer":{"answer":{"allow":{}},"ask":"ask-1"},"child":"c1","id":"a1"}
+effect write "{\"ask\":\"ask-1\",\"child\":\"c1\",\"type\":\"answer\"}"
+effect reply a1 accepted
+agent sub-b659ad36 snapshot WORKING queue=[] working_on=- at=1000 asks=[] model=?
+## 11 child_input {"answer":{"answer":{"allow":{}},"ask":"ask-1"},"child":"c1","id":"a2"}
+effect reply a2 rejected:CLOSED_ASK
+## 12 fact {"channel":"stream","json":{"by":"c1","call":"m1","child":"c2","title":"Read the tests","type":"sub_start"}}
+agent sub-aa7db46d start child=c2 call=sub-b659ad36/m1 title="Read the tests"
+agent sub-aa7db46d snapshot WORKING queue=[] working_on=- at=1000 asks=[] model=?
+## 13 fact {"channel":"stream","json":{"child":"c1","id":"m1","type":"sub_text_done"}}
+agent sub-b659ad36 item m1 message final at=1000 text="Looking"
+## 14 fact {"channel":"stream","json":{"child":"c2","type":"sub_end"}}
+agent sub-aa7db46d end FINISHED
+## 15 fact {"channel":"stream","json":{"child":"c1","type":"sub_end"}}
+agent sub-b659ad36 end FINISHED
+## 16 child_input {"answer":{"answer":{"allow":{}},"ask":"ask-1"},"child":"c1","id":"a3"}
+effect reply a3 rejected:UNSUPPORTED
+## 17 fact {"channel":"stream","json":{"id":"call-1","output":"surveyed","type":"tool_result"}}
+item call-1 tool final at=1000 text="" Agent TOOL_STATE_SUCCEEDED
+## 18 fact {"channel":"stream","json":{"type":"turn_end"}}
+item turn:1 turn final at=1000 text="" #1 started=1000
+snapshot IDLE queue=[] working_on="survey the code" at=1000 asks=[] model=?
+turn_end 1 last=-
+## 19 fact {"channel":"stream","json":{"call":"call-1","child":"c3","title":"Continue the survey","type":"sub_start"}}
+agent sub-1872c15e start child=c3 call=host/call-1 title="Continue the survey"
+agent sub-1872c15e snapshot WORKING queue=[] working_on=- at=1000 asks=[] model=?
+## 20 provider_exit {"code":0}
+snapshot STARTING queue=[] working_on="survey the code" at=1000 asks=[] model=?
+incarnation_end QUIT
+agent sub-1872c15e end QUIT

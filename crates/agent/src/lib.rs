@@ -29,6 +29,7 @@ mod notebook;
 mod provider;
 mod ready;
 pub mod spawns;
+mod tail;
 mod terminal;
 mod tools;
 mod tree;

@@ -34,12 +34,11 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
-     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
-     3 prompt:c063eb52ea794f798b56cb826e2cafb7 Prompt { text: [Text("Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: run exactly this shell command once, with your shell tool, and nothing else: touch child_decided.txt. The sandbox is read-only, so request escalated permissions for it; the user will approve. Then reply with t…
-     4 call_0d73954306cf494c8f6dcd69b77f29e7 [opens=sub-78f6028b] Subagent { description: "", continued: false, state: Succeeded, answer: "", duration_ms: None }
-     5 call_34b6fb9f66dc44f6a973b44373636632 Hidden collapsed
-     6 msg_0ab550f6b410ca5b016afa4966001087d29ec9c362d477f275 Prose { text: [Text("done")], streaming: false, working_note: false }
-     7 turn:1 TurnEnd { duration_ms: Some(12777), failed: false }
+     2 prompt:c063eb52ea794f798b56cb826e2cafb7 Prompt { text: [Text("Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: run exactly this shell command once, with your shell tool, and nothing else: touch child_decided.txt. The sandbox is read-only, so request escalated permissions for it; the user will approve. Then reply with t…
+     3 call_0d73954306cf494c8f6dcd69b77f29e7 [opens=sub-78f6028b] Subagent { description: "", continued: false, state: Succeeded, answer: "", duration_ms: None }
+     4 call_34b6fb9f66dc44f6a973b44373636632 Hidden collapsed
+     5 msg_0ab550f6b410ca5b016afa4966001087d29ec9c362d477f275 Prose { text: [Text("done")], streaming: false, working_note: false }
+     6 turn:1 TurnEnd { duration_ms: Some(12777), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 15627, window_tokens: Some(475000), percent: Some(3), near_full: false }) sign-in None
 == settings

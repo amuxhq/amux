@@ -45,8 +45,8 @@ async fn a_codex_agent_handshakes_runs_a_turn_and_resumes_its_thread() {
         .await;
     assert_eq!(agent.provider_session(), thread, "the same thread resumed");
     // A long thread's whole history can exceed what one message carries,
-    // so the resume leaves the turns out, as Codex's own app does, and the
-    // resumed thread is not then read back in full.
+    // so the resume leaves the turns out, as Codex's own app does, and no
+    // thread is ever read back in full, which Codex warns is deprecated.
     let input = agent.provider_input();
     // What amux never draws, Codex is asked not to send.
     let initialize = input
@@ -65,11 +65,10 @@ async fn a_codex_agent_handshakes_runs_a_turn_and_resumes_its_thread() {
         .find(|line| line["method"] == "thread/resume")
         .expect("a resume");
     assert_eq!(resume["params"]["excludeTurns"], true, "{resume}");
-    let reads = input
+    let full = input
         .iter()
-        .filter(|line| line["method"] == "thread/read")
-        .count();
-    assert_eq!(reads, 1, "the resumed thread was read back in full");
+        .find(|line| line["method"] == "thread/read" && line["params"]["includeTurns"] == true);
+    assert_eq!(full, None, "a thread was read back in full");
     let mut daemon = agent.dial().await;
     daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);

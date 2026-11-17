@@ -1964,11 +1964,37 @@ fn exits(stepped: &interpret::Stepped) -> bool {
         .any(|effect| matches!(effect, Effect::Exit { .. }))
 }
 
-/// A resume leaves the turns out, so its answer has none however long the
-/// thread; that is no sign of a new thread, whose history Codex has yet to
-/// write, so nothing reads the whole history back.
+/// Codex warns that reading a thread with its turns is deprecated, so no
+/// thread is read so. A new thread that has run no turn is written to disk
+/// by naming it, which is what lets Codex's own app attach before the
+/// first turn; a resumed thread is on disk already, and its answer leaves
+/// the turns out however long the thread.
 #[test]
-fn a_resumed_thread_is_not_read_back_in_full() {
+fn no_thread_is_read_back_in_full_and_a_new_one_is_named() {
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        name: "worker".into(),
+        name_given: true,
+        ..Default::default()
+    };
+    let (mut state, _) = Codex::initial(&spec);
+    let started = Codex::step(
+        &mut state,
+        rpc(
+            json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.166.0", "turns": []}, "model": "m"}}),
+        ),
+    );
+    let sent = writes(&started.effects);
+    assert!(
+        sent.iter().any(|write| write["method"] == "thread/name/set"
+            && write["params"] == json!({"threadId": "t1", "name": "worker"})),
+        "{sent:?}"
+    );
+    assert!(
+        !sent.iter().any(|write| write["method"] == "thread/read"),
+        "{sent:?}"
+    );
+
     let mut agent = resuming();
     let answered = agent.rpc(json!({"id": "agent-resume", "result": {
         "thread": {"id": "t1", "cliVersion": "0.163.0", "turns": []}, "model": "m"}}));

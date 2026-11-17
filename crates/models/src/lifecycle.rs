@@ -483,6 +483,7 @@ impl AgentLifecycle {
             Output::Dump { reason } => {
                 state.seen.dumped.get_or_insert(format!("{reason:?}"));
             }
+            Output::Log { .. } => {}
         }
     }
 

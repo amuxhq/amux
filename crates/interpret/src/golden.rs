@@ -2103,6 +2103,7 @@ fn render_effect(effect: &Effect, catalogue: Option<&[u8]>) -> String {
             )
         }
         Effect::Exit { cause } => format!("exit {}", Value::String(cause.clone())),
+        Effect::Log { line } => format!("log {}", Value::String(line.clone())),
         Effect::Terminal(input) => format!("terminal {input}"),
         Effect::HookAnswer { id, answer } if answer.is_empty() => format!("hook {id} released"),
         Effect::HookAnswer { id, answer } => {

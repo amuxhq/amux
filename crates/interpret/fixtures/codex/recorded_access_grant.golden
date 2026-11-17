@@ -1,7 +1,6 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 5 recorded 4: fact Rpc "{\"id\":\"agent-thread\",\"result\":{\"activePermissionProfile\":{\"extends\":n…
-effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"01a191d2-0f79-7ef1-ac96-0d28e3b52fcd\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1793447825289 text="" BOUNDARY_KIND_STARTED
@@ -23,7 +22,7 @@ snapshot IDLE queue=[] working_on=- at=1793447825292 asks=[] thread=01a191d2-0f7
 ## 14 recorded 13: fact Rpc method=mcpServer/startupStatus/updated
 snapshot IDLE queue=[] working_on=- at=1793447825293 asks=[] thread=01a191d2-0f79-7ef1-ac96-0d28e3b52fcd model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
 ## 19 recorded 18: fact Rpc method=deprecationNotice
-item warning:3 error final at=1793447825296 text="Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." deprecationNotice "Full-history hydration is deprecated for paginated threads; omit `includeTurns` …" retry=false 0/0
+effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
 ## 22 recorded 21: input 0x9c1a6f29f82a4faf87bbbab79fd50c4e
 effect reply 0x9c1a6f29f82a4faf87bbbab79fd50c4e accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"9c1a6f29f82a4faf87bbbab79fd50c4e\",\"input\":[{\"text\":\"Use your request_permissions tool to ask me for network access. Once granted, run `curl -sI https://example.com` and reply with its status line.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a191d2-0f79-7ef1-ac96-0d28e3b52fcd\"}}"

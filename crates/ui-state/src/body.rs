@@ -81,6 +81,9 @@ impl ItemBody {
                 },
                 Codex::Work(work) => codex_work(work),
                 Codex::Turn(_) => ItemClass::Turn,
+                Codex::Error(error) if error.error_kind == CODEX_DEPRECATION_NOTICE => {
+                    ItemClass::Silent
+                }
                 Codex::Error(error) => api_error(error),
                 Codex::Boundary(_) => ItemClass::Boundary,
                 Codex::AgentMessage(_) => ItemClass::AgentMessage,
@@ -267,7 +270,7 @@ pub enum ItemClass {
     /// it interrupted.
     Ask,
     /// Drawn by no client: Claude's status bookkeeping, a finished safety
-    /// check.
+    /// check, an old Codex deprecation notice.
     Silent,
     Other,
 }
@@ -398,6 +401,12 @@ fn codex_opened(work: &wire::Work) -> Option<&[u8]> {
     };
     Some(id.as_slice()).filter(|id| !id.is_empty())
 }
+
+/// The kind of the error item earlier builds wrote for Codex's
+/// `deprecationNotice`: Codex telling amux it will stop supporting
+/// something amux sends. It is for amux's developers, which the agent now
+/// logs, and no client draws a history's one.
+pub const CODEX_DEPRECATION_NOTICE: &str = "deprecationNotice";
 
 fn api_error(error: &wire::ApiError) -> ItemClass {
     if error.will_retry {

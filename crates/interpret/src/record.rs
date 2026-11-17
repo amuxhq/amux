@@ -729,6 +729,7 @@ fn effect_record(alias: &Alias, kind: wire::Kind, effect: &Effect) -> Value {
             "attachments": attachments.len(),
         }),
         Effect::Exit { .. } => json!({ "effect": "exit" }),
+        Effect::Log { line } => json!({ "effect": "log", "bytes": line.len() }),
         Effect::WriteBlob { bytes, .. } => json!({ "effect": "write_blob", "bytes": bytes.len() }),
         Effect::Terminal(_) => json!({ "effect": "terminal" }),
         Effect::HookAnswer { id, answer } => {

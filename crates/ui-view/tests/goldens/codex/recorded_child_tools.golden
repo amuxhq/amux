@@ -64,14 +64,13 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed
-     2 warning:2 Error { error_kind: "deprecationNotice", message: "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.", attempts: 0, gave_up: true } attention
-     3 prompt:9aeb12b3bc8143c3b9843e31c13b9504 Prompt { text: [Text("First call the whoami tool from the meta tool server yourself with caller parent, and call the status tool from the amux tool server with text parent-checking. Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: call the whoami tool from the meta tool server on…
-     4 msg_06c8235076ad9215016afa49060ef087d298e8d014725f331c Prose { text: [Text("I’ll make the parent tool calls, start one agent for the child calls, and wait for its answer.")], streaming: false, working_note: true }
-     5 exec-296ed999-4835-4a46-996e-de8f5133215a ToolCall { server: "meta", tool: "whoami", fact: "parent", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"process 51775 heard parent\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-296ed999-4835-4a46-996e-de8f5133215a..exec-296ed999-4835-4a46-996e-de8f5133215a x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, …
-     6 call_138e12130f6347f5b434da1109111041 [opens=sub-06d04fa6] Subagent { description: "", continued: false, state: Succeeded, answer: "", duration_ms: None }
-     7 call_47bf0946f75343a2964fb444bc5ffe45 Hidden collapsed
-     8 msg_06c8235076ad9215016afa49179fd487d2a648fa6dd93df926 Prose { text: [Text("process 66980 heard child")], streaming: false, working_note: false }
-     9 turn:1 TurnEnd { duration_ms: Some(21876), failed: false }
+     2 prompt:9aeb12b3bc8143c3b9843e31c13b9504 Prompt { text: [Text("First call the whoami tool from the meta tool server yourself with caller parent, and call the status tool from the amux tool server with text parent-checking. Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: call the whoami tool from the meta tool server on…
+     3 msg_06c8235076ad9215016afa49060ef087d298e8d014725f331c Prose { text: [Text("I’ll make the parent tool calls, start one agent for the child calls, and wait for its answer.")], streaming: false, working_note: true }
+     4 exec-296ed999-4835-4a46-996e-de8f5133215a ToolCall { server: "meta", tool: "whoami", fact: "parent", state: Succeeded, result: "{\"_meta\":null,\"content\":[{\"text\":\"process 51775 heard parent\",\"type\":\"text\"}],\"structuredContent\":null}" } run[exec-296ed999-4835-4a46-996e-de8f5133215a..exec-296ed999-4835-4a46-996e-de8f5133215a x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, …
+     5 call_138e12130f6347f5b434da1109111041 [opens=sub-06d04fa6] Subagent { description: "", continued: false, state: Succeeded, answer: "", duration_ms: None }
+     6 call_47bf0946f75343a2964fb444bc5ffe45 Hidden collapsed
+     7 msg_06c8235076ad9215016afa49179fd487d2a648fa6dd93df926 Prose { text: [Text("process 66980 heard child")], streaming: false, working_note: false }
+     8 turn:1 TurnEnd { duration_ms: Some(21876), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 16118, window_tokens: Some(475000), percent: Some(3), near_full: false }) sign-in None
 == settings

@@ -610,6 +610,10 @@ impl<I: Interpreter> Driver<I> {
                 }
                 Output::WriteBlob { hash, bytes } => dir::write_blob(&self.dir, &hash, &bytes),
                 Output::AppendJournal(step) => self.journal.append(&step).map(|_| ()),
+                Output::Log { line } => {
+                    eprintln!("amux agent: {line}");
+                    Ok(())
+                }
                 Output::WriteProvider(interpret::Effect::HookAnswer { id, answer }) => {
                     self.hook_answers.answer(id, answer);
                     Ok(())

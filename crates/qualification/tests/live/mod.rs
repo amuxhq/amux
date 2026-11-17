@@ -657,18 +657,31 @@ async fn run(driver: &Driver, selected: &[Scenario], report: &mut Report) {
         }
     };
     for scenario in selected {
-        let verdict = match tokio::time::timeout(SCENARIO, install.scenario(*scenario)).await {
+        let mut verdict = match tokio::time::timeout(SCENARIO, install.scenario(*scenario)).await {
             Ok(Ok(verdict)) => verdict,
             Ok(Err(why)) => Verdict::Fail(why),
             Err(_) => Verdict::Fail(format!("did not finish within {SCENARIO:?}")),
         };
-        eprintln!("{} {}: {verdict}", driver.tag(), scenario.name());
         // Whatever the verdict, an agent's traffic is kept for a look.
-        if install.has_agent(*scenario)
-            && let Err(why) = install.collect(*scenario)
-        {
-            eprintln!("{} {}: no recording: {why}", driver.tag(), scenario.name());
+        if install.has_agent(*scenario) {
+            match install.collect(*scenario) {
+                Ok(fixture) => {
+                    // amux draws no deprecation notice and the agent only
+                    // logs one, so the run is where the next one is heard.
+                    let notices = capture::deprecation_notices(&fixture);
+                    if !notices.is_empty() && matches!(verdict, Verdict::Pass) {
+                        verdict = Verdict::Fail(format!(
+                            "Codex sent a deprecation notice: {}",
+                            notices.join(" | ")
+                        ));
+                    }
+                }
+                Err(why) => {
+                    eprintln!("{} {}: no recording: {why}", driver.tag(), scenario.name())
+                }
+            }
         }
+        eprintln!("{} {}: {verdict}", driver.tag(), scenario.name());
         report.results.push((*scenario, verdict));
     }
     if let Some(model) = install.model.lock().unwrap().clone() {
@@ -856,7 +869,8 @@ impl Install {
         })
         .await
         .ok_or("its front door never answered")?;
-        let profile = InstallationServiceClient::new(door)
+        let mut door = InstallationServiceClient::new(door);
+        let profile = door
             .list_profiles(wire::ListProfilesRequest {})
             .await
             .map_err(|status| status.to_string())?
@@ -865,6 +879,16 @@ impl Install {
             .into_iter()
             .next()
             .ok_or("it has no profile")?;
+        // An installation set up long ago, as a person's is: the client
+        // opens on its agents, not on setting up.
+        door.answer_onboarding(wire::AnswerOnboardingRequest {
+            profile_id: Vec::new(),
+            answer: Some(wire::answer_onboarding_request::Answer::Dismiss(
+                wire::Empty {},
+            )),
+        })
+        .await
+        .map_err(|status| status.to_string())?;
         let client = wire::client_stubs(
             channel(Path::new(&profile.socket_path))
                 .await
@@ -1925,10 +1949,6 @@ fn item_token(kind: Kind, item: &Item) -> Option<String> {
             Codex::Prompt(_) => Some("prompt".into()),
             Codex::Steer(_) => Some("steer".into()),
             Codex::Work(work) => Some(tool(work.state, work.decision.as_ref())),
-            // Codex answers amux's read of a fresh thread's history with a
-            // deprecation notice whenever it gets to it, before or after the
-            // first prompt; it says nothing about what the scenario did.
-            Codex::Error(error) if error.error_kind == "deprecationNotice" => None,
             Codex::Error(_) => Some("error".into()),
             Codex::AgentMessage(_) => Some("agent message".into()),
             Codex::Ask(item) => Some(ask(&item)),

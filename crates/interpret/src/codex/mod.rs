@@ -340,7 +340,10 @@ enum Request {
     TitleThread,
     /// The hidden thread's one turn.
     TitleTurn,
-    /// `thread/read` with turns, to have the thread written to disk.
+    /// `thread/read` with turns, which earlier builds sent to have a thread
+    /// that had run no turn written to disk. None is sent now (naming the
+    /// thread writes it); the variant stays so a checkpoint written while
+    /// one was pending still opens, and its answer is ignored.
     Persist,
     /// `skills/list`.
     Skills,

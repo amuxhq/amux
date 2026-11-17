@@ -1,7 +1,6 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 5 recorded 4: fact Rpc "{\"id\":\"agent-thread\",\"result\":{\"activePermissionProfile\":null,\"approva…
-effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"01a191d0-1be9-7fd1-91be-c4b81382bfa0\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1793447697401 text="" BOUNDARY_KIND_STARTED
@@ -21,7 +20,7 @@ snapshot IDLE queue=[] working_on=- at=1793447697404 asks=[] thread=01a191d0-1be
 ## 13 recorded 12: fact Rpc method=mcpServer/startupStatus/updated
 snapshot IDLE queue=[] working_on=- at=1793447697404 asks=[] thread=01a191d0-1be9-7fd1-91be-c4b81382bfa0 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=medium permission=default mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
 ## 18 recorded 17: fact Rpc method=deprecationNotice
-item warning:2 error final at=1793447697407 text="Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." deprecationNotice "Full-history hydration is deprecated for paginated threads; omit `includeTurns` …" retry=false 0/0
+effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
 ## 21 recorded 20: input 0xf296e02e1eb24445a68239dcefabea46
 effect reply 0xf296e02e1eb24445a68239dcefabea46 accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"f296e02e1eb24445a68239dcefabea46\",\"input\":[{\"text\":\"Reply with the single word pong and nothing else.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a191d0-1be9-7fd1-91be-c4b81382bfa0\"}}"

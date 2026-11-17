@@ -90,7 +90,12 @@ You can also start an agent from the shell, in the current folder:
 ```sh
 amux new claude --prompt "Find out why the login test is flaky"
 amux new codex --cwd ~/source/app --name reviewer
+amux new claude --worktree --name fix-scroll
 ```
+
+`--worktree` is the `w` key: the agent starts in a new worktree of the
+folder's repository, on a new branch named after it, and amux says where the
+worktree is.
 
 ## Chatting
 
@@ -254,6 +259,32 @@ Press `,` on home for settings:
 - whether selecting text copies it; turned off, press **C** to copy
 - usage counts and automatic reports ([What amux sends](../understand/what-amux-sends.md))
 - your account: who's signed in, and on which plan
+- experiments: features still taking shape, which you can try before they
+  settle. Each is on or off for the whole machine, and a change takes effect
+  when amux restarts (`amux server stop`, then `amux server start`). An
+  experiment may change or go in any release, and what it keeps may be lost
+  when amux updates.
+
+  With `workspaces` on, a new worktree is a [wt](https://github.com/jordanwebster/wt)
+  tree when the repository uses wt, and its agent runs in the tree's
+  environment. The agent appears at once and starts when its worktree is
+  ready. A name the repository's branches already have gets a suffix
+  (`fix-2`) instead of failing. When you delete a worktree's last agent,
+  amux removes the worktree. The confirmation lists its uncommitted changes,
+  which confirming discards; otherwise a worktree with changes stays on disk
+  ([Settling and deleting](agents-working-together.md#settling-and-deleting)).
+
+  With `suspension` on, an agent you started yourself that has sat idle
+  for 30 minutes closes its Claude or Codex to free the machine. It still
+  shows as idle, and starts again on its own when a message reaches it,
+  including a report from an agent it started, or when you open its
+  terminal. It doesn't suspend while it's working, waiting for agents it
+  started, running something in the background, holding a wake-up it
+  scheduled or a permission you gave it for the session, or while a
+  terminal is open on it. After the machine restarts, agents that were idle
+  stay that way until something reaches them, and one that was working
+  carries on where it left off; its chat marks where with "Resumed · after
+  the machine restarted".
 
 These settings belong to the machine, so your phone and every other terminal
 see a change at once. Copying when you select is the exception: it applies to
@@ -265,7 +296,18 @@ A few more live only in the config file, `~/.config/amux/config.toml`.
 ```toml
 [ui]
 theme = "terminal"    # terminal (your terminal's own colours), dark or light
+
+[experiments]
+enabled = ["workspaces"]   # the experiments switched on, by name
+
+[experiments.suspension]
+after = "1h"               # how long an agent sits idle before it suspends
 ```
+
+`amux config` reads and changes an experiment's settings by the same names:
+`amux config set experiments.suspension.after 1h`, then
+`amux config get experiments.suspension.after`. A name amux doesn't have is
+refused with the ones it does.
 
 To go back to following Claude or Codex after picking in amux, forget the
 remembered value: `amux config unset new_agent.claude.model`, and likewise
@@ -280,13 +322,13 @@ Everything the app does is also a command. Name an agent by its name, by
 | Command | What it does |
 |---|---|
 | `amux ls` | List your agents, subagents beneath the agent that started them |
-| `amux new claude` or `amux new codex` | Start an agent in this folder |
+| `amux new claude` or `amux new codex` | Start an agent in this folder; `--worktree` starts it in a new worktree of the folder's repository |
 | `amux send <agent> <message>` | Send an agent a message |
 | `amux attach <agent>` | Open an agent's chat in this terminal |
 | `amux settle <agent>` | You're done with an agent: stops it if it's running, and settles its subagents. It can be resumed later. |
 | `amux resume <agent> [message]` | Start a stopped or settled agent again |
 | `amux rename <agent> <name>` | Rename an agent |
-| `amux rm <agent>` | Delete an agent, its history and its subagents |
+| `amux rm <agent>` | Delete an agent, its history and its subagents; `--discard-changes` also removes a worktree that goes with it when it has uncommitted changes |
 | `amux pair [target]` | Pair with another machine, or open this one for pairing ([Add another computer](../get-started/add-another-computer.md)) |
 | `amux hosts` | List your paired machines, and ones you could pair |
 | `amux unpair <host>` | Stop trusting a machine |

@@ -52,6 +52,9 @@ pub struct Sqlite {
     pub(crate) conn: Connection,
     pub(crate) own_host: Vec<u8>,
     pub(crate) markers: HashMap<AgentKey, Marker>,
+    /// The `suspension/1` experiment's table is there: each own agent's
+    /// run is kept in it.
+    pub(crate) suspension_1: bool,
     /// How many resets each replica row has absorbed since the store
     /// opened: what a replica that was told to forget its block went
     /// through, for the checks that judge it.
@@ -79,6 +82,78 @@ impl Sqlite {
         Self::with_connection(conn, &path.display().to_string(), own_host.into())
     }
 
+    /// Opens or creates the profile store at `path` as [`Sqlite::open`]
+    /// does, for a daemon running the experiment versions in `experiments`
+    /// (`workspaces/1`): their tables are made, and every other
+    /// experiment's dropped, with its data (see [`crate::experiments`]),
+    /// and this host's own rows keep only those versions' experimental
+    /// entries. Only the store's owner opens it so; a tool that opens a
+    /// copy leaves experiment tables and entries as they are.
+    pub fn open_with(
+        path: &Path,
+        own_host: impl Into<Vec<u8>>,
+        experiments: &[&str],
+    ) -> Result<Self, OpenError> {
+        let mut store = Self::open(path, own_host)?;
+        store.settle_experiments(experiments)?;
+        Ok(store)
+    }
+
+    /// Makes the tables of the experiment versions in `experiments` and
+    /// drops every other experiment's, and clears from this host's own
+    /// rows every experimental entry of a version not in `experiments`, as
+    /// [`Sqlite::open_with`] does; for a store opened otherwise, such as
+    /// one in memory. A host speaks only for its own rows: a replica's
+    /// entries are its origin's, kept whatever this host runs.
+    pub fn settle_experiments(&mut self, experiments: &[&str]) -> Result<(), OpenError> {
+        crate::experiments::settle(&mut self.conn, &self.own_host, experiments)?;
+        self.suspension_1 = experiments.contains(&crate::experiments::SUSPENSION_1.version);
+        Ok(())
+    }
+
+    /// Writes an own row's experimental map whole, as the experiments this
+    /// host runs say it; false when there is no such row. A replica's map
+    /// is its origin's, written only by [`Sqlite::put_agent`].
+    pub fn set_experimental(
+        &mut self,
+        agent: &AgentKey,
+        map: &std::collections::BTreeMap<String, Vec<u8>>,
+    ) -> Result<bool, StoreError> {
+        if !self.is_own(agent) {
+            return Err(StoreError::NotOwn);
+        }
+        self.write(|rows| {
+            let Some(mut row) = rows.agent(agent)? else {
+                return Ok(false);
+            };
+            row.experimental = map.clone();
+            rows.upsert_agent(&row, &rows::update_of(rows::EXPERIMENTAL))?;
+            Ok(true)
+        })
+    }
+
+    /// The incarnation the own agent's current run began at, under the
+    /// `suspension/1` experiment; none without an entry or the table.
+    pub fn run_start(&self, agent: &[u8]) -> Result<Option<u32>, StoreError> {
+        if !self.suspension_1 {
+            return Ok(None);
+        }
+        self.read(|rows| rows.run_start(agent))
+    }
+
+    /// Records the incarnation the own agent's current run began at, or
+    /// forgets it. Does nothing without the experiment's table.
+    pub fn put_run_start(
+        &mut self,
+        agent: &[u8],
+        incarnation: Option<u32>,
+    ) -> Result<(), StoreError> {
+        if !self.suspension_1 {
+            return Ok(());
+        }
+        self.write(|rows| rows.put_run_start(agent, incarnation))
+    }
+
     /// A store with the same schema that lives only in memory: gone when
     /// it is dropped, for exploring the store's own transitions.
     pub fn open_in_memory(own_host: impl Into<Vec<u8>>) -> Result<Self, OpenError> {
@@ -101,6 +176,7 @@ impl Sqlite {
             conn,
             own_host,
             markers: HashMap::new(),
+            suspension_1: false,
             #[cfg(feature = "explore")]
             resets: HashMap::new(),
         })
@@ -317,6 +393,7 @@ impl Sqlite {
         let result = f(&Rows {
             conn: &tx,
             own_host: &self.own_host,
+            suspension_1: self.suspension_1,
         });
         tx.finish()?;
         result
@@ -360,6 +437,7 @@ impl Sqlite {
         let result = f(&Rows {
             conn: &tx,
             own_host: &self.own_host,
+            suspension_1: self.suspension_1,
         })?;
         tx.commit()?;
         Ok(result)
@@ -516,8 +594,8 @@ impl Sqlite {
     /// Creates a row whole, or updates the columns its role owns: for an
     /// own row its registry columns (kind, name, cwd, parent, lifecycle,
     /// exit cause and detail, creation time and incarnation), and for a
-    /// replica those and the phase, working_on, phase_since and git its
-    /// inventory row carries. Committed state is kept, except that an own
+    /// replica those and the phase, working_on, phase_since, git and
+    /// experimental map its inventory row carries, the map replaced whole. Committed state is kept, except that an own
     /// row moving to a new incarnation is back in phase starting: the new
     /// process has said nothing yet.
     pub fn put_agent(&mut self, row: &AgentRow) -> Result<(), StoreError> {
@@ -561,6 +639,29 @@ impl Sqlite {
             };
             row.descendants = count;
             rows.upsert_agent(&row, &rows::update_of(&["descendants"]))?;
+            Ok(true)
+        })
+    }
+
+    /// Writes an own row's phase and when it began, which otherwise only a
+    /// committed snapshot sets: the daemon's word for a process that is
+    /// gone and left its row live. False when there is no such row.
+    pub fn set_phase(
+        &mut self,
+        agent: &AgentKey,
+        phase: wire::Phase,
+        since_ms: i64,
+    ) -> Result<bool, StoreError> {
+        if !self.is_own(agent) {
+            return Err(StoreError::NotOwn);
+        }
+        self.write(|rows| {
+            let Some(mut row) = rows.agent(agent)? else {
+                return Ok(false);
+            };
+            row.phase = phase as i32;
+            row.phase_since_ms = Some(since_ms);
+            rows.upsert_agent(&row, &rows::update_of(&["phase", "phase_since_ms"]))?;
             Ok(true)
         })
     }

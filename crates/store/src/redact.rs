@@ -46,7 +46,8 @@ fn redacted<M: prost::Message + prost::Name + Default>(redactor: &dyn Redactor, 
 /// rows' names, directories, texts, details, snapshots, git states, item
 /// bodies and attachments, the owed reports' and notifications' texts, the
 /// paired hosts' names and SSH destinations, the drafts and the recent
-/// directories.
+/// directories. Experiments' tables are dropped and the rows' experimental
+/// entries cleared.
 /// The file is left in rollback mode, with no WAL beside it. Returns each
 /// row's agent with its ingest cursor, the journal offset its commits
 /// reach.
@@ -93,6 +94,9 @@ pub fn redact_file(
         }
     }
     hosts_drafts_and_directories(&tx, redactor)?;
+    // No experiment says how its rows redact, and none is promised to
+    // survive, so a dump carries none.
+    crate::experiments::drop_tables(&tx, &[])?;
     tx.commit()?;
     conn.execute_batch("VACUUM")?;
     let mut read = conn.prepare("SELECT origin_host, agent_id, ingest_cursor FROM agents")?;
@@ -210,9 +214,11 @@ fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(),
             .transpose()
             .map_err(|error| StoreError::Corrupt(error.to_string()))?
             .map(|snapshot| redacted(redactor, &snapshot).encode_to_vec());
+        // No experiment says how its entries redact, and a workspace's
+        // names its folder, so a dump carries none of them.
         tx.execute(
             "UPDATE agents SET name = ?2, cwd = ?3, exit_detail = ?4, working_on = ?5, title = ?8, \
-             git = ?6, snapshot = ?7, last_said = ?9 WHERE rowid = ?1",
+             git = ?6, snapshot = ?7, last_said = ?9, experimental = NULL WHERE rowid = ?1",
             params![
                 rowid,
                 agent.name,

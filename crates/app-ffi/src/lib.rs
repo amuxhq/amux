@@ -2558,6 +2558,35 @@ pub unsafe extern "C" fn amux_profile_agent_act(
     })
 }
 
+/// What deleting an agent, named by its `AgentKey` as JSON, does to its
+/// workspace, once current: the ticket answers `{"Ok": DeleteWarning}`,
+/// `{"Ok": null}` when the workspace stays, or `{"Err": ..}`. For an agent
+/// with no process it asks the agent's host first.
+///
+/// # Safety
+/// `profile` is from `amux_profile_open`; the string is NUL-terminated.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_profile_delete_warning(
+    profile: *const AmuxProfile,
+    agent: *const c_char,
+) -> u64 {
+    guard(0, || {
+        // SAFETY: the caller's contract.
+        let Some(profile) = (unsafe { live_profile(profile) }) else {
+            return 0;
+        };
+        // SAFETY: the caller's contract.
+        let agent: Option<AgentKey> = unsafe { parse(agent) };
+        let app = profile.app.clone();
+        profile.act(async move {
+            let Some(agent) = agent else {
+                return Answered::Err("the agent is not readable".into());
+            };
+            Answered::Ok(app.delete_warning(&agent).await)
+        })
+    })
+}
+
 /// What a provider, as a JSON `Provider` ("Claude" or "Codex"), offers on a
 /// host, by its id as a JSON byte array, with no agent running there; the
 /// ticket answers `{"Ok": Catalogue}` or `{"Err": ..}`.

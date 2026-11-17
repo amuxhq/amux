@@ -488,7 +488,7 @@
       {"literal": "\"pin.fill\"", "context": "Image(systemName: \"pin.fill\")", "reason": "SF Symbol name, not a displayed label.", "count": 1},
       {"literal": "\"home.scope.\\(scope.id)\"", "context": ".identified(\"home.scope.\\(scope.id)\", label: scope.title)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"settle.\\(row.id)\"", "context": "case .close(let row, _): \"settle.\\(row.id)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"delete.\\(row.id)\"", "context": "case .delete(let row): \"delete.\\(row.id)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"delete.\\(row.id)\"", "context": "case .delete(let row, _): \"delete.\\(row.id)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"archivebox\"", "context": "Image(systemName: \"archivebox\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
       {"literal": "\"pair.\\(host.name)\"", "context": "id: \"pair.\\(host.name)\", glyph: offer.waiting ? \"laptopcomputer\" : \"plus.circle\",", "reason": "Stable element/record identifier, not a displayed label.", "count": 2},
       {"literal": "\"laptopcomputer\"", "context": "id: \"pair.\\(host.name)\", glyph: offer.waiting ? \"laptopcomputer\" : \"plus.circle\",", "reason": "SF Symbol name, not a displayed label.", "count": 2},
@@ -910,6 +910,7 @@
       {"literal": "\"fails\"", "context": "case \"fails\": .fails(reason)", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
     ],
     "apps/apple/Amux/Debug/ComponentCatalog.swift": [
+      {"literal": "\"Studio cannot be reached\"", "context": "deleting(\"delete-worktree-unknown\") { .failure(RuntimeFailure(\"Studio cannot be reached\")) },", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"notifications\"", "context": "sheet(\"notifications\") { StoryApp(settingsOpen: true, notifications: .on).settings },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"Change `../plan1/README.md` instead.\"", "context": "label: \"Edit the other\", description: \"Change `../plan1/README.md` instead.\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"Edit the other\"", "context": "label: \"Edit the other\", description: \"Change `../plan1/README.md` instead.\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
@@ -948,8 +949,8 @@
       {"literal": "\"pairing.log\"", "context": "static let log = BlobRef(hash: [8, 8, 8], name: \"pairing.log\", mime: \"text/plain\", size: 12_288)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"text/plain\"", "context": "static let log = BlobRef(hash: [8, 8, 8], name: \"pairing.log\", mime: \"text/plain\", size: 12_288)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"screen.jpg\"", "context": "static let images: [[UInt8]: Data] = [photo.hash: photoData, Array(\"screen.jpg\".utf8): photoData]", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"/Users/ada/src/amux\"", "context": "name: \"refactor-auth\", host: \"Studio\", directory: \"/Users/ada/src/amux\", branch: \"ada/refactor-auth\",", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 2},
-      {"literal": "\"ada/refactor-auth\"", "context": "name: \"refactor-auth\", host: \"Studio\", directory: \"/Users/ada/src/amux\", branch: \"ada/refactor-auth\",", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 2},
+      {"literal": "\"/Users/ada/src/amux\"", "context": "name: \"refactor-auth\", host: \"Studio\", directory: \"/Users/ada/src/amux\", branch: \"ada/refactor-auth\",", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 3},
+      {"literal": "\"ada/refactor-auth\"", "context": "name: \"refactor-auth\", host: \"Studio\", directory: \"/Users/ada/src/amux\", branch: \"ada/refactor-auth\",", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 3},
       {"literal": "\"/Users/ada/src/amux\"", "context": "name: \"refactor-auth\", host: \"Studio\", directory: \"/Users/ada/src/amux\", reach: .away)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"review.\\(id)\"", "context": "id: \"review.\\(id)\", family: .review, canvas: CGSize(width: 390, height: height)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"patch\"", "context": "patch: BlobRef(hash: [5, 5, 5], name: \"patch\", mime: \"text/x-diff\", size: UInt64(reviewPatch.utf8.count))),", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
@@ -1348,6 +1349,9 @@
       {"literal": "\"chat.native.stopping\"", "context": ".identified(\"chat.native.stopping\", label: String(localized: \"Stopping…\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift": [
+      {"literal": "\"ellipsis\"", "context": "Consequence(lines.settled ? \"xmark\" : \"ellipsis\", kept: !lines.settled, lines.workspace)", "reason": "SF Symbol name, not interface copy.", "count": 1},
+      {"literal": "\"chat.delete.workspace\"", "context": ".identified(\"chat.delete.workspace\", label: lines.workspace)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"nothing can be asked\"", "context": ".failure(RuntimeFailure(\"nothing can be asked\"))", "reason": "A failure's reason the screens read as a host that could not say; never drawn.", "count": 1},
       {"literal": "\"/\"", "context": "[name, host.isEmpty ? nil : host.lowercased()].compactMap { $0 }.joined(separator: \"/\")", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"arrow.down\"", "context": "Image(systemName: \"arrow.down\")", "reason": "SF Symbol name, not interface copy.", "count": 2},
       {"literal": "\"chat.newActivity\"", "context": ".identified(\"chat.newActivity\", label: String(localized: \"New activity\"), value: \"shown\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1382,7 +1386,7 @@
       {"literal": "\"chat.rename.cancel\"", "context": "choiceButton(String(localized: \"Cancel\"), kind: .outline, id: \"chat.rename.cancel\", action: cancel)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.rename.confirm\"", "context": "String(localized: \"Rename\"), kind: .primary, id: \"chat.rename.confirm\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.delete.cancel\"", "context": "choiceButton(String(localized: \"Cancel\"), kind: .outline, id: \"chat.delete.cancel\", action: cancel)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"chat.delete.confirm\"", "context": "choiceButton(String(localized: \"Delete\"), kind: .destructive, id: \"chat.delete.confirm\", action: confirm)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"chat.delete.confirm\"", "context": "choiceButton(String(localized: \"Delete\"), kind: .destructive, id: \"chat.delete.confirm\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\u{2212}\\(changes.removed)\"", "context": "Text(verbatim: \"\\u{2212}\\(changes.removed)\").foregroundStyle(design.removed.color)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"chat.changes\"", "context": "\"chat.changes\", label: \"+\\(changes.added) \\u{2212}\\(changes.removed)\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"list.bullet.rectangle\"", "context": "Label(\"Overview\", systemImage: \"list.bullet.rectangle\")", "reason": "SF Symbol name, not interface copy.", "count": 1},

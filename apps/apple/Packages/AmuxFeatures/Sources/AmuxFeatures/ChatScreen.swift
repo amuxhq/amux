@@ -31,6 +31,9 @@ public struct ChatSubject: Equatable, Sendable {
     public let filing: Filing
     /// It has no parent, so it may be pinned.
     public let topLevel: Bool
+    /// The workspace that deleting it removes, as its fleet row says; nil
+    /// when the workspace stays.
+    public let workspaceGoes: WorkspaceGoes?
     /// A subagent its parent's provider runs: it goes with its parent, has
     /// no folder and cannot be messaged, so it is never deleted on its own
     /// and has no address to copy.
@@ -39,7 +42,8 @@ public struct ChatSubject: Equatable, Sendable {
     public init(
         name: String, host: String, directory: String, branch: String? = nil, reach: Reach,
         connecting: Bool = false, descendants: Int = 0, backgroundJobs: Int = 0, closeHeld: Bool = false,
-        filing: Filing = .open, topLevel: Bool = true, native: Bool = false
+        filing: Filing = .open, topLevel: Bool = true, workspaceGoes: WorkspaceGoes? = nil,
+        native: Bool = false
     ) {
         self.name = name
         self.host = host
@@ -52,6 +56,7 @@ public struct ChatSubject: Equatable, Sendable {
         self.closeHeld = closeHeld
         self.filing = filing
         self.topLevel = topLevel
+        self.workspaceGoes = workspaceGoes
         self.native = native
     }
 
@@ -92,7 +97,12 @@ public enum ChatAction: Equatable, Sendable {
     case unpin
     /// Back among the agents, without resuming it.
     case reopen
+    /// Deletes it, keeping any uncommitted changes in a workspace that goes
+    /// with it.
     case delete
+    /// Deletes it, agreeing to lose the uncommitted changes its confirmation
+    /// named.
+    case deleteDiscardingChanges
     case copyAddress
     /// A parent or child in this chat's family.
     case open(AgentKey)
@@ -102,7 +112,18 @@ public enum ChatAction: Equatable, Sendable {
     case dictate
     /// Dictation was refused: open the app's page in Settings.
     case dictationSettings
+
+    /// The delete a confirmation that drew `warning` asks for: it loses
+    /// uncommitted changes only when it named them.
+    static func deleting(_ warning: DeleteWarning?) -> ChatAction {
+        DeleteWords.discards(warning) ? .deleteDiscardingChanges : .delete
+    }
 }
+
+/// Asks what deleting the agent does to its workspace, for its confirmation
+/// to say: nil when the workspace stays. The answer can wait on the agent's
+/// host.
+public typealias DeleteWarningAsk = @MainActor () async -> Result<DeleteWarning?, RuntimeFailure>
 
 /// What the chat has open over itself; one at a time.
 public enum ChatOverlay: String, Equatable, Sendable {
@@ -131,6 +152,7 @@ public struct ChatScreen: View {
     let model: ChatModel
     let subject: ChatSubject
     let family: FamilyHeader?
+    let deleteWarning: DeleteWarningAsk
     let actions: (ChatAction) -> Void
     @State private var showing: ChatOverlay?
     @State private var overviewOpen = false
@@ -150,11 +172,13 @@ public struct ChatScreen: View {
 
     public init(
         model: ChatModel, subject: ChatSubject, family: FamilyHeader? = nil,
-        showing: ChatOverlay? = nil, actions: @escaping (ChatAction) -> Void
+        showing: ChatOverlay? = nil, deleteWarning: DeleteWarningAsk? = nil,
+        actions: @escaping (ChatAction) -> Void
     ) {
         self.model = model
         self.subject = subject
         self.family = family
+        self.deleteWarning = deleteWarning ?? DeleteWords.unasked
         self.actions = actions
         _showing = State(initialValue: showing)
     }
@@ -227,7 +251,7 @@ public struct ChatScreen: View {
                 model: model, subject: subject, children: family?.children ?? [],
                 descendants: descendants, showing: $showing, putDown: putDown,
                 askRoom: screenHeight.map { max(0, $0 - headerHeight - Self.feedGlimpse) },
-                openOverview: { overviewOpen = true }, actions: actions)
+                openOverview: { overviewOpen = true }, deleteWarning: deleteWarning, actions: actions)
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: {
             screenHeight = $0.height
@@ -612,6 +636,8 @@ public struct ChatStanding: View {
     let askRoom: CGFloat?
     /// Opens what runs around the chat, from the dock's background row.
     let openOverview: () -> Void
+    /// What the delete card asks before it says what goes with the agent.
+    let deleteWarning: DeleteWarningAsk
     let actions: (ChatAction) -> Void
     @FocusState private var focused: Bool
 
@@ -619,7 +645,8 @@ public struct ChatStanding: View {
         model: ChatModel, subject: ChatSubject, children: [FleetCard] = [], dockExpanded: Bool = false,
         descendants: Int = 0, showing: Binding<ChatOverlay?> = .constant(nil), putDown: Int = 0,
         askRoom: CGFloat? = nil,
-        openOverview: @escaping () -> Void = {}, actions: @escaping (ChatAction) -> Void = { _ in }
+        openOverview: @escaping () -> Void = {}, deleteWarning: DeleteWarningAsk? = nil,
+        actions: @escaping (ChatAction) -> Void = { _ in }
     ) {
         self.model = model
         self.subject = subject
@@ -630,6 +657,7 @@ public struct ChatStanding: View {
         self.putDown = putDown
         self.askRoom = askRoom
         self.openOverview = openOverview
+        self.deleteWarning = deleteWarning ?? DeleteWords.unasked
         self.actions = actions
     }
 
@@ -693,9 +721,12 @@ public struct ChatStanding: View {
                     actions(.close)
                 }
             case .delete?:
-                DeleteCard(name: subject.name, descendants: descendants, cancel: { showing = nil }) {
+                DeleteCard(
+                    name: subject.name, descendants: descendants, workspaceGoes: subject.workspaceGoes,
+                    ask: deleteWarning, cancel: { showing = nil }
+                ) { shown in
                     showing = nil
-                    actions(.delete)
+                    actions(.deleting(shown))
                 }
             case .settings?:
                 if let settings = model.settings {
@@ -1006,30 +1037,171 @@ private struct DeleteCard: View {
     @Environment(\.design) private var design
     let name: String
     let descendants: Int
+    /// What the card says goes with the workspace, when one goes: what the
+    /// row said while the host is asked, then the host's answer. State keeps
+    /// it for as long as the card stays up, so a fleet change while it is
+    /// open changes neither what it says nor what confirming agrees to; only
+    /// the answer to the card's own question does.
+    @State private var warning: DeleteWarning?
+    let ask: DeleteWarningAsk
     let cancel: () -> Void
-    let confirm: () -> Void
+    /// Handed the warning the card drew, to delete exactly as it said.
+    let confirm: (DeleteWarning?) -> Void
+
+    init(
+        name: String, descendants: Int, workspaceGoes: WorkspaceGoes?, ask: @escaping DeleteWarningAsk,
+        cancel: @escaping () -> Void, confirm: @escaping (DeleteWarning?) -> Void
+    ) {
+        self.name = name
+        self.descendants = descendants
+        _warning = State(initialValue: DeleteWords.asking(workspaceGoes))
+        self.ask = ask
+        self.cancel = cancel
+        self.confirm = confirm
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(String(localized: "Delete \(name)?"))
                 .designFont(.screenTitle, design)
                 .foregroundStyle(design.ink.color)
-            Consequence("checkmark", kept: true, String(localized: "Its edits stay. Nothing is reverted."))
+            let lines = DeleteWords.lines(for: warning)
+            if lines == nil {
+                Consequence("checkmark", kept: true, String(localized: "Its edits stay. Nothing is reverted."))
+            }
             Consequence("xmark", kept: false, String(localized: "The chat is deleted on every device."))
             if descendants == 1 {
                 Consequence("xmark", kept: false, String(localized: "Its subagent is deleted too."))
             } else if descendants > 1 {
                 Consequence("xmark", kept: false, String(localized: "Its \(descendants) subagents are deleted too."))
             }
+            if let lines {
+                // Until the host answers nothing is said to go but what
+                // certainly does, so the line is not marked as a loss.
+                Consequence(lines.settled ? "xmark" : "ellipsis", kept: !lines.settled, lines.workspace)
+                    .identified("chat.delete.workspace", label: lines.workspace)
+                if let branch = lines.branch {
+                    Consequence("checkmark", kept: true, branch)
+                }
+            }
             ButtonPair {
                 choiceButton(String(localized: "Cancel"), kind: .outline, id: "chat.delete.cancel", action: cancel)
-                choiceButton(String(localized: "Delete"), kind: .destructive, id: "chat.delete.confirm", action: confirm)
+                choiceButton(String(localized: "Delete"), kind: .destructive, id: "chat.delete.confirm") {
+                    confirm(warning)
+                }
             }
         }
         .padding(16)
         .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
+        .task {
+            guard DeleteWords.awaitsAnswer(warning) else { return }
+            let answer = await ask()
+            // A card put away before its answer came has nothing to show it on.
+            guard !Task.isCancelled else { return }
+            warning = DeleteWords.answered(warning, with: answer)
+        }
     }
 
+}
+
+/// What deleting an agent says goes with it, in the words the home's dialog
+/// and the chat's card both use, and whether confirming agrees to lose
+/// uncommitted changes.
+///
+/// A confirmation opens on what the agent's row says goes, and asks the
+/// runtime for current facts: the uncommitted changes of an agent with no
+/// process are known only to its host. It says it is checking until the
+/// answer comes, and confirming before then keeps a worktree with changes
+/// on disk, because nothing it drew named them.
+enum DeleteWords {
+    /// Answers that the host could not be asked, for a screen given no way
+    /// to ask: a worktree with changes then stays on disk.
+    static func unasked() async -> Result<DeleteWarning?, RuntimeFailure> {
+        .failure(RuntimeFailure("nothing can be asked"))
+    }
+
+    /// What a confirmation draws on opening, from what the row says goes:
+    /// checking, when a workspace goes at all.
+    static func asking(_ goes: WorkspaceGoes?) -> DeleteWarning? { goes.map(DeleteWarning.checking) }
+
+    /// Whether a confirmation drawing `warning` is waiting on an answer.
+    static func awaitsAnswer(_ warning: DeleteWarning?) -> Bool {
+        if case .checking? = warning { true } else { false }
+    }
+
+    /// What a confirmation draws once its question is answered. Only one
+    /// still checking takes the answer; an answer that is a failure reads as
+    /// a host that could not say.
+    static func answered(
+        _ drawn: DeleteWarning?, with answer: Result<DeleteWarning?, RuntimeFailure>
+    ) -> DeleteWarning? {
+        guard case .checking(let asked)? = drawn else { return drawn }
+        switch answer {
+        case .success(let warning): return warning
+        case .failure: return .unknown(asked)
+        }
+    }
+
+    /// What a confirmation says of the workspace: its line, the branch's
+    /// line when it names one, and whether what it says is settled rather
+    /// than still being checked. Nil when the workspace stays.
+    static func lines(for warning: DeleteWarning?) -> (workspace: String, branch: String?, settled: Bool)? {
+        switch warning {
+        case nil: nil
+        case .goes(let goes)?: (workspace(goes), branch(goes), true)
+        case .checking(let goes)?:
+            (String(localized: "Checking its worktree for uncommitted changes…"), branch(goes), false)
+        case .unknown(let goes)?:
+            (String(localized: "Its worktree is removed too, but stays on disk if it has uncommitted changes, which couldn’t be checked."),
+             branch(goes), true)
+        }
+    }
+
+    /// "Its worktree is removed too, with 3 uncommitted files (+42 −7).", or
+    /// "Its worktree is removed too." when nothing in it is uncommitted.
+    static func workspace(_ goes: WorkspaceGoes) -> String {
+        guard let uncommitted = goes.uncommitted else {
+            return String(localized: "Its worktree is removed too.")
+        }
+        let files = uncommitted.files
+        // Files can change with no line counted, a binary or a mode change,
+        // and then there are no counts to show.
+        let counts = ChatWords.counts(added: uncommitted.added, removed: uncommitted.removed)
+        switch (files == 1, counts.isEmpty) {
+        case (true, false): return String(localized: "Its worktree is removed too, with 1 uncommitted file (\(counts)).")
+        case (true, true): return String(localized: "Its worktree is removed too, with 1 uncommitted file.")
+        case (false, false):
+            return String(localized: "Its worktree is removed too, with \(files) uncommitted files (\(counts)).")
+        case (false, true): return String(localized: "Its worktree is removed too, with \(files) uncommitted files.")
+        }
+    }
+
+    /// "The branch fix-scroll keeps what was committed.", whenever the row
+    /// names a branch.
+    static func branch(_ goes: WorkspaceGoes) -> String? {
+        goes.branch.map { String(localized: "The branch \($0) keeps what was committed.") }
+    }
+
+    /// The home's dialog under "Delete name?": the chat and its subagents,
+    /// then what happens to the workspace.
+    static func message(descendants: UInt32, warning: DeleteWarning?) -> String {
+        guard let lines = lines(for: warning) else {
+            return descendants > 0
+                ? String(localized: "Its chat is deleted on every device, with its subagents. Its edits stay.")
+                : String(localized: "Its chat is deleted on every device. Its edits stay.")
+        }
+        let chat = descendants > 0
+            ? String(localized: "Its chat is deleted on every device, with its subagents.")
+            : String(localized: "Its chat is deleted on every device.")
+        return [chat, lines.workspace, lines.branch].compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// Whether confirming agrees to lose uncommitted changes: only when the
+    /// confirmation drew them from current facts. A delete without that
+    /// consent keeps such a workspace on disk.
+    static func discards(_ warning: DeleteWarning?) -> Bool {
+        if case .goes(let goes)? = warning { goes.uncommitted != nil } else { false }
+    }
 }
 
 /// Lays its one subview out at its own height, never taller than `cap`.

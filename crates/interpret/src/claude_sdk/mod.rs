@@ -719,6 +719,9 @@ impl State {
     ) {
         self.asks.remove(key);
         self.shared.close_ask(key);
+        if claude_answers::for_session(&result) {
+            self.shared.granted_for_session();
+        }
         emit.effect(write(&claude_stream::Input::ControlResponse(
             ControlResponse::success(key, &result),
         )));
@@ -884,6 +887,9 @@ impl State {
         };
         let ask = self.answered(emit, who, id, &key);
         let meta = self.asks.remove(&key);
+        if matches!(&response, Answer::Permission(result) if claude_answers::for_session(result)) {
+            self.shared.granted_for_session();
+        }
         emit.effect(write(&claude_stream::Input::ControlResponse(
             match response {
                 Answer::Permission(result) => ControlResponse::success(&key, &result),
@@ -1214,6 +1220,10 @@ impl Interpreter for ClaudeSdk {
 
     fn typed_unrecorded(state: &Self::State) -> bool {
         state.shared.typed_unrecorded()
+    }
+
+    fn holds(state: &Self::State) -> crate::Holds {
+        state.shared.holds()
     }
 
     fn input_shape(input: &Input) -> crate::shape::InputShape {

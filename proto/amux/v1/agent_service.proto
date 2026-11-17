@@ -94,13 +94,17 @@ message CreateAgentRequest {
   // The first prompt, with attachments: the agent's first turn, written to
   // the provider once it takes input.
   optional PromptSubmission initial_prompt = 9;
-  // Start the agent in a new git worktree of cwd's repository, on a new
-  // branch named after the agent, made from whatever cwd has checked out.
-  // The agent's host chooses where the worktree lives; the agent's cwd is
-  // the worktree. Fails the call, making no agent, when cwd is not in a
-  // repository or the branch exists. The name is valid as a branch, so it
-  // is the branch as given.
-  bool new_worktree = 10;
+  // Start the agent in a new workspace of cwd's repository: a wt tree when
+  // wt is configured for it, else a git worktree. Either is on a new branch
+  // named after the agent, made from whatever cwd has checked out. The
+  // agent's host chooses where the workspace lives; the agent's cwd is the
+  // workspace. Fails the call, making no agent, when cwd is not in a
+  // repository. The name is valid as a branch, so it is the branch as
+  // given, unless the host runs the workspaces experiment, which gives a
+  // name whose branch or folder is taken the next free suffix, answers as
+  // soon as the agent's row is written and makes the workspace after.
+  // Named new_worktree until 0.9.1; the number and type are as they were.
+  bool new_workspace = 10;
   // The agent config's model and effort are a person's picks, so its host
   // starts its later agents of this kind on them too.
   bool remember_model = 11;
@@ -140,6 +144,11 @@ message FileAgentResponse {
 message ResumeAgentRequest {
   bytes agent_id = 1;
   optional PromptSubmission initial_prompt = 2;
+  // Resume it only if it is suspended (live with no process), as when a
+  // client acts on a row it holds that may be out of date: an agent stopped
+  // since is refused with FAILED_PRECONDITION rather than started again.
+  // False, as from builds before it, resumes any agent that is not running.
+  bool if_suspended = 3;
 }
 
 message ResumeAgentResponse {
@@ -148,6 +157,18 @@ message ResumeAgentResponse {
 
 message DeleteAgentRequest {
   bytes agent_id = 1;
+  // The person agreed to lose the uncommitted changes in the agent's
+  // workspace when this delete removes it: a client sets it only after
+  // warning them and their confirming. A workspace its host made is removed
+  // with its last agent; with this unset, as from every build before it, a
+  // workspace with changes stays on disk and stops being amux's, so nothing
+  // is lost. The host checks for changes itself when it removes the
+  // workspace. The consent counts when every other agent in the workspace
+  // descends from this one, and then holds until the workspace is removed or
+  // gains an agent, so children going with their parent are covered. Deletes
+  // amux makes itself (retention, children going with their parent) never
+  // set it.
+  bool discard_workspace_changes = 2;
 }
 
 message DeleteAgentResponse {}

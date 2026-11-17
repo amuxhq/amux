@@ -6,7 +6,7 @@
 //! started the way it was. A resume writes the next file from the current
 //! configuration; config is frozen per incarnation.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
@@ -334,6 +334,7 @@ pub struct Incarnation<'a> {
 pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
     let command = provider_command(launch, at.kind);
     let agent = &launch.agent;
+    let parentless = at.parent.is_none();
     AgentSpec {
         agent_id: at.agent_id.to_vec(),
         kind: at.kind as i32,
@@ -366,7 +367,25 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
         bootstrap: at.bootstrap,
         offered: at.offered,
         base_branch: at.base_branch,
+        experimental: experimental(launch, parentless),
     }
+}
+
+/// What experiments tell the agent process, each under its version, while
+/// it is on: for suspension, how long an agent without a parent waits with
+/// nothing to do before it suspends. A child already ends itself after its
+/// work, so it is told nothing.
+fn experimental(launch: &Launch, parentless: bool) -> BTreeMap<String, Vec<u8>> {
+    let mut map = BTreeMap::new();
+    if parentless && launch.experiments.is_on(&settings::experiments::SUSPENSION) {
+        wire::experimental::SUSPENSION.put(
+            &mut map,
+            &wire::experimental::SuspensionSpec {
+                after_ms: launch.suspension.after_ms(),
+            },
+        );
+    }
+    map
 }
 
 fn millis(secs: u64) -> u32 {
@@ -508,6 +527,51 @@ mod tests {
                 "high"
             ]
         );
+    }
+
+    /// Only an agent without a parent is told when to suspend, and only
+    /// while the experiment is on: off, the spec is what it always was.
+    #[test]
+    fn an_agent_without_a_parent_is_told_when_to_suspend_while_the_experiment_is_on() {
+        use std::time::Duration;
+
+        use settings::experiments::{Enabled, SUSPENSION};
+        let resolved = resolve(&Agent::ClaudeSdk(ClaudeCreateConfig::default()));
+        let spec = |launch: &Launch, parent: Option<AgentRef>| {
+            build(
+                launch,
+                Incarnation {
+                    agent_id: b"agent",
+                    kind: Kind::ClaudeSdk,
+                    cwd: "/tmp",
+                    name: "agent",
+                    parent,
+                    resolved: &resolved,
+                    created_at_ms: 0,
+                    incarnation: 1,
+                    bootstrap: None,
+                    offered: None,
+                    base_branch: None,
+                },
+            )
+        };
+        let mut launch = Launch {
+            experiments: Enabled::of(&[&SUSPENSION]),
+            ..Launch::default()
+        };
+        launch.suspension.after = Duration::from_secs(300);
+        let parentless = spec(&launch, None);
+        assert_eq!(
+            wire::experimental::SUSPENSION.get(&parentless.experimental),
+            Some(wire::experimental::SuspensionSpec { after_ms: 300_000 })
+        );
+        assert!(
+            spec(&launch, Some(AgentRef::default()))
+                .experimental
+                .is_empty()
+        );
+        launch.experiments = Enabled::none();
+        assert!(spec(&launch, None).experimental.is_empty());
     }
 
     #[test]

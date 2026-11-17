@@ -13,3 +13,4 @@ mod single_daemon;
 mod socket;
 mod supervisor;
 mod switch;
+mod workspaces;

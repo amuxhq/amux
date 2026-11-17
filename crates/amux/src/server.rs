@@ -64,15 +64,28 @@ pub(crate) fn log_to_stderr() {
 }
 
 /// What agents start with: this binary as the canonical install path, the
-/// installation's agent settings, its repositories and which Claude it runs.
+/// installation's agent settings, its repositories and which Claude it runs;
+/// and the experiments switched on, with their own settings, which the
+/// daemon runs until it stops.
 fn launch(config: &InstallationConfig) -> Result<Launch> {
     let install_path = std::env::current_exe().context("finding the amux binary")?;
+    let experiments = config.experiments.enabled();
+    let (suspension, warnings) = settings::experiments::suspension::Suspension::read(
+        config.experiments.table(&settings::experiments::SUSPENSION),
+    );
+    if experiments.is_on(&settings::experiments::SUSPENSION) {
+        for warning in warnings {
+            tracing::warn!("{warning}");
+        }
+    }
     Ok(Launch {
         install_path,
         agent: config.agent,
         repositories: config.repositories(),
         claude_kind: node::claude_kind(config),
         new_agent: config.new_agent.clone(),
+        experiments,
+        suspension,
         ..Launch::default()
     })
 }
@@ -85,6 +98,9 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
     log_to(&log)?;
     for key in &config.ignored {
         tracing::warn!(key, "ignoring an unknown config key");
+    }
+    for name in config.experiments.unknown_names() {
+        tracing::warn!(name, "ignoring an experiment this build does not have");
     }
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -118,6 +134,7 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
             root = %config.root.display(),
             front_door = %config.front_door().display(),
             generation = daemon.generation().counter,
+            experiments = ?config.experiments.enabled().versions(),
             "serving"
         );
         tokio::select! {
@@ -491,6 +508,27 @@ fn lock_held(path: &Path) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The daemon runs the experiments the file switches on when it
+    /// starts, and only those this build implements.
+    #[test]
+    fn a_daemon_starts_the_experiments_switched_on() {
+        let config = InstallationConfig::from_toml(
+            "[experiments]\nenabled = [\"teleport\", \"workspaces\"]\n",
+        )
+        .unwrap();
+        assert_eq!(
+            launch(&config).unwrap().experiments.versions(),
+            ["workspaces/1"]
+        );
+        assert!(
+            launch(&InstallationConfig::default())
+                .unwrap()
+                .experiments
+                .versions()
+                .is_empty()
+        );
+    }
 
     /// A daemon that starts with usage counts off still runs the uploader,
     /// whose gate follows the file: turned on, it sends; off again, it

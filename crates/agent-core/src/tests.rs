@@ -629,6 +629,7 @@ fn a_lifecycle_exit_decided_mid_turn_is_a_violation() {
         turn_ended: false,
         turn_running: true,
         deadline_passed: false,
+        suspension_due: false,
     });
     assert_eq!(
         run.agent.check_step_invariants().map_err(|v| v.invariant),
@@ -697,6 +698,235 @@ fn the_lifecycles_summary_holds_states_and_counts() {
     assert_eq!(summary["connected"], true, "{summary}");
     let text = summary.to_string();
     assert!(!text.contains("p1") && !text.contains("hello"), "{text}");
+}
+
+// --- suspension ----------------------------------------------------------
+
+const AFTER_MS: u64 = 600_000;
+
+/// An agent without a parent whose spec carries the suspension delay.
+fn suspending_spec(one_shot: bool) -> AgentSpec {
+    let mut spec = spec(one_shot, None);
+    wire::experimental::SUSPENSION.put(
+        &mut spec.experimental,
+        &wire::experimental::SuspensionSpec { after_ms: AFTER_MS },
+    );
+    spec
+}
+
+/// The suspension timer as the outputs last asked for it.
+fn suspension_timer(out: &[Output]) -> Option<Option<u64>> {
+    out.iter().rev().find_map(|output| match output {
+        Output::ArmTimer {
+            id: TimerId::Suspend,
+            at_ms,
+        } => Some(Some(*at_ms)),
+        Output::CancelTimer {
+            id: TimerId::Suspend,
+        } => Some(None),
+        _ => None,
+    })
+}
+
+/// A suspending agent whose provider is ready, its daemon connected: idle,
+/// with the timer armed from the provider's readiness.
+fn idle_suspending() -> Run {
+    let mut run = Run::start(&suspending_spec(false));
+    run.on(Input::DaemonDials { connection: DAEMON });
+    let out = run.fact(json!({"type": "ready"}));
+    assert_eq!(
+        suspension_timer(&out),
+        Some(Some(run.now_ms + AFTER_MS)),
+        "{out:?}"
+    );
+    run
+}
+
+#[test]
+fn an_idle_agent_suspends_after_its_delay_the_ordinary_graceful_way() {
+    let mut run = idle_suspending();
+    let at = run.agent.life.suspend.expect("armed");
+    let out = run.at(at, Input::Timer(TimerId::Suspend));
+    assert!(closes(&out), "{out:?}");
+    let end = out.iter().find_map(|output| match output {
+        Output::AppendJournal(step) => step.incarnation_end.clone(),
+        _ => None,
+    });
+    assert_eq!(
+        end.map(|end| end.cause),
+        Some(wire::ExitCause::Suspended as i32)
+    );
+    assert_eq!(run.agent.exiting(), Some(&ExitCause::Suspended));
+    assert!(dumps(&out).is_empty(), "{out:?}");
+    // A message arriving as it exits is refused as exiting, which the
+    // daemon answers by resuming it with that message.
+    let out = run.prompt("late", "are you there");
+    assert!(
+        matches!(verdicts(&out).as_slice(), [(id, verdict)] if id == b"late"
+            && matches!(&verdict.of, Some(wire::send_input_response::Of::Rejected(rejected))
+                if rejected.refusal() == wire::Refusal::Exiting)),
+        "{out:?}"
+    );
+    assert_eq!(provider_exits(&mut run), Some(ExitCause::Suspended));
+}
+
+/// Anything that happens to an idle agent breaks its quiet: the timer is
+/// cancelled, and armed afresh from the moment it is idle again.
+#[test]
+fn a_turn_cancels_the_timer_and_its_end_arms_it_afresh() {
+    let mut run = idle_suspending();
+    let out = run.prompt("p1", "hello");
+    assert_eq!(suspension_timer(&out), Some(None));
+    run.reflect("p1");
+    let out = run.at(run.now_ms + 5_000, json_fact(json!({"type": "turn_end"})));
+    assert_eq!(suspension_timer(&out), Some(Some(run.now_ms + AFTER_MS)));
+    // A turn the provider starts itself counts as a turn.
+    let out = run.fact(json!({"type": "turn_start"}));
+    assert_eq!(suspension_timer(&out), Some(None));
+    assert_eq!(run.agent.life.suspend, None);
+    // A stale timer does nothing.
+    let out = run.on(Input::Timer(TimerId::Suspend));
+    assert!(!closes(&out) && run.agent.exiting().is_none(), "{out:?}");
+}
+
+#[test]
+fn a_terminal_client_attached_keeps_the_agent_awake() {
+    let mut run = idle_suspending();
+    let out = run.on(Input::Attached { clients: 1 });
+    assert_eq!(suspension_timer(&out), Some(None));
+    assert_eq!(
+        suspension_timer(&run.on(Input::Attached { clients: 2 })),
+        None
+    );
+    assert_eq!(
+        suspension_timer(&run.on(Input::Attached { clients: 1 })),
+        None
+    );
+    let out = run.on(Input::Attached { clients: 0 });
+    assert_eq!(suspension_timer(&out), Some(Some(run.now_ms + AFTER_MS)));
+}
+
+/// A background job, the turn the provider owes for its end, a wake-up
+/// and a grant for the session each keep the agent from suspending.
+#[test]
+fn what_the_provider_holds_keeps_the_agent_awake() {
+    let mut run = idle_suspending();
+    let out = run.fact(json!({"type": "job_started", "id": "j1"}));
+    assert_eq!(suspension_timer(&out), Some(None));
+    // Its end is reported in a turn the provider starts itself: until that
+    // turn has run, the agent is not idle.
+    let out = run.fact(json!({"type": "job_ended", "id": "j1", "reported": true}));
+    assert_eq!(suspension_timer(&out), None);
+    assert_eq!(
+        suspension_timer(&run.fact(json!({"type": "turn_start"}))),
+        None
+    );
+    let out = run.turn_end();
+    assert_eq!(suspension_timer(&out), Some(Some(run.now_ms + AFTER_MS)));
+
+    // A one-shot wake-up holds until it fires and its turn ends; a
+    // recurring one until it is cancelled.
+    assert_eq!(
+        suspension_timer(&run.fact(json!({"type": "wakeup", "id": "w1"}))),
+        Some(None)
+    );
+    run.fact(json!({"type": "wakeup_fired", "id": "w1"}));
+    assert_eq!(
+        suspension_timer(&run.turn_end()),
+        Some(Some(run.now_ms + AFTER_MS))
+    );
+    run.fact(json!({"type": "wakeup", "id": "w2", "recurring": true}));
+    run.fact(json!({"type": "wakeup_fired", "id": "w2"}));
+    assert_eq!(suspension_timer(&run.turn_end()), None);
+    assert_eq!(run.agent.life.suspend, None);
+    let out = run.fact(json!({"type": "wakeup_cancelled", "id": "w2"}));
+    assert_eq!(suspension_timer(&out), Some(Some(run.now_ms + AFTER_MS)));
+
+    // A permission granted for the session holds for the incarnation.
+    run.prompt("p1", "touch a file");
+    run.reflect("p1");
+    run.fact(json!({"type": "ask", "id": "a1", "tool": "t", "tool_name": "Bash"}));
+    let answer = wire::Input::new(
+        b"ok".to_vec(),
+        wire::ClaudeSdkInput {
+            of: Some(wire::claude_sdk_input::Of::Answer(wire::ClaudeAnswer {
+                ask_key: "a1".into(),
+                of: Some(wire::claude_answer::Of::Permission(
+                    wire::PermissionAnswer {
+                        of: Some(wire::permission_answer::Of::Allow(wire::PermissionAllow {
+                            scope: Some(0),
+                        })),
+                    },
+                )),
+            })),
+        },
+    );
+    run.frame(ctl_frame::Of::Input(answer));
+    assert_eq!(suspension_timer(&run.turn_end()), None);
+    assert_eq!(run.agent.life.suspend, None);
+    assert!(dumps(&run.out).is_empty(), "{:?}", run.out);
+}
+
+/// Only an agent without a parent with the delay in its spec suspends: a
+/// child ends itself after its work, and no entry means today's agent.
+#[test]
+fn an_agent_suspends_only_without_a_parent_and_with_the_delay_in_its_spec() {
+    for spec in [suspending_spec(true), spec(false, None)] {
+        let mut run = Run::start(&spec);
+        run.on(Input::DaemonDials { connection: DAEMON });
+        run.fact(json!({"type": "ready"}));
+        run.prompt("p1", "hello");
+        run.reflect("p1");
+        run.turn_end();
+        assert_eq!(suspension_timer(&run.out), None, "{:?}", spec.parent);
+    }
+}
+
+/// A stop or a lost daemon takes the agent out of running: the timer goes.
+#[test]
+fn a_draining_agent_does_not_suspend() {
+    let mut run = idle_suspending();
+    run.prompt("p1", "hello");
+    run.reflect("p1");
+    let out = run.frame(ctl_frame::Of::Stop(wire::Stop { kill: false }));
+    assert_eq!(run.agent.life.suspend, None, "{out:?}");
+    let mut run = idle_suspending();
+    let out = run.on(Input::DaemonGone { connection: DAEMON });
+    assert!(run.agent.life.suspend.is_some(), "{out:?}");
+    run.at(run.now_ms + GRACE_MS, Input::Timer(TimerId::Grace));
+    assert_eq!(run.agent.exiting(), Some(&ExitCause::DaemonLost));
+    assert_eq!(run.agent.life.suspend, None);
+}
+
+#[test]
+fn a_suspension_armed_while_busy_or_decided_early_is_a_violation() {
+    let mut run = idle_suspending();
+    run.prompt("p1", "hello");
+    run.agent.life.suspend = Some(run.now_ms);
+    assert_eq!(
+        run.agent.check_step_invariants().map_err(|v| v.invariant),
+        Err(crate::SUSPENSION_WHILE_BUSY)
+    );
+    let run = idle_suspending();
+    let mut agent = run.agent;
+    agent.touched.decided = Some(Decided {
+        cause: ExitCause::Suspended,
+        turn_ended: true,
+        turn_running: false,
+        deadline_passed: false,
+        suspension_due: false,
+    });
+    assert_eq!(
+        agent.check_step_invariants().map_err(|v| v.invariant),
+        Err(crate::EXIT_OUTSIDE_TURN_END)
+    );
+}
+
+fn json_fact(fact: serde_json::Value) -> Input {
+    Input::Provider(Fact {
+        channel: Channel::Stream,
+        payload: serde_json::to_vec(&fact).expect("json"),
+    })
 }
 
 fn journaled_keys(out: &[Output]) -> Vec<String> {
@@ -818,6 +1048,165 @@ mod headless_claude {
                 "is_error": false, "duration_ms": 10, "num_turns": 1, "result": text,
             }))
         }
+    }
+
+    impl Claude {
+        /// A headless Claude without a parent whose spec carries the
+        /// suspension delay `after_ms`, started on a first prompt, with its
+        /// daemon connected.
+        fn suspending(after_ms: u64) -> Self {
+            let mut spec = spec(false, Some("go"));
+            wire::experimental::SUSPENSION.put(
+                &mut spec.experimental,
+                &wire::experimental::SuspensionSpec { after_ms },
+            );
+            let mut out = Vec::new();
+            let agent = Agent::<ClaudeSdk>::start(&spec, None, 1_000, &mut out);
+            let mut claude = Self {
+                agent,
+                now_ms: 1_000,
+            };
+            claude.on(Input::DaemonDials { connection: DAEMON });
+            claude.says(json!({"type": "system", "subtype": "init", "uuid": "i1", "session_id": "s", "model": "claude-test"}));
+            claude
+        }
+
+        /// `input` at `at_ms`, a timer's firing say.
+        fn at(&mut self, at_ms: u64, input: Input) -> Vec<Output> {
+            self.now_ms = at_ms - 1;
+            self.on(input)
+        }
+
+        fn suspension(&self) -> Option<u64> {
+            self.agent.life.suspend
+        }
+    }
+
+    /// The `/compact` amux sent Claude, by its uuid.
+    fn compact_sent(out: &[Output]) -> Option<String> {
+        out.iter().find_map(|output| match output {
+            Output::WriteProvider(Effect::UserMessage { uuid, text, .. }) if text == "/compact" => {
+                Some(uuid.clone())
+            }
+            _ => None,
+        })
+    }
+
+    fn wake_armed(out: &[Output]) -> Option<u64> {
+        out.iter().rev().find_map(|output| match output {
+            Output::ArmTimer {
+                id: TimerId::Wake,
+                at_ms,
+            } => Some(*at_ms),
+            _ => None,
+        })
+    }
+
+    /// An agent without a parent does not suspend while a provider subagent
+    /// it started runs in the background after its own turn has ended:
+    /// suspending would kill the subagent with the provider. The timer is
+    /// armed only once the notification's follow-up turn has ended.
+    #[test]
+    fn a_headless_claude_without_a_parent_stays_awake_while_its_background_subagent_runs() {
+        const AFTER_MS: u64 = 30 * 60_000;
+        let mut claude = Claude::suspending(AFTER_MS);
+        claude.assistant(
+            "a1",
+            json!([{"type": "tool_use", "id": "toolu_agent", "name": "Agent",
+                "input": {"description": "count", "prompt": "Count the files.", "subagent_type": "general-purpose"}}]),
+        );
+        claude.says(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1task", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "count", "is_backgrounded": true,
+        }));
+        claude.says(json!({
+            "type": "user", "uuid": "u1", "session_id": "s", "parent_tool_use_id": null,
+            "message": {"role": "user", "content": [{
+                "type": "tool_result", "tool_use_id": "toolu_agent", "is_error": false,
+                "content": [{"type": "text", "text": "Async agent launched successfully.\nagentId: a1task\nThe agent is working in the background. You will be notified automatically when it completes."}],
+            }]},
+        }));
+        claude.assistant(
+            "a2",
+            json!([{"type": "text", "text": "A subagent is counting."}]),
+        );
+        let out = claude.result("r1", "A subagent is counting.");
+        assert!(!closes(&out), "{out:?}");
+        assert_eq!(claude.suspension(), None, "armed while its subagent runs");
+
+        claude.says(json!({
+            "type": "system", "subtype": "task_notification", "uuid": "t3", "session_id": "s",
+            "task_id": "a1task", "tool_use_id": "toolu_agent", "status": "completed",
+            "output_file": "/tmp/claude/tasks/a1task.output", "summary": "There are 3 files.",
+        }));
+        assert_eq!(claude.suspension(), None, "the follow-up turn runs");
+        claude.says(json!({"type": "system", "subtype": "init", "uuid": "i2", "session_id": "s", "model": "claude-test"}));
+        claude.assistant(
+            "a3",
+            json!([{"type": "text", "text": "There are 3 files."}]),
+        );
+        claude.result("r2", "There are 3 files.");
+        let at = claude.suspension().expect("armed once nothing runs");
+        assert_eq!(at, claude.now_ms + AFTER_MS);
+        let out = claude.at(at, Input::Timer(TimerId::Suspend));
+        assert!(closes(&out), "{out:?}");
+        assert_eq!(claude.agent.exiting(), Some(&ExitCause::Suspended));
+    }
+
+    /// Idle compaction and suspension compose: a compaction is no turn of
+    /// anybody's, but the provider is busy with it and the agent reads as
+    /// working, so it holds the suspension timer while it runs; once it is
+    /// over the agent is idle again and the delay starts afresh. It runs
+    /// once per idle stretch, so it delays a suspension at most once.
+    #[test]
+    fn an_idle_compaction_holds_suspension_while_it_runs_and_delays_it_once() {
+        const AFTER_MS: u64 = 2 * 60 * 60_000;
+        let mut claude = Claude::suspending(AFTER_MS);
+        claude.says(json!({"type": "stream_event", "event": {"type": "message_start", "message": {
+            "id": "msg_1",
+            "usage": {
+                "input_tokens": 2,
+                "cache_read_input_tokens": 240_000,
+                "cache_creation_input_tokens": 10_000,
+                "cache_creation": {"ephemeral_1h_input_tokens": 10_000, "ephemeral_5m_input_tokens": 0},
+            },
+        }}}));
+        let out = claude.result("r1", "done");
+        let wake = wake_armed(&out).expect("the compaction's time is armed");
+        let idle_at = claude.now_ms;
+        assert_eq!(claude.suspension(), Some(idle_at + AFTER_MS));
+        assert!(wake < idle_at + AFTER_MS, "it compacts before it suspends");
+
+        let out = claude.at(wake, Input::Timer(TimerId::Wake));
+        let uuid = compact_sent(&out).expect("the idle compaction is sent");
+        assert_eq!(claude.suspension(), None, "the compaction holds it");
+        assert!(
+            out.contains(&Output::CancelTimer {
+                id: TimerId::Suspend
+            }),
+            "{out:?}"
+        );
+
+        claude.says(json!({"type": "system", "subtype": "compact_boundary", "uuid": "cb", "session_id": "s",
+            "compact_metadata": {"trigger": "manual", "pre_tokens": 250_000, "post_tokens": 30_000}}));
+        assert_eq!(claude.suspension(), None);
+        let out = claude.says(
+            json!({"type": "result", "subtype": "success", "uuid": "r2", "duration_ms": 17_000,
+            "user_message_uuid": uuid, "user_message_uuids": [uuid]}),
+        );
+        let over = claude.now_ms;
+        assert_eq!(
+            claude.suspension(),
+            Some(over + AFTER_MS),
+            "armed afresh once it is over"
+        );
+        assert_eq!(wake_armed(&out), None, "no second compaction: {out:?}");
+
+        let out = claude.at(over + AFTER_MS, Input::Timer(TimerId::Suspend));
+        assert!(compact_sent(&out).is_none());
+        assert!(closes(&out), "{out:?}");
+        assert_eq!(claude.agent.exiting(), Some(&ExitCause::Suspended));
     }
 
     /// Headless Claude starts the subagents its Agent tool asks for in the
@@ -1041,6 +1430,10 @@ mod hosting {
             Kind::wake_at(state)
         }
 
+        fn holds(state: &Self::State) -> interpret::Holds {
+            Kind::holds(state)
+        }
+
         fn describe_item(body: &[u8]) -> ItemView {
             Kind::describe_item(body)
         }
@@ -1131,6 +1524,36 @@ mod hosting {
         fn exits(&mut self) -> Option<ExitCause> {
             exit_of(&self.on(Input::ProviderExited { code: Some(0) })).cloned()
         }
+    }
+
+    /// An agent without a parent whose provider runs a subagent, any
+    /// provider's, holds its suspension until the subagent ends: the timer
+    /// is cancelled at the subagent's start and armed afresh at its end.
+    #[test]
+    fn a_running_provider_subagent_holds_its_hosts_suspension() {
+        let mut spec = spec(false, None);
+        wire::experimental::SUSPENSION.put(
+            &mut spec.experimental,
+            &wire::experimental::SuspensionSpec { after_ms: AFTER_MS },
+        );
+        let mut out = Vec::new();
+        let agent = Agent::<Hosting>::start(&spec, None, 1_000, &mut out);
+        let mut host = Host {
+            agent,
+            now_ms: 1_000,
+        };
+        host.on(Input::DaemonDials { connection: DAEMON });
+        host.fact(json!({"type": "ready"}));
+        assert!(host.agent.life.suspend.is_some(), "idle: armed");
+        let out = host.starts("sub-a");
+        assert_eq!(suspension_timer(&out), Some(None), "{out:?}");
+        assert_eq!(host.agent.life.suspend, None);
+        let out = host.ends("sub-a");
+        assert_eq!(
+            suspension_timer(&out),
+            Some(Some(host.now_ms + AFTER_MS)),
+            "{out:?}"
+        );
     }
 
     /// A turn that ends while a subagent it started runs is not the last:

@@ -61,7 +61,7 @@ mod telemetry;
 mod transport;
 mod trust;
 mod window;
-mod worktree;
+mod workspaces;
 
 pub use activation::{ActivationError, ActivationPipe, InheritedPipe, PIPE_ENV, PREPARED};
 pub use auth::oauth::CLI_CLIENT_ID;
@@ -115,7 +115,7 @@ pub use runtime::{
 };
 pub use serve::{MAX_PAGE, ServeError};
 pub use telemetry::Telemetry;
-pub use worktree::WORKTREES;
+pub use workspaces::WORKTREES;
 
 /// Internals the testnet harness assembles topologies from. Hidden and
 /// unstable: reachable only for test infrastructure, never for products.

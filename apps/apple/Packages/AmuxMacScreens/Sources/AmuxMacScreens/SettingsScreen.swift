@@ -142,6 +142,24 @@ private struct SettingsForm: View {
                 Account(account: account, actions: actions)
             }
 
+            if !settings.experiments.isEmpty {
+                Section {
+                    ForEach(settings.experiments, id: \.name) { experiment in
+                        Toggle(isOn: change(experiment.enabled) { on in
+                            .with(experiments: settings.switching(experiment.name, on: on))
+                        }) {
+                            Text(experiment.name.capitalized)
+                            Text(experiment.description)
+                        }
+                    }
+                } header: {
+                    Text("Experiments")
+                } footer: {
+                    Text("Takes effect when amux restarts.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             if let problem {
                 Text(problem).foregroundStyle(Palette.failure).textSelection(.enabled)
             }
@@ -226,11 +244,21 @@ extension SettingsChange {
     /// A change to only the settings named.
     public static func with(
         hostName: String? = nil, startAtLogin: Bool? = nil, keepAwake: Bool? = nil,
-        repositories: [String]? = nil, telemetry: Bool? = nil, autoReports: Bool? = nil
+        repositories: [String]? = nil, telemetry: Bool? = nil, autoReports: Bool? = nil,
+        experiments: [String]? = nil
     ) -> SettingsChange {
         SettingsChange(
-            autoReports: autoReports, hostName: hostName, keepAwake: keepAwake,
-            repositories: repositories, startAtLogin: startAtLogin, telemetry: telemetry)
+            autoReports: autoReports, experiments: experiments, hostName: hostName,
+            keepAwake: keepAwake, repositories: repositories, startAtLogin: startAtLogin,
+            telemetry: telemetry)
+    }
+}
+
+extension MachineSettings {
+    /// The names of the experiments on once `name` is switched `on`: the
+    /// whole list a change sends.
+    func switching(_ name: String, on: Bool) -> [String] {
+        experiments.filter { $0.name == name ? on : $0.enabled }.map(\.name)
     }
 }
 

@@ -20,7 +20,7 @@ pub fn edit(text: &str, changes: &[Change]) -> Result<(String, InstallationConfi
         .map_err(|error: toml_edit::TomlError| ConfigError::Invalid(error.to_string()))?;
     for (key, value) in changes {
         match value {
-            Some(value) => *slot(&mut document, key) = toml_edit::value(value.clone()),
+            Some(value) => *slot(&mut document, key)? = toml_edit::value(value.clone()),
             None => remove(&mut document, key),
         }
     }
@@ -48,18 +48,40 @@ pub fn is_set(text: &str, key: &str) -> bool {
 
 /// The key's place in the document, its tables made where they are missing
 /// as the sections a person writes (`[new_agent.claude]`), not inline.
-fn slot<'a>(document: &'a mut DocumentMut, key: &str) -> &'a mut Item {
+/// Refused when a key on the way is set to a value: the file says something
+/// else there, which only the person can sort out.
+fn slot<'a>(document: &'a mut DocumentMut, key: &str) -> Result<&'a mut Item, ConfigError> {
     let mut item = document.as_item_mut();
+    let mut path: Vec<&str> = Vec::new();
     let mut parts = key.split('.').peekable();
     while let Some(part) = parts.next() {
-        if parts.peek().is_some() && item.get(part).is_none() {
-            let mut table = toml_edit::Table::new();
-            table.set_implicit(true);
-            item[part] = Item::Table(table);
+        path.push(part);
+        if parts.peek().is_some() {
+            // What is there now, read before `item` is changed.
+            let there = item
+                .get(part)
+                .map(|inside| (inside.is_table_like(), inside.to_string()));
+            match there {
+                None => {
+                    let mut table = toml_edit::Table::new();
+                    table.set_implicit(true);
+                    item[part] = Item::Table(table);
+                }
+                Some((false, value)) => {
+                    return Err(ConfigError::InTheWay {
+                        key: path.join("."),
+                        value: value.trim().to_owned(),
+                        setting: key.to_owned(),
+                    });
+                }
+                Some((true, _)) => {}
+            }
         }
+        // `item` is the document or a table-like item checked above, so
+        // indexing it never panics.
         item = &mut item[part];
     }
-    item
+    Ok(item)
 }
 
 fn remove(document: &mut DocumentMut, key: &str) {
@@ -79,6 +101,28 @@ fn remove(document: &mut DocumentMut, key: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A key whose parent the file sets to a value has nowhere to go: the
+    /// edit is refused, naming the key in the way, and nothing panics.
+    #[test]
+    fn a_value_where_a_table_belongs_refuses_the_edit_and_names_it() {
+        let refused = |text: &str, key: &str| {
+            edit(text, &[(key, Some("1h".into()))])
+                .err()
+                .unwrap_or_else(|| panic!("{key} was set under a value"))
+                .to_string()
+        };
+        let why = refused(
+            "[experiments]\nsuspension = 7\n",
+            "experiments.suspension.after",
+        );
+        assert!(why.contains("experiments.suspension"), "{why}");
+        assert!(why.contains('7'), "{why}");
+        let why = refused("ui = 3\n", "ui.theme");
+        assert!(why.starts_with("ui "), "{why}");
+        let why = refused("[ui]\ntheme = \"dark\"\n", "ui.theme.shade");
+        assert!(why.contains("ui.theme"), "{why}");
+    }
 
     #[test]
     fn an_edit_keeps_the_rest_of_the_file_and_refuses_what_would_not_read() {

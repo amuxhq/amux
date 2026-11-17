@@ -1974,6 +1974,94 @@ fn a_first_prompt_is_drawn_while_terminal_claude_starts_and_typed_once() {
     assert!(!Kind::typed_unrecorded(&state), "the prompt was reflected");
 }
 
+// --- what Claude holds, for suspension --------------------------------------
+//
+// The hook payloads below are cut from live recordings of Claude Code
+// 2.1.325 in a terminal (2026-11-15).
+
+fn stop_hook(extra: serde_json::Value) -> Event {
+    let mut value = serde_json::json!({
+        "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl",
+        "cwd": "/w", "permission_mode": "default",
+        "hook_event_name": "Stop", "stop_hook_active": false,
+    });
+    value
+        .as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    hook(value)
+}
+
+/// Each Stop says which wake-ups the session holds (`session_crons`), and
+/// that stands until the next: one pending keeps the agent awake, an empty
+/// list releases it.
+#[test]
+fn the_stops_session_crons_are_the_wakeups_held() {
+    let (mut state, _) = started_claude();
+    ClaudePty::step(
+        &mut state,
+        stop_hook(
+            serde_json::json!({"background_tasks": [], "session_crons": [
+            {"id": "2fce0b1b", "schedule": "33 20 * * *", "recurring": false, "prompt": "say woke"}]}),
+        ),
+    );
+    assert_eq!(ClaudePty::holds(&state).wakeups, 1);
+    ClaudePty::step(
+        &mut state,
+        stop_hook(
+            serde_json::json!({"background_tasks": [], "session_crons": [
+            {"id": "a5ba5d56", "schedule": "*/1 * * * *", "recurring": true, "prompt": "say tick"}]}),
+        ),
+    );
+    assert_eq!(ClaudePty::holds(&state).wakeups, 1);
+    ClaudePty::step(
+        &mut state,
+        stop_hook(serde_json::json!({"background_tasks": [], "session_crons": []})),
+    );
+    assert!(ClaudePty::holds(&state).nothing());
+    // A Stop from a build that sends no list leaves the last one standing.
+    ClaudePty::step(
+        &mut state,
+        stop_hook(serde_json::json!({"session_crons": [
+            {"id": "51d76cc5", "schedule": "36 20 * * *", "recurring": false, "prompt": "say woke2"}]})),
+    );
+    ClaudePty::step(&mut state, stop_hook(serde_json::json!({})));
+    assert_eq!(ClaudePty::holds(&state).wakeups, 1);
+}
+
+/// A background job listed at a turn's end is held until a later Stop no
+/// longer lists it. A background subagent in the list is no job of the
+/// agent's: it is a provider subagent, an agent of its own, which holds its
+/// parent awake from its start to the task notification that ends it and
+/// starts the turn reporting it.
+#[test]
+fn a_background_job_is_held_until_claude_reports_its_end() {
+    let (mut state, _) = started_claude();
+    ClaudePty::step(
+        &mut state,
+        stop_hook(
+            serde_json::json!({"session_crons": [], "background_tasks": [
+            {"id": "booanlim9", "type": "shell", "status": "running", "description": "sleep 20"}]}),
+        ),
+    );
+    assert_eq!(ClaudePty::holds(&state).background_jobs, 1);
+    ClaudePty::step(
+        &mut state,
+        stop_hook(serde_json::json!({"background_tasks": [], "session_crons": []})),
+    );
+    assert!(ClaudePty::holds(&state).nothing());
+
+    ClaudePty::step(
+        &mut state,
+        stop_hook(
+            serde_json::json!({"background_tasks": [{"id": "a7aebc", "type": "subagent",
+            "status": "running", "description": "Run a 60-second sleep"}]}),
+        ),
+    );
+    let held = ClaudePty::holds(&state);
+    assert!(held.nothing(), "{held:?}");
+}
+
 /// A subagent's ask can come before any row of its file: it opens in the
 /// subagent's own chat with no item, as the agent's own ask does before
 /// its call's row lands, and points at the call once the subagent's row

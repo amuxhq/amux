@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package amux.experimental;
+
+// The suspension experiment, at version suspension/1: an idle agent without
+// a parent stops its provider process, and the next message resumes it.
+//
+// Like every amux.experimental file, it keeps none of amux.v1's promises;
+// see workspaces.proto.
+
+// How the agent process suspends itself, as
+// `AgentSpec.experimental["suspension/1"]` carries it. The daemon writes it
+// only for an agent without a parent, while the experiment is on; with no
+// entry the agent never suspends.
+message SuspensionSpec {
+  // How long the agent must have nothing to do, without a break, before it
+  // suspends. Zero never suspends.
+  uint64 after_ms = 1;
+}

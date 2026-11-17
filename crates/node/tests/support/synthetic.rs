@@ -89,6 +89,8 @@ pub struct SyntheticAgent {
     segment_bytes: u64,
     answer: Arc<Mutex<Answer>>,
     inputs: Arc<Mutex<Vec<Handed>>>,
+    /// Stops and kills the daemon asked of it.
+    stops: Arc<AtomicUsize>,
     /// The inputs among `inputs` the daemon handed on for one of the
     /// provider subagents this agent runs: the subagent's id, and the
     /// input's.
@@ -144,6 +146,7 @@ impl SyntheticAgent {
             segment_bytes,
             answer: Arc::new(Mutex::new(Answer::Accept)),
             inputs: Arc::default(),
+            stops: Arc::default(),
             child_inputs: Arc::default(),
             wedged: Arc::new(tokio::sync::watch::Sender::new(false)),
             frozen: Arc::new(tokio::sync::watch::Sender::new(false)),
@@ -191,6 +194,11 @@ impl SyntheticAgent {
     /// Every input and agent message the daemon relayed to this agent.
     pub fn inputs(&self) -> Vec<Handed> {
         self.inputs.lock().unwrap().clone()
+    }
+
+    /// How many stops or kills the daemon has asked of this agent.
+    pub fn stops_asked(&self) -> usize {
+        self.stops.load(Ordering::SeqCst)
     }
 
     /// The subagent each input handed on for a provider subagent was for,
@@ -277,6 +285,7 @@ impl SyntheticAgent {
         let journal = self.journal.clone();
         let answer = self.answer.clone();
         let inputs = self.inputs.clone();
+        let stops = self.stops.clone();
         let child_inputs = self.child_inputs.clone();
         let wedged = self.wedged.clone();
         let frozen = self.frozen.clone();
@@ -297,11 +306,12 @@ impl SyntheticAgent {
                     }
                     hellos.fetch_add(1, Ordering::SeqCst);
                     *conn.lock().await = Some(writer);
-                    let (conn, journal, answer, inputs, child_inputs) = (
+                    let (conn, journal, answer, inputs, stops, child_inputs) = (
                         conn.clone(),
                         journal.clone(),
                         answer.clone(),
                         inputs.clone(),
+                        stops.clone(),
                         child_inputs.clone(),
                     );
                     let mut wedged = wedged.subscribe();
@@ -338,6 +348,10 @@ impl SyntheticAgent {
                                 continue;
                             }
                             let input = match frame.of {
+                                Some(ctl_frame::Of::Stop(_)) => {
+                                    stops.fetch_add(1, Ordering::SeqCst);
+                                    continue;
+                                }
                                 Some(ctl_frame::Of::Input(input)) => Handed::Input(input),
                                 // Answered as its own input is: an agent
                                 // process answers for its subagent.

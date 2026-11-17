@@ -404,7 +404,8 @@ impl SimNet {
             cwd,
             given: Some(decl.name.clone()),
             branches: Default::default(),
-            new_worktree: false,
+            new_workspace: false,
+            workspace: None,
             recent: None,
             spec,
         };
@@ -768,7 +769,15 @@ impl World for SimNet {
             return Err(NetError::Down(at.host.clone()));
         }
         let what = format!("{agent} to be deleted");
-        registry_call(&mut sim, h, &what, ClientRequest::DeleteAgent { agent: id })?;
+        registry_call(
+            &mut sim,
+            h,
+            &what,
+            ClientRequest::DeleteAgent {
+                agent: id,
+                discard: false,
+            },
+        )?;
         drop(sim);
         self.agents.remove(agent);
         Ok(self.ack(format!("{agent} deleted")))
@@ -818,6 +827,7 @@ impl World for SimNet {
             ClientRequest::ResumeAgent(Box::new(Resume {
                 agent: id,
                 bootstrap,
+                if_suspended: false,
             })),
         )?
         .ok_or_else(|| answered_without_row(&at.host, &what))

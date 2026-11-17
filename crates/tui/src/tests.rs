@@ -3151,7 +3151,7 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
     let [FleetEffect::Start { setup, .. }] = effects.as_slice() else {
         panic!("{effects:?}");
     };
-    assert!(setup.request(b"id".to_vec(), None).new_worktree);
+    assert!(setup.request(b"id".to_vec(), None).new_workspace);
     assert!(home.start_failed(refused.to_owned()));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
@@ -3167,7 +3167,7 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
     let [FleetEffect::Start { setup, .. }] = effects.as_slice() else {
         panic!("{effects:?}");
     };
-    assert!(!setup.request(b"id".to_vec(), None).new_worktree);
+    assert!(!setup.request(b"id".to_vec(), None).new_workspace);
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(!screen.contains("Could not start"), "{screen}");
     // Left meanwhile, the form has nowhere to say it.
@@ -3194,7 +3194,7 @@ fn a_new_agent_asks_for_a_new_worktree_and_shows_why_a_start_failed() {
     let [FleetEffect::Start { setup, .. }] = effects.as_slice() else {
         panic!("{effects:?}");
     };
-    assert!(setup.request(b"id".to_vec(), None).new_worktree);
+    assert!(setup.request(b"id".to_vec(), None).new_workspace);
     assert!(home.start_failed(refused.to_owned()));
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(

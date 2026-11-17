@@ -41,6 +41,9 @@ pub enum TimerId {
     /// What the agent's process was given to end in is up: its stop
     /// deadline, or a kill's patience.
     Exit(AgentId),
+    /// The agent's process ended without its journal saying why, and the
+    /// grace before its exit is recorded is up.
+    Grace(AgentId),
     /// The pairing window expires, or its lockout lifts.
     PairWindow,
     /// A pairing conversation's deadline, or a pending pairing's token

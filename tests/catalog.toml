@@ -2,7 +2,7 @@ version = 1
 
 [[suite]]
 name = "desktop-cli-system"
-contract = "The built amux binary hosts agents that outlive a killed daemon and are adopted by the next, attaches terminals to them, forwards the browser extension's calls to its sockets, closes pairing mode however amux pair ends, words its refusals as sentences, serves the cloud relay, writes its login units, routes stop and update through the supervisor, and keeps overlapping releases working across an update."
+contract = "The built amux binary hosts agents that outlive a killed daemon and are adopted by the next, attaches terminals to them, forwards the browser extension's calls to its sockets, closes pairing mode however amux pair ends, words its refusals as sentences, starts an agent in a new worktree from `amux new --worktree`, serves the cloud relay, writes its login units, routes stop and update through the supervisor, and keeps overlapping releases working across an update."
 paths = ["crates/amux/tests"]
 recipe = "just suite desktop-cli-system"
 boundary = "System composition"
@@ -16,7 +16,7 @@ evidence = ""
 update = "AMUX_UPDATE_GOLDENS=1 just suite desktop-cli-system supervise_cli::, then review the login-unit diff."
 cargo = [
   { package = "amux", kind = "bin", targets = ["amux"] },
-  { package = "amux", modules = ["agent_process", "attach", "browser", "cli_words", "codex_attach", "overlap", "pairing", "process", "relay", "supervise_cli"] },
+  { package = "amux", modules = ["agent_process", "attach", "browser", "cli_words", "codex_attach", "new_worktree", "overlap", "pairing", "process", "relay", "supervise_cli"] },
 ]
 
 [[suite]]
@@ -194,7 +194,7 @@ evidence = "the checker's printed verdict"
 update = ""
 cargo = [
   { package = "models", kind = "lib", targets = ["models"], features = [] },
-  { package = "models", modules = ["client", "composed", "family", "lifecycle", "path", "presence", "relay", "replication", "single_daemon", "socket", "supervisor", "switch"], features = [] },
+  { package = "models", modules = ["client", "composed", "family", "lifecycle", "path", "presence", "relay", "replication", "single_daemon", "socket", "supervisor", "switch", "workspaces"], features = [] },
 ]
 
 [[suite]]
@@ -452,7 +452,7 @@ capabilities = ["desktop", "Unix for the agent-process cases"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "node", modules = ["addresses", "agent_names", "analytics", "blobs", "catalogue", "diff", "dump", "forwarded_send", "front_door", "host_catalogue", "hosts", "messaging", "onboarding", "peer_service", "push", "registry", "resumption", "settings", "single_daemon", "subagents", "upgrade", "worktree"], features = [] }]
+cargo = [{ package = "node", modules = ["addresses", "agent_names", "analytics", "blobs", "catalogue", "diff", "dump", "forwarded_send", "front_door", "host_catalogue", "hosts", "messaging", "onboarding", "peer_service", "push", "registry", "resumption", "settings", "single_daemon", "subagents", "suspension", "upgrade", "workspaces", "worktree"], features = [] }]
 
 [[suite]]
 name = "client-install"
@@ -520,7 +520,7 @@ cargo = [
 [[suite]]
 name = "state-machine-cores"
 contract = "Each state-machine core takes one input to the outputs it wants done and ends every step by checking its cheap invariants, a checkpoint this build cannot decode is refused, and the ring of inputs since a checkpoint resumes from the newest one with a torn tail cut."
-paths = ["crates/agent-core/src", "crates/core-ring/src", "crates/daemon-core/src", "crates/path-core/src", "crates/relay-core/src", "crates/supervisor-core/src"]
+paths = ["crates/agent-core/src", "crates/core-ring/src", "crates/daemon-core/src", "crates/path-core/src", "crates/relay-core/src", "crates/supervisor-core/src", "crates/workspace-core/src"]
 recipe = "just suite state-machine-cores"
 boundary = "Single daemon"
 oracle = "The exact outputs of a step, the checkpoint a restored core writes, and the inputs a ring hands back."
@@ -538,6 +538,7 @@ cargo = [
   { package = "path-core", kind = "lib", targets = ["path_core"], features = [] },
   { package = "relay-core", kind = "lib", targets = ["relay_core"], features = [] },
   { package = "supervisor-core", kind = "lib", targets = ["supervisor_core"], features = [] },
+  { package = "workspace-core", kind = "lib", targets = ["workspace_core"], features = [] },
 ]
 
 [[suite]]
@@ -720,7 +721,7 @@ cargo = [{ package = "testnet", modules = ["ctl"], features = [] }]
 [[suite]]
 name = "many-daemon-protocol-spec"
 contract = "Production daemons enforce pairing, trust, discovery, routing, relay carriers, credential refresh, revocation and account isolation, reconcile the inventory, keep each replica one contiguous block, carry agent families and their deliveries across hosts, and count pairings and forwarded prompts once on the right host, and send a person's report or a check's dump to the profile's account only when signed in and allowed. Four parallel provider subagents (headless Claude and Codex) are fleet rows and chats of their own on every client of either host, folded into one row in their parent's chat, which keeps its history in its window; an ask in one is answered once from the paired host's client while the parent's row reads waiting on you, a stop reaches the provider once and ends it stopped while the parent carries on, a client of a host that joins later catches up on a subagent's whole chat, and a one-shot host stays until its background subagent and the follow-up turn on it have ended."
-paths = ["crates/testnet/tests/spec_analytics.rs", "crates/testnet/tests/spec_edge.rs", "crates/testnet/tests/spec_families.rs", "crates/testnet/tests/spec_inventory.rs", "crates/testnet/tests/spec_network.rs", "crates/testnet/tests/spec_pairing_window.rs", "crates/testnet/tests/spec_replication.rs", "crates/testnet/tests/spec_reports.rs", "crates/testnet/tests/spec_sign_in_offers.rs", "crates/testnet/tests/spec_subagents.rs", "crates/testnet/tests/support"]
+paths = ["crates/testnet/tests/spec_analytics.rs", "crates/testnet/tests/spec_edge.rs", "crates/testnet/tests/spec_families.rs", "crates/testnet/tests/spec_inventory.rs", "crates/testnet/tests/spec_network.rs", "crates/testnet/tests/spec_pairing_window.rs", "crates/testnet/tests/spec_replication.rs", "crates/testnet/tests/spec_reports.rs", "crates/testnet/tests/spec_sign_in_offers.rs", "crates/testnet/tests/spec_subagents.rs", "crates/testnet/tests/spec_suspension.rs", "crates/testnet/tests/spec_workspaces.rs", "crates/testnet/tests/support"]
 recipe = "just suite many-daemon-protocol-spec"
 modes = ["real"]
 boundary = "Many daemons"
@@ -732,7 +733,7 @@ capabilities = ["loopback network", "desktop"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "testnet", modules = ["spec_analytics", "spec_edge", "spec_families", "spec_inventory", "spec_network", "spec_pairing_window", "spec_replication", "spec_reports", "spec_sign_in_offers", "spec_subagents"], features = [] }]
+cargo = [{ package = "testnet", modules = ["spec_analytics", "spec_edge", "spec_families", "spec_inventory", "spec_network", "spec_pairing_window", "spec_replication", "spec_reports", "spec_sign_in_offers", "spec_subagents", "spec_suspension", "spec_workspaces"], features = [] }]
 
 [[suite]]
 name = "claude-pty-live-compatibility"

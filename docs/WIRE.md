@@ -99,11 +99,11 @@ holds one event. The tables name what a response holds.
 | --- | --- | --- |
 | `SubscribeInventory` | stream of `InventoryEvent` | Hosts and agent rows: the current set, `CaughtUp`, then changes |
 | `ResolveAgent` | `Agent` | Fleet-wide reference to row: an id in any form amux prints (with or without dashes, or the short id's eight or more leading hex digits), a name, or `name@host`. Names are unique on a host, so `name@host` picks one; a bare name matching agents on two hosts is ambiguous, and the message offers those forms. Every other call takes an agent id. |
-| `CreateAgent` | `Agent` | Spawn, optionally with a first prompt (see [Creating and resuming](#creating-and-resuming)). Names are unique on a host, counting exited agents: a given name another agent on the host holds gets the next free suffix (`worker-2`), and the returned `Agent` says the name it got. Without a name the daemon gives a word pair (`quiet-otter`) that no other agent on the host and no branch in the folder's repository has. With `new_worktree` the agent's host first makes a worktree on a branch named after the agent, and the agent starts there |
+| `CreateAgent` | `Agent` | Spawn, optionally with a first prompt (see [Creating and resuming](#creating-and-resuming)). Names are unique on a host, counting exited agents: a given name another agent on the host holds gets the next free suffix (`worker-2`), and the returned `Agent` says the name it got. Without a name the daemon gives a word pair (`quiet-otter`) that no other agent on the host and no branch in the folder's repository has. With `new_workspace` the agent's host first makes a worktree on a branch named after the agent, and the agent starts there; under the workspaces experiment it answers with the row first and makes the workspace after ([new workspaces](PROTOCOL.md#new-workspaces)) |
 | `RenameAgent` | `Agent` | A name outside the rule (lowercase letters, digits and hyphens, starting with a letter or digit, at most 64) is refused `INVALID_ARGUMENT`, as it is for `CreateAgent`; a name another agent on the host holds, exited ones included, is refused `ALREADY_EXISTS` saying so. The agent's branch keeps the name it was made with |
 | `FileAgent` | `Agent` | Files the agent open, pinned or closed, apart from its lifecycle ([filing](PROTOCOL.md#filing)). Closing ends a live agent now: its running turn is cancelled the provider's own way and it exits, resumable, answered once it has ended. There is no "stop when done". The terminal, the phone and an agent's stop tool all close; the interrupt input is what ends only the turn. Its children follow on their own hosts by [the family rule](PROTOCOL.md#the-family-rule). Pinning is refused for an agent with a parent |
 | `ResumeAgent` | `Agent` | Start the agent's directory again, optionally with a first prompt |
-| `DeleteAgent` | nothing | Stops the agent if live and removes it for good. Its children follow on their own hosts by [the family rule](PROTOCOL.md#the-family-rule) |
+| `DeleteAgent` | nothing | Stops the agent if live and removes it for good. Its children follow on their own hosts by [the family rule](PROTOCOL.md#the-family-rule). `discard_workspace_changes` agrees to lose the uncommitted changes of a workspace the delete removes ([new workspaces](PROTOCOL.md#new-workspaces)); unset, they are kept |
 | `SendMessage` | the envelope id | Agent messaging: who it is from is the caller, never the request (see [Messages](#messages) and [agent tools](AGENT_TOOLS.md)) |
 | `PutBlob` | `BlobRef` | Bytes into an agent's directory |
 | `GetBlob` | the bytes | Bytes out |
@@ -143,7 +143,7 @@ message CreateAgentRequest {
     CodexCreateConfig codex = 8;
   }
   optional PromptSubmission initial_prompt = 9;
-  bool new_worktree = 10;
+  bool new_workspace = 10;                    // named new_worktree until 0.9.1
 }
 
 message HostRef { oneof of { bytes host_id = 1; string name = 2; } }
@@ -720,7 +720,11 @@ are the agent's own, written in its journal as the last step's
 `incarnation_end` (see [the agent process](AGENT_PROCESS.md#lifecycle)):
 `FINISHED` (a child's one-shot exit), `STOPPED` (a stop: its turn cancelled the
 provider's own way, then the exit), `PROVIDER_EXITED`,
-`DAEMON_LOST`, `ORPHANED`, `COULD_NOT_START` and `DIRECTORY_FAILED`. The
+`DAEMON_LOST`, `ORPHANED`, `COULD_NOT_START`, `DIRECTORY_FAILED` and
+`SUSPENDED` (an idle agent without a parent stopped its provider, under the
+`suspension` experiment; the next message resumes it). A suspended agent's
+row stays live, with `SUSPENDED` on it and phase idle, so every build reads
+it as an idle agent; only its own host knows it has no process. The
 daemon copies that onto the row when it ingests the step, reads the journal
 to its end before it marks the agent exited, and records its own cause only
 where the journal has none: `COULD_NOT_START` when the agent process cannot
@@ -732,9 +736,16 @@ agent's (a row still live can briefly hold the cause its journal ended with,
 until the daemon marks it exited, so a client reads the cause only on an
 exited row), and a cause a client does not know reads as an ordinary end,
 not a failure: clients draw `FINISHED` as finished,
-the stops and unknown causes as ended, and every other cause as a failure in
+the stops, `SUSPENDED` and unknown causes as ended, and every other cause as a failure in
 its words followed by its own. The `Boundary` that ends an incarnation in the
 journal carries the same cause and detail.
+
+An agent the machine restarted under in its turn is resumed, under the
+`suspension` experiment, with a prompt saying so, which nobody sent: its
+input id begins with the eight bytes `amux-con` (`wire::continued_input_id`,
+`wire::is_continued_input`). A client that knows draws that prompt's item as
+a line saying the agent carried on after the restart, and leaves it out of
+the queue; an older one draws the prompt's own words.
 
 `HostEntry` carries the host's own word (its `Host`: name, version, platform,
 capabilities and whether it is signed in), its `generation`, which changes
@@ -828,6 +839,8 @@ What a client writes into a dump is `amux.dump`, outside these promises:
 `DumpRequest.sessions` carries each session's record as bytes, and only the build that
 wrote it reads it back.
 
+Experiments are outside them too; see [experiments](#experiments).
+
 After any edit to a `.proto`, run `just protobuf` to regenerate the committed
 Rust; `just codegen-check`, which CI runs, fails on stale output.
 
@@ -862,6 +875,115 @@ Nothing else carries a version integer either:
   refuses a store for it: a build runs the ones a store lacks and opens a
   store that has had more as it is, because migrations only add (see
   [the journal and store](JOURNAL_AND_STORE.md#schema-and-migrations)).
+
+### Experiments
+
+An experiment is a feature shipped while its shape still moves, switched on
+per installation (`experiments.enabled`) and read by the daemon when it
+starts. Its wire shapes keep none of the promises above:
+
+- **Its messages are `amux.experimental`**, in
+  [`crates/wire/proto/amux/experimental/`](../crates/wire/proto/amux/experimental/).
+  Like `amux.dump`, the files sit outside the buf module, so buf neither
+  lints them nor checks them against a release, and they change freely.
+  `crates/xtask` compiles them with the rest (`INTERNAL_PROTO_FILES`), and
+  each type encoded into a map entry is a root of the reachability test in
+  `crates/wire/src/lib.rs`.
+- **They travel in an `experimental` map.** An amux.v1 message an
+  experiment extends carries, once and for good, `map<string, bytes>
+  experimental = 1000`. `Agent` and `AgentSpec` do now; `Host` gets one
+  when an experiment first needs it. Each entry is keyed by an experiment's
+  version and holds an encoded amux.experimental message:
+  `Agent.experimental["workspaces/1"]` is an `AgentWorkspace`. Its values
+  are bytes because a file in the buf module cannot import one outside it,
+  and bytes keep buf from seeing the experimental types at all. The map is
+  promised; its entries are not.
+- **Each entry has a typed key** beside the generated types in the wire
+  crate (`wire::experimental::WORKSPACE`, `SUSPENSION`), whose `get`, `put`
+  and `clear` are the one way code reads and writes it; an entry that does
+  not decode reads as none. Shared types never grow experiment fields: a
+  consumer decodes the entry into a view of its own.
+- **What a row says to everyone rides on the row; a host's working state
+  stays home.** A host writes entries only on its own rows and specs, and
+  only for the versions it runs, and clears its own rows of every other
+  version's when it opens its store. A replica's map is its origin's,
+  stored and passed on whole and undecoded whatever the host in between
+  runs, entries of versions it has never heard of included, and replaced
+  whole by the origin's next row. So a client reads an entry whatever its
+  own node runs: the phone, whose node has no experiment switch, shows a
+  desk's workspaces. A reader that acts on an entry decides for itself
+  whether to (the daemon acts on its own rows' workspace entries only with
+  the experiment on). State only the host reads lives in experiment tables
+  of its own ([the store](JOURNAL_AND_STORE.md#experiment-tables)).
+- **Builds meet without knowing what the others run.** A build ignores
+  every key it does not read, as an older build ignores field 1000, so
+  hosts, clients and agent processes running any mix of versions, or none,
+  meet and nothing is announced.
+- **Enum values cannot be experimental**, since an enum lives in one
+  package. An experiment that needs a value on an amux.v1 enum adds it to
+  amux.v1 for good, and dropping it later reserves it.
+
+The switch itself is promised: `Settings.experiments` lists every
+experiment a build implements with its name, version, description and
+whether the config switches it on, and `UpdateSettingsRequest.experiments`
+replaces the list of names switched on, keeping any the build does not
+know. A change takes effect when the daemon next starts.
+
+A person switches an experiment by its **name** (`workspaces`: lowercase
+letters only, so a store table's name says whose it is). A build implements
+at most one **version** of each (`workspaces/1`), and everything sent or
+stored is keyed by the version. The registry,
+[`crates/settings/src/experiments.rs`](../crates/settings/src/experiments.rs),
+lists each with its description and its own settings. In the config file the
+switch is the `[experiments]` table:
+
+```toml
+[experiments]
+enabled = ["workspaces", "suspension"]
+
+[experiments.suspension]
+after = "30m"
+```
+
+- **`experiments.enabled` is the one key the config promises.** A name this
+  build has no experiment by is ignored with a warning, and kept when a
+  client switches experiments, since no client of this build can see it.
+  The daemon makes the new list from the file as it reads under the
+  settings' write lock, not from its last poll, so a hand edit made just
+  before is neither undone nor lost.
+- **Each `[experiments.<name>]` table belongs to its experiment.** The config
+  reader keeps it raw and the experiment's module reads it
+  (`settings::experiments::suspension`); a value the module cannot use is a
+  warning and the default, so an experiment's settings never stop amux
+  starting. The module lists its keys (`Experiment.keys`), and `amux config
+  get`, `set` and `unset` reach `experiments.<name>.<key>` through them. The
+  table stops being read when the experiment graduates or goes.
+- **The switch is per installation,** so an experiment is on for every
+  profile: experiments change what the daemon does, and an installation runs
+  one daemon. The daemon reads the switch once, as it starts
+  (`Launch.experiments`, logged with the serving line). Switching while it
+  runs was rejected: every experiment would have to handle being turned off
+  while its work is under way, which none needs.
+- **An experiment's data may be lost at any upgrade,** so it keeps nothing
+  there it cannot afford to lose; what must survive lives in a promised
+  place or with the thing it describes, as a workspace's maker is recorded
+  on disk ([workspaces](WORKSPACES.md#who-made-it)). A file a release
+  promises, such as an agent's spec, carries an experiment's data only as
+  entries in its map (`AgentSpec.experimental["suspension/1"]` holds the
+  suspension delay).
+
+To change an experiment's shape, edit its `.proto` and run `just protobuf`.
+A change a build at the same version could misread moves the experiment to
+its next version (`workspaces/2`, under a key of its own, in the registry
+in `crates/settings/src/experiments.rs`). To graduate one, design the
+settled shape in amux.v1 from first principles, as if the experiment had
+never existed, and delete the experiment's files; its entries simply stop
+being written, and nothing in amux.v1 changes.
+
+Rejected: a field number per version (`workspace_experimental = 1000`, then
+`workspace_experimental_2 = 1001`). Every version would edit amux.v1 and
+leave a reserved number behind at graduation, the trail experiments exist
+to avoid.
 
 ## Writing a client
 

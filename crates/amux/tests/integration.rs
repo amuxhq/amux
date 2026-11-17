@@ -10,6 +10,7 @@ mod attach;
 mod browser;
 mod cli_words;
 mod codex_attach;
+mod new_worktree;
 mod overlap;
 mod pairing;
 mod process;

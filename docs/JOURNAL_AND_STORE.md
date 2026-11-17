@@ -420,11 +420,13 @@ revision, and a pool's bytes are one sum. Every write to `agents` and `items`
 but one is an `INSERT ... ON CONFLICT DO UPDATE` that names the columns its
 writer owns, and a commit's writes must stay so, because the daemon's
 crash-injection tests fail a commit with a `BEFORE INSERT` trigger, which a
-bare `UPDATE` would slip past. The exception is `rewind_cursor`, a bare
-`UPDATE` run in power-loss recovery outside any commit. Each upsert's columns
-are its writer's: an own row's registry columns come from the daemon, a
-replica's from its origin's inventory row, and the snapshot envelope and
-cursors from commit or absorb. The conformance suite in
+bare `UPDATE` would slip past. The exceptions are bare `UPDATE`s run
+outside any commit: `rewind_cursor`, in power-loss recovery, and the
+clearing of an own row's experimental entries as the store opens. Each
+upsert's columns are its writer's: an own row's registry columns come from
+the daemon and its experimental map from the experiments it runs, a
+replica's registry columns and map from its origin's inventory row, and the
+snapshot envelope and cursors from commit or absorb. The conformance suite in
 [`crates/store/tests/conformance.rs`](../crates/store/tests/conformance.rs)
 holds the store to its answers against a temporary database file.
 
@@ -457,6 +459,7 @@ The schema is the text in
 | `owes_report` | Own rows: the incarnation has not yet sent its parent its last report, from its start until a turn end marked `last` (and again should a later turn start). An incarnation that exits still owing one, its turn open or ended idle, tells its parent it failed. |
 | `created_at_ms`, `incarnation` | Creation time and the `spec.<n>` it is running |
 | `native` | An encoded `amux.v1.NativeChild` on a provider subagent, the provider's id for it; NULL on an agent amux started, which is every row written before the column existed. Owned by the registry; a replica copies its origin's |
+| `experimental` | What the row says to everyone under each experiment: the wire's `Agent.experimental` map, version to encoded message, which the store never decodes. Held as a message whose one field is that map, so the column holds the entries as the wire encodes them; NULL holds none. A replica's is its origin's, replaced whole by each inventory row whatever this host runs, so a host with an experiment off still stores and serves a peer's entries, and those of versions it has never heard of. An own row's is written by the experiments this host runs (`Sqlite::set_experimental`); a registry write leaves it. See [experiment tables](#experiment-tables) |
 
 Kind, lifecycle, exit cause and phase are stored as their wire integers, so a value from
 a newer peer is stored and served rather than refused.
@@ -555,6 +558,64 @@ To change the schema:
 A change that cannot be made by adding, such as a column whose meaning must
 change, gets a new column or table that the code fills as it goes, and the old
 one is left in place unread.
+
+### Experiment tables
+
+An experiment keeps two kinds of data, and they live in different places:
+
+- **What a row says to everyone** rides on the row, in the agents table's
+  `experimental` column: the workspace an agent runs in, as
+  `Agent.experimental["workspaces/1"]` carries it. The column is promised
+  like every other; the entries in it are not. Only agents rows carry a map
+  (as only `Agent` and `AgentSpec` do on the wire); a host row gets one when
+  an experiment first needs it.
+- **A host's own working state**, which nobody else reads, lives in tables
+  of the experiment's own:
+  `exp_suspension_1_runs` (one of this host's own agents to the incarnation
+  its current run began at, against which a child's report is judged; see
+  [the agent process](AGENT_PROCESS.md#a-suspended-agent-on-its-host)).
+
+Experiment tables are outside both rules: their shape may change in any
+release, and losing them is the price of shipping early. Each version of an
+experiment has tables of its own, declared in
+[`crates/store/src/experiments.rs`](../crates/store/src/experiments.rs)
+rather than in `MIGRATIONS`, each named with its version's prefix. They have
+real columns and indexes, and are `STRICT` like every other table.
+
+When the daemon opens a profile's store (`Sqlite::open_with`), it creates the
+tables of the experiments it runs and drops every `exp_` table that does not
+belong to one of them at the version this build implements, rows and indexes
+with it. So a new version never reads an old version's rows, switching an
+experiment off frees its space, and a build from before experiments leaves
+the tables alone, as it does any table it does not know. In the same
+transaction it clears from its **own** rows every experimental entry of a
+version it does not run, so switching an experiment off, or moving to a
+build at another version, takes back what this host's rows said under it. A
+host speaks only for its own rows: replica rows keep what their origins
+wrote. Every other opener (`Sqlite::open`, which the dump and replay tools
+use) touches no `exp_` table and no entry. A dump's redacted copy drops
+every `exp_` table and clears every row's `experimental` column, since no
+experiment says how its data redacts and a workspace's entry names a folder.
+No migration may name an `exp_` table; `just store-check` reads only
+`MIGRATIONS`, and a store test fails on one that does.
+
+Graduating an experiment converts none of its rows: the settled design gets
+a migration of its own, written as if the experiment had never existed, the
+experiment's tables are dropped the next time a store opens, and its
+entries are cleared from own rows like any version the build does not run.
+
+Rejected: keeping a row's experimental entries in experiment tables. A node
+with the experiment off dropped them from the replicas it stored, so a
+client whose node cannot switch the experiment on (the phone's, which runs
+none) never saw them: the phone could not warn that deleting an agent takes
+its worktree, nor send consent to discard its changes.
+
+Rejected: one generic table of encoded records for every experiment's
+working state. Tables of their own cost a create and drop when the store
+opens, and in return an experiment gets queries, indexes and joins, tables
+`sqlite3` reads, and a graduation whose table can become the real migration.
+This is about state only the host reads; what a row says to everyone rides
+on the row.
 
 ### Own rows and replica rows
 

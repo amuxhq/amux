@@ -495,7 +495,8 @@ impl<I: Interpreter> Driver<I> {
     /// What an attached terminal client does. The interpreter hears when
     /// the first comes to Claude's screen and when the last leaves it: a
     /// tool server's form is then left to Claude's own dialog, for the
-    /// person looking at it.
+    /// person looking at it. The core hears every count: an agent someone
+    /// is watching does not suspend.
     async fn on_control(&mut self, control: attach::Control) {
         match control {
             attach::Control::Joined => {
@@ -503,12 +504,14 @@ impl<I: Interpreter> Driver<I> {
                 if self.watchers == 1 {
                     self.feed_watched(true).await;
                 }
+                self.feed_attached().await;
             }
             attach::Control::Left => {
                 self.watchers = self.watchers.saturating_sub(1);
                 if self.watchers == 0 {
                     self.feed_watched(false).await;
                 }
+                self.feed_attached().await;
             }
             attach::Control::Keys(keys) => {
                 if let Some(provider) = &self.provider {
@@ -521,6 +524,11 @@ impl<I: Interpreter> Driver<I> {
                 }
             }
         }
+    }
+
+    async fn feed_attached(&mut self) {
+        let clients = u32::try_from(self.watchers).unwrap_or(u32::MAX);
+        self.feed(Input::Attached { clients }).await;
     }
 
     async fn feed_watched(&mut self, watched: bool) {

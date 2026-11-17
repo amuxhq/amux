@@ -2712,6 +2712,390 @@ fn a_first_prompt_is_drawn_while_claude_starts_and_written_once() {
     );
 }
 
+// --- what Claude holds, for suspension --------------------------------------
+//
+// The frames below are cut from live recordings of Claude Code 2.1.325
+// (2026-11-15), keeping only the fields the interpreter reads.
+
+fn holds_after(state: &mut State, events: impl IntoIterator<Item = Value>) -> interpret::Holds {
+    for event in events {
+        ClaudeSdk::step(state, stream(event));
+    }
+    ClaudeSdk::holds(state)
+}
+
+fn turn_result() -> Value {
+    json!({"type": "result", "subtype": "success", "uuid": "r", "session_id": "s", "duration_ms": 10})
+}
+
+/// A background command that ends between turns: Claude says so with
+/// `task_updated`, `task_notification` and an empty task list, and then
+/// starts a turn of its own to report it. From the end until that turn
+/// starts, the agent owes a turn and is not idle.
+#[test]
+fn a_background_command_ending_between_turns_owes_the_turn_claude_starts_to_report_it() {
+    let mut state = started();
+    let running = holds_after(
+        &mut state,
+        [
+            json!({"type": "assistant", "uuid": "a1", "session_id": "s", "message": {
+                "id": "msg_011Ch5JSmtVqPbemzLmJe5sh", "role": "assistant", "content": [{
+                    "type": "tool_use", "id": "toolu_01X4vwoyvkp8G3cFRfXHcXhw", "name": "Bash",
+                    "input": {"command": "sleep 20; echo done", "description": "Wait 20 seconds then print done", "run_in_background": true}}]}}),
+            json!({"type": "system", "subtype": "background_tasks_changed", "uuid": "b1", "session_id": "s",
+                "tasks": [{"task_id": "b3t6jdojf", "task_type": "local_bash", "description": "Wait 20 seconds then print done"}]}),
+            json!({"type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+                "task_id": "b3t6jdojf", "tool_use_id": "toolu_01X4vwoyvkp8G3cFRfXHcXhw",
+                "description": "Wait 20 seconds then print done", "is_backgrounded": true, "task_type": "local_bash"}),
+            turn_result(),
+        ],
+    );
+    assert_eq!(running.background_jobs, 1, "{running:?}");
+    assert!(!state.shared().is_busy());
+
+    let ended = holds_after(
+        &mut state,
+        [
+            json!({"type": "system", "subtype": "task_updated", "uuid": "t2", "session_id": "s",
+                "task_id": "b3t6jdojf", "patch": {"status": "completed", "end_time": 1794772553215_i64}}),
+            json!({"type": "system", "subtype": "task_notification", "uuid": "t3", "session_id": "s",
+                "task_id": "b3t6jdojf", "tool_use_id": "toolu_01X4vwoyvkp8G3cFRfXHcXhw", "status": "completed",
+                "summary": "Background command \"Wait 20 seconds then print done\" completed (exit code 0)"}),
+            json!({"type": "system", "subtype": "background_tasks_changed", "uuid": "b2", "session_id": "s", "tasks": []}),
+        ],
+    );
+    assert_eq!(
+        (ended.background_jobs, ended.turn_owed),
+        (0, true),
+        "{ended:?}"
+    );
+
+    // Claude's own turn: its reply, then its result.
+    let reported = holds_after(
+        &mut state,
+        [
+            json!({"type": "assistant", "uuid": "a2", "session_id": "s", "message": {
+            "id": "msg_011Ch5JUbYhB5GqsRf7daQ5W", "role": "assistant", "content": [{
+                "type": "text", "text": "The background command finished successfully (exit code 0)."}]}}),
+        ],
+    );
+    assert!(
+        state.shared().is_busy() && !reported.turn_owed,
+        "{reported:?}"
+    );
+    assert!(holds_after(&mut state, [turn_result()]).nothing());
+}
+
+/// ScheduleWakeup's result gives the time it fires; the wake-up is held
+/// until its `command_lifecycle` arrives with `wakeup_source`, which also
+/// starts the turn Claude runs for it with nothing from amux.
+#[test]
+fn a_scheduled_wakeup_is_held_until_it_fires_as_a_turn_of_its_own() {
+    let mut state = started();
+    let scheduled = holds_after(
+        &mut state,
+        [
+            json!({"type": "assistant", "uuid": "a1", "session_id": "s", "message": {
+                "id": "msg_011Ch5JSmpH7yHP8JfDV9qPy", "role": "assistant", "content": [{
+                    "type": "tool_use", "id": "toolu_0112BzM6pLnyoi55sxnrcCum", "name": "ScheduleWakeup",
+                    "input": {"delaySeconds": 60, "prompt": "say woke", "reason": "User asked for a 60-second wakeup that will say woke.", "noop": false}}]}}),
+            json!({"type": "user", "uuid": "u1", "session_id": "s", "message": {"role": "user", "content": [{
+                "tool_use_id": "toolu_0112BzM6pLnyoi55sxnrcCum", "type": "tool_result",
+                "content": "Next wakeup scheduled for 20:57:00 (in 86s)."}]},
+                "tool_use_result": {"scheduledFor": 1794772620000_i64, "clampedDelaySeconds": 60, "wasClamped": false}}),
+            turn_result(),
+        ],
+    );
+    assert_eq!(scheduled.wakeups, 1, "{scheduled:?}");
+    assert!(!state.shared().is_busy());
+
+    let fired = holds_after(
+        &mut state,
+        [
+            json!({"type": "command_lifecycle", "command_uuid": "cc214fe7-e48e-4fd9-906c-a54faa064d4c",
+            "state": "started", "wakeup_source": "loop_wakeup", "scheduled_for": 1794772620000_i64}),
+        ],
+    );
+    assert_eq!(fired.wakeups, 0, "{fired:?}");
+    assert!(state.shared().is_busy(), "the wake-up's turn runs");
+    assert!(holds_after(&mut state, [turn_result()]).nothing());
+}
+
+/// A recurring CronCreate stays held through each tick (a `schedule_wakeup`
+/// with no time) until CronDelete names its id.
+#[test]
+fn a_recurring_cron_is_held_until_it_is_deleted() {
+    let mut state = started();
+    let tool = |id: &str, name: &str, input: Value| {
+        json!({"type": "assistant", "uuid": format!("a-{id}"), "session_id": "s", "message": {
+            "id": format!("msg-{id}"), "role": "assistant", "content": [{
+                "type": "tool_use", "id": id, "name": name, "input": input}]}})
+    };
+    let result = |id: &str, text: &str, result: Value| {
+        json!({"type": "user", "uuid": format!("u-{id}"), "session_id": "s", "message": {"role": "user",
+            "content": [{"tool_use_id": id, "type": "tool_result", "content": text}]},
+            "tool_use_result": result})
+    };
+    let created = holds_after(
+        &mut state,
+        [
+            tool(
+                "toolu_01PbVBufph2J2GdhLudukC8F",
+                "CronCreate",
+                json!({"cron": "* * * * *", "prompt": "say tick", "recurring": true}),
+            ),
+            result(
+                "toolu_01PbVBufph2J2GdhLudukC8F",
+                "Scheduled recurring job 07a89516 (Every minute).",
+                json!({"id": "07a89516", "humanSchedule": "Every minute", "recurring": true,
+                    "durable": false, "nextFireAt": 1794772740897.4834_f64}),
+            ),
+            turn_result(),
+        ],
+    );
+    assert_eq!(created.wakeups, 1, "{created:?}");
+    let ticked = holds_after(
+        &mut state,
+        [
+            json!({"type": "command_lifecycle", "command_uuid": "392bfcee-d328-4f87-a573-b082dcaf615c",
+                "state": "started", "wakeup_source": "schedule_wakeup"}),
+            turn_result(),
+        ],
+    );
+    assert_eq!(ticked.wakeups, 1, "a recurring cron stays: {ticked:?}");
+    let deleted = holds_after(
+        &mut state,
+        [
+            tool(
+                "toolu_01LHLadyBiWcpNjhQ3Zq3wrz",
+                "CronDelete",
+                json!({"id": "07a89516"}),
+            ),
+            result(
+                "toolu_01LHLadyBiWcpNjhQ3Zq3wrz",
+                "Cancelled job 07a89516.",
+                json!({"id": "07a89516"}),
+            ),
+            turn_result(),
+        ],
+    );
+    assert!(deleted.nothing(), "{deleted:?}");
+}
+
+/// An ask answered allowing one of its scope choices whose destination is
+/// the session: Claude keeps that only in its process, so the agent holds
+/// a session grant from then on, and a new process holds none.
+#[test]
+fn a_permission_granted_for_the_session_is_held_until_the_process_ends() {
+    let mut state = started();
+    ClaudeSdk::step(
+        &mut state,
+        stream(
+            json!({"type": "control_request", "request_id": "ask-1", "request": {
+            "subtype": "can_use_tool", "tool_name": "Bash", "tool_use_id": "toolu_01H5CJdTAppzXTHLBmP6qU4n",
+            "input": {"command": "touch g1.txt", "description": "Create empty file g1.txt"},
+            "permission_suggestions": [
+                {"type": "addRules", "rules": [{"toolName": "Bash", "ruleContent": "touch g1.txt"}], "behavior": "allow", "destination": "localSettings"},
+                {"type": "addDirectories", "directories": ["/private/tmp/amux-rec-sdk"], "destination": "session"},
+                {"type": "setMode", "mode": "acceptEdits", "destination": "session"}]}}),
+        ),
+    );
+    assert!(!ClaudeSdk::holds(&state).session_grant);
+    let allow = |scope: u32| {
+        sdk_input(
+            b"answer",
+            wire::claude_sdk_input::Of::Answer(wire::ClaudeAnswer {
+                ask_key: "ask-1".into(),
+                of: Some(wire::claude_answer::Of::Permission(
+                    wire::PermissionAnswer {
+                        of: Some(wire::permission_answer::Of::Allow(wire::PermissionAllow {
+                            scope: Some(scope),
+                        })),
+                    },
+                )),
+            }),
+        )
+    };
+    // Saved to the project's settings, it survives a resume.
+    let mut saved = state.clone_via_checkpoint();
+    ClaudeSdk::step(&mut saved, allow(0));
+    assert!(!ClaudeSdk::holds(&saved).session_grant);
+    let mut granted = state.clone_via_checkpoint();
+    ClaudeSdk::step(&mut granted, allow(1));
+    assert!(ClaudeSdk::holds(&granted).session_grant);
+    ClaudeSdk::step(&mut granted, Event::ProviderExit { code: Some(0) });
+    assert!(ClaudeSdk::holds(&granted).nothing());
+}
+
+trait CloneViaCheckpoint {
+    fn clone_via_checkpoint(&self) -> Self;
+}
+
+impl CloneViaCheckpoint for State {
+    fn clone_via_checkpoint(&self) -> Self {
+        interpret::decode_checkpoint(&interpret::encode_checkpoint(self)).unwrap()
+    }
+}
+
+/// A recurring cron's tick names no time, so it cannot be the one-shot
+/// cron that is also pending: the one-shot stays held through the tick and
+/// after the recurring one is deleted.
+#[test]
+fn a_recurring_crons_tick_leaves_a_pending_one_shot_held() {
+    let mut state = started();
+    let created = |call: &str, id: &str, recurring: bool, at: f64| {
+        [
+            json!({"type": "assistant", "uuid": format!("a-{call}"), "session_id": "s", "message": {
+                "id": format!("msg-{call}"), "role": "assistant", "content": [{
+                    "type": "tool_use", "id": call, "name": "CronCreate",
+                    "input": {"cron": "* * * * *", "prompt": "say tick", "recurring": recurring}}]}}),
+            json!({"type": "user", "uuid": format!("u-{call}"), "session_id": "s", "message": {"role": "user",
+                "content": [{"tool_use_id": call, "type": "tool_result", "content": "Scheduled."}]},
+                "tool_use_result": {"id": id, "humanSchedule": "Every minute", "recurring": recurring,
+                    "durable": false, "nextFireAt": at}}),
+        ]
+    };
+    ClaudeSdk::step(
+        &mut state,
+        Event::Tick {
+            at_ms: 1_794_772_700_000,
+        },
+    );
+    let pending = holds_after(
+        &mut state,
+        created("toolu_once", "0nce0001", false, 1_794_776_400_000.0)
+            .into_iter()
+            .chain(created(
+                "toolu_tick",
+                "07a89516",
+                true,
+                1_794_772_740_897.48,
+            ))
+            .chain([turn_result()]),
+    );
+    assert_eq!(pending.wakeups, 2, "{pending:?}");
+    ClaudeSdk::step(
+        &mut state,
+        Event::Tick {
+            at_ms: 1_794_772_741_000,
+        },
+    );
+    let ticked = holds_after(
+        &mut state,
+        [
+            json!({"type": "command_lifecycle", "command_uuid": "392bfcee-d328-4f87-a573-b082dcaf615c",
+                "state": "started", "wakeup_source": "schedule_wakeup"}),
+            turn_result(),
+        ],
+    );
+    assert_eq!(
+        ticked.wakeups, 2,
+        "the tick is the recurring cron's: {ticked:?}"
+    );
+    let deleted = holds_after(
+        &mut state,
+        [
+            json!({"type": "assistant", "uuid": "a-del", "session_id": "s", "message": {
+                "id": "msg-del", "role": "assistant", "content": [{
+                    "type": "tool_use", "id": "toolu_del", "name": "CronDelete", "input": {"id": "07a89516"}}]}}),
+            json!({"type": "user", "uuid": "u-del", "session_id": "s", "message": {"role": "user",
+                "content": [{"tool_use_id": "toolu_del", "type": "tool_result", "content": "Cancelled job 07a89516."}]},
+                "tool_use_result": {"id": "07a89516"}}),
+            turn_result(),
+        ],
+    );
+    assert_eq!(
+        deleted.wakeups, 1,
+        "the one-shot is still pending: {deleted:?}"
+    );
+}
+
+/// A suspension ends the provider with nothing left to do: the agent's last
+/// snapshot says idle, as its row does, not starting.
+#[test]
+fn a_suspensions_last_snapshot_says_idle() {
+    let mut state = started();
+    let stepped = ClaudeSdk::step(
+        &mut state,
+        Event::Exiting(wire::IncarnationEnd {
+            cause: wire::ExitCause::Suspended as i32,
+            detail: None,
+        }),
+    );
+    let phase = stepped.step.snapshot.map(|snapshot| snapshot.phase);
+    assert_eq!(phase, Some(wire::Phase::Idle as i32));
+}
+
+/// The provider's own end says by its last snapshot whether it cut a turn
+/// off: idle when it had none under way, starting when it did. A restart of
+/// the machine that killed the provider first reads the row's phase so, to
+/// suspend an idle agent and continue one in its turn.
+#[test]
+fn a_providers_own_end_says_idle_unless_it_cut_a_turn_off() {
+    let mut idle = started();
+    let stepped = ClaudeSdk::step(&mut idle, Event::ProviderExit { code: None });
+    let phase = stepped.step.snapshot.map(|snapshot| snapshot.phase());
+    assert!(
+        phase.is_none_or(|phase| phase == wire::Phase::Idle),
+        "idle it stays: {phase:?}"
+    );
+
+    let mut working = started();
+    let prompt = wire::Input::new(
+        b"p1".to_vec(),
+        wire::ClaudeSdkInput {
+            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+                text: "go".into(),
+                attachments: Vec::new(),
+            })),
+        },
+    );
+    let stepped = ClaudeSdk::step(&mut working, Event::Input(prompt));
+    assert_eq!(
+        stepped.step.snapshot.map(|snapshot| snapshot.phase()),
+        Some(wire::Phase::Working)
+    );
+    let stepped = ClaudeSdk::step(&mut working, Event::ProviderExit { code: None });
+    let phase = stepped.step.snapshot.map(|snapshot| snapshot.phase());
+    assert_eq!(phase, Some(wire::Phase::Starting), "a turn was cut off");
+}
+
+/// A provider subagent still running when the provider ends is work cut
+/// off, though the agent's own turn had ended: the last snapshot reads
+/// starting, as for a turn cut off, so a restart of the machine continues
+/// the agent rather than leaving it suspended, and the subagent ends with
+/// the provider.
+#[test]
+fn a_providers_own_end_while_a_subagent_runs_says_work_was_cut_off() {
+    let mut state = idle_on_root();
+    ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "count", "is_backgrounded": true,
+        })),
+    );
+    assert!(!state.shared().is_busy(), "the agent's own turn is over");
+    let stepped = ClaudeSdk::step(&mut state, Event::ProviderExit { code: None });
+    let phase = stepped.step.snapshot.map(|snapshot| snapshot.phase());
+    assert_eq!(
+        phase,
+        Some(wire::Phase::Starting),
+        "its subagent was cut off"
+    );
+    let child = interpret::subagent_id(b"agent", "a1");
+    assert!(
+        stepped
+            .step
+            .agents
+            .iter()
+            .any(|part| part.agent_id == child && part.end.is_some()),
+        "the subagent ends with the provider: {:?}",
+        stepped.step.agents
+    );
+}
+
 const MINUTE: i64 = 60 * 1000;
 
 /// A turn that ends at `at`, whose request read a conversation of 250k

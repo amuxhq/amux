@@ -904,7 +904,11 @@ impl Daemon {
         self.parent_changed(key, ParentSays::Deleted, out)
     }
 
-    fn put_replica_row(&mut self, agent: &Agent, out: &mut Vec<Output>) -> Result<(), StoreError> {
+    pub(crate) fn put_replica_row(
+        &mut self,
+        agent: &Agent,
+        out: &mut Vec<Output>,
+    ) -> Result<(), StoreError> {
         let row = from_wire(agent);
         if row.lifecycle != wire::Lifecycle::Exited as i32 {
             let key = Key::from(&row.agent);
@@ -1714,6 +1718,10 @@ pub fn from_wire(agent: &Agent) -> AgentRow {
     row.title = agent.title.clone();
     row.last_said = agent.last_said.clone();
     row.native = agent.native.clone();
+    // What the origin says under each experiment, whole and undecoded,
+    // whatever this host runs: a client of this host, the phone's above
+    // all, shows them though this host can switch none of them on.
+    row.experimental = agent.experimental.clone();
     row
 }
 
@@ -1773,6 +1781,65 @@ mod tests {
             lifecycle: lifecycle as i32,
             ..Agent::default()
         }
+    }
+
+    /// A host that runs no experiment keeps and serves a peer's
+    /// `experimental` entries exactly as the peer sent them, under versions
+    /// it runs, does not run or has never heard of, and replaces them whole
+    /// when the peer's row changes: a client of it, the phone's above all,
+    /// sees what the row says though this host can switch none of it on.
+    #[test]
+    fn a_peers_experiment_entries_ride_on_its_replica_rows_whatever_this_host_runs() {
+        let mut daemon = daemon();
+        assert!(!daemon.workspaces_on());
+        let inventory = following(&mut daemon);
+        let workspace = wire::experimental::AgentWorkspace {
+            kind: wire::experimental::WorkspaceKind::Git as i32,
+            id: "/src/app-fix".into(),
+            made_by_amux: true,
+            ..Default::default()
+        };
+        let mut with_entries = Agent {
+            name: "coder".into(),
+            ..listed(wire::Lifecycle::Live)
+        };
+        wire::experimental::WORKSPACE.put(&mut with_entries.experimental, &workspace);
+        with_entries
+            .experimental
+            .insert("teleport/3".into(), vec![0xff]);
+        for of in [
+            inventory_event::Of::Agent(with_entries.clone()),
+            inventory_event::Of::CaughtUp(CaughtUp::default()),
+        ] {
+            step(&mut daemon, inventory_event(inventory, of));
+        }
+        let held = daemon
+            .store
+            .agent(&key())
+            .unwrap()
+            .expect("the replica row");
+        assert_eq!(held.experimental, with_entries.experimental);
+        let served = crate::serve::to_wire(&held);
+        assert_eq!(served.experimental, with_entries.experimental);
+        assert_eq!(
+            wire::experimental::WORKSPACE.get(&served.experimental),
+            Some(workspace)
+        );
+        assert_eq!(served.name, "coder");
+
+        // The peer's next row says only the entry it does not know.
+        let mut changed = with_entries.clone();
+        wire::experimental::WORKSPACE.clear(&mut changed.experimental);
+        step(
+            &mut daemon,
+            inventory_event(inventory, inventory_event::Of::Agent(changed.clone())),
+        );
+        let held = daemon
+            .store
+            .agent(&key())
+            .unwrap()
+            .expect("the replica row");
+        assert_eq!(held.experimental, changed.experimental);
     }
 
     /// The calls the step made of `PEER`.
@@ -1927,13 +1994,14 @@ mod tests {
         (inventory, source)
     }
 
-    fn far_child(new_worktree: bool) -> ClientRequest {
+    fn far_child(new_workspace: bool) -> ClientRequest {
         ClientRequest::CreateAgent(Box::new(crate::Create {
             agent: FAR_CHILD,
             cwd: "/src".into(),
             given: Some("child".into()),
             branches: BTreeSet::new(),
-            new_worktree,
+            new_workspace,
+            workspace: None,
             recent: None,
             spec: wire::AgentSpec {
                 agent_id: FAR_CHILD.0.to_vec(),

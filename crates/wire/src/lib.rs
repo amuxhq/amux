@@ -15,9 +15,27 @@ pub mod amux {
         #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
         include!("generated/amux.dump.rs");
     }
+
+    /// The shapes of experiments, carried as bytes in the `experimental`
+    /// maps of amux.v1 messages; outside the protocol's compatibility
+    /// promises, so they change freely.
+    pub mod experimental {
+        #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
+        include!("generated/amux.experimental.rs");
+
+        pub use crate::entry::{Entry, Map};
+
+        /// The workspaces experiment's entry on an agent's row:
+        /// `Agent.experimental["workspaces/1"]`.
+        pub const WORKSPACE: Entry<AgentWorkspace> = Entry::new("workspaces/1");
+
+        /// The suspension experiment's entry in an agent's spec:
+        /// `AgentSpec.experimental["suspension/1"]`.
+        pub const SUSPENSION: Entry<SuspensionSpec> = Entry::new("suspension/1");
+    }
 }
 
-pub use amux::dump;
+pub use amux::{dump, experimental};
 
 /// gRPC's richer error model, from the vendored googleapis protos.
 pub mod google {
@@ -29,12 +47,15 @@ pub mod google {
 
 pub use google::rpc;
 
+mod continued;
+mod entry;
 mod error;
 mod host_name;
 #[cfg(test)]
 mod pinned;
 mod said;
 pub use amux::v1::*;
+pub use continued::{continued_input_id, is_continued_input};
 pub use host_name::{HostName, HostNameError, MAX_HOST_NAME_CHARS};
 /// An error's code, gRPC's own.
 pub use rpc::Code as ErrorCode;
@@ -106,6 +127,33 @@ sized_service!(
 /// the usage count of clients opened: `mac` for the Mac app. The terminal
 /// sends none.
 pub const SURFACE_HEADER: &str = "amux-surface";
+
+/// The detail an incarnation's end gives when its provider died of a signal
+/// the agent did not send: amux's own stops and kills end with causes of
+/// their own, so this one came from outside, as when the machine shuts
+/// down. Released builds write these words, so they are read as written.
+pub const PROVIDER_SIGNALLED: &str = "killed by a signal";
+
+/// How an incarnation's end words a provider's exit status: "exit code 1".
+pub const PROVIDER_EXIT_CODE: &str = "exit code ";
+
+/// Whether a provider's own end, by its detail, was a signal: killed by one
+/// (see [`PROVIDER_SIGNALLED`]), or exiting with the status a shell gives for
+/// one, 128 and its number, as a provider that catches the signal does
+/// (headless Claude exits 143 on SIGTERM). Only the signals a machine
+/// shutting down or a closed terminal sends count: SIGHUP, SIGINT, SIGKILL
+/// and SIGTERM.
+pub fn provider_signalled(detail: Option<&str>) -> bool {
+    const SIGNALS: [i32; 4] = [1, 2, 9, 15];
+    let Some(detail) = detail else {
+        return false;
+    };
+    detail == PROVIDER_SIGNALLED
+        || detail
+            .strip_prefix(PROVIDER_EXIT_CODE)
+            .and_then(|code| code.parse::<i32>().ok())
+            .is_some_and(|code| SIGNALS.iter().any(|signal| code == 128 + signal))
+}
 
 /// What a caller says of a method its host does not have. gRPC's own answer
 /// to an unknown method has no words, and a caller's "could not start the
@@ -468,6 +516,30 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn a_provider_ending_by_a_shutdowns_signal_reads_signalled() {
+        let signalled = [
+            PROVIDER_SIGNALLED,
+            "exit code 129",
+            "exit code 130",
+            "exit code 137",
+            "exit code 143",
+        ];
+        for detail in signalled {
+            assert!(provider_signalled(Some(detail)), "{detail}");
+        }
+        let not = [
+            None,
+            Some("exit code 1"),
+            Some("exit code 134"),
+            Some("exit code 15"),
+            Some("exit code x"),
+        ];
+        for detail in not {
+            assert!(!provider_signalled(detail), "{detail:?}");
+        }
+    }
+
     fn descriptor() -> FileDescriptorSet {
         FileDescriptorSet::decode(DESCRIPTOR_SET).expect("descriptor set should decode")
     }
@@ -599,6 +671,15 @@ mod tests {
             )
             // A client encodes its session history into DumpRequest.sessions.
             .chain([".amux.dump.ClientSessionHistory".to_owned()])
+            // Each experiment's values are encoded into an `experimental`
+            // map entry.
+            .chain(
+                [
+                    ".amux.experimental.AgentWorkspace",
+                    ".amux.experimental.SuspensionSpec",
+                ]
+                .map(str::to_owned),
+            )
             .collect::<Vec<_>>();
         let mut reached = BTreeSet::new();
         while let Some(name) = pending.pop() {
@@ -624,6 +705,64 @@ mod tests {
             unreached.is_empty(),
             "nothing carries these; delete them, or list a type code encodes on its own: {unreached:?}"
         );
+    }
+
+    /// What a build before the `experimental` maps decodes an `Agent` row
+    /// and an `AgentSpec` as: their first fields and nothing at 1000.
+    #[derive(Clone, PartialEq, prost::Message)]
+    struct Before {
+        #[prost(bytes = "vec", tag = "1")]
+        agent_id: Vec<u8>,
+        #[prost(string, tag = "4")]
+        name: String,
+    }
+
+    /// An `experimental` entry is field 1000 to a build that predates the
+    /// map, so 0.9 hosts and agent processes read a row or a spec carrying
+    /// one as they read it without, and an entry under a version a build
+    /// does not run is only bytes under a key it never asks for.
+    #[test]
+    fn a_build_without_the_experimental_maps_reads_past_them() {
+        let workspace = experimental::AgentWorkspace {
+            kind: experimental::WorkspaceKind::Wt as i32,
+            id: "/src/app".into(),
+            made_by_amux: true,
+            ..Default::default()
+        };
+        let mut agent = Agent {
+            agent_id: b"agent".to_vec(),
+            name: "coder".into(),
+            ..Default::default()
+        };
+        experimental::WORKSPACE.put(&mut agent.experimental, &workspace);
+        agent
+            .experimental
+            .insert("workspaces/2".into(), b"another shape".to_vec());
+        let mut spec = AgentSpec {
+            agent_id: b"agent".to_vec(),
+            name: "coder".into(),
+            ..Default::default()
+        };
+        experimental::SUSPENSION.put(
+            &mut spec.experimental,
+            &experimental::SuspensionSpec { after_ms: 5 },
+        );
+        for bytes in [agent.encode_to_vec(), spec.encode_to_vec()] {
+            assert_eq!(
+                Before::decode(bytes.as_slice()).unwrap(),
+                Before {
+                    agent_id: b"agent".to_vec(),
+                    name: "coder".into(),
+                }
+            );
+        }
+        let read = Agent::decode(agent.encode_to_vec().as_slice()).unwrap();
+        assert_eq!(
+            experimental::WORKSPACE.get(&read.experimental),
+            Some(workspace)
+        );
+        // The map encodes in key order, so a row encodes the same each time.
+        assert_eq!(read.encode_to_vec(), agent.encode_to_vec());
     }
 
     /// Top-level enum values share one namespace in the package, so each

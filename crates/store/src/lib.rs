@@ -20,6 +20,7 @@ mod schema;
 mod sqlite;
 
 mod blobs;
+pub mod experiments;
 #[cfg(feature = "explore")]
 mod explore;
 pub mod redact;
@@ -143,6 +144,13 @@ pub struct AgentRow {
     /// on every row written before the column existed. The registry owns
     /// it; a replica copies its origin's.
     pub native: Option<wire::NativeChild>,
+    /// What the row says to everyone under each experiment, by version
+    /// (`workspaces/1`), as the wire's `Agent.experimental` carries it. The
+    /// store never decodes an entry. A replica's is its origin's, replaced
+    /// whole by [`Sqlite::put_agent`] whatever this host runs; an own row's
+    /// is written by the experiments this host runs, with
+    /// [`Sqlite::set_experimental`], and a registry write leaves it.
+    pub experimental: std::collections::BTreeMap<String, Vec<u8>>,
 }
 
 impl AgentRow {
@@ -193,6 +201,7 @@ impl AgentRow {
             last_said: None,
             name_given: false,
             native: None,
+            experimental: std::collections::BTreeMap::new(),
         }
     }
 }

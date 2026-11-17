@@ -105,6 +105,8 @@ pub fn queue_rows(state: &SessionState) -> Vec<QueuedRow> {
     state
         .queue()
         .into_iter()
+        // A continuation after a restart is nobody's to withdraw or send.
+        .filter(|row| !wire::is_continued_input(&row.entry.input_id))
         .map(|row| {
             let from_agent = match row
                 .entry

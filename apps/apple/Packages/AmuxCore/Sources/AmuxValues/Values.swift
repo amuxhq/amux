@@ -267,7 +267,6 @@ public struct ActivityLine: Codable, Hashable, Sendable {
 
 /// A change to one agent from outside its chat.
 public enum AgentAct: Codable, Hashable, Sendable {
-    case delete
     case rename(String)
     /// Files it as done with, stopping it now when live. One whose host
     /// cannot be reached is held, shown on its card, and goes when the
@@ -279,6 +278,13 @@ public enum AgentAct: Codable, Hashable, Sendable {
     case pin
     /// Files it back as open: un-pinned, or reopened without resuming.
     case unfile
+    /// Deletes it, keeping the uncommitted changes of a workspace that goes
+    /// with it: such a workspace stays on disk, no longer amux's.
+    case delete
+    /// Deletes it, agreeing to lose the uncommitted changes of the workspace
+    /// that goes with it, which its card's `workspace_goes` names. Sent only
+    /// after the person read those and confirmed.
+    case deleteDiscardingChanges
 
     private enum Tag: String, CodingKey {
         case rename = "Rename"
@@ -289,11 +295,12 @@ public enum AgentAct: Codable, Hashable, Sendable {
            let _name = try? _single.decode(String.self)
         {
             switch _name {
-            case "Delete": self = .delete
             case "Close": self = .close
             case "CancelClose": self = .cancelClose
             case "Pin": self = .pin
             case "Unfile": self = .unfile
+            case "Delete": self = .delete
+            case "DeleteDiscardingChanges": self = .deleteDiscardingChanges
             default:
                 throw DecodingError.dataCorruptedError(
                     in: _single, debugDescription: "no AgentAct is named \(_name)")
@@ -315,9 +322,6 @@ public enum AgentAct: Codable, Hashable, Sendable {
 
     public func encode(to encoder: any Encoder) throws {
         switch self {
-        case .delete:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("Delete")
         case .rename(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .rename)
@@ -333,6 +337,12 @@ public enum AgentAct: Codable, Hashable, Sendable {
         case .unfile:
             var _container = encoder.singleValueContainer()
             try _container.encode("Unfile")
+        case .delete:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Delete")
+        case .deleteDiscardingChanges:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("DeleteDiscardingChanges")
         }
     }
 }
@@ -2418,6 +2428,59 @@ public enum DecisionView: String, Codable, Hashable, Sendable, CaseIterable {
     case dismissed = "Dismissed"
 }
 
+/// What a delete's confirmation says about the workspace that goes with the
+/// agent, and so what confirming it agrees to. The row's git facts are kept
+/// current only by the agent's process: for an agent without one,
+/// suspended or exited, the confirmation asks the agent's host for the
+/// workspace's changes against HEAD and says so until it answers.
+public enum DeleteWarning: Codable, Hashable, Sendable {
+    /// What goes, from facts that are current: the row's while a process
+    /// keeps them so, else the host's answer.
+    case goes(WorkspaceGoes)
+    /// Asking the host what is uncommitted; the branch is the row's.
+    case checking(WorkspaceGoes)
+    /// The host could not say: a worktree with changes stays on disk.
+    case unknown(WorkspaceGoes)
+
+    private enum Tag: String, CodingKey {
+        case goes = "Goes"
+        case checking = "Checking"
+        case unknown = "Unknown"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a DeleteWarning names exactly one variant"))
+        }
+        switch _tag {
+        case .goes:
+            self = .goes(try _container.decode(WorkspaceGoes.self, forKey: .goes))
+        case .checking:
+            self = .checking(try _container.decode(WorkspaceGoes.self, forKey: .checking))
+        case .unknown:
+            self = .unknown(try _container.decode(WorkspaceGoes.self, forKey: .unknown))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .goes(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .goes)
+        case .checking(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .checking)
+        case .unknown(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .unknown)
+        }
+    }
+}
+
 /// A comparison of an agent's working tree, made on the agent's host. It
 /// runs to the working tree, untracked files included, from HEAD or from
 /// where the branch left the named base. The patch is a text/x-diff blob of
@@ -2841,6 +2904,33 @@ public enum ExitCause: Codable, Hashable, Sendable {
     }
 }
 
+/// An experiment a machine's build implements: a feature still taking
+/// shape, which a person switches on for the whole machine.
+public struct ExperimentView: Codable, Hashable, Sendable {
+    /// What it is switched by, e.g. "workspaces".
+    public var name: String
+    /// The shape the build implements, e.g. "workspaces/1".
+    public var version: String
+    /// One line to show beside the switch.
+    public var description: String
+    /// Whether the machine's settings switch it on.
+    public var enabled: Bool
+
+    public init(name: String, version: String, description: String, enabled: Bool) {
+        self.name = name
+        self.version = version
+        self.description = description
+        self.enabled = enabled
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case version
+        case description
+        case enabled
+    }
+}
+
 public enum ExploreVerb: String, Codable, Hashable, Sendable, CaseIterable {
     case read = "Read"
     case search = "Search"
@@ -3193,8 +3283,11 @@ public struct FleetCard: Codable, Hashable, Sendable {
     public var exitCause: ExitCause?
     /// The repository it works in, by its remote, else its folder.
     public var repository: Repository?
+    /// Deleting it removes its workspace, and what goes with that: a
+    /// delete's confirmation says so. None when the workspace stays.
+    public var workspaceGoes: WorkspaceGoes?
 
-    public init(agent: AgentKey, name: String, handle: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, closeHeld: Bool, filing: Filing, topLevel: Bool, native: Bool, branch: String?, exitCause: ExitCause?, repository: Repository?) {
+    public init(agent: AgentKey, name: String, handle: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, closeHeld: Bool, filing: Filing, topLevel: Bool, native: Bool, branch: String?, exitCause: ExitCause?, repository: Repository?, workspaceGoes: WorkspaceGoes?) {
         self.agent = agent
         self.name = name
         self.handle = handle
@@ -3216,6 +3309,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
         self.branch = branch
         self.exitCause = exitCause
         self.repository = repository
+        self.workspaceGoes = workspaceGoes
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -3240,6 +3334,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
         case branch
         case exitCause = "exit_cause"
         case repository
+        case workspaceGoes = "workspace_goes"
     }
 }
 
@@ -4306,16 +4401,20 @@ public struct MachineSettings: Codable, Hashable, Sendable {
     public var telemetry: Bool
     /// A report is sent on its own when something goes wrong.
     public var autoReports: Bool
+    /// Every experiment the machine's build implements, in the order they
+    /// are listed. A switch takes effect when amux next starts.
+    public var experiments: [ExperimentView]
     /// Whether amux starts at login; None on an install without a
     /// supervisor, which has nothing to start.
     public var startAtLogin: Bool?
 
-    public init(hostName: String, keepAwake: Bool, repositories: [String], telemetry: Bool, autoReports: Bool, startAtLogin: Bool?) {
+    public init(hostName: String, keepAwake: Bool, repositories: [String], telemetry: Bool, autoReports: Bool, experiments: [ExperimentView], startAtLogin: Bool?) {
         self.hostName = hostName
         self.keepAwake = keepAwake
         self.repositories = repositories
         self.telemetry = telemetry
         self.autoReports = autoReports
+        self.experiments = experiments
         self.startAtLogin = startAtLogin
     }
 
@@ -4325,6 +4424,7 @@ public struct MachineSettings: Codable, Hashable, Sendable {
         case repositories
         case telemetry
         case autoReports = "auto_reports"
+        case experiments
         case startAtLogin = "start_at_login"
     }
 }
@@ -6961,6 +7061,9 @@ public enum SettingChange: Codable, Hashable, Sendable {
 /// is.
 public struct SettingsChange: Codable, Hashable, Sendable {
     public var autoReports: Bool?
+    /// The names of the experiments to switch on, the whole new list;
+    /// every other one the build implements is switched off.
+    public var experiments: [String]?
     /// Empty returns to the machine's own name.
     public var hostName: String?
     public var keepAwake: Bool?
@@ -6969,8 +7072,9 @@ public struct SettingsChange: Codable, Hashable, Sendable {
     public var startAtLogin: Bool?
     public var telemetry: Bool?
 
-    public init(autoReports: Bool?, hostName: String?, keepAwake: Bool?, repositories: [String]?, startAtLogin: Bool?, telemetry: Bool?) {
+    public init(autoReports: Bool?, experiments: [String]?, hostName: String?, keepAwake: Bool?, repositories: [String]?, startAtLogin: Bool?, telemetry: Bool?) {
         self.autoReports = autoReports
+        self.experiments = experiments
         self.hostName = hostName
         self.keepAwake = keepAwake
         self.repositories = repositories
@@ -6980,6 +7084,7 @@ public struct SettingsChange: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case autoReports = "auto_reports"
+        case experiments
         case hostName = "host_name"
         case keepAwake = "keep_awake"
         case repositories
@@ -7719,5 +7824,26 @@ public struct Worked: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case failed
         case durationMs = "duration_ms"
+    }
+}
+
+/// What a delete removes with the agent: its workspace, and with it the
+/// uncommitted changes the row last reported. A client says so before
+/// confirming, and sends the delete with consent to discard them.
+public struct WorkspaceGoes: Codable, Hashable, Sendable {
+    /// The branch that keeps what was committed; none on a detached head
+    /// or before the row's git facts were read.
+    public var branch: String?
+    /// Its uncommitted changes, when it has any.
+    public var uncommitted: ChangeTotals?
+
+    public init(branch: String?, uncommitted: ChangeTotals?) {
+        self.branch = branch
+        self.uncommitted = uncommitted
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case branch
+        case uncommitted
     }
 }

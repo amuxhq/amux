@@ -55,6 +55,9 @@ pub struct FleetCard {
     pub filing: Filing,
     /// It has no parent, so it may be pinned.
     pub top_level: bool,
+    /// Deleting it removes its workspace, and what goes with that: a
+    /// delete's confirmation says so. None when the workspace stays.
+    pub workspace_goes: Option<ui_state::WorkspaceGoes>,
     /// A subagent its parent's provider runs: it goes with its parent and
     /// has no folder, terminal, settings or composer of its own, so it is
     /// never offered a resume, a delete, a pin or a terminal of its own.
@@ -395,6 +398,7 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
             filing => filing,
         },
         top_level: agent.parent.is_none(),
+        workspace_goes: fleet.delete_removes_workspace(&at),
         native: agent.native.is_some(),
         agent: at,
     }

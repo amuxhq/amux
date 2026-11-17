@@ -355,7 +355,8 @@ $TMPDIR/amux-<uid>/<hash>, <hash>.d
   supervisor.log, .1          the supervisor's log, when amux runs under one, capped the same
   reports/                    dumps and core reports, the newest 20 kept; .dump-* is one being written
   worktrees/<repository>/<agent name>/
-                              the git worktrees amux makes for new agents; never removed by amux
+                              the git worktrees amux makes for new agents; removed with
+                              their last agent only under the workspaces experiment
   tui/layout.json             the terminal client's folds, comparison and tool modes, shared by every
                               terminal on this installation; the 200 most recently changed chats kept
   profiles/<profile_id>/      one per profile; its id is its host id; built under a dotted name
@@ -645,6 +646,7 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`agent-core`](../crates/agent-core/README.md) | The agent process around its interpreter: incarnation, timers, queue and the open ask. |
 | [`core-ring`](../crates/core-ring/src/lib.rs) | The bounded ring of a core's inputs since its last checkpoint, in segments beside their checkpoints; the agent process's facts ring is one. |
 | [`supervisor-core`](../crates/supervisor-core/README.md) | The supervisor's update decisions: which binary to fetch, start, set aside, go with or roll back to. |
+| [`workspace-core`](../crates/workspace-core/README.md) | The workspace lifecycle: when a workspace is made, claimed, started, stopped and removed, and when a member may launch. The daemon core composes it under the `workspaces/1` experiment. |
 
 **The UI library** — reaches the daemon only through `client`.
 
@@ -706,9 +708,11 @@ workspace crates, and ignores dev-dependencies. Its rules:
    the dependency graph cannot say: no core, and not the ring they record
    into, has tokio anywhere in its graph on any target, and none of their
    sources holds a lock, spawns a task or awaits.
-5. **Every dependency comes from crates.io, but rustls.** The sources
-   table in `deny.toml` holds it, and CI checks it: rustls alone may come from git, and only from the fork
-   that carries the patch below, at whatever commit the lockfile pins.
+5. **Every dependency comes from crates.io, but rustls and wt.** The sources
+   table in `deny.toml` holds it, and CI checks it: rustls may come from git
+   only from the fork that carries the patch below, and wt, whose library
+   makes, holds and stops wt's trees, only from its own repository, each at
+   whatever commit the lockfile pins.
 
 The allowed sets encode the layering above:
 
@@ -725,6 +729,7 @@ The allowed sets encode the layering above:
 | `socket-core` | at most `path-core` | names links and paths as the path machine does |
 | `agent-core` | at most `core-ring`, `interpret`, `journal`, `wire` | wraps the interpreter |
 | `supervisor-core` | at most `core-ring`, `release` | reads release manifests and version stamps, and shares the cores' step budget and dump reasons from the ring's crate |
+| `workspace-core` | nothing in the workspace | the daemon core composes it and runs it inside its own step, so it needs no budget or dump reason of its own |
 | `agent` | `agent-core`, `agent-dir`, `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `log-file`, `pty-host`, `wire` | the agent core's driver with each provider's host inside it, and the only production crate that reads a provider |
 | `node` | `agent-dir`, `analytics`, `core-ring`, `daemon-core`, `git-facts`, `interpret`, `journal`, `log-file`, `path-core`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the walker that writes a report's core record as its structure |
 | `client` | `agent-dir`, `wire` | the local socket and the clock come from the contract crate |
@@ -734,7 +739,7 @@ The allowed sets encode the layering above:
 | `app-embedded` | `analytics`, `app-runtime`, `client`, `log-file`, `node`, `wire` | the daemon in the phone's process |
 | `app-ffi` | `app-embedded`, `app-runtime`, `client`, `node`, `ui-state`, `ui-view` | the C ABI over both |
 | `amux` | `agent`, `agent-dir`, `analytics`, `client`, `log-file`, `node`, `settings`, `tui`, `wire` | the one binary |
-| `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `socket-core`, `store`, `supervisor-core`, `ui-state`, `wire` | the properties, explored over the real cores, store and session state |
+| `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `socket-core`, `store`, `supervisor-core`, `ui-state`, `wire`, `workspace-core` | the properties, explored over the real cores, store and session state |
 | `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `provider-fakes`, `relay-core`, `store`, `supervisor-core`, `ui-state`, `wire` | replays the core's and the sessions' records, judging the models' properties; an agent's record carries no provider's words, so it replays as a stream made up from it through the real interpreter, held to the provider's types by the fakes' conformance; an installation's facts rings replay through the interpreter as they are, and the relay's and supervisor's reports through their cores; `just repro`, a debugging tool nothing links |
 | `qualification` | `node`, `provider-fakes`, `pty-host`, `redaction`, `testnet`, `wire` | the live lane and the performance workloads over the harness; its probes host terminal Claude on a pseudo-terminal of their own and sanitize what they record |
 | `xtask` | `release` | signs releases |

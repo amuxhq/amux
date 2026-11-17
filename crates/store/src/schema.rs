@@ -159,4 +159,14 @@ CREATE INDEX agents_by_parent ON agents (parent_host, parent_id);
 CREATE INDEX agents_by_id ON agents (agent_id);
 CREATE INDEX agents_by_name ON agents (origin_host, name);
 "#,
+    // 3: the row's experimental entries, as the wire's Agent.experimental
+    // carries them.
+    r#"
+-- What the row says to everyone under each experiment, version to encoded
+-- message, as its origin wrote it: an own row's, written by the
+-- experiments this host runs, and a replica's, replaced whole from its
+-- origin's row whatever this host runs. NULL holds none, as every row
+-- written before this column did.
+ALTER TABLE agents ADD COLUMN experimental BLOB;
+"#,
 ];

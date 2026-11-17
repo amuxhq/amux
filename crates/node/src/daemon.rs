@@ -98,6 +98,8 @@ pub(crate) struct Installation {
     pub(crate) data_dir: PathBuf,
     pub(crate) front_door: Option<PathBuf>,
     generation: u64,
+    /// The machine has booted since the daemon before this one started.
+    rebooted: bool,
     /// What each profile opens with; its repositories and Claude kind
     /// follow the settings, so a profile opened after a change starts with
     /// it.
@@ -263,8 +265,12 @@ impl Installation {
         let dir = profiles::profile_dir(&self.data_dir, profile);
         // The profile's id is its host id, the one its peers know it by.
         let host = profile;
-        let store = store::Sqlite::open(&dir.join(STORE), host.as_bytes().to_vec())
-            .map_err(|error| StartError::Store { profile, error })?;
+        // The experiments the daemon started with keep their tables; every
+        // other experiment's are dropped.
+        let experiments = self.launch.lock().unwrap().experiments.versions();
+        let store =
+            store::Sqlite::open_with(&dir.join(STORE), host.as_bytes().to_vec(), &experiments)
+                .map_err(|error| StartError::Store { profile, error })?;
         // Every write is the core's, which holds its commits while its
         // checkpoint's WAL job runs; that job and the clean shutdown's
         // flush are the only checkpoints.
@@ -274,12 +280,19 @@ impl Installation {
                 profile,
                 error: error.into(),
             })?;
+        let launch = self.launch.lock().unwrap().clone();
+        let workspaces = std::sync::Arc::new(crate::workspaces::Workspaces::new(
+            profile,
+            self.data_dir.join(crate::workspaces::WORKTREES),
+            launch.wt_home.clone(),
+        ));
         Ok(ProfileRuntime::open(Profile {
             profile,
             generation: self.generation,
+            rebooted: self.rebooted,
             dir,
             store,
-            launch: self.launch.lock().unwrap().clone(),
+            launch,
             clock: self.clock.clone(),
             push: self.push.clone(),
             reports: self.data_dir.join(REPORTS),
@@ -290,9 +303,7 @@ impl Installation {
                 None => analytics::Analytics::off(),
             },
             auto_reports: self.auto_reports.clone(),
-            worktrees: crate::worktree::GitWorktrees::new(
-                self.data_dir.join(crate::worktree::WORKTREES),
-            ),
+            workspaces,
             onboarding: self.onboarding.clone(),
             remember_pick: self.pick_keeper.get().cloned().unwrap_or_default(),
         }))
@@ -593,6 +604,9 @@ pub async fn start(
         data_dir,
         front_door,
         generation: generation.counter,
+        rebooted: last_run
+            .as_ref()
+            .is_some_and(|last| last.boot_id != boot_id),
         launch: Mutex::new(launch),
         clock,
         push,
@@ -832,6 +846,20 @@ impl Daemon {
     /// A failure before the flag leaves the installation dirty, the safe
     /// error.
     pub async fn shutdown(mut self) -> io::Result<()> {
+        // First: the system may be signalling the agents too, and an exit
+        // recorded from here on would reach paired hosts before the links
+        // close, and have them stop its children.
+        let runtimes: Vec<Arc<ProfileRuntime>> = self
+            .installation
+            .hosted
+            .lock()
+            .unwrap()
+            .values()
+            .map(|hosted| hosted.runtime.clone())
+            .collect();
+        for runtime in runtimes {
+            runtime.stopping().await;
+        }
         if let Some(front_door) = self.front_door.take() {
             front_door.abort();
         }

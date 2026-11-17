@@ -24,5 +24,7 @@ mod settings;
 mod single_daemon;
 mod subagents;
 mod supervisor;
+mod suspension;
 mod upgrade;
+mod workspaces;
 mod worktree;

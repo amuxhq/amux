@@ -109,7 +109,8 @@ pub fn create(name: &str, spec: wire::AgentSpec) -> ClientRequest {
         cwd: spec.cwd.clone(),
         given: Some(name.to_owned()),
         branches: Default::default(),
-        new_worktree: false,
+        new_workspace: false,
+        workspace: None,
         recent: None,
         spec,
     }))

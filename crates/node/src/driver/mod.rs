@@ -1107,6 +1107,10 @@ impl CoreThread {
                     self.inputs.clone(),
                 ));
             }
+            Output::Job {
+                id,
+                op: Job::Workspace(job),
+            } => self.workspace_job(runtime, id, job),
             Output::Job { id, op } => {
                 tokio::spawn(run_job(
                     Arc::downgrade(runtime),
@@ -1225,7 +1229,11 @@ impl CoreThread {
                     outcome: daemon_core::RelayOutcome::Lost("the edge is not up".to_owned()),
                 }),
             },
-            Output::SpawnAgent { dir, spec } => runtime.spawn_process(dir, *spec),
+            Output::SpawnAgent {
+                dir,
+                spec,
+                workspace,
+            } => runtime.spawn_process(dir, *spec, workspace),
             Output::DialAgent { agent } => runtime.dial_agent(uuid::Uuid::from_bytes(agent.0)),
             Output::WriteControl { agent, frame } => {
                 let id = uuid::Uuid::from_bytes(agent.0);
@@ -1280,6 +1288,58 @@ impl CoreThread {
     }
 
     /// Does what the core left to the shell.
+    /// Carries out a workspace job. A claim is taken here, between the
+    /// core's outputs, so a stop asked for after it cannot begin under it;
+    /// only one waiting for a stop hook that runs finishes on a thread. A
+    /// release is done here too. Everything else blocks on git, wt's locks
+    /// or a hook, and runs on a thread of its own, which no runtime waits
+    /// for as it shuts down: a stop waiting for its holders may wait as
+    /// long as an agent works.
+    fn workspace_job(
+        &mut self,
+        runtime: &Arc<ProfileRuntime>,
+        id: JobId,
+        job: daemon_core::workspaces::WorkspaceJob,
+    ) {
+        use daemon_core::workspaces::{WorkspaceDone, WorkspaceJob};
+        let backends = runtime.workspaces().clone();
+        let done = move |done| Input::JobDone {
+            job: id,
+            result: JobResult::Workspace(done),
+        };
+        let job = match job {
+            WorkspaceJob::ReleaseClaim { workspace } => return backends.release(&workspace),
+            WorkspaceJob::TakeClaim { workspace } => match backends.try_claim(&workspace) {
+                Ok(true) => {
+                    let result = Ok(());
+                    return self
+                        .again
+                        .push_back(done(WorkspaceDone::Claimed { workspace, result }));
+                }
+                Err(error) => {
+                    let result = Err(error);
+                    return self
+                        .again
+                        .push_back(done(WorkspaceDone::Claimed { workspace, result }));
+                }
+                Ok(false) => WorkspaceJob::TakeClaim { workspace },
+            },
+            job => job,
+        };
+        let inputs = self.inputs.clone();
+        let spawned = std::thread::Builder::new()
+            .name("amux-workspace".into())
+            .spawn(move || {
+                let finished = crate::workspaces::run(&backends, job);
+                if let Some(inputs) = inputs.upgrade() {
+                    let _ = inputs.blocking_send(Fed::Input(done(finished)));
+                }
+            });
+        if let Err(error) = spawned {
+            tracing::error!(%error, "starting a workspace job's thread failed");
+        }
+    }
+
     fn shell_work(&mut self, runtime: &Arc<ProfileRuntime>, work: ShellWork) {
         match work {
             ShellWork::Wrote => runtime.wrote(),
@@ -1420,6 +1480,8 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
             };
             runtime.make_worktree(&repo, &name).await
         }
+        // Carried out by the driver itself, between the core's outputs.
+        Job::Workspace(_) => return,
         Job::SendPush(push) => {
             let Some(runtime) = runtime.upgrade() else {
                 return;

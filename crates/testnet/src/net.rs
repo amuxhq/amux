@@ -1234,6 +1234,7 @@ impl Net {
                 .resume_agent(wire::ResumeAgentRequest {
                     agent_id: agent.id.as_bytes().to_vec(),
                     initial_prompt: submission,
+                    if_suspended: false,
                 })
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?
@@ -1374,6 +1375,7 @@ impl Net {
         let agent = self.agent(name)?.clone();
         let request = DeleteAgentRequest {
             agent_id: agent.id.as_bytes().to_vec(),
+            ..DeleteAgentRequest::default()
         };
         match self.process(&agent.host)?.cloned() {
             Some(process) => {

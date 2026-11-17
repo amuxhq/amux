@@ -13,7 +13,12 @@ amux = "target/debug/amux"
 AMUX_CONFIG = "{{root}}/.wt/amux/config.toml"
 AMUX_LOG = "{{root}}/.wt/amux/amux.log"
 
+# The daemon writes its own settings into this file (experiments, model
+# picks), so wt writes it only when it is missing and never overwrites it.
+# A change to the template below reaches an existing tree once its copy
+# is deleted.
 [files.".wt/amux/config.toml"]
+keep = true
 content = """
 host_name = "{{name_short}}"
 root = "{{root}}/.wt/amux"
@@ -27,7 +32,10 @@ scope = "{{name}}"
 [lifecycle]
 create = "just build"
 start = "amux server start"
-stop = "amux server stop"
+# Stopping also sweeps target/ of build output unused for a week (`just
+# sweep`): well under a second with nothing to clean, a second or two when
+# a few gigabytes go.
+stop = "amux server stop && just sweep"
 
 # The pinned iPhones this Mac owns. A recipe leases one and gets it clean;
 # a tree prefers the one it used last, so a series of recipes reuses a booted

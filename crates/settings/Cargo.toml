@@ -15,7 +15,8 @@ serde_ignored = { workspace = true }
 toml = { workspace = true }
 toml_edit = { workspace = true }
 thiserror = { workspace = true }
-# A host's name is the one type every place a name enters amux builds.
+# A host's name is the one type every place a name enters amux builds, and
+# an experiment's version is its entry's key.
 wire = { workspace = true }
 
 [dev-dependencies]

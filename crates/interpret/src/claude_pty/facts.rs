@@ -248,6 +248,8 @@ impl State {
 
     pub(super) fn exited(&mut self, emit: &mut Emit, exit: wire::IncarnationEnd) {
         emit.end_incarnation(exit.clone());
+        // Before its subagents end: one still running is work cut off.
+        self.shared.provider_exited_as(&exit);
         // The subagents it ran end with it, for its cause.
         self.end_all_subagents(emit, &exit);
         self.running.clear();
@@ -255,7 +257,6 @@ impl State {
         // A reply Claude died drawing ends as it was drawn.
         self.finish_streams(emit);
         self.boundary(emit, BoundaryKind::Exited, exit);
-        self.shared.provider_exited();
         self.jobs.clear();
         self.local_turn = false;
     }
@@ -392,6 +393,19 @@ impl State {
                     );
                     let jobs = self.host_jobs(jobs);
                     self.shared.set_jobs(jobs);
+                }
+                // Claude's word on its wake-ups at each turn's end, which
+                // stands until the next.
+                if let Some(crons) = &stop.session_crons {
+                    self.shared.wakeups_listed(crons.iter().map(|cron| {
+                        (
+                            cron.id.clone(),
+                            crate::Wakeup {
+                                recurring: cron.recurring,
+                                at_ms: None,
+                            },
+                        )
+                    }));
                 }
                 self.running.clear();
                 self.close_own_asks(emit);

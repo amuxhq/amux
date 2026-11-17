@@ -1237,6 +1237,126 @@
         }
       }
     },
+    "Its chat is deleted on every device, with its subagents." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its chat is deleted on every device, with its subagents."
+          }
+        }
+      }
+    },
+    "Its chat is deleted on every device." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its chat is deleted on every device."
+          }
+        }
+      }
+    },
+    "Its worktree is removed too, with %@ uncommitted files (%@)." : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its worktree is removed too, with %@ uncommitted files (%@)."
+          }
+        }
+      }
+    },
+    "Its worktree is removed too, with %@ uncommitted files." : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its worktree is removed too, with %@ uncommitted files."
+          }
+        }
+      }
+    },
+    "Its worktree is removed too, with 1 uncommitted file (%@)." : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its worktree is removed too, with 1 uncommitted file (%@)."
+          }
+        }
+      }
+    },
+    "Its worktree is removed too, with 1 uncommitted file." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its worktree is removed too, with 1 uncommitted file."
+          }
+        }
+      }
+    },
+    "Checking its worktree for uncommitted changes…" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking its worktree for uncommitted changes…"
+          }
+        }
+      }
+    },
+    "Its worktree is removed too, but stays on disk if it has uncommitted changes, which couldn’t be checked." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its worktree is removed too, but stays on disk if it has uncommitted changes, which couldn’t be checked."
+          }
+        }
+      }
+    },
+    "Its worktree is removed too." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its worktree is removed too."
+          }
+        }
+      }
+    },
+    "The branch %@ keeps what was committed." : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The branch %@ keeps what was committed."
+          }
+        }
+      }
+    },
     "connecting" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState" : "manual",

@@ -234,7 +234,7 @@ pub enum AppEvent {
     /// An agent created with its first prompt: its chat opens, or home
     /// stays and says it started.
     Started {
-        agent: Agent,
+        agent: Box<Agent>,
         open: bool,
         /// Used in its own terminal: attach to it rather than open its chat.
         attach: bool,
@@ -254,6 +254,12 @@ pub enum AppEvent {
         agent_id: Vec<u8>,
         key: crate::chat::FetchKey,
         diff: Diff,
+    },
+    /// What an agent's workspace holds against HEAD, or why its host could
+    /// not say, for home's delete confirmation.
+    DeleteChecked {
+        agent: AgentKey,
+        compared: Result<Diff, String>,
     },
     /// Onboarding's and the settings screen's calls came back.
     Desk(desk::DeskEvent),
@@ -757,6 +763,10 @@ impl App {
                 }
             }
             AppEvent::Notice(words, tone) => self.notice(words, tone),
+            AppEvent::DeleteChecked { agent, compared } => {
+                self.home
+                    .changes_checked(&agent, compared.as_ref().map_err(Clone::clone));
+            }
             AppEvent::Desk(event) => self.desk_event(event),
             AppEvent::Folders { host, answer } => {
                 self.folders_asked.remove(&host);
@@ -876,7 +886,7 @@ impl App {
                     // Straight into its own terminal; where it has none
                     // here, its chat opens and says why.
                     let Some(why) = terminal_refusal(&agent, &self.config) else {
-                        return Flow::Attach(Box::new(agent));
+                        return Flow::Attach(agent);
                     };
                     self.notice(format!("{why}; its chat opens instead"), Tone::Warn);
                     self.config.initial_chat = Some(agent.agent_id.clone());
@@ -1384,7 +1394,7 @@ impl App {
                         let _ = events.send(AppEvent::Notice(why, Tone::Warn));
                     }
                     Some(AppEvent::Started {
-                        agent,
+                        agent: Box::new(agent),
                         open,
                         attach,
                     })
@@ -1409,7 +1419,7 @@ impl App {
                     let request = setup.request(inputs::input_id(), prompt);
                     Some(match client.create_agent(request).await {
                         Ok(agent) => AppEvent::Started {
-                            agent,
+                            agent: Box::new(agent),
                             open,
                             attach,
                         },
@@ -1445,9 +1455,20 @@ impl App {
             }
             FleetEffect::Pin(agent) => self.file(agent, wire::Filing::Pinned, "pin"),
             FleetEffect::Unpin(agent) => self.file(agent, wire::Filing::Open, "unpin"),
-            FleetEffect::Delete(agent) => self.spawn(async move {
+            FleetEffect::CheckChanges(agent) => self.spawn(async move {
+                let head = wire::DiffBase {
+                    base: Some(wire::diff_base::Base::Head(wire::Empty {})),
+                };
+                let compared =
+                    ui_runtime::review::changed_files(client.as_ref(), &agent.agent, head)
+                        .await
+                        .map_err(|error| error.to_string());
+                Some(AppEvent::DeleteChecked { agent, compared })
+            }),
+            FleetEffect::Delete(agent, discard) => self.spawn(async move {
                 let request = DeleteAgentRequest {
                     agent_id: agent.agent,
+                    discard_workspace_changes: discard,
                 };
                 Some(match client.delete_agent(request).await {
                     Ok(_) => AppEvent::Notice("deleted".into(), Tone::Info),

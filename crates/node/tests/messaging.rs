@@ -291,7 +291,10 @@ async fn an_agent_acts_only_on_its_own_children_and_starts_them_with_defaults() 
             .await
             .unwrap_err(),
         tools
-            .delete_agent(Request::new(wire::DeleteAgentRequest { agent_id: id() }))
+            .delete_agent(Request::new(wire::DeleteAgentRequest {
+                agent_id: id(),
+                ..Default::default()
+            }))
             .await
             .unwrap_err(),
         tools
@@ -896,8 +899,12 @@ async fn a_child_answering_exiting_to_its_parents_message_is_resumed_with_it() {
     daemon.shutdown().await.unwrap();
 }
 
+/// An agent refusing a person's input as exiting with no stop asked of it
+/// is leaving of its own accord: the input waits for the exit, and an exit
+/// that was no suspension leaves it refused as exited. The agent can then
+/// be resumed as any exited one.
 #[tokio::test(flavor = "multi_thread")]
-async fn an_input_answered_exiting_lets_a_resume_wait_for_the_lock() {
+async fn an_input_answered_exiting_waits_for_the_exit_and_is_refused_as_exited() {
     let install = Install::new();
     let mut agent = SyntheticAgent::new(&install, "leaving", SEGMENTS);
     agent.register(&install);
@@ -906,13 +913,76 @@ async fn an_input_answered_exiting_lets_a_resume_wait_for_the_lock() {
     agent.answer_with(Answer::Reject(wire::Refusal::Exiting));
     let (daemon, runtime) = start_resuming(&install).await;
 
-    let answer = runtime
-        .send_input(&SendInputRequest {
+    let sent = tokio::spawn({
+        let runtime = runtime.clone();
+        let request = SendInputRequest {
             agent_id: agent.id.as_bytes().to_vec(),
             input: Some(prompt(b"i1", "one more thing")),
-        })
+        };
+        async move { runtime.send_input(&request).await }
+    });
+    // A window: an input waiting for the exit leaves no mark to wait on.
+    holds_for("the input to wait", Duration::from_millis(300), || async {
+        !sent.is_finished()
+    })
+    .await
+    .expect("the input waits for the agent's own exit instead of being refused");
+    agent.die().await;
+    let answer = sent.await.unwrap().unwrap();
+    assert_eq!(verdict(&answer), "rejected Exited");
+    let resumed = runtime
+        .resume(agent.id, None)
         .await
-        .unwrap();
+        .expect("resumed once it is gone");
+    assert_eq!(resumed.incarnation, 2);
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
+/// Input to an agent the daemon is stopping, refused as exiting, is
+/// answered so at once rather than held for the stop's deadline; a resume
+/// asked meanwhile waits for the stop and the lock instead of refusing a
+/// live agent.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_input_to_an_agent_being_stopped_is_answered_at_once_and_a_resume_waits() {
+    let install = Install::new();
+    let mut agent = SyntheticAgent::new(&install, "leaving", SEGMENTS);
+    agent.register(&install);
+    agent.write_spec();
+    agent.go_live();
+    agent.answer_with(Answer::Reject(wire::Refusal::Exiting));
+    let (daemon, runtime) = start_resuming(&install).await;
+    until("the daemon to connect", || async {
+        (agent.hellos() > 0)
+            .then_some(())
+            .ok_or_else(|| "no Hello".to_owned())
+    })
+    .await
+    .unwrap();
+
+    let stopped = tokio::spawn({
+        let runtime = runtime.clone();
+        let id = agent.id;
+        async move { runtime.kill_agent(id).await }
+    });
+    until("the stop to reach the agent", || async {
+        (agent.stops_asked() > 0)
+            .then_some(())
+            .ok_or_else(|| "no stop yet".to_owned())
+    })
+    .await
+    .unwrap();
+    let answer = tokio::time::timeout(
+        Duration::from_secs(2),
+        runtime.send_input(&SendInputRequest {
+            agent_id: agent.id.as_bytes().to_vec(),
+            input: Some(prompt(b"i1", "one more thing")),
+        }),
+    )
+    .await
+    .expect("answered at once, not after the stop's deadline")
+    .unwrap();
     assert_eq!(verdict(&answer), "rejected Exiting");
     let resumed = tokio::spawn({
         let runtime = runtime.clone();
@@ -926,6 +996,7 @@ async fn an_input_answered_exiting_lets_a_resume_wait_for_the_lock() {
     .await
     .expect("the resume waits for the leaving process instead of refusing a live agent");
     agent.die().await;
+    stopped.await.unwrap().expect("the stop is answered");
     let resumed = resumed
         .await
         .unwrap()

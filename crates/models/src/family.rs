@@ -21,6 +21,13 @@
 //! acceptance to its journal; the link goes down and comes back; the
 //! child's host unpairs from the parent's; and a daemon crashes and starts
 //! again, adopting the processes still running.
+//!
+//! Under the suspension experiment the parent's process may also suspend
+//! while nothing is written to it, exiting with its journal saying so, and
+//! the parent's machine may restart: every process on it gone, its daemon
+//! starting on a new boot, with the parent idle or in a turn as its journal
+//! last said. A message to a suspended parent resumes it, its child's
+//! report included, and the resumed process takes it as its first input.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -55,6 +62,7 @@ const SEGMENT_BYTES: u64 = 1 << 20;
 const CREATE: CallId = CallId(1);
 const STOP: CallId = CallId(2);
 const DELETE: CallId = CallId(3);
+const KILL: CallId = CallId(4);
 
 fn parent_key() -> AgentKey {
     AgentKey::new(HOSTS[PARENTS].0.to_vec(), PARENT.0.to_vec())
@@ -80,6 +88,12 @@ pub struct FamilyDeliveries {
     /// Timers armed for later that fire, all told: the outbox's retry, the
     /// follower's backoff and a message's patience.
     pub waits: u8,
+    /// Both cores run the suspension experiment.
+    pub suspension: bool,
+    /// Times the parent's process suspends.
+    pub suspends: u8,
+    /// Times the parent's machine restarts.
+    pub restarts: u8,
 }
 
 impl FamilyDeliveries {
@@ -99,6 +113,25 @@ impl FamilyDeliveries {
             downs: 1,
             crashes: 1,
             waits: 0,
+            suspension: false,
+            suspends: 0,
+            restarts: 0,
+        }
+    }
+
+    /// The bounds `just test` explores with the suspension experiment on:
+    /// the parent suspends once and its machine restarts once, with the
+    /// parent idle or in its turn. The daemon crash is left out, since a
+    /// restart is a crash that takes the processes with it, and so is the
+    /// link going down on its own: the restart takes the link down and up.
+    pub const fn suspending() -> Self {
+        Self {
+            downs: 0,
+            crashes: 0,
+            suspension: true,
+            suspends: 1,
+            restarts: 1,
+            ..Self::ci()
         }
     }
 
@@ -136,6 +169,8 @@ struct Process {
     connected: bool,
     /// The daemon asked it to stop.
     asked_stop: bool,
+    /// The incarnation its spec named.
+    incarnation: u32,
     /// Messages it took, by envelope id: one written to it again is
     /// answered and goes no further, as the interpreter does at intake.
     taken: BTreeSet<Vec<u8>>,
@@ -183,6 +218,9 @@ struct Used {
     crashes: u8,
     unpaired: bool,
     waits: u8,
+    killed: bool,
+    suspends: u8,
+    restarts: u8,
     /// The world has stopped changing.
     rested: bool,
 }
@@ -212,6 +250,24 @@ struct Seen {
     /// The child's process ended because its host asked it to, its parent
     /// having ended.
     child_followed: bool,
+    /// The child was asked to stop while its parent's row on the parent's
+    /// own host was live and open.
+    child_stopped_unasked: Option<String>,
+    /// A restart of the parent's machine left the parent's row exited when
+    /// it was live, and not closed, before.
+    exited_by_restart: Option<String>,
+    /// The report the suspended parent was resumed with, by envelope id.
+    woken_by: Option<Vec<u8>>,
+    /// The parent was continued after its machine restarted under its turn.
+    continued: bool,
+    /// The parent's process took a report for an earlier incarnation.
+    took_earlier: bool,
+    /// The parent's row on its own host has said closed, or exited by a
+    /// stop: the person's close or kill was stored.
+    parent_closed: bool,
+    /// The parent was started again after the person's close or stop was
+    /// stored.
+    revived_after_close: Option<String>,
 }
 
 #[derive(Clone)]
@@ -238,6 +294,8 @@ pub struct State {
     outbox: BTreeSet<Vec<u8>>,
     used: Used,
     seen: Seen,
+    /// Both cores run the suspension experiment: the model's, fixed.
+    suspension: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -249,6 +307,9 @@ pub enum Action {
     Stop,
     /// A person deletes the parent.
     Delete,
+    /// A person kills the parent, under the suspension experiment: a stop
+    /// that leaves its row open.
+    Kill,
     /// The agent's process ends: asked to, or of its own accord.
     Exit(Who),
     /// The child's turn ends: its journal says so and its daemon is nudged.
@@ -273,6 +334,16 @@ pub enum Action {
     Unpair,
     /// The world's doing: the host's daemon crashes and starts again.
     Crash(usize),
+    /// The parent's process suspends: what was written to it and is
+    /// unanswered it refuses as exiting, its journal ends saying so, and it
+    /// exits. It may have been asked to stop as it did.
+    Suspend,
+    /// The parent's machine restarts, the parent's journal last saying it
+    /// was idle, in its turn or suspending: every process on it is gone,
+    /// and its daemon starts on a new boot.
+    Restart {
+        last: Last,
+    },
     /// The world stops changing: nobody creates, stops or deletes, no
     /// process exits unasked, no turn ends, the link stays as it is, the
     /// pairing stays and no daemon crashes. What the cores asked for still
@@ -362,6 +433,20 @@ impl Hash for State {
     }
 }
 
+/// What the parent's journal last said when its machine restarted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Last {
+    Idle,
+    Busy,
+    /// Its incarnation ended suspended, and the daemon had not yet seen it
+    /// gone.
+    Suspending,
+    /// The shutdown ended its idle provider first: the incarnation ended
+    /// with the provider signalled. One that cut a turn off reads starting
+    /// and is continued as a busy one is.
+    ProviderGone,
+}
+
 /// One of the two agents.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Who {
@@ -376,8 +461,9 @@ impl Machine for FamilyDeliveries {
     fn init(&self) -> State {
         crate::share_sqlite_across_threads();
         let host = |index: usize| {
-            let store = Sqlite::open_in_memory(HOSTS[index].0).expect("a store opens");
-            let daemon = Daemon::new(store, options());
+            let mut store = Sqlite::open_in_memory(HOSTS[index].0).expect("a store opens");
+            settle(&mut store, self.suspension);
+            let daemon = Daemon::new(store, options(self.suspension, false));
             let print = daemon.fingerprint();
             let (held, _) = Held::of(daemon);
             HostState {
@@ -403,6 +489,7 @@ impl Machine for FamilyDeliveries {
             outbox: BTreeSet::new(),
             used: Used::default(),
             seen: Seen::default(),
+            suspension: self.suspension,
         };
         with_scratch(|scratch| {
             let mut t = Transition::new(scratch, &mut s);
@@ -411,8 +498,8 @@ impl Machine for FamilyDeliveries {
             // spawned before that listing catches up is one the listing
             // must not judge, and its parent's row arrives on the live
             // stream after it.
-            t.start(PARENTS);
-            t.start(CHILDS);
+            t.start(PARENTS, false);
+            t.start(CHILDS, false);
             t.run();
             t.link_up();
             t.run();
@@ -447,6 +534,9 @@ impl Machine for FamilyDeliveries {
         }
         if world && !s.used.deleted {
             out.push(Action::Delete);
+        }
+        if world && self.suspension && !s.used.killed {
+            out.push(Action::Kill);
         }
         for (who, process, exits) in [
             (Who::Parent, &s.parent, self.parent_exits),
@@ -495,6 +585,20 @@ impl Machine for FamilyDeliveries {
             out.push(Action::Crash(PARENTS));
             out.push(Action::Crash(CHILDS));
         }
+        // An agent suspends only once it has taken its first input; what
+        // reached it as it exits it refuses.
+        if world
+            && s.used.suspends < self.suspends
+            && s.parent.connected
+            && s.written.iter().all(|(_, by)| *by != u8::MAX)
+        {
+            out.push(Action::Suspend);
+        }
+        if world && s.used.restarts < self.restarts {
+            for last in [Last::Idle, Last::Busy, Last::Suspending, Last::ProviderGone] {
+                out.push(Action::Restart { last });
+            }
+        }
     }
 
     fn next(&self, s: &State, action: &Action) -> Option<State> {
@@ -508,10 +612,49 @@ impl Machine for FamilyDeliveries {
     }
 
     fn properties(&self) -> Vec<Property<Self>> {
+        let mut properties = self.family_properties();
+        if self.suspension {
+            properties.extend([
+                Property::always(
+                    "a machine restart leaves no row exited that was live and open before it",
+                    |_, s: &State| s.seen.exited_by_restart.is_none(),
+                ),
+                Property::sometimes(
+                    "a suspended parent is sometimes resumed by its child's report and takes it",
+                    |_, s: &State| {
+                        s.seen.woken_by.as_ref().is_some_and(|id| {
+                            s.reports.get(id).is_some_and(|report| report.reached == 1)
+                        })
+                    },
+                ),
+                Property::sometimes(
+                    "a parent in its turn is sometimes continued after its machine restarts, and \
+                     later takes a report sent to its earlier incarnation",
+                    |_, s: &State| s.seen.continued && s.seen.took_earlier,
+                ),
+            ]);
+        }
+        properties
+    }
+}
+
+impl FamilyDeliveries {
+    fn family_properties(&self) -> Vec<Property<Self>> {
         vec![
             Property::always("the cores never ask for a dump", |_, s: &State| {
                 s.seen.dumped.is_none()
             }),
+            Property::always(
+                "a parent the person closed or stopped is never started again: once its own host \
+                 stored the close or the stop, no message, report or restart resumes it",
+                |_, s: &State| s.seen.revived_after_close.is_none(),
+            ),
+            Property::always(
+                "a parent's suspension, or its machine's restart, stops none of its children: the \
+                 child is asked to stop only once its parent's row on the parent's own host is \
+                 exited, closed or gone",
+                |_, s: &State| s.seen.child_stopped_unasked.is_none(),
+            ),
             Property::always(
                 "no child is deleted by a stale listing: a child goes from its host only once its \
                  parent has gone from the parent's own host",
@@ -519,8 +662,9 @@ impl Machine for FamilyDeliveries {
             ),
             Property::always(
                 "an outbox row is deleted only on accept: a report goes from the child's outbox only \
-                 once the parent's process accepted it, or the parent is gone from its host, or the \
-                 child's host unpaired from it",
+                 once the parent's process accepted it, or the parent is gone from its host, or was \
+                 stopped since the report was written (its row there exited under a later \
+                 incarnation), or the child's host unpaired from it",
                 |_, s: &State| s.seen.removed_unaccepted.is_none(),
             ),
             Property::always(
@@ -612,9 +756,18 @@ impl State {
         !self.used.unpaired && self.link.is_some()
     }
 
-    /// The parent exited or is deleted, as its own host holds it.
+    /// The parent exited or is deleted, as its own host holds it: a
+    /// suspended parent has no process and has not ended.
     fn parent_ended(&self) -> bool {
-        self.seen.parent_deleted || !self.parent.running
+        self.seen.parent_deleted
+            || with_scratch(|scratch| {
+                scratch.slots[PARENTS].read(&self.hosts[PARENTS].held.store, |store| {
+                    store
+                        .agent(&parent_key())
+                        .unwrap()
+                        .is_none_or(|row| row.lifecycle == Lifecycle::Exited as i32)
+                })
+            })
     }
 
     /// The child was made before its host caught up with the parent's or
@@ -648,13 +801,29 @@ impl State {
 
 /// The options both cores run under: no step budget, since the model is a
 /// function of its actions alone and no step may ask for a dump because
-/// the machine ran slowly.
-fn options() -> StartOptions {
+/// the machine ran slowly; the suspension experiment as the model runs it,
+/// and whether the machine booted since the daemon before.
+fn options(suspension: bool, rebooted: bool) -> StartOptions {
     StartOptions {
         generation: 1,
         budget: StepBudget::UNLIMITED,
+        suspension,
+        rebooted,
         ..StartOptions::default()
     }
+}
+
+/// The experiments' tables a store opened by its daemon has: the
+/// suspension experiment's, when the model runs it.
+fn settle(store: &mut Sqlite, suspension: bool) {
+    let on: &[&str] = if suspension {
+        &[wire::experimental::SUSPENSION.version()]
+    } else {
+        &[]
+    };
+    store
+        .settle_experiments(on)
+        .expect("the experiments' tables are made");
 }
 
 fn create(agent: AgentId, name: &str, parent: Option<(HostId, AgentId)>) -> Create {
@@ -663,7 +832,8 @@ fn create(agent: AgentId, name: &str, parent: Option<(HostId, AgentId)>) -> Crea
         cwd: "/src".into(),
         given: Some(name.into()),
         branches: BTreeSet::new(),
-        new_worktree: false,
+        new_workspace: false,
+        workspace: None,
         recent: None,
         spec: wire::AgentSpec {
             agent_id: agent.0.to_vec(),
@@ -732,8 +902,20 @@ impl<'a> Transition<'a> {
     fn store_changed(&mut self, host: usize) {
         let store = self.scratch.slots[host].store();
         if host == PARENTS {
-            if store.agent(&parent_key()).unwrap().is_none() {
-                self.next.seen.parent_deleted = true;
+            match store.agent(&parent_key()).unwrap() {
+                None => self.next.seen.parent_deleted = true,
+                // Closed, or ended by the person's stop: nothing resumes
+                // it from here but the person.
+                Some(row)
+                    if row.is_closed()
+                        || row.lifecycle == Lifecycle::Exited as i32
+                            && [wire::ExitCause::Stopped, wire::ExitCause::Killed]
+                                .iter()
+                                .any(|cause| row.exit_cause == *cause as i32) =>
+                {
+                    self.next.seen.parent_closed = true;
+                }
+                Some(_) => {}
             }
             return;
         }
@@ -777,13 +959,28 @@ impl<'a> Transition<'a> {
                 })
                 .parent_incarnation = *parent_incarnation;
         }
+        // Exited on its own host under this incarnation: stopped since a
+        // report for an earlier one was written.
+        let parent_exited_at =
+            self.scratch.slots[PARENTS].read(&self.next.hosts[PARENTS].held.store, |store| {
+                store
+                    .agent(&parent_key())
+                    .unwrap()
+                    .filter(|row| row.lifecycle == Lifecycle::Exited as i32)
+                    .map(|row| row.incarnation)
+            });
         for id in &self.next.outbox {
             if rows.contains_key(id) {
                 continue;
             }
-            let accepted = self.next.reports.get(id).is_some_and(|r| r.reached > 0);
+            let report = self.next.reports.get(id);
+            let accepted = report.is_some_and(|r| r.reached > 0);
+            let stopped_since = report
+                .zip(parent_exited_at)
+                .is_some_and(|(report, at)| report.parent_incarnation < at);
             let seen = &mut self.next.seen;
             if !accepted
+                && !stopped_since
                 && !seen.parent_deleted
                 && !self.next.used.unpaired
                 && seen.removed_unaccepted.is_none()
@@ -812,7 +1009,10 @@ impl<'a> Transition<'a> {
                         self.feed(host, Input::Timer { id });
                     } else if matches!(
                         id,
-                        TimerId::Deliveries | TimerId::Follow(_) | TimerId::Lane(_)
+                        TimerId::Deliveries
+                            | TimerId::Follow(_)
+                            | TimerId::Lane(_)
+                            | TimerId::Grace(_)
                     ) {
                         self.next.hosts[host].timers.insert(id);
                     }
@@ -824,8 +1024,33 @@ impl<'a> Transition<'a> {
                     let process = self.process(&spec.agent_id);
                     *process = Process {
                         running: true,
+                        incarnation: spec.incarnation,
                         ..Process::default()
                     };
+                    if spec.agent_id == PARENT.0 && self.next.seen.parent_closed {
+                        self.next
+                            .seen
+                            .revived_after_close
+                            .get_or_insert_with(|| "the closed parent started again".into());
+                    }
+                    // A resume's first input: a message the process takes
+                    // as any written to it, with no verdict to give.
+                    match spec.bootstrap.and_then(|bootstrap| bootstrap.of) {
+                        Some(wire::bootstrap::Of::AgentMessage(envelope))
+                            if spec.agent_id == PARENT.0 =>
+                        {
+                            if self.next.reports.contains_key(&envelope.id) {
+                                self.next.seen.woken_by = Some(envelope.id.clone());
+                            }
+                            self.next.written.push((envelope.id, u8::MAX));
+                        }
+                        Some(wire::bootstrap::Of::Prompt(prompt))
+                            if wire::is_continued_input(&prompt.input_id) =>
+                        {
+                            self.next.seen.continued = true;
+                        }
+                        _ => {}
+                    }
                 }
                 Output::DialAgent { agent } => {
                     let process = self.process(&agent.0);
@@ -841,7 +1066,12 @@ impl<'a> Transition<'a> {
                         continue;
                     }
                     match frame.of {
-                        Some(wire::ctl_frame::Of::Stop(_)) => process.asked_stop = true,
+                        Some(wire::ctl_frame::Of::Stop(_)) => {
+                            process.asked_stop = true;
+                            if agent == CHILD {
+                                self.child_asked_to_stop();
+                            }
+                        }
                         Some(wire::ctl_frame::Of::AgentMessage(envelope)) if agent == PARENT => {
                             self.next.written.push((envelope.id, run));
                         }
@@ -850,8 +1080,28 @@ impl<'a> Transition<'a> {
                 }
                 Output::Job { id, op } => {
                     let result = match op {
-                        Job::NextSpec { .. } => {
-                            JobResult::Spec(Some(Box::new(wire::AgentSpec::default())))
+                        Job::NextSpec {
+                            agent, bootstrap, ..
+                        } => {
+                            let last = self.scratch.slots[host].read(
+                                &self.next.hosts[host].held.store,
+                                |store| {
+                                    store
+                                        .agent(&AgentKey::new(
+                                            HOSTS[host].0.to_vec(),
+                                            agent.0.to_vec(),
+                                        ))
+                                        .unwrap()
+                                        .map_or(0, |row| row.incarnation)
+                                },
+                            );
+                            JobResult::Spec(Some(Box::new(wire::AgentSpec {
+                                agent_id: agent.0.to_vec(),
+                                kind: wire::Kind::Codex as i32,
+                                incarnation: last + 1,
+                                bootstrap,
+                                ..wire::AgentSpec::default()
+                            })))
                         }
                         _ => JobResult::Done,
                     };
@@ -882,6 +1132,24 @@ impl<'a> Transition<'a> {
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// The child's host asked the child to stop: only the parent's row on
+    /// its own host being exited, closed or gone may have made it.
+    fn child_asked_to_stop(&mut self) {
+        let parent_live =
+            self.scratch.slots[PARENTS].read(&self.next.hosts[PARENTS].held.store, |store| {
+                store
+                    .agent(&parent_key())
+                    .unwrap()
+                    .is_some_and(|row| row.lifecycle == Lifecycle::Live as i32 && !row.is_closed())
+            });
+        if parent_live {
+            self.next
+                .seen
+                .child_stopped_unasked
+                .get_or_insert_with(|| "the child was asked to stop under a live parent".into());
         }
     }
 
@@ -984,13 +1252,26 @@ impl<'a> Transition<'a> {
                     },
                 );
             }
+            Action::Kill => {
+                self.next.used.killed = true;
+                self.feed(
+                    PARENTS,
+                    Input::ClientCall {
+                        call: KILL,
+                        request: ClientRequest::KillAgent { agent: PARENT },
+                    },
+                );
+            }
             Action::Delete => {
                 self.next.used.deleted = true;
                 self.feed(
                     PARENTS,
                     Input::ClientCall {
                         call: DELETE,
-                        request: ClientRequest::DeleteAgent { agent: PARENT },
+                        request: ClientRequest::DeleteAgent {
+                            agent: PARENT,
+                            discard: false,
+                        },
                     },
                 );
             }
@@ -1122,6 +1403,9 @@ impl<'a> Transition<'a> {
                 if new {
                     if let Some(report) = self.next.reports.get_mut(&id) {
                         report.reached += 1;
+                        if report.parent_incarnation < self.next.parent.incarnation {
+                            self.next.seen.took_earlier = true;
+                        }
                     }
                     // Keyed by the message, as the interpreter keys the item
                     // it writes on accepting one.
@@ -1186,6 +1470,127 @@ impl<'a> Transition<'a> {
                 self.crash(*host);
             }
             Action::Rest => self.next.used.rested = true,
+            Action::Suspend => {
+                self.next.used.suspends += 1;
+                let run = self.next.hosts[PARENTS].run;
+                for (id, by) in std::mem::take(&mut self.next.written) {
+                    if by == run {
+                        self.feed(
+                            PARENTS,
+                            Input::Verdict {
+                                agent: PARENT,
+                                input_id: id,
+                                verdict: Some(wire::SendInputResponse {
+                                    of: Some(wire::send_input_response::Of::Rejected(
+                                        wire::Rejected {
+                                            refusal: wire::Refusal::Exiting as i32,
+                                            detail: None,
+                                        },
+                                    )),
+                                }),
+                            },
+                        );
+                    }
+                }
+                self.append(
+                    PARENTS,
+                    PARENT,
+                    &Step {
+                        incarnation_end: Some(wire::IncarnationEnd {
+                            cause: wire::ExitCause::Suspended as i32,
+                            detail: None,
+                        }),
+                        ..Default::default()
+                    },
+                );
+                self.next.parent = Process::default();
+                self.feed(
+                    PARENTS,
+                    Input::ControlClosed {
+                        agent: PARENT,
+                        ended: Ended::Exited,
+                    },
+                );
+            }
+            Action::Restart { last } => {
+                self.next.used.restarts += 1;
+                self.restart(*last);
+            }
+        }
+    }
+
+    /// The parent's machine restarts: its journal last said the parent was
+    /// in its turn or idle, suspending, or that the shutdown ended its
+    /// provider first, every process on it goes without a word, and
+    /// its daemon starts on a new boot. Its link goes with it and comes
+    /// back. Whatever the parent's row said live it still says after.
+    fn restart(&mut self, last: Last) {
+        if self.next.parent.running {
+            let step = match last {
+                Last::Idle | Last::Busy => Step {
+                    snapshot: Some(wire::Snapshot {
+                        kind: wire::Kind::Codex as i32,
+                        phase: if last == Last::Busy {
+                            wire::Phase::Working
+                        } else {
+                            wire::Phase::Idle
+                        } as i32,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                Last::Suspending => Step {
+                    incarnation_end: Some(wire::IncarnationEnd {
+                        cause: wire::ExitCause::Suspended as i32,
+                        detail: None,
+                    }),
+                    ..Default::default()
+                },
+                // As an interpreter writes it for a provider that was idle.
+                Last::ProviderGone => Step {
+                    snapshot: Some(wire::Snapshot {
+                        kind: wire::Kind::Codex as i32,
+                        phase: wire::Phase::Idle as i32,
+                        ..Default::default()
+                    }),
+                    incarnation_end: Some(wire::IncarnationEnd {
+                        cause: wire::ExitCause::ProviderExited as i32,
+                        detail: Some(wire::PROVIDER_SIGNALLED.to_owned()),
+                    }),
+                    ..Default::default()
+                },
+            };
+            self.append(PARENTS, PARENT, &step);
+        }
+        let lifecycle = |t: &mut Self| {
+            t.scratch.slots[PARENTS].read(&t.next.hosts[PARENTS].held.store, |store| {
+                store
+                    .agent(&parent_key())
+                    .unwrap()
+                    .map(|row| (row.lifecycle, row.is_closed()))
+            })
+        };
+        // A row the person closed is on its way out already.
+        let before = lifecycle(self)
+            .filter(|(_, closed)| !closed)
+            .map(|(lifecycle, _)| lifecycle);
+        let linked = self.next.link.is_some();
+        self.link_down(Some(PARENTS));
+        self.run();
+        self.next.parent = Process::default();
+        self.next.written.clear();
+        self.start(PARENTS, true);
+        if linked {
+            self.link_up();
+        }
+        self.run();
+        if before == Some(Lifecycle::Live as i32)
+            && lifecycle(self).map(|(lifecycle, _)| lifecycle) == Some(Lifecycle::Exited as i32)
+        {
+            self.next
+                .seen
+                .exited_by_restart
+                .get_or_insert_with(|| "the parent's row read exited after the restart".into());
         }
     }
 
@@ -1272,15 +1677,17 @@ impl<'a> Transition<'a> {
         } else {
             self.next.child.connected = false;
         }
-        self.start(host);
+        self.start(host, false);
         if linked {
             self.link_up();
         }
     }
 
     /// The host's daemon starts over its store: its settings, then what
-    /// its start's sweep finds, then the sweep's end.
-    fn start(&mut self, host: usize) {
+    /// its start's sweep finds, then the sweep's end; `rebooted` when the
+    /// machine booted since the daemon before.
+    fn start(&mut self, host: usize, rebooted: bool) {
+        let suspension = self.next.suspension;
         let state = &mut self.next.hosts[host];
         state.run += 1;
         state.timers.clear();
@@ -1293,7 +1700,8 @@ impl<'a> Transition<'a> {
                 daemon_core::trust::TrustStore::of_hosts([HOSTS[PARENTS]])
                     .write_for_test(&mut store);
             }
-            let daemon = Daemon::new(store, options());
+            settle(&mut store, suspension);
+            let daemon = Daemon::new(store, options(suspension, rebooted));
             print = Some(daemon.fingerprint());
             daemon
         });

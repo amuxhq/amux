@@ -694,6 +694,18 @@ public final class Profile: @unchecked Sendable {
         }
     }
 
+    /// What deleting an agent does to its workspace, from facts that are
+    /// current, or nil when the workspace stays. The uncommitted changes of
+    /// an agent with no process are only known to its host, which is asked
+    /// first, so this can take a moment; a host that cannot say answers
+    /// `.unknown`.
+    public func deleteWarning(_ agent: AgentKey) async -> Result<DeleteWarning?, RuntimeFailure> {
+        let agent = Bridge.json(agent)
+        return await act(DeleteWarning?.self) { live in
+            agent.withCString { amux_profile_delete_warning(live, $0) }
+        }
+    }
+
     // MARK: - Chats
 
     /// Opens an agent's chat with `tail` rows, or the configured number when

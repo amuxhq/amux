@@ -536,7 +536,7 @@ impl Setup {
             cwd: self.folder.clone(),
             initial_prompt: prompt,
             agent: Some(config),
-            new_worktree: self.worktree,
+            new_workspace: self.worktree,
             // What a chat's sibling merely copied is not the person's pick.
             remember_model: !own && self.model.is_some() && self.model != self.copied.0,
             remember_effort: !own && self.effort.is_some() && self.effort != self.copied.1,

@@ -376,7 +376,7 @@ impl Daemon {
         let family = call == Caller::Family;
         match op {
             Op::Resume(_) => refused(NO_RESUME),
-            Op::Delete if !family => refused(NO_DELETE),
+            Op::Delete { .. } if !family => refused(NO_DELETE),
             Op::Kill if !family => refused(NO_KILL),
             // A close a person asks of a running subagent stops it, or is
             // refused: one that hid it would leave it running unseen. Its
@@ -586,7 +586,8 @@ mod tests {
                 cwd: "/src".into(),
                 given: Some(name.into()),
                 branches: BTreeSet::new(),
-                new_worktree: false,
+                new_workspace: false,
+                workspace: None,
                 recent: None,
                 spec: AgentSpec {
                     agent_id: agent.0.to_vec(),
@@ -845,7 +846,8 @@ mod tests {
             cwd: "/src".into(),
             given: Some("helper".into()),
             branches: BTreeSet::new(),
-            new_worktree: false,
+            new_workspace: false,
+            workspace: None,
             recent: None,
             spec: AgentSpec {
                 agent_id: CHILD.0.to_vec(),
@@ -1064,6 +1066,7 @@ mod tests {
         let (_, out) = rig.call(ClientRequest::ResumeAgent(Box::new(Resume {
             agent: HOST,
             bootstrap: None,
+            if_suspended: false,
         })));
         let job = |out: &[Output]| {
             out.iter()
@@ -1243,11 +1246,15 @@ mod tests {
         let resume = ClientRequest::ResumeAgent(Box::new(Resume {
             agent: SUB,
             bootstrap: None,
+            if_suspended: false,
         }));
         for (request, refused) in [
             (resume, Refusal::Subagent(NO_RESUME.into())),
             (
-                ClientRequest::DeleteAgent { agent: SUB },
+                ClientRequest::DeleteAgent {
+                    agent: SUB,
+                    discard: false,
+                },
                 Refusal::Subagent(NO_DELETE.into()),
             ),
             (
@@ -1334,7 +1341,10 @@ mod tests {
             ExitCause::EndedUnexpectedly as i32
         );
 
-        let (_, out) = rig.call(ClientRequest::DeleteAgent { agent: HOST });
+        let (_, out) = rig.call(ClientRequest::DeleteAgent {
+            agent: HOST,
+            discard: false,
+        });
         assert!(
             rig.row(SUB).is_none() && rig.row(SUB_TWO).is_none(),
             "{out:?}"

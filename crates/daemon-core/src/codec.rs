@@ -210,6 +210,26 @@ pub(crate) mod optional {
 }
 
 /// Messages in order.
+/// [`message`] for a boxed message, kept boxed so the enum holding it
+/// stays small.
+pub(crate) mod boxed_message {
+    use super::*;
+
+    #[allow(clippy::borrowed_box)]
+    pub(crate) fn serialize<T: prost::Message + prost::Name, S: Serializer>(
+        message: &Box<T>,
+        to: S,
+    ) -> Result<S::Ok, S::Error> {
+        super::message::serialize(message.as_ref(), to)
+    }
+
+    pub(crate) fn deserialize<'de, T: prost::Message + Default, D: Deserializer<'de>>(
+        from: D,
+    ) -> Result<Box<T>, D::Error> {
+        super::message::deserialize(from).map(Box::new)
+    }
+}
+
 pub(crate) mod messages {
     use super::*;
 

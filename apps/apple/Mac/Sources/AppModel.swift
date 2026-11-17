@@ -375,10 +375,11 @@ final class AppModel {
             case .pin: await stores.pin(agent)
             case .unfile: await stores.unfile(agent)
             case .delete: await stores.delete(agent)
+            case .deleteDiscardingChanges: await stores.delete(agent, discardingChanges: true)
             }
         switch outcome {
         case .success:
-            if act == .delete, place.agent == agent { place.agent = nil }
+            if act == .delete || act == .deleteDiscardingChanges, place.agent == agent { place.agent = nil }
         case .failure(let error): problem = error.description
         }
     }

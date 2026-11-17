@@ -508,7 +508,7 @@ private struct ChatPage: View {
                 let now = standing ?? read()
                 ChatScreen(
                     model: model, subject: now.subject, family: now.family,
-                    actions: act)
+                    deleteWarning: { [agent, stores] in await stores.deleteWarning(agent) }, actions: act)
             } else {
                 PagePlaceholder(
                     failure.map { .failed(title: String(localized: "Couldn’t open this chat"), reason: $0) }
@@ -589,6 +589,7 @@ private struct ChatPage: View {
             closeHeld: card?.closeHeld ?? false,
             filing: card?.filing ?? .open,
             topLevel: card?.topLevel ?? true,
+            workspaceGoes: card?.workspaceGoes,
             native: card?.native ?? false)
         return Standing(subject: subject, family: stores.profile?.family(agent), listed: row != nil)
     }
@@ -605,9 +606,12 @@ private struct ChatPage: View {
         case .cancelClose: Task { _ = await stores.cancelClose(agent) }
         case .pin: Task { _ = await stores.pin(agent) }
         case .unpin, .reopen: Task { _ = await stores.unfile(agent) }
-        case .delete:
+        case .delete, .deleteDiscardingChanges:
+            let discarding = action == .deleteDiscardingChanges
             Task {
-                if case .success = await stores.delete(agent) { router.close(.conversation(agent)) }
+                if case .success = await stores.delete(agent, discardingChanges: discarding) {
+                    router.close(.conversation(agent))
+                }
             }
         case .copyAddress: copy(subject.address)
         case .open(let other): router.open(.conversation(other))
@@ -652,7 +656,8 @@ private struct AgentsTab: View {
     var body: some View {
         AgentsHome(
             model: stores.fleet, accounts: accounts, hosts: stores.hosts,
-            offerNotifications: offerNotifications, signingIn: signingIn, scope: scope
+            offerNotifications: offerNotifications, signingIn: signingIn, scope: scope,
+            deleteWarning: { [stores] in await stores.deleteWarning($0) }
         ) { action in
             switch action {
             case .close(let agent): Task { _ = await stores.close(agent) }
@@ -660,6 +665,7 @@ private struct AgentsTab: View {
             case .pin(let agent): Task { _ = await stores.pin(agent) }
             case .unfile(let agent): Task { _ = await stores.unfile(agent) }
             case .delete(let agent): Task { _ = await stores.delete(agent) }
+            case .deleteDiscardingChanges(let agent): Task { _ = await stores.delete(agent, discardingChanges: true) }
             case .rename(let agent, let name): Task { _ = await stores.rename(name, of: agent) }
             case .showClosed: router.open(.closed)
             case .open(let agent):

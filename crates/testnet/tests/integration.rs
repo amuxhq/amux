@@ -22,3 +22,5 @@ mod spec_replication;
 mod spec_reports;
 mod spec_sign_in_offers;
 mod spec_subagents;
+mod spec_suspension;
+mod spec_workspaces;

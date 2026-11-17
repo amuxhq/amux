@@ -370,6 +370,8 @@ fn agent(agent: Agent) -> Agent {
         filing: agent.filing,
         filed_at_ms: agent.filed_at_ms,
         native: agent.native,
+        // An experiment's entry may name folders; none is kept.
+        experimental: Default::default(),
     }
 }
 

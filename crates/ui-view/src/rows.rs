@@ -725,6 +725,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
     let plain = |kind| (kind, None, false);
     match &held.body {
         ItemBody::Claude(kind) => match kind {
+            Claude::Prompt(_) if wire::is_continued_input(&item.input_id) => plain(continued()),
             Claude::Prompt(_) => plain(RowKind::Prompt {
                 text: text(),
                 steered: false,
@@ -765,6 +766,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
         ItemBody::Codex(kind) => match kind {
             Codex::CommandOutput(s) => plain(slash(held, s)),
             Codex::SafetyCheck(_) => plain(RowKind::Hidden),
+            Codex::Prompt(_) if wire::is_continued_input(&item.input_id) => plain(continued()),
             Codex::Prompt(_) => plain(RowKind::Prompt {
                 text: text(),
                 steered: false,
@@ -1117,6 +1119,20 @@ fn boundary(b: &wire::Boundary, provider: Provider) -> RowKind {
         | BoundaryKind::Exited => RowKind::Hidden,
     }
 }
+
+/// The prompt an agent was resumed with after the machine restarted under
+/// its turn: nobody sent it, so it is drawn as the line saying the agent
+/// carried on, not as the person's words.
+fn continued() -> RowKind {
+    RowKind::Boundary {
+        kind: BoundaryKind::Resumed,
+        cause: CONTINUED_WORDS.to_owned(),
+    }
+}
+
+/// What the line over a continuation after a restart says, after the
+/// boundary's own word.
+pub const CONTINUED_WORDS: &str = "after the machine restarted";
 
 fn agent_message(held: &Held, m: &wire::AgentMessage) -> RowKind {
     let from = match m.from.as_ref().and_then(|from| from.value.as_ref()) {

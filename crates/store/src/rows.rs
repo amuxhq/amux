@@ -5,12 +5,15 @@
 //! crash-injection tests fail a commit with a `BEFORE INSERT` trigger on
 //! `items` or `agents`, which a bare `UPDATE` would slip past. The other
 //! row writes are upserts too. An upsert names the columns its writer owns;
-//! the rest of a held row is left as it is. The one bare `UPDATE` is
-//! `rewind_cursor`, power-loss recovery that runs outside any commit.
+//! the rest of a held row is left as it is. The bare `UPDATE`s run outside
+//! any commit: `rewind_cursor`, power-loss recovery, and the clearing of
+//! own rows' experimental entries as the store opens
+//! (`experiments::settle`).
 
 use prost::Message as _;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
+use crate::experiments::SUSPENSION_1_RUNS;
 use crate::{
     AgentKey, AgentRow, Delivery, Item, Notification, Snapshot, StoreError, TrustedHost,
     decode_attachments, encode_attachments,
@@ -20,7 +23,7 @@ const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, name, cwd, parent_host
     lifecycle, exit_cause, exit_detail, phase, working_on, phase_since_ms, git, snapshot, \
     ingest_cursor, next_revision, source_cursor, source_generation, \
     complete_from_order, exhausted, owes_report, created_at_ms, incarnation, background_jobs, \
-    descendants, filing, filed_at_ms, title, name_given, last_said, native";
+    descendants, filing, filed_at_ms, title, name_given, last_said, native, experimental";
 
 const ITEM_COLUMNS: &str =
     "key, position, revision, at_ms, input_id, text, kind, attachments, body";
@@ -65,6 +68,11 @@ const INVENTORY_ENVELOPE: &[&str] = &[
 /// What a replica's inventory row counts that its origin owns: its live
 /// descendants. An own row's count is the daemon's, written apart.
 const INVENTORY_COUNTS: &[&str] = &["descendants"];
+
+/// The row's experimental map. A replica's inventory row carries it, and it
+/// is replaced whole from the origin's row whatever this host runs; an own
+/// row's is written apart, by the experiments this host runs.
+pub(crate) const EXPERIMENTAL: &[&str] = &["experimental"];
 
 /// What a commit writes: the newest snapshot's envelope, the cause the
 /// journal ended its incarnation with, and the own row's cursors.
@@ -162,15 +170,58 @@ pub(crate) fn registry_update(own: bool) -> String {
         )
     } else {
         format!(
-            "{registry}, {}, {}",
+            "{registry}, {}, {}, {}",
             update_of(INVENTORY_ENVELOPE),
-            update_of(INVENTORY_COUNTS)
+            update_of(INVENTORY_COUNTS),
+            update_of(EXPERIMENTAL)
         )
     }
 }
 
-/// An agents row with its snapshot, git and native columns still encoded.
-type RawAgent = (AgentRow, Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
+/// An agents row with its snapshot, git, native and experimental columns
+/// still encoded.
+type RawAgent = (
+    AgentRow,
+    Option<Vec<u8>>,
+    Option<Vec<u8>>,
+    Option<Vec<u8>>,
+    Option<Vec<u8>>,
+);
+
+/// The `experimental` column: a protobuf message whose one field is the
+/// row's map, `map<string, bytes> entries = 1`. A map field encodes each
+/// entry as the same key-and-value pair whichever message holds it, so the
+/// column holds the entries exactly as `Agent.experimental` carries them on
+/// the wire, any later build reads it knowing no experiment, and `protoc
+/// --decode_raw` shows it. A row with no entries holds NULL, as every row
+/// written before the column does.
+#[derive(Clone, PartialEq, prost::Message)]
+struct ExperimentalColumn {
+    #[prost(btree_map = "string, bytes", tag = "1")]
+    entries: std::collections::BTreeMap<String, Vec<u8>>,
+}
+
+/// The column's value for a row's map.
+pub(crate) fn encode_experimental(
+    map: &std::collections::BTreeMap<String, Vec<u8>>,
+) -> Option<Vec<u8>> {
+    (!map.is_empty()).then(|| {
+        ExperimentalColumn {
+            entries: map.clone(),
+        }
+        .encode_to_vec()
+    })
+}
+
+/// The row's map from its column's value.
+pub(crate) fn decode_experimental(
+    column: Option<&[u8]>,
+) -> Result<std::collections::BTreeMap<String, Vec<u8>>, prost::DecodeError> {
+    match column {
+        None => Ok(Default::default()),
+        Some(bytes) => Ok(ExperimentalColumn::decode(bytes)?.entries),
+    }
+}
 
 fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
     let parent_host: Option<Vec<u8>> = row.get(5)?;
@@ -207,15 +258,19 @@ fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
             name_given: row.get(29)?,
             last_said: row.get(30)?,
             native: None,
+            experimental: Default::default(),
         },
         row.get(14)?,
         row.get(13)?,
         row.get(31)?,
+        row.get(32)?,
     ))
 }
 
 /// Decodes the message columns `agent_row` leaves as bytes.
-fn finish_agent((mut row, snapshot, git, native): RawAgent) -> Result<AgentRow, StoreError> {
+fn finish_agent(
+    (mut row, snapshot, git, native, experimental): RawAgent,
+) -> Result<AgentRow, StoreError> {
     let corrupt = |error: prost::DecodeError| StoreError::Corrupt(error.to_string());
     row.snapshot = snapshot
         .map(|bytes| Snapshot::decode(bytes.as_slice()))
@@ -229,6 +284,7 @@ fn finish_agent((mut row, snapshot, git, native): RawAgent) -> Result<AgentRow, 
         .map(|bytes| wire::NativeChild::decode(bytes.as_slice()))
         .transpose()
         .map_err(corrupt)?;
+    row.experimental = decode_experimental(experimental.as_deref()).map_err(corrupt)?;
     Ok(row)
 }
 
@@ -299,6 +355,9 @@ fn signed(value: u64) -> i64 {
 pub(crate) struct Rows<'a> {
     pub(crate) conn: &'a Connection,
     pub(crate) own_host: &'a [u8],
+    /// The `suspension/1` experiment's table is there: a row removed takes
+    /// its run with it.
+    pub(crate) suspension_1: bool,
 }
 
 impl Rows<'_> {
@@ -375,7 +434,7 @@ impl Rows<'_> {
             .prepare_cached(&format!(
                 "INSERT INTO agents ({AGENT_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, \
                  ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, \
-                 ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
+                 ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
             ))?
             .execute(params![
                 row.agent.host,
@@ -412,6 +471,7 @@ impl Rows<'_> {
                 row.name_given,
                 row.last_said,
                 row.native.as_ref().map(|native| native.encode_to_vec()),
+                encode_experimental(&row.experimental),
             ])?;
         Ok(())
     }
@@ -470,7 +530,46 @@ impl Rows<'_> {
             "DELETE FROM deliveries WHERE child_id = ?1",
             params![agent.agent],
         )?;
+        if self.suspension_1 && self.is_own(agent) {
+            self.put_run_start(&agent.agent, None)?;
+        }
         self.remove_notifications(&agent.agent)
+    }
+
+    /// The incarnation an own agent's current run began at, from the
+    /// `suspension/1` table.
+    pub(crate) fn run_start(&self, agent: &[u8]) -> Result<Option<u32>, StoreError> {
+        Ok(self
+            .conn
+            .prepare_cached(&format!(
+                "SELECT incarnation FROM {SUSPENSION_1_RUNS} WHERE agent_id = ?1"
+            ))?
+            .query_row(params![agent], |row| row.get::<_, u32>(0))
+            .optional()?)
+    }
+
+    /// Writes an own agent's `suspension/1` run, or removes it.
+    pub(crate) fn put_run_start(
+        &self,
+        agent: &[u8],
+        incarnation: Option<u32>,
+    ) -> Result<(), StoreError> {
+        match incarnation {
+            Some(incarnation) => self
+                .conn
+                .prepare_cached(&format!(
+                    "INSERT INTO {SUSPENSION_1_RUNS} (agent_id, incarnation) VALUES (?1, ?2) \
+                     ON CONFLICT (agent_id) DO UPDATE SET incarnation = excluded.incarnation"
+                ))?
+                .execute(params![agent, incarnation])?,
+            None => self
+                .conn
+                .prepare_cached(&format!(
+                    "DELETE FROM {SUSPENSION_1_RUNS} WHERE agent_id = ?1"
+                ))?
+                .execute(params![agent])?,
+        };
+        Ok(())
     }
 
     fn items_where(

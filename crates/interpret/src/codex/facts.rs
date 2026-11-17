@@ -816,6 +816,24 @@ impl State {
         }
     }
 
+    /// Another thread on the server ran or stopped: a subagent, or a thread
+    /// nothing here can place, which counts as running too, so suspension
+    /// never ends it.
+    fn other_thread(&mut self, thread: &str, notification: &ServerNotification) {
+        let running = match notification {
+            ServerNotification::ThreadStatusChanged(changed) => changed
+                .status
+                .as_ref()
+                .map(|status| status.kind == "active"),
+            ServerNotification::TurnStarted(_) => Some(true),
+            ServerNotification::TurnCompleted(_) => Some(false),
+            _ => None,
+        };
+        if let Some(running) = running {
+            self.threads.insert(thread.to_owned(), running);
+        }
+    }
+
     /// `/clear`'s thread: from now on it is this agent's conversation.
     /// The old thread's turn state and jobs stay with it.
     fn cleared(&mut self, emit: &mut Emit, response: &ThreadResponse) {
@@ -1639,6 +1657,7 @@ impl State {
             && ours != theirs
         {
             let theirs = theirs.to_owned();
+            self.other_thread(&theirs, &notification);
             return self.child_notification(emit, &theirs, notification);
         }
         match notification {
@@ -2086,6 +2105,15 @@ impl State {
         completed: bool,
     ) {
         let id = item.id().to_owned();
+        // A subagent runs from its spawn until its own thread says it is
+        // idle; a thread already seen to end stays ended.
+        if let ThreadItem::CollabAgentToolCall(call) = item
+            && call.tool == codex_protocol::items::CollabAgentTool::SpawnAgent
+        {
+            for thread in &call.receiver_thread_ids {
+                self.threads.entry(thread.clone()).or_insert(true);
+            }
+        }
         match item {
             ThreadItem::UserMessage(message) => {
                 if completed {
@@ -2960,6 +2988,8 @@ impl State {
 
     pub(super) fn exited(&mut self, emit: &mut Emit, exit: wire::IncarnationEnd) {
         emit.end_incarnation(exit.clone());
+        // Before its subagents end: one still running is work cut off.
+        self.shared.provider_exited_as(&exit);
         // The subagents went with the process that ran them.
         self.end_children(emit, &exit);
         self.idle_compaction = None;
@@ -2985,7 +3015,7 @@ impl State {
             }
         }
         self.background = None;
-        self.shared.provider_exited();
+        self.threads.clear();
         self.active_turn = None;
         self.interrupt_pending = false;
         self.boundary(emit, wire::BoundaryKind::Exited, exit);

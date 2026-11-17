@@ -57,5 +57,6 @@ allow-wildcard-paths = true
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-# The rustls patch in the root Cargo.toml.
-allow-git = ["https://github.com/amuxhq/rustls"]
+# The rustls patch in the root Cargo.toml, and wt's library for the
+# workspaces experiment until wt publishes the release it needs.
+allow-git = ["https://github.com/amuxhq/rustls", "https://github.com/jordanwebster/wt"]

@@ -7,7 +7,7 @@ a change keeps them:
 - **The protocol.** `amux.v1` only adds, as `proto/amux/v1/README.md` says
   (reserve a retired number; never renumber, retype or rename), which
   `just proto-compat` checks. `docs/WIRE.md` has the steps for a new field.
-  `amux.dump` is exempt.
+  `amux.dump` and `amux.experimental` are exempt.
 - **The store.** It changes by appending a migration that only adds; a
   released migration is never edited. `just store-check` checks both, and
   `docs/JOURNAL_AND_STORE.md` has the steps.
@@ -28,6 +28,16 @@ a change keeps them:
   long after the build that wrote the call. The command-line test in
   `crates/amux/src/main.rs` parses each one. Commands a person types change
   freely.
+
+**Experiments are exempt.** An experiment is switched on per installation and
+lives in `amux.experimental`, in the entries of `experimental` maps, in store
+tables named `exp_*` and under `[experiments.<name>]` in the config. None of
+that is promised: it may change or go in any release, and its data may be
+dropped on upgrade. What switches experiments on (`experiments.enabled` and
+the settings fields), and each `experimental` map itself, is promised like
+everything else. An experiment must not keep anything it can't afford to lose
+in those places; what must survive lives in a promised place or with the thing
+it describes. The registry is `crates/settings/src/experiments.rs`.
 
 Nothing else is promised. Crate APIs, internals and test formats change
 freely, and nothing gets a shim for a shape no release shipped. A change that

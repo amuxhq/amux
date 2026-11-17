@@ -46,7 +46,7 @@ use serde::de::DeserializeOwned;
 pub use serde_pb::{from_hex, to_hex};
 pub use shared::{
     AMUX_TOOL_SERVER, Asks, Emit, ItemDraft, OUTPUT_CAP, OpenAsk, OpenTurn, Output, Queue,
-    SEND_TOOL, STATUS_TOOL, SendOutcome, Shared, TurnCounter, agent_message_body,
+    SEND_TOOL, STATUS_TOOL, SendOutcome, Shared, TurnCounter, Wakeup, agent_message_body,
     agent_message_key, human, is_attach_tool, is_send_tool, is_status_tool, output_cut,
     sent_message, status_working_on, without_terminal_codes,
 };
@@ -89,6 +89,9 @@ pub trait Interpreter {
     /// nothing is queued, so a one-shot agent waits for it too.
     fn typed_unrecorded(state: &Self::State) -> bool;
 
+    /// What the provider process holds that ending it now would lose or
+    /// cut short: an agent suspends only while it holds nothing.
+    fn holds(state: &Self::State) -> Holds;
     /// When the interpreter next wants a [`Event::Tick`] that no other
     /// event would bring: the agent process arms a timer for it and feeds
     /// the tick when it fires. None asks for nothing.
@@ -141,6 +144,34 @@ pub trait Interpreter {
             "{:?} has no reader for recordings in format {format:?}",
             Self::KIND
         ))
+    }
+}
+
+/// What a provider process holds that ending it would lose or cut short,
+/// as its interpreter last tracked it: what keeps an idle agent from
+/// suspending.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Holds {
+    /// Jobs it runs in the background, which a kill would end or orphan.
+    pub background_jobs: usize,
+    /// Subagents it runs as threads of its own (Codex's), which a kill
+    /// would end.
+    pub subagents: usize,
+    /// A background job ended between turns, and the provider reports it
+    /// in a turn of its own that has not started yet.
+    pub turn_owed: bool,
+    /// Wake-ups it scheduled and has not run, which live only in the
+    /// process.
+    pub wakeups: usize,
+    /// amux granted it something for the rest of its session, which no
+    /// resume restores.
+    pub session_grant: bool,
+}
+
+impl Holds {
+    /// Nothing that ending the process would lose or cut short.
+    pub fn nothing(&self) -> bool {
+        *self == Holds::default()
     }
 }
 
@@ -211,8 +242,8 @@ pub fn provider_exit(code: Option<i32>) -> wire::IncarnationEnd {
     wire::IncarnationEnd {
         cause: wire::ExitCause::ProviderExited as i32,
         detail: Some(match code {
-            Some(code) => format!("exit code {code}"),
-            None => "killed by a signal".to_owned(),
+            Some(code) => format!("{}{code}", wire::PROVIDER_EXIT_CODE),
+            None => wire::PROVIDER_SIGNALLED.to_owned(),
         }),
     }
 }

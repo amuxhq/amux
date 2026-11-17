@@ -144,7 +144,9 @@ pub enum ClientRequest {
         request: Box<PeerRequest>,
     },
     /// Creates one of this host's agents and starts its process; answered
-    /// with its row once the process said Hello, or ended.
+    /// with its row once the process said Hello, or ended. With the
+    /// workspaces experiment, one in a new workspace is answered as soon as
+    /// its row is written, its workspace still being made.
     CreateAgent(Box<Create>),
     /// Starts an exited agent's next incarnation; answered as a create is.
     ResumeAgent(Box<Resume>),
@@ -160,9 +162,12 @@ pub enum ClientRequest {
         agent: AgentId,
     },
     /// Stops the agent and removes its rows and its directory; answered
-    /// with nothing.
+    /// with nothing. `discard`: the person agreed to lose the uncommitted
+    /// changes of a workspace the delete removes.
     DeleteAgent {
         agent: AgentId,
+        #[serde(default)]
+        discard: bool,
     },
     /// Renames the agent; answered with its row.
     RenameAgent {
@@ -491,4 +496,6 @@ pub enum JobResult {
     CompareFailed(GitRefusal),
     /// The next spec a resume starts from; none when the agent has none.
     Spec(#[serde(with = "codec::optional_boxed")] Option<Box<wire::AgentSpec>>),
+    /// What a workspace job came to.
+    Workspace(crate::workspaces::WorkspaceDone),
 }

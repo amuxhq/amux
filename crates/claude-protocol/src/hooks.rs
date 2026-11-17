@@ -304,6 +304,29 @@ pub struct Stop {
     /// The jobs still running in the background.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_tasks: Option<Vec<BackgroundTask>>,
+    /// The wake-ups the session has scheduled and not yet run (ScheduleWakeup,
+    /// `/loop`, CronCreate), as they stand at the turn's end: empty when
+    /// there are none. They live only in the process.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_crons: Option<Vec<SessionCron>>,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
+/// A wake-up the session has scheduled.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionCron {
+    #[serde(default = "crate::absent::id")]
+    pub id: String,
+    /// When it fires, as a cron expression.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<String>,
+    /// It fires again after each run until it is deleted.
+    #[serde(default)]
+    pub recurring: bool,
+    /// What it prompts Claude with when it fires.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

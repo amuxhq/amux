@@ -12,11 +12,17 @@ use crate::{ExitCause, Notice, ask_notice, blocked_notice, notice};
 
 impl ExitCause {
     /// Whether the agent ended in a way nobody meant. A cause this build
-    /// doesn't know is not failure.
+    /// doesn't know is not failure, and neither is a suspension, which the
+    /// agent chose and the next message undoes.
     pub fn failed(cause: i32) -> bool {
         !matches!(
             Self::try_from(cause).unwrap_or_default(),
-            Self::Unspecified | Self::Finished | Self::Stopped | Self::Killed | Self::Quit
+            Self::Unspecified
+                | Self::Finished
+                | Self::Stopped
+                | Self::Killed
+                | Self::Quit
+                | Self::Suspended
         )
     }
 }
@@ -133,5 +139,39 @@ impl Said {
                 detail: died.detail,
             },
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::ExitCause;
+
+    /// An end someone meant, a suspension and a cause this build does not
+    /// know are no failure: nothing pushes "died" for them, and clients
+    /// draw them as ended.
+    #[test]
+    fn only_an_end_nobody_meant_is_a_failure() {
+        for cause in [
+            ExitCause::Unspecified,
+            ExitCause::Finished,
+            ExitCause::Stopped,
+            ExitCause::Killed,
+            ExitCause::Quit,
+            ExitCause::Suspended,
+        ] {
+            assert!(!ExitCause::failed(cause as i32), "{cause:?}");
+        }
+        assert!(!ExitCause::failed(9_999));
+        for cause in [
+            ExitCause::ProviderExited,
+            ExitCause::DaemonLost,
+            ExitCause::Orphaned,
+            ExitCause::CouldNotStart,
+            ExitCause::DirectoryFailed,
+            ExitCause::EndedWhileAway,
+            ExitCause::EndedUnexpectedly,
+        ] {
+            assert!(ExitCause::failed(cause as i32), "{cause:?}");
+        }
     }
 }

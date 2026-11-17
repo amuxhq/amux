@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package amux.experimental;
+
+// The workspaces experiment, at version workspaces/1.
+//
+// amux.experimental holds the shapes of experiments: features shipped while
+// their shape still moves. It sits outside the buf module, so it keeps none
+// of amux.v1's promises: a message here may change or go in any release.
+// Its values travel as bytes in the `experimental` maps of amux.v1 messages,
+// keyed by the version that wrote them, so a build reads only the shape its
+// own version knows. A change a build at the same version could misread
+// moves the experiment to its next version, under a key of its own.
+
+// The workspace an agent runs in, as `Agent.experimental["workspaces/1"]`
+// carries it.
+message AgentWorkspace {
+  WorkspaceKind kind = 1;
+  // Which workspace it is within its kind: for every local kind, the
+  // workspace's root, a canonical path on the agent's host.
+  string id = 2;
+  // The agent's host made this workspace, so it may start, stop and remove
+  // it. Any other is hand-made to that host, and gets only its environment.
+  bool made_by_amux = 3;
+  // Still being made: the row exists and the workspace does not yet.
+  bool creating = 4;
+  // What went wrong with it, shown on the agent: a hook that failed or an
+  // environment that did not load. Absent when nothing did.
+  optional string problem = 5;
+}
+
+enum WorkspaceKind {
+  WORKSPACE_KIND_UNSPECIFIED = 0;
+  // A plain folder, rooted at the agent's folder.
+  WORKSPACE_KIND_FOLDER = 1;
+  // A git worktree made without wt.
+  WORKSPACE_KIND_GIT = 2;
+  // A wt tree.
+  WORKSPACE_KIND_WT = 3;
+}

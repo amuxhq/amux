@@ -38,6 +38,7 @@ pub fn definitions() -> Map<String, Value> {
     roots!(
         ui_state::AgentKey,
         ui_state::Attention,
+        ui_state::DeleteWarning,
         ui_state::BlobStatus,
         ui_state::Connection,
         ui_state::Composer,

@@ -184,6 +184,12 @@ message Agent {
   // agent whose process runs it, and it takes no messages. Absent on every
   // agent amux started itself.
   optional NativeChild native = 22;
+  // What experiments say about the agent, each entry keyed by an
+  // experiment's version (e.g. "workspaces/1") and holding an encoded
+  // amux.experimental message. A build reads and writes only the entries of
+  // the versions it implements and has on, and ignores every other key.
+  // The map is promised; its entries are not. Empty outside experiments.
+  map<string, bytes> experimental = 1000;
 }
 
 // What marks a provider subagent's row.

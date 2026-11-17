@@ -83,6 +83,9 @@ impl From<ConfigError> for SettingsError {
         match error {
             ConfigError::Io(error) => SettingsError::Io(error),
             ConfigError::Invalid(reason) => SettingsError::Invalid(reason),
+            // The file holds a value where the change needs a table: the
+            // request cannot be made until a person changes the file.
+            error @ ConfigError::InTheWay { .. } => SettingsError::Invalid(error.to_string()),
         }
     }
 }
@@ -185,15 +188,19 @@ impl HostSettings {
         &self,
         request: &UpdateSettingsRequest,
     ) -> Result<InstallationConfig, SettingsError> {
-        let changes = changes(request, self.home())?;
-        self.write(&changes, |held| {
-            if let (Some(on), Some(login)) = (request.start_at_login, &self.login)
-                && (on != held.start_at_login || on != login.is_on())
-            {
-                login.set(on)?;
-            }
-            Ok(())
-        })
+        // From the file as it is when written, not as last polled: a list
+        // that keeps names this build does not know keeps the file's.
+        self.write(
+            |fresh| changes(request, self.home(), fresh),
+            |held| {
+                if let (Some(on), Some(login)) = (request.start_at_login, &self.login)
+                    && (on != held.start_at_login || on != login.is_on())
+                {
+                    login.set(on)?;
+                }
+                Ok(())
+            },
+        )
     }
 
     /// Keeps a person's pick as what later agents of its kind start with.
@@ -235,27 +242,37 @@ impl HostSettings {
         if changes.is_empty() {
             return Ok(None);
         }
-        self.write(&changes, |_| Ok(())).map(Some)
+        self.write(|_| Ok(changes), |_| Ok(())).map(Some)
     }
 
-    /// Puts `changes` in the file (or in memory) and answers the settings
-    /// they leave. `before` runs once they are known to be valid, before
-    /// anything is written, and may refuse them.
+    /// Puts the changes `changes_of` makes of the settings as they are now
+    /// in the file (or in memory) and answers the settings they leave.
+    /// `before` runs once they are known to be valid, before anything is
+    /// written, and may refuse them.
     fn write(
         &self,
-        changes: &[Change],
+        changes_of: impl FnOnce(&InstallationConfig) -> Result<Vec<Change<'static>>, SettingsError>,
         before: impl FnOnce(&InstallationConfig) -> Result<(), SettingsError>,
     ) -> Result<InstallationConfig, SettingsError> {
         let mut held = self.held.lock().unwrap();
-        // A change made beside the daemon since it last looked is kept.
-        if let Some(path) = &self.file {
-            held.text = match std::fs::read_to_string(path) {
-                Ok(text) => text,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-                Err(error) => return Err(error.into()),
-            };
-        }
-        let (text, edited) = settings::edit::edit(&held.text, changes)?;
+        // A change made beside the daemon since it last looked is kept, and
+        // the changes are made of the file as it reads now, under the lock:
+        // what the last poll saw may be up to its interval old.
+        let fresh = match &self.file {
+            Some(path) => {
+                held.text = match std::fs::read_to_string(path) {
+                    Ok(text) => text,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+                    Err(error) => return Err(error.into()),
+                };
+                // One that no longer reads is the edit's to refuse, unless
+                // the change mends it; the last good settings stand in.
+                read(&held.text, path).unwrap_or_else(|_| held.config.clone())
+            }
+            None => held.config.clone(),
+        };
+        let changes = changes_of(&fresh)?;
+        let (text, edited) = settings::edit::edit(&held.text, &changes)?;
         let config = match &self.file {
             Some(path) => read(&text, path)?,
             None => InstallationConfig {
@@ -303,13 +320,23 @@ pub(crate) fn to_wire(
         } as i32,
         telemetry: config.telemetry,
         auto_reports: config.auto_reports,
+        experiments: settings::experiments::EXPERIMENTS
+            .iter()
+            .map(|experiment| wire::Experiment {
+                name: experiment.name.to_owned(),
+                version: experiment.version.to_owned(),
+                description: experiment.description.to_owned(),
+                enabled: config.experiments.is_on(experiment),
+            })
+            .collect(),
     }
 }
 
-/// The file's keys a request changes.
+/// The file's keys a request changes, from the settings it changes.
 fn changes(
     request: &UpdateSettingsRequest,
     home: Option<&Path>,
+    current: &InstallationConfig,
 ) -> Result<Vec<Change<'static>>, SettingsError> {
     let mut changes: Vec<Change> = Vec::new();
     if let Some(name) = &request.host_name {
@@ -360,7 +387,42 @@ fn changes(
     if let Some(on) = request.auto_reports {
         changes.push(("auto_reports", Some(on.into())));
     }
+    if let Some(list) = &request.experiments {
+        changes.push((
+            "experiments.enabled",
+            Some(experiments(list, current)?.into()),
+        ));
+    }
     Ok(changes)
+}
+
+/// The names `experiments.enabled` takes for a list a client sent: each
+/// one this build implements, in the order sent, and after them the names
+/// the file held that this build does not know, which no client here can
+/// see to keep.
+fn experiments(
+    list: &wire::ExperimentList,
+    current: &InstallationConfig,
+) -> Result<toml_edit::Array, SettingsError> {
+    let mut names = toml_edit::Array::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for name in &list.names {
+        let name = name.trim();
+        if settings::experiments::named(name).is_none() {
+            return Err(SettingsError::Invalid(format!(
+                "this amux has no experiment named {name:?}"
+            )));
+        }
+        if seen.insert(name.to_owned()) {
+            names.push(name);
+        }
+    }
+    for name in current.experiments.unknown_names() {
+        if seen.insert(name.to_owned()) {
+            names.push(name);
+        }
+    }
+    Ok(names)
 }
 
 /// A repository as the file keeps it: absolute, and canonical where it
@@ -526,6 +588,142 @@ mod tests {
             },
         ] {
             assert!(settings.update(&refused).is_err(), "{refused:?}");
+        }
+    }
+
+    /// Switching an experiment writes `experiments.enabled` and keeps the
+    /// rest of the file, comments, another build's experiment and an
+    /// experiment's own table among it; the daemon runs what the file said
+    /// when it started, so the settings answer the switch, not what runs.
+    #[test]
+    fn switching_an_experiment_writes_the_names_and_keeps_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let text = "# mine\ntelemetry = false\n\n\
+                    [experiments]\n# what I try\nenabled = [\"teleport\"]\n\n\
+                    [experiments.suspension]\nafter = \"5m\" # quick\n";
+        std::fs::write(&path, text).unwrap();
+        let settings = HostSettings::new(SettingsOptions {
+            file: Some(path.clone()),
+            initial: InstallationConfig::from_file(&path).unwrap(),
+            login: None,
+            home: None,
+        });
+        let wire = to_wire(&settings.current(), "desk", false);
+        let listed: Vec<(&str, &str, bool)> = wire
+            .experiments
+            .iter()
+            .map(|experiment| {
+                (
+                    experiment.name.as_str(),
+                    experiment.version.as_str(),
+                    experiment.enabled,
+                )
+            })
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                ("workspaces", "workspaces/1", false),
+                ("suspension", "suspension/1", false)
+            ]
+        );
+        assert!(wire.experiments.iter().all(|e| !e.description.is_empty()));
+
+        let switch = |names: &[&str]| UpdateSettingsRequest {
+            experiments: Some(wire::ExperimentList {
+                names: names.iter().map(|name| (*name).to_owned()).collect(),
+            }),
+            ..request()
+        };
+        let config = settings
+            .update(&switch(&["suspension", "workspaces", "suspension"]))
+            .unwrap();
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            written.starts_with("# mine\ntelemetry = false\n"),
+            "{written}"
+        );
+        assert!(written.contains("# what I try\n"), "{written}");
+        assert!(written.contains("after = \"5m\" # quick"), "{written}");
+        assert!(
+            written.contains("enabled = [\"suspension\", \"workspaces\", \"teleport\"]"),
+            "{written}"
+        );
+        let read = InstallationConfig::from_file(&path).unwrap();
+        assert_eq!(read.experiments, config.experiments);
+        assert_eq!(
+            read.experiments.enabled().versions(),
+            ["workspaces/1", "suspension/1"]
+        );
+        assert!(
+            to_wire(&config, "desk", false)
+                .experiments
+                .iter()
+                .all(|experiment| experiment.enabled)
+        );
+
+        // Off again; the name this build does not know stays.
+        let config = settings.update(&switch(&[])).unwrap();
+        assert_eq!(config.experiments.enabled, ["teleport"]);
+        // Absent leaves the list alone.
+        let config = settings
+            .update(&UpdateSettingsRequest {
+                telemetry: Some(true),
+                ..request()
+            })
+            .unwrap();
+        assert_eq!(config.experiments.enabled, ["teleport"]);
+        let refused = settings.update(&switch(&["teleport"]));
+        assert!(
+            matches!(refused, Err(SettingsError::Invalid(_))),
+            "{refused:?}"
+        );
+    }
+
+    /// A hand edit lands between the daemon's last read and a client's
+    /// switch, before the next poll would see it: the names the switch
+    /// keeps are the file's as it is now, so the edit's unknown name stays
+    /// and the one it removed does not come back.
+    #[test]
+    fn a_switch_keeps_the_unknown_names_the_file_has_now() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "[experiments]\nenabled = [\"teleport\"]\n").unwrap();
+        let settings = HostSettings::new(SettingsOptions {
+            file: Some(path.clone()),
+            initial: InstallationConfig::from_file(&path).unwrap(),
+            login: None,
+            home: None,
+        });
+        std::fs::write(&path, "[experiments]\nenabled = [\"warp\"]\n").unwrap();
+        let config = settings
+            .update(&UpdateSettingsRequest {
+                experiments: Some(wire::ExperimentList {
+                    names: vec!["suspension".to_owned()],
+                }),
+                ..request()
+            })
+            .unwrap();
+        assert_eq!(config.experiments.enabled, ["suspension", "warp"]);
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("enabled = [\"suspension\", \"warp\"]")
+        );
+    }
+
+    /// The store keeps tables by version and knows no registry; each
+    /// version it declares tables for is one this build implements, with
+    /// the prefix the registry gives it.
+    #[test]
+    fn every_experiments_store_tables_belong_to_a_registered_version() {
+        for tables in store::experiments::EXPERIMENT_TABLES {
+            let experiment = settings::experiments::EXPERIMENTS
+                .iter()
+                .find(|experiment| experiment.version == tables.version)
+                .unwrap_or_else(|| panic!("{} is in no registry entry", tables.version));
+            assert_eq!(experiment.table_prefix(), tables.prefix());
         }
     }
 

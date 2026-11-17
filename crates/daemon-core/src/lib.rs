@@ -45,11 +45,14 @@ pub mod serve;
 pub mod sources;
 pub mod subagents;
 pub mod trust;
+pub mod workspaces;
 
 pub use blobs::Blobs;
 pub use checkpoints::Checkpoints;
 pub use deliveries::{Deliveries, DrainReport, delivery_envelope_id};
-pub use families::{Create, Ended, FamilyState, Filing, Refusal, Resume};
+pub use families::{
+    CAUSELESS_GRACE_MS, CONTINUE_AFTER_RESTART, Create, Ended, FamilyState, Filing, Refusal, Resume,
+};
 pub use fingerprint::Fingerprint;
 pub use ids::{
     AccountId, AgentId, AttemptId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId,
@@ -92,6 +95,8 @@ pub struct Daemon {
     notifications: Notifications,
     blobs: Blobs,
     deliveries: Deliveries,
+    /// The workspaces experiment's lifecycle, idle when it is off.
+    workspaces: workspaces::WorkspaceState,
     timers: Timers,
     pending: Pending,
     settings: Settings,
@@ -121,6 +126,21 @@ pub struct StartOptions {
     pub replicas: PathBuf,
     /// How long one step may take before it is reported with a dump.
     pub budget: StepBudget,
+    /// The daemon runs the workspaces experiment (`workspaces/1`), switched
+    /// on as it started: each own agent is a member of the workspace its
+    /// folder is in, and a create in a new workspace writes its row first.
+    pub workspaces: bool,
+    /// The daemon runs the suspension experiment (`suspension/1`): an own
+    /// agent's run is kept across the resumes that continue it, an end its
+    /// journal gives no cause for is recorded only after a grace, and after
+    /// a restart of the machine each agent found gone is suspended or
+    /// continued. Rows already suspended are handled with it off too.
+    #[serde(default)]
+    pub suspension: bool,
+    /// The machine has booted since the daemon before this one started: an
+    /// agent this start finds gone ended with the machine, not by a fault.
+    #[serde(default)]
+    pub rebooted: bool,
 }
 
 impl Daemon {
@@ -144,6 +164,7 @@ impl Daemon {
             notifications: Notifications::default(),
             blobs: Blobs::default(),
             deliveries: Deliveries::default(),
+            workspaces: workspaces::WorkspaceState::default(),
             timers: Timers::default(),
             pending: Pending::default(),
             settings: Settings::default(),
@@ -210,9 +231,15 @@ impl Daemon {
                 self.checkpoint_done(result, out)
             }
             Input::JobDone { job, result } => {
-                if !self.push_done(job, &result, out) && !self.blob_done(job, &result, out) {
+                if !self.push_done(job, &result, out)
+                    && !self.blob_done(job, &result, out)
+                    && !self.workspace_job_done(job, &result, out)
+                {
                     self.registry_job(job, result, out);
                 }
+            }
+            Input::WorkspaceEnvironment { agent, problem } => {
+                self.workspace_environment(agent, problem.map_or(Ok(()), Err), out)
             }
             Input::Nudge { agent } => self.ingest(agent, out),
             Input::AgentHello { agent } => {
@@ -222,6 +249,7 @@ impl Daemon {
             Input::ControlClosed { agent, ended } => self.control_closed(agent, ended, out),
             Input::Adopted { agent } => self.adopted(agent, out),
             Input::Exiting { agent } => self.exiting(agent),
+            Input::Stopping => self.daemon_stopping(),
             Input::Retain(retain) => self.retain(retain, out),
             Input::Swept => {
                 self.swept(out);
@@ -240,7 +268,7 @@ impl Daemon {
                 id: TimerId::Lane(agent),
             } => self.lane_timer(agent, out),
             Input::Timer {
-                id: id @ (TimerId::Start(_) | TimerId::Exit(_)),
+                id: id @ (TimerId::Start(_) | TimerId::Exit(_) | TimerId::Grace(_)),
             } => self.registry_timer(id, out),
             Input::Timer {
                 id: TimerId::Ingest(agent),
@@ -462,6 +490,15 @@ impl Daemon {
                 ),
             });
         }
+        if let Some(broken) = &self.touched.workspace_broken {
+            return Err(Violation {
+                invariant: Check {
+                    id: broken.check.id,
+                    sentence: broken.check.sentence,
+                },
+                detail: broken.detail.clone(),
+            });
+        }
         if let Some(agent) = self.touched.after_end.first() {
             return Err(Violation {
                 invariant: SUBAGENT_AFTER_ITS_END,
@@ -511,7 +548,7 @@ impl Daemon {
             &self.checkpoints,
             &self.notifications,
             &self.blobs,
-            &self.deliveries,
+            (&self.deliveries, &self.workspaces),
             &self.timers,
             &self.pending,
             &self.settings,
@@ -539,7 +576,7 @@ impl Daemon {
             checkpoints,
             notifications,
             blobs,
-            deliveries,
+            (deliveries, workspaces),
             timers,
             pending,
             settings,
@@ -561,6 +598,7 @@ impl Daemon {
             notifications,
             blobs,
             deliveries,
+            workspaces,
             timers,
             pending,
             settings,
@@ -725,6 +763,9 @@ struct Touched {
     /// How long the step waited on the drive for a synced write, which its
     /// budget leaves out.
     synced_micros: u64,
+    /// The workspace core's own check that failed after an input the step
+    /// fed it.
+    workspace_broken: Option<workspace_core::Broken>,
 }
 
 impl Touched {
@@ -791,7 +832,7 @@ type Parts = (
     Checkpoints,
     Notifications,
     Blobs,
-    Deliveries,
+    (Deliveries, workspaces::WorkspaceState),
     Timers,
     Pending,
     Settings,

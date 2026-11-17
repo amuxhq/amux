@@ -1,0 +1,7 @@
+# A client's session state is read under a std mutex its own tasks take as
+# they apply events. Held across an await, it blocks the task that applies
+# the next one on a runtime worker, which can stall the runtime's timers, so
+# the await never ends.
+await-holding-invalid-types = [
+    { path = "ui_runtime::session::StateGuard", reason = "a std mutex the session's tasks take: let it go before awaiting" },
+]

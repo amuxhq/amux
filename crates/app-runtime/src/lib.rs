@@ -316,7 +316,7 @@ impl AppRuntime {
                 name: Some(agent.name.clone()).filter(|name| !name.is_empty()),
                 cwd: agent.cwd.clone(),
                 agent: config,
-                new_worktree: agent.new_worktree,
+                new_workspace: agent.new_worktree,
                 // A value is present here only because the person picked it.
                 remember_model: agent.model.is_some(),
                 remember_effort: agent.effort.is_some(),
@@ -376,6 +376,26 @@ impl AppRuntime {
         })
     }
 
+    /// What a delete's confirmation says of the workspace that goes with
+    /// the agent, once current: none when it stays. An agent with a running
+    /// process answers from its row; for one without, which cannot keep
+    /// its row's facts current, the host is asked what the workspace holds
+    /// against HEAD, and a failure answers `Unknown`. The confirmation says
+    /// it is checking until this answers, and its consent is the
+    /// [`ui_state::DeleteWarning::discards`] of what it drew.
+    pub async fn delete_warning(&self, agent: &AgentKey) -> Option<ui_state::DeleteWarning> {
+        let warning = self.fleet.state().delete_warning(agent)?;
+        if !matches!(warning, ui_state::DeleteWarning::Checking(_)) {
+            return Some(warning);
+        }
+        let head = wire::DiffBase {
+            base: Some(wire::diff_base::Base::Head(wire::Empty {})),
+        };
+        let compared =
+            ui_runtime::review::changed_files(self.client.as_ref(), &agent.agent, head).await;
+        Some(warning.answered(compared.as_ref()))
+    }
+
     /// Renames, files or deletes an agent.
     pub async fn agent_act(&self, agent: &AgentKey, act: &AgentAct) -> Result<(), RpcError> {
         let agent_id = agent.agent.clone();
@@ -395,9 +415,12 @@ impl AppRuntime {
             }
             AgentAct::Pin => self.fleet.file(agent, Filing::Pinned).await.map(drop),
             AgentAct::Unfile => self.fleet.file(agent, Filing::Open).await.map(drop),
-            AgentAct::Delete => self
+            AgentAct::Delete | AgentAct::DeleteDiscardingChanges => self
                 .client
-                .delete_agent(DeleteAgentRequest { agent_id })
+                .delete_agent(DeleteAgentRequest {
+                    agent_id,
+                    discard_workspace_changes: *act == AgentAct::DeleteDiscardingChanges,
+                })
                 .await
                 .map(drop),
         }

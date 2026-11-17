@@ -519,6 +519,17 @@ pub struct Shared<A: OpenAsk> {
     /// there stays for the next incarnation rather than going to a
     /// provider about to be closed.
     leaving: bool,
+    /// The provider ended with no turn under way, closed by a suspension or
+    /// gone of its own accord: the agent reads idle, not starting, until its
+    /// next incarnation. A restart of the machine that cut the provider off
+    /// reads it so, and suspends it rather than continuing a turn.
+    #[serde(default)]
+    ended_idle: bool,
+    /// What the provider process holds that ending it would lose: its
+    /// scheduled wake-ups, a grant for its session, and a turn it owes.
+    /// Absent from a checkpoint an earlier build wrote.
+    #[serde(default)]
+    held: Held,
     /// When the agent last finished a turn and went idle; None before its
     /// first, and while a turn runs. A checkpoint from before this field
     /// existed reads it as never.
@@ -539,6 +550,31 @@ pub struct Shared<A: OpenAsk> {
     subagents: BTreeMap<String, Native<A>>,
     /// What the checks after every step watch.
     watch: Watch,
+}
+
+/// What a provider process holds that a kill and resume would lose or cut
+/// short, beyond its background jobs. Each process starts holding nothing.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+struct Held {
+    /// A background job ended between turns, and the provider reports it
+    /// in a turn of its own that has not started yet.
+    turn_owed: bool,
+    /// The wake-ups it has scheduled and not yet run, by the provider's id
+    /// for each, or one amux gives it.
+    wakeups: BTreeMap<String, Wakeup>,
+    /// amux answered an ask with a grant that lasts for the provider's
+    /// session, which no resume restores.
+    session_grant: bool,
+}
+
+/// A wake-up a provider scheduled for itself.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Wakeup {
+    /// It runs again after each firing until it is cancelled.
+    pub recurring: bool,
+    /// When it fires next, as the provider said; none when it did not.
+    pub at_ms: Option<i64>,
 }
 
 impl<A: OpenAsk> Shared<A> {
@@ -577,6 +613,8 @@ impl<A: OpenAsk> Shared<A> {
             turn_on_reflection: false,
             stopping: false,
             leaving: false,
+            ended_idle: false,
+            held: Held::default(),
             idle_since_ms: None,
             housekeeping: false,
             housekept: false,
@@ -600,12 +638,15 @@ impl<A: OpenAsk> Shared<A> {
     pub fn reincarnate(&mut self, spec: &AgentSpec) {
         self.stopping = false;
         self.leaving = false;
+        self.ended_idle = false;
         // The row's word, which a rename while the agent was not running
         // has changed.
         self.title.clone_from(&spec.title);
         self.provider_titles = !spec.name_given;
-        // A new provider process runs nothing in the background yet.
+        // A new provider process runs nothing in the background yet, and
+        // holds nothing the last one did.
         self.set_jobs(Vec::new());
+        self.held = Held::default();
         // Nor any subagent of the last one. One that process never ended
         // takes the end of its incarnation, which the journal holds.
         self.subagents.clear();
@@ -803,7 +844,7 @@ impl<A: OpenAsk> Shared<A> {
     pub fn phase(&self) -> Phase {
         if !self.asks.is_empty() {
             Phase::NeedsYou
-        } else if !self.started {
+        } else if !self.started && !self.ended_idle {
             Phase::Starting
         } else if self.busy || self.housekeeping {
             Phase::Working
@@ -946,6 +987,56 @@ impl<A: OpenAsk> Shared<A> {
     /// interpreter has set them.
     pub fn jobs(&self) -> wire::BackgroundJobs {
         self.jobs.clone().unwrap_or_default()
+    }
+
+    // --- what the provider holds -------------------------------------------
+
+    /// What the provider process holds that ending it would lose or cut
+    /// short. Jobs not yet known count as none.
+    pub fn holds(&self) -> crate::Holds {
+        crate::Holds {
+            background_jobs: self.jobs.as_ref().map_or(0, |jobs| jobs.jobs.len()),
+            subagents: 0,
+            turn_owed: self.held.turn_owed,
+            wakeups: self.held.wakeups.len(),
+            session_grant: self.held.session_grant,
+        }
+    }
+
+    /// A background job ended while no turn ran, and the provider reports
+    /// its end in a turn it starts itself, as both Claudes do: until that
+    /// turn starts the agent is not idle. Nothing while a turn runs, which
+    /// takes the report into itself.
+    pub fn turn_owed(&mut self) {
+        if !self.busy {
+            self.held.turn_owed = true;
+        }
+    }
+
+    /// The provider scheduled a wake-up for itself, under `id`.
+    pub fn wakeup_scheduled(&mut self, id: String, wakeup: Wakeup) {
+        self.held.wakeups.insert(id, wakeup);
+    }
+
+    /// A wake-up ran for the last time or was cancelled.
+    pub fn wakeup_gone(&mut self, id: &str) {
+        self.held.wakeups.remove(id);
+    }
+
+    /// The provider said which wake-ups it has: they replace those known.
+    pub fn wakeups_listed(&mut self, wakeups: impl IntoIterator<Item = (String, Wakeup)>) {
+        self.held.wakeups = wakeups.into_iter().collect();
+    }
+
+    /// The wake-ups known to be pending, by id.
+    pub fn wakeups(&self) -> &BTreeMap<String, Wakeup> {
+        &self.held.wakeups
+    }
+
+    /// amux sent the provider a grant that lasts for its session: it is
+    /// held until the process ends.
+    pub fn granted_for_session(&mut self) {
+        self.held.session_grant = true;
     }
 
     // --- clock -----------------------------------------------------------
@@ -1175,6 +1266,8 @@ impl<A: OpenAsk> Shared<A> {
         self.submitted.push(input_id.to_vec());
         if !self.turn_on_reflection {
             self.busy = true;
+            // Any turn takes the report of a job that ended before it.
+            self.held.turn_owed = false;
             self.turn.begin(self.now_ms);
             // A turn that never reaches the model, as a local command's
             // doesn't, starts no provider turn to clear this.
@@ -1425,6 +1518,7 @@ impl<A: OpenAsk> Shared<A> {
     pub fn turn_started(&mut self) -> u64 {
         self.busy = true;
         self.trouble = None;
+        self.held.turn_owed = false;
         self.idle_since_ms = None;
         self.housekept = false;
         self.turn.begin(self.now_ms)
@@ -1502,6 +1596,23 @@ impl<A: OpenAsk> Shared<A> {
         self.turn.end();
     }
 
+    /// The provider is gone as the incarnation ends for `end`: as
+    /// [`Self::provider_exited`]. A suspension, or the provider's own end
+    /// once it had started with no turn under way and no provider subagent
+    /// running, leaves the agent idle rather than starting, so its row says
+    /// whether work was cut off. A subagent still running is the agent's
+    /// work under way, as it is to the one-shot rule and to suspension.
+    /// Called before the interpreter ends its subagents.
+    pub fn provider_exited_as(&mut self, end: &wire::IncarnationEnd) -> Option<OpenTurn> {
+        use wire::ExitCause;
+        let own =
+            end.cause == ExitCause::ProviderExited as i32 || end.cause == ExitCause::Quit as i32;
+        let idle = self.started && !self.busy && self.running_subagents().next().is_none();
+        let open = self.provider_exited();
+        self.ended_idle = end.cause == ExitCause::Suspended as i32 || own && idle && open.is_none();
+        open
+    }
+
     /// When housekeeping may start, `after_ms` past `from_ms` (the kind's
     /// own clock for it, such as its last request): the agent finished a
     /// turn and nothing has happened since, nobody waits on it, nothing is
@@ -1543,8 +1654,10 @@ impl<A: OpenAsk> Shared<A> {
         self.watch.exited = true;
         self.started = false;
         // A clean exit stops its jobs; a provider killed alone may orphan
-        // them, but nothing reports on them any more either way.
+        // them, but nothing reports on them any more either way. What else
+        // it held ends with it.
         self.set_jobs(Vec::new());
+        self.held = Held::default();
         self.busy = false;
         self.housekeeping = false;
         self.idle_since_ms = None;
@@ -2013,6 +2126,8 @@ fn ended_words(end: Option<&wire::IncarnationEnd>) -> String {
         Ok(ExitCause::CouldNotStart) => "could not start",
         Ok(ExitCause::DirectoryFailed) => "its directory failed",
         Ok(ExitCause::EndedUnexpectedly) => "ended unexpectedly",
+        // Only an agent without a parent suspends, so no parent reads this.
+        Ok(ExitCause::Suspended) => "suspended",
         Ok(ExitCause::Unspecified) | Err(_) => "ended",
     };
     match end

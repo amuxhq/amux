@@ -363,7 +363,13 @@ phase tells the two apart:
 - an agent the person closed was on its way out, and is marked exited as
   stopped;
 - an idle one, or one waiting on its children, is left suspended;
-- one in its turn is suspended and resumed at once with *"The machine
+- either way, a provider subagent its journal left running ends now, with
+  the cause it would have taken had the agent been marked exited (ended
+  while away, unless the journal said how the provider ended): it ran
+  inside the process the restart killed;
+- one in its turn, or with a provider subagent still running (its row
+  still live: the journal never ended it), is suspended and resumed at
+  once with *"The machine
   restarted while you were working; carry on where you left off."*, which
   continues its run (a wake, so a stop the person asked for while the
   journal was being read holds); the provider finds the cut-off turn in its own

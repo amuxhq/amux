@@ -1514,7 +1514,7 @@ impl Daemon {
         let gone = self.gone(&ended, &process, row.as_ref());
         let continued = matches!(gone, Gone::Continued);
         let marked = match gone {
-            Gone::Suspended | Gone::Continued => self.mark_suspended(agent, out),
+            Gone::Suspended | Gone::Continued => self.mark_suspended(agent, &ended, out),
             Gone::Stopped => self.mark_stopped(agent, out),
             Gone::Exited { fallback, if_live } => self.mark_exited(agent, fallback, if_live, out),
         };
@@ -1543,12 +1543,42 @@ impl Daemon {
 
     /// Leaves the gone process's row live with no process: cause suspended,
     /// phase idle, since a provider's exit can leave it starting, and
-    /// caught up, since nothing more comes until it is resumed.
-    fn mark_suspended(&mut self, agent: AgentId, out: &mut Vec<Output>) -> Result<(), StoreError> {
+    /// caught up, since nothing more comes until it is resumed. The
+    /// provider subagents its process ran and its journal never ended (a
+    /// reboot killed it first) end now, with the cause its row would have
+    /// taken without the experiment: none runs without its host's process.
+    fn mark_suspended(
+        &mut self,
+        agent: AgentId,
+        ended: &Ended,
+        out: &mut Vec<Output>,
+    ) -> Result<(), StoreError> {
         let key = self.own_key(agent);
         let Some(mut row) = self.store.agent(&key)? else {
             return Ok(());
         };
+        let own_cause = row.exit_cause != ExitCause::Unspecified as i32
+            && row.exit_cause != ExitCause::Suspended as i32;
+        let host_end = if own_cause {
+            wire::IncarnationEnd {
+                cause: row.exit_cause,
+                detail: row.exit_detail.clone(),
+            }
+        } else {
+            let cause = match ended {
+                Ended::Away => ExitCause::EndedWhileAway,
+                _ => ExitCause::EndedUnexpectedly,
+            };
+            wire::IncarnationEnd {
+                cause: cause as i32,
+                detail: None,
+            }
+        };
+        let subagents = self.subagents_ending_with(&key, &host_end)?;
+        if !subagents.is_empty() {
+            self.store.put_agents(&subagents)?;
+            self.subagents_ended_with_host(&key, &subagents, out)?;
+        }
         if row.phase != wire::Phase::Idle as i32 {
             self.store
                 .set_phase(&key, wire::Phase::Idle, self.timers.now_ms as i64)?;
@@ -1687,7 +1717,13 @@ impl Daemon {
             && let Some(row) = live
             && shutdown_like(row)
         {
-            return if row.phase == wire::Phase::Idle as i32 {
+            // A provider subagent still running is its work under way, as
+            // a turn is.
+            let runs_subagents = self.store.agents_of_parent(&row.agent).is_ok_and(|rows| {
+                rows.iter()
+                    .any(|sub| sub.native.is_some() && sub.lifecycle == Lifecycle::Live as i32)
+            });
+            return if row.phase == wire::Phase::Idle as i32 && !runs_subagents {
                 Gone::Suspended
             } else {
                 Gone::Continued
@@ -3587,6 +3623,70 @@ mod tests {
                 (exited, ExitCause::ProviderExited as i32)
             );
         }
+    }
+
+    /// A provider subagent runs inside its host's provider process, so it
+    /// ends with that process however the host's row is left: a reboot
+    /// that kills the host before its journal could say so leaves no
+    /// subagent live under a row with no process. One still running is
+    /// the host's work under way, so an idle host with one is continued
+    /// as one cut off in its turn; an idle host whose subagents had ended
+    /// is suspended, with its ended subagents as they were.
+    #[test]
+    fn after_a_reboot_a_hosts_live_provider_subagents_end_and_it_is_continued() {
+        const SUB: AgentId = AgentId(*b"sub-000000000000");
+        const DONE_SUB: AgentId = AgentId(*b"done-sub-0000000");
+        let mut rig = suspension_rig(true);
+        rig.left(PARENT, wire::Phase::Idle, ExitCause::Unspecified);
+        rig.left(OTHER, wire::Phase::Idle, ExitCause::Unspecified);
+        let subagent = |rig: &Rig, agent: AgentId, host: AgentId, live: bool| {
+            let mut row = AgentRow::new(rig.daemon.own_key(agent), wire::Kind::Codex, "/src");
+            row.parent = Some(rig.daemon.own_key(host));
+            row.native = Some(wire::NativeChild {
+                provider_child_id: format!("thread-{}", agent.0[0]),
+            });
+            row.phase = wire::Phase::Working as i32;
+            if !live {
+                row.lifecycle = Lifecycle::Exited as i32;
+                row.exit_cause = ExitCause::Finished as i32;
+            }
+            row
+        };
+        let rows = [
+            subagent(&rig, SUB, PARENT, true),
+            subagent(&rig, DONE_SUB, OTHER, false),
+        ];
+        rig.daemon.store.put_agents(&rows).unwrap();
+        let mut resumed = Vec::new();
+        for agent in [PARENT, OTHER] {
+            let out = rig.step(Input::ControlClosed {
+                agent,
+                ended: Ended::Away,
+            });
+            if job_of(&out).is_some() {
+                resumed.push(agent);
+            }
+        }
+        rig.step(Input::Swept);
+
+        assert_eq!(resumed, [PARENT], "its subagent's work was cut off");
+        let sub = rig.row(SUB).unwrap();
+        assert_eq!(
+            (sub.lifecycle, sub.exit_cause),
+            (Lifecycle::Exited as i32, ExitCause::EndedWhileAway as i32),
+            "the subagent ended with its host's process"
+        );
+        let other = rig.row(OTHER).unwrap();
+        assert_eq!(
+            (other.lifecycle, other.exit_cause),
+            (Lifecycle::Live as i32, ExitCause::Suspended as i32)
+        );
+        let done = rig.row(DONE_SUB).unwrap();
+        assert_eq!(
+            done.exit_cause,
+            ExitCause::Finished as i32,
+            "left as it was"
+        );
     }
 
     #[test]

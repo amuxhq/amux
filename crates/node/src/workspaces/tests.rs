@@ -46,7 +46,7 @@ struct Place {
 impl Place {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
+        let root = crate::plain_paths::canonical(dir.path()).unwrap();
         let repo = root.join("shop");
         std::fs::create_dir_all(&repo).unwrap();
         run_git(&repo, &["init", "-q", "-b", "main"]);

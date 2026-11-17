@@ -262,7 +262,7 @@ impl Maker for GitBackend {
                     continue;
                 };
                 if self.ours(Path::new(git_dir.trim()))
-                    && let Ok(canonical) = path.canonicalize()
+                    && let Ok(canonical) = crate::plain_paths::canonical(&path)
                 {
                     owned.push(Key {
                         kind: Kind::Git,
@@ -281,7 +281,7 @@ impl Holder for GitBackend {
         if !self.ours(&git_dir) {
             return None;
         }
-        let root = super::toplevel(folder)?.canonicalize().ok()?;
+        let root = crate::plain_paths::canonical(&super::toplevel(folder)?).ok()?;
         Some(Resolved {
             workspace: Key {
                 kind: Kind::Git,

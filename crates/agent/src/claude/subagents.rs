@@ -583,9 +583,15 @@ mod tests {
         assert_eq!(next_row(&mut events).await["uuid"], "r-DONE");
         let (_, drained) = next(&mut events).await;
         assert_eq!(drained["type"], "subagent_drained");
+        // The file system reports the row from a thread of its own, which
+        // the paused clock does not wait for: when the runtime idles first,
+        // the clock jumps to the follower's fallback poll, which reads the
+        // row instead. Either way the drain is reported before its wait is
+        // over.
         let waited = asked.elapsed();
         assert!(
-            waited < DRAIN_WAIT / 2,
+            waited <= Duration::from_millis(100) + crate::tail::FALLBACK_POLL
+                && waited < DRAIN_WAIT,
             "drained {waited:?} after it was asked"
         );
     }

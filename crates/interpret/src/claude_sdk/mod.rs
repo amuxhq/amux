@@ -1214,8 +1214,25 @@ impl Interpreter for ClaudeSdk {
         state.shared.pending_messages().iter().cloned().collect()
     }
 
+    /// An idle compaction falls due at a time its last tick may already
+    /// have passed, when the turn that left the agent idle ended long after
+    /// its last request: the next millisecond's tick starts it then.
     fn wake_at(state: &Self::State) -> Option<i64> {
-        state.idle_compact_at()
+        state
+            .idle_compact_at()
+            .map(|at| at.max(state.shared.now_ms().saturating_add(1)))
+    }
+
+    fn housekeeping(state: &Self::State) -> crate::Housekeeping {
+        if state.shared.is_housekeeping() {
+            crate::Housekeeping::Running
+        } else {
+            state
+                .idle_compact_at()
+                .map_or(crate::Housekeeping::Settled, |at_ms| {
+                    crate::Housekeeping::Due { at_ms }
+                })
+        }
     }
 
     fn typed_unrecorded(state: &Self::State) -> bool {

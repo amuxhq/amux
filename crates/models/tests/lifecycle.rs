@@ -25,6 +25,22 @@ fn every_lifecycle_promise_holds_for_an_agent_that_suspends_at_ci_bounds() {
     holds("suspending agent", &AgentLifecycle::suspending());
 }
 
+#[test]
+fn every_lifecycle_promise_holds_for_an_agent_that_housekeeps_before_its_suspension_is_due() {
+    holds(
+        "housekeeping early",
+        &AgentLifecycle::housekeeping(models::lifecycle::HOUSEKEEPS_EARLY_MS),
+    );
+}
+
+#[test]
+fn every_lifecycle_promise_holds_for_an_agent_that_housekeeps_after_its_suspension_would_be_due() {
+    holds(
+        "housekeeping late",
+        &AgentLifecycle::housekeeping(models::lifecycle::HOUSEKEEPS_LATE_MS),
+    );
+}
+
 /// The nightly bounds, run by hand or by the nightly recipe: twelve million
 /// states for the one-shot child, under a minute and a half on the enrolled
 /// Mac's cores.

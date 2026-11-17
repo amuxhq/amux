@@ -15,6 +15,11 @@
 //! open, `interrupt`; an answer allowing with a scope grants for the
 //! session. Bodies are the SDK's messages under the kind tag `test`.
 //!
+//! It housekeeps while idle as the providers' interpreters compact: after
+//! `housekeeping` (with `after`, in milliseconds), each idle stretch that
+//! lasts that long past its turn's end starts housekeeping once, writing
+//! `housekeep`, and the provider's `housekept` ends it.
+//!
 //! It also runs provider subagents, each named by the fact's `child`:
 //! `sub_start` (with the `call` that started it, its `title`, and `by`, the
 //! subagent that made the call when it is nested), `sub_text`/
@@ -55,6 +60,10 @@ pub struct State<const FORGET: bool> {
     /// it writes a `woke` item.
     #[serde(default)]
     wake: Option<i64>,
+    /// How long an idle stretch lasts before housekeeping starts in it, once
+    /// a `housekeeping` fact asked for it.
+    #[serde(default)]
+    housekeep_after: Option<i64>,
     /// This agent's id, which each subagent's id is derived from.
     #[serde(default)]
     host: Vec<u8>,
@@ -65,6 +74,13 @@ pub struct State<const FORGET: bool> {
 }
 
 impl<const FORGET: bool> State<FORGET> {
+    /// When this stretch's housekeeping starts, if it is still to come.
+    fn housekeeping_at(&self) -> Option<i64> {
+        let after = self.housekeep_after?;
+        let since = self.shared.idle_since_ms()?;
+        self.shared.idle_wake(since, after)
+    }
+
     fn body(&self) -> Vec<u8> {
         ClaudeSnapshot {
             asks: self.shared.asks().open_asks().to_vec(),
@@ -293,6 +309,8 @@ impl<const FORGET: bool> TestKind<FORGET> {
                 shared.turn_started();
             }
             "wakeup_cancelled" => shared.wakeup_gone(&id),
+            "housekeeping" => state.housekeep_after = value.get("after").and_then(Value::as_i64),
+            "housekept" => shared.housekeeping_ended(),
             "subagent_start" => {
                 let start = wire::NativeStart {
                     provider_child_id: text_of(&value, "agent"),
@@ -559,6 +577,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
             interrupted: false,
             jobs: BTreeSet::new(),
             wake: None,
+            housekeep_after: None,
             host: spec.agent_id.clone(),
             parts: Vec::new(),
         };
@@ -589,6 +608,10 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
                             ..Default::default()
                         },
                     );
+                }
+                if state.housekeeping_at().is_some_and(|at| at <= at_ms) {
+                    state.shared.housekeeping_started();
+                    emit.effect(Effect::ProviderWrite(br#"{"type":"housekeep"}"#.to_vec()));
                 }
             }
             Event::Fact(fact) if fact.channel == Channel::Stream => {
@@ -642,7 +665,25 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
     }
 
     fn wake_at(state: &Self::State) -> Option<i64> {
-        state.wake
+        let housekeeping = state
+            .housekeeping_at()
+            .map(|at| at.max(state.shared.now_ms().saturating_add(1)));
+        match (state.wake, housekeeping) {
+            (Some(wake), Some(housekeeping)) => Some(wake.min(housekeeping)),
+            (wake, housekeeping) => wake.or(housekeeping),
+        }
+    }
+
+    fn housekeeping(state: &Self::State) -> crate::Housekeeping {
+        if state.shared.is_housekeeping() {
+            crate::Housekeeping::Running
+        } else {
+            state
+                .housekeeping_at()
+                .map_or(crate::Housekeeping::Settled, |at_ms| {
+                    crate::Housekeeping::Due { at_ms }
+                })
+        }
     }
 
     fn typed_unrecorded(state: &Self::State) -> bool {

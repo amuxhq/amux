@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use interpret::claude_sdk::{ClaudeSdk, State, client_uuid};
-use interpret::{Channel, Effect, Event, Fact, Interpreter, run_golden};
+use interpret::{Channel, Effect, Event, Fact, Housekeeping, Interpreter, run_golden};
 use serde_json::{Value, json};
 
 fn fixtures() -> PathBuf {
@@ -3160,10 +3160,15 @@ fn an_idle_conversation_on_the_hour_cache_is_compacted_before_it_expires() {
     big_turn_ending(&mut state, 1_000, "1h");
     let due = 1_000 + 55 * MINUTE;
     assert_eq!(ClaudeSdk::wake_at(&state), Some(due));
+    assert_eq!(
+        ClaudeSdk::housekeeping(&state),
+        Housekeeping::Due { at_ms: due }
+    );
     assert!(compact_sent(&ClaudeSdk::step(&mut state, Event::Tick { at_ms: due - 1 })).is_none());
 
     let sent = ClaudeSdk::step(&mut state, Event::Tick { at_ms: due });
     let uuid = compact_sent(&sent).expect("the idle compaction is sent");
+    assert_eq!(ClaudeSdk::housekeeping(&state), Housekeeping::Running);
     assert!(
         sent.step.items.is_empty(),
         "nothing draws it: {:?}",
@@ -3221,6 +3226,7 @@ fn an_idle_conversation_on_the_hour_cache_is_compacted_before_it_expires() {
         ),
     );
     assert_eq!(over.step.turn_end, None, "no turn ends for it");
+    assert_eq!(ClaudeSdk::housekeeping(&state), Housekeeping::Settled);
     assert!(
         over.effects
             .iter()
@@ -3238,6 +3244,7 @@ fn no_idle_compaction_without_a_warm_hour_cache() {
     let mut state = started();
     big_turn_ending(&mut state, 1_000, "5m");
     assert_eq!(ClaudeSdk::wake_at(&state), None);
+    assert_eq!(ClaudeSdk::housekeeping(&state), Housekeeping::Settled);
 
     let mut state = started();
     big_turn_ending(&mut state, 1_000, "1h");
@@ -3249,6 +3256,7 @@ fn no_idle_compaction_without_a_warm_hour_cache() {
     );
     assert!(compact_sent(&late).is_none());
     assert_eq!(ClaudeSdk::wake_at(&state), None);
+    assert_eq!(ClaudeSdk::housekeeping(&state), Housekeeping::Settled);
 }
 
 /// A result that never names amux's `/compact` would hold the queue

@@ -37,8 +37,10 @@
 //!   experiment's delay suspends itself: once it has been idle for that
 //!   long without a break (no turn, nothing queued or pending, every
 //!   child's last report taken, nothing the interpreter says the provider
-//!   holds, and no terminal client attached), it exits the ordinary
-//!   graceful way, with cause suspended. The daemon resumes it with the
+//!   holds, and no terminal client attached), and the interpreter's own
+//!   idle housekeeping is settled, it exits the ordinary graceful way,
+//!   with cause suspended. That housekeeping is no break: it neither ends
+//!   the stretch nor restarts the delay. The daemon resumes it with the
 //!   next message, and one arriving as it exits is refused as
 //!   `REFUSAL_EXITING`, as for a one-shot agent.
 //! - The provider exiting ends the agent, whatever state it was in.
@@ -53,7 +55,7 @@ use std::fmt;
 use std::time::Instant;
 
 use interpret::ring::Entry;
-use interpret::{Effect, Event, Interpreter, Stepped, reply};
+use interpret::{Effect, Event, Housekeeping, Interpreter, Stepped, reply};
 use wire::{AgentHello, AgentSpec, CtlFrame, Nudge, Phase, Step, Verdict, ctl_frame};
 
 use crate::awaited::Awaited;
@@ -465,6 +467,9 @@ struct Decided {
     deadline_passed: bool,
     /// The suspension timer fired with the agent still idle.
     suspension_due: bool,
+    /// The interpreter's idle housekeeping was settled: none due, none
+    /// running.
+    housekeeping_settled: bool,
 }
 
 /// The incarnation, the grace and drain timers, the pending set, the open
@@ -505,8 +510,14 @@ struct Life {
     asked_to_exit: Option<ExitCause>,
     /// Terminal clients attached to the agent's terminal.
     attached: u32,
-    /// When the agent suspends: armed while it is idle, cancelled the
-    /// moment it is not.
+    /// When the agent's idle stretch began: the end of its last turn, or
+    /// the moment whatever else kept it busy let go. Its own idle
+    /// housekeeping neither ends a stretch nor starts one. None while it is
+    /// not idle, and for an agent that never suspends.
+    stretch: Option<u64>,
+    /// When the agent suspends: armed while it is idle with its
+    /// housekeeping settled, for the later of the stretch's start plus the
+    /// delay and now; cancelled the moment that is not so.
     suspend: Option<u64>,
     git: GitReads,
     next_job: u64,
@@ -548,6 +559,7 @@ impl<I: Interpreter> Agent<I> {
                 subagents: BTreeSet::new(),
                 asked_to_exit: None,
                 attached: 0,
+                stretch: None,
                 suspend: None,
                 git: GitReads::default(),
                 next_job: 0,
@@ -623,6 +635,12 @@ impl<I: Interpreter> Agent<I> {
             "asked_to_exit": life.asked_to_exit.as_ref().map(cause),
             "suspends_after_ms": life.params.suspend_after_ms,
             "attached": life.attached,
+            "idle_stretch": life.stretch.is_some(),
+            "housekeeping": match I::housekeeping(&self.interpreter) {
+                Housekeeping::Due { .. } => "due",
+                Housekeeping::Running => "running",
+                Housekeeping::Settled => "settled",
+            },
             "suspension_armed": life.suspend.is_some(),
             "reading_git": life.git.reading.is_some(),
             "exited": life.exited.as_ref().map(cause),
@@ -676,6 +694,8 @@ impl<I: Interpreter> Agent<I> {
     ///   running, or at a drain deadline; and suspends it only at its
     ///   suspension deadline, with no turn running;
     /// - the suspension timer runs only while the agent is idle;
+    /// - the agent never suspends, and its suspension timer never runs,
+    ///   while the interpreter's idle housekeeping is due or running;
     /// - the pending set never holds an input the journal recorded as taken;
     /// - the drain timer waits on one open ask at most, and only while the
     ///   agent drains for a lost daemon with an ask open;
@@ -698,6 +718,25 @@ impl<I: Interpreter> Agent<I> {
                     ),
                 });
             }
+        }
+        let housekeeping_settled = self.touched.decided.as_ref().is_none_or(|decided| {
+            decided.cause != ExitCause::Suspended || decided.housekeeping_settled
+        });
+        let housekeeping = I::housekeeping(&self.interpreter);
+        if !housekeeping_settled
+            || (self.life.suspend.is_some() && housekeeping != Housekeeping::Settled)
+        {
+            return Err(Violation {
+                invariant: SUSPENSION_BEFORE_HOUSEKEEPING,
+                detail: format!(
+                    "suspension {} with housekeeping {housekeeping:?}",
+                    if housekeeping_settled {
+                        "armed"
+                    } else {
+                        "decided"
+                    },
+                ),
+            });
         }
         if self.life.suspend.is_some() && !self.idle() {
             return Err(Violation {
@@ -961,7 +1000,7 @@ impl<I: Interpreter> Agent<I> {
                 }
             }
             TimerId::Suspend => match self.life.suspend {
-                Some(at) if at <= now && self.idle() => {
+                Some(at) if at <= now && self.may_suspend() => {
                     self.life.suspend = None;
                     self.touched.decided = Some(Decided {
                         cause: ExitCause::Suspended,
@@ -969,11 +1008,13 @@ impl<I: Interpreter> Agent<I> {
                         turn_running: self.life.turn.running(),
                         deadline_passed: false,
                         suspension_due: true,
+                        housekeeping_settled: I::housekeeping(&self.interpreter)
+                            == Housekeeping::Settled,
                     });
                     self.exit(ExitCause::Suspended, out);
                 }
                 // Fired early by a clock that disagrees: it is still due.
-                Some(at) if self.idle() => out.push(Output::ArmTimer {
+                Some(at) if self.may_suspend() => out.push(Output::ArmTimer {
                     id: TimerId::Suspend,
                     at_ms: at,
                 }),
@@ -1103,6 +1144,7 @@ impl<I: Interpreter> Agent<I> {
                 turn_running,
                 deadline_passed: false,
                 suspension_due: false,
+                housekeeping_settled: false,
             });
             self.exit(cause, out);
         } else {
@@ -1110,26 +1152,44 @@ impl<I: Interpreter> Agent<I> {
         }
     }
 
-    /// The suspension timer: armed `after` from the moment the agent became
-    /// idle, cancelled the moment it is not, and armed afresh after a turn
-    /// that both began and ended since the last step, so it fires only
-    /// after that long without a break.
+    /// The idle stretch and the suspension timer. The stretch begins the
+    /// moment the agent is idle, and afresh at a turn that both began and
+    /// ended since the last step; anything but the interpreter's own idle
+    /// housekeeping ends it. The timer is armed for the later of the
+    /// stretch's start plus `after` and now, and only while the agent is
+    /// idle with that housekeeping settled: one due waits for its time,
+    /// runs, and then lets the agent suspend, so a suspension comes after
+    /// it whichever constant is the larger, and the delay is not restarted
+    /// by it.
     fn watch_idle(&mut self, turn_ended: bool, out: &mut Vec<Output>) {
         let Some(after) = self.life.params.suspend_after_ms else {
             return;
         };
-        if self.idle() {
-            if self.life.suspend.is_none() || turn_ended {
-                let at_ms = self.life.now_ms.saturating_add(after);
-                self.life.suspend = Some(at_ms);
-                out.push(Output::ArmTimer {
-                    id: TimerId::Suspend,
-                    at_ms,
-                });
-            }
-        } else {
-            self.cancel_suspension(out);
+        if !self.idle_but_housekeeping() {
+            self.life.stretch = None;
+            return self.cancel_suspension(out);
         }
+        let now = self.life.now_ms;
+        let since = match self.life.stretch {
+            Some(since) if !turn_ended => since,
+            _ => now,
+        };
+        self.life.stretch = Some(since);
+        if !self.may_suspend() {
+            return self.cancel_suspension(out);
+        }
+        let at_ms = since.saturating_add(after).max(now);
+        // Armed for a time already past, it stands for the stretch: a later
+        // step leaves it to fire.
+        let standing = |armed: u64| armed == at_ms || (!turn_ended && armed <= now);
+        if self.life.suspend.is_some_and(standing) {
+            return;
+        }
+        self.life.suspend = Some(at_ms);
+        out.push(Output::ArmTimer {
+            id: TimerId::Suspend,
+            at_ms,
+        });
     }
 
     /// Whether the agent is idle the way suspension needs: running, with
@@ -1142,6 +1202,25 @@ impl<I: Interpreter> Agent<I> {
             && self.life.attached == 0
             && self.quiescent()
             && I::holds(&self.interpreter).nothing()
+    }
+
+    /// Idle, and the interpreter's idle housekeeping settled: nothing due
+    /// and nothing running.
+    fn may_suspend(&self) -> bool {
+        self.idle() && I::housekeeping(&self.interpreter) == Housekeeping::Settled
+    }
+
+    /// Idle but for the interpreter's own idle housekeeping, which reads as
+    /// working while it runs and is no break in the stretch.
+    fn idle_but_housekeeping(&self) -> bool {
+        self.idle()
+            || (self.life.mode == Mode::Running
+                && self.life.attached == 0
+                && self.life.turn.phase == Phase::Working
+                && I::housekeeping(&self.interpreter) == Housekeeping::Running
+                && self.life.pending.queued.is_empty()
+                && self.nothing_pending()
+                && I::holds(&self.interpreter).nothing())
     }
 
     fn cancel_suspension(&mut self, out: &mut Vec<Output>) {
@@ -1160,6 +1239,7 @@ impl<I: Interpreter> Agent<I> {
             turn_running: self.life.turn.running(),
             deadline_passed: true,
             suspension_due: false,
+            housekeeping_settled: false,
         });
         self.exit(ExitCause::Orphaned, out);
     }
@@ -1235,6 +1315,7 @@ impl<I: Interpreter> Agent<I> {
     fn finish(&mut self, cause: ExitCause, out: &mut Vec<Output>) {
         self.life.grace = None;
         self.life.ask = None;
+        self.life.stretch = None;
         self.life.suspend = None;
         self.life.exited = Some(cause.clone());
         out.push(Output::Exit(cause));
@@ -1460,6 +1541,10 @@ pub const SUSPENSION_WHILE_BUSY: Check = Check {
     id: "agent.suspension_while_busy",
     sentence: "the suspension timer runs only while the agent is idle with nothing held",
 };
+pub const SUSPENSION_BEFORE_HOUSEKEEPING: Check = Check {
+    id: "agent.suspension_before_housekeeping",
+    sentence: "an agent never suspends while its idle housekeeping is due or running",
+};
 pub const DEADLINE_WITHOUT_ORPHAN: Check = Check {
     id: "agent.deadline_without_orphan",
     sentence: "a drain deadline waits only on an ask left open while draining for a lost daemon",
@@ -1471,6 +1556,7 @@ pub const CHECKS: &[Check] = &[
     TAKEN_STILL_PENDING,
     DEADLINE_WITHOUT_ORPHAN,
     SUSPENSION_WHILE_BUSY,
+    SUSPENSION_BEFORE_HOUSEKEEPING,
 ];
 
 pub use core_ring::{Check, DumpReason, StepBudget, Violation};

@@ -95,7 +95,14 @@ the tick that reaches it starts a compaction.
 Idle means a turn ended and nothing has happened since: no ask, nothing
 queued or in flight, no message waiting, one compaction per idle stretch.
 None starts once the cache's lifetime has passed (a machine that slept
-through it), when it would save nothing.
+through it), when it would save nothing. Each interpreter reports where the
+stretch's compaction stands (`Interpreter::housekeeping`): due at its time,
+running, or settled (done, or nothing to do). A suspending agent waits for
+it to settle, so it never goes cold uncompacted
+([suspension](AGENT_PROCESS.md#one-decision-one-way-out)). A turn that ends
+long after its last request can leave a compaction due at a time the
+interpreter's clock has passed: it asks to be woken a millisecond on, and
+starts it then.
 
 The compaction is nobody's turn (`Shared::housekeeping_started`): no prompt
 is drawn and no `TurnEnd` is written, so no parent hears a report and no

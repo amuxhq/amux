@@ -149,10 +149,16 @@ hands a person's input or an agent message, stops or kills the agent, and
 resumes it with a parent's message it refused while exiting, again after
 every incarnation that exits before its journal records the message taken,
 as the daemon's message lane does. The resume replays the facts ring the
-last incarnation recorded, as the driver does. Time moves only when the
-grace or drain timer fires. Two configurations are checked: a one-shot
-child started on its spawn prompt, and an agent without a parent. The
-properties are in `src/lifecycle.rs`.
+last incarnation recorded, as the driver does. Time moves only when a
+timer the core armed fires. The configurations checked are a one-shot
+child started on its spawn prompt, an agent without a parent, one that
+suspends, and one that suspends and whose interpreter housekeeps while idle
+(as the providers' interpreters compact), once with its housekeeping due
+before the suspension delay is up and once after. For that last pair the
+model checks that the agent never suspends while its housekeeping is due or
+running, and that it suspends at the later of the delay counted from its
+quiet's start and the housekeeping's end, so housekeeping never restarts
+the delay. The properties are in `src/lifecycle.rs`.
 
 ## Supervisor update
 

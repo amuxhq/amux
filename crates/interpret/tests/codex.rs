@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use interpret::codex::{Codex, State};
-use interpret::{Channel, Effect, Event, Fact, Interpreter, run_golden};
+use interpret::{Channel, Effect, Event, Fact, Housekeeping, Interpreter, run_golden};
 use serde_json::{Value, json};
 
 fn fixtures() -> PathBuf {
@@ -3670,9 +3670,14 @@ fn an_idle_thread_is_compacted_inside_the_cache_lifetime() {
     let mut state = big_idle_codex(1_000);
     let due = 1_000 + 25 * MINUTE;
     assert_eq!(Codex::wake_at(&state), Some(due));
+    assert_eq!(
+        Codex::housekeeping(&state),
+        Housekeeping::Due { at_ms: due }
+    );
     let sent = writes(&Codex::step(&mut state, Event::Tick { at_ms: due }).effects);
     assert_eq!(sent.len(), 1, "{sent:?}");
     assert_eq!(sent[0]["method"], "thread/compact/start");
+    assert_eq!(Codex::housekeeping(&state), Housekeeping::Running);
     // Until its turn starts, only the deadline for starting it is awaited.
     assert_eq!(Codex::wake_at(&state), Some(due + 2 * MINUTE));
 
@@ -3725,6 +3730,7 @@ fn an_idle_thread_is_compacted_inside_the_cache_lifetime() {
         ),
     );
     assert_eq!(over.step.turn_end, None, "no turn ends for it");
+    assert_eq!(Codex::housekeeping(&state), Housekeeping::Settled);
     let released = writes(&over.effects);
     assert_eq!(released[0]["method"], "thread/inject_items", "{released:?}");
     assert!(is_empty_turn(&released[1]), "{released:?}");
@@ -3743,6 +3749,28 @@ fn no_idle_compaction_once_the_cache_has_gone() {
     );
     assert!(writes(&late.effects).is_empty());
     assert_eq!(Codex::wake_at(&state), None);
+    assert_eq!(Codex::housekeeping(&state), Housekeeping::Settled);
+}
+
+/// A small thread has nothing worth compacting: its housekeeping is
+/// settled from the turn's end.
+#[test]
+fn a_small_idle_thread_has_no_housekeeping_due() {
+    let mut state = idle_codex();
+    Codex::step(&mut state, prompt(b"p1", "count"));
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+        ),
+    );
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "completed"}}}),
+        ),
+    );
+    assert_eq!(Codex::housekeeping(&state), Housekeeping::Settled);
 }
 
 /// Codex accepting the compaction and never starting a turn for it would

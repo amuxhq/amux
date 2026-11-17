@@ -630,6 +630,7 @@ fn a_lifecycle_exit_decided_mid_turn_is_a_violation() {
         turn_running: true,
         deadline_passed: false,
         suspension_due: false,
+        housekeeping_settled: false,
     });
     assert_eq!(
         run.agent.check_step_invariants().map_err(|v| v.invariant),
@@ -915,10 +916,162 @@ fn a_suspension_armed_while_busy_or_decided_early_is_a_violation() {
         turn_running: false,
         deadline_passed: false,
         suspension_due: false,
+        housekeeping_settled: true,
     });
     assert_eq!(
         agent.check_step_invariants().map_err(|v| v.invariant),
         Err(crate::EXIT_OUTSIDE_TURN_END)
+    );
+}
+
+// --- suspension and idle housekeeping --------------------------------------
+
+/// The wake timer as the outputs last asked for it.
+fn wake_timer(out: &[Output]) -> Option<Option<u64>> {
+    out.iter().rev().find_map(|output| match output {
+        Output::ArmTimer {
+            id: TimerId::Wake,
+            at_ms,
+        } => Some(Some(*at_ms)),
+        Output::CancelTimer { id: TimerId::Wake } => Some(None),
+        _ => None,
+    })
+}
+
+/// A suspending agent whose interpreter housekeeps once an idle stretch has
+/// lasted `after_ms`, left idle by a turn that ended at the returned time.
+fn housekeeping_suspending(after_ms: u64) -> (Run, u64) {
+    let mut run = idle_suspending();
+    run.fact(json!({"type": "housekeeping", "after": after_ms}));
+    run.prompt("p1", "hello");
+    run.reflect("p1");
+    run.turn_end();
+    let ended = run.now_ms;
+    (run, ended)
+}
+
+/// The stretch's housekeeping runs at its time and the provider finishes
+/// it: the outputs of the step that settles it.
+fn housekeep(run: &mut Run, wake_at: u64) -> Vec<Output> {
+    let out = run.at(wake_at, Input::Timer(TimerId::Wake));
+    assert!(
+        provider_writes(&out).contains(&r#"{"type":"housekeep"}"#.to_owned()),
+        "{out:?}"
+    );
+    assert_eq!(
+        I::housekeeping(&run.agent.interpreter),
+        Housekeeping::Running
+    );
+    assert_eq!(
+        run.agent.life.suspend, None,
+        "nothing suspends it meanwhile"
+    );
+    assert!(run.agent.life.stretch.is_some(), "and the stretch goes on");
+    let out = run.fact(json!({"type": "housekept"}));
+    assert!(dumps(&run.out).is_empty(), "{:?}", run.out);
+    out
+}
+
+type I = Kind;
+
+/// Housekeeping due before the delay is up runs at its time, and the
+/// agent suspends when the delay counted from the turn's end is up: the
+/// housekeeping neither started a stretch of its own nor restarted the
+/// delay.
+#[test]
+fn housekeeping_before_the_delay_runs_and_the_delay_still_counts_from_the_turns_end() {
+    let (mut run, ended) = housekeeping_suspending(AFTER_MS / 2);
+    assert_eq!(
+        run.agent.life.suspend, None,
+        "not while housekeeping is due"
+    );
+    assert_eq!(wake_timer(&run.out), Some(Some(ended + AFTER_MS / 2)));
+    let out = housekeep(&mut run, ended + AFTER_MS / 2);
+    assert_eq!(suspension_timer(&out), Some(Some(ended + AFTER_MS)));
+    let out = run.at(ended + AFTER_MS, Input::Timer(TimerId::Suspend));
+    assert_eq!(run.agent.exiting(), Some(&ExitCause::Suspended), "{out:?}");
+    assert!(dumps(&out).is_empty(), "{out:?}");
+}
+
+/// Housekeeping due after the delay is up holds the suspension until it
+/// has run, and the agent suspends as soon as it settles.
+#[test]
+fn housekeeping_after_the_delay_holds_the_suspension_until_it_settles() {
+    let (mut run, ended) = housekeeping_suspending(AFTER_MS * 2);
+    assert_eq!(
+        run.agent.life.suspend, None,
+        "not while housekeeping is due"
+    );
+    // The delay passes: a stray timer finds nothing to do.
+    let out = run.at(ended + AFTER_MS, Input::Timer(TimerId::Suspend));
+    assert!(run.agent.exiting().is_none(), "{out:?}");
+    let out = housekeep(&mut run, ended + AFTER_MS * 2);
+    let settled = run.now_ms;
+    assert_eq!(suspension_timer(&out), Some(Some(settled)));
+    run.at(settled, Input::Timer(TimerId::Suspend));
+    assert_eq!(run.agent.exiting(), Some(&ExitCause::Suspended));
+}
+
+/// Housekeeping runs once a stretch: after it, a stretch that goes on is
+/// settled, and only the agent's next turn starts a stretch, and its
+/// housekeeping, afresh.
+#[test]
+fn housekeeping_runs_once_a_stretch_and_a_turn_starts_the_next() {
+    let (mut run, ended) = housekeeping_suspending(AFTER_MS / 2);
+    housekeep(&mut run, ended + AFTER_MS / 2);
+    assert_eq!(
+        I::housekeeping(&run.agent.interpreter),
+        Housekeeping::Settled
+    );
+    run.prompt("p2", "again");
+    assert_eq!(run.agent.life.stretch, None, "a person's turn ends it");
+    run.reflect("p2");
+    let out = run.turn_end();
+    let ended = run.now_ms;
+    assert_eq!(run.agent.life.stretch, Some(ended));
+    assert_eq!(run.agent.life.suspend, None, "{out:?}");
+    assert_eq!(wake_timer(&out), Some(Some(ended + AFTER_MS / 2)));
+}
+
+/// Whatever else breaks the stretch while housekeeping runs ends it: a
+/// person's prompt waits for the housekeeping, then runs as a turn, and the
+/// stretch starts again from that turn's end.
+#[test]
+fn a_prompt_during_housekeeping_ends_the_stretch() {
+    let (mut run, ended) = housekeeping_suspending(AFTER_MS / 2);
+    run.at(ended + AFTER_MS / 2, Input::Timer(TimerId::Wake));
+    run.prompt("p2", "are you there");
+    assert_eq!(run.agent.life.stretch, None);
+    let out = run.fact(json!({"type": "housekept"}));
+    assert_eq!(run.agent.life.suspend, None, "{out:?}");
+    run.reflect("p2");
+    let out = run.turn_end();
+    // A new stretch, whose own housekeeping is due again.
+    assert_eq!(run.agent.life.stretch, Some(run.now_ms));
+    assert_eq!(wake_timer(&out), Some(Some(run.now_ms + AFTER_MS / 2)));
+    assert!(dumps(&run.out).is_empty(), "{:?}", run.out);
+}
+
+#[test]
+fn a_suspension_armed_or_decided_before_housekeeping_settles_is_a_violation() {
+    let (mut run, _) = housekeeping_suspending(AFTER_MS / 2);
+    run.agent.life.suspend = Some(run.now_ms + AFTER_MS);
+    assert_eq!(
+        run.agent.check_step_invariants().map_err(|v| v.invariant),
+        Err(crate::SUSPENSION_BEFORE_HOUSEKEEPING)
+    );
+    run.agent.life.suspend = None;
+    run.agent.touched.decided = Some(Decided {
+        cause: ExitCause::Suspended,
+        turn_ended: false,
+        turn_running: false,
+        deadline_passed: false,
+        suspension_due: true,
+        housekeeping_settled: false,
+    });
+    assert_eq!(
+        run.agent.check_step_invariants().map_err(|v| v.invariant),
+        Err(crate::SUSPENSION_BEFORE_HOUSEKEEPING)
     );
 }
 
@@ -980,6 +1133,162 @@ fn a_draining_agent_is_not_woken() {
     run.fact(json!({"type": "wake", "at": 50_000}));
     let out = run.frame(ctl_frame::Of::Stop(wire::Stop { kill: false }));
     assert!(out.contains(&Output::CancelTimer { id: TimerId::Wake }));
+}
+
+/// The core around Codex's own interpreter, for how its idle compaction
+/// meets suspension.
+mod codex {
+    use interpret::codex::Codex;
+
+    use super::*;
+
+    const MINUTE: u64 = 60_000;
+    /// When Codex compacts an idle thread.
+    const COMPACTS_AT: u64 = 25 * MINUTE;
+
+    struct CodexRun {
+        agent: Agent<Codex>,
+        now_ms: u64,
+    }
+
+    impl CodexRun {
+        /// A suspending Codex under delay `after_ms` whose first turn read a
+        /// thread of `tokens` and has just ended.
+        fn after_a_turn(after_ms: u64, tokens: u64) -> Self {
+            let mut spec = spec(false, None);
+            wire::experimental::SUSPENSION.put(
+                &mut spec.experimental,
+                &wire::experimental::SuspensionSpec { after_ms },
+            );
+            let mut out = Vec::new();
+            let agent = Agent::<Codex>::start(&spec, None, 1_000, &mut out);
+            let mut codex = Self {
+                agent,
+                now_ms: 1_000,
+            };
+            codex.on(Input::DaemonDials { connection: DAEMON });
+            codex.rpc(json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.162.1", "turns": []}, "model": "m"}}));
+            let prompt = wire::Input::new(
+                b"p1".to_vec(),
+                wire::CodexInput {
+                    of: Some(wire::codex_input::Of::Prompt(wire::PromptInput {
+                        text: "count".into(),
+                        ..Default::default()
+                    })),
+                },
+            );
+            codex.on(Input::Control {
+                connection: DAEMON,
+                frame: CtlFrame {
+                    of: Some(ctl_frame::Of::Input(prompt)),
+                },
+            });
+            codex.rpc(json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}));
+            codex.rpc(
+                json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1",
+                "item": {"id": "u1", "type": "userMessage", "clientId": "7031",
+                    "content": [{"type": "text", "text": "count"}]}}}),
+            );
+            codex.rpc(json!({"method": "thread/tokenUsage/updated", "params": {"threadId": "t1", "turnId": "turn-1",
+                "tokenUsage": {"last": {"totalTokens": tokens}, "modelContextWindow": 400_000}}}));
+            codex.rpc(json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "completed"}}}));
+            codex
+        }
+
+        fn on(&mut self, input: Input) -> Vec<Output> {
+            self.now_ms += 1;
+            let mut out = Vec::new();
+            self.agent.step(
+                Input::Tick {
+                    now_ms: self.now_ms,
+                },
+                &mut out,
+            );
+            self.agent.step(input, &mut out);
+            out
+        }
+
+        fn at(&mut self, at_ms: u64, input: Input) -> Vec<Output> {
+            self.now_ms = at_ms - 1;
+            self.on(input)
+        }
+
+        fn rpc(&mut self, message: serde_json::Value) -> Vec<Output> {
+            self.on(Input::Provider(Fact {
+                channel: Channel::Rpc,
+                payload: message.to_string().into_bytes(),
+            }))
+        }
+
+        fn suspension(&self) -> Option<u64> {
+            self.agent.life.suspend
+        }
+
+        /// The idle compaction runs at its time and Codex finishes it.
+        fn compacts(&mut self, at: u64) {
+            let out = self.at(at, Input::Timer(TimerId::Wake));
+            let sent: Vec<serde_json::Value> = out
+                .iter()
+                .filter_map(|output| match output {
+                    Output::WriteProvider(Effect::ProviderWrite(bytes)) => {
+                        serde_json::from_slice(bytes).ok()
+                    }
+                    _ => None,
+                })
+                .filter(|written: &serde_json::Value| written["method"] == "thread/compact/start")
+                .collect();
+            let [request] = sent.as_slice() else {
+                panic!("one compaction asked for: {out:?}");
+            };
+            assert_eq!(self.suspension(), None, "nothing suspends it meanwhile");
+            self.rpc(json!({"id": request["id"], "result": {}}));
+            self.rpc(json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-2"}}}));
+            assert_eq!(self.suspension(), None);
+            self.rpc(json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-2", "status": "completed"}}}));
+        }
+
+        fn suspends_at(&mut self, at: u64) {
+            let out = self.at(at, Input::Timer(TimerId::Suspend));
+            assert!(closes(&out), "{out:?}");
+            assert_eq!(self.agent.exiting(), Some(&ExitCause::Suspended));
+            assert!(dumps(&out).is_empty(), "{out:?}");
+        }
+    }
+
+    /// With the default half-hour delay, a large thread compacts at 25
+    /// minutes and suspends at 30, counted from the turn's end.
+    #[test]
+    fn a_large_codex_compacts_at_its_time_and_suspends_at_the_delay() {
+        let mut codex = CodexRun::after_a_turn(30 * MINUTE, 150_000);
+        let ended = codex.now_ms;
+        assert_eq!(codex.suspension(), None, "not while its compaction is due");
+        codex.compacts(ended + COMPACTS_AT);
+        assert_eq!(codex.suspension(), Some(ended + 30 * MINUTE));
+        codex.suspends_at(ended + 30 * MINUTE);
+    }
+
+    /// A delay shorter than the compaction point waits for the compaction
+    /// and suspends the moment it is over.
+    #[test]
+    fn a_large_codex_under_a_shorter_delay_suspends_right_after_its_compaction() {
+        let mut codex = CodexRun::after_a_turn(20 * MINUTE, 150_000);
+        let ended = codex.now_ms;
+        let out = codex.at(ended + 20 * MINUTE, Input::Timer(TimerId::Suspend));
+        assert!(!closes(&out), "{out:?}");
+        codex.compacts(ended + COMPACTS_AT);
+        let settled = codex.now_ms;
+        assert_eq!(codex.suspension(), Some(settled));
+        codex.suspends_at(settled);
+    }
+
+    /// A small thread has nothing to compact and suspends at the delay.
+    #[test]
+    fn a_small_codex_suspends_at_its_delay() {
+        let mut codex = CodexRun::after_a_turn(30 * MINUTE, 50_000);
+        let ended = codex.now_ms;
+        assert_eq!(codex.suspension(), Some(ended + 30 * MINUTE));
+        codex.suspends_at(ended + 30 * MINUTE);
+    }
 }
 
 /// The core around headless Claude's own interpreter, for rules that hang
@@ -1154,59 +1463,97 @@ mod headless_claude {
         assert_eq!(claude.agent.exiting(), Some(&ExitCause::Suspended));
     }
 
-    /// Idle compaction and suspension compose: a compaction is no turn of
-    /// anybody's, but the provider is busy with it and the agent reads as
-    /// working, so it holds the suspension timer while it runs; once it is
-    /// over the agent is idle again and the delay starts afresh. It runs
-    /// once per idle stretch, so it delays a suspension at most once.
-    #[test]
-    fn an_idle_compaction_holds_suspension_while_it_runs_and_delays_it_once() {
-        const AFTER_MS: u64 = 2 * 60 * 60_000;
-        let mut claude = Claude::suspending(AFTER_MS);
+    const MINUTE: u64 = 60_000;
+    /// When headless Claude compacts an idle conversation.
+    const COMPACTS_AT: u64 = 55 * MINUTE;
+
+    /// A suspending headless Claude under delay `after_ms` whose first turn
+    /// read a conversation of `tokens`, writing to the hour-long cache or
+    /// the five-minute one, and has just ended: the outputs of its end and
+    /// when it ended.
+    fn after_a_turn(after_ms: u64, tokens: u64, hour_cache: bool) -> (Claude, Vec<Output>, u64) {
+        let mut claude = Claude::suspending(after_ms);
+        let (hour, five) = if hour_cache { (10_000, 0) } else { (0, 10_000) };
         claude.says(json!({"type": "stream_event", "event": {"type": "message_start", "message": {
             "id": "msg_1",
             "usage": {
                 "input_tokens": 2,
-                "cache_read_input_tokens": 240_000,
+                "cache_read_input_tokens": tokens - 10_000,
                 "cache_creation_input_tokens": 10_000,
-                "cache_creation": {"ephemeral_1h_input_tokens": 10_000, "ephemeral_5m_input_tokens": 0},
+                "cache_creation": {"ephemeral_1h_input_tokens": hour, "ephemeral_5m_input_tokens": five},
             },
         }}}));
         let out = claude.result("r1", "done");
-        let wake = wake_armed(&out).expect("the compaction's time is armed");
-        let idle_at = claude.now_ms;
-        assert_eq!(claude.suspension(), Some(idle_at + AFTER_MS));
-        assert!(wake < idle_at + AFTER_MS, "it compacts before it suspends");
+        let ended = claude.now_ms;
+        (claude, out, ended)
+    }
 
+    /// The idle compaction runs at `wake` and Claude finishes it: the
+    /// outputs of the step that settles it.
+    fn compacts(claude: &mut Claude, wake: u64) -> Vec<Output> {
         let out = claude.at(wake, Input::Timer(TimerId::Wake));
         let uuid = compact_sent(&out).expect("the idle compaction is sent");
-        assert_eq!(claude.suspension(), None, "the compaction holds it");
-        assert!(
-            out.contains(&Output::CancelTimer {
-                id: TimerId::Suspend
-            }),
-            "{out:?}"
-        );
-
+        assert_eq!(claude.suspension(), None, "nothing suspends it meanwhile");
         claude.says(json!({"type": "system", "subtype": "compact_boundary", "uuid": "cb", "session_id": "s",
             "compact_metadata": {"trigger": "manual", "pre_tokens": 250_000, "post_tokens": 30_000}}));
         assert_eq!(claude.suspension(), None);
-        let out = claude.says(
+        claude.says(
             json!({"type": "result", "subtype": "success", "uuid": "r2", "duration_ms": 17_000,
             "user_message_uuid": uuid, "user_message_uuids": [uuid]}),
-        );
-        let over = claude.now_ms;
-        assert_eq!(
-            claude.suspension(),
-            Some(over + AFTER_MS),
-            "armed afresh once it is over"
-        );
-        assert_eq!(wake_armed(&out), None, "no second compaction: {out:?}");
+        )
+    }
 
-        let out = claude.at(over + AFTER_MS, Input::Timer(TimerId::Suspend));
+    fn suspends_at(claude: &mut Claude, at: u64) {
+        let out = claude.at(at, Input::Timer(TimerId::Suspend));
         assert!(compact_sent(&out).is_none());
         assert!(closes(&out), "{out:?}");
         assert_eq!(claude.agent.exiting(), Some(&ExitCause::Suspended));
+        assert!(dumps(&out).is_empty(), "{out:?}");
+    }
+
+    /// With the default half-hour delay, a large conversation on the hour
+    /// cache is not left to go cold: the agent waits past the delay for its
+    /// compaction at 55 minutes, and suspends the moment it is over.
+    #[test]
+    fn a_large_headless_claude_compacts_before_it_suspends_under_a_shorter_delay() {
+        let (mut claude, out, ended) = after_a_turn(30 * MINUTE, 250_000, true);
+        assert_eq!(claude.suspension(), None, "not while its compaction is due");
+        let wake = wake_armed(&out).expect("the compaction's time is armed");
+        assert!(wake > ended + 30 * MINUTE && wake <= ended + COMPACTS_AT);
+        // The delay passes: a stray timer finds nothing to do.
+        let out = claude.at(ended + 30 * MINUTE, Input::Timer(TimerId::Suspend));
+        assert!(!closes(&out), "{out:?}");
+        compacts(&mut claude, wake);
+        let settled = claude.now_ms;
+        assert_eq!(claude.suspension(), Some(settled), "right after it");
+        suspends_at(&mut claude, settled);
+    }
+
+    /// Under a delay longer than the compaction point the compaction runs
+    /// at its time, and the delay still counts from the turn's end: the
+    /// compaction does not restart it.
+    #[test]
+    fn a_compaction_does_not_restart_the_delay() {
+        const AFTER_MS: u64 = 2 * 60 * MINUTE;
+        let (mut claude, out, ended) = after_a_turn(AFTER_MS, 250_000, true);
+        let wake = wake_armed(&out).expect("the compaction's time is armed");
+        assert_eq!(claude.suspension(), None);
+        let out = compacts(&mut claude, wake);
+        assert_eq!(claude.suspension(), Some(ended + AFTER_MS), "{out:?}");
+        assert_eq!(wake_armed(&out), None, "no second compaction: {out:?}");
+        suspends_at(&mut claude, ended + AFTER_MS);
+    }
+
+    /// Nothing to compact, a conversation too small or not on the hour
+    /// cache, suspends at the delay.
+    #[test]
+    fn a_headless_claude_with_nothing_to_compact_suspends_at_its_delay() {
+        for (tokens, hour_cache) in [(50_000, true), (250_000, false)] {
+            let (mut claude, out, ended) = after_a_turn(30 * MINUTE, tokens, hour_cache);
+            assert_eq!(wake_armed(&out), None, "{tokens} {hour_cache}");
+            assert_eq!(claude.suspension(), Some(ended + 30 * MINUTE));
+            suspends_at(&mut claude, ended + 30 * MINUTE);
+        }
     }
 
     /// Headless Claude starts the subagents its Agent tool asks for in the
@@ -1432,6 +1779,10 @@ mod hosting {
 
         fn holds(state: &Self::State) -> interpret::Holds {
             Kind::holds(state)
+        }
+
+        fn housekeeping(state: &Self::State) -> interpret::Housekeeping {
+            Kind::housekeeping(state)
         }
 
         fn describe_item(body: &[u8]) -> ItemView {

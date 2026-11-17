@@ -99,6 +99,14 @@ pub trait Interpreter {
         let _ = state;
         None
     }
+    /// Where the housekeeping the interpreter does on its own while the
+    /// agent sits idle (an idle compaction) stands in this idle stretch:
+    /// an agent suspends only once it is settled, so a suspension never
+    /// cuts it short or comes before it.
+    fn housekeeping(state: &Self::State) -> Housekeeping {
+        let _ = state;
+        Housekeeping::Settled
+    }
 
     /// Reads an item body for goldens and invariants.
     fn describe_item(body: &[u8]) -> ItemView;
@@ -173,6 +181,24 @@ impl Holds {
     pub fn nothing(&self) -> bool {
         *self == Holds::default()
     }
+}
+
+/// The housekeeping an interpreter does on its own in an idle stretch, an
+/// idle compaction, as it stands. It runs at most once a stretch, and a
+/// stretch ends only with the agent's next turn: once settled, it stays
+/// settled until then.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Housekeeping {
+    /// It starts at this time, by the interpreter's clock, if the agent is
+    /// still idle then. The interpreter's [`Interpreter::wake_at`] asks to
+    /// hear that time.
+    Due { at_ms: i64 },
+    /// It runs.
+    Running,
+    /// Nothing more this stretch: it ran, or there is nothing worth doing
+    /// (a small conversation, a cache that has gone cold or is not one that
+    /// would outlive the wait).
+    Settled,
 }
 
 /// What an interpreter consumes. One event is in hand at a time, so the

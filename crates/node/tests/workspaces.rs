@@ -625,7 +625,7 @@ async fn the_experiments_entry_rides_on_the_row_to_every_host_whatever_it_runs()
     let at_origin = row_until(&a.runtime, &on_a, "A's entry", |row| entry(row).is_some()).await;
     let expected = entry(&at_origin).unwrap();
     assert_eq!(expected.kind(), WorkspaceKind::Folder);
-    assert_eq!(Path::new(&expected.id), folder);
+    assert_eq!(canonical(&expected.id), folder);
 
     let on_c = c.sees(&a, &on_a).await;
     assert_eq!(

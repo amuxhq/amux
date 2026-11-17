@@ -356,8 +356,9 @@ recorded as one when the machine did not restart. Only terminal Claude can
 be quit by a person, in its terminal (Codex's terminal is a view that
 leaves its app server running), so its quit in a turn is the person's and
 is never continued. The interpreter's last
-snapshot after a provider's own end reads idle unless it cut a turn off, so
-the phase tells the two apart:
+snapshot after a provider's own end reads idle unless it cut work off, a
+turn or a provider subagent still running (which ends with it), so the
+phase tells the two apart:
 
 - an agent the person closed was on its way out, and is marked exited as
   stopped;

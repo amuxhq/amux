@@ -515,10 +515,11 @@ impl State {
 
     pub(super) fn exited(&mut self, emit: &mut Emit, exit: wire::IncarnationEnd) {
         emit.end_incarnation(exit.clone());
+        // Before its subagents end: one still running is work cut off.
+        self.shared.provider_exited_as(&exit);
         // The subagents it ran end with it, for its cause.
         self.end_all_subagents(emit, &exit);
         self.dismiss_own_asks(emit);
-        self.shared.provider_exited_as(&exit);
         self.boundary(emit, BoundaryKind::Exited, exit);
         self.jobs.clear();
         self.exited = true;

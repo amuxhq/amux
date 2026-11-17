@@ -248,13 +248,14 @@ impl State {
 
     pub(super) fn exited(&mut self, emit: &mut Emit, exit: wire::IncarnationEnd) {
         emit.end_incarnation(exit.clone());
+        // Before its subagents end: one still running is work cut off.
+        self.shared.provider_exited_as(&exit);
         // The subagents it ran end with it, for its cause.
         self.end_all_subagents(emit, &exit);
         self.running.clear();
         self.close_all_unknown(emit);
         // A reply Claude died drawing ends as it was drawn.
         self.finish_streams(emit);
-        self.shared.provider_exited_as(&exit);
         self.boundary(emit, BoundaryKind::Exited, exit);
         self.jobs.clear();
         self.local_turn = false;

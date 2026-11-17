@@ -1598,14 +1598,16 @@ impl<A: OpenAsk> Shared<A> {
 
     /// The provider is gone as the incarnation ends for `end`: as
     /// [`Self::provider_exited`]. A suspension, or the provider's own end
-    /// once it had started and with no turn under way, leaves the agent
-    /// idle rather than starting, so its row says whether a turn was cut
-    /// off.
+    /// once it had started with no turn under way and no provider subagent
+    /// running, leaves the agent idle rather than starting, so its row says
+    /// whether work was cut off. A subagent still running is the agent's
+    /// work under way, as it is to the one-shot rule and to suspension.
+    /// Called before the interpreter ends its subagents.
     pub fn provider_exited_as(&mut self, end: &wire::IncarnationEnd) -> Option<OpenTurn> {
         use wire::ExitCause;
         let own =
             end.cause == ExitCause::ProviderExited as i32 || end.cause == ExitCause::Quit as i32;
-        let idle = self.started && !self.busy;
+        let idle = self.started && !self.busy && self.running_subagents().next().is_none();
         let open = self.provider_exited();
         self.ended_idle = end.cause == ExitCause::Suspended as i32 || own && idle && open.is_none();
         open

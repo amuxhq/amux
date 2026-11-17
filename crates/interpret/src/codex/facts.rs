@@ -2988,6 +2988,8 @@ impl State {
 
     pub(super) fn exited(&mut self, emit: &mut Emit, exit: wire::IncarnationEnd) {
         emit.end_incarnation(exit.clone());
+        // Before its subagents end: one still running is work cut off.
+        self.shared.provider_exited_as(&exit);
         // The subagents went with the process that ran them.
         self.end_children(emit, &exit);
         self.idle_compaction = None;
@@ -3014,7 +3016,6 @@ impl State {
         }
         self.background = None;
         self.threads.clear();
-        self.shared.provider_exited_as(&exit);
         self.active_turn = None;
         self.interrupt_pending = false;
         self.boundary(emit, wire::BoundaryKind::Exited, exit);

@@ -3060,6 +3060,42 @@ fn a_providers_own_end_says_idle_unless_it_cut_a_turn_off() {
     assert_eq!(phase, Some(wire::Phase::Starting), "a turn was cut off");
 }
 
+/// A provider subagent still running when the provider ends is work cut
+/// off, though the agent's own turn had ended: the last snapshot reads
+/// starting, as for a turn cut off, so a restart of the machine continues
+/// the agent rather than leaving it suspended, and the subagent ends with
+/// the provider.
+#[test]
+fn a_providers_own_end_while_a_subagent_runs_says_work_was_cut_off() {
+    let mut state = idle_on_root();
+    ClaudeSdk::step(
+        &mut state,
+        stream(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "count", "is_backgrounded": true,
+        })),
+    );
+    assert!(!state.shared().is_busy(), "the agent's own turn is over");
+    let stepped = ClaudeSdk::step(&mut state, Event::ProviderExit { code: None });
+    let phase = stepped.step.snapshot.map(|snapshot| snapshot.phase());
+    assert_eq!(
+        phase,
+        Some(wire::Phase::Starting),
+        "its subagent was cut off"
+    );
+    let child = interpret::subagent_id(b"agent", "a1");
+    assert!(
+        stepped
+            .step
+            .agents
+            .iter()
+            .any(|part| part.agent_id == child && part.end.is_some()),
+        "the subagent ends with the provider: {:?}",
+        stepped.step.agents
+    );
+}
+
 const MINUTE: i64 = 60 * 1000;
 
 /// A turn that ends at `at`, whose request read a conversation of 250k

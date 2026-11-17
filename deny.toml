@@ -18,6 +18,10 @@ ignore = [
     # Unmaintained, with no known flaw. fontdue reads the fonts the test
     # screenshot renderer ships with; nothing shipped renders a font.
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser reads only the test renderer's own fonts" },
+    # Unmaintained, with no known flaw. amux uses chrono only to read and
+    # write RFC 3339 timestamps and take the current time; moving to jiff is
+    # a change of its own.
+    { id = "RUSTSEC-2026-0543", reason = "chrono only formats, parses and reads the clock" },
 ]
 
 [licenses]

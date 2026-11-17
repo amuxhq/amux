@@ -38,6 +38,7 @@ mod offers;
 mod onboarding;
 mod outbox;
 mod pairing;
+mod plain_paths;
 mod profile_admin;
 mod profiles;
 mod registry;

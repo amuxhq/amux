@@ -67,7 +67,7 @@ impl WtBackend {
 }
 
 fn canonical(path: &Path) -> String {
-    path.canonicalize()
+    crate::plain_paths::canonical(path)
         .unwrap_or_else(|_| path.to_owned())
         .to_string_lossy()
         .into_owned()

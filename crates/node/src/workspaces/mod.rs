@@ -35,6 +35,8 @@ use daemon_core::workspaces::{
 };
 use uuid::Uuid;
 
+use crate::plain_paths::canonical;
+
 pub(crate) mod git;
 #[cfg(all(unix, not(target_os = "ios")))]
 pub(crate) mod wt;
@@ -177,7 +179,7 @@ impl Workspaces {
 
     /// The workspace `folder` is in.
     pub fn resolve(&self, folder: &str) -> Resolved {
-        let Ok(canonical) = Path::new(folder).canonicalize() else {
+        let Ok(canonical) = canonical(Path::new(folder)) else {
             return Resolved {
                 workspace: Key {
                     kind: Kind::Folder,
@@ -194,7 +196,7 @@ impl Workspaces {
             return resolved;
         }
         let root = toplevel(&canonical)
-            .and_then(|root| root.canonicalize().ok())
+            .and_then(|root| crate::plain_paths::canonical(&root).ok())
             .unwrap_or(canonical);
         Resolved {
             workspace: Key {
@@ -339,7 +341,7 @@ pub(crate) fn canonical_beyond(path: &Path) -> PathBuf {
     let mut rest = Vec::new();
     let mut ancestor = path;
     loop {
-        if let Ok(canonical) = ancestor.canonicalize() {
+        if let Ok(canonical) = canonical(ancestor) {
             return rest
                 .iter()
                 .rev()

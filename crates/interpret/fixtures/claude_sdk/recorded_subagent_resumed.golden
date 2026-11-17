@@ -29,6 +29,7 @@ snapshot WORKING queue=[] working_on="Use the Agent tool once, with run_in_backg
 ## 53 recorded 52: fact Stream type=system subtype=task_started uuid=d4c15549-cf83-4fea-888f-7d47311ddbde tool_use_id=toolu_01FFZk6JxqFayjKY3WESx4HR
 item toolu_01FFZk6JxqFayjKY3WESx4HR tool final at=1794832343904 text="" Agent TOOL_STATE_RUNNING background opens=sub-b7ece70b input=subagent:"Run delayed echo command"
 agent sub-b7ece70b start child=af2e79073c2b02ec2 call=host/toolu_01FFZk6JxqFayjKY3WESx4HR title="Run delayed echo command"
+agent sub-b7ece70b item prompt:toolu_01FFZk6JxqFayjKY3WESx4HR prompt final at=1794832344485 text="Run the Bash command `python3 -c 'import time; time.sleep(90)'; echo LATE` in the foreground and report what it printed. Do not run any other commands."
 agent sub-b7ece70b snapshot WORKING queue=[] working_on=- at=1794832344485 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run delayed echo command"@1794832344485]
 ## 60 recorded 59: fact Stream type=rate_limit_event uuid=7480b5ba-f654-48fc-8449-3d278cf85615
 snapshot WORKING queue=[] working_on="Use the Agent tool once, with run_in_background set to true, to start one general-purpose subagent whose task is exactly: run the Bash command `python3 -c 'import time; time.sleep(90)'; echo LATE` in the foreground and report what it printed. Then reply with the single word STARTED." at=1794832344494 asks=[] session=0dd2c472-dd57-411e-94f3-fcb6a410741c model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=20630/? tasks=? active=[] usage=ok 7d:27%(ok) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
@@ -130,6 +131,7 @@ item toolu_01KJ1SozFVSeMr46dJHvHAa1 tool final at=1794832346641 text="" SendMess
 ## 148 recorded 147: fact Stream type=system subtype=task_started uuid=776dfc96-04cd-41da-a92a-62aab4550b61 tool_use_id=toolu_01KJ1SozFVSeMr46dJHvHAa1
 item toolu_01KJ1SozFVSeMr46dJHvHAa1 tool final at=1794832346641 text="" SendMessage TOOL_STATE_RUNNING background opens=sub-b7ece70b input="{\"content\":\"BACK\",\"message\":\"BACK\",\"recipient\":\"af2e79073c2b…"
 agent sub-b7ece70b start child=af2e79073c2b02ec2 call=host/toolu_01FFZk6JxqFayjKY3WESx4HR title="Run delayed echo command"
+agent sub-b7ece70b item prompt:toolu_01KJ1SozFVSeMr46dJHvHAa1 prompt final at=1794832346641 text="BACK"
 agent sub-b7ece70b snapshot WORKING queue=[] working_on=- at=1794832346641 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run delayed echo command"@1794832346641]
 ## 152 recorded 151: fact Stream type=system subtype=status uuid=e307a1f1-fba0-4ff1-9ea7-5e66d4f483c2
 item e307a1f1-fba0-4ff1-9ea7-5e66d4f483c2 status final at=1794832346641 text="" SDK_STATUS_UNSPECIFIED requesting

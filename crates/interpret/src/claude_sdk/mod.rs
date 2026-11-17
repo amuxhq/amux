@@ -114,6 +114,12 @@ struct Sub {
     stopping: bool,
     /// Claude's refusal of the last stop.
     stop_error: String,
+    /// The prompt its latest run's `task_started` drew, until Claude
+    /// streams the same text as the subagent's own prompt, which is then not
+    /// drawn again. A checkpoint from before this field existed reads it as
+    /// None.
+    #[serde(default)]
+    prompt_drawn: Option<String>,
     conversation: crate::claude_subagent::Conversation,
 }
 

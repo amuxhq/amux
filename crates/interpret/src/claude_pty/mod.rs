@@ -107,13 +107,13 @@
 mod facts;
 mod recording;
 mod subagents;
-
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
 use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+pub(crate) use subagents::{CONTINUED_CLOSING, CONTINUED_PREAMBLE};
 use wire::{
     AgentSpec, Ask, AskClosed, Attachment, BoundaryKind, ClaudeAnswer, ClaudeGrant, ClaudeSnapshot,
     DecisionOutcome, Envelope, Input, KindInput, Refusal, RunningCall, Step, ToolDecision,

@@ -142,10 +142,12 @@
 == agent sub-8b600219 "Run echo ALPHA" started by host/toolu_01F8e5YXiBSZPM3CvjhngKPs
   composer Native { stop: Unavailable } phase=Exited { cause: Finished }
 == chat
-     1 toolu_01AU9XgB9WTSHZGvborQZ6cn Command { command: "echo ALPHA", description: "Print ALPHA via echo", state: Succeeded, exit_code: None, output_head: ["ALPHA"], more_lines: 0, output_trimmed: false, output_tail: ["ALPHA"], duration_ms: Some(215) } run[toolu_01AU9XgB9WTSHZGvborQZ6cn..toolu_01AU9XgB9WTSHZGvborQZ6cn x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, f…
-     2 msg_011Ch5eDyYBkhU47eVtr35Ts:0 Thinking { text: "", open: false, duration_ms: Some(1729) }
-     3 msg_011Ch5eDyYBkhU47eVtr35Ts:1 Prose { text: [Text("The command `echo ALPHA` printed exactly:\n\n```\nALPHA\n```")], streaming: false, working_note: false }
-     4 toolu_01M9Jnn7H9bt486EAP8wVk7L Command { command: "echo BETA", description: "Print BETA via echo", state: Succeeded, exit_code: None, output_head: ["BETA"], more_lines: 0, output_trimmed: false, output_tail: ["BETA"], duration_ms: Some(16) } run[toolu_01M9Jnn7H9bt486EAP8wVk7L..toolu_01M9Jnn7H9bt486EAP8wVk7L x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, fetche…
-     5 msg_011Ch5eEUM3uim5t5yGsut2L:0 Prose { text: [Text("The command `echo BETA` printed exactly:\n\n```\nBETA\n```")], streaming: false, working_note: false }
+     1 prompt:toolu_01F8e5YXiBSZPM3CvjhngKPs Prompt { text: [Text("Use the Bash tool to run exactly this command: echo ALPHA\nThen report back exactly what it printed.")], steered: false }
+     2 toolu_01AU9XgB9WTSHZGvborQZ6cn Command { command: "echo ALPHA", description: "Print ALPHA via echo", state: Succeeded, exit_code: None, output_head: ["ALPHA"], more_lines: 0, output_trimmed: false, output_tail: ["ALPHA"], duration_ms: Some(215) } run[toolu_01AU9XgB9WTSHZGvborQZ6cn..toolu_01AU9XgB9WTSHZGvborQZ6cn x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, f…
+     3 msg_011Ch5eDyYBkhU47eVtr35Ts:0 Thinking { text: "", open: false, duration_ms: Some(1729) }
+     4 msg_011Ch5eDyYBkhU47eVtr35Ts:1 Prose { text: [Text("The command `echo ALPHA` printed exactly:\n\n```\nALPHA\n```")], streaming: false, working_note: false }
+     5 prompt:toolu_0115dPdfaNpQp5uZ4Cdj5n7t Prompt { text: [Text("Use Bash to run exactly this command: echo BETA\nThen report back exactly what it printed.")], steered: false }
+     6 toolu_01M9Jnn7H9bt486EAP8wVk7L Command { command: "echo BETA", description: "Print BETA via echo", state: Succeeded, exit_code: None, output_head: ["BETA"], more_lines: 0, output_trimmed: false, output_tail: ["BETA"], duration_ms: Some(16) } run[toolu_01M9Jnn7H9bt486EAP8wVk7L..toolu_01M9Jnn7H9bt486EAP8wVk7L x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, fetche…
+     7 msg_011Ch5eEUM3uim5t5yGsut2L:0 Prose { text: [Text("The command `echo BETA` printed exactly:\n\n```\nBETA\n```")], streaming: false, working_note: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
   changes: Changeability { model: NotOffered, effort: NotOffered, permission: NotOffered, mode: NotOffered } commands=0

@@ -321,6 +321,12 @@ started it.
 - A `task_started` naming a SendMessage call, for a task id that ended,
   continues it: a new start on the same agent, under its first call, and
   the SendMessage row opens its chat too.
+- Each run's prompt is its `task_started`'s `prompt`, drawn as a prompt
+  item keyed `prompt:<call id>`, the first run's and each continuation's:
+  Claude streams a subagent's prompt as a frame of its own only for some
+  runs (one in the foreground), and never for a continuation. A streamed
+  frame with the same text before the run's first reply is that prompt
+  again, and draws nothing.
 - Its `task_notification` ends it: completed is finished, stopped or killed
   is stopped, failed is the provider's exit with the reason. Claude answers
   a notification with a turn of its own, so the agent reads working from
@@ -368,6 +374,10 @@ parent subagent.
   Claude raises it when a subagent's turn stops. A top-level subagent's
   notice opens the agent's turn, as Claude answers it with one.
 - `SubagentStart` again for the same id is a continuation: a new start.
+  Its prompt is the subagent's first user row, as for any run; Claude
+  writes a continuation's as a note to the model (`isMeta`) from the
+  coordinator, its message wrapped in two lines of Claude's own, which are
+  left out. Claude's other notes to the model draw nothing.
 - Its asks come from `PermissionRequest` hooks carrying its `agent_id`, and
   its working-on line from its `PreToolUse` of amux's status tool.
 - Terminal Claude has no way to stop one subagent: it lists no job, and a

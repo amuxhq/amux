@@ -60,6 +60,31 @@ use crate::{Effect, Emit, ItemDraft};
 /// after the same time.
 pub(super) const DRAIN_WAIT_MS: i64 = 2_000;
 
+/// Who a subagent's prompt came from when its parent's SendMessage
+/// continued it, as Claude 2.1.326 marks the row.
+const COORDINATOR: &str = "coordinator";
+/// The lines Claude 2.1.326 wraps a continuing message in, for the model.
+pub(crate) const CONTINUED_PREAMBLE: &str =
+    "The coordinator sent a message while you were working:\n";
+pub(crate) const CONTINUED_CLOSING: &str = "\n\nAddress this before completing your current task.";
+
+/// The message a SendMessage continued a subagent with, from the row
+/// Claude writes for it in the subagent's file: a note to the model from
+/// the coordinator, wrapped in Claude's own lines, which are left out. A
+/// row of any other note is None.
+fn continuation_message(user: &transcript::UserRow) -> Option<String> {
+    if user.origin.as_ref()?.kind != COORDINATOR {
+        return None;
+    }
+    let text = crate::claude_common::message_text(&user.message.content);
+    let message = text
+        .trim_start()
+        .strip_prefix(CONTINUED_PREAMBLE)
+        .unwrap_or(&text);
+    let message = message.strip_suffix(CONTINUED_CLOSING).unwrap_or(message);
+    Some(message.to_owned())
+}
+
 /// Whether `said`, what a subagent last said, is `reply`, the last reply
 /// its parent's notice names.
 pub(super) fn is_last_reply(said: &str, reply: &str) -> bool {
@@ -761,11 +786,26 @@ impl State {
             .unwrap_or_else(|| self.shared.now_ms());
         match &row {
             Row::User(user) => {
-                // Claude's own notes to the model.
-                if user.is_meta == Some(true) || user.is_compact_summary == Some(true) {
+                // Claude's own notes to the model, but for the message a
+                // SendMessage continued the subagent with, which Claude
+                // writes as one: that is the prompt its run answers.
+                let continued_with = (user.is_meta == Some(true))
+                    .then(|| continuation_message(user))
+                    .flatten();
+                if (user.is_meta == Some(true) && continued_with.is_none())
+                    || user.is_compact_summary == Some(true)
+                {
                     return;
                 }
-                if let MessageContent::Blocks(blocks) = &user.message.content {
+                let continuing;
+                let content = match continued_with {
+                    Some(message) => {
+                        continuing = MessageContent::Text(message);
+                        &continuing
+                    }
+                    None => &user.message.content,
+                };
+                if let MessageContent::Blocks(blocks) = content {
                     for block in blocks {
                         if let ContentBlock::ToolResult {
                             tool_use_id,
@@ -797,7 +837,7 @@ impl State {
                 sub.conversation.user(
                     &mut view,
                     &user.envelope.uuid,
-                    &user.message.content,
+                    content,
                     user.tool_use_result.as_ref(),
                     &BTreeMap::new(),
                     &mut self.tasks,

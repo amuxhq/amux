@@ -29,6 +29,7 @@ snapshot WORKING queue=[] working_on="Delegate to the `counter` subagent, then r
 ## 40 recorded 39: fact Stream type=system subtype=task_started uuid=bd32ecc1-e922-4493-b8dd-f3515f41230e tool_use_id=toolu_012VXWzW2WdrKc71g3eWUc4e
 item toolu_012VXWzW2WdrKc71g3eWUc4e tool final at=1793423939972 text="" Agent TOOL_STATE_RUNNING background opens=sub-df8e53a5 input=subagent:"Run counter subagent"
 agent sub-df8e53a5 start child=a4d06ab64caac045e call=host/toolu_012VXWzW2WdrKc71g3eWUc4e title="Run counter subagent"
+agent sub-df8e53a5 item prompt:toolu_012VXWzW2WdrKc71g3eWUc4e prompt final at=1793423940385 text="Count to three and report the result."
 agent sub-df8e53a5 snapshot WORKING queue=[] working_on=- at=1793423940385 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run counter subagent"@1793423940385]
 ## 47 recorded 46: fact Stream type=rate_limit_event uuid=0a8f20d7-672f-43cb-9a69-45f10ca1c449
 snapshot WORKING queue=[] working_on="Delegate to the `counter` subagent, then reply with exactly what it said." at=1793423940391 asks=[] session=79895c4f-d9bf-4336-8688-b5d2b2d1f834 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20399/? tasks=? active=[] usage=ok 5h:19%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]

@@ -244,6 +244,7 @@ dependencies = [
  "node",
  "patience",
  "provider-fakes",
+ "settings",
  "sha2 0.10.9",
  "tempfile",
  "testnet",

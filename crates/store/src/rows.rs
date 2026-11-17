@@ -5,13 +5,15 @@
 //! crash-injection tests fail a commit with a `BEFORE INSERT` trigger on
 //! `items` or `agents`, which a bare `UPDATE` would slip past. The other
 //! row writes are upserts too. An upsert names the columns its writer owns;
-//! the rest of a held row is left as it is. The one bare `UPDATE` is
-//! `rewind_cursor`, power-loss recovery that runs outside any commit.
+//! the rest of a held row is left as it is. The bare `UPDATE`s run outside
+//! any commit: `rewind_cursor`, power-loss recovery, and the clearing of
+//! own rows' experimental entries as the store opens
+//! (`experiments::settle`).
 
 use prost::Message as _;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
-use crate::experiments::{SUSPENSION_1_RUNS, WORKSPACES_1_MEMBERS};
+use crate::experiments::SUSPENSION_1_RUNS;
 use crate::{
     AgentKey, AgentRow, Delivery, Item, Notification, Snapshot, StoreError, TrustedHost,
     decode_attachments, encode_attachments,
@@ -21,7 +23,7 @@ const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, name, cwd, parent_host
     lifecycle, exit_cause, exit_detail, phase, working_on, phase_since_ms, git, snapshot, \
     ingest_cursor, next_revision, source_cursor, source_generation, \
     complete_from_order, exhausted, owes_report, created_at_ms, incarnation, background_jobs, \
-    descendants, filing, filed_at_ms, title, name_given, last_said";
+    descendants, filing, filed_at_ms, title, name_given, last_said, experimental";
 
 const ITEM_COLUMNS: &str =
     "key, position, revision, at_ms, input_id, text, kind, attachments, body";
@@ -65,6 +67,11 @@ const INVENTORY_ENVELOPE: &[&str] = &[
 /// What a replica's inventory row counts that its origin owns: its live
 /// descendants. An own row's count is the daemon's, written apart.
 const INVENTORY_COUNTS: &[&str] = &["descendants"];
+
+/// The row's experimental map. A replica's inventory row carries it, and it
+/// is replaced whole from the origin's row whatever this host runs; an own
+/// row's is written apart, by the experiments this host runs.
+pub(crate) const EXPERIMENTAL: &[&str] = &["experimental"];
 
 /// What a commit writes: the newest snapshot's envelope, the cause the
 /// journal ended its incarnation with, and the own row's cursors.
@@ -140,27 +147,54 @@ pub(crate) fn registry_update(own: bool) -> String {
         )
     } else {
         format!(
-            "{registry}, {}, {}",
+            "{registry}, {}, {}, {}",
             update_of(INVENTORY_ENVELOPE),
-            update_of(INVENTORY_COUNTS)
+            update_of(INVENTORY_COUNTS),
+            update_of(EXPERIMENTAL)
         )
     }
 }
 
-/// An agents row with its snapshot and git columns still encoded.
-type RawAgent = (AgentRow, Option<Vec<u8>>, Option<Vec<u8>>);
+/// An agents row with its snapshot, git and experimental columns still
+/// encoded.
+type RawAgent = (AgentRow, Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
 
-/// The column after the agents table's own that carries an experiment's
-/// entry, when one is joined: `workspaces/1`'s encoded `AgentWorkspace`.
-const WORKSPACES_1_COLUMN: usize = 31;
+/// The `experimental` column: a protobuf message whose one field is the
+/// row's map, `map<string, bytes> entries = 1`. A map field encodes each
+/// entry as the same key-and-value pair whichever message holds it, so the
+/// column holds the entries exactly as `Agent.experimental` carries them on
+/// the wire, any later build reads it knowing no experiment, and `protoc
+/// --decode_raw` shows it. A row with no entries holds NULL, as every row
+/// written before the column does.
+#[derive(Clone, PartialEq, prost::Message)]
+struct ExperimentalColumn {
+    #[prost(btree_map = "string, bytes", tag = "1")]
+    entries: std::collections::BTreeMap<String, Vec<u8>>,
+}
+
+/// The column's value for a row's map.
+pub(crate) fn encode_experimental(
+    map: &std::collections::BTreeMap<String, Vec<u8>>,
+) -> Option<Vec<u8>> {
+    (!map.is_empty()).then(|| {
+        ExperimentalColumn {
+            entries: map.clone(),
+        }
+        .encode_to_vec()
+    })
+}
+
+/// The row's map from its column's value.
+pub(crate) fn decode_experimental(
+    column: Option<&[u8]>,
+) -> Result<std::collections::BTreeMap<String, Vec<u8>>, prost::DecodeError> {
+    match column {
+        None => Ok(Default::default()),
+        Some(bytes) => Ok(ExperimentalColumn::decode(bytes)?.entries),
+    }
+}
 
 fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
-    let mut experimental = std::collections::BTreeMap::new();
-    if row.as_ref().column_count() > WORKSPACES_1_COLUMN
-        && let Some(entry) = row.get::<_, Option<Vec<u8>>>(WORKSPACES_1_COLUMN)?
-    {
-        experimental.insert(crate::experiments::WORKSPACES_1.version.to_owned(), entry);
-    }
     let parent_host: Option<Vec<u8>> = row.get(5)?;
     let parent_id: Option<Vec<u8>> = row.get(6)?;
     Ok((
@@ -194,15 +228,16 @@ fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
             title: row.get(28)?,
             name_given: row.get(29)?,
             last_said: row.get(30)?,
-            experimental,
+            experimental: Default::default(),
         },
         row.get(14)?,
         row.get(13)?,
+        row.get(31)?,
     ))
 }
 
 /// Decodes the message columns `agent_row` leaves as bytes.
-fn finish_agent((mut row, snapshot, git): RawAgent) -> Result<AgentRow, StoreError> {
+fn finish_agent((mut row, snapshot, git, experimental): RawAgent) -> Result<AgentRow, StoreError> {
     let corrupt = |error: prost::DecodeError| StoreError::Corrupt(error.to_string());
     row.snapshot = snapshot
         .map(|bytes| Snapshot::decode(bytes.as_slice()))
@@ -212,6 +247,7 @@ fn finish_agent((mut row, snapshot, git): RawAgent) -> Result<AgentRow, StoreErr
         .map(|bytes| wire::Git::decode(bytes.as_slice()))
         .transpose()
         .map_err(corrupt)?;
+    row.experimental = decode_experimental(experimental.as_deref()).map_err(corrupt)?;
     Ok(row)
 }
 
@@ -282,9 +318,6 @@ fn signed(value: u64) -> i64 {
 pub(crate) struct Rows<'a> {
     pub(crate) conn: &'a Connection,
     pub(crate) own_host: &'a [u8],
-    /// The `workspaces/1` experiment's table is there: a row read carries
-    /// its entry, and a row removed takes its entry with it.
-    pub(crate) workspaces_1: bool,
     /// The `suspension/1` experiment's table is there: a row removed takes
     /// its run with it.
     pub(crate) suspension_1: bool,
@@ -295,27 +328,13 @@ impl Rows<'_> {
         agent.host == self.own_host
     }
 
-    /// The columns a read of agents rows selects: the table's own, then
-    /// each experiment's entry whose table is there.
-    fn agent_columns(&self) -> String {
-        if self.workspaces_1 {
-            format!(
-                "{AGENT_COLUMNS}, (SELECT entry.workspace FROM {WORKSPACES_1_MEMBERS} entry \
-                 WHERE entry.origin_host = agents.origin_host AND entry.agent_id = agents.agent_id)"
-            )
-        } else {
-            AGENT_COLUMNS.to_owned()
-        }
-    }
-
     fn agents_where(
         &self,
         condition: &str,
         params: impl rusqlite::Params,
     ) -> Result<Vec<AgentRow>, StoreError> {
         let mut statement = self.conn.prepare_cached(&format!(
-            "SELECT {} FROM agents WHERE {condition} ORDER BY origin_host, agent_id",
-            self.agent_columns()
+            "SELECT {AGENT_COLUMNS} FROM agents WHERE {condition} ORDER BY origin_host, agent_id"
         ))?;
         let rows = statement
             .query_map(params, agent_row)?
@@ -339,9 +358,8 @@ impl Rows<'_> {
     /// The row an agent id names, this host's own first.
     pub(crate) fn agent_by_id(&self, agent_id: &[u8]) -> Result<Option<AgentRow>, StoreError> {
         let mut statement = self.conn.prepare_cached(&format!(
-            "SELECT {} FROM agents WHERE agent_id = ?1 \
-             ORDER BY origin_host = ?2 DESC, origin_host LIMIT 1",
-            self.agent_columns()
+            "SELECT {AGENT_COLUMNS} FROM agents WHERE agent_id = ?1 \
+             ORDER BY origin_host = ?2 DESC, origin_host LIMIT 1"
         ))?;
         statement
             .query_row(params![agent_id, self.own_host], agent_row)
@@ -379,7 +397,7 @@ impl Rows<'_> {
             .prepare_cached(&format!(
                 "INSERT INTO agents ({AGENT_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, \
                  ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, \
-                 ?25, ?26, ?27, ?28, ?29, ?30, ?31) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
+                 ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
             ))?
             .execute(params![
                 row.agent.host,
@@ -415,6 +433,7 @@ impl Rows<'_> {
                 row.title,
                 row.name_given,
                 row.last_said,
+                encode_experimental(&row.experimental),
             ])?;
         Ok(())
     }
@@ -473,9 +492,6 @@ impl Rows<'_> {
             "DELETE FROM deliveries WHERE child_id = ?1",
             params![agent.agent],
         )?;
-        if self.workspaces_1 {
-            self.put_workspaces_1(agent, None)?;
-        }
         if self.suspension_1 && self.is_own(agent) {
             self.put_run_start(&agent.agent, None)?;
         }
@@ -514,31 +530,6 @@ impl Rows<'_> {
                     "DELETE FROM {SUSPENSION_1_RUNS} WHERE agent_id = ?1"
                 ))?
                 .execute(params![agent])?,
-        };
-        Ok(())
-    }
-
-    /// Writes the agent's `workspaces/1` entry, or removes it.
-    pub(crate) fn put_workspaces_1(
-        &self,
-        agent: &AgentKey,
-        entry: Option<&[u8]>,
-    ) -> Result<(), StoreError> {
-        match entry {
-            Some(entry) => self
-                .conn
-                .prepare_cached(&format!(
-                    "INSERT INTO {WORKSPACES_1_MEMBERS} (origin_host, agent_id, workspace) \
-                     VALUES (?1, ?2, ?3) ON CONFLICT (origin_host, agent_id) \
-                     DO UPDATE SET workspace = excluded.workspace"
-                ))?
-                .execute(params![agent.host, agent.agent, entry])?,
-            None => self
-                .conn
-                .prepare_cached(&format!(
-                    "DELETE FROM {WORKSPACES_1_MEMBERS} WHERE origin_host = ?1 AND agent_id = ?2"
-                ))?
-                .execute(params![agent.host, agent.agent])?,
         };
         Ok(())
     }

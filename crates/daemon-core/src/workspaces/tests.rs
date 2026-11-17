@@ -4,6 +4,7 @@
 
 use std::collections::BTreeSet;
 
+use prost::Message as _;
 use store::{AgentKey, AgentRow, Sqlite};
 use wire::{AgentSpec, Envelope, ExitCause, Lifecycle};
 
@@ -28,7 +29,7 @@ fn store() -> Sqlite {
     let mut store = Sqlite::open_in_memory(OWN).expect("a store opens");
     store
         .settle_experiments(&[VERSION])
-        .expect("the experiment's tables");
+        .expect("the experiments settle");
     store
 }
 
@@ -693,9 +694,9 @@ fn a_daemon_restarted_while_it_made_a_workspace_ends_that_agent_as_could_not_sta
         creating: true,
         problem: None,
     });
-    store
-        .put_experimental(&key, VERSION, Some(&creating.encode_to_vec()))
-        .unwrap();
+    let mut map = wire::experimental::Map::new();
+    wire::experimental::WORKSPACE.put(&mut map, &creating);
+    assert!(store.set_experimental(&key, &map).unwrap());
     let dir = tempfile::tempdir().unwrap();
     let mut rig = Rig {
         daemon: daemon(store, true, &dir),
@@ -762,7 +763,7 @@ fn without_the_experiment_a_new_worktree_is_made_before_the_row_as_before() {
 }
 
 #[test]
-fn a_replica_row_carries_its_origins_entry_only_where_the_experiment_runs() {
+fn a_replica_row_carries_its_origins_entry_whether_or_not_the_experiment_runs() {
     let entry = to_entry(&View {
         workspace: wt_tree("/trees/shop/far"),
         made_here: true,
@@ -772,7 +773,12 @@ fn a_replica_row_carries_its_origins_entry_only_where_the_experiment_runs() {
     .encode_to_vec();
     for on in [true, false] {
         let dir = tempfile::tempdir().unwrap();
-        let mut daemon = daemon(store(), on, &dir);
+        let store = if on {
+            store()
+        } else {
+            Sqlite::open_in_memory(OWN).expect("a store opens")
+        };
+        let mut daemon = daemon(store, on, &dir);
         let agent = wire::Agent {
             host_id: b"far-host-0000000".to_vec(),
             agent_id: b"theirs".to_vec(),
@@ -792,11 +798,7 @@ fn a_replica_row_carries_its_origins_entry_only_where_the_experiment_runs() {
             .unwrap()
             .unwrap();
         let served = crate::serve::to_wire(&held);
-        if on {
-            assert_eq!(served.experimental[VERSION], entry);
-        } else {
-            assert!(served.experimental.is_empty());
-        }
+        assert_eq!(served.experimental[VERSION], entry, "running it: {on}");
     }
 }
 

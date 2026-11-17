@@ -449,10 +449,7 @@ fn opening_keeps_the_tables_of_the_experiments_on_and_drops_the_rest() {
         .unwrap();
     store.put_draft(b"agent", b"draft").unwrap();
     drop(store);
-    assert_eq!(
-        experiment_tables(&path),
-        ["exp_suspension_1_runs", "exp_workspaces_1_members"]
-    );
+    assert_eq!(experiment_tables(&path), ["exp_suspension_1_runs"]);
     {
         let conn = Connection::open(&path).unwrap();
         conn.execute(
@@ -478,7 +475,7 @@ fn opening_keeps_the_tables_of_the_experiments_on_and_drops_the_rest() {
     drop(Sqlite::open(&path, OWN).unwrap());
     assert_eq!(
         experiment_tables(&path).len(),
-        4,
+        3,
         "a plain open drops nothing"
     );
 
@@ -586,40 +583,199 @@ fn experiment_tables_are_named_by_their_version_and_kept_out_of_the_migrations()
     );
 }
 
+/// A blanking redactor: every text the same length of x, every message
+/// kept, content zeroed.
+struct Blank;
+
+impl store::redact::Redactor for Blank {
+    fn text(&self, _: &str, _: &str, text: &str) -> String {
+        "x".repeat(text.len())
+    }
+    fn message(&self, _: &str, bytes: &[u8]) -> Vec<u8> {
+        bytes.to_vec()
+    }
+    fn content(&self, bytes: &[u8]) -> Vec<u8> {
+        vec![0; bytes.len()]
+    }
+    fn hash(&self, bytes: &[u8]) -> Vec<u8> {
+        bytes.to_vec()
+    }
+}
+
 /// No experiment says how its rows redact, so a dump's copy of the store
 /// carries none of them.
 #[test]
 fn a_redacted_copy_carries_no_experiment_tables() {
-    struct Blank;
-    impl store::redact::Redactor for Blank {
-        fn text(&self, _: &str, _: &str, text: &str) -> String {
-            "x".repeat(text.len())
-        }
-        fn message(&self, _: &str, bytes: &[u8]) -> Vec<u8> {
-            bytes.to_vec()
-        }
-        fn content(&self, bytes: &[u8]) -> Vec<u8> {
-            vec![0; bytes.len()]
-        }
-        fn hash(&self, bytes: &[u8]) -> Vec<u8> {
-            bytes.to_vec()
-        }
-    }
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("store.sqlite");
-    drop(Sqlite::open_with(&path, OWN, &["workspaces/1"]).unwrap());
-    assert_eq!(experiment_tables(&path), ["exp_workspaces_1_members"]);
+    drop(Sqlite::open_with(&path, OWN, &["suspension/1"]).unwrap());
+    assert_eq!(experiment_tables(&path), ["exp_suspension_1_runs"]);
     store::redact::redact_file(&path, &Blank).unwrap();
     assert!(experiment_tables(&path).is_empty());
     assert!(tables(&path).iter().any(|(name, _)| name == "agents"));
 }
 
-/// A row read while an experiment's table is there carries the agent's
-/// entry from it, keyed by the version; a row written does not touch it,
-/// and a row removed, by a delete or by retention, takes it along. A store
-/// without the table writes and reads nothing of it.
+/// A map with an entry under each version, as a row's origin wrote it:
+/// one this build runs, and one no build of this one knows.
+fn entries(workspace: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
+    [
+        ("workspaces/1".to_owned(), workspace.to_vec()),
+        ("teleport/3".to_owned(), b"another build's shape".to_vec()),
+    ]
+    .into()
+}
+
+/// What `agents.experimental` holds for each row, raw.
+fn experimental_columns(path: &std::path::Path) -> Vec<Option<Vec<u8>>> {
+    Connection::open(path)
+        .unwrap()
+        .prepare("SELECT experimental FROM agents ORDER BY origin_host, agent_id")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+}
+
+/// No experiment says how its entries redact, and a workspace's names the
+/// agent's folder, so a dump's copy of the store keeps no row's entries.
 #[test]
-fn an_experiments_entry_rides_on_the_row_and_goes_with_it() {
+fn a_redacted_copy_carries_no_experimental_entries() {
+    const FOLDER: &[u8] = b"/Users/someone/src/PLANTEDfolder";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.sqlite");
+    let mut store = Sqlite::open_with(&path, OWN, &["workspaces/1"]).unwrap();
+    for key in [
+        AgentKey::new(OWN, b"agent".to_vec()),
+        AgentKey::new(b"far-host".to_vec(), b"theirs".to_vec()),
+    ] {
+        let mut row = AgentRow::new(key, wire::Kind::Codex, "/src");
+        row.experimental = entries(FOLDER);
+        store.put_agent(&row).unwrap();
+    }
+    drop(store);
+    assert!(
+        experimental_columns(&path).iter().all(Option::is_some),
+        "both rows hold their entries before"
+    );
+    store::redact::redact_file(&path, &Blank).unwrap();
+    assert_eq!(experimental_columns(&path), [None, None]);
+    let file = std::fs::read(&path).unwrap();
+    assert!(
+        !file.windows(FOLDER.len()).any(|window| window == FOLDER),
+        "the file keeps the folder somewhere"
+    );
+    let store = Sqlite::open(&path, OWN).unwrap();
+    assert!(
+        store
+            .agents()
+            .unwrap()
+            .iter()
+            .all(|row| row.experimental.is_empty())
+    );
+}
+
+/// A replica's entries are its origin's: stored whole and read back as
+/// they came, whatever this store's owner runs and under versions it has
+/// never heard of, and replaced whole by the origin's next row.
+#[test]
+fn a_replicas_experimental_entries_are_kept_as_its_origin_wrote_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.sqlite");
+    let replica = AgentKey::new(b"far-host".to_vec(), b"theirs".to_vec());
+    // Its owner runs no experiment, as the phone's does not.
+    let mut store = Sqlite::open_with(&path, OWN, &[]).unwrap();
+    let mut row = AgentRow::new(replica.clone(), wire::Kind::Codex, "/src");
+    row.experimental = entries(&[1, 2, 3]);
+    store.put_agent(&row).unwrap();
+    assert_eq!(
+        store.agent(&replica).unwrap().unwrap().experimental,
+        entries(&[1, 2, 3])
+    );
+    assert_eq!(
+        store.agent_by_id(b"theirs").unwrap().unwrap().experimental,
+        entries(&[1, 2, 3])
+    );
+    drop(store);
+
+    for on in [&[][..], &["workspaces/1"], &["suspension/1"]] {
+        let store = Sqlite::open_with(&path, OWN, on).unwrap();
+        assert_eq!(
+            store.agents().unwrap()[0].experimental,
+            entries(&[1, 2, 3]),
+            "reopened running {on:?}"
+        );
+    }
+    drop(Sqlite::open(&path, OWN).unwrap());
+
+    let mut store = Sqlite::open_with(&path, OWN, &[]).unwrap();
+    row.experimental = [("teleport/3".to_owned(), vec![7])].into();
+    store.put_agent(&row).unwrap();
+    assert_eq!(
+        store.agent(&replica).unwrap().unwrap().experimental,
+        row.experimental,
+        "the origin's next row replaces the map whole"
+    );
+    row.experimental.clear();
+    store.put_agent(&row).unwrap();
+    assert!(
+        store
+            .agent(&replica)
+            .unwrap()
+            .unwrap()
+            .experimental
+            .is_empty()
+    );
+    assert_eq!(experimental_columns(&path), [None], "an empty map is NULL");
+}
+
+/// A host speaks only for its own rows: opening its store clears from them
+/// the entries of every version it does not run, and leaves a replica's.
+#[test]
+fn opening_clears_own_rows_of_entries_it_does_not_run_and_never_a_replicas() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.sqlite");
+    let own = AgentKey::new(OWN, b"agent".to_vec());
+    let replica = AgentKey::new(b"far-host".to_vec(), b"theirs".to_vec());
+    let mut store = Sqlite::open_with(&path, OWN, &["workspaces/1"]).unwrap();
+    for key in [&own, &replica] {
+        let mut row = AgentRow::new(key.clone(), wire::Kind::Codex, "/src");
+        row.experimental = entries(&[1]);
+        store.put_agent(&row).unwrap();
+    }
+    drop(store);
+
+    let store = Sqlite::open_with(&path, OWN, &["workspaces/1"]).unwrap();
+    assert_eq!(
+        store.agent(&own).unwrap().unwrap().experimental,
+        [("workspaces/1".to_owned(), vec![1])].into(),
+        "an own row keeps only what this host runs"
+    );
+    assert_eq!(
+        store.agent(&replica).unwrap().unwrap().experimental,
+        entries(&[1])
+    );
+    drop(store);
+
+    // A tool's open clears nothing.
+    let store = Sqlite::open(&path, OWN).unwrap();
+    assert!(!store.agent(&own).unwrap().unwrap().experimental.is_empty());
+    drop(store);
+
+    let store = Sqlite::open_with(&path, OWN, &[]).unwrap();
+    assert!(store.agent(&own).unwrap().unwrap().experimental.is_empty());
+    assert_eq!(
+        store.agent(&replica).unwrap().unwrap().experimental,
+        entries(&[1]),
+        "a replica keeps its origin's entries"
+    );
+}
+
+/// An own row's entries are its experiments': a registry write leaves them,
+/// the experiments write the map whole, and a row removed takes them along.
+/// Nothing but its origin's row writes a replica's.
+#[test]
+fn an_own_rows_entries_are_written_by_its_experiments_alone() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("store.sqlite");
     let mut store = Sqlite::open_with(&path, OWN, &["workspaces/1"]).unwrap();
@@ -630,63 +786,39 @@ fn an_experiments_entry_rides_on_the_row_and_goes_with_it() {
             .put_agent(&AgentRow::new(key.clone(), wire::Kind::Codex, "/src"))
             .unwrap();
     }
-    assert!(store.agent(&own).unwrap().unwrap().experimental.is_empty());
-
-    store
-        .put_experimental(&own, "workspaces/1", Some(&[1, 2, 3]))
-        .unwrap();
-    store
-        .put_experimental(&replica, "workspaces/1", Some(&[4]))
-        .unwrap();
-    // A version the store keeps no table for is not written.
-    store
-        .put_experimental(&own, "workspaces/2", Some(&[9]))
-        .unwrap();
+    let map: std::collections::BTreeMap<String, Vec<u8>> =
+        [("workspaces/1".to_owned(), vec![1, 2, 3])].into();
+    assert!(store.set_experimental(&own, &map).unwrap());
     let held = store.agent(&own).unwrap().unwrap();
-    assert_eq!(
-        held.experimental,
-        [("workspaces/1".to_owned(), vec![1, 2, 3])].into()
-    );
-    let by_id = store.agent_by_id(b"theirs").unwrap().unwrap();
-    assert_eq!(
-        by_id.experimental,
-        [("workspaces/1".to_owned(), vec![4])].into()
-    );
-    assert_eq!(
-        store
-            .agents()
-            .unwrap()
-            .iter()
-            .filter(|row| !row.experimental.is_empty())
-            .count(),
-        2
-    );
+    assert_eq!(held.experimental, map);
 
-    // Writing the row again leaves its entry.
     let mut renamed = held.clone();
     renamed.name = "renamed".into();
     renamed.experimental.clear();
     store.put_agent(&renamed).unwrap();
-    assert_eq!(
-        store.agent(&own).unwrap().unwrap().experimental,
-        held.experimental
+    let after = store.agent(&own).unwrap().unwrap();
+    assert_eq!(after.name, "renamed");
+    assert_eq!(after.experimental, map, "a registry write leaves the map");
+
+    assert!(matches!(
+        store.set_experimental(&replica, &map),
+        Err(StoreError::NotOwn)
+    ));
+    assert!(
+        !store
+            .set_experimental(&AgentKey::new(OWN, b"nobody".to_vec()), &map)
+            .unwrap()
     );
-    store.put_experimental(&own, "workspaces/1", None).unwrap();
+    assert!(store.set_experimental(&own, &Default::default()).unwrap());
     assert!(store.agent(&own).unwrap().unwrap().experimental.is_empty());
 
-    store.delete_agent(&replica).unwrap();
-    let left: i64 = store
-        .connection()
-        .query_row("SELECT count(*) FROM exp_workspaces_1_members", [], |row| {
-            row.get(0)
-        })
+    store.set_experimental(&own, &map).unwrap();
+    store.delete_agent(&own).unwrap();
+    store
+        .put_agent(&AgentRow::new(own.clone(), wire::Kind::Codex, "/src"))
         .unwrap();
-    assert_eq!(left, 0, "the entry went with its row");
-    drop(store);
-
-    let mut plain = Sqlite::open(&path, OWN).unwrap();
-    plain
-        .put_experimental(&own, "workspaces/1", Some(&[1]))
-        .unwrap();
-    assert!(plain.agent(&own).unwrap().unwrap().experimental.is_empty());
+    assert!(
+        store.agent(&own).unwrap().unwrap().experimental.is_empty(),
+        "the entries went with the row"
+    );
 }

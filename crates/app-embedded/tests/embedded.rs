@@ -490,6 +490,103 @@ async fn a_phone_links_to_its_desk_again_once_its_browser_finds_the_desk_back() 
     net.shutdown().await.unwrap();
 }
 
+/// The phone's node runs no experiment and cannot switch one on, yet it
+/// keeps the workspace a desk running the workspaces experiment puts on
+/// its rows: the phone's fleet holds it, and deleting the agent warns that
+/// its worktree goes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_phone_keeps_the_workspace_a_desks_row_says() {
+    use wire::agent_service_server::AgentService as _;
+
+    let net = Net::start_with(
+        Topology::new().host_decl(HostDecl {
+            name: "desk".into(),
+            lan: true,
+            repositories: vec!["site".into()],
+            files: [("site/README.md".to_owned(), "# The site\n".to_owned())].into(),
+            ..HostDecl::default()
+        }),
+        testnet::NetOptions {
+            launch: Some(Arc::new(|_: &str, launch: &mut node::Launch| {
+                launch.experiments =
+                    settings::experiments::Enabled::of(&[&settings::experiments::WORKSPACES]);
+            })),
+            ..testnet::NetOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let embedded = EmbeddedRuntime::start_with(
+        &config(dir.path()),
+        loopback(),
+        Arc::new(SystemClock),
+        queue(),
+    )
+    .await
+    .unwrap();
+    let phone = only_profile(&embedded).await;
+    let desk = net.host("desk").unwrap();
+    let (pin, addrs) = pairing_pin(&net).await;
+    pair(
+        &embedded,
+        phone,
+        &PairRequest::Pin {
+            host_id: desk.host_id.as_bytes().to_vec(),
+            pin,
+            addrs,
+        },
+    )
+    .await
+    .unwrap();
+    let app = app(&embedded, phone).await;
+
+    let site = desk.work.with_file_name("repositories").join("site");
+    let created = net
+        .client("desk")
+        .unwrap()
+        .create_agent(tonic::Request::new(wire::CreateAgentRequest {
+            agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+            name: Some("fix-header".into()),
+            cwd: site.to_string_lossy().into_owned(),
+            agent: wire::create_agent_request::Agent::defaults(wire::Kind::ClaudeSdk),
+            new_workspace: true,
+            ..wire::CreateAgentRequest::default()
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .agent
+        .expect("a created agent is answered");
+    let agent = ui_state::agent_key(&created);
+    let made = |app: &AppRuntime| {
+        app.fleet()
+            .state()
+            .agent(&agent)
+            .and_then(|row| wire::experimental::WORKSPACE.get(&row.experimental))
+            .filter(|workspace| !workspace.creating)
+    };
+    eventually(&app, "the desk's workspace on the phone's row", || {
+        made(&app).is_some()
+    })
+    .await;
+    let workspace = made(&app).unwrap();
+    assert_eq!(workspace.kind(), wire::experimental::WorkspaceKind::Git);
+    assert!(workspace.made_by_amux);
+    assert!(
+        app.fleet()
+            .state()
+            .delete_removes_workspace(&agent)
+            .is_some(),
+        "the phone warns that the worktree goes"
+    );
+    assert!(app.delete_warning(&agent).await.is_some());
+
+    drop(app);
+    embedded.shutdown().await.unwrap();
+    net.shutdown().await.unwrap();
+}
+
 /// One profile as the profile list shows it.
 async fn listed(embedded: &EmbeddedRuntime, profile: ProfileId) -> ProfileView {
     let id = profile.to_string();

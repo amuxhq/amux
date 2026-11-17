@@ -202,7 +202,9 @@ async fn an_experiment_switched_takes_effect_at_the_next_start() {
     daemon.shutdown().await.unwrap();
 
     let daemon = start("boot-1").await;
-    assert_eq!(experiment_tables(&desk), ["exp_workspaces_1_members"]);
+    // Workspaces keeps nothing in tables of its own: its entries ride on
+    // the rows.
+    assert!(experiment_tables(&desk).is_empty());
     assert_eq!(
         runtime(&daemon, &desk).launch().experiments.versions(),
         ["workspaces/1"]

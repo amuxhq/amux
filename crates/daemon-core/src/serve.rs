@@ -608,13 +608,9 @@ pub fn to_wire(row: &AgentRow) -> Agent {
         filed_at_ms: row.filed_at_ms,
         title: row.title.clone(),
         last_said: row.last_said.clone(),
-        // Each experiment's entry comes from its own table, joined as the
-        // row was read; the row's columns hold none.
-        experimental: row
-            .experimental
-            .iter()
-            .map(|(version, entry)| (version.clone(), entry.clone()))
-            .collect(),
+        // Whole and undecoded: an own row's as this host's experiments
+        // wrote it, a replica's as its origin sent it.
+        experimental: row.experimental.clone(),
     }
 }
 

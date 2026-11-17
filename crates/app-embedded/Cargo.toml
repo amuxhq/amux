@@ -26,6 +26,7 @@ futures-util = { workspace = true }
 ui-state = { workspace = true }
 patience = { workspace = true }
 provider-fakes = { workspace = true }
+settings = { workspace = true }
 tempfile = { workspace = true }
 testnet = { workspace = true }
 tracing = { workspace = true }

@@ -139,11 +139,12 @@ pub struct AgentRow {
     /// A person or a parent chose the name, so the provider does not title
     /// the agent.
     pub name_given: bool,
-    /// The entries of the experiments whose tables the store has, by
-    /// version (`workspaces/1`), joined from those tables when the row is
-    /// read: the agents table holds none, and [`Sqlite::put_agent`] writes
-    /// none. An experiment writes its entries with
-    /// [`Sqlite::put_experimental`].
+    /// What the row says to everyone under each experiment, by version
+    /// (`workspaces/1`), as the wire's `Agent.experimental` carries it. The
+    /// store never decodes an entry. A replica's is its origin's, replaced
+    /// whole by [`Sqlite::put_agent`] whatever this host runs; an own row's
+    /// is written by the experiments this host runs, with
+    /// [`Sqlite::set_experimental`], and a registry write leaves it.
     pub experimental: std::collections::BTreeMap<String, Vec<u8>>,
 }
 

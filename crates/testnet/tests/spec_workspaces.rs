@@ -174,6 +174,58 @@ async fn a_new_worktree_from_another_host_is_answered_first_and_replicated_with_
     net.shutdown().await.unwrap();
 }
 
+/// The desk runs the experiment and the laptop does not: the laptop still
+/// keeps and serves the workspace the desk's row says, so a client of the
+/// laptop warns that deleting the agent takes its worktree.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_without_the_experiment_keeps_a_replicas_workspace_for_its_clients() {
+    let homes = tempfile::tempdir().unwrap();
+    let homes = homes.path().to_owned();
+    let options = NetOptions {
+        launch: Some(Arc::new(move |host: &str, launch: &mut Launch| {
+            if host == "desk" {
+                launch.experiments =
+                    settings::experiments::Enabled::of(&[&settings::experiments::WORKSPACES]);
+            }
+            launch.wt_home = Some(homes.join(host));
+        })),
+        ..NetOptions::default()
+    };
+    let net = Net::start_with(topology(false), options).await.unwrap();
+    assert!(
+        !net.runtime("laptop")
+            .unwrap()
+            .launch()
+            .experiments
+            .is_on(&settings::experiments::WORKSPACES)
+    );
+
+    let agent = create(&net, "fix-sidebar").await;
+    let on_desk = row_on(&net, "desk", &agent, "the worktree made", |row| {
+        made(entry(row))
+    })
+    .await;
+    let on_laptop = row_on(&net, "laptop", &agent, "the replica's workspace", |row| {
+        made(entry(row))
+    })
+    .await;
+    assert_eq!(on_laptop.experimental, on_desk.experimental);
+    assert_eq!(entry(&on_laptop).unwrap().kind(), WorkspaceKind::Git);
+
+    let mut fleet = ui_state::FleetState::new();
+    fleet.update(ui_state::FleetMsg::Event(Box::new(wire::InventoryEvent {
+        of: Some(inventory_event::Of::Agent(on_laptop.clone())),
+    })));
+    assert!(
+        fleet
+            .delete_removes_workspace(&ui_state::agent_key(&on_laptop))
+            .is_some(),
+        "the laptop's client warns that the worktree goes"
+    );
+
+    net.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_new_wt_tree_from_another_host_runs_its_agent_and_starts_the_tree() {
     let homes = tempfile::tempdir().unwrap();

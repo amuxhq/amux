@@ -7,8 +7,8 @@
 //! launch, no longer awake, deleted), turns its outputs into the driver's
 //! jobs, and hands back "this member may launch" to the registry, which
 //! waits for it before it spawns a process. It also writes each member's
-//! workspace into the experiment's store table, from which every row read
-//! carries it as `Agent.experimental["workspaces/1"]`.
+//! workspace onto its row, which carries it to everyone as
+//! `Agent.experimental["workspaces/1"]`.
 //!
 //! As the daemon starts nothing of the workspace core carries over: once
 //! the start's sweep is done, each own agent's folder is resolved to its
@@ -23,9 +23,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use prost::Message as _;
 use serde::{Deserialize, Serialize};
-use store::StoreError;
 use workspace_core::{Input as Core, MemberId, Output as Wants, View, Workspaces};
 pub use workspace_core::{Key, Kind, Plan, Removal};
 
@@ -311,8 +309,8 @@ impl Daemon {
         }
     }
 
-    /// Writes the member's workspace into the experiment's table as the
-    /// core now sees it, and tells subscribers its row, when that changed.
+    /// Writes the member's workspace onto its row as the core now sees it,
+    /// and tells subscribers the row, when that changed.
     fn sync_entry(&mut self, agent: AgentId, out: &mut Vec<Output>) {
         let Some(view) = self.workspaces.core.view_of(member(agent)) else {
             return;
@@ -322,12 +320,12 @@ impl Daemon {
             let Some(row) = self.store.agent(&key)? else {
                 return Ok(false);
             };
-            let entry = to_entry(&view).encode_to_vec();
-            if row.experimental.get(VERSION) == Some(&entry) {
+            let mut map = row.experimental.clone();
+            wire::experimental::WORKSPACE.put(&mut map, &to_entry(&view));
+            if map == row.experimental {
                 return Ok(false);
             }
-            self.store.put_experimental(&key, VERSION, Some(&entry))?;
-            Ok::<_, StoreError>(true)
+            self.store.set_experimental(&key, &map)
         })();
         match written {
             Ok(true) => {

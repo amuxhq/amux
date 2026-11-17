@@ -148,4 +148,14 @@ CREATE UNIQUE INDEX items_by_position ON items (origin_host, agent_id, position)
 CREATE INDEX items_by_revision ON items (origin_host, agent_id, revision);
 CREATE INDEX items_by_input ON items (origin_host, agent_id, input_id) WHERE input_id IS NOT NULL;
 "#,
+    // 2: the row's experimental entries, as the wire's Agent.experimental
+    // carries them.
+    r#"
+-- What the row says to everyone under each experiment, version to encoded
+-- message, as its origin wrote it: an own row's, written by the
+-- experiments this host runs, and a replica's, replaced whole from its
+-- origin's row whatever this host runs. NULL holds none, as every row
+-- written before this column did.
+ALTER TABLE agents ADD COLUMN experimental BLOB;
+"#,
 ];

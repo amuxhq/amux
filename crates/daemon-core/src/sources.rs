@@ -916,17 +916,6 @@ impl Daemon {
             self.sources.settling.remove(&key);
         }
         self.store.put_agent(&row)?;
-        // The row's experiment entries, as its origin says them, for the
-        // experiments this host runs: none of another version, and none
-        // when the origin no longer sends one.
-        if self.workspaces_on() {
-            let entry = agent.experimental.get(crate::workspaces::VERSION);
-            self.store.put_experimental(
-                &row.agent,
-                crate::workspaces::VERSION,
-                entry.map(Vec::as_slice),
-            )?;
-        }
         self.publish_row(&row.agent, out)?;
         self.recount_from(row.parent, out)
     }
@@ -1728,6 +1717,10 @@ pub fn from_wire(agent: &Agent) -> AgentRow {
     row.filed_at_ms = agent.filed_at_ms;
     row.title = agent.title.clone();
     row.last_said = agent.last_said.clone();
+    // What the origin says under each experiment, whole and undecoded,
+    // whatever this host runs: a client of this host, the phone's above
+    // all, shows them though this host can switch none of them on.
+    row.experimental = agent.experimental.clone();
     row
 }
 
@@ -1789,34 +1782,63 @@ mod tests {
         }
     }
 
-    /// A host that runs no experiment, or another version of one, reads
-    /// nothing of a peer's `experimental` entries: the replica row it keeps
-    /// and serves is the one it would keep had the peer sent none.
+    /// A host that runs no experiment keeps and serves a peer's
+    /// `experimental` entries exactly as the peer sent them, under versions
+    /// it runs, does not run or has never heard of, and replaces them whole
+    /// when the peer's row changes: a client of it, the phone's above all,
+    /// sees what the row says though this host can switch none of it on.
     #[test]
-    fn a_peers_experiment_entries_leave_its_replica_rows_as_they_were() {
-        let plain = Agent {
+    fn a_peers_experiment_entries_ride_on_its_replica_rows_whatever_this_host_runs() {
+        let mut daemon = daemon();
+        assert!(!daemon.workspaces_on());
+        let inventory = following(&mut daemon);
+        let workspace = wire::experimental::AgentWorkspace {
+            kind: wire::experimental::WorkspaceKind::Git as i32,
+            id: "/src/app-fix".into(),
+            made_by_amux: true,
+            ..Default::default()
+        };
+        let mut with_entries = Agent {
             name: "coder".into(),
             ..listed(wire::Lifecycle::Live)
         };
-        let mut with_entries = plain.clone();
+        wire::experimental::WORKSPACE.put(&mut with_entries.experimental, &workspace);
         with_entries
             .experimental
-            .insert("workspaces/1".into(), vec![0x0a, 0x01, 0x2f]);
-        with_entries
-            .experimental
-            .insert("workspaces/2".into(), vec![0xff]);
-        assert_eq!(from_wire(&with_entries), from_wire(&plain));
-
-        let mut store = Sqlite::open_in_memory(OWN).expect("a store opens");
-        store.put_agent(&from_wire(&with_entries)).unwrap();
-        let held = store
-            .agent(&AgentKey::new(PEER.to_vec(), THEIRS.to_vec()))
+            .insert("teleport/3".into(), vec![0xff]);
+        for of in [
+            inventory_event::Of::Agent(with_entries.clone()),
+            inventory_event::Of::CaughtUp(CaughtUp::default()),
+        ] {
+            step(&mut daemon, inventory_event(inventory, of));
+        }
+        let held = daemon
+            .store
+            .agent(&key())
             .unwrap()
             .expect("the replica row");
+        assert_eq!(held.experimental, with_entries.experimental);
         let served = crate::serve::to_wire(&held);
-        assert!(served.experimental.is_empty());
+        assert_eq!(served.experimental, with_entries.experimental);
+        assert_eq!(
+            wire::experimental::WORKSPACE.get(&served.experimental),
+            Some(workspace)
+        );
         assert_eq!(served.name, "coder");
-        assert_eq!(served.cwd, plain.cwd);
+
+        // The peer's next row says only the entry it does not know.
+        let mut changed = with_entries.clone();
+        wire::experimental::WORKSPACE.clear(&mut changed.experimental);
+        step(
+            &mut daemon,
+            inventory_event(inventory, inventory_event::Of::Agent(changed.clone())),
+        );
+        let held = daemon
+            .store
+            .agent(&key())
+            .unwrap()
+            .expect("the replica row");
+        assert_eq!(held.experimental, changed.experimental);
     }
 
     /// The calls the step made of `PEER`.

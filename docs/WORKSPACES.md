@@ -212,13 +212,13 @@ of its own.
 | Concern | Where |
 | --- | --- |
 | The lifecycle rules, as one pure step | [`workspace-core`](../crates/workspace-core/README.md) |
-| Feeding it what happens to agents, holding launches until it allows them, resolving members at start, the store entry | [`crates/daemon-core/src/workspaces.rs`](../crates/daemon-core/src/workspaces.rs) |
+| Feeding it what happens to agents, holding launches until it allows them, resolving members at start, the entry on own rows | [`crates/daemon-core/src/workspaces.rs`](../crates/daemon-core/src/workspaces.rs) |
 | The row-first create and its name suffixing | `begin_create` and `workspace_planned` in [`families.rs`](../crates/daemon-core/src/families.rs) |
 | The backends, each a maker (plan, make, start, delete, list owned) and a holder (resolve, claim, release, stop when unheld, environment) | [`crates/node/src/workspaces/`](../crates/node/src/workspaces/mod.rs) |
 | The model, over the real core | `WorkspaceLifecycle` in [`crates/models/src/workspaces.rs`](../crates/models/src/workspaces.rs) |
 | The experiment's name and version | [`crates/settings/src/experiments.rs`](../crates/settings/src/experiments.rs) |
 | What a row says of its workspace | `amux.experimental.AgentWorkspace` (kind, id, `made_by_amux`, `creating`, `problem`) in `Agent.experimental["workspaces/1"]` |
-| Where that is kept | `exp_workspaces_1_members`, for own rows and replicas ([experiment tables](JOURNAL_AND_STORE.md#experiment-tables)); for own agents a cache of what the folder says, republished only when it changes |
+| Where that is kept | On the row, in the store's `experimental` column ([experiment tables](JOURNAL_AND_STORE.md#experiment-tables)). For own agents a cache of what the folder says, republished only when it changes; a replica's as its host wrote it, kept and passed on by every host whether it runs the experiment or not, so the phone warns of a delete's worktree though its node has no switch |
 | Git worktrees on disk | `<installation>/worktrees/<repository>/<name>` |
 | wt trees on disk | Where wt's configuration places them, under wt's home (`$WT_HOME`, else `~/.wt`), so `wt ls`, `wt shell` and `wt rm` work on them |
 
@@ -228,16 +228,16 @@ person's folders, so a report's redaction aliases them, and a plan's
 repository, as paths ([debugging](DEBUGGING.md)).
 
 Switching the experiment off loses nothing that matters: amux stops making
-wt trees and stops removing workspaces with their last agent, the store
-drops the experiment's table, and the workspaces it made keep their owner
-on disk for when it is on again.
+wt trees and stops removing workspaces with their last agent, the host
+clears the entry from its own rows when it next opens the store, and the
+workspaces it made keep their owner on disk for when it is on again.
 
 ## Rejected alternatives
 
 **Recording who made a workspace in amux's own data,** a field in the
 agent's spec or a store column. It duplicates what the disk already says, a
 copy can disagree with the disk, and it is lost with a store reset or an
-experiment's dropped tables, after which amux would either leak workspaces
+experiment switched off, after which amux would either leak workspaces
 or remove ones it never made. A spec field would also be a promised on-disk
 format from its first release.
 
@@ -277,7 +277,9 @@ plain delete of `B` by a person, retention or the family rule, would have
 discarded `B`'s work, which nobody agreed to. Consent covers only the
 members its delete takes with it.
 
-**A generic store table for every experiment,** holding encoded records.
-Each experiment version has tables of its own, `exp_<name>_<n>_*`, with real
-columns and indexes
+**Keeping the rows' workspace entries in an experiment table** of the
+store's (`exp_workspaces_1_members`). A host with the experiment off dropped
+them from the replicas it stored, so the phone, whose node runs no
+experiment, never warned that a delete takes the worktree. The entry is
+what a row says to everyone, so it rides on the row
 ([experiment tables](JOURNAL_AND_STORE.md#experiment-tables)).

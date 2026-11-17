@@ -4,8 +4,8 @@
 //! this host's marker and a wt tree its owner, a wt tree's environment
 //! reaches the provider and its hooks run with its agents, each workspace
 //! goes with its last agent, and the experiment's entry rides on the rows
-//! to hosts that run it and nowhere else. Without the experiment a new
-//! workspace is a plain worktree, as before.
+//! to every host, whether it runs the experiment or not. Without the
+//! experiment a new workspace is a plain worktree, as before.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -593,7 +593,7 @@ impl Host {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_experiments_entry_reaches_hosts_that_run_it_and_others_pass_rows_on_without_it() {
+async fn the_experiments_entry_rides_on_the_row_to_every_host_whatever_it_runs() {
     let a = Host::start(true).await;
     let b = Host::start(false).await;
     let c = Host::start(true).await;
@@ -634,10 +634,14 @@ async fn the_experiments_entry_reaches_hosts_that_run_it_and_others_pass_rows_on
         "C runs it and keeps it"
     );
     let on_b = b.sees(&a, &on_a).await;
-    assert_eq!(entry(&on_b), None, "B does not run it and keeps nothing");
-    assert_eq!(on_b.name, on_a.name, "but has the row");
+    assert_eq!(
+        entry(&on_b),
+        Some(expected.clone()),
+        "B does not run it, and keeps and serves A's entry all the same"
+    );
+    assert_eq!(on_b.name, on_a.name);
 
-    // B's own agents carry no entry, to anyone.
+    // B writes no entry on its own agents, to anyone.
     assert_eq!(entry(&a.sees(&b, &on_b_own).await), None);
     assert_eq!(entry(&c.sees(&b, &on_b_own).await), None);
 

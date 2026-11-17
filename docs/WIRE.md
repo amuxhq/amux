@@ -864,19 +864,34 @@ starts. Its wire shapes keep none of the promises above:
   `crates/wire/src/lib.rs`.
 - **They travel in an `experimental` map.** An amux.v1 message an
   experiment extends carries, once and for good, `map<string, bytes>
-  experimental = 1000` (`Agent` and `AgentSpec` do now). Each entry is keyed
-  by an experiment's version and holds an encoded amux.experimental message:
+  experimental = 1000`. `Agent` and `AgentSpec` do now; `Host` gets one
+  when an experiment first needs it. Each entry is keyed by an experiment's
+  version and holds an encoded amux.experimental message:
   `Agent.experimental["workspaces/1"]` is an `AgentWorkspace`. Its values
   are bytes because a file in the buf module cannot import one outside it,
   and bytes keep buf from seeing the experimental types at all. The map is
   promised; its entries are not.
-- **A build reads and writes only the keys of the versions it implements
-  and has on** (`settings::experiments::Enabled::get` and `put`), and
-  ignores every other key, as an older build ignores field 1000. Hosts,
-  clients and agent processes running any mix of versions, or none, meet
-  without knowing what the others run, and nothing is announced. A replica
-  row is rebuilt from the store's columns, so a host does not pass on a
-  peer's entries it does not run.
+- **Each entry has a typed key** beside the generated types in the wire
+  crate (`wire::experimental::WORKSPACE`, `SUSPENSION`), whose `get`, `put`
+  and `clear` are the one way code reads and writes it; an entry that does
+  not decode reads as none. Shared types never grow experiment fields: a
+  consumer decodes the entry into a view of its own.
+- **What a row says to everyone rides on the row; a host's working state
+  stays home.** A host writes entries only on its own rows and specs, and
+  only for the versions it runs, and clears its own rows of every other
+  version's when it opens its store. A replica's map is its origin's,
+  stored and passed on whole and undecoded whatever the host in between
+  runs, entries of versions it has never heard of included, and replaced
+  whole by the origin's next row. So a client reads an entry whatever its
+  own node runs: the phone, whose node has no experiment switch, shows a
+  desk's workspaces. A reader that acts on an entry decides for itself
+  whether to (the daemon acts on its own rows' workspace entries only with
+  the experiment on). State only the host reads lives in experiment tables
+  of its own ([the store](JOURNAL_AND_STORE.md#experiment-tables)).
+- **Builds meet without knowing what the others run.** A build ignores
+  every key it does not read, as an older build ignores field 1000, so
+  hosts, clients and agent processes running any mix of versions, or none,
+  meet and nothing is announced.
 - **Enum values cannot be experimental**, since an enum lives in one
   package. An experiment that needs a value on an amux.v1 enum adds it to
   amux.v1 for good, and dropping it later reserves it.

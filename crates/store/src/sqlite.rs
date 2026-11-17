@@ -51,9 +51,6 @@ pub struct Sqlite {
     pub(crate) conn: Connection,
     pub(crate) own_host: Vec<u8>,
     pub(crate) markers: HashMap<AgentKey, Marker>,
-    /// The `workspaces/1` experiment's table is there: rows read carry its
-    /// entries.
-    pub(crate) workspaces_1: bool,
     /// The `suspension/1` experiment's table is there: each own agent's
     /// run is kept in it.
     pub(crate) suspension_1: bool,
@@ -87,9 +84,10 @@ impl Sqlite {
     /// Opens or creates the profile store at `path` as [`Sqlite::open`]
     /// does, for a daemon running the experiment versions in `experiments`
     /// (`workspaces/1`): their tables are made, and every other
-    /// experiment's dropped, with its data (see [`crate::experiments`]).
-    /// Only the store's owner opens it so; a tool that opens a copy leaves
-    /// experiment tables as they are.
+    /// experiment's dropped, with its data (see [`crate::experiments`]),
+    /// and this host's own rows keep only those versions' experimental
+    /// entries. Only the store's owner opens it so; a tool that opens a
+    /// copy leaves experiment tables and entries as they are.
     pub fn open_with(
         path: &Path,
         own_host: impl Into<Vec<u8>>,
@@ -101,28 +99,36 @@ impl Sqlite {
     }
 
     /// Makes the tables of the experiment versions in `experiments` and
-    /// drops every other experiment's, as [`Sqlite::open_with`] does; for a
-    /// store opened otherwise, such as one in memory.
+    /// drops every other experiment's, and clears from this host's own
+    /// rows every experimental entry of a version not in `experiments`, as
+    /// [`Sqlite::open_with`] does; for a store opened otherwise, such as
+    /// one in memory. A host speaks only for its own rows: a replica's
+    /// entries are its origin's, kept whatever this host runs.
     pub fn settle_experiments(&mut self, experiments: &[&str]) -> Result<(), OpenError> {
-        crate::experiments::settle(&mut self.conn, experiments)?;
-        self.workspaces_1 = experiments.contains(&crate::experiments::WORKSPACES_1.version);
+        crate::experiments::settle(&mut self.conn, &self.own_host, experiments)?;
         self.suspension_1 = experiments.contains(&crate::experiments::SUSPENSION_1.version);
         Ok(())
     }
 
-    /// Writes the agent's entry for the experiment `version`, or removes it
-    /// when `entry` is none. Does nothing for a version whose tables the
-    /// store does not have: a build ignores what it does not run.
-    pub fn put_experimental(
+    /// Writes an own row's experimental map whole, as the experiments this
+    /// host runs say it; false when there is no such row. A replica's map
+    /// is its origin's, written only by [`Sqlite::put_agent`].
+    pub fn set_experimental(
         &mut self,
         agent: &AgentKey,
-        version: &str,
-        entry: Option<&[u8]>,
-    ) -> Result<(), StoreError> {
-        if version != crate::experiments::WORKSPACES_1.version || !self.workspaces_1 {
-            return Ok(());
+        map: &std::collections::BTreeMap<String, Vec<u8>>,
+    ) -> Result<bool, StoreError> {
+        if !self.is_own(agent) {
+            return Err(StoreError::NotOwn);
         }
-        self.write(|rows| rows.put_workspaces_1(agent, entry))
+        self.write(|rows| {
+            let Some(mut row) = rows.agent(agent)? else {
+                return Ok(false);
+            };
+            row.experimental = map.clone();
+            rows.upsert_agent(&row, &rows::update_of(rows::EXPERIMENTAL))?;
+            Ok(true)
+        })
     }
 
     /// The incarnation the own agent's current run began at, under the
@@ -169,7 +175,6 @@ impl Sqlite {
             conn,
             own_host,
             markers: HashMap::new(),
-            workspaces_1: false,
             suspension_1: false,
             #[cfg(feature = "explore")]
             resets: HashMap::new(),
@@ -382,7 +387,6 @@ impl Sqlite {
         let result = f(&Rows {
             conn: &tx,
             own_host: &self.own_host,
-            workspaces_1: self.workspaces_1,
             suspension_1: self.suspension_1,
         });
         tx.finish()?;
@@ -427,7 +431,6 @@ impl Sqlite {
         let result = f(&Rows {
             conn: &tx,
             own_host: &self.own_host,
-            workspaces_1: self.workspaces_1,
             suspension_1: self.suspension_1,
         })?;
         tx.commit()?;
@@ -585,8 +588,8 @@ impl Sqlite {
     /// Creates a row whole, or updates the columns its role owns: for an
     /// own row its registry columns (kind, name, cwd, parent, lifecycle,
     /// exit cause and detail, creation time and incarnation), and for a
-    /// replica those and the phase, working_on, phase_since and git its
-    /// inventory row carries. Committed state is kept, except that an own
+    /// replica those and the phase, working_on, phase_since, git and
+    /// experimental map its inventory row carries, the map replaced whole. Committed state is kept, except that an own
     /// row moving to a new incarnation is back in phase starting: the new
     /// process has said nothing yet.
     pub fn put_agent(&mut self, row: &AgentRow) -> Result<(), StoreError> {

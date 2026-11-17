@@ -159,9 +159,7 @@ impl Sqlite {
                 .iter()
                 .any(|table| table.name.starts_with(&prefix))
         };
-        let workspaces = held(crate::experiments::WORKSPACES_1.version);
-        let suspension = held(crate::experiments::SUSPENSION_1.version);
-        if (workspaces, suspension) != (self.workspaces_1, self.suspension_1) {
+        if held(crate::experiments::SUSPENSION_1.version) != self.suspension_1 {
             let on: Vec<&str> = crate::experiments::EXPERIMENT_TABLES
                 .iter()
                 .map(|tables| tables.version)

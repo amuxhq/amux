@@ -1,4 +1,5 @@
-//! The store tables of experiments, outside the promised migrations.
+//! The store tables of experiments, outside the promised migrations, and
+//! the clearing of own rows' entries of experiments a host does not run.
 //!
 //! An experiment's data is never promised: its shape may change in any
 //! release, and losing it is the price of shipping it early. So each
@@ -15,6 +16,13 @@
 //! Graduating an experiment does not convert its rows: the settled design
 //! gets a migration of its own, and the experiment's tables are dropped the
 //! next time a store opens, like any version this build does not run.
+//!
+//! Tables hold a host's own working state, which nobody else reads. What a
+//! row says to everyone under an experiment rides on the row instead, in its
+//! `experimental` column, so a host with the experiment off still stores and
+//! passes on a replica's entries. As the store opens a host clears its own
+//! rows of the entries of every version it does not run, since a host speaks
+//! only for its own rows; replicas keep what their origins wrote.
 
 use rusqlite::{Connection, TransactionBehavior};
 
@@ -42,26 +50,6 @@ pub fn prefix(version: &str) -> String {
     format!("exp_{}_", version.replace('/', "_"))
 }
 
-/// The table [`WORKSPACES_1`] keeps each agent's workspace in.
-pub const WORKSPACES_1_MEMBERS: &str = "exp_workspaces_1_members";
-
-/// What an agent's workspace is, for the host's own agents and replicas
-/// alike, joined when a row is read: a row read while the table is there
-/// carries its entry in [`AgentRow::experimental`](crate::AgentRow), and a
-/// row removed takes its entry with it. For own agents it is a cache: the
-/// folder is the truth.
-pub const WORKSPACES_1: ExperimentTables = ExperimentTables {
-    version: "workspaces/1",
-    schema: r#"
-CREATE TABLE IF NOT EXISTS exp_workspaces_1_members (
-  origin_host BLOB NOT NULL,  -- the host that runs the agent
-  agent_id    BLOB NOT NULL,  -- the agent's id
-  workspace   BLOB NOT NULL,  -- amux.experimental.AgentWorkspace, encoded
-  PRIMARY KEY (origin_host, agent_id)
-) STRICT;
-"#,
-};
-
 /// The table [`SUSPENSION_1`] keeps each own agent's run in.
 pub const SUSPENSION_1_RUNS: &str = "exp_suspension_1_runs";
 
@@ -69,7 +57,7 @@ pub const SUSPENSION_1_RUNS: &str = "exp_suspension_1_runs";
 /// at: a resume after a suspension or a restart continues the run, any
 /// other resume starts a new one.
 pub const SUSPENSION_1: ExperimentTables = ExperimentTables {
-    version: "suspension/1",
+    version: wire::experimental::SUSPENSION.version(),
     schema: r#"
 CREATE TABLE IF NOT EXISTS exp_suspension_1_runs (
   agent_id    BLOB    NOT NULL PRIMARY KEY, -- one of this host's own agents
@@ -79,12 +67,13 @@ CREATE TABLE IF NOT EXISTS exp_suspension_1_runs (
 };
 
 /// Every experiment version this build keeps tables for.
-pub const EXPERIMENT_TABLES: &[&ExperimentTables] = &[&WORKSPACES_1, &SUSPENSION_1];
+pub const EXPERIMENT_TABLES: &[&ExperimentTables] = &[&SUSPENSION_1];
 
 /// Makes the tables of the experiment versions in `on` and drops every
-/// other `exp_` table, in one transaction. A version in `on` with no tables
-/// declared has nothing to make.
-pub(crate) fn settle(conn: &mut Connection, on: &[&str]) -> rusqlite::Result<()> {
+/// other `exp_` table, and keeps on the rows of `own_host` only the
+/// experimental entries of the versions in `on`, in one transaction. A
+/// version in `on` with no tables declared has nothing to make.
+pub(crate) fn settle(conn: &mut Connection, own_host: &[u8], on: &[&str]) -> rusqlite::Result<()> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let kept: Vec<String> = on.iter().map(|version| prefix(version)).collect();
     drop_tables(&tx, &kept)?;
@@ -93,7 +82,42 @@ pub(crate) fn settle(conn: &mut Connection, on: &[&str]) -> rusqlite::Result<()>
             tx.execute_batch(tables.schema)?;
         }
     }
+    keep_own_entries(&tx, own_host, on)?;
     tx.commit()
+}
+
+/// Drops from each of `own_host`'s rows the experimental entries of every
+/// version not in `on`; a column that does not decode goes whole, since no
+/// experiment's entry is worth failing to open over. Replica rows are left
+/// as their origins wrote them.
+fn keep_own_entries(conn: &Connection, own_host: &[u8], on: &[&str]) -> rusqlite::Result<()> {
+    let held = conn
+        .prepare(
+            "SELECT rowid, experimental FROM agents \
+             WHERE origin_host = ?1 AND experimental IS NOT NULL",
+        )?
+        .query_map([own_host], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    for (rowid, column) in held {
+        let kept = match crate::rows::decode_experimental(Some(column.as_slice())) {
+            Ok(mut map) => {
+                let before = map.len();
+                map.retain(|version, _| on.contains(&version.as_str()));
+                if map.len() == before {
+                    continue;
+                }
+                crate::rows::encode_experimental(&map)
+            }
+            Err(_) => None,
+        };
+        conn.execute(
+            "UPDATE agents SET experimental = ?2 WHERE rowid = ?1",
+            rusqlite::params![rowid, kept],
+        )?;
+    }
+    Ok(())
 }
 
 /// Drops every `exp_` table whose name starts with none of `kept`; its

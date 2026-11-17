@@ -816,7 +816,11 @@ fn options(suspension: bool, rebooted: bool) -> StartOptions {
 /// The experiments' tables a store opened by its daemon has: the
 /// suspension experiment's, when the model runs it.
 fn settle(store: &mut Sqlite, suspension: bool) {
-    let on: &[&str] = if suspension { &["suspension/1"] } else { &[] };
+    let on: &[&str] = if suspension {
+        &[wire::experimental::SUSPENSION.version()]
+    } else {
+        &[]
+    };
     store
         .settle_experiments(on)
         .expect("the experiments' tables are made");

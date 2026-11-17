@@ -62,9 +62,7 @@ version = "0.1.0"
 dependencies = [
  "core-ring",
  "interpret",
- "prost",
  "serde_json",
- "settings",
  "wire",
 ]
 
@@ -3854,7 +3852,6 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "gethostname",
- "prost",
  "serde",
  "serde_ignored",
  "tempfile",
@@ -5403,6 +5400,7 @@ dependencies = [
  "serde",
  "tonic",
  "tonic-prost",
+ "tracing",
 ]
 
 [[package]]

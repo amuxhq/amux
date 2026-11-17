@@ -19,8 +19,6 @@ use wire::agent_service_server::AgentService as _;
 use wire::experimental::{AgentWorkspace, WorkspaceKind};
 use wire::inventory_event;
 
-const VERSION: &str = "workspaces/1";
-
 /// A `.wt.toml` with an environment and a start hook that records itself
 /// in the tree.
 const WT_CONFIG: &str = r#"
@@ -91,10 +89,7 @@ async fn create(net: &Net, name: &str) -> wire::Agent {
 }
 
 fn entry(agent: &wire::Agent) -> Option<AgentWorkspace> {
-    agent
-        .experimental
-        .get(VERSION)
-        .map(|bytes| AgentWorkspace::decode(bytes.as_slice()).unwrap())
+    wire::experimental::WORKSPACE.get(&agent.experimental)
 }
 
 /// The agent's row as `host`'s inventory lists it, once `done` holds for

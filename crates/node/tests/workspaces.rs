@@ -18,8 +18,6 @@ use wire::{AgentSpec, CreateAgentRequest, inventory_event};
 
 use crate::support;
 
-const VERSION: &str = "workspaces/1";
-
 fn git(cwd: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .args([
@@ -130,10 +128,7 @@ fn in_new_workspace(cwd: &Path, name: &str) -> CreateAgentRequest {
 }
 
 fn entry(agent: &wire::Agent) -> Option<AgentWorkspace> {
-    agent
-        .experimental
-        .get(VERSION)
-        .map(|bytes| AgentWorkspace::decode(bytes.as_slice()).unwrap())
+    wire::experimental::WORKSPACE.get(&agent.experimental)
 }
 
 /// The agent's first spec. The daemon writes it as it launches the

@@ -20,4 +20,5 @@ schemars = { workspace = true }
 serde = { workspace = true }
 tonic = { workspace = true, optional = true }
 tonic-prost = { workspace = true, optional = true }
+tracing = { workspace = true }
 

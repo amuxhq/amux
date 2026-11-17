@@ -432,7 +432,6 @@ fn archive_in_worktree_as(
     lifecycle: wire::Lifecycle,
     exit_cause: wire::ExitCause,
 ) -> FleetState {
-    use prost::Message as _;
     let mut fleet = home_fleet();
     let key = ui_state::AgentKey {
         host: b"a".to_vec(),
@@ -445,8 +444,7 @@ fn archive_in_worktree_as(
         made_by_amux: true,
         ..Default::default()
     };
-    row.experimental
-        .insert("workspaces/1".into(), entry.encode_to_vec());
+    wire::experimental::WORKSPACE.put(&mut row.experimental, &entry);
     row.git = Some(git);
     row.lifecycle = lifecycle as i32;
     row.exit_cause = exit_cause as i32;

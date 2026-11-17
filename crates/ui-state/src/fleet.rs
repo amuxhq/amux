@@ -12,15 +12,11 @@ pub use crate::model::{AgentKey, Attention, ExitCause, HostId};
 use crate::session::Connection;
 
 /// The workspace entry a host running the workspaces experiment puts on
-/// its rows.
+/// its rows. A client reads it whatever its own node runs: the node stores
+/// and passes on its peers' entries as they came.
 fn workspace_of(agent: &Agent) -> Option<AgentWorkspace> {
-    use prost::Message as _;
-    let bytes = agent.experimental.get(WORKSPACES)?;
-    AgentWorkspace::decode(bytes.as_slice()).ok()
+    wire::experimental::WORKSPACE.get(&agent.experimental)
 }
-
-/// The version of the workspaces experiment this build reads.
-const WORKSPACES: &str = "workspaces/1";
 
 /// What a delete removes with the agent: its workspace, and with it the
 /// uncommitted changes the row last reported. A client says so before

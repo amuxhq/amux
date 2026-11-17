@@ -9,10 +9,8 @@ publish = false
 [dependencies]
 core-ring = { workspace = true }
 interpret = { workspace = true }
-prost = { workspace = true }
 serde_json = { workspace = true }
 wire = { workspace = true }
 
 [dev-dependencies]
 interpret = { workspace = true, features = ["testkind"] }
-settings = { workspace = true }

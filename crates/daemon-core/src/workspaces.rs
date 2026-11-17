@@ -36,7 +36,7 @@ use crate::payload::JobResult;
 use crate::{Daemon, codec};
 
 /// The experiment version whose shapes this module reads and writes.
-pub const VERSION: &str = store::experiments::WORKSPACES_1.version;
+pub const VERSION: &str = wire::experimental::WORKSPACE.version();
 
 /// A folder's workspace, as the driver resolved it from what is on disk.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -196,8 +196,7 @@ pub fn to_entry(view: &View) -> wire::experimental::AgentWorkspace {
 
 /// The member's workspace as its row carries it, if it carries one.
 pub fn entry_of(row: &store::AgentRow) -> Option<wire::experimental::AgentWorkspace> {
-    let bytes = row.experimental.get(VERSION)?;
-    wire::experimental::AgentWorkspace::decode(bytes.as_slice()).ok()
+    wire::experimental::WORKSPACE.get(&row.experimental)
 }
 
 /// Whether an agent about to launch may.

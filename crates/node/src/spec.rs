@@ -376,14 +376,15 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
 /// nothing to do before it suspends. A child already ends itself after its
 /// work, so it is told nothing.
 fn experimental(launch: &Launch, parentless: bool) -> BTreeMap<String, Vec<u8>> {
-    use settings::experiments::SUSPENSION;
     let mut map = BTreeMap::new();
-    let suspension = parentless.then(|| wire::experimental::SuspensionSpec {
-        after_ms: launch.suspension.after_ms(),
-    });
-    launch
-        .experiments
-        .put(&mut map, &SUSPENSION, suspension.as_ref());
+    if parentless && launch.experiments.is_on(&settings::experiments::SUSPENSION) {
+        wire::experimental::SUSPENSION.put(
+            &mut map,
+            &wire::experimental::SuspensionSpec {
+                after_ms: launch.suspension.after_ms(),
+            },
+        );
+    }
     map
 }
 
@@ -561,9 +562,7 @@ mod tests {
         launch.suspension.after = Duration::from_secs(300);
         let parentless = spec(&launch, None);
         assert_eq!(
-            launch
-                .experiments
-                .get::<wire::experimental::SuspensionSpec>(&parentless.experimental, &SUSPENSION),
+            wire::experimental::SUSPENSION.get(&parentless.experimental),
             Some(wire::experimental::SuspensionSpec { after_ms: 300_000 })
         );
         assert!(

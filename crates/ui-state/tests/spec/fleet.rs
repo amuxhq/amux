@@ -301,16 +301,13 @@ fn in_workspace(
     made: bool,
     git: Option<wire::Git>,
 ) -> Agent {
-    use prost::Message as _;
     let entry = wire::experimental::AgentWorkspace {
         kind: kind as i32,
         id: workspace.into(),
         made_by_amux: made,
         ..Default::default()
     };
-    agent
-        .experimental
-        .insert("workspaces/1".into(), entry.encode_to_vec());
+    wire::experimental::WORKSPACE.put(&mut agent.experimental, &entry);
     agent.git = git;
     agent
 }

@@ -239,9 +239,9 @@ fn a_create_in_a_new_workspace_answers_with_its_row_and_starts_once_made_and_cla
     let answered = answer_of(&out, call).expect("answered once the row is written");
     assert_eq!(answered.cwd, path, "its final folder");
     assert_eq!(answered.name, "fix-2");
-    let entry =
-        wire::experimental::AgentWorkspace::decode(answered.experimental[VERSION].as_slice())
-            .unwrap();
+    let entry = wire::experimental::WORKSPACE
+        .get(&answered.experimental)
+        .expect("the answer carries the workspace");
     assert!(entry.creating && entry.made_by_amux, "{entry:?}");
     assert_eq!(entry.id, path);
     assert!(

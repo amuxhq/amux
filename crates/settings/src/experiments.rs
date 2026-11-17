@@ -83,7 +83,7 @@ impl Experiment {
 /// tree, made, started and stopped with its agents.
 pub const WORKSPACES: Experiment = Experiment {
     name: "workspaces",
-    version: "workspaces/1",
+    version: wire::experimental::WORKSPACE.version(),
     description: "Run each agent in a workspace that amux makes, starts and stops with its agents.",
     keys: &[],
 };
@@ -92,7 +92,7 @@ pub const WORKSPACES: Experiment = Experiment {
 /// message, and a machine restart leaves agents as they were.
 pub const SUSPENSION: Experiment = Experiment {
     name: "suspension",
-    version: "suspension/1",
+    version: wire::experimental::SUSPENSION.version(),
     description: "Suspend idle agents and resume them when a message arrives.",
     keys: suspension::KEYS,
 };
@@ -210,9 +210,11 @@ impl ExperimentSettings {
 }
 
 /// The experiments a daemon runs: those switched on when it started that
-/// this build implements. It reads and writes only their entries in an
-/// `experimental` map and ignores every other key, as a build without the
-/// map ignores the field.
+/// this build implements. It acts on and writes only their entries in its
+/// own rows' and specs' `experimental` maps (each through its key in
+/// `wire::experimental`), and clears its own rows of every other version's
+/// when it opens a store; a peer's entries it stores and passes on as they
+/// came.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Enabled(Vec<&'static Experiment>);
 
@@ -231,50 +233,14 @@ impl Enabled {
         self.0.contains(&experiment)
     }
 
-    /// The versions on, in registry order: the keys this daemon reads and
-    /// writes, and whose store tables it keeps.
+    /// The versions on, in registry order: the keys this daemon writes on
+    /// its own rows, and whose store tables it keeps.
     pub fn versions(&self) -> Vec<&'static str> {
         self.0.iter().map(|experiment| experiment.version).collect()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &'static Experiment> + '_ {
         self.0.iter().copied()
-    }
-
-    /// `experiment`'s entry in an `experimental` map, decoded: none when it
-    /// is off, when the map holds no entry under its version, or when the
-    /// entry does not decode (experiment data is never worth failing over).
-    pub fn get<M: prost::Message + Default>(
-        &self,
-        map: &BTreeMap<String, Vec<u8>>,
-        experiment: &Experiment,
-    ) -> Option<M> {
-        if !self.is_on(experiment) {
-            return None;
-        }
-        M::decode(map.get(experiment.version)?.as_slice()).ok()
-    }
-
-    /// Sets `experiment`'s entry in an `experimental` map, or removes it
-    /// with none. Leaves the map alone while the experiment is off, and
-    /// never touches another version's entry.
-    pub fn put<M: prost::Message>(
-        &self,
-        map: &mut BTreeMap<String, Vec<u8>>,
-        experiment: &Experiment,
-        value: Option<&M>,
-    ) {
-        if !self.is_on(experiment) {
-            return;
-        }
-        match value {
-            Some(value) => {
-                map.insert(experiment.version.to_owned(), value.encode_to_vec());
-            }
-            None => {
-                map.remove(experiment.version);
-            }
-        }
     }
 }
 
@@ -353,39 +319,5 @@ mod tests {
         // What it writes back reads the same.
         let again = InstallationConfig::from_toml(&toml::to_string(&config).unwrap()).unwrap();
         assert_eq!(again.experiments, config.experiments);
-    }
-
-    /// An entry is read and written only by a build running its version:
-    /// one without the experiment, or at another version, leaves it alone.
-    #[test]
-    fn a_map_entry_is_read_and_written_only_under_a_version_that_is_on() {
-        static LATER: Experiment = Experiment {
-            name: "workspaces",
-            version: "workspaces/2",
-            description: "a later shape",
-            keys: &[],
-        };
-        let on = Enabled::of(&[&WORKSPACES]);
-        let off = Enabled::none();
-        let later = Enabled::of(&[&LATER]);
-        let value = wire::Empty {};
-        let mut map = BTreeMap::new();
-
-        off.put(&mut map, &WORKSPACES, Some(&value));
-        assert!(map.is_empty(), "off writes nothing");
-        on.put(&mut map, &WORKSPACES, Some(&value));
-        later.put(&mut map, &LATER, Some(&wire::HostRef::default()));
-        assert_eq!(
-            map.keys().collect::<Vec<_>>(),
-            ["workspaces/1", "workspaces/2"]
-        );
-        assert_eq!(on.get::<wire::Empty>(&map, &WORKSPACES), Some(value));
-        assert_eq!(off.get::<wire::Empty>(&map, &WORKSPACES), None);
-        assert_eq!(later.get::<wire::Empty>(&map, &WORKSPACES), None);
-        later.put::<wire::HostRef>(&mut map, &LATER, None);
-        assert_eq!(map.keys().collect::<Vec<_>>(), ["workspaces/1"]);
-        // An entry that does not decode reads as none.
-        map.insert("workspaces/1".into(), vec![0xff]);
-        assert_eq!(on.get::<wire::HostRef>(&map, &WORKSPACES), None);
     }
 }

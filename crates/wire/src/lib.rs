@@ -22,6 +22,16 @@ pub mod amux {
     pub mod experimental {
         #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
         include!("generated/amux.experimental.rs");
+
+        pub use crate::entry::{Entry, Map};
+
+        /// The workspaces experiment's entry on an agent's row:
+        /// `Agent.experimental["workspaces/1"]`.
+        pub const WORKSPACE: Entry<AgentWorkspace> = Entry::new("workspaces/1");
+
+        /// The suspension experiment's entry in an agent's spec:
+        /// `AgentSpec.experimental["suspension/1"]`.
+        pub const SUSPENSION: Entry<SuspensionSpec> = Entry::new("suspension/1");
     }
 }
 
@@ -38,6 +48,7 @@ pub mod google {
 pub use google::rpc;
 
 mod continued;
+mod entry;
 mod error;
 mod host_name;
 #[cfg(test)]
@@ -723,9 +734,7 @@ mod tests {
             name: "coder".into(),
             ..Default::default()
         };
-        agent
-            .experimental
-            .insert("workspaces/1".into(), workspace.encode_to_vec());
+        experimental::WORKSPACE.put(&mut agent.experimental, &workspace);
         agent
             .experimental
             .insert("workspaces/2".into(), b"another shape".to_vec());
@@ -734,8 +743,10 @@ mod tests {
             name: "coder".into(),
             ..Default::default()
         };
-        spec.experimental
-            .insert("suspension/1".into(), b"a delay".to_vec());
+        experimental::SUSPENSION.put(
+            &mut spec.experimental,
+            &experimental::SuspensionSpec { after_ms: 5 },
+        );
         for bytes in [agent.encode_to_vec(), spec.encode_to_vec()] {
             assert_eq!(
                 Before::decode(bytes.as_slice()).unwrap(),
@@ -747,9 +758,8 @@ mod tests {
         }
         let read = Agent::decode(agent.encode_to_vec().as_slice()).unwrap();
         assert_eq!(
-            experimental::AgentWorkspace::decode(read.experimental["workspaces/1"].as_slice())
-                .unwrap(),
-            workspace
+            experimental::WORKSPACE.get(&read.experimental),
+            Some(workspace)
         );
         // The map encodes in key order, so a row encodes the same each time.
         assert_eq!(read.encode_to_vec(), agent.encode_to_vec());

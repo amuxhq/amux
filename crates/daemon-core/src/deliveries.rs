@@ -1493,7 +1493,9 @@ mod tests {
     /// experiment's table.
     fn suspension_daemon(dir: &tempfile::TempDir) -> Daemon {
         let mut store = Sqlite::open_in_memory(OWN).expect("a store opens");
-        store.settle_experiments(&["suspension/1"]).unwrap();
+        store
+            .settle_experiments(&[wire::experimental::SUSPENSION.version()])
+            .unwrap();
         Daemon::new(
             store,
             StartOptions {

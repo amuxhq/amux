@@ -163,15 +163,13 @@ impl AgentLifecycle {
     }
 
     fn spec(&self, incarnation: u32, bootstrap: Option<Bootstrap>) -> AgentSpec {
-        use prost::Message as _;
-        let mut experimental = std::collections::BTreeMap::new();
+        let mut experimental = wire::experimental::Map::new();
         if self.suspends && !self.one_shot {
-            experimental.insert(
-                agent_core::SUSPENSION.to_owned(),
-                wire::experimental::SuspensionSpec {
+            wire::experimental::SUSPENSION.put(
+                &mut experimental,
+                &wire::experimental::SuspensionSpec {
                     after_ms: SUSPEND_AFTER_MS,
-                }
-                .encode_to_vec(),
+                },
             );
         }
         AgentSpec {

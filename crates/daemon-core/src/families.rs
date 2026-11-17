@@ -2401,7 +2401,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("a temporary directory");
         let mut store = Sqlite::open_in_memory(OWN).expect("a store opens");
         store
-            .settle_experiments(&["suspension/1"])
+            .settle_experiments(&[wire::experimental::SUSPENSION.version()])
             .expect("the experiment's tables are made");
         let daemon = Daemon::new(
             store,

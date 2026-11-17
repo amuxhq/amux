@@ -640,11 +640,10 @@ const AFTER_MS: u64 = 600_000;
 
 /// An agent without a parent whose spec carries the suspension delay.
 fn suspending_spec(one_shot: bool) -> AgentSpec {
-    use prost::Message as _;
     let mut spec = spec(one_shot, None);
-    spec.experimental.insert(
-        SUSPENSION.to_owned(),
-        wire::experimental::SuspensionSpec { after_ms: AFTER_MS }.encode_to_vec(),
+    wire::experimental::SUSPENSION.put(
+        &mut spec.experimental,
+        &wire::experimental::SuspensionSpec { after_ms: AFTER_MS },
     );
     spec
 }
@@ -675,13 +674,6 @@ fn idle_suspending() -> Run {
         "{out:?}"
     );
     run
-}
-
-/// The daemon writes the delay under the experiment's version in the
-/// registry; the agent reads it under the same key.
-#[test]
-fn the_spec_key_is_the_experiments_version() {
-    assert_eq!(SUSPENSION, settings::experiments::SUSPENSION.version);
 }
 
 #[test]

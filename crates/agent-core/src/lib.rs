@@ -70,10 +70,6 @@ pub const DEFAULT_GRACE_MS: u64 = 5 * 60 * 1000;
 pub const DEFAULT_DRAIN_MS: u64 = 5 * 60 * 1000;
 /// How long a provider asked to finish gets before its group is killed.
 pub const PROVIDER_STOP_MS: u64 = 10 * 1000;
-/// The key of the suspension experiment's entry in the spec's
-/// `experimental` map: its version in the registry in `crates/settings`,
-/// which the daemon writes it under.
-pub const SUSPENSION: &str = "suspension/1";
 
 /// A timer the core asks the driver to arm. One of each at a time: arming
 /// one replaces it.
@@ -335,13 +331,8 @@ impl Params {
         // The daemon writes the delay only for an agent without a parent
         // while the experiment is on; an entry that does not decode is
         // never worth failing over.
-        let suspend_after_ms = spec
-            .experimental
-            .get(SUSPENSION)
-            .and_then(|bytes| {
-                <wire::experimental::SuspensionSpec as prost::Message>::decode(bytes.as_slice())
-                    .ok()
-            })
+        let suspend_after_ms = wire::experimental::SUSPENSION
+            .get(&spec.experimental)
             .map(|suspension| suspension.after_ms)
             .filter(|after| *after > 0 && spec.parent.is_none());
         Self {

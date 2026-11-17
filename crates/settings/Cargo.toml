@@ -10,14 +10,13 @@ publish = false
 # The CLI takes `ui.chat_in`'s values as a command-line choice too.
 clap = { workspace = true, optional = true }
 gethostname = { workspace = true }
-# An experiment's entry in an `experimental` map is an encoded message.
-prost = { workspace = true }
 serde = { workspace = true }
 serde_ignored = { workspace = true }
 toml = { workspace = true }
 toml_edit = { workspace = true }
 thiserror = { workspace = true }
-# A host's name is the one type every place a name enters amux builds.
+# A host's name is the one type every place a name enters amux builds, and
+# an experiment's version is its entry's key.
 wire = { workspace = true }
 
 [dev-dependencies]

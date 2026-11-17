@@ -185,9 +185,7 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
         .animation(.snappy(duration: 0.2), value: place.changes)
     }
 
-    private var inspecting: Bool {
-        place.showsChanges(native: place.agent.flatMap { content.fleet.row($0) }?.native == true)
-    }
+    private var inspecting: Bool { content.showsChanges(place) }
 
     private func exists(_ agent: AgentKey) -> Bool { content.fleet.row(agent) != nil }
 
@@ -426,5 +424,13 @@ struct AgentMenu: View {
         } else {
             Button("Settle") { actions.act(.close, agent) }
         }
+    }
+}
+
+extension MainContent {
+    /// Whether the window shows the changes pane at `place`: the open
+    /// agent's own folder, which a provider subagent does not have.
+    public func showsChanges(_ place: Place) -> Bool {
+        place.showsChanges(native: place.agent.flatMap { fleet.row($0) }?.native == true)
     }
 }

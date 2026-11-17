@@ -20,7 +20,7 @@ effect catalogue 5d3c8fba models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},
 snapshot catalogue 5d3c8fba
 snapshot IDLE queue=[] working_on=- at=1794788104169 asks=[] thread=01a1e1b5-1788-7713-a163-d9e28d7076ba model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 22 recorded 21: fact Rpc method=deprecationNotice
-item warning:2 error final at=1794788104203 text="Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." deprecationNotice "Full-history hydration is deprecated for paginated threads; omit `includeTurns` …" retry=false 0/0
+effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
 ## 26 recorded 25: input 0x5e05f9ac3bd24742ad32446cd41db0b2
 effect reply 0x5e05f9ac3bd24742ad32446cd41db0b2 accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"5e05f9ac3bd24742ad32446cd41db0b2\",\"input\":[{\"text\":\"Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: reply with exactly FIRST_ANSWER. Then wait for it to finish and reply with what it answered.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a1e1b5-1788-7713-a163-d9e28d7076ba\"}}"
@@ -87,7 +87,7 @@ snapshot IDLE queue=[] working_on="Call your spawn_agent tool directly, without 
 ## 106 recorded 105: fact Rpc method=mcpServer/startupStatus/updated
 snapshot IDLE queue=[] working_on="Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: reply with exactly FIRST_ANSWER. Then wait for it to finish and reply with what it answered." at=1794788113918 asks=[] thread=01a1e1b5-1788-7713-a163-d9e28d7076ba model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=15542/475000 plan=? usage=ok 7d:1%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
 ## 108 recorded 107: fact Rpc "{\"id\":\"agent-resume\",\"result\":{\"activePermissionProfile\":{\"extends\":n…
-item boundary:3 boundary final at=1794788113918 text="" BOUNDARY_KIND_RESUMED
+item boundary:2 boundary final at=1794788113918 text="" BOUNDARY_KIND_RESUMED
 snapshot IDLE queue=[] working_on="Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: reply with exactly FIRST_ANSWER. Then wait for it to finish and reply with what it answered." at=1794788113918 asks=[] thread=01a1e1b5-1788-7713-a163-d9e28d7076ba model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=default approval=on-request context=15542/475000 plan=? usage=ok 7d:1%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
 ## 115 recorded 114: input 0xa529eb95731b43c8b32de58185898415
 effect reply 0xa529eb95731b43c8b32de58185898415 accepted

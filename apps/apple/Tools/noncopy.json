@@ -1504,8 +1504,6 @@
       {"literal": "\"compaction\"", "context": "kind: \"compaction\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"error\"", "context": "kind: \"error\", glyph: \"exclamationmark.triangle\", failed: true, rail: rail,", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"exclamationmark.triangle\"", "context": "kind: \"error\", glyph: \"exclamationmark.triangle\", failed: true, rail: rail,", "reason": "SF Symbol name, not interface copy.", "count": 1},
-      {"literal": "\"deprecation\"", "context": "kind: \"deprecation\", glyph: \"exclamationmark.triangle\", rail: rail,", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"exclamationmark.triangle\"", "context": "kind: \"deprecation\", glyph: \"exclamationmark.triangle\", rail: rail,", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"model-switch\"", "context": "kind: \"model-switch\", glyph: \"arrow.left.arrow.right\", rail: rail,", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"arrow.left.arrow.right\"", "context": "kind: \"model-switch\", glyph: \"arrow.left.arrow.right\", rail: rail,", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"boundary\"", "context": "FeedRule(kind: \"boundary\", label: ChatWords.boundary(kind, cause: cause))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

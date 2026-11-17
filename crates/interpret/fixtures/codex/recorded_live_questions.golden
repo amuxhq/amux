@@ -18,7 +18,7 @@ effect catalogue e24fe0b2 models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},
 snapshot catalogue e24fe0b2
 snapshot IDLE queue=[] working_on=- at=1793447687458 asks=[] thread=01a191cf-f510-7fc1-b4ee-bd325a352f39 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_STARTING,codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
 ## 17 recorded 16: fact Rpc method=deprecationNotice
-item warning:2 error final at=1793447687461 text="Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." deprecationNotice "Full-history hydration is deprecated for paginated threads; omit `includeTurns` …" retry=false 0/0
+effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
 ## 19 recorded 18: fact Rpc method=mcpServer/startupStatus/updated
 snapshot IDLE queue=[] working_on=- at=1793447687461 asks=[] thread=01a191cf-f510-7fc1-b4ee-bd325a352f39 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
 ## 21 recorded 20: input stdin-8-mode

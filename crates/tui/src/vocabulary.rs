@@ -1656,19 +1656,6 @@ fn row_sets() -> Vec<RowSet> {
             ],
         ),
         (
-            "row_deprecation",
-            "Codex saying something it is sent is deprecated: a notice, not a failure.",
-            vec![(
-                row(RowKind::Deprecation {
-                    message: "Full-history hydration is deprecated for paginated threads; omit \
-                              `includeTurns` or set it to `false`, then page with \
-                              `thread/turns/list` and `thread/items/list`."
-                        .into(),
-                }),
-                CLOSED,
-            )],
-        ),
-        (
             "row_model_switch",
             "A model reroute with its reason.",
             vec![(

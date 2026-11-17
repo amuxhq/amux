@@ -315,12 +315,6 @@ public struct ChatRowView: View {
                     : String(localized: "\(attempts) tries")),
                 detail: detailed ? message : nil, detailLines: expanded ? nil : 3,
                 opens: detailed, open: expanded, toggle: toggle)
-        case .deprecation(let message):
-            GridRow(
-                kind: "deprecation", glyph: "exclamationmark.triangle", rail: rail,
-                verb: String(localized: "Deprecation notice"), quiet: true,
-                detail: message, detailLines: expanded ? nil : 3,
-                opens: true, open: expanded, toggle: toggle)
         case .modelSwitch(let to, let reason):
             GridRow(
                 kind: "model-switch", glyph: "arrow.left.arrow.right", rail: rail,

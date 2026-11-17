@@ -20,7 +20,7 @@ snapshot IDLE queue=[] working_on=- at=1793447844856 asks=[] thread=01a191d2-5be
 ## 14 recorded 13: fact Rpc method=mcpServer/startupStatus/updated
 snapshot IDLE queue=[] working_on=- at=1793447844858 asks=[] thread=01a191d2-5be2-79a1-a7f1-e525d35f09f9 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
 ## 18 recorded 17: fact Rpc method=deprecationNotice
-item warning:2 error final at=1793447844859 text="Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." deprecationNotice "Full-history hydration is deprecated for paginated threads; omit `includeTurns` …" retry=false 0/0
+effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
 ## 21 recorded 20: input 0xbe04eee1582449ecb0e1867aaadab4ee
 effect reply 0xbe04eee1582449ecb0e1867aaadab4ee accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"be04eee1582449ecb0e1867aaadab4ee\",\"input\":[{\"text\":\"Do these steps in order, one tool call each: run the shell command `touch first.txt`; then use apply_patch to create notes.txt containing the line one; then use apply_patch to change that line to two. The sandbox is read-only, so request escalated permissions where you need them; I will approve. Then reply DONE.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a191d2-5be2-79a1-a7f1-e525d35f09f9\"}}"

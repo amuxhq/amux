@@ -20,7 +20,7 @@ snapshot IDLE queue=[] working_on=- at=1793447747289 asks=[] thread=01a191d0-dec
 ## 14 recorded 13: fact Rpc method=mcpServer/startupStatus/updated
 snapshot IDLE queue=[] working_on=- at=1793447747290 asks=[] thread=01a191d0-dec6-7c40-9a76-630022314498 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 19 recorded 18: fact Rpc method=deprecationNotice
-item warning:2 error final at=1793447747292 text="Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." deprecationNotice "Full-history hydration is deprecated for paginated threads; omit `includeTurns` …" retry=false 0/0
+effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
 ## 22 recorded 21: input 0x13038aef24d24324b20ea3385966b63a
 effect reply 0x13038aef24d24324b20ea3385966b63a accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"13038aef24d24324b20ea3385966b63a\",\"input\":[{\"text\":\"Run these three shell commands separately, one tool call each: `cat config.txt`, `ls`, and `grep -n VALUE config.txt`. Then reply DONE.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a191d0-dec6-7c40-9a76-630022314498\"}}"

@@ -22,7 +22,7 @@ effect catalogue 5d3c8fba models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},
 snapshot catalogue 5d3c8fba
 snapshot IDLE queue=[] working_on=- at=1794830998217 asks=[] thread=01a1e443-983d-70c1-88ee-36656a5460f0 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 22 recorded 21: fact Rpc method=deprecationNotice
-item warning:2 error final at=1794830998262 text="Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." deprecationNotice "Full-history hydration is deprecated for paginated threads; omit `includeTurns` …" retry=false 0/0
+effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
 ## 25 recorded 24: input 0xe4e518e1de164f0faba65cc184811b8e
 effect reply 0xe4e518e1de164f0faba65cc184811b8e accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"e4e518e1de164f0faba65cc184811b8e\",\"input\":[{\"text\":\"Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: run the shell command `echo CHILD_RAN` once with your shell tool and reply with its output. Then wait for it to finish and reply with what it answered.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a1e443-983d-70c1-88ee-36656a5460f0\"}}"

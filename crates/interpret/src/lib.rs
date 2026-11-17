@@ -280,6 +280,10 @@ pub enum Effect {
     },
     /// The agent process should exit with this cause.
     Exit { cause: String },
+    /// A line for the agent's own log, which a debug report carries:
+    /// something the provider said that is for amux's developers and no
+    /// client draws.
+    Log { line: String },
     /// Write `bytes` to the agent's blob directory as `blobs/<hex of
     /// hash>`, the SHA-256 of the bytes: an image the model read, which an
     /// item in this step references, or the encoded `wire::Catalogue` the

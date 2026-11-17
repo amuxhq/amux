@@ -1106,14 +1106,20 @@ answer.
   carries the page's address, as the step's text too, since Codex says
   nothing else about it. Codex's warnings are error items of the kind Codex
   sent them as, in Codex's words, as its own app shows them: `configWarning`
-  (configuration Codex found and did not apply), `deprecationNotice` (which
-  every client draws as a deprecation notice, never a failure: Codex will
-  stop supporting something, and nothing failed),
+  (configuration Codex found and did not apply),
   `warning` (among them the one that says a request was routed to another
   model; `model/rerouted` itself changes nothing, since a reroute covers one
   request), `guardianWarning` (except an approved review's, which repeats
   its verdict row), `model/verification`'s cybersecurity check (in Codex's
   fixed words) and `autoApprovalReview/strictReviewRequired`.
+  A `deprecationNotice` is not drawn: Codex is telling amux it will stop
+  supporting something amux sends, which is news for amux's developers and
+  nothing the person chatting can act on, and Codex's own app keeps it out
+  of the chat too. The interpreter writes it to the agent's log
+  (`Effect::Log`, "Codex deprecation notice: …"), which a debug report
+  carries, and the live Codex run fails on one, naming its words, so the
+  next deprecation is heard before it becomes a removal. Earlier builds
+  kept the notice as an error item; a history's one draws nothing.
   `model/safetyBuffering/updated` is a safety-check item, hidden, which makes
   the turn's activity "Running safety checks" while the check runs. A
   review's `enteredReviewMode` and `exitedReviewMode` items are command-output

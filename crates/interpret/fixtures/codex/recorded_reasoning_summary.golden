@@ -20,7 +20,7 @@ effect catalogue e24fe0b2 models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},
 snapshot catalogue e24fe0b2
 snapshot IDLE queue=[] working_on=- at=1793447520250 asks=[] thread=01a191cd-67cb-7d93-9740-841bce178dd9 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=high permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
 ## 19 recorded 18: fact Rpc method=deprecationNotice
-item warning:2 error final at=1793447520251 text="Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." deprecationNotice "Full-history hydration is deprecated for paginated threads; omit `includeTurns` …" retry=false 0/0
+effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
 ## 23 recorded 22: input 0x9aa109de282c495a8802ee67ecb12f99
 effect reply 0x9aa109de282c495a8802ee67ecb12f99 accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"9aa109de282c495a8802ee67ecb12f99\",\"input\":[{\"text\":\"Think carefully about which is larger, 17 * 23 or 19 * 21, then reply with only the larger product.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a191cd-67cb-7d93-9740-841bce178dd9\"}}"

@@ -657,18 +657,31 @@ async fn run(driver: &Driver, selected: &[Scenario], report: &mut Report) {
         }
     };
     for scenario in selected {
-        let verdict = match tokio::time::timeout(SCENARIO, install.scenario(*scenario)).await {
+        let mut verdict = match tokio::time::timeout(SCENARIO, install.scenario(*scenario)).await {
             Ok(Ok(verdict)) => verdict,
             Ok(Err(why)) => Verdict::Fail(why),
             Err(_) => Verdict::Fail(format!("did not finish within {SCENARIO:?}")),
         };
-        eprintln!("{} {}: {verdict}", driver.tag(), scenario.name());
         // Whatever the verdict, an agent's traffic is kept for a look.
-        if install.has_agent(*scenario)
-            && let Err(why) = install.collect(*scenario)
-        {
-            eprintln!("{} {}: no recording: {why}", driver.tag(), scenario.name());
+        if install.has_agent(*scenario) {
+            match install.collect(*scenario) {
+                Ok(fixture) => {
+                    // amux draws no deprecation notice and the agent only
+                    // logs one, so the run is where the next one is heard.
+                    let notices = capture::deprecation_notices(&fixture);
+                    if !notices.is_empty() && matches!(verdict, Verdict::Pass) {
+                        verdict = Verdict::Fail(format!(
+                            "Codex sent a deprecation notice: {}",
+                            notices.join(" | ")
+                        ));
+                    }
+                }
+                Err(why) => {
+                    eprintln!("{} {}: no recording: {why}", driver.tag(), scenario.name())
+                }
+            }
         }
+        eprintln!("{} {}: {verdict}", driver.tag(), scenario.name());
         report.results.push((*scenario, verdict));
     }
     if let Some(model) = install.model.lock().unwrap().clone() {
@@ -1936,9 +1949,6 @@ fn item_token(kind: Kind, item: &Item) -> Option<String> {
             Codex::Prompt(_) => Some("prompt".into()),
             Codex::Steer(_) => Some("steer".into()),
             Codex::Work(work) => Some(tool(work.state, work.decision.as_ref())),
-            Codex::Error(error) if error.error_kind == "deprecationNotice" => {
-                Some("deprecation notice".into())
-            }
             Codex::Error(_) => Some("error".into()),
             Codex::AgentMessage(_) => Some("agent message".into()),
             Codex::Ask(item) => Some(ask(&item)),

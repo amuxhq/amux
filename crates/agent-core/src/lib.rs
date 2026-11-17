@@ -168,8 +168,8 @@ pub enum Output {
     /// size of every other output, which would otherwise all take its room.
     AppendJournal(Box<Step>),
     /// Hand the provider what the interpreter asked of it: bytes, keys, an
-    /// injected message, a transcript to follow. Never a reply, a blob or
-    /// an exit, which are outputs of their own.
+    /// injected message, a transcript to follow. Never a reply, a blob, a
+    /// log line or an exit, which are outputs of their own.
     WriteProvider(Effect),
     WriteControl {
         connection: ConnId,
@@ -194,6 +194,11 @@ pub enum Output {
     /// The process exits; the cause is the journal's last step, except
     /// after a kill or a write that failed, which write nothing.
     Exit(ExitCause),
+    /// Write a line to the agent's own log: what the interpreter noted for
+    /// amux's developers, which a debug report carries.
+    Log {
+        line: String,
+    },
     /// Take a dump: the core saw something it must not carry on from.
     Dump {
         reason: DumpReason,
@@ -1212,6 +1217,7 @@ impl<I: Interpreter> Agent<I> {
                         .asked_to_exit
                         .get_or_insert(ExitCause::Interpreter(cause));
                 }
+                Effect::Log { line } => out.push(Output::Log { line }),
                 effect => out.push(Output::WriteProvider(effect)),
             }
         }

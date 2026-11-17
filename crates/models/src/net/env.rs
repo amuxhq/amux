@@ -2293,8 +2293,8 @@ impl Transition<'_> {
                 return;
             }
             match output {
-                // Nothing reads back the facts ring or the blobs.
-                Out::Record(_) | Out::WriteBlob { .. } => {}
+                // Nothing reads back the facts ring, the blobs or the log.
+                Out::Record(_) | Out::WriteBlob { .. } | Out::Log { .. } => {}
                 // A process playing a recorded journal writes that instead.
                 Out::AppendJournal(_)
                     if self.plan.recorded.contains_key(&self.w.processes[p].agent) => {}

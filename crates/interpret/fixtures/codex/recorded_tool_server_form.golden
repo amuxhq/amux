@@ -24,7 +24,7 @@ snapshot IDLE queue=[] working_on=- at=1793447814200 asks=[] thread=01a191d1-e42
 ## 20 recorded 19: fact Rpc method=mcpServer/startupStatus/updated
 snapshot IDLE queue=[] working_on=- at=1793447814203 asks=[] thread=01a191d1-e426-7b30-93b0-b7edda9621b7 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_STARTING,spec:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 21 recorded 20: fact Rpc method=deprecationNotice
-item warning:2 error final at=1793447814203 text="Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`." deprecationNotice "Full-history hydration is deprecated for paginated threads; omit `includeTurns` …" retry=false 0/0
+effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
 ## 24 recorded 23: input 0x297c5848d158446dbd3a9f68f2dee642
 effect reply 0x297c5848d158446dbd3a9f68f2dee642 accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"297c5848d158446dbd3a9f68f2dee642\",\"input\":[{\"text\":\"Call the ask_the_operator tool from the spec tool server twice, one call at a time: first with word BLUE, then with word LINK. Then reply with what each call returned.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a191d1-e426-7b30-93b0-b7edda9621b7\"}}"

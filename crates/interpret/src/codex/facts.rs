@@ -1805,9 +1805,12 @@ impl State {
                 self.warning(emit, "configWarning", notice_words(warning))
             }
             // Codex's own app shows each of these as a warning line.
-            ServerNotification::DeprecationNotice(notice) => {
-                self.warning(emit, "deprecationNotice", notice_words(notice))
-            }
+            // Codex will stop supporting something amux sends: news for
+            // amux's developers, logged where a debug report finds it.
+            // Codex's own app keeps it out of the chat too.
+            ServerNotification::DeprecationNotice(notice) => emit.effect(Effect::Log {
+                line: format!("Codex deprecation notice: {}", notice_words(notice)),
+            }),
             ServerNotification::Warning(warning) => self.warning(emit, "warning", warning.message),
             // An approved review's warning repeats its verdict row, so
             // Codex's own app leaves it out too.

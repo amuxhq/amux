@@ -1050,6 +1050,165 @@ mod headless_claude {
         }
     }
 
+    impl Claude {
+        /// A headless Claude without a parent whose spec carries the
+        /// suspension delay `after_ms`, started on a first prompt, with its
+        /// daemon connected.
+        fn suspending(after_ms: u64) -> Self {
+            let mut spec = spec(false, Some("go"));
+            wire::experimental::SUSPENSION.put(
+                &mut spec.experimental,
+                &wire::experimental::SuspensionSpec { after_ms },
+            );
+            let mut out = Vec::new();
+            let agent = Agent::<ClaudeSdk>::start(&spec, None, 1_000, &mut out);
+            let mut claude = Self {
+                agent,
+                now_ms: 1_000,
+            };
+            claude.on(Input::DaemonDials { connection: DAEMON });
+            claude.says(json!({"type": "system", "subtype": "init", "uuid": "i1", "session_id": "s", "model": "claude-test"}));
+            claude
+        }
+
+        /// `input` at `at_ms`, a timer's firing say.
+        fn at(&mut self, at_ms: u64, input: Input) -> Vec<Output> {
+            self.now_ms = at_ms - 1;
+            self.on(input)
+        }
+
+        fn suspension(&self) -> Option<u64> {
+            self.agent.life.suspend
+        }
+    }
+
+    /// The `/compact` amux sent Claude, by its uuid.
+    fn compact_sent(out: &[Output]) -> Option<String> {
+        out.iter().find_map(|output| match output {
+            Output::WriteProvider(Effect::UserMessage { uuid, text, .. }) if text == "/compact" => {
+                Some(uuid.clone())
+            }
+            _ => None,
+        })
+    }
+
+    fn wake_armed(out: &[Output]) -> Option<u64> {
+        out.iter().rev().find_map(|output| match output {
+            Output::ArmTimer {
+                id: TimerId::Wake,
+                at_ms,
+            } => Some(*at_ms),
+            _ => None,
+        })
+    }
+
+    /// An agent without a parent does not suspend while a provider subagent
+    /// it started runs in the background after its own turn has ended:
+    /// suspending would kill the subagent with the provider. The timer is
+    /// armed only once the notification's follow-up turn has ended.
+    #[test]
+    fn a_headless_claude_without_a_parent_stays_awake_while_its_background_subagent_runs() {
+        const AFTER_MS: u64 = 30 * 60_000;
+        let mut claude = Claude::suspending(AFTER_MS);
+        claude.assistant(
+            "a1",
+            json!([{"type": "tool_use", "id": "toolu_agent", "name": "Agent",
+                "input": {"description": "count", "prompt": "Count the files.", "subagent_type": "general-purpose"}}]),
+        );
+        claude.says(json!({
+            "type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "a1task", "task_type": "local_agent", "tool_use_id": "toolu_agent",
+            "description": "count", "is_backgrounded": true,
+        }));
+        claude.says(json!({
+            "type": "user", "uuid": "u1", "session_id": "s", "parent_tool_use_id": null,
+            "message": {"role": "user", "content": [{
+                "type": "tool_result", "tool_use_id": "toolu_agent", "is_error": false,
+                "content": [{"type": "text", "text": "Async agent launched successfully.\nagentId: a1task\nThe agent is working in the background. You will be notified automatically when it completes."}],
+            }]},
+        }));
+        claude.assistant(
+            "a2",
+            json!([{"type": "text", "text": "A subagent is counting."}]),
+        );
+        let out = claude.result("r1", "A subagent is counting.");
+        assert!(!closes(&out), "{out:?}");
+        assert_eq!(claude.suspension(), None, "armed while its subagent runs");
+
+        claude.says(json!({
+            "type": "system", "subtype": "task_notification", "uuid": "t3", "session_id": "s",
+            "task_id": "a1task", "tool_use_id": "toolu_agent", "status": "completed",
+            "output_file": "/tmp/claude/tasks/a1task.output", "summary": "There are 3 files.",
+        }));
+        assert_eq!(claude.suspension(), None, "the follow-up turn runs");
+        claude.says(json!({"type": "system", "subtype": "init", "uuid": "i2", "session_id": "s", "model": "claude-test"}));
+        claude.assistant(
+            "a3",
+            json!([{"type": "text", "text": "There are 3 files."}]),
+        );
+        claude.result("r2", "There are 3 files.");
+        let at = claude.suspension().expect("armed once nothing runs");
+        assert_eq!(at, claude.now_ms + AFTER_MS);
+        let out = claude.at(at, Input::Timer(TimerId::Suspend));
+        assert!(closes(&out), "{out:?}");
+        assert_eq!(claude.agent.exiting(), Some(&ExitCause::Suspended));
+    }
+
+    /// Idle compaction and suspension compose: a compaction is no turn of
+    /// anybody's, but the provider is busy with it and the agent reads as
+    /// working, so it holds the suspension timer while it runs; once it is
+    /// over the agent is idle again and the delay starts afresh. It runs
+    /// once per idle stretch, so it delays a suspension at most once.
+    #[test]
+    fn an_idle_compaction_holds_suspension_while_it_runs_and_delays_it_once() {
+        const AFTER_MS: u64 = 2 * 60 * 60_000;
+        let mut claude = Claude::suspending(AFTER_MS);
+        claude.says(json!({"type": "stream_event", "event": {"type": "message_start", "message": {
+            "id": "msg_1",
+            "usage": {
+                "input_tokens": 2,
+                "cache_read_input_tokens": 240_000,
+                "cache_creation_input_tokens": 10_000,
+                "cache_creation": {"ephemeral_1h_input_tokens": 10_000, "ephemeral_5m_input_tokens": 0},
+            },
+        }}}));
+        let out = claude.result("r1", "done");
+        let wake = wake_armed(&out).expect("the compaction's time is armed");
+        let idle_at = claude.now_ms;
+        assert_eq!(claude.suspension(), Some(idle_at + AFTER_MS));
+        assert!(wake < idle_at + AFTER_MS, "it compacts before it suspends");
+
+        let out = claude.at(wake, Input::Timer(TimerId::Wake));
+        let uuid = compact_sent(&out).expect("the idle compaction is sent");
+        assert_eq!(claude.suspension(), None, "the compaction holds it");
+        assert!(
+            out.contains(&Output::CancelTimer {
+                id: TimerId::Suspend
+            }),
+            "{out:?}"
+        );
+
+        claude.says(json!({"type": "system", "subtype": "compact_boundary", "uuid": "cb", "session_id": "s",
+            "compact_metadata": {"trigger": "manual", "pre_tokens": 250_000, "post_tokens": 30_000}}));
+        assert_eq!(claude.suspension(), None);
+        let out = claude.says(
+            json!({"type": "result", "subtype": "success", "uuid": "r2", "duration_ms": 17_000,
+            "user_message_uuid": uuid, "user_message_uuids": [uuid]}),
+        );
+        let over = claude.now_ms;
+        assert_eq!(
+            claude.suspension(),
+            Some(over + AFTER_MS),
+            "armed afresh once it is over"
+        );
+        assert_eq!(wake_armed(&out), None, "no second compaction: {out:?}");
+
+        let out = claude.at(over + AFTER_MS, Input::Timer(TimerId::Suspend));
+        assert!(compact_sent(&out).is_none());
+        assert!(closes(&out), "{out:?}");
+        assert_eq!(claude.agent.exiting(), Some(&ExitCause::Suspended));
+    }
+
     /// Headless Claude starts the subagents its Agent tool asks for in the
     /// background: the call's result only says the subagent was launched,
     /// and the parent's turn ends while the subagent still works. A
@@ -1365,6 +1524,36 @@ mod hosting {
         fn exits(&mut self) -> Option<ExitCause> {
             exit_of(&self.on(Input::ProviderExited { code: Some(0) })).cloned()
         }
+    }
+
+    /// An agent without a parent whose provider runs a subagent, any
+    /// provider's, holds its suspension until the subagent ends: the timer
+    /// is cancelled at the subagent's start and armed afresh at its end.
+    #[test]
+    fn a_running_provider_subagent_holds_its_hosts_suspension() {
+        let mut spec = spec(false, None);
+        wire::experimental::SUSPENSION.put(
+            &mut spec.experimental,
+            &wire::experimental::SuspensionSpec { after_ms: AFTER_MS },
+        );
+        let mut out = Vec::new();
+        let agent = Agent::<Hosting>::start(&spec, None, 1_000, &mut out);
+        let mut host = Host {
+            agent,
+            now_ms: 1_000,
+        };
+        host.on(Input::DaemonDials { connection: DAEMON });
+        host.fact(json!({"type": "ready"}));
+        assert!(host.agent.life.suspend.is_some(), "idle: armed");
+        let out = host.starts("sub-a");
+        assert_eq!(suspension_timer(&out), Some(None), "{out:?}");
+        assert_eq!(host.agent.life.suspend, None);
+        let out = host.ends("sub-a");
+        assert_eq!(
+            suspension_timer(&out),
+            Some(Some(host.now_ms + AFTER_MS)),
+            "{out:?}"
+        );
     }
 
     /// A turn that ends while a subagent it started runs is not the last:

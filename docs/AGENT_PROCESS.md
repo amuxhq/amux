@@ -282,15 +282,28 @@ experiment, whose daemon writes a delay into its spec
 after`, 30 minutes unless set). The core arms a suspension timer for that
 delay the moment the agent is idle, and cancels it the moment it is not:
 idle is `Running` with no turn, nothing queued or pending, every child's last
-report taken, no terminal client attached (the driver feeds the attached
-count as an input), and nothing the interpreter says the provider holds
-(`Interpreter::holds`: background jobs, a turn the provider owes for a job
-that ended between turns, a scheduled wake-up, or a permission amux granted
-for the session, none of which survive a kill and resume). A turn that
-begins and ends between two steps arms it afresh. When it fires the exit is
-the ordinary graceful one with cause `SUSPENDED`: there is no turn to cut
-short and nothing running in the background. A message arriving as it exits
-is refused `REFUSAL_EXITING`, as for a one-shot agent.
+report taken, no provider subagent running (Claude's or Codex's own, which
+would die with the provider), no terminal client attached (the driver feeds
+the attached count as an input), and nothing the interpreter says the
+provider holds (`Interpreter::holds`: background jobs, a turn the provider
+owes for a job that ended between turns, a scheduled wake-up, or a
+permission amux granted for the session, none of which survive a kill and
+resume). A turn that begins and ends between two steps arms it afresh. When
+it fires the exit is the ordinary graceful one with cause `SUSPENDED`: there
+is no turn to cut short and nothing running in the background. A message
+arriving as it exits is refused `REFUSAL_EXITING`, as for a one-shot agent.
+A provider subagent has no process or spec of its own, so it never suspends;
+its parent suspends only once none runs.
+
+An [idle compaction](INTERPRETERS.md#idle-compaction) composes with it
+without a rule of its own. The compaction is nobody's turn, but the agent
+reads as working while it runs, so it holds the timer like a turn; once it
+is over the agent is idle again and the delay starts afresh. One runs per
+idle stretch, so it delays a suspension at most once. A suspended agent has
+no process to arm a wake timer, so it is never woken to compact. With the
+defaults a Codex agent compacts at 25 minutes idle and suspends half an hour
+after that; headless Claude's compaction, at 55 minutes, comes after the
+30-minute delay, so it runs only under a delay set longer than that.
 
 ### A suspended agent on its host
 

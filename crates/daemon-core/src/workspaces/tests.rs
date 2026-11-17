@@ -818,3 +818,47 @@ fn a_checkpoint_carries_the_workspaces_and_restores_them() {
             .is_some()
     );
 }
+
+/// A provider subagent runs in its parent's process and folder: it is no
+/// member of the parent's workspace, before a restart or after it, so it
+/// neither keeps the workspace from going nor carries an entry of its own.
+#[test]
+fn a_restarted_daemon_makes_no_provider_subagent_a_member_of_its_parents_workspace() {
+    const SUB: AgentId = AgentId(*b"sub-000000000000");
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = store();
+    let tree = wt_tree("/trees/shop/lead");
+    let lead = AgentRow::new(AgentKey::new(OWN, LEAD.0), wire::Kind::Codex, &tree.id);
+    let mut sub = AgentRow::new(AgentKey::new(OWN, SUB.0), wire::Kind::Codex, &tree.id);
+    sub.parent = Some(lead.agent.clone());
+    sub.native = Some(wire::NativeChild {
+        provider_child_id: "thread-1".into(),
+    });
+    store.put_agents(&[lead, sub]).unwrap();
+    let mut rig = Rig {
+        daemon: daemon(store, true, &dir),
+        next_call: 0,
+        _dir: dir,
+    };
+    rig.step(Input::Adopted { agent: LEAD });
+    let out = rig.step(Input::Swept);
+    let (resolve, _) = rig.job(&out, |job| matches!(job, WorkspaceJob::Resolve { .. }));
+    rig.done(
+        resolve,
+        WorkspaceDone::Resolved {
+            folder: tree.id.clone(),
+            resolved: Resolved {
+                workspace: tree.clone(),
+                made_here: true,
+            },
+        },
+    );
+
+    assert_eq!(rig.entry(LEAD).id, tree.id);
+    assert_eq!(
+        rig.daemon.workspaces().core().members(&tree),
+        vec![member(LEAD)],
+        "the subagent is no member"
+    );
+    assert_eq!(entry_of(&rig.row(SUB).unwrap()), None);
+}

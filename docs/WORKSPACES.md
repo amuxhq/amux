@@ -33,6 +33,10 @@ exists is a `folder` workspace at its path as written. Workspaces do not
 nest: a worktree inside a repository is a workspace of its own. Families are
 independent of workspaces: a child started in its parent's folder shares its
 parent's workspace, and one started in a new workspace is a member of that.
+A provider subagent (one Claude's Agent tool or a Codex child thread starts
+inside its parent's process) is the exception to "every agent": it is in
+its parent's folder but no member, since it has no process to launch and
+goes with its parent, so it never holds, starts or removes a workspace.
 
 `CreateAgentRequest.new_workspace` (`amux new --worktree`, the terminal's
 `w` toggle) asks for a new one. It is a wt tree when wt is configured for the

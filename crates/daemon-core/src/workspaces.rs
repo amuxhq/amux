@@ -534,7 +534,12 @@ impl Daemon {
             }
         };
         let mut folders: BTreeMap<String, Vec<AgentId>> = BTreeMap::new();
-        for row in rows.into_iter().filter(|row| row.agent.host == own) {
+        // A provider subagent runs in its parent's process and folder: it
+        // is never a member, as it never is when it starts.
+        for row in rows
+            .into_iter()
+            .filter(|row| row.agent.host == own && row.native.is_none())
+        {
             let Some(agent) = AgentId::from_slice(&row.agent.agent) else {
                 continue;
             };

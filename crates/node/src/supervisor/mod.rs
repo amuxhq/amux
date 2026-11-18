@@ -53,11 +53,11 @@ pub use files::{FileId, Files, SUPERVISOR_LOCK};
 pub use keep_awake::{KeepAwake, REASON as KEEP_AWAKE_REASON};
 use semver::Version;
 use sha2::{Digest as _, Sha256};
-pub use supervisor_core::StepBudget;
 use supervisor_core::{
     self as core, AskId, DaemonId, INHERITED_DAEMON, JobId, JobResult, Listed, Output, PrevFound,
     Start, Supervisor, TimerId,
 };
+pub use supervisor_core::{RESTARTING, StepBudget};
 use tokio::io::AsyncWriteExt as _;
 use tokio::sync::{mpsc, oneshot};
 
@@ -455,6 +455,7 @@ impl Driver {
                 Request::Check => core::Request::Check { retry: false },
                 Request::Retry => core::Request::Check { retry: true },
                 Request::Stop => core::Request::Stop,
+                Request::Restart => core::Request::Restart,
             },
         }
     }

@@ -260,10 +260,12 @@ Press `,` on home for settings:
 - usage counts and automatic reports ([What amux sends](../understand/what-amux-sends.md))
 - your account: who's signed in, and on which plan
 - experiments: features still taking shape, which you can try before they
-  settle. Each is on or off for the whole machine, and a change takes effect
-  when amux restarts (`amux server stop`, then `amux server start`). An
-  experiment may change or go in any release, and what it keeps may be lost
-  when amux updates.
+  settle. Each is on or off for the whole machine. When you switch one, amux
+  restarts itself to apply it, a few seconds later, or once it has finished
+  making a worktree or running a worktree's hook; the switch says
+  `applying…` until then. Your agents keep running, as they do whenever
+  amux restarts. An experiment may change or go in any release, and what it
+  keeps may be lost when amux updates.
 
   With `workspaces` on, a new worktree is a [wt](https://github.com/jordanwebster/wt)
   tree when the repository uses wt, and its agent runs in the tree's
@@ -310,10 +312,15 @@ enabled = ["workspaces"]   # the experiments switched on, by name
 after = "1h"               # how long an agent sits idle before it suspends
 ```
 
+Switching experiments with `amux config set experiments.enabled
+'["workspaces"]'`, or by editing the file, restarts amux the same way.
 `amux config` reads and changes an experiment's settings by the same names:
 `amux config set experiments.suspension.after 1h`, then
 `amux config get experiments.suspension.after`. A name amux doesn't have is
-refused with the ones it does.
+refused with the ones it does. While the experiment is on, a change to its
+settings restarts amux the same way, and its switch says `applying…` until
+then; a value it can't use is ignored with a warning, so it keeps its
+default and nothing restarts.
 
 To go back to following Claude or Codex after picking in amux, forget the
 remembered value: `amux config unset new_agent.claude.model`, and likewise

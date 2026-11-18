@@ -294,6 +294,68 @@ fn amux_update_retry_installs_the_rejected_build_again() {
     assert_eq!(answers(&out), vec!["installing 1.1.0"]);
 }
 
+/// The daemon's own restart is the install's without the install: the
+/// serving daemon is stopped and, once it exits, the same binary starts at
+/// once, with no backoff and nothing beside the binary touched. A daemon not
+/// serving yet is left to the start it is making.
+#[test]
+fn a_restart_the_daemon_asks_for_stops_it_and_starts_it_again_at_once() {
+    let mut run = Run::start(PrevFound::None, None, false);
+    let out = run.on(Input::Asked {
+        ask: AskId(1),
+        request: Request::Restart,
+    });
+    assert!(
+        !out.iter()
+            .any(|output| matches!(output, Output::Stop { .. })),
+        "{out:?}"
+    );
+    assert_eq!(
+        answers(&out),
+        vec!["the daemon is not serving; it starts afresh anyway"]
+    );
+    let daemon = run.serves();
+    let out = run.on(Input::Asked {
+        ask: AskId(2),
+        request: Request::Restart,
+    });
+    assert!(out.contains(&Output::Stop { daemon }), "{out:?}");
+    assert_eq!(answers(&out), vec![RESTARTING]);
+    let out = run.on(Input::DaemonExited { daemon, code: 0 });
+    assert!(
+        out.iter()
+            .any(|output| matches!(output, Output::Spawn { daemon: next } if *next != daemon)),
+        "started again at once: {out:?}"
+    );
+    assert!(
+        !out.iter().any(|output| matches!(
+            output,
+            Output::ArmTimer {
+                id: TimerId::Restart,
+                ..
+            } | Output::InstallStaged
+                | Output::RestorePrev
+                | Output::RetirePrev
+        )),
+        "{out:?}"
+    );
+    // The supervisor stopping wins: a restart asked meanwhile starts nothing.
+    let daemon = run.serves();
+    run.on(Input::Terminate);
+    let out = run.on(Input::Asked {
+        ask: AskId(3),
+        request: Request::Restart,
+    });
+    assert_eq!(answers(&out), vec!["the supervisor is stopping"]);
+    let out = run.on(Input::DaemonExited { daemon, code: 0 });
+    assert!(out.contains(&Output::Exit), "{out:?}");
+    assert!(
+        !out.iter()
+            .any(|output| matches!(output, Output::Spawn { .. })),
+        "{out:?}"
+    );
+}
+
 #[test]
 fn two_daemons_serving_is_a_violation() {
     let mut run = Run::start(PrevFound::None, None, false);

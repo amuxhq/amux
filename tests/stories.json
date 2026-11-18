@@ -477,6 +477,12 @@
       "why": "The phone does not change a machine's settings; it has settings of its own."
     },
     {
+      "name": "settings.experiment-applying",
+      "shows": "A machine's experiments just after Suspension was switched on: amux restarts to run it, so its row says it is applying the change rather than on or off.",
+      "clients": ["terminal", "mac"],
+      "why": "The phone does not change a machine's settings; it has settings of its own."
+    },
+    {
       "name": "report.ready",
       "shows": "Reporting a problem over a frozen copy of the screen, nothing written yet.",
       "clients": ["phone", "terminal"]

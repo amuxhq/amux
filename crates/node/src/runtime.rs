@@ -407,6 +407,12 @@ pub struct ProfileRuntime {
     /// polling: a message waiting for its acceptance item, a test fencing
     /// a host to an order.
     pub(crate) commits: watch::Sender<u64>,
+    /// How many of the jobs a restart waits for are under way: a
+    /// workspace being planned, made, started, stopped or removed (a hook
+    /// among them), a worktree being made, a resumed agent's spec being
+    /// built, an agent's directory being waited on or removed. Cut off by a
+    /// restart, a create would end its agent as could not start.
+    pub(crate) busy: watch::Sender<usize>,
     /// Journal frames committed since start: what ingest has done, so its
     /// cost per frame can be measured from outside.
     ingested_frames: AtomicU64,
@@ -728,6 +734,7 @@ impl ProfileRuntime {
                 driver
             },
             commits: watch::Sender::new(0),
+            busy: watch::Sender::new(0),
             ingested_frames: AtomicU64::new(0),
             skipped_subagent_parts: AtomicU64::new(0),
             push,

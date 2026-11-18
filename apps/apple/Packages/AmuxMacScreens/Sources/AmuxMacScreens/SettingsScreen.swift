@@ -145,18 +145,34 @@ private struct SettingsForm: View {
             if !settings.experiments.isEmpty {
                 Section {
                     ForEach(settings.experiments, id: \.name) { experiment in
-                        Toggle(isOn: change(experiment.enabled) { on in
-                            .with(experiments: settings.switching(experiment.name, on: on))
-                        }) {
-                            Text(experiment.name.capitalized)
-                            Text(experiment.description)
+                        if experiment.applying {
+                            // amux restarts to run what the switch now says;
+                            // until it has, neither on nor off is true.
+                            LabeledContent {
+                                HStack(spacing: 6) {
+                                    ProgressView().controlSize(.small)
+                                    Text("Applying…").foregroundStyle(.secondary)
+                                }
+                            } label: {
+                                Text(experiment.name.capitalized)
+                                Text(experiment.description)
+                            }
+                        } else {
+                            Toggle(isOn: change(experiment.enabled) { on in
+                                .with(experiments: settings.switching(experiment.name, on: on))
+                            }) {
+                                Text(experiment.name.capitalized)
+                                Text(experiment.description)
+                            }
                         }
                     }
                 } header: {
                     Text("Experiments")
                 } footer: {
-                    Text("Takes effect when amux restarts.")
-                        .foregroundStyle(.secondary)
+                    if settings.applyingExperiments {
+                        Text("amux restarts to apply the change. Agents keep running.")
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -259,6 +275,12 @@ extension MachineSettings {
     /// whole list a change sends.
     func switching(_ name: String, on: Bool) -> [String] {
         experiments.filter { $0.name == name ? on : $0.enabled }.map(\.name)
+    }
+
+    /// amux is restarting to apply an experiment switch: until it has, the
+    /// settings are worth reading again.
+    public var applyingExperiments: Bool {
+        experiments.contains(where: \.applying)
     }
 }
 

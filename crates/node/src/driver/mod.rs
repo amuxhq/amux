@@ -268,6 +268,7 @@ impl Driver {
             ticked: None,
             dumps: DumpLimit::new(dump_interval_ms),
             settings: None,
+            holding: std::collections::BTreeSet::new(),
             trust: trust.clone(),
             window: window.clone(),
             pairings: pairings.clone(),
@@ -585,6 +586,9 @@ pub(crate) struct CoreThread {
     dumps: DumpLimit,
     /// The settings as last told to the core.
     settings: Option<Settings>,
+    /// The jobs under way that a restart waits for, published as the
+    /// runtime's `busy` once each turn is done.
+    holding: std::collections::BTreeSet<JobId>,
     trust: crate::trust::SharedTrustStore,
     window: Arc<pairing::PairWindow>,
     pairings: Arc<pairing::Carriers>,
@@ -933,6 +937,10 @@ impl CoreThread {
         if opens_pairing(&input) {
             self.step(runtime, Input::Entropy(entropy()), out);
         }
+        let done = match &input {
+            Input::JobDone { job, .. } => Some(*job),
+            _ => None,
+        };
         self.record(&input);
         self.daemon.step(input, out);
         // The call's own answers reach its queue together, where the first
@@ -966,6 +974,14 @@ impl CoreThread {
         {
             self.calls.answer_all(call, own);
         }
+        // After the step's outputs: the job a done one led to is held
+        // before this one lets go, so a chain of them (a plan, then its
+        // make) never reads as settled between its links.
+        if let Some(job) = done
+            && self.holding.remove(&job)
+        {
+            self.publish_busy(runtime);
+        }
         if let Some(outcome) = checkpointed
             && self.checkpointing.is_none()
         {
@@ -978,6 +994,25 @@ impl CoreThread {
                     let _ = waiter.send(outcome.clone());
                 }
             }
+        }
+    }
+
+    /// Tells whoever waits for the daemon's work to settle how many of the
+    /// jobs a restart waits for are under way.
+    fn publish_busy(&self, runtime: &ProfileRuntime) {
+        let now = self.holding.len();
+        runtime.busy.send_if_modified(|under_way| {
+            let moved = *under_way != now;
+            *under_way = now;
+            moved
+        });
+    }
+
+    /// Holds `id` until its result is stepped when it is work a restart
+    /// waits for ([`holds_a_restart`]).
+    fn hold(&mut self, runtime: &ProfileRuntime, id: JobId, op: &Job) {
+        if holds_a_restart(op) && self.holding.insert(id) {
+            self.publish_busy(runtime);
         }
     }
 
@@ -1110,8 +1145,12 @@ impl CoreThread {
             Output::Job {
                 id,
                 op: Job::Workspace(job),
-            } => self.workspace_job(runtime, id, job),
+            } => {
+                self.hold(runtime, id, &Job::Workspace(job.clone()));
+                self.workspace_job(runtime, id, job);
+            }
             Output::Job { id, op } => {
+                self.hold(runtime, id, &op);
                 tokio::spawn(run_job(
                     Arc::downgrade(runtime),
                     id,
@@ -1405,6 +1444,32 @@ impl CoreThread {
         for waiter in self.waiting.remove(&agent).unwrap_or_default() {
             let _ = waiter.done.send(outcome.clone().map(|()| waiter.frames));
         }
+    }
+}
+
+/// Whether a job is the daemon's own work in progress, which a restart to
+/// apply an experiment switch waits for: cut off, a workspace being made
+/// ends its agent as could not start, a hook stops halfway, a resume or a
+/// delete is left for the next daemon to find half done. A release of a
+/// workspace claim is done at once and never answered, so it holds nothing.
+/// The rest (checkpoints, blobs, pushes, credentials, comparisons, kills)
+/// are quick or done again by the next daemon.
+fn holds_a_restart(op: &Job) -> bool {
+    use daemon_core::workspaces::WorkspaceJob;
+    match op {
+        Job::Workspace(WorkspaceJob::ReleaseClaim { .. }) => false,
+        Job::Workspace(_)
+        | Job::MakeWorktree { .. }
+        | Job::NextSpec { .. }
+        | Job::AwaitUnlocked { .. }
+        | Job::RemoveDir { .. } => true,
+        Job::Fsync { .. }
+        | Job::CheckpointWal
+        | Job::WriteBlob { .. }
+        | Job::RefreshToken { .. }
+        | Job::SendPush(_)
+        | Job::KillAgent { .. }
+        | Job::Compare { .. } => false,
     }
 }
 

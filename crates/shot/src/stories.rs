@@ -277,6 +277,9 @@ pub fn all() -> Vec<Story> {
         story("settings.machine-signed-out", || {
             Scene::Settings(Box::new(setup::settings_page(false)))
         }),
+        story("settings.experiment-applying", || {
+            Scene::Settings(Box::new(setup::settings_applying()))
+        }),
         // Reporting a problem.
         story("report.ready", || {
             Scene::Report(Box::new(Scene::Home(Box::new(

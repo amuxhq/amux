@@ -16,9 +16,12 @@ async fn desk_with_file(install: &Install, text: &str) -> (node::Daemon, std::pa
     let file = install.path("config.toml");
     std::fs::write(&file, text).unwrap();
     let mut options = install.options("boot-1", quiet_launch());
+    let initial = settings::InstallationConfig::from_file(&file).unwrap();
+    // Running the experiments the file switches on, as `amux daemon` does.
+    options.launch.experiments = initial.experiments.enabled();
     options.settings = node::SettingsOptions {
         file: Some(file.clone()),
-        initial: settings::InstallationConfig::from_file(&file).unwrap(),
+        initial,
         login: None,
         home: None,
     };
@@ -358,5 +361,199 @@ async fn the_daemon_keeps_the_machine_awake_while_an_agent_works() {
     let id = uuid::Uuid::from_slice(&agent.agent_id).unwrap();
     let _ = runtime.kill_agent(id).await;
     drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
+/// Switches the experiments to `names` through the front door, answering
+/// the settings the daemon now serves.
+async fn switch(daemon: &node::Daemon, names: &[&str]) -> wire::Settings {
+    daemon
+        .front_door()
+        .update_settings(Request::new(UpdateSettingsRequest {
+            experiments: Some(wire::ExperimentList {
+                names: names.iter().map(|name| (*name).to_owned()).collect(),
+            }),
+            ..UpdateSettingsRequest::default()
+        }))
+        .await
+        .unwrap()
+        .into_inner()
+        .settings
+        .unwrap()
+}
+
+/// Each experiment's name, whether the settings switch it on and whether
+/// it is being applied.
+fn experiments(settings: &wire::Settings) -> Vec<(&str, bool, bool)> {
+    settings
+        .experiments
+        .iter()
+        .map(|experiment| {
+            (
+                experiment.name.as_str(),
+                experiment.enabled,
+                experiment.applying,
+            )
+        })
+        .collect()
+}
+
+/// Several switches in a row are one restart: the daemon wants it only once
+/// the switch has stayed put for the debounce, for the set switched on last,
+/// and says meanwhile that each switch that moved is being applied.
+#[tokio::test(flavor = "multi_thread")]
+async fn several_switches_in_a_row_want_one_restart_once_they_stay_put() {
+    let desk = Install::new();
+    let (daemon, _file) = desk_with_file(&desk, "").await;
+    let mut restart = Box::pin(daemon.restart_wanted(|| true));
+
+    switch(&daemon, &["suspension"]).await;
+    switch(&daemon, &[]).await;
+    switch(&daemon, &["workspaces"]).await;
+    let last = std::time::Instant::now();
+    let settings = switch(&daemon, &["workspaces", "suspension"]).await;
+    assert_eq!(
+        experiments(&settings),
+        [("workspaces", true, true), ("suspension", true, true)]
+    );
+
+    let wanted = tokio::time::timeout(PATIENCE, &mut restart)
+        .await
+        .expect("a restart is wanted");
+    assert!(
+        last.elapsed() >= node::RESTART_DEBOUNCE,
+        "wanted {:?} after the last switch",
+        last.elapsed()
+    );
+    assert_eq!(
+        wanted,
+        node::RestartWanted {
+            running: vec![],
+            wanted: vec!["workspaces/1", "suspension/1"],
+            settings: vec!["suspension.after = 30m".to_owned()],
+            settled: true,
+        }
+    );
+    drop(restart);
+    daemon.shutdown().await.unwrap();
+}
+
+/// A switch flipped back before the debounce is up, and a hand edit that
+/// only names an experiment this build does not have, change nothing the
+/// daemon runs: no restart is wanted, and nothing reads as being applied.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_switch_flipped_back_or_an_unknown_name_wants_no_restart() {
+    let desk = Install::new();
+    let (daemon, file) = desk_with_file(&desk, "").await;
+    let mut restart = Box::pin(daemon.restart_wanted(|| true));
+
+    switch(&daemon, &["suspension"]).await;
+    let settings = switch(&daemon, &[]).await;
+    assert_eq!(
+        experiments(&settings),
+        [("workspaces", false, false), ("suspension", false, false)]
+    );
+    // A name another build has, as `amux config set` or an editor writes it;
+    // the daemon reads the file again within its poll.
+    std::fs::write(&file, "[experiments]\nenabled = [\"teleport\"]\n").unwrap();
+    let held = tokio::time::timeout(
+        node::RESTART_DEBOUNCE + std::time::Duration::from_secs(4),
+        &mut restart,
+    )
+    .await;
+    assert!(held.is_err(), "no restart is wanted: {held:?}");
+    let settings = daemon
+        .front_door()
+        .get_settings(Request::new(wire::GetSettingsRequest {}))
+        .await
+        .unwrap()
+        .into_inner()
+        .settings
+        .unwrap();
+    assert_eq!(
+        experiments(&settings),
+        [("workspaces", false, false), ("suspension", false, false)]
+    );
+
+    // A hand edit that does switch one on is noticed like a client's switch.
+    std::fs::write(
+        &file,
+        "[experiments]\nenabled = [\"teleport\", \"suspension\"]\n",
+    )
+    .unwrap();
+    let wanted = tokio::time::timeout(PATIENCE, &mut restart)
+        .await
+        .expect("a restart is wanted");
+    assert_eq!(wanted.wanted, ["suspension/1"]);
+    drop(restart);
+    daemon.shutdown().await.unwrap();
+}
+
+/// An experiment's own settings restart the daemon as its switch does, as
+/// its module reads them: a new delay for suspension while it runs wants
+/// one restart, with the new delay, and says suspension is being applied;
+/// a value the module cannot use, a key it does not read, and the delay of
+/// an experiment that is off change nothing it runs and restart nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_running_experiments_own_settings_want_a_restart_as_its_module_reads_them() {
+    let on = "[experiments]\nenabled = [\"suspension\"]\n";
+    let desk = Install::new();
+    let (daemon, file) = desk_with_file(&desk, on).await;
+    let mut restart = Box::pin(daemon.restart_wanted(|| true));
+    let quiet = node::RESTART_DEBOUNCE + std::time::Duration::from_secs(4);
+
+    // As written by hand; the daemon reads the file again within its poll.
+    std::fs::write(
+        &file,
+        format!("{on}[experiments.suspension]\nafter = \"soon\"\nbefore = \"1h\"\n"),
+    )
+    .unwrap();
+    let held = tokio::time::timeout(quiet, &mut restart).await;
+    assert!(held.is_err(), "nothing it runs changed: {held:?}");
+
+    std::fs::write(
+        &file,
+        format!("{on}[experiments.suspension]\nafter = \"45m\"\n"),
+    )
+    .unwrap();
+    until("suspension is being applied", || async {
+        let settings = daemon
+            .front_door()
+            .get_settings(Request::new(wire::GetSettingsRequest {}))
+            .await
+            .unwrap()
+            .into_inner()
+            .settings
+            .unwrap();
+        let listed = experiments(&settings);
+        (listed == [("workspaces", false, false), ("suspension", true, true)])
+            .then_some(())
+            .ok_or(format!("{listed:?}"))
+    })
+    .await
+    .unwrap();
+    let wanted = tokio::time::timeout(PATIENCE, &mut restart)
+        .await
+        .expect("a restart is wanted");
+    assert_eq!(
+        wanted,
+        node::RestartWanted {
+            running: vec!["suspension/1"],
+            wanted: vec!["suspension/1"],
+            settings: vec!["suspension.after = 45m".to_owned()],
+            settled: true,
+        }
+    );
+    drop(restart);
+    daemon.shutdown().await.unwrap();
+
+    // Off, its delay changes nothing the daemon runs.
+    let desk = Install::new();
+    let (daemon, file) = desk_with_file(&desk, "").await;
+    let mut restart = Box::pin(daemon.restart_wanted(|| true));
+    std::fs::write(&file, "[experiments.suspension]\nafter = \"45m\"\n").unwrap();
+    let held = tokio::time::timeout(quiet, &mut restart).await;
+    assert!(held.is_err(), "suspension is off: {held:?}");
+    drop(restart);
     daemon.shutdown().await.unwrap();
 }

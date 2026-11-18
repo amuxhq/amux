@@ -91,6 +91,8 @@ pub struct SyntheticAgent {
     inputs: Arc<Mutex<Vec<Handed>>>,
     /// Stops and kills the daemon asked of it.
     stops: Arc<AtomicUsize>,
+    /// The times the daemon asked it to read its git facts again.
+    git_reads: Arc<AtomicUsize>,
     /// The inputs among `inputs` the daemon handed on for one of the
     /// provider subagents this agent runs: the subagent's id, and the
     /// input's.
@@ -147,6 +149,7 @@ impl SyntheticAgent {
             answer: Arc::new(Mutex::new(Answer::Accept)),
             inputs: Arc::default(),
             stops: Arc::default(),
+            git_reads: Arc::default(),
             child_inputs: Arc::default(),
             wedged: Arc::new(tokio::sync::watch::Sender::new(false)),
             frozen: Arc::new(tokio::sync::watch::Sender::new(false)),
@@ -199,6 +202,18 @@ impl SyntheticAgent {
     /// How many stops or kills the daemon has asked of this agent.
     pub fn stops_asked(&self) -> usize {
         self.stops.load(Ordering::SeqCst)
+    }
+
+    /// How many times the daemon has asked this agent to read its git
+    /// facts again.
+    pub fn git_reads_asked(&self) -> usize {
+        self.git_reads.load(Ordering::SeqCst)
+    }
+
+    /// The agent works in `cwd` rather than the installation's work folder.
+    pub fn in_folder(mut self, cwd: PathBuf) -> Self {
+        self.cwd = cwd;
+        self
     }
 
     /// The subagent each input handed on for a provider subagent was for,
@@ -286,6 +301,7 @@ impl SyntheticAgent {
         let answer = self.answer.clone();
         let inputs = self.inputs.clone();
         let stops = self.stops.clone();
+        let git_reads = self.git_reads.clone();
         let child_inputs = self.child_inputs.clone();
         let wedged = self.wedged.clone();
         let frozen = self.frozen.clone();
@@ -306,12 +322,13 @@ impl SyntheticAgent {
                     }
                     hellos.fetch_add(1, Ordering::SeqCst);
                     *conn.lock().await = Some(writer);
-                    let (conn, journal, answer, inputs, stops, child_inputs) = (
+                    let (conn, journal, answer, inputs, stops, git_reads, child_inputs) = (
                         conn.clone(),
                         journal.clone(),
                         answer.clone(),
                         inputs.clone(),
                         stops.clone(),
+                        git_reads.clone(),
                         child_inputs.clone(),
                     );
                     let mut wedged = wedged.subscribe();
@@ -350,6 +367,10 @@ impl SyntheticAgent {
                             let input = match frame.of {
                                 Some(ctl_frame::Of::Stop(_)) => {
                                     stops.fetch_add(1, Ordering::SeqCst);
+                                    continue;
+                                }
+                                Some(ctl_frame::Of::ReadGit(_)) => {
+                                    git_reads.fetch_add(1, Ordering::SeqCst);
                                     continue;
                                 }
                                 Some(ctl_frame::Of::Input(input)) => Handed::Input(input),

@@ -666,6 +666,29 @@ impl Sqlite {
         })
     }
 
+    /// Writes an own row's git facts, which otherwise only a committed
+    /// snapshot sets: the daemon's word when a diff it made of the folder
+    /// shows the agent's last read is out of date. The snapshot the row
+    /// holds is left as the agent wrote it. False when there is no such
+    /// row.
+    pub fn set_git(
+        &mut self,
+        agent: &AgentKey,
+        git: Option<wire::Git>,
+    ) -> Result<bool, StoreError> {
+        if !self.is_own(agent) {
+            return Err(StoreError::NotOwn);
+        }
+        self.write(|rows| {
+            let Some(mut row) = rows.agent(agent)? else {
+                return Ok(false);
+            };
+            row.git = git;
+            rows.upsert_agent(&row, &rows::update_of(&["git"]))?;
+            Ok(true)
+        })
+    }
+
     /// Removes an agent whole: row, items, deliveries and notifications.
     pub fn delete_agent(&mut self, agent: &AgentKey) -> Result<(), StoreError> {
         self.markers.remove(agent);

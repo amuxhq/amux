@@ -14533,7 +14533,7 @@ impl ::prost::Name for EffectiveConfig {
 /// EOF in either direction means the peer is gone.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CtlFrame {
-    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12")]
+    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13")]
     pub of: ::core::option::Option<ctl_frame::Of>,
 }
 /// Nested message and enum types in `CtlFrame`.
@@ -14591,6 +14591,11 @@ pub mod ctl_frame {
         /// itself. Answered by `reply` keyed by the input's id, as `input` is.
         #[prost(message, tag = "12")]
         ChildInput(super::ChildInput),
+        /// Daemon to agent: the folder may have changed since the agent last
+        /// read its git facts, so read them again. An agent from before this
+        /// frame ignores it and reads them at its next turn end as ever.
+        #[prost(message, tag = "13")]
+        ReadGit(super::ReadGit),
     }
 }
 impl ::prost::Name for CtlFrame {
@@ -14720,6 +14725,22 @@ impl ::prost::Name for Nudge {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Nudge".into()
+    }
+}
+/// Sent when something outside the agent's own turns showed its git facts
+/// may be stale: another agent in the same checkout ended a turn, or a diff
+/// of the folder disagreed with the agent's row. The facts reach the row the
+/// usual way, on the agent's next snapshot.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadGit {}
+impl ::prost::Name for ReadGit {
+    const NAME: &'static str = "ReadGit";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ReadGit".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.ReadGit".into()
     }
 }
 /// The live agents directly below the agent, on every host its daemon knows

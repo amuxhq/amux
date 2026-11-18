@@ -146,6 +146,16 @@ impl FamilyState {
             .get(&agent)
             .is_some_and(|process| process.hello && process.ended.is_none())
     }
+
+    /// The agents whose process has a connection that said Hello, in id
+    /// order.
+    pub(crate) fn connected_agents(&self) -> Vec<AgentId> {
+        self.processes
+            .keys()
+            .copied()
+            .filter(|agent| self.connected(*agent))
+            .collect()
+    }
 }
 
 /// One agent's process, as the registry knows it.

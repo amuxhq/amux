@@ -2096,3 +2096,50 @@ mod hosting {
         assert_eq!(marked_last(&host.turn_end()), Some(false));
     }
 }
+
+fn git_reads(out: &[Output]) -> Vec<JobId> {
+    out.iter()
+        .filter_map(|output| match output {
+            Output::Job {
+                id,
+                op: AgentJob::ReadGit,
+            } => Some(*id),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The daemon's word that the folder may have changed reads the git facts
+/// again: after the read under way, not beside it, and not once the agent
+/// is leaving.
+#[test]
+fn the_daemon_asking_reads_the_git_facts_again() {
+    let mut run = Run::start(&spec(false, None));
+    let first = git_reads(&run.out);
+    assert_eq!(first.len(), 1, "the read at start");
+    run.on(Input::DaemonDials { connection: DAEMON });
+    run.fact(json!({"type": "ready"}));
+
+    let out = run.frame(ctl_frame::Of::ReadGit(wire::ReadGit {}));
+    assert!(git_reads(&out).is_empty(), "one read at a time");
+    let out = run.on(Input::JobDone {
+        job: first[0],
+        result: JobResult::Git(None),
+    });
+    let again = git_reads(&out);
+    assert_eq!(again.len(), 1, "the ask is read once the first is in");
+    run.on(Input::JobDone {
+        job: again[0],
+        result: JobResult::Git(None),
+    });
+
+    let out = run.frame(ctl_frame::Of::ReadGit(wire::ReadGit {}));
+    assert_eq!(git_reads(&out).len(), 1, "an idle agent reads at once");
+
+    run.frame(ctl_frame::Of::Stop(wire::Stop { kill: false }));
+    let out = run.frame(ctl_frame::Of::ReadGit(wire::ReadGit {}));
+    assert!(
+        git_reads(&out).is_empty(),
+        "a leaving agent's facts are final"
+    );
+}

@@ -3,7 +3,10 @@
 //! channel now; `retry` is `amux update --retry`, which may install the
 //! build rolled back here again. `stop` is `amux server stop`
 //! on Windows, which has no signals; on Unix the CLI signals the pid in the
-//! supervisor's lock file instead.
+//! supervisor's lock file instead. `restart` is the daemon's own: it asks
+//! to be stopped and started again when the experiments its config switches
+//! on are not the ones it runs. A supervisor from before `restart` answers
+//! `unknown request "restart"`, and the daemon then exits by itself.
 
 use std::io;
 use std::path::Path;
@@ -21,6 +24,7 @@ pub enum Request {
     Check,
     Retry,
     Stop,
+    Restart,
 }
 
 impl Request {
@@ -29,6 +33,7 @@ impl Request {
             Self::Check => "check",
             Self::Retry => "retry",
             Self::Stop => "stop",
+            Self::Restart => "restart",
         }
     }
 
@@ -37,6 +42,7 @@ impl Request {
             "check" => Some(Self::Check),
             "retry" => Some(Self::Retry),
             "stop" => Some(Self::Stop),
+            "restart" => Some(Self::Restart),
             _ => None,
         }
     }

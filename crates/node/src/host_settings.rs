@@ -299,6 +299,7 @@ pub(crate) fn to_wire(
     config: &InstallationConfig,
     host_name: &str,
     supervised: bool,
+    running: &settings::experiments::Enabled,
 ) -> wire::Settings {
     wire::Settings {
         host_name: host_name.to_owned(),
@@ -327,6 +328,7 @@ pub(crate) fn to_wire(
                 version: experiment.version.to_owned(),
                 description: experiment.description.to_owned(),
                 enabled: config.experiments.is_on(experiment),
+                applying: config.experiments.is_on(experiment) != running.is_on(experiment),
             })
             .collect(),
     }
@@ -469,6 +471,8 @@ fn stamp(path: &Path) -> Option<(SystemTime, u64)> {
 
 #[cfg(test)]
 mod tests {
+    use settings::experiments::Enabled;
+
     use super::*;
 
     fn request() -> UpdateSettingsRequest {
@@ -556,7 +560,7 @@ mod tests {
         );
         assert!(settings.reread().is_none(), "its own write is no news");
 
-        let wire = to_wire(&config, "desk", false);
+        let wire = to_wire(&config, "desk", false, &Enabled::none());
         assert_eq!(wire.start_at_login, None);
         assert_eq!(wire.claude_kind, wire::Kind::ClaudePty as i32);
 
@@ -593,8 +597,9 @@ mod tests {
 
     /// Switching an experiment writes `experiments.enabled` and keeps the
     /// rest of the file, comments, another build's experiment and an
-    /// experiment's own table among it; the daemon runs what the file said
-    /// when it started, so the settings answer the switch, not what runs.
+    /// experiment's own table among it. The daemon runs what the file said
+    /// when it started, so the settings answer the switch and say it is
+    /// being applied while it differs from what runs.
     #[test]
     fn switching_an_experiment_writes_the_names_and_keeps_the_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -609,7 +614,7 @@ mod tests {
             login: None,
             home: None,
         });
-        let wire = to_wire(&settings.current(), "desk", false);
+        let wire = to_wire(&settings.current(), "desk", false, &Enabled::none());
         let listed: Vec<(&str, &str, bool)> = wire
             .experiments
             .iter()
@@ -656,16 +661,35 @@ mod tests {
             read.experiments.enabled().versions(),
             ["workspaces/1", "suspension/1"]
         );
-        assert!(
-            to_wire(&config, "desk", false)
+        let applying = |running: &[&'static settings::experiments::Experiment]| {
+            to_wire(&config, "desk", false, &Enabled::of(running))
                 .experiments
                 .iter()
-                .all(|experiment| experiment.enabled)
+                .map(|experiment| (experiment.enabled, experiment.applying))
+                .collect::<Vec<_>>()
+        };
+        // Started with neither, both are being applied; with one, the other.
+        assert_eq!(applying(&[]), [(true, true), (true, true)]);
+        assert_eq!(
+            applying(&[&settings::experiments::SUSPENSION]),
+            [(true, true), (true, false)]
         );
+        let both = [
+            &settings::experiments::WORKSPACES,
+            &settings::experiments::SUSPENSION,
+        ];
+        assert_eq!(applying(&both), [(true, false), (true, false)]);
 
         // Off again; the name this build does not know stays.
         let config = settings.update(&switch(&[])).unwrap();
         assert_eq!(config.experiments.enabled, ["teleport"]);
+        assert!(
+            to_wire(&config, "desk", false, &Enabled::of(&both))
+                .experiments
+                .iter()
+                .all(|experiment| !experiment.enabled && experiment.applying),
+            "switched off while running: being applied"
+        );
         // Absent leaves the list alone.
         let config = settings
             .update(&UpdateSettingsRequest {

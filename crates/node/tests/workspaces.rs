@@ -444,6 +444,97 @@ async fn a_new_wt_tree_runs_its_agent_in_its_environment_and_its_hooks_with_its_
     daemon.shutdown().await.unwrap();
 }
 
+/// A switch of experiments restarts the daemon only once the workspace it
+/// is making is made: cut off by the restart, the agent would end as could
+/// not start. git's checkout hook holds the make here until the test opens
+/// its gate; the restart is wanted only after, with the row made.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restart_for_an_experiment_switch_waits_for_a_workspace_being_made() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    use wire::installation_service_server::InstallationService as _;
+
+    let install = Install::new();
+    let repo = repository(&install);
+    let gate = install.path("checkout-gate");
+    let hook = repo.join(".git/hooks/post-checkout");
+    std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    std::fs::write(
+        &hook,
+        format!(
+            "#!/bin/sh
+while [ ! -e '{}' ]; do sleep 0.1; done
+",
+            gate.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut options = install.options("boot-1", launch(&install, true));
+    // Started with what its settings switch on, as `amux daemon` is.
+    options.settings.initial =
+        ::settings::InstallationConfig::from_toml("[experiments]\nenabled = [\"workspaces\"]\n")
+            .unwrap();
+    let daemon = node::start(options, None).await.unwrap();
+    let runtime = runtime(&daemon, &install);
+
+    let agent = runtime
+        .spawn(in_new_workspace(&repo, "slow-checkout"), None)
+        .await
+        .unwrap();
+    assert!(entry(&agent).is_some_and(|entry| entry.creating));
+    let mut restart = Box::pin(daemon.restart_wanted());
+    daemon
+        .front_door()
+        .update_settings(tonic::Request::new(wire::UpdateSettingsRequest {
+            experiments: Some(wire::ExperimentList {
+                names: vec!["workspaces".into(), "suspension".into()],
+            }),
+            ..Default::default()
+        }))
+        .await
+        .unwrap();
+
+    let held = tokio::time::timeout(
+        node::RESTART_DEBOUNCE + std::time::Duration::from_secs(3),
+        &mut restart,
+    )
+    .await;
+    assert!(held.is_err(), "wanted while the make runs: {held:?}");
+    let row = runtime.agent(id_of(&agent)).await.unwrap();
+    assert!(
+        entry(&row).is_some_and(|entry| entry.creating),
+        "the make is still under way"
+    );
+
+    std::fs::write(&gate, b"").unwrap();
+    let wanted = tokio::time::timeout(PATIENCE, &mut restart)
+        .await
+        .expect("a restart is wanted once the make is done");
+    assert_eq!(
+        wanted,
+        node::RestartWanted {
+            running: vec!["workspaces/1"],
+            wanted: vec!["workspaces/1", "suspension/1"],
+            settled: true,
+        }
+    );
+    let row = runtime.agent(id_of(&agent)).await.unwrap();
+    assert!(
+        entry(&row).is_some_and(|entry| !entry.creating && entry.problem.is_none()),
+        "made before the restart: {:?}",
+        entry(&row)
+    );
+    assert!(Path::new(&row.cwd).join("feature.txt").is_file());
+    running(&runtime, &agent).await;
+
+    drop(restart);
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
 /// A delete that lands while the tree's stop hook runs, as `amux rm` of an
 /// agent whose process just ended does: wt refuses a removal under the
 /// hook's exclusive hold, so the delete waits for the stop, and the tree

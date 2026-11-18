@@ -531,3 +531,156 @@ async fn update_reports_a_build_that_never_started_and_then_leaves_it_alone() {
         stdout(&again)
     );
 }
+
+/// Under a supervisor, a client switching an experiment restarts the daemon
+/// the way an update does: the daemon asks, the supervisor stops it and
+/// starts the same binary again at once, and stays itself. The new daemon
+/// serves the experiments switched on, says so to clients, and the agent in
+/// the middle of a turn keeps its process across it.
+#[tokio::test(flavor = "multi_thread")]
+async fn under_a_supervisor_an_experiment_switch_restarts_the_daemon_through_it() {
+    use client::Installation as _;
+    use support::desk::{Desk, LONG_GRACE_SECS};
+
+    let gate_dir = tempfile::tempdir().unwrap();
+    let gate = gate_dir.path().join("gate");
+    let desk = Desk::new(
+        true,
+        LONG_GRACE_SECS,
+        node::version(),
+        "http://127.0.0.1:9",
+        support::gated_turn(&gate),
+    );
+    desk.run(&["server", "start"]).await;
+    let supervisor = desk.supervisor_pid().expect("a supervisor runs");
+    let first = desk.daemon_pid();
+    let work = desk.work.to_string_lossy().into_owned();
+    let id = support::created_id(
+        &desk
+            .run(&[
+                "new",
+                "claude",
+                "--in",
+                "amux",
+                "--name",
+                "sdk",
+                "--cwd",
+                &work,
+                "--prompt",
+                "first task",
+            ])
+            .await,
+    );
+    let chats = support::client(&desk.socket).await;
+    support::until("the agent is mid-turn", || {
+        let mut chats = chats.clone();
+        let id = &id;
+        async move { support::says(&support::chat(&mut chats, id).await, "started", 1) }
+    })
+    .await
+    .unwrap();
+    let agent = agent_pid(&desk.agent_dir(&id)).expect("the agent runs");
+
+    let door = client::GrpcInstallation::connect(&desk.socket)
+        .await
+        .unwrap();
+    let switched = door
+        .update_settings(wire::UpdateSettingsRequest {
+            experiments: Some(wire::ExperimentList {
+                names: vec!["suspension".into()],
+            }),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    let suspension = |settings: &wire::Settings| {
+        let found = settings
+            .experiments
+            .iter()
+            .find(|experiment| experiment.name == "suspension")
+            .expect("this build has suspension");
+        (found.enabled, found.applying)
+    };
+    assert_eq!(suspension(&switched), (true, true), "being applied");
+
+    until("the supervisor starts a new daemon", || {
+        desk.daemon_pid() != first && desk.daemon_running()
+    })
+    .await;
+    assert_eq!(
+        desk.supervisor_pid(),
+        Some(supervisor),
+        "the same supervisor"
+    );
+    until("the new daemon serves", || {
+        std::fs::read_to_string(desk.data.join("daemon.log"))
+            .unwrap()
+            .lines()
+            .filter(|line| line.contains(" serving "))
+            .count()
+            == 2
+    })
+    .await;
+    let log = std::fs::read_to_string(desk.data.join("daemon.log")).unwrap();
+    let serving_now: Vec<&str> = log
+        .lines()
+        .filter(|line| line.contains(" serving "))
+        .collect();
+    let restarting = log
+        .lines()
+        .filter(|line| line.contains("restarting to run the experiments switched on"))
+        .count();
+    assert_eq!(restarting, 1, "{log}");
+    // Through the supervisor's restart, not an exit it backs off from.
+    assert!(!log.contains("did not restart the daemon"), "{log}");
+    assert!(
+        serving_now[1].contains(r#"experiments=["suspension/1"]"#),
+        "{}",
+        serving_now[1]
+    );
+    assert_eq!(
+        agent_pid(&desk.agent_dir(&id)),
+        Some(agent),
+        "the agent kept its process"
+    );
+
+    let door = client::GrpcInstallation::connect(&desk.socket)
+        .await
+        .unwrap();
+    let settings = door.get_settings().await.unwrap();
+    assert_eq!(suspension(&settings), (true, false), "applied");
+    std::fs::write(&gate, b"").unwrap();
+    let chats = support::client(&desk.socket).await;
+    support::until("the turn finishes under the new daemon", || {
+        let mut chats = chats.clone();
+        let id = &id;
+        async move { support::says(&support::chat(&mut chats, id).await, "finished", 1) }
+    })
+    .await
+    .unwrap();
+    let second = desk.daemon_pid();
+    holds_for(
+        "no second restart",
+        node::RESTART_DEBOUNCE + Duration::from_secs(3),
+        || async { desk.daemon_pid() == second },
+    )
+    .await
+    .expect("one restart");
+    desk.run(&["settle", "sdk"]).await;
+}
+
+/// The agent process hosting the directory `dir`, found by the agent id
+/// its command line ends with.
+fn agent_pid(dir: &Path) -> Option<u32> {
+    let id = dir.file_name()?.to_string_lossy().into_owned();
+    let output = Command::new("pgrep")
+        .args(["-f", &format!(" agent .*{id}$")])
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()?
+        .trim()
+        .parse()
+        .ok()
+}

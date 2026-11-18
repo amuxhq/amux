@@ -377,12 +377,14 @@ pub fn settings_page(signed_in: bool) -> SettingsScene {
                 version: "workspaces/1".to_owned(),
                 description: settings::experiments::WORKSPACES.description.to_owned(),
                 enabled: true,
+                applying: false,
             },
             wire::Experiment {
                 name: "suspension".to_owned(),
                 version: "suspension/1".to_owned(),
                 description: settings::experiments::SUSPENSION.description.to_owned(),
                 enabled: false,
+                applying: false,
             },
         ],
         ..settings()

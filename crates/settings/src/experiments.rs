@@ -16,8 +16,8 @@
 //! builds running different versions, or none, never read each other's
 //! shapes.
 //!
-//! The switch is read when the daemon starts; a change takes effect at the
-//! next start.
+//! The switch is read when the daemon starts, and the daemon restarts
+//! itself to apply a change (`node::Daemon::restart_wanted`).
 
 pub mod suspension;
 

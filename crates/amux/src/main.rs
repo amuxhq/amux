@@ -15,6 +15,7 @@ mod config;
 mod connect;
 mod pairing;
 mod profiles;
+mod relaunch;
 mod relay;
 mod server;
 mod setup;

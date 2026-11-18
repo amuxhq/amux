@@ -3,7 +3,7 @@
 *For developers working on how amux starts, stops, restarts and updates its daemon on a desktop machine.*
 
 `amux supervise` is a small parent process for the daemon. It starts `amux
-daemon` as its child, restarts it whenever it exits, and, when the install
+daemon` as its child, restarts it whenever it exits or asks to be, and, when the install
 allows it, installs new releases and rolls back a release that never comes up.
 It also keeps the machine awake while it is on power. Agents do not depend on it: every
 agent is its own process and outlives any daemon (see [the agent
@@ -211,6 +211,41 @@ step takes longer than its 10 ms budget (`Params.step_budget`);
 files for it. [Parameters](PARAMETERS.md)
 lists them with the rest.
 
+## Restarting to apply an experiment switch
+
+The daemon reads which experiments are on once, as it starts, and restarts
+itself when they are switched ([experiments](WIRE.md#experiments) says when
+and what it waits for). The restart takes the path a daemon start already
+has, in each install cell:
+
+- **With a supervisor**, the daemon writes `restart` to the control socket.
+  The supervisor's core stops the serving daemon as it does onto an update
+  (SIGTERM, or closing the pipe on Windows, then the stop deadline and a
+  kill) and starts the same binary at once once it has exited, with no
+  backoff and nothing beside the binary touched; the supervisor itself keeps
+  running. A daemon not yet serving is left to the start it is making. A
+  supervisor from before `restart` answers `unknown request "restart"`, and
+  so does nothing listening: the daemon then shuts down and exits by itself,
+  and the supervisor starts it again after its backoff. So does a daemon
+  the supervisor has not stopped within ten seconds of answering.
+- **Without a supervisor**, the daemon shuts down cleanly, which releases
+  the installation lock and closes its sockets, and on Unix execs its own
+  executable with the same arguments and environment: the same process, so
+  a service manager running `amux daemon` sees nothing happen. Every
+  descriptor it holds closes on exec, and the new image takes the lock and
+  binds the front door as any start does. The agents the old image started
+  are still the process's children across the exec, with nothing in the new
+  image waiting for them, so a daemon reaps, as each exits, every child it
+  finds it already has as it starts; one started any other way has none.
+  Windows has no exec, and the nearest honest equivalent is a fresh
+  process: the daemon starts its own executable with the same arguments and
+  environment, detached, and exits. Its process id changes, so a service
+  manager watching the first process sees it exit cleanly and no longer
+  tracks the one that took over.
+
+Before either, the daemon waits for its config file to read: the next start
+reads it, and one that no longer reads would not start at all.
+
 ## Updates and channels
 
 Each channel is one manifest at `<releases_url>/<channel>.json`:
@@ -369,11 +404,12 @@ sleep, which is no worse than `keep_awake = false`.
 
 | Where | What it shows |
 | --- | --- |
+| [`crates/supervisor-core/src/tests.rs`](../crates/supervisor-core/src/tests.rs) | The core's rules one input at a time; among them a restart the daemon asks for stopping it and starting it again at once, with no backoff and nothing moved, and nothing started when the supervisor is stopping. |
 | [`crates/node/tests/supervisor.rs`](../crates/node/tests/supervisor.rs) | The real supervisor driving a stand-in binary (`fake-amux`) whose daemon mode is scripted per version, against a local manifest server, with releases signed by the test key. Restart on every exit and stop on request; install a newer signed release and exec it keeping pid, child, pipe and lock; refuse a bad hash or signature; roll back after K starts that never prepare and skip the rejected build; stop a daemon that hangs before `prepared` at the start deadline; restart without rollback after `go`; kill at the stop deadline; the three recovery cases above; the real `amux daemon` exiting when its supervisor dies; rollout and version choice. |
-| [`crates/amux/tests/supervise_cli.rs`](../crates/amux/tests/supervise_cli.rs) | The CLI around it, with the real binary: `start_at_login` writing the login item for the next login and removing it, and finding no supervisor to write one for, stop going to the supervisor first or to the daemon when there is none, a client starting the supervisor only where the install has one, the supervisor's power assertion under `keep_awake`, let go and taken again as the setting changes (macOS), `amux config set channel`, and `amux update` reporting a build that never started and leaving it alone after, and `amux update --retry` installing a build this machine had rolled back. |
+| [`crates/amux/tests/supervise_cli.rs`](../crates/amux/tests/supervise_cli.rs) | The CLI around it, with the real binary: `start_at_login` writing the login item for the next login and removing it, and finding no supervisor to write one for, stop going to the supervisor first or to the daemon when there is none, a client starting the supervisor only where the install has one, a client's experiment switch restarting the daemon through the supervisor with the agent mid-turn keeping its process, the supervisor's power assertion under `keep_awake`, let go and taken again as the setting changes (macOS), `amux config set channel`, and `amux update` reporting a build that never started and leaving it alone after, and `amux update --retry` installing a build this machine had rolled back. |
 | [`crates/node/tests/settings.rs`](../crates/node/tests/settings.rs) | The daemon's half of keep-awake: wanted while an agent works under `keep_awake`, not once the turn ends or the setting goes off. |
 | [`crates/amux/tests/overlap.rs`](../crates/amux/tests/overlap.rs) | Releases overlapping on one machine. Agents started by the previous build work on after an update; a terminal client of the previous build keeps working and names the newer daemon; the previous build reopens and works in a store the new build opened before it was killed ahead of `prepared`; restarting the generated LaunchAgent under a running turn leaves the agent running. "The previous build" is a copy of the build under test re-stamped one version lower (`node::release::restamp`). |
-| [`crates/amux/tests/process.rs`](../crates/amux/tests/process.rs) | A daemon killed mid-turn loses nothing: agents finish without it and the next daemon adopts them. |
+| [`crates/amux/tests/process.rs`](../crates/amux/tests/process.rs) | A daemon killed mid-turn loses nothing: agents finish without it and the next daemon adopts them. A daemon with no supervisor restarts itself in place, once, for several `amux config set experiments.enabled` in a row, keeping its process id and its agent mid-turn, restarts nothing for a name the build lacks, and reaps the agent the replaced image started. |
 
 `just journey system survive-daemon` tells the same story end to end: agents of
 every kind finish their turns with amux killed, amux comes back under its

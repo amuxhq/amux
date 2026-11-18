@@ -884,7 +884,8 @@ Nothing else carries a version integer either:
 
 An experiment is a feature shipped while its shape still moves, switched on
 per installation (`experiments.enabled`) and read by the daemon when it
-starts. Its wire shapes keep none of the promises above:
+starts; the daemon restarts itself to apply a switch. Its wire shapes keep
+none of the promises above:
 
 - **Its messages are `amux.experimental`**, in
   [`crates/wire/proto/amux/experimental/`](../crates/wire/proto/amux/experimental/).
@@ -928,10 +929,13 @@ starts. Its wire shapes keep none of the promises above:
   amux.v1 for good, and dropping it later reserves it.
 
 The switch itself is promised: `Settings.experiments` lists every
-experiment a build implements with its name, version, description and
-whether the config switches it on, and `UpdateSettingsRequest.experiments`
+experiment a build implements with its name, version, description, whether
+the config switches it on (`enabled`) and whether the daemon is still
+restarting to apply that (`applying`), and `UpdateSettingsRequest.experiments`
 replaces the list of names switched on, keeping any the build does not
-know. A change takes effect when the daemon next starts.
+know. A client shows an experiment that is `applying` as neither on nor off,
+and reads the settings again once the daemon is back: a build from before
+`applying` sends false, and applied a switch only at its next start.
 
 A person switches an experiment by its **name** (`workspaces`: lowercase
 letters only, so a store table's name says whose it is). A build implements
@@ -968,6 +972,26 @@ after = "30m"
   (`Launch.experiments`, logged with the serving line). Switching while it
   runs was rejected: every experiment would have to handle being turned off
   while its work is under way, which none needs.
+- **The daemon restarts itself to apply a switch.** Whichever way the
+  switch moved (a client's `UpdateSettings`, `amux config set
+  experiments.enabled`, an edit of the file, which the daemon reads again
+  every two seconds), once the experiments it switches on have stayed put
+  for three seconds (`RESTART_DEBOUNCE` in `crates/node/src/daemon.rs`) and
+  are not the ones the daemon runs, `amux daemon` waits for its own work
+  under way to settle and restarts: a workspace being planned, made,
+  started, stopped or removed, a hook among them, a worktree being made, a
+  resumed agent's spec being built, an agent's directory being waited on or
+  removed (`holds_a_restart` in `crates/node/src/driver/mod.rs`). It waits
+  at most five minutes (`RESTART_SETTLE_WITHIN`). Under a supervisor it asks
+  the supervisor to restart it, which stops it and starts it again as onto
+  an update; without one it shuts down and execs itself in place
+  ([the supervisor](SUPERVISOR.md#restarting-to-apply-an-experiment-switch)).
+  Agents keep running, as across any restart, and clients reconnect. A
+  daemon never restarts for the settings it started with, since it runs
+  what they switch on: a name this build does not have changes nothing it
+  runs, so it restarts nothing, and a switch flipped back within the three
+  seconds restarts nothing either. Only `amux daemon` restarts; an embedder
+  such as the phone runs what it was started with.
 - **An experiment's data may be lost at any upgrade,** so it keeps nothing
   there it cannot afford to lose; what must survive lives in a promised
   place or with the thing it describes, as a workspace's maker is recorded

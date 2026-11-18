@@ -260,6 +260,10 @@ fn note(key: &str) -> Option<&'static str> {
         "supervisor" | "updates" | "root" => {
             Some("amux uses it from its next start: `amux server stop`, then any amux command.")
         }
+        "experiments.enabled" => Some(
+            "A running amux restarts to apply it once the work it has under way settles; \
+             agents keep running.",
+        ),
         _ if key.starts_with("experiments.") => {
             Some("amux uses it from its next start: `amux server stop`, then any amux command.")
         }

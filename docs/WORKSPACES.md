@@ -103,7 +103,10 @@ While the workspace is made, messages wait in the agent's lane (without the
 five seconds a live row's process otherwise has to connect), and so does a
 stop or a delete. A workspace that cannot be made ends the agent as
 `EXIT_CAUSE_COULD_NOT_START` with the reason, and a restarted daemon that
-finds a row still `creating` ends it the same way.
+finds a row still `creating` ends it the same way. So the restart the daemon
+makes to apply an experiment switch waits for every workspace job under way,
+a make or a hook, for up to five minutes ([experiments](WIRE.md#experiments)),
+while an update or `amux server stop` does not wait.
 
 Every launch in a wt tree, start or resume, merges the tree's environment
 into the provider's (`start_process` in

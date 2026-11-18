@@ -684,3 +684,186 @@ async fn a_root_too_deep_for_a_socket_address_still_serves() {
     install.detached = false;
     assert!(install.front_door().await.is_none());
 }
+
+/// The `serving` lines of the daemon's log: one per start.
+fn serving_lines(install: &Install) -> Vec<String> {
+    std::fs::read_to_string(install.data.join("daemon.log"))
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| line.contains(" serving "))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The processes whose parent is `pid` that have exited and not been
+/// waited for.
+fn zombies_of(pid: u32) -> Vec<String> {
+    let listed = std::process::Command::new("ps")
+        .args(["-A", "-o", "pid=,ppid=,stat="])
+        .output()
+        .expect("ps runs");
+    String::from_utf8_lossy(&listed.stdout)
+        .lines()
+        .filter(|line| {
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            fields.get(1) == Some(&pid.to_string().as_str())
+                && fields.get(2).is_some_and(|stat| stat.starts_with('Z'))
+        })
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Switching an experiment restarts a daemon that has no supervisor in
+/// place: the same process, so the service manager running `amux daemon`
+/// sees nothing, serving again with the experiments the config now switches
+/// on, and its agent working on across it. Several switches in a row are one
+/// restart, and a name this build does not have restarts nothing. The agent
+/// the old image started is reaped by the new one once it exits.
+#[tokio::test(flavor = "multi_thread")]
+async fn switching_an_experiment_restarts_the_daemon_in_place_once() {
+    let gate = tempfile::tempdir().unwrap();
+    let gate = gate.path().join("gate");
+    let mut install = Install::new(gated_turn(&gate));
+    install.run_daemon().await;
+    let pid = install
+        .daemon
+        .as_ref()
+        .unwrap()
+        .id()
+        .expect("the daemon runs");
+    let work = install.work.to_string_lossy().into_owned();
+    let sdk = created_id(
+        &install
+            .ok(&[
+                "new",
+                "claude",
+                "--in",
+                "amux",
+                "--name",
+                "sdk",
+                "--cwd",
+                &work,
+                "--prompt",
+                "first task",
+            ])
+            .await,
+    );
+    let client = install.client().await;
+    until("the agent is mid-turn", || {
+        let mut client = client.clone();
+        let sdk = &sdk;
+        async move {
+            let chat = chat(&mut client, sdk).await;
+            texts(&chat)
+                .contains(&"started")
+                .then_some(())
+                .ok_or_else(|| format!("chat: {chat:?}"))
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(serving_lines(&install).len(), 1);
+
+    let said = install
+        .ok(&["config", "set", "experiments.enabled", r#"["workspaces"]"#])
+        .await;
+    assert!(said.contains("restarts to apply it"), "{said}");
+    install
+        .ok(&["config", "set", "experiments.enabled", r#"["suspension"]"#])
+        .await;
+    install
+        .ok(&[
+            "config",
+            "set",
+            "experiments.enabled",
+            r#"["suspension", "teleport"]"#,
+        ])
+        .await;
+
+    until("the daemon serves again", || async {
+        let lines = serving_lines(&install);
+        (lines.len() >= 2)
+            .then_some(())
+            .ok_or_else(|| format!("{lines:#?}"))
+    })
+    .await
+    .unwrap();
+    until("its front door answers again", || async {
+        install
+            .front_door()
+            .await
+            .map(|_| ())
+            .ok_or("no front door")
+    })
+    .await
+    .unwrap();
+    let lines = serving_lines(&install);
+    assert!(lines[0].contains("experiments=[]"), "{}", lines[0]);
+    assert!(
+        lines[1].contains(r#"experiments=["suspension/1"]"#),
+        "{}",
+        lines[1]
+    );
+    let daemon = install.daemon.as_mut().unwrap();
+    assert!(
+        daemon.try_wait().unwrap().is_none(),
+        "the daemon the service manager started is still running"
+    );
+    assert_eq!(daemon.id(), Some(pid), "the same process");
+    let dir = install.agent_dir(&sdk);
+    assert!(agent_dir::locked(&dir), "the agent kept running");
+
+    // The turn the agent was in finishes, and the restarted daemon has it.
+    std::fs::write(&gate, b"").unwrap();
+    let mut client = install.client().await;
+    until("the agent finishes its turn", || {
+        let mut client = client.clone();
+        let sdk = &sdk;
+        async move {
+            let chat = chat(&mut client, sdk).await;
+            (count(&chat, "finished") == 1)
+                .then_some(())
+                .ok_or_else(|| format!("chat: {chat:?}"))
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(count(&chat(&mut client, &sdk).await, "first task"), 1);
+
+    // A name only another build has changes nothing this daemon runs.
+    install
+        .ok(&[
+            "config",
+            "set",
+            "experiments.enabled",
+            r#"["suspension", "warp"]"#,
+        ])
+        .await;
+    holds_for(
+        "no second restart",
+        node::RESTART_DEBOUNCE + Duration::from_secs(4),
+        || async { serving_lines(&install).len() == 2 },
+    )
+    .await
+    .expect("one restart");
+
+    // The agent the replaced image started exits under the new one, which
+    // waits for it.
+    install.ok(&["settle", "sdk"]).await;
+    until("the agent exits", || async {
+        (!agent_dir::locked(&dir))
+            .then_some(())
+            .ok_or("still running")
+    })
+    .await
+    .unwrap();
+    until("the agent is reaped", || async {
+        let zombies = zombies_of(pid);
+        zombies
+            .is_empty()
+            .then_some(())
+            .ok_or_else(|| format!("{zombies:?}"))
+    })
+    .await
+    .unwrap();
+}

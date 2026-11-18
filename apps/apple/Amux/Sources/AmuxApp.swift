@@ -126,8 +126,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, ObservableObject,
         Signposts.emit(.pushWoke)
         let background = application.applicationState == .background
         let warmed = await composition.runtime.warm(agent, inBackground: background)
-        // The system suspends a woken app again once this returns.
-        if background { await composition.runtime.suspending() }
+        // The system suspends a woken app again once this returns, but the
+        // wait can be long enough for somebody to open the app meanwhile;
+        // the coordinator suspends only if it is still in the background.
+        await composition.runtime.pushFinished()
         switch warmed {
         case .current:
             Signposts.emit(.pushCurrent)

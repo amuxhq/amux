@@ -87,7 +87,7 @@ pub fn set(path: &Path, key: &str, raw: &str) -> Result<()> {
                 write(path, &edited)?;
                 println!("{key} = {}", value.to_string().trim());
                 applied(path, key)?;
-                if let Some(note) = note(key) {
+                if let Some(note) = note(&edited, key) {
                     println!("{note}");
                 }
                 return Ok(());
@@ -132,6 +132,9 @@ pub fn unset(path: &Path, key: &str) -> Result<()> {
     write(path, &edited)?;
     println!("{key} is no longer set; its default applies.");
     applied(path, key)?;
+    if let Some(note) = note(&edited, key) {
+        println!("{note}");
+    }
     Ok(())
 }
 
@@ -241,9 +244,12 @@ fn write(path: &Path, text: &str) -> Result<()> {
         .with_context(|| format!("writing {}", path.display()))
 }
 
+/// What a running amux says as it restarts to apply an experiment change.
+const APPLYING: &str = "A running amux restarts to apply it once the work it has under way settles; agents keep running.";
+
 /// When a running amux picks the change up, for the settings where that is
-/// not simply the next time it reads them.
-fn note(key: &str) -> Option<&'static str> {
+/// not simply the next time it reads them; `edited` is the file as written.
+fn note(edited: &str, key: &str) -> Option<&'static str> {
     match key {
         "channel" => {
             Some("The supervisor follows it from its next check; `amux update` checks now.")
@@ -260,12 +266,21 @@ fn note(key: &str) -> Option<&'static str> {
         "supervisor" | "updates" | "root" => {
             Some("amux uses it from its next start: `amux server stop`, then any amux command.")
         }
-        "experiments.enabled" => Some(
-            "A running amux restarts to apply it once the work it has under way settles; \
-             agents keep running.",
-        ),
-        _ if key.starts_with("experiments.") => {
-            Some("amux uses it from its next start: `amux server stop`, then any amux command.")
+        "experiments.enabled" => Some(APPLYING),
+        // An experiment's own setting: a running amux restarts for it only
+        // while the experiment is on, since otherwise it changes nothing.
+        _ if let Some(rest) = key.strip_prefix("experiments.") => {
+            let on = rest
+                .split('.')
+                .next()
+                .and_then(settings::experiments::named)
+                .zip(InstallationConfig::from_toml(edited).ok())
+                .is_some_and(|(experiment, config)| config.experiments.is_on(experiment));
+            Some(if on {
+                APPLYING
+            } else {
+                "The experiment is off, so this applies once it is switched on."
+            })
         }
         _ => None,
     }
@@ -280,6 +295,19 @@ mod tests {
         let path = dir.path().join("config.toml");
         std::fs::write(&path, text).unwrap();
         (dir, path)
+    }
+
+    /// A running amux restarts for an experiment's own setting only while
+    /// the experiment is on, and says so.
+    #[test]
+    fn an_experiments_setting_says_it_applies_while_the_experiment_is_on() {
+        let on = "[experiments]\nenabled = [\"suspension\"]\n";
+        assert_eq!(note(on, "experiments.suspension.after"), Some(APPLYING));
+        assert_eq!(note(on, "experiments.enabled"), Some(APPLYING));
+        assert_eq!(
+            note("", "experiments.suspension.after"),
+            Some("The experiment is off, so this applies once it is switched on.")
+        );
     }
 
     #[test]

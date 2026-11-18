@@ -972,12 +972,12 @@ after = "30m"
   (`Launch.experiments`, logged with the serving line). Switching while it
   runs was rejected: every experiment would have to handle being turned off
   while its work is under way, which none needs.
-- **The daemon restarts itself to apply a switch.** Whichever way the
-  switch moved (a client's `UpdateSettings`, `amux config set
-  experiments.enabled`, an edit of the file, which the daemon reads again
-  every two seconds), once the experiments it switches on have stayed put
-  for three seconds (`RESTART_DEBOUNCE` in `crates/node/src/daemon.rs`) and
-  are not the ones the daemon runs, `amux daemon` waits for its own work
+- **The daemon restarts itself to apply a switch, and an experiment's own
+  settings.** Whichever way the change came (a client's `UpdateSettings`,
+  `amux config set` or `unset`, an edit of the file, which the daemon reads
+  again every two seconds), once what the config asks has stayed put for
+  three seconds (`RESTART_DEBOUNCE` in `crates/node/src/daemon.rs`) and is
+  not what the daemon runs, `amux daemon` waits for its own work
   under way to settle and restarts: a workspace being planned, made,
   started, stopped or removed, a hook among them, a worktree being made, a
   resumed agent's spec being built, an agent's directory being waited on or
@@ -986,11 +986,19 @@ after = "30m"
   the supervisor to restart it, which stops it and starts it again as onto
   an update; without one it shuts down and execs itself in place
   ([the supervisor](SUPERVISOR.md#restarting-to-apply-an-experiment-switch)).
-  Agents keep running, as across any restart, and clients reconnect. A
-  daemon never restarts for the settings it started with, since it runs
-  what they switch on: a name this build does not have changes nothing it
-  runs, so it restarts nothing, and a switch flipped back within the three
-  seconds restarts nothing either. Only `amux daemon` restarts; an embedder
+  Agents keep running, as across any restart, and clients reconnect. What
+  the config asks is the experiments switched on, each with its settings as
+  its module reads them (`Experiment.in_effect`, `InEffect` in the
+  registry), so a value the module cannot use reads as the default it uses
+  instead, a key it does not read is nothing, and the settings of an
+  experiment that is off are nothing: none of those changes what a daemon
+  runs. A daemon never restarts for the settings it started with, since it
+  runs what they ask: a name this build does not have changes nothing it
+  runs, so it restarts nothing, and a change undone within the three
+  seconds restarts nothing either. `Settings.experiments` says an
+  experiment is `applying` while the config asks otherwise of it than the
+  daemon runs, and the serving line lists each running experiment's
+  settings (`experiment_settings`). Only `amux daemon` restarts; an embedder
   such as the phone runs what it was started with.
 - **An experiment's data may be lost at any upgrade,** so it keeps nothing
   there it cannot afford to lose; what must survive lives in a promised

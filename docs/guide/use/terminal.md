@@ -317,7 +317,10 @@ Switching experiments with `amux config set experiments.enabled
 `amux config` reads and changes an experiment's settings by the same names:
 `amux config set experiments.suspension.after 1h`, then
 `amux config get experiments.suspension.after`. A name amux doesn't have is
-refused with the ones it does.
+refused with the ones it does. While the experiment is on, a change to its
+settings restarts amux the same way, and its switch says `applying…` until
+then; a value it can't use is ignored with a warning, so it keeps its
+default and nothing restarts.
 
 To go back to following Claude or Codex after picking in amux, forget the
 remembered value: `amux config unset new_agent.claude.model`, and likewise

@@ -299,8 +299,9 @@ pub(crate) fn to_wire(
     config: &InstallationConfig,
     host_name: &str,
     supervised: bool,
-    running: &settings::experiments::Enabled,
+    running: &settings::experiments::InEffect,
 ) -> wire::Settings {
+    let wanted = config.experiments.in_effect();
     wire::Settings {
         host_name: host_name.to_owned(),
         start_at_login: supervised.then_some(config.start_at_login),
@@ -328,7 +329,7 @@ pub(crate) fn to_wire(
                 version: experiment.version.to_owned(),
                 description: experiment.description.to_owned(),
                 enabled: config.experiments.is_on(experiment),
-                applying: config.experiments.is_on(experiment) != running.is_on(experiment),
+                applying: wanted.of_experiment(experiment) != running.of_experiment(experiment),
             })
             .collect(),
     }
@@ -471,7 +472,7 @@ fn stamp(path: &Path) -> Option<(SystemTime, u64)> {
 
 #[cfg(test)]
 mod tests {
-    use settings::experiments::Enabled;
+    use settings::experiments::{Enabled, InEffect};
 
     use super::*;
 
@@ -560,7 +561,7 @@ mod tests {
         );
         assert!(settings.reread().is_none(), "its own write is no news");
 
-        let wire = to_wire(&config, "desk", false, &Enabled::none());
+        let wire = to_wire(&config, "desk", false, &InEffect::default());
         assert_eq!(wire.start_at_login, None);
         assert_eq!(wire.claude_kind, wire::Kind::ClaudePty as i32);
 
@@ -614,7 +615,7 @@ mod tests {
             login: None,
             home: None,
         });
-        let wire = to_wire(&settings.current(), "desk", false, &Enabled::none());
+        let wire = to_wire(&settings.current(), "desk", false, &InEffect::default());
         let listed: Vec<(&str, &str, bool)> = wire
             .experiments
             .iter()
@@ -662,11 +663,16 @@ mod tests {
             ["workspaces/1", "suspension/1"]
         );
         let applying = |running: &[&'static settings::experiments::Experiment]| {
-            to_wire(&config, "desk", false, &Enabled::of(running))
-                .experiments
-                .iter()
-                .map(|experiment| (experiment.enabled, experiment.applying))
-                .collect::<Vec<_>>()
+            to_wire(
+                &config,
+                "desk",
+                false,
+                &InEffect::of(&Enabled::of(running), &config.experiments),
+            )
+            .experiments
+            .iter()
+            .map(|experiment| (experiment.enabled, experiment.applying))
+            .collect::<Vec<_>>()
         };
         // Started with neither, both are being applied; with one, the other.
         assert_eq!(applying(&[]), [(true, true), (true, true)]);
@@ -684,10 +690,15 @@ mod tests {
         let config = settings.update(&switch(&[])).unwrap();
         assert_eq!(config.experiments.enabled, ["teleport"]);
         assert!(
-            to_wire(&config, "desk", false, &Enabled::of(&both))
-                .experiments
-                .iter()
-                .all(|experiment| !experiment.enabled && experiment.applying),
+            to_wire(
+                &config,
+                "desk",
+                false,
+                &InEffect::of(&Enabled::of(&both), &config.experiments)
+            )
+            .experiments
+            .iter()
+            .all(|experiment| !experiment.enabled && experiment.applying),
             "switched off while running: being applied"
         );
         // Absent leaves the list alone.

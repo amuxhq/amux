@@ -517,6 +517,7 @@ while [ ! -e '{}' ]; do sleep 0.1; done
         node::RestartWanted {
             running: vec!["workspaces/1"],
             wanted: vec!["workspaces/1", "suspension/1"],
+            settings: vec!["suspension.after = 30m".to_owned()],
             settled: true,
         }
     );

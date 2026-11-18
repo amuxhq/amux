@@ -867,3 +867,58 @@ async fn switching_an_experiment_restarts_the_daemon_in_place_once() {
     .await
     .unwrap();
 }
+
+/// A running experiment's own setting restarts the daemon in place as its
+/// switch does, as suspension reads it: a value it cannot use, written by
+/// hand, reads as the default it runs already, and a key it does not read is
+/// nothing, so neither restarts; a new delay set with `amux config` is one
+/// restart, and the next serving line runs it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_running_experiments_setting_restarts_the_daemon_once() {
+    let mut install = Install::new(Vec::new());
+    let mut text = std::fs::read_to_string(&install.config).unwrap();
+    text.push_str("[experiments]\nenabled = [\"suspension\"]\n");
+    std::fs::write(&install.config, &text).unwrap();
+    install.run_daemon().await;
+
+    text.push_str("[experiments.suspension]\nafter = \"soon\"\nbefore = \"1h\"\n");
+    std::fs::write(&install.config, &text).unwrap();
+    holds_for(
+        "no restart for what suspension cannot use",
+        node::RESTART_DEBOUNCE + Duration::from_secs(4),
+        || async { serving_lines(&install).len() == 1 },
+    )
+    .await
+    .expect("no restart");
+
+    let said = install
+        .ok(&["config", "set", "experiments.suspension.after", "45m"])
+        .await;
+    assert!(said.contains("restarts to apply it"), "{said}");
+    until("the daemon serves again", || async {
+        let lines = serving_lines(&install);
+        (lines.len() >= 2)
+            .then_some(())
+            .ok_or_else(|| format!("{lines:#?}"))
+    })
+    .await
+    .unwrap();
+    let lines = serving_lines(&install);
+    assert!(
+        lines[0].contains(r#"experiment_settings=["suspension.after = 30m"]"#),
+        "{}",
+        lines[0]
+    );
+    assert!(
+        lines[1].contains(r#"experiment_settings=["suspension.after = 45m"]"#),
+        "{}",
+        lines[1]
+    );
+    holds_for(
+        "one restart",
+        node::RESTART_DEBOUNCE + Duration::from_secs(3),
+        || async { serving_lines(&install).len() == 2 },
+    )
+    .await
+    .expect("one restart");
+}

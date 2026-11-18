@@ -113,9 +113,13 @@ pub(crate) struct Installation {
     edge: Mutex<EdgeOptions>,
     /// The settings as last applied.
     applied: Mutex<settings::InstallationConfig>,
-    /// The experiments the settings switch on, as last applied, which a
-    /// restart follows when they move away from the ones this daemon runs.
-    wanted: watch::Sender<settings::experiments::Enabled>,
+    /// The experiments the settings switch on, with their own settings as
+    /// their modules read them, as last applied: a restart follows them
+    /// when they move away from what this daemon runs.
+    wanted: watch::Sender<settings::experiments::InEffect>,
+    /// What this daemon runs: the experiments it started with, and their
+    /// settings as the settings it started with give them.
+    started: settings::experiments::InEffect,
     /// Whether an agent works while `keep_awake` is on.
     pub(crate) awake: Arc<crate::awake::Awake>,
     pub(crate) settings: crate::host_settings::HostSettings,
@@ -140,9 +144,10 @@ impl Installation {
         self.edge.lock().unwrap().host_name.clone()
     }
 
-    /// The experiments this daemon runs: those switched on when it started.
-    pub(crate) fn running_experiments(&self) -> settings::experiments::Enabled {
-        self.launch.lock().unwrap().experiments.clone()
+    /// The experiments this daemon runs and their settings: those it
+    /// started with.
+    pub(crate) fn running_experiments(&self) -> &settings::experiments::InEffect {
+        &self.started
     }
 
     /// Resolves once no profile has work under way that a restart waits
@@ -191,7 +196,7 @@ impl Installation {
             (repositories, kind, renamed, new_agent)
         };
         self.awake.keep_awake(config.keep_awake);
-        let wanted = config.experiments.enabled();
+        let wanted = config.experiments.in_effect();
         self.wanted.send_if_modified(|was| {
             let moved = *was != wanted;
             *was = wanted;
@@ -276,14 +281,18 @@ pub const RESTART_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs
 /// running) before it restarts anyway.
 pub const RESTART_SETTLE_WITHIN: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
-/// Why the daemon wants to restart: the experiments its settings switch on
-/// are not the ones it runs, and stayed so for [`RESTART_DEBOUNCE`].
+/// Why the daemon wants to restart: the experiments its settings switch on,
+/// or the settings of one it runs, are not what it runs, and stayed so for
+/// [`RESTART_DEBOUNCE`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RestartWanted {
     /// The versions it runs now.
     pub running: Vec<&'static str>,
     /// The versions the settings switch on, which the next start runs.
     pub wanted: Vec<&'static str>,
+    /// Their own settings, as their modules read them, which the next start
+    /// runs with (`suspension.after = 30m`).
+    pub settings: Vec<String>,
     /// The work it waited for settled; false when the wait ran out at
     /// [`RESTART_SETTLE_WITHIN`] with some still under way.
     pub settled: bool,
@@ -604,9 +613,9 @@ pub struct Daemon {
     /// Holds the machine awake while an agent works, on a supervised
     /// install.
     awake: Option<JoinHandle<()>>,
-    /// The experiments the settings switch on, seen as of the start: any
-    /// change since reads as changed.
-    wanted: watch::Receiver<settings::experiments::Enabled>,
+    /// The experiments the settings switch on and their settings, seen as
+    /// of the start: any change since reads as changed.
+    wanted: watch::Receiver<settings::experiments::InEffect>,
     // Dropped last: the lock outlives everything that writes under it.
     lock: Option<InstallationLock>,
 }
@@ -663,6 +672,7 @@ pub async fn start(
         .map_err(StartError::Generation)?;
 
     let onboarding = Arc::new(crate::onboarding::Onboarding::open(&data_dir));
+    let launch_experiments = launch.experiments.clone();
     let installation = Arc::new(Installation {
         data_dir,
         front_door,
@@ -678,7 +688,11 @@ pub async fn start(
         auto_reports,
         edge: Mutex::new(edge),
         applied: Mutex::new(settings.initial.clone()),
-        wanted: watch::Sender::new(settings.initial.experiments.enabled()),
+        wanted: watch::Sender::new(settings.initial.experiments.in_effect()),
+        started: settings::experiments::InEffect::of(
+            &launch_experiments,
+            &settings.initial.experiments,
+        ),
         awake: Arc::new(crate::awake::Awake::new(settings.initial.keep_awake)),
         settings: crate::host_settings::HostSettings::new(settings),
         onboarding,
@@ -901,20 +915,24 @@ impl Daemon {
     }
 
     /// Resolves once the daemon should restart to run the experiments its
-    /// settings switch on: they changed since it started, whichever way
-    /// (a client's settings, `amux config`, an edit of the file), stayed put
-    /// for [`RESTART_DEBOUNCE`] and are not the ones it runs; and the work
+    /// settings switch on, with their own settings: they changed since it
+    /// started, whichever way (a client's settings, `amux config`, an edit
+    /// of the file), stayed put for [`RESTART_DEBOUNCE`] and are not what
+    /// it runs; and the work
     /// it has under way that a restart would cut off has settled, or
     /// [`RESTART_SETTLE_WITHIN`] has passed.
     ///
     /// A daemon never restarts for the settings it started with: what it
     /// runs is what they switched on, so a restarted daemon has nothing to
     /// restart for until the switch moves again, whatever names this build
-    /// does not have the file lists. Switched back before the restart, it
-    /// does not restart at all. Only `amux daemon` acts on it; an embedder
+    /// does not have the file lists. Settings compare as each experiment's
+    /// module reads them, so a value it cannot use, a key it does not read
+    /// or the settings of an experiment that is off change nothing it runs
+    /// and restart nothing. Switched back before the restart, it does not
+    /// restart at all. Only `amux daemon` acts on it; an embedder
     /// runs what it was started with.
     pub async fn restart_wanted(&self) -> RestartWanted {
-        let running = self.installation.running_experiments();
+        let running = self.installation.running_experiments().clone();
         let mut wanted = self.wanted.clone();
         loop {
             if wanted.changed().await.is_err() {
@@ -938,8 +956,9 @@ impl Daemon {
                 continue;
             }
             return RestartWanted {
-                running: running.versions(),
-                wanted: now.versions(),
+                running: running.enabled().versions(),
+                wanted: now.enabled().versions(),
+                settings: now.describe(),
                 settled,
             };
         }

@@ -9298,10 +9298,11 @@ pub struct Experiment {
     /// starts, and restarts itself to apply a change.
     #[prost(bool, tag = "4")]
     pub enabled: bool,
-    /// The daemon runs it otherwise than `enabled` says: the switch moved
-    /// since the daemon started, and the daemon restarts to apply it once its
-    /// work under way settles. A client shows the switch as being applied.
-    /// False from builds before it, which applied a switch at their next start.
+    /// The daemon runs it otherwise than the config now says: the switch, or
+    /// while it is on its own settings, moved since the daemon started, and the
+    /// daemon restarts to apply that once its work under way settles. A client
+    /// shows the switch as being applied. False from builds before it, which
+    /// applied a change at their next start.
     #[prost(bool, tag = "5")]
     pub applying: bool,
 }

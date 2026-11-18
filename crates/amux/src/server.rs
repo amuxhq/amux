@@ -154,6 +154,7 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
             front_door = %config.front_door().display(),
             generation = daemon.generation().counter,
             experiments = ?config.experiments.enabled().versions(),
+            experiment_settings = ?config.experiments.in_effect().describe(),
             "serving"
         );
         // The waits borrow the daemon, so they end before it shuts down.
@@ -192,8 +193,9 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
                     tracing::info!(
                         running = ?wanted.running,
                         wanted = ?wanted.wanted,
+                        settings = ?wanted.settings,
                         settled = wanted.settled,
-                        "restarting to run the experiments switched on"
+                        "restarting to run the experiments switched on, with their settings"
                     );
                     if !wanted.settled {
                         tracing::warn!(

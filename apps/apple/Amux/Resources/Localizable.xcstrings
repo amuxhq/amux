@@ -5845,6 +5845,18 @@
         }
       }
     },
+    "Signed in elsewhere? Send a message to try again." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/SignInWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed in elsewhere? Send a message to try again."
+          }
+        }
+      }
+    },
     "Signed out" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxCore/Sources/AmuxCore/AccountRegistry.swift.",
       "extractionState" : "manual",

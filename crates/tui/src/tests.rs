@@ -840,6 +840,41 @@ fn a_draft_is_taken_any_time_and_sent_only_once_the_chat_is_current() {
     assert!(view.editor.is_empty());
 }
 
+/// An agent whose account needs signing in says how above a composer that
+/// still sends: someone who signed in elsewhere tries again by sending, and
+/// the provider's next good answer clears the notice.
+#[test]
+fn a_signed_out_agent_says_how_to_sign_in_and_still_sends() {
+    let (_, state, at) = fixtures::frames(Kind::ClaudeSdk, "recorded_sign_in_problem")
+        .pop()
+        .expect("the recording has frames");
+    assert!(
+        ui_view::sign_in(&state).is_some(),
+        "the recording ends needing a sign-in"
+    );
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    typed(&mut view, &state, "check the links");
+    let (buffer, _) = draw(&mut view, &state, at, W, H, theme());
+    let screen = text(&buffer);
+    assert!(screen.contains("Claude needs you to sign in"), "{screen}");
+    assert!(screen.contains("/login"), "{screen}");
+    assert!(
+        screen.contains("Signed in elsewhere? Send a message to try again."),
+        "{screen}"
+    );
+    assert!(
+        screen.contains("check the links"),
+        "the draft is not shown: {screen}"
+    );
+    assert_eq!(
+        view.key(&state, key(KeyCode::Enter), theme()),
+        vec![ChatEffect::Prompt {
+            text: "check the links".into(),
+            attachments: vec![]
+        }]
+    );
+}
+
 #[test]
 fn an_exited_entry_offers_resume_with_the_draft() {
     let mut state = chat(replies(1, 3));

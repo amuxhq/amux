@@ -148,7 +148,7 @@ pub fn components(theme: Theme) -> Vec<Component> {
     }
     add(
         "composer_signed_out_codex",
-        "Codex refused its sign-in: in the composer's place a box says Codex needs you to sign in, that sign-in failed and the provider's words why, and to run codex login on the agent's host, with the model on its edge.",
+        "Codex refused its sign-in: above a composer that still sends, a notice says Codex needs you to sign in, that sign-in failed and the provider's words why, to run codex login on the agent's host, and that someone who signed in elsewhere tries again by sending.",
         sign_in_composer_lines(
             wire::Kind::Codex,
             "studio",
@@ -157,7 +157,7 @@ pub fn components(theme: Theme) -> Vec<Component> {
                 account: String::new(),
                 message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header".into(),
             },
-            "GPT-5.5",
+            "fixer",
             w,
             theme,
         ),

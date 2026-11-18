@@ -2687,6 +2687,49 @@ fn a_known_ground_tints_the_highlight_instead_of_marking_it() {
     assert_eq!(buffer[(W / 2, 0)].bg, ratatui::style::Color::Reset);
 }
 
+/// "+ New Agent" is the list's first row, so the blank line above it is the
+/// one under the top line: highlighted, its tint still gets half a line on
+/// both sides, as every other highlighted row does.
+#[test]
+fn a_highlighted_first_row_is_tinted_above_as_below() {
+    let fleet = home_fleet();
+    let mut home = new_home();
+    let colors = crate::theme::TerminalColors {
+        background: (21, 21, 21),
+        foreground: (208, 208, 208),
+        ansi: [(128, 128, 128); 16],
+    };
+    let tinted = Theme::from_terminal(colors, crate::theme::ColorMode::TrueColor);
+    let draw = |home: &mut crate::home::Home| {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(W, H)).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                home.draw(frame, area, &fleet, &HashMap::new(), None, now(), tinted);
+            })
+            .unwrap();
+        text(terminal.backend().buffer())
+    };
+    draw(&mut home);
+    home.key(&fleet, key(KeyCode::Home));
+    let screen = draw(&mut home);
+    let new_agent = row_of(&screen, "New Agent") as usize;
+    let lines: Vec<&str> = screen.lines().collect();
+    assert!(
+        lines[new_agent - 1].trim().starts_with('▄')
+            && lines[new_agent + 1].trim().starts_with('▀'),
+        "the highlight has an edge on both sides:\n{screen}"
+    );
+    home.key(&fleet, key(KeyCode::Down));
+    let screen = draw(&mut home);
+    let lines: Vec<&str> = screen.lines().collect();
+    assert!(
+        !lines[new_agent - 1].contains('▄'),
+        "the edge goes with the highlight:\n{screen}"
+    );
+}
+
 /// A new Claude agent runs the kind its host publishes, whatever this
 /// terminal chats in, so every client starts the same Claude there.
 #[test]

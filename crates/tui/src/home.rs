@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::Frame as Paint;
 use ratatui::layout::{Position, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use settings::ChatInSetting;
@@ -1342,7 +1342,13 @@ impl Home {
                 matches!(item, Item::Heading(section, _, true)
                     if self.selected == Some(Target::Section(*section)))
             });
-            laid.extend(self.list(&items, now_ms, width, room, area.height, theme));
+            let (rows, edge_above) = self.list(&items, now_ms, width, room, area.height, theme);
+            // The blank under the top line is the list's own line above when
+            // its first shown row is the highlighted one.
+            if let Some(edge) = edge_above {
+                laid[list_top - 1] = Laid::plain(edge);
+            }
+            laid.extend(rows);
             // Renaming: the name is a field on its own row.
             if let Some((col, row)) = self.rename_at {
                 cursor = Some((col, list_top + row));
@@ -1657,7 +1663,7 @@ impl Home {
         room: usize,
         height: u16,
         theme: Theme,
-    ) -> Vec<Laid> {
+    ) -> (Vec<Laid>, Option<Line<'static>>) {
         let targets = Self::targets(items);
         let selected = self.settle(&targets);
         let roomy = height >= ROOMY;
@@ -1814,6 +1820,7 @@ impl Home {
             laid.pop();
         }
         pad_highlight(&mut laid, highlight, width, theme);
+        let highlighted = highlight;
         let highlight = in_view;
         if self.reveal {
             if highlight.0 < self.top {
@@ -1845,7 +1852,12 @@ impl Home {
         {
             *last = Laid::default();
         }
-        shown
+        // A highlight on the first shown row has no blank line of the list's
+        // above it, so its upper edge goes in the one the caller lays there.
+        let edge_above = (highlighted.1 > highlighted.0 && highlighted.0 == self.top)
+            .then(|| highlight_edge("▄", width, theme))
+            .flatten();
+        (shown, edge_above)
     }
 
     /// The composer of a new agent's chat, boxed, with what the agent will
@@ -2346,16 +2358,7 @@ fn pad_highlight(laid: &mut Vec<Laid>, (start, end): (usize, usize), width: usiz
     while end > start && laid.get(end - 1).is_some_and(is_blank) {
         end -= 1;
     }
-    // The tint's own extent: the outer margin on each side.
-    let edge = |glyph: &str| {
-        Line::from(vec![
-            Span::raw(" ".repeat(MARGIN)),
-            Span::styled(
-                glyph.repeat(width.saturating_sub(2 * MARGIN)),
-                Style::default().fg(surface),
-            ),
-        ])
-    };
+    let edge = |glyph: &str| edge_line(glyph, surface, width);
     if let Some(above) = start.checked_sub(1).and_then(|at| laid.get_mut(at))
         && is_blank(above)
     {
@@ -2367,6 +2370,24 @@ fn pad_highlight(laid: &mut Vec<Laid>, (start, end): (usize, usize), width: usiz
         None => laid.push(Laid::plain(edge("▀"))),
         Some(_) => {}
     }
+}
+
+/// Half a line of the highlight's tint across the tint's own extent, the
+/// outer margin on each side.
+fn edge_line(glyph: &str, surface: Color, width: usize) -> Line<'static> {
+    Line::from(vec![
+        Span::raw(" ".repeat(MARGIN)),
+        Span::styled(
+            glyph.repeat(width.saturating_sub(2 * MARGIN)),
+            Style::default().fg(surface),
+        ),
+    ])
+}
+
+/// The highlight's edge, or nothing in a theme without a row surface.
+fn highlight_edge(glyph: &str, width: usize, theme: Theme) -> Option<Line<'static>> {
+    let surface = theme.row_surface().and_then(|style| style.bg)?;
+    Some(edge_line(glyph, surface, width))
 }
 
 /// One blank line, unless the list already ends in one.

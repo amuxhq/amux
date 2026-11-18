@@ -1600,8 +1600,9 @@ fn composer_limits(journey: &mut TerminalJourney) -> Proved {
     )?;
     reflected_once(&limited, "Try again.")?;
 
-    // A refused credential takes the composer's box: Claude must be signed
-    // in again where it runs.
+    // A refused credential puts a notice over the composer: Claude must be
+    // signed in again where it runs. The composer still sends, and sending
+    // is the retry once Claude is signed in elsewhere.
     journey.home(&pane)?;
     journey.open_chat(&pane, "expired")?;
     journey.type_text(&pane, "Check the links.")?;
@@ -1611,15 +1612,33 @@ fn composer_limits(journey: &mut TerminalJourney) -> Proved {
         &[
             "Claude needs you to sign in",
             "Run claude and sign in with /login on desk.",
+            "Signed in elsewhere? Send a message to try again.",
+            "Message expired",
         ],
     )?;
     journey.frame(&pane, "sign-in")?;
     let refused = journey.wait_chat("desk", "expired", |chat| phase(chat) == "IDLE", "refused")?;
     reflected_once(&refused, "Check the links.")?;
+    journey.type_text(&pane, "Try them again.")?;
+    journey.keys(&pane, &["Enter"])?;
+    journey.wait(
+        &pane,
+        |frame| at_rest(frame, &["Links checked."]) && !frame.contains("needs you to sign in"),
+        "the answer that clears the notice",
+    )?;
+    let retried = journey.wait_chat(
+        "desk",
+        "expired",
+        |chat| phase(chat) == "IDLE" && prompts(chat, "Try them again.").len() == 1,
+        "retried",
+    )?;
+    reflected_once(&retried, "Try them again.")?;
+    journey.frame(&pane, "signed-in-again")?;
     journey.quit_client(&pane)?;
     Ok(lines(&[
         "at its usage limit the composer named the window and when it resets, and a prompt still went and was answered",
-        "refused its credential, Claude's chat put sign-in in the composer's box, naming the host to sign in on",
+        "refused its credential, Claude's chat put a sign-in notice over a composer that still sends, naming the host to sign in on",
+        "signed in again, a message sent from that composer was answered and the answer took the notice away",
         "the desk holds each prompt once",
         "the client exited 0",
     ]))

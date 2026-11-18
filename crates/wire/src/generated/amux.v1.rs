@@ -3195,8 +3195,8 @@ impl ::prost::Name for ToolServer {
         "type.googleapis.com/amux.v1.ToolServer".into()
     }
 }
-/// Session strip: sign-in state; a problem replaces the composer with a foot
-/// card.
+/// Session strip: sign-in state; a problem shows as a notice above the
+/// composer, which still sends: sending is how to try again.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SignIn {
     #[prost(enumeration = "SignInState", tag = "1")]

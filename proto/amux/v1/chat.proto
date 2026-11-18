@@ -691,8 +691,8 @@ enum ToolServerStatus {
   TOOL_SERVER_STATUS_NEEDS_AUTH = 4;
 }
 
-// Session strip: sign-in state; a problem replaces the composer with a foot
-// card.
+// Session strip: sign-in state; a problem shows as a notice above the
+// composer, which still sends: sending is how to try again.
 message SignIn {
   SignInState state = 1;
   string account = 2;

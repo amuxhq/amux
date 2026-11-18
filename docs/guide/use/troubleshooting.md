@@ -65,12 +65,18 @@ to pair, including when the phone and computer are on different networks.
 
 ## An agent can't carry on
 
-The line under an agent's name, and the box where you'd type to it, say what's
-in the way:
+The line under an agent's name, and the box where you type to it or the chat
+just above it, say what's in the way:
 
 - **Claude or Codex needs you to sign in.** amux can't sign in for you. On the
   machine the agent runs on, run `claude` and sign in with `/login`, or run
-  `codex login`.
+  `codex login`. Then send the agent a message: you don't need to stop it, and
+  sending is how it tries again. The notice goes once Claude or Codex answers.
+  Claude can take up to half a minute to notice you signed in, so if the
+  first message still fails, send another. Codex keeps the API key or ChatGPT
+  account it started with: if you signed in with a different one, run
+  `amux settle <agent>` and then `amux resume <agent>`, which starts it again
+  on the same conversation.
 - **Can't reach Claude.** The request got no answer, usually because the
   machine the agent runs on has lost its connection. Claude keeps trying by
   itself, and the chat counts down to the next attempt.

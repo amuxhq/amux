@@ -271,7 +271,7 @@ Beside it, read from the same state:
 |---|---|---|---|---|
 | `context(state)` | Always in settings; set apart from 80% used (`CONTEXT_NEAR_FULL_PERCENT`, `near_full`) | partial: tokens, no window | full | full |
 | `controls(state)`: the model's name, the effort in force, a permission or mode other than the normal one | Composer facts and the settings view | partial | full | full |
-| `sign_in(state)` | A foot card in place of the composer when there is a problem | partial: as an API error | full | full |
+| `sign_in(state)` | A notice above the composer when there is a problem; the composer still sends, which is how to try again | partial: as an API error | full | full |
 
 `diff_base(state, comparison)` names what the changed files are counted against: the uncommitted work, or
 everything on the branch since it left its base branch.

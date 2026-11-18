@@ -195,7 +195,7 @@ pub struct ChatFrame {
     /// outside a repository.
     pub git: Option<wire::Git>,
     pub context: Option<ContextView>,
-    /// Only a problem; it replaces the composer with a foot card.
+    /// Only a problem; a notice above the composer, which still sends.
     pub sign_in: Option<SignInView>,
     pub connection: Connection,
     /// The rows are current with the agent's host.

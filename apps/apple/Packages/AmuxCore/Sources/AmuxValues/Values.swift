@@ -1819,7 +1819,7 @@ public struct ChatFrame: Codable, Hashable, Sendable {
     /// The agent's branch and change totals as of its last turn end; None
     /// outside a repository.
     public var git: Git?
-    /// Only a problem; it replaces the composer with a foot card.
+    /// Only a problem; a notice above the composer, which still sends.
     public var signIn: SignInView?
 
     public init(agent: AgentKey, name: String, kind: Kind, phase: PhaseView, composer: ComposerView, controls: ControlsSummary, connection: Connection, caughtUp: Bool, hasOlder: Bool, arrivalsHeld: Bool, queue: [QueuedRow], underway: [SentPrompt], refused: [RefusedPrompt], askInput: [UInt8]?, context: ContextView?, ended: String?, git: Git?, signIn: SignInView?) {

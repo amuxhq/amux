@@ -137,6 +137,22 @@ carry on after an error. Each kind recognises
 its own: a refused connection in terminal Claude ends its turn completed, and its
 only word of a spent limit is the error row it writes in place of an answer.
 
+A sign-in problem never takes the composer away: the person signs in outside
+amux and sends again, and that send is the retry. A running provider sees the
+new credential without a restart in the common cases, measured against a local
+stand-in for each API in November 2026 (Claude 2.1.327, Codex 0.166):
+
+- Headless Claude rereads its stored credential on the request after a refused
+  one. From a `.credentials.json` file the next send carries the new one; from
+  the macOS Keychain it reads through a cache of about 30 seconds, so a send in
+  that window fails once more.
+- Codex signed out (no `auth.json`) picks up a `codex login` on its next turn.
+  A ChatGPT token it was refused is reloaded from `auth.json` on the next 401
+  only when the account is the same one (`UnauthorizedRecovery` in Codex's
+  `login/src/auth/manager.rs`). A replaced API key, or another ChatGPT
+  account, is not read until Codex restarts: settling and resuming the agent
+  does that.
+
 ## The step rule
 
 Every event yields exactly one step: zero or more items, the snapshot when it

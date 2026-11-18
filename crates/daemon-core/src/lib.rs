@@ -26,6 +26,7 @@ pub mod drafts;
 mod families;
 pub mod fingerprint;
 pub mod generation;
+mod git;
 pub mod host_set;
 pub mod ids;
 pub mod ingest;

@@ -1038,7 +1038,9 @@ public final class ChatModel {
 
     /// The review page's model for the chosen comparison, as the agent's
     /// host freezes it now: the one already being written when it is on the
-    /// same patch, else a new one. Nil when nothing changed.
+    /// same patch, else a new one. Nil when nothing changed; a failure when
+    /// the changes could not be read, which is never said as nothing
+    /// changed.
     public func openReview() async -> Result<ReviewModel?, RuntimeFailure> {
         switch await source.review(comparison) {
         case .failure(let failure): return .failure(failure)
@@ -1046,7 +1048,17 @@ public final class ChatModel {
             if let reviewing, reviewing.review.diff.patch?.hash == frozen.diff.patch?.hash {
                 return .success(reviewing)
             }
-            guard !ReviewModel.document(frozen, comments: []).files.isEmpty else { return .success(nil) }
+            guard let doc = ReviewModel.document(frozen, comments: []) else {
+                return .failure(RuntimeFailure(String(localized: "this app could not read the host’s diff")))
+            }
+            if doc.files.isEmpty {
+                // The host's list of changed files is its word on whether
+                // anything changed; a patch showing none of them was not
+                // read whole.
+                return frozen.diff.files.isEmpty
+                    ? .success(nil)
+                    : .failure(RuntimeFailure(String(localized: "the host’s patch is missing the files it lists")))
+            }
             let review = ReviewModel(review: frozen)
             reviewing = review
             return .success(review)

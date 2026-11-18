@@ -437,8 +437,8 @@ impl Turn {
     }
 }
 
-/// The folder's git facts are read at start and at each turn end; turn
-/// ends during a read ask for one more after it.
+/// The folder's git facts are read at start, at each turn end and when the
+/// daemon asks; an ask during a read asks for one more after it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 struct GitReads {
     reading: Option<JobId>,
@@ -919,6 +919,15 @@ impl<I: Interpreter> Agent<I> {
                 }
             }
             Some(ctl_frame::Of::Stop(stop)) => self.stop(stop.kill, out),
+            // Something outside this agent's turns may have changed its
+            // folder: another agent sharing the checkout ended a turn, or a
+            // diff of it disagreed with the row. A leaving agent's facts
+            // are final.
+            Some(ctl_frame::Of::ReadGit(_)) => {
+                if self.life.mode == Mode::Running {
+                    self.read_git(out);
+                }
+            }
             Some(ctl_frame::Of::Children(children)) => {
                 let settled = self.life.awaited.children(&children, connection);
                 if settled {

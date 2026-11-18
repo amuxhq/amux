@@ -1294,6 +1294,21 @@ final class ChatModelTests: XCTestCase {
         }
     }
 
+    /// Changes the page cannot read are never shown as no changes: the host
+    /// listed files, so something changed, and the page says it could not
+    /// read them.
+    func testChangesThatCannotBeReadAreAFailureNotNoChanges() async {
+        let source = FakeChat(rows: [row("a", 1)], frame: frame())
+        var listed = ReviewFixtures.frozen.diff
+        listed.files = [DiffFile(path: "src/pairing/errors.rs", added: 1, removed: 2, change: 1, binary: false)]
+        source.working = FrozenReview(diff: listed, patch: "")
+        let model = ChatModel(source: source)
+        guard case .failure(let failure) = await model.openReview() else {
+            return XCTFail("a patch missing the files the host lists is not read as no changes")
+        }
+        XCTAssertEqual(failure.description, "the host’s patch is missing the files it lists")
+    }
+
     func testAnAttachedReviewIsOneDraftTokenThatSendsWithItsPatch() async {
         let source = FakeChat(rows: [row("a", 1)], frame: frame())
         source.working = ReviewFixtures.frozen

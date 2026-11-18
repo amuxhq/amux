@@ -150,6 +150,10 @@ message CtlFrame {
     // which stops it. The daemon refuses every other input to a subagent
     // itself. Answered by `reply` keyed by the input's id, as `input` is.
     ChildInput child_input = 12;
+    // Daemon to agent: the folder may have changed since the agent last
+    // read its git facts, so read them again. An agent from before this
+    // frame ignores it and reads them at its next turn end as ever.
+    ReadGit read_git = 13;
   }
 }
 
@@ -202,6 +206,12 @@ message AgentHello {
 }
 
 message Nudge {}
+
+// Sent when something outside the agent's own turns showed its git facts
+// may be stale: another agent in the same checkout ended a turn, or a diff
+// of the folder disagreed with the agent's row. The facts reach the row the
+// usual way, on the agent's next snapshot.
+message ReadGit {}
 
 // The live agents directly below the agent, on every host its daemon knows
 // of, each with its incarnation; sent whenever that changes. Every child

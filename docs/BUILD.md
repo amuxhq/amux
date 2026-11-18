@@ -177,8 +177,9 @@ test task. [`.wt.toml`](../.wt.toml) holds the tree's side:
   `AMUX_CONFIG` names its installation file and `AMUX_LOG` its daemon log.
   The installation sets its own discovery scope, so a tree's daemon never
   meets real machines or other trees. It has no supervisor, so it never
-  installs a release, and it turns `keep_awake` off. `wt start` and `wt stop`
-  start and stop its daemon.
+  installs a release, and it turns `keep_awake` off. Its daemon starts the
+  first time an `amux` command runs in the tree, and `wt stop` (or removing
+  the tree) stops it.
 - The pinned iPhone simulators are machine-wide resources that the iOS
   recipes lease through `scripts/with`.
 - [AGENTS.md](../AGENTS.md) says how a branch lands on main.

@@ -31,10 +31,11 @@ scope = "{{name}}"
 
 [lifecycle]
 create = "just build"
-start = "amux server start"
-# Stopping also sweeps target/ of build output unused for a week (`just
-# sweep`): well under a second with nothing to clean, a second or two when
-# a few gigabytes go.
+# No start hook: most trees never use their daemon, and the first `amux`
+# command in a tree starts it. Stopping still stops it, so a daemon never
+# outlives its tree, and also sweeps target/ of build output unused for a
+# week (`just sweep`): well under a second with nothing to clean, a second
+# or two when a few gigabytes go.
 stop = "amux server stop && just sweep"
 
 # The pinned iPhones this Mac owns. A recipe leases one and gets it clean;

@@ -33,7 +33,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
-use std::time::Instant;
 
 use daemon_core::payload::ForwardRefusal;
 use daemon_core::{Check, DumpReason, HostId, LinkId, StepBudget, Violation};
@@ -456,7 +455,7 @@ impl Relay {
     /// invariants; a violation appends [`Output::Dump`], as does a step
     /// over its budget.
     pub fn step(&mut self, input: Input, out: &mut Vec<Output>) {
-        let started = Instant::now();
+        let started = daemon_core::StepStart::now();
         self.touched = Touched::default();
         match input {
             Input::LinkUp {
@@ -487,7 +486,7 @@ impl Relay {
         }
         let checked = self.check_step_invariants();
         out.extend(
-            daemon_core::finish_step(started, self.budget, 0, checked)
+            daemon_core::finish_step(started, self.budget, 0, None, checked)
                 .map(|reason| Output::Dump { reason }),
         );
     }

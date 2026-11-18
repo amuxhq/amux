@@ -688,7 +688,14 @@ impl<I: Interpreter> Driver<I> {
                     let now = now_ms(self.clock.as_ref());
                     if let Some(admitted) = limited_dump_reason(&mut self.dumps, &reason, now) {
                         eprintln!("amux agent: {}", admitted.reason);
-                        self.record(admitted, reason.check());
+                        match reason.check() {
+                            // The daemon counts a slow step and writes no
+                            // dump of it, so the record is not built.
+                            None => self
+                                .asks
+                                .ask(self.daemon.as_ref(), admitted, None, Vec::new()),
+                            check => self.record(admitted, check),
+                        }
                     }
                     Ok(())
                 }
@@ -1110,13 +1117,13 @@ mod tests {
             mut sent,
             mut built,
         } = fixture();
-        let slow = DumpReason::OverBudget {
-            micros: 9_000,
-            budget: core_ring::StepBudget { micros: 1_000 },
-        };
+        let broke = DumpReason::Violation(agent_core::Violation {
+            invariant: agent_core::EXIT_OUTSIDE_TURN_END,
+            detail: "two asks open".into(),
+        });
         assert!(
             driver
-                .execute(vec![Output::Dump { reason: slow }])
+                .execute(vec![Output::Dump { reason: broke }])
                 .await
                 .is_ok()
         );
@@ -1126,10 +1133,42 @@ mod tests {
         driver.built(built.recv().await.expect("the record is built"));
         assert_eq!(driver.building, 0);
         let asked = asked(sent.try_recv().expect("asked once built"));
-        assert!(asked.check.is_empty(), "a slow step has no check");
+        assert_eq!(asked.check, agent_core::EXIT_OUTSIDE_TURN_END.id);
         let record: serde_json::Value = serde_json::from_slice(&asked.record).unwrap();
         assert_eq!(record["settings"]["kind"], "KIND_CLAUDE_SDK", "{record}");
         assert_eq!(record["segments"].as_array().map(Vec::len), Some(1));
+    }
+
+    /// The daemon counts a slow step without dumping it, so the ask goes at
+    /// once and carries no record.
+    #[tokio::test]
+    async fn a_slow_step_is_asked_at_once_without_a_record() {
+        let Fixture {
+            _dir,
+            mut driver,
+            mut sent,
+            ..
+        } = fixture();
+        let slow = DumpReason::OverBudget {
+            micros: 9_000,
+            budget: core_ring::StepBudget { micros: 1_000 },
+            input: None,
+        };
+        assert!(
+            driver
+                .execute(vec![Output::Dump { reason: slow }])
+                .await
+                .is_ok()
+        );
+        assert_eq!(driver.building, 0);
+        let asked = asked(sent.try_recv().expect("asked at once"));
+        assert!(asked.check.is_empty(), "a slow step has no check");
+        assert!(asked.record.is_empty());
+        assert!(
+            asked.reason.contains("over its budget of 1000 µs"),
+            "{}",
+            asked.reason
+        );
     }
 
     /// A build that fails leaves a record that says so, never one that

@@ -166,13 +166,17 @@ amux --profile Work dump
 ## Reports nobody asks for
 
 When the daemon's core breaks one of its cheap invariants, or a step runs over its budget, the daemon writes a
-report whose `reason` starts `the daemon core: `. A chat whose transcript fails its own check when the stream catches
-up or resets asks for one too, with the reason starting `the client's transcript: ` and that chat's record inside, its
-trace cut at the message the check failed at. An agent process whose core breaks one of its invariants, or whose
-interpreter breaks one of its own checks, or that takes a step over its budget, says so on its stderr (`the agent
-core: `) and asks its daemon for a report over the control connection, sending its [record](#the-agents-record),
-built then, with the ask; the daemon writes the report, reason starting `an agent's core: ` and naming the agent,
-with that record, which it writes even when the agent has exited since. Every interpreter is judged by the same checks
+report whose `reason` starts `the daemon core: `; a step over its budget names the kind of input it took (`the
+daemon core: a Retain step took 412000 µs, over its budget of 100000 µs`). A chat whose transcript fails its own
+check when the stream catches up or resets asks for one too, with the reason starting `the client's transcript: `
+and that chat's record inside, its trace cut at the message the check failed at. An agent process whose core breaks
+one of its invariants, or whose interpreter breaks one of its own checks, says so on its stderr (`the agent core: `)
+and asks its daemon for a report over the control connection, sending its [record](#the-agents-record), built then,
+with the ask; the daemon writes the report, reason starting `an agent's core: ` and naming the agent, with that
+record, which it writes even when the agent has exited since. An agent process that takes a step over its budget
+says so on its stderr too and tells its daemon, which counts it (below) and writes no report: the agent core keeps
+no inputs, so its report could not say what made the step slow, and on a busy machine every agent's steps are
+slow. Every interpreter is judged by the same checks
 after every step, whatever its kind: every tool result answers a call the interpreter saw
 (`agent.tool_result_without_call`), the provider's exit leaves no turn open and no item streaming
 (`agent.exit_left_open`), an ask that closed is never answered later (`agent.closed_ask_answered`), and every item
@@ -185,14 +189,20 @@ relay and the supervisor write a JSON file beside it: the reason, the core's sta
 every input stepped since (at least the last 256) and the state now. The supervisor writes
 `<data_dir>/reports/supervisor-<unix ms>-<id>.json`; a relay writes `relay-<unix ms>-<id>.json` into `reports/` under its
 `state_dir` (see [running the relay](CLOUD.md#running-the-relay)), and a daemon's own relay core into the
-installation's `reports/`. `just repro` replays either ([reproducing a report](#reproducing-a-report)). Each process reports one per kind of reason (one per broken invariant,
-one for steps over budget) every ten minutes, and the daemon writes one agent-asked report per kind in the same
-interval, however many agents ask; the next one of that kind says how many were held back since. Every core times its
-steps against a budget of its own: the daemon's 100 ms, the relay's 1 ms, and the agent's and the supervisor's 10 ms.
+installation's `reports/`. `just repro` replays either ([reproducing a report](#reproducing-a-report)). Each process
+reports one per kind of reason (one per broken invariant, one for steps over budget) every ten minutes, and the
+daemon writes one agent-asked report per broken invariant in the same interval, however many agents ask; the next
+one of that kind says how many were held back since. The daemon's own steps over budget are the exception: one
+report per kind of input a day, since a slow step is as much the machine's load as the code's, and the first
+report of a kind already names the input. Every core times its steps against a budget of its own: the daemon's
+100 ms, the relay's 1 ms, and the agent's and the supervisor's 10 ms. A step during which the machine slept, or
+suspended the process, is not over its budget however long it measured: the core reads the wall clock beside the
+monotonic one when a step starts, and a step over its budget whose wall clock moved on more than a second further
+than its monotonic clock is taken to have spanned the pause.
 
-Each check a limit admits is also counted as a `check_failed` usage event, naming the core, the check's id, whether
-it was an invariant or a step over budget, and how many the limit held back since: no reason text and nothing from
-the report (see [what amux sends](guide/understand/what-amux-sends.md)). It is sent whenever usage events are, so a check that breaks in
+Each check is also counted as a `check_failed` usage event at most once per check every ten minutes, whatever its
+reports' limit, naming the core, the check's id, whether it was an invariant or a step over budget, and how many
+were held back since: no reason text and nothing from the report (see [what amux sends](guide/understand/what-amux-sends.md)). It is sent whenever usage events are, so a check that breaks in
 the field is seen without anybody sending its report.
 
 ## Records
@@ -291,8 +301,8 @@ event keeps its skeleton, a record can be turned back into a provider stream: ma
 where the aliases stood, the same value for the same alias, run through the real interpreter. That stream reproduces
 the check its original broke, at the same step (`replay_support::synthetic`; see [replaying a
 report](#replaying-a-report)). The agent core's
-own checks and a step over budget are named by the report's reason and trigger; the core's inputs are not kept, so
-they are not replayed, and the lifecycle beside the record is where to look.
+own checks are named by the report's reason and trigger; the core's inputs are not kept, so they are not replayed,
+and the lifecycle beside the record is where to look.
 
 ## Replaying a report
 

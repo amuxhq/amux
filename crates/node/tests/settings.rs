@@ -405,7 +405,7 @@ fn experiments(settings: &wire::Settings) -> Vec<(&str, bool, bool)> {
 async fn several_switches_in_a_row_want_one_restart_once_they_stay_put() {
     let desk = Install::new();
     let (daemon, _file) = desk_with_file(&desk, "").await;
-    let mut restart = Box::pin(daemon.restart_wanted());
+    let mut restart = Box::pin(daemon.restart_wanted(|| true));
 
     switch(&daemon, &["suspension"]).await;
     switch(&daemon, &[]).await;
@@ -445,7 +445,7 @@ async fn several_switches_in_a_row_want_one_restart_once_they_stay_put() {
 async fn a_switch_flipped_back_or_an_unknown_name_wants_no_restart() {
     let desk = Install::new();
     let (daemon, file) = desk_with_file(&desk, "").await;
-    let mut restart = Box::pin(daemon.restart_wanted());
+    let mut restart = Box::pin(daemon.restart_wanted(|| true));
 
     switch(&daemon, &["suspension"]).await;
     let settings = switch(&daemon, &[]).await;
@@ -499,7 +499,7 @@ async fn a_running_experiments_own_settings_want_a_restart_as_its_module_reads_t
     let on = "[experiments]\nenabled = [\"suspension\"]\n";
     let desk = Install::new();
     let (daemon, file) = desk_with_file(&desk, on).await;
-    let mut restart = Box::pin(daemon.restart_wanted());
+    let mut restart = Box::pin(daemon.restart_wanted(|| true));
     let quiet = node::RESTART_DEBOUNCE + std::time::Duration::from_secs(4);
 
     // As written by hand; the daemon reads the file again within its poll.
@@ -550,7 +550,7 @@ async fn a_running_experiments_own_settings_want_a_restart_as_its_module_reads_t
     // Off, its delay changes nothing the daemon runs.
     let desk = Install::new();
     let (daemon, file) = desk_with_file(&desk, "").await;
-    let mut restart = Box::pin(daemon.restart_wanted());
+    let mut restart = Box::pin(daemon.restart_wanted(|| true));
     std::fs::write(&file, "[experiments.suspension]\nafter = \"45m\"\n").unwrap();
     let held = tokio::time::timeout(quiet, &mut restart).await;
     assert!(held.is_err(), "suspension is off: {held:?}");

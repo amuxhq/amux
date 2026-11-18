@@ -444,6 +444,51 @@ async fn a_new_wt_tree_runs_its_agent_in_its_environment_and_its_hooks_with_its_
     daemon.shutdown().await.unwrap();
 }
 
+/// The `shop` repository with a checkout hook that holds every worktree
+/// git adds until the gate exists, and a daemon on it running the
+/// workspaces experiment as its settings, in memory, switch on.
+#[cfg(unix)]
+async fn slow_checkouts(install: &Install) -> (PathBuf, PathBuf, node::Daemon) {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let repo = repository(install);
+    let gate = install.path("checkout-gate");
+    let hook = repo.join(".git/hooks/post-checkout");
+    std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    std::fs::write(
+        &hook,
+        format!(
+            "#!/bin/sh\nwhile [ ! -e '{}' ]; do sleep 0.1; done\n",
+            gate.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut options = install.options("boot-1", launch(install, true));
+    // Started with what its settings switch on, as `amux daemon` is.
+    options.settings.initial =
+        ::settings::InstallationConfig::from_toml("[experiments]\nenabled = [\"workspaces\"]\n")
+            .unwrap();
+    let daemon = node::start(options, None).await.unwrap();
+    (repo, gate, daemon)
+}
+
+/// Switches the daemon's experiments to `names` through its front door.
+#[cfg(unix)]
+async fn switch(daemon: &node::Daemon, names: &[&str]) {
+    use wire::installation_service_server::InstallationService as _;
+    daemon
+        .front_door()
+        .update_settings(tonic::Request::new(wire::UpdateSettingsRequest {
+            experiments: Some(wire::ExperimentList {
+                names: names.iter().map(|name| (*name).to_owned()).collect(),
+            }),
+            ..Default::default()
+        }))
+        .await
+        .unwrap();
+}
+
 /// A switch of experiments restarts the daemon only once the workspace it
 /// is making is made: cut off by the restart, the agent would end as could
 /// not start. git's checkout hook holds the make here until the test opens
@@ -451,32 +496,8 @@ async fn a_new_wt_tree_runs_its_agent_in_its_environment_and_its_hooks_with_its_
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_restart_for_an_experiment_switch_waits_for_a_workspace_being_made() {
-    use std::os::unix::fs::PermissionsExt as _;
-
-    use wire::installation_service_server::InstallationService as _;
-
     let install = Install::new();
-    let repo = repository(&install);
-    let gate = install.path("checkout-gate");
-    let hook = repo.join(".git/hooks/post-checkout");
-    std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
-    std::fs::write(
-        &hook,
-        format!(
-            "#!/bin/sh
-while [ ! -e '{}' ]; do sleep 0.1; done
-",
-            gate.display()
-        ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let mut options = install.options("boot-1", launch(&install, true));
-    // Started with what its settings switch on, as `amux daemon` is.
-    options.settings.initial =
-        ::settings::InstallationConfig::from_toml("[experiments]\nenabled = [\"workspaces\"]\n")
-            .unwrap();
-    let daemon = node::start(options, None).await.unwrap();
+    let (repo, gate, daemon) = slow_checkouts(&install).await;
     let runtime = runtime(&daemon, &install);
 
     let agent = runtime
@@ -484,17 +505,8 @@ while [ ! -e '{}' ]; do sleep 0.1; done
         .await
         .unwrap();
     assert!(entry(&agent).is_some_and(|entry| entry.creating));
-    let mut restart = Box::pin(daemon.restart_wanted());
-    daemon
-        .front_door()
-        .update_settings(tonic::Request::new(wire::UpdateSettingsRequest {
-            experiments: Some(wire::ExperimentList {
-                names: vec!["workspaces".into(), "suspension".into()],
-            }),
-            ..Default::default()
-        }))
-        .await
-        .unwrap();
+    let mut restart = Box::pin(daemon.restart_wanted(|| true));
+    switch(&daemon, &["workspaces", "suspension"]).await;
 
     let held = tokio::time::timeout(
         node::RESTART_DEBOUNCE + std::time::Duration::from_secs(3),
@@ -528,6 +540,98 @@ while [ ! -e '{}' ]; do sleep 0.1; done
         entry(&row)
     );
     assert!(Path::new(&row.cwd).join("feature.txt").is_file());
+    running(&runtime, &agent).await;
+
+    drop(restart);
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
+/// The restart is one decision made again whenever anything moves: a
+/// config that stopped reading holds it, and once the file reads again a
+/// workspace begun meanwhile is waited for like any other.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restart_held_by_an_unreadable_config_still_waits_for_work_begun_meanwhile() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let install = Install::new();
+    let (repo, gate, daemon) = slow_checkouts(&install).await;
+    let runtime = runtime(&daemon, &install);
+    let reads = Arc::new(AtomicBool::new(false));
+    let mut restart = Box::pin(daemon.restart_wanted({
+        let reads = reads.clone();
+        move || reads.load(Ordering::SeqCst)
+    }));
+    switch(&daemon, &["workspaces", "suspension"]).await;
+    let quiet = node::RESTART_DEBOUNCE + std::time::Duration::from_secs(2);
+    let held = tokio::time::timeout(quiet, &mut restart).await;
+    assert!(held.is_err(), "the config does not read: {held:?}");
+
+    let agent = runtime
+        .spawn(in_new_workspace(&repo, "begun-meanwhile"), None)
+        .await
+        .unwrap();
+    assert!(entry(&agent).is_some_and(|entry| entry.creating));
+    reads.store(true, Ordering::SeqCst);
+    let held = tokio::time::timeout(std::time::Duration::from_secs(4), &mut restart).await;
+    assert!(held.is_err(), "wanted while the make runs: {held:?}");
+
+    std::fs::write(&gate, b"").unwrap();
+    let wanted = tokio::time::timeout(PATIENCE, &mut restart)
+        .await
+        .expect("a restart once the make is done");
+    assert!(wanted.settled);
+    let row = runtime.agent(id_of(&agent)).await.unwrap();
+    assert!(
+        entry(&row).is_some_and(|entry| !entry.creating),
+        "{:?}",
+        entry(&row)
+    );
+
+    drop(restart);
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
+/// A switch made while the restart waits for work restarts the quiet: once
+/// the work is done the restart still waits until the latest switch has
+/// stayed put, so switches in a row stay one restart.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_switch_made_while_work_settles_restarts_the_quiet() {
+    let install = Install::new();
+    let (repo, gate, daemon) = slow_checkouts(&install).await;
+    let runtime = runtime(&daemon, &install);
+    let agent = runtime
+        .spawn(in_new_workspace(&repo, "slow-checkout"), None)
+        .await
+        .unwrap();
+    let mut restart = Box::pin(daemon.restart_wanted(|| true));
+    switch(&daemon, &["workspaces", "suspension"]).await;
+    let held = tokio::time::timeout(
+        node::RESTART_DEBOUNCE + std::time::Duration::from_secs(2),
+        &mut restart,
+    )
+    .await;
+    assert!(held.is_err(), "the make runs: {held:?}");
+
+    // Another switch, then the work ends at once.
+    switch(&daemon, &["suspension"]).await;
+    let last = std::time::Instant::now();
+    std::fs::write(&gate, b"").unwrap();
+    let wanted = tokio::time::timeout(PATIENCE, &mut restart)
+        .await
+        .expect("a restart");
+    assert!(
+        last.elapsed() >= node::RESTART_DEBOUNCE,
+        "wanted {:?} after the last switch",
+        last.elapsed()
+    );
+    assert_eq!(wanted.wanted, ["suspension/1"]);
     running(&runtime, &agent).await;
 
     drop(restart);

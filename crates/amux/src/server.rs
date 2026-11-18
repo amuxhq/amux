@@ -105,11 +105,16 @@ enum Ended {
 
 /// Runs the daemon in the foreground until it is asked to stop: by a
 /// client's shutdown call, SIGTERM or SIGINT, or its supervisor's end of the
-/// pipe closing. It restarts itself when the experiments the config
+/// pipe closing. `named` is the config file named on the command line or
+/// in the environment, as the daemon was started with it. It restarts itself when the experiments the config
 /// switches on are no longer the ones it runs: under a supervisor by asking
 /// it to, as the supervisor restarts it onto an installed update; without
 /// one by shutting down and starting again in place ([`crate::relaunch`]).
-pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>) -> Result<()> {
+pub fn run_daemon(
+    config: &InstallationConfig,
+    named: Option<&Path>,
+    pipe: Option<node::InheritedPipe>,
+) -> Result<()> {
     let log = daemon_log(config);
     log_to(&log)?;
     #[cfg(unix)]
@@ -162,11 +167,23 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
         let gone = supervisor_gone(supervisor);
         let signalled = terminated();
         let restart = async {
-            let wanted = daemon.restart_wanted().await;
-            // The next start reads the file: one that no longer reads would
-            // not start at all, so the restart waits for it to be mended.
-            readable_again(config).await;
-            wanted
+            // The next start reads the config as this one did: one it would
+            // refuse, a named file gone among them, holds the restart.
+            let said = std::sync::atomic::AtomicBool::new(false);
+            daemon
+                .restart_wanted(|| match connect::read_config(named) {
+                    Ok(_) => true,
+                    Err(error) => {
+                        if !said.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                            tracing::warn!(
+                                error = format!("{error:#}"),
+                                "the config would not read at a start; restarting once it does"
+                            );
+                        }
+                        false
+                    }
+                })
+                .await
         };
         tokio::pin!(gone, signalled, restart);
         let mut asked: Option<tokio::time::Instant> = None;
@@ -250,32 +267,6 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
             tracing::info!("starting again in place");
             Err(crate::relaunch::relaunch()).context("starting the daemon again")
         }
-    }
-}
-
-/// Resolves once the config file reads, at once when it does; until then it
-/// looks again as often as the daemon polls the file, having said why once.
-async fn readable_again(config: &InstallationConfig) {
-    let path = config
-        .path
-        .clone()
-        .unwrap_or_else(InstallationConfig::default_path);
-    let mut said = false;
-    loop {
-        match InstallationConfig::from_file(&path).and_then(|read| read.validate().map(|()| read)) {
-            Ok(_) => return,
-            Err(settings::ConfigError::Io(error))
-                if error.kind() == std::io::ErrorKind::NotFound =>
-            {
-                return;
-            }
-            Err(error) => {
-                if !std::mem::replace(&mut said, true) {
-                    tracing::warn!(%error, "the config no longer reads; restarting once it does");
-                }
-            }
-        }
-        tokio::time::sleep(Duration::from_secs(2)).await;
     }
 }
 

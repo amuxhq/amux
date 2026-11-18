@@ -790,13 +790,6 @@ impl ProfileRuntime {
         self.edge.get().cloned()
     }
 
-    /// Resolves once none of the jobs a restart waits for is under way
-    /// ([`ProfileRuntime::busy`]); at once when none is.
-    pub(crate) async fn settled(&self) {
-        let mut busy = self.busy.subscribe();
-        let _ = busy.wait_for(|under_way| *under_way == 0).await;
-    }
-
     /// Tells the core the daemon is on its way out: under the suspension
     /// experiment it records no more exits, and the next start's sweep
     /// decides each agent that ends meanwhile.

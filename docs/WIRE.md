@@ -975,14 +975,18 @@ after = "30m"
 - **The daemon restarts itself to apply a switch, and an experiment's own
   settings.** Whichever way the change came (a client's `UpdateSettings`,
   `amux config set` or `unset`, an edit of the file, which the daemon reads
-  again every two seconds), once what the config asks has stayed put for
-  three seconds (`RESTART_DEBOUNCE` in `crates/node/src/daemon.rs`) and is
-  not what the daemon runs, `amux daemon` waits for its own work
-  under way to settle and restarts: a workspace being planned, made,
-  started, stopped or removed, a hook among them, a worktree being made, a
-  resumed agent's spec being built, an agent's directory being waited on or
-  removed (`holds_a_restart` in `crates/node/src/driver/mod.rs`). It waits
-  at most five minutes (`RESTART_SETTLE_WITHIN`). Under a supervisor it asks
+  again every two seconds), `amux daemon` restarts when, all at once, what
+  the config asks is not what it runs, has stayed the same for three
+  seconds (`RESTART_DEBOUNCE` in `crates/node/src/daemon.rs`; any change
+  starts the quiet over), the config reads as a start would read it (a
+  named file that is gone does not, and the quiet starts over once it
+  does), and none of its own work a restart would cut off is under way: a
+  workspace being planned, made, started, stopped or removed, a hook among
+  them, a worktree being made, a resumed agent's spec being built, an
+  agent's directory being waited on or removed (`holds_a_restart` in
+  `crates/node/src/driver/mod.rs`). The decision is made again whenever any
+  of that moves. Work stops holding it five minutes after the config first
+  asked otherwise (`RESTART_SETTLE_WITHIN`). Under a supervisor it asks
   the supervisor to restart it, which stops it and starts it again as onto
   an update; without one it shuts down and execs itself in place
   ([the supervisor](SUPERVISOR.md#restarting-to-apply-an-experiment-switch)).

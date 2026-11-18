@@ -922,3 +922,35 @@ async fn a_running_experiments_setting_restarts_the_daemon_once() {
     .await
     .expect("one restart");
 }
+
+/// A daemon started on a config named explicitly (here by `AMUX_CONFIG`)
+/// does not restart when that file is removed: the next start would refuse
+/// a named file that is not there, so it counts as a config that does not
+/// read, and the daemon keeps serving until the file is back.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_named_config_removed_is_no_reason_to_restart() {
+    let mut install = Install::new(Vec::new());
+    let mut text = std::fs::read_to_string(&install.config).unwrap();
+    text.push_str("[experiments]\nenabled = [\"suspension\"]\n");
+    std::fs::write(&install.config, &text).unwrap();
+    install.run_daemon().await;
+
+    std::fs::remove_file(&install.config).unwrap();
+    holds_for(
+        "the daemon serving on",
+        node::RESTART_DEBOUNCE + Duration::from_secs(4),
+        || async { install.front_door().await.is_some() && serving_lines(&install).len() == 1 },
+    )
+    .await
+    .expect("no restart while the named config is missing");
+
+    std::fs::write(&install.config, &text).unwrap();
+    holds_for(
+        "the daemon serving on",
+        node::RESTART_DEBOUNCE + Duration::from_secs(3),
+        || async { serving_lines(&install).len() == 1 },
+    )
+    .await
+    .expect("back as it was: nothing to restart for");
+    assert!(install.front_door().await.is_some());
+}

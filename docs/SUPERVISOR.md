@@ -243,8 +243,9 @@ has, in each install cell:
   manager watching the first process sees it exit cleanly and no longer
   tracks the one that took over.
 
-Before either, the daemon waits for its config file to read: the next start
-reads it, and one that no longer reads would not start at all.
+Neither happens while the config would not read at a start (a named file
+that is gone counts, since a start refuses it), because the next start would
+fail; the quiet before a restart starts over once it reads again.
 
 ## Updates and channels
 

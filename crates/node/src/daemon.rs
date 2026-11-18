@@ -150,28 +150,13 @@ impl Installation {
         &self.started
     }
 
-    /// Resolves once no profile has work under way that a restart waits
-    /// for, all at the same moment.
-    async fn settled(&self) {
-        loop {
-            let runtimes: Vec<Arc<ProfileRuntime>> = self
-                .hosted
-                .lock()
-                .unwrap()
-                .values()
-                .map(|hosted| hosted.runtime.clone())
-                .collect();
-            let mut waited = false;
-            for runtime in runtimes {
-                if *runtime.busy.borrow() != 0 {
-                    runtime.settled().await;
-                    waited = true;
-                }
-            }
-            if !waited {
-                return;
-            }
-        }
+    /// Whether no profile has work under way that a restart waits for.
+    fn settled(&self) -> bool {
+        self.hosted
+            .lock()
+            .unwrap()
+            .values()
+            .all(|hosted| *hosted.runtime.busy.borrow() == 0)
     }
 
     /// Puts what changed in the settings into force: every profile's
@@ -275,6 +260,10 @@ fn follow_settings(installation: std::sync::Weak<Installation>) -> JoinHandle<()
 /// How long the experiments switched on must stay put before the daemon
 /// restarts to run them, so several switches in a row are one restart.
 pub const RESTART_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(3);
+
+// A file that reads again is applied within a poll, inside the quiet that
+// follows it, before a restart is decided on what it said.
+const _: () = assert!(SETTINGS_POLL.as_millis() < RESTART_DEBOUNCE.as_millis());
 
 /// How long a restart to run the experiments switched on waits for the
 /// daemon's own work under way to settle (a workspace being made, a hook
@@ -915,52 +904,75 @@ impl Daemon {
     }
 
     /// Resolves once the daemon should restart to run the experiments its
-    /// settings switch on, with their own settings: they changed since it
-    /// started, whichever way (a client's settings, `amux config`, an edit
-    /// of the file), stayed put for [`RESTART_DEBOUNCE`] and are not what
-    /// it runs; and the work
-    /// it has under way that a restart would cut off has settled, or
-    /// [`RESTART_SETTLE_WITHIN`] has passed.
+    /// settings switch on, with their own settings. It is one decision,
+    /// made again whenever anything it rests on moves, and taken only when
+    /// all of it holds at once:
+    ///
+    /// - what the settings ask (whichever way they changed: a client, `amux
+    ///   config`, an edit of the file) is not what the daemon runs;
+    /// - that ask has stayed the same for [`RESTART_DEBOUNCE`]: any change
+    ///   to it starts the quiet over, so switches in a row are one restart,
+    ///   and a change undone in time is none;
+    /// - `reads` says the next start can read its config, and has for the
+    ///   quiet: one that could not would not start at all, and the quiet
+    ///   gives the settings poll time to apply the file once it reads;
+    /// - no work that a restart would cut off is under way, unless it has
+    ///   been wanted for [`RESTART_SETTLE_WITHIN`] since the ask first
+    ///   differed from what runs.
     ///
     /// A daemon never restarts for the settings it started with: what it
-    /// runs is what they switched on, so a restarted daemon has nothing to
-    /// restart for until the switch moves again, whatever names this build
-    /// does not have the file lists. Settings compare as each experiment's
+    /// runs is what they asked. Settings compare as each experiment's
     /// module reads them, so a value it cannot use, a key it does not read
     /// or the settings of an experiment that is off change nothing it runs
-    /// and restart nothing. Switched back before the restart, it does not
-    /// restart at all. Only `amux daemon` acts on it; an embedder
-    /// runs what it was started with.
-    pub async fn restart_wanted(&self) -> RestartWanted {
+    /// and restart nothing, nor does a name this build does not have. Only
+    /// `amux daemon` acts on it; an embedder runs what it was started with.
+    pub async fn restart_wanted(&self, reads: impl Fn() -> bool) -> RestartWanted {
+        /// How often the decision is made again while it waits: what it
+        /// rests on beyond the settings (work under way, the file reading)
+        /// is looked at, not watched.
+        const LOOK_AGAIN: std::time::Duration = std::time::Duration::from_millis(250);
         let running = self.installation.running_experiments().clone();
         let mut wanted = self.wanted.clone();
+        let mut asked_since = tokio::time::Instant::now();
+        let mut differs_since: Option<tokio::time::Instant> = None;
         loop {
-            if wanted.changed().await.is_err() {
-                return std::future::pending().await;
-            }
-            // Quiet for the debounce: a switch flipped several times, or
-            // two in a row, is one restart.
-            while let Ok(changed) = tokio::time::timeout(RESTART_DEBOUNCE, wanted.changed()).await {
-                if changed.is_err() {
-                    return std::future::pending().await;
+            let now = tokio::time::Instant::now();
+            let asked = wanted.borrow_and_update().clone();
+            if asked == running {
+                differs_since = None;
+            } else {
+                let since = *differs_since.get_or_insert(now);
+                // A config that does not read also starts the quiet over:
+                // once it reads again the daemon's poll has the time to
+                // apply what it now says before anything is decided on it.
+                if !reads() {
+                    asked_since = now;
+                }
+                let settled = self.installation.settled();
+                if now.duration_since(asked_since) >= RESTART_DEBOUNCE
+                    && (settled || now.duration_since(since) >= RESTART_SETTLE_WITHIN)
+                {
+                    return RestartWanted {
+                        running: running.enabled().versions(),
+                        wanted: asked.enabled().versions(),
+                        settings: asked.describe(),
+                        settled,
+                    };
                 }
             }
-            if *wanted.borrow() == running {
-                continue;
-            }
-            let settled = tokio::time::timeout(RESTART_SETTLE_WITHIN, self.installation.settled())
-                .await
-                .is_ok();
-            let now = wanted.borrow_and_update().clone();
-            if now == running {
-                continue;
-            }
-            return RestartWanted {
-                running: running.enabled().versions(),
-                wanted: now.enabled().versions(),
-                settings: now.describe(),
-                settled,
+            let changed = if differs_since.is_some() {
+                tokio::select! {
+                    changed = wanted.changed() => Some(changed),
+                    () = tokio::time::sleep(LOOK_AGAIN) => None,
+                }
+            } else {
+                Some(wanted.changed().await)
             };
+            match changed {
+                Some(Ok(())) => asked_since = tokio::time::Instant::now(),
+                Some(Err(_)) => return std::future::pending().await,
+                None => {}
+            }
         }
     }
 

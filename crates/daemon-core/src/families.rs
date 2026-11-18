@@ -1100,7 +1100,15 @@ impl Daemon {
             return Err(Refusal::NotFound);
         };
         if let Some(process) = self.families.processes.get(&agent) {
-            let leaving = process.leaving || process.stopping.is_some() || process.ended.is_some();
+            // A cause on a live row with a process is its journal's last
+            // step, written as the agent begins to exit: it is on its way
+            // out though it may have refused nothing yet, and once it
+            // finishes it no longer reads input.
+            let journal_ended = row.exit_cause != ExitCause::Unspecified as i32;
+            let leaving = process.leaving
+                || process.stopping.is_some()
+                || process.ended.is_some()
+                || journal_ended;
             if !leaving {
                 return Err(Refusal::Live);
             }
@@ -3229,6 +3237,31 @@ mod tests {
             "{out:?}"
         );
         assert_eq!(rig.row(OTHER).unwrap().lifecycle, Lifecycle::Exited as i32);
+    }
+
+    /// The journal's last step puts the suspension on the row while the
+    /// process is still finishing, so a person sees it suspended and types
+    /// before it is gone, and before it ever refused anything as exiting.
+    /// The wake waits for the exit and then resumes it. Refused as live,
+    /// the input went to a process that no longer read it, and its sender
+    /// heard the answer was lost.
+    #[test]
+    fn a_wake_after_the_journal_said_it_suspends_waits_for_the_process() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        let mut row = rig.row(PARENT).unwrap();
+        row.exit_cause = ExitCause::Suspended as i32;
+        rig.daemon.store.put_agent(&row).unwrap();
+        let (call, out) = rig.call(wake(PARENT, "go on"));
+        assert_eq!(refusal_of(&out, call), None, "it waits: {out:?}");
+        assert_eq!(job_of(&out), None, "it waits for the exit: {out:?}");
+        let gone = rig.step(Input::ControlClosed {
+            agent: PARENT,
+            ended: Ended::Exited,
+        });
+        rig.resume_through(&gone, 2);
+        let out = rig.step(Input::AgentHello { agent: PARENT });
+        assert_eq!(answer_of(&out, call).map(|row| row.incarnation), Some(2));
     }
 
     /// A wake for an agent the daemon is stopping, or about to, is refused

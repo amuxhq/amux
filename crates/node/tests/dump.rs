@@ -4,7 +4,7 @@
 //! every planted secret and word absent. Real agent processes on the fake
 //! provider build their own records.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use daemon_core::Filing;
@@ -826,8 +826,21 @@ async fn core_dumps(install: &Install, count: usize) -> Vec<String> {
     .unwrap()
 }
 
+/// The kind of input a slow step the daemon core dumped took, as its
+/// reason names it.
+fn slow_input(reason: &str) -> &str {
+    let rest = reason
+        .strip_prefix(node::CORE_DUMP)
+        .and_then(|rest| rest.split_once(' '))
+        .map(|(_, rest)| rest)
+        .unwrap_or_else(|| panic!("not a slow step's reason: {reason}"));
+    rest.split_once(" step took ")
+        .unwrap_or_else(|| panic!("names no input: {reason}"))
+        .0
+}
+
 #[tokio::test(flavor = "multi_thread")]
-async fn steps_over_their_budget_are_one_dump_within_the_interval() {
+async fn steps_over_their_budget_are_one_dump_per_kind_of_input_within_the_interval() {
     // Not told to expect dumps: a step over its budget is tolerated at
     // teardown, only a broken invariant fails it.
     let install = Install::new();
@@ -856,7 +869,17 @@ async fn steps_over_their_budget_are_one_dump_within_the_interval() {
     drop(runtime);
     // A clean shutdown waits for every dump under way.
     daemon.shutdown().await.unwrap();
-    assert_eq!(install.core_dumps(), first);
+    let reasons = install.core_dumps();
+    let mut inputs: Vec<&str> = reasons.iter().map(|reason| slow_input(reason)).collect();
+    assert!(inputs.contains(&"Nudge"), "{reasons:#?}");
+    let all = inputs.len();
+    inputs.sort();
+    inputs.dedup();
+    assert_eq!(
+        inputs.len(),
+        all,
+        "one bundle per kind of input: {reasons:#?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -865,7 +888,7 @@ async fn steps_over_their_budget_dump_again_after_the_interval_counting_the_rest
     const INTERVAL_MS: u64 = 1_500;
     let launch = node::Launch {
         step_budget: daemon_core::StepBudget { micros: 0 },
-        dump_interval_ms: INTERVAL_MS,
+        over_budget_dump_interval_ms: INTERVAL_MS,
         ..support::synthetic::quiet_launch()
     };
     let daemon = install.start("boot-1", launch).await;
@@ -874,11 +897,16 @@ async fn steps_over_their_budget_dump_again_after_the_interval_counting_the_rest
     agent.register(&install);
     agent.append(&support::synthetic::item("a", "hello"));
     runtime.ingest(agent.id).await.unwrap();
-    core_dumps(&install, 1).await;
+    let nudges = |install: &Install| -> Vec<(u64, String)> {
+        bundles_by_time(install)
+            .into_iter()
+            .filter(|(_, reason)| slow_input(reason) == "Nudge")
+            .collect()
+    };
     // Steps keep coming, each over its budget, until the interval is past.
     let started = std::time::Instant::now();
     let mut n = 0;
-    while install.core_dumps().len() < 2 {
+    while nudges(&install).len() < 2 {
         assert!(
             started.elapsed() < std::time::Duration::from_secs(30),
             "no second bundle after the interval: {:?}",
@@ -889,7 +917,7 @@ async fn steps_over_their_budget_dump_again_after_the_interval_counting_the_rest
         runtime.ingest(agent.id).await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
-    let bundles = bundles_by_time(&install);
+    let bundles = nudges(&install);
     assert_eq!(bundles.len(), 2, "{bundles:?}");
     let (first_ms, first) = &bundles[0];
     let (second_ms, second) = &bundles[1];
@@ -933,6 +961,8 @@ fn bundles_by_time(install: &Install) -> Vec<(u64, String)> {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_clean_shutdown_ends_a_dump_still_waiting_for_an_agents_part() {
     let install = Install::new();
+    // The agent asks for a broken invariant's dump on purpose.
+    install.expect_core_dumps();
     // A live agent that never reads the dump request, so never answers it:
     // the dump waits on its part, holding the runtime.
     let mut silent = support::synthetic::SyntheticAgent::new(&install, "silent", 1 << 20);
@@ -953,7 +983,9 @@ async fn a_clean_shutdown_ends_a_dump_still_waiting_for_an_agents_part() {
     // one started before the connection would skip the part and finish at
     // once.
     // Without a record, as from an agent whose record could not be built.
-    silent.ask_for_dump("a step ran long", "", &[]).await;
+    silent
+        .ask_for_dump("one open ask at most", "one open ask at most", &[])
+        .await;
     let reports = install.data_dir.join(node::REPORTS);
     until("a dump under way", || {
         let partial = std::fs::read_dir(&reports)
@@ -1094,13 +1126,16 @@ async fn a_dump_cannot_compute_the_pin_of_a_window_opened_after_it() {
     daemon.shutdown().await.unwrap();
 }
 
-/// An agent's core asking for a dump is a bundle written by the daemon
-/// with the record the agent sent, the reason saying which agent asked. The daemon holds a repeat of the
-/// same kind back, as twenty agents breaking one invariant would send it.
+/// An agent's core asking for a dump for a broken invariant is a bundle
+/// written by the daemon with the record the agent sent, the reason saying
+/// which agent asked. The daemon holds a repeat of the same kind back, as
+/// twenty agents breaking one invariant would send it. A step over its
+/// budget is counted and leaves no bundle.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
     const INVARIANT: &str = "one open ask at most";
     let install = Install::new();
+    let recording = analytics::Recording::new();
     // This test makes an agent's core ask on purpose.
     install.expect_core_dumps();
     let mut asking = support::synthetic::SyntheticAgent::new(&install, "asking", 1 << 20);
@@ -1110,9 +1145,9 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
     asking.go_live();
     // The bundles here are the agent's alone: the daemon's core never
     // dumps for a slow step of its own.
-    let daemon = install
-        .start("boot-1", support::synthetic::quiet_launch())
-        .await;
+    let mut options = install.options("boot-1", support::synthetic::quiet_launch());
+    options.analytics = node::Telemetry::Record(recording.clone());
+    let daemon = node::start(options, None).await.unwrap();
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
 
     let violation = format!("the agent core: {INVARIANT}: two asks open");
@@ -1129,11 +1164,27 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
             support::synthetic::SYNTHETIC_RECORD,
         )
         .await;
-    let reasons = until("both kinds' bundles", || async {
+    // Both are counted; a step over its budget leaves no bundle.
+    let counted = until("both kinds counted", || async {
+        let mut counted: Vec<String> = recording
+            .events()
+            .into_iter()
+            .filter_map(|(_, event)| match event {
+                analytics::Event::CheckFailed { check, .. } => Some(check.as_str().to_owned()),
+                _ => None,
+            })
+            .collect();
+        counted.sort();
+        (counted.len() >= 2)
+            .then_some(counted)
+            .ok_or("fewer than two counted")
+    })
+    .await
+    .unwrap();
+    assert_eq!(counted, ["agent.over_budget", "agent.test"]);
+    let reasons = until("the violation's bundle", || async {
         let reasons = install.core_dumps();
-        (reasons.len() >= 2)
-            .then_some(reasons)
-            .ok_or("fewer than two bundles")
+        (!reasons.is_empty()).then_some(reasons).ok_or("no bundle")
     })
     .await
     .unwrap();
@@ -1147,16 +1198,8 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
         violations[0].contains(&id) && violations[0].ends_with(&violation),
         "{reasons:#?}"
     );
-    assert!(
-        reasons
-            .iter()
-            .any(|reason| reason.starts_with(node::AGENT_DUMP)
-                && !reason.starts_with(node::AGENT_VIOLATION_DUMP)
-                && reason.contains("its budget of 0 µs")),
-        "{reasons:#?}"
-    );
 
-    // Each names its check, a step over budget by its core's id for one.
+    // The bundle names its check.
     let mut checks = Vec::new();
     for bundle in std::fs::read_dir(install.data_dir.join(node::REPORTS)).unwrap() {
         let bundle = bundle.unwrap().path();
@@ -1181,12 +1224,13 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
         );
     }
     checks.sort();
-    assert_eq!(checks, ["agent.over_budget", "agent.test"]);
-    // A window: a dump held back leaves no mark to wait on.
+    assert_eq!(checks, ["agent.test"]);
+    // A window: a dump held back, or one never written, leaves no mark to
+    // wait on.
     holds_for(
         "the repeat to stay held back",
         std::time::Duration::from_millis(300),
-        || async { install.core_dumps().len() == 2 },
+        || async { install.core_dumps().len() == 1 },
     )
     .await
     .unwrap();
@@ -1264,14 +1308,13 @@ async fn the_asking_agents_record_goes_first_and_what_finds_no_room_is_counted()
 /// An agent's core times its steps against the budget its spec carries: a
 /// real agent process on the fake provider, under a budget of one
 /// microsecond (zero is the agent's own), soon takes a step over it, and
-/// the daemon writes the bundle the agent asked for, of that agent.
+/// the daemon counts it without writing a bundle.
 #[tokio::test(flavor = "multi_thread")]
-async fn an_agents_step_over_its_budget_leaves_a_bundle_of_that_agent() {
-    // Not told to expect dumps: a step over its budget is tolerated at
-    // teardown, only a broken invariant fails it.
+async fn an_agents_step_over_its_budget_is_counted_and_not_dumped() {
     let install = Install::new();
-    // The one bundle is the agent's: the daemon's core, untimed as in
-    // every test installation, never dumps for a slow step of its own.
+    let recording = analytics::Recording::new();
+    // The daemon's core, untimed as in every test installation, never
+    // dumps for a slow step of its own.
     let launch = node::Launch {
         agent_step_budget_micros: 1,
         ..install.launch(
@@ -1279,54 +1322,40 @@ async fn an_agents_step_over_its_budget_leaves_a_bundle_of_that_agent() {
             vec![text("working on it"), provider_fakes::script::Step::TurnEnd],
         )
     };
-    let daemon = install.start("boot-1", launch).await;
+    let mut options = install.options("boot-1", launch);
+    options.analytics = node::Telemetry::Record(recording.clone());
+    let daemon = node::start(options, None).await.unwrap();
     let runtime = runtime(&daemon, &install);
-    let id = id_of(
-        &runtime
-            .spawn(create(&install.work, "slow", Some("go")), None)
-            .await
-            .unwrap(),
-    );
-    let reasons = core_dumps(&install, 1).await;
-    let id_text = id.to_string();
-    assert!(
-        reasons
-            .iter()
-            .any(|reason| reason.starts_with(node::AGENT_DUMP)
-                && !reason.starts_with(node::AGENT_VIOLATION_DUMP)
-                && reason.contains(&id_text)
-                && reason.contains("over its budget of 1 µs")),
-        "{reasons:#?}"
-    );
-    let bundles: Vec<PathBuf> = std::fs::read_dir(install.data_dir.join(node::REPORTS))
-        .unwrap()
-        .map(|bundle| bundle.unwrap().path())
-        .collect();
-    assert_eq!(bundles.len(), 1, "{bundles:?}");
-    let agents: Vec<String> = std::fs::read_dir(bundles[0].join("agents"))
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    assert_eq!(agents, vec![id_text.clone()], "the agent that asked");
-    // The record the agent sent with its ask, built from its facts ring
-    // when it asked.
-    let record = std::fs::read(
-        bundles[0]
-            .join("agents")
-            .join(&id_text)
-            .join(node::AGENT_RECORD),
-    )
+    runtime
+        .spawn(create(&install.work, "slow", Some("go")), None)
+        .await
+        .unwrap();
+    until("the slow step counted", || async {
+        recording
+            .events()
+            .into_iter()
+            .any(|(_, event)| {
+                matches!(
+                    event,
+                    analytics::Event::CheckFailed {
+                        core: analytics::CheckCore::Agent,
+                        cause: analytics::CheckCause::OverBudget,
+                        ..
+                    }
+                )
+            })
+            .then_some(())
+            .ok_or("not counted yet")
+    })
+    .await
     .unwrap();
-    let record: serde_json::Value = serde_json::from_slice(&record).unwrap();
-    assert!(
-        !record["segments"].as_array().unwrap().is_empty(),
-        "{record}"
-    );
-    println!(
-        "{}: {}",
-        bundles[0].file_name().unwrap().to_string_lossy(),
-        reasons[0]
-    );
+    holds_for(
+        "no bundle",
+        std::time::Duration::from_millis(300),
+        || async { install.bundles().is_empty() },
+    )
+    .await
+    .unwrap();
     kill_all(&runtime).await;
     drop(runtime);
     daemon.shutdown().await.unwrap();

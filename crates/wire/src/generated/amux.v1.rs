@@ -14666,7 +14666,9 @@ pub struct DumpAsked {
     /// it, by kind, size and aliased id, without content. What the daemon
     /// writes as the bundle's record of the agent, even when the agent has
     /// exited by the time the bundle is written; empty when it could not be
-    /// built, and then the daemon asks the agent for its part.
+    /// built, and then the daemon asks the agent for its part. Empty too for
+    /// a step over its budget, which the daemon counts and writes no bundle
+    /// of.
     #[prost(bytes = "vec", tag = "5")]
     pub record: ::prost::alloc::vec::Vec<u8>,
 }

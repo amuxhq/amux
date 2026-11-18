@@ -52,7 +52,6 @@ mod start;
 
 use std::collections::BTreeSet;
 use std::fmt;
-use std::time::Instant;
 
 use interpret::ring::Entry;
 use interpret::{Effect, Event, Housekeeping, Interpreter, Stepped, reply};
@@ -592,7 +591,7 @@ impl<I: Interpreter> Agent<I> {
     pub fn step(&mut self, input: Input, out: &mut Vec<Output>) {
         // The step's own duration is the one reading of the world a core
         // makes: it decides nothing but whether to ask for a dump.
-        let started = Instant::now();
+        let started = core_ring::StepStart::now();
         self.touched = Touched::default();
         if self.life.exited.is_none() {
             self.take_input(input, out);
@@ -603,7 +602,7 @@ impl<I: Interpreter> Agent<I> {
         }
         let checked = self.check_step_invariants();
         out.extend(
-            core_ring::finish_step(started, self.life.params.budget, 0, checked)
+            core_ring::finish_step(started, self.life.params.budget, 0, None, checked)
                 .map(|reason| Output::Dump { reason }),
         );
     }

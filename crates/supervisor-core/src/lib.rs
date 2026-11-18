@@ -39,8 +39,6 @@
 
 #![forbid(unsafe_code)]
 
-use std::time::Instant;
-
 use release::{Choice, Manifest, Release, Skip};
 pub use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -494,7 +492,7 @@ impl Supervisor {
     pub fn step(&mut self, input: Input, out: &mut Vec<Output>) {
         // The step's own duration is the one reading of the world a core
         // makes: it decides nothing but whether to ask for a dump.
-        let started = Instant::now();
+        let started = core_ring::StepStart::now();
         self.touched = Touched::default();
         if !self.exited {
             self.take(input, out);
@@ -505,7 +503,7 @@ impl Supervisor {
         let checked = self.check_step_invariants();
         self.touched = Touched::default();
         out.extend(
-            core_ring::finish_step(started, self.params.step_budget, 0, checked)
+            core_ring::finish_step(started, self.params.step_budget, 0, None, checked)
                 .map(|reason| Output::Dump { reason }),
         );
     }

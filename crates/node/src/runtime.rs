@@ -131,8 +131,12 @@ pub struct Launch {
     /// dump, in microseconds; 0 leaves the agent its own budget.
     pub agent_step_budget_micros: u64,
     /// How long after a dump the profile's core asked for another of the
-    /// same kind is held back, and counted in the next.
+    /// same kind is held back, and counted in the next; and how often a
+    /// check that broke is counted in usage, a step over budget included.
     pub dump_interval_ms: u64,
+    /// The same for a dump of a step over its budget, by the kind of input
+    /// the step took.
+    pub over_budget_dump_interval_ms: u64,
     /// Where the profile's core is stepped by its caller; none gives it a
     /// thread of its own.
     pub cores: Option<crate::Cores>,
@@ -187,6 +191,7 @@ impl Default for Launch {
             step_budget: daemon_core::StepBudget::DAEMON,
             agent_step_budget_micros: 0,
             dump_interval_ms: core_ring::DumpLimit::INTERVAL_MS,
+            over_budget_dump_interval_ms: core_ring::DumpLimit::OVER_BUDGET_DAILY_MS,
             cores: None,
             experiments: settings::experiments::Enabled::none(),
             suspension: Default::default(),
@@ -727,7 +732,7 @@ impl ProfileRuntime {
                     store,
                     dir.clone(),
                     options,
-                    launch.dump_interval_ms,
+                    (launch.dump_interval_ms, launch.over_budget_dump_interval_ms),
                     launch.cores.clone(),
                 );
                 core = Some(thread);

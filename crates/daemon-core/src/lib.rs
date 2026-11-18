@@ -13,7 +13,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
-use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use store::Sqlite;
@@ -178,7 +177,7 @@ impl Daemon {
     pub fn step(&mut self, input: Input, out: &mut Vec<Output>) {
         // The step's own duration is the one reading of the world a core
         // makes: it decides nothing but whether to ask for a dump.
-        let started = Instant::now();
+        let started = StepStart::now();
         let kind = input.kind();
         self.touched = Touched::default();
         // What waited out a WAL checkpoint that has ended goes first, so
@@ -201,7 +200,7 @@ impl Daemon {
         self.arm_on_commit(out);
         let checked = self.check_step_invariants();
         let (budget, synced) = (self.options.budget, self.touched.synced_micros);
-        for reason in finish_step(started, budget, synced, checked) {
+        for reason in finish_step(started, budget, synced, Some(kind), checked) {
             tracing::error!(%reason, input = kind, "a daemon core step asked for a dump");
             out.push(Output::Dump { reason });
         }
@@ -817,7 +816,7 @@ pub struct Pending {
     peers: peers::PeerCalls,
 }
 
-pub use core_ring::{Check, DumpReason, StepBudget, Violation, finish_step};
+pub use core_ring::{Check, DumpReason, StepBudget, StepStart, Violation, finish_step};
 
 /// The core's state as a checkpoint holds it, in the order
 /// [`Daemon::checkpoint`] writes it.

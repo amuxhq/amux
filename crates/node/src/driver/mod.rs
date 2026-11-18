@@ -37,7 +37,7 @@ use std::time::Duration;
 
 pub(crate) use calls::{Answers, Delivered};
 use calls::{CallTable, Carried};
-use core_ring::{DumpLimit, Ring};
+use core_ring::{DumpKind, DumpLimit, Ring};
 use daemon_core::payload::{
     Answer, BlobRefusal, CallError, ChannelError, ClientRequest, JobResult, PeerFailure, PeerReply,
     PeerRequest, Response, Status,
@@ -209,7 +209,7 @@ impl Driver {
         store: Sqlite,
         dir: PathBuf,
         options: StartOptions,
-        dump_interval_ms: u64,
+        (dump_interval_ms, over_budget_dump_interval_ms): (u64, u64),
         cores: Option<Cores>,
     ) -> (Self, CoreThread) {
         let (inputs, fed) = mpsc::channel(INPUT_ROOM);
@@ -266,7 +266,8 @@ impl Driver {
             link_alarm: None,
             waiting: HashMap::new(),
             ticked: None,
-            dumps: DumpLimit::new(dump_interval_ms),
+            counted: DumpLimit::new(dump_interval_ms),
+            dumps: DumpLimit::new(dump_interval_ms).with_over_budget(over_budget_dump_interval_ms),
             settings: None,
             holding: std::collections::BTreeSet::new(),
             trust: trust.clone(),
@@ -582,7 +583,10 @@ pub(crate) struct CoreThread {
     waiting: HashMap<daemon_core::AgentId, Vec<Waiting>>,
     /// The clocks as last told to the core: policy time, then link time.
     ticked: Option<(u64, u64)>,
-    /// The dumps the core asked for that were written, by kind.
+    /// The checks that broke and were counted in usage, by check.
+    counted: DumpLimit,
+    /// The dumps the core asked for that were written, by kind: a step
+    /// over its budget by the kind of input it took.
     dumps: DumpLimit,
     /// The settings as last told to the core.
     settings: Option<Settings>,
@@ -1161,14 +1165,18 @@ impl CoreThread {
             Output::Dump { reason } => {
                 // The core logged why. The bundle is written off this
                 // thread, reading the store between later steps, so a burst
-                // of the same reason is one bundle.
+                // of the same reason is one bundle. Usage counts every
+                // check on the same window whatever its dumps' window, so a
+                // count reads the same across kinds of check.
                 let now = runtime.clock_now().max(0) as u64;
                 let check = reason.check().map_or("", |check| check.id).to_owned();
+                let core = crate::reports::Core::Daemon;
+                if let Some(held_back) = self.counted.admit(DumpKind::check(&reason), now) {
+                    runtime.check_failed(core, &check, held_back);
+                }
                 let Some(admitted) = limited_dump_reason(&mut self.dumps, &reason, now) else {
                     return;
                 };
-                let core = crate::reports::Core::Daemon;
-                runtime.check_failed(core, &check, admitted.held_back);
                 runtime.dump_unasked(
                     admitted.reason,
                     crate::reports::check_id(core, &check),
@@ -1783,9 +1791,13 @@ mod tests {
         let slow = daemon_core::DumpReason::OverBudget {
             micros: 250_000,
             budget: daemon_core::StepBudget::DAEMON,
+            input: Some("Retain"),
         };
         let slow = limited_dump_reason(&mut limit, &slow, 2).unwrap().reason;
-        assert!(slow.contains("250000 µs"), "{slow}");
+        assert_eq!(
+            slow,
+            "the daemon core: a Retain step took 250000 µs, over its budget of 100000 µs"
+        );
         let second = limited_dump_reason(&mut limit, &broke, DumpLimit::INTERVAL_MS).unwrap();
         assert_eq!(second.held_back, 2);
         let second = second.reason;

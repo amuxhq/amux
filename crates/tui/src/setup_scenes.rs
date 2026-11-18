@@ -399,3 +399,22 @@ pub fn settings_page(signed_in: bool) -> SettingsScene {
     }
     scene
 }
+
+/// The settings screen just after Suspension was switched on, while amux
+/// restarts to run it, scrolled to the experiments.
+pub fn settings_applying() -> SettingsScene {
+    let mut scene = settings_page(true);
+    let mut settings = scene.screen.settings().clone();
+    let suspension = settings
+        .experiments
+        .iter_mut()
+        .find(|experiment| experiment.name == "suspension")
+        .expect("the scene lists suspension");
+    suspension.enabled = true;
+    suspension.applying = true;
+    scene.screen.settings_changed(settings);
+    for _ in 0..20 {
+        scene.key(KeyCode::Down);
+    }
+    scene
+}

@@ -725,7 +725,8 @@ pub struct MachineSettings {
     /// A report is sent on its own when something goes wrong.
     pub auto_reports: bool,
     /// Every experiment the machine's build implements, in the order they
-    /// are listed. A switch takes effect when amux next starts.
+    /// are listed. amux restarts itself to apply a switch, and says it is
+    /// being applied until it has.
     pub experiments: Vec<ExperimentView>,
 }
 
@@ -741,6 +742,9 @@ pub struct ExperimentView {
     pub description: String,
     /// Whether the machine's settings switch it on.
     pub enabled: bool,
+    /// amux runs it otherwise than `enabled` says, and is restarting to
+    /// apply the switch: show it as being applied, neither on nor off.
+    pub applying: bool,
 }
 
 impl From<&wire::Settings> for MachineSettings {
@@ -760,6 +764,7 @@ impl From<&wire::Settings> for MachineSettings {
                     version: experiment.version.clone(),
                     description: experiment.description.clone(),
                     enabled: experiment.enabled,
+                    applying: experiment.applying,
                 })
                 .collect(),
         }

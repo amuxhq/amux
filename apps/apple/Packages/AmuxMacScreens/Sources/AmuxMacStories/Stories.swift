@@ -686,13 +686,21 @@ public enum Stories {
             ExperimentView(
                 name: "workspaces", version: "workspaces/1",
                 description: "Run each agent in a workspace that amux makes, starts and stops with its agents.",
-                enabled: true),
+                enabled: true, applying: false),
             ExperimentView(
                 name: "suspension", version: "suspension/1",
                 description: "Suspend idle agents and resume them when a message arrives.",
-                enabled: false),
+                enabled: false, applying: false),
         ],
         startAtLogin: true)
+
+    /// Suspension just switched on, while amux restarts to run it.
+    private static var applyingSettings: MachineSettings {
+        var settings = machineSettings
+        settings.experiments[1].enabled = true
+        settings.experiments[1].applying = true
+        return settings
+    }
 
     private static let settings = [
         Story("settings.machine", window: .settings) {
@@ -700,6 +708,11 @@ public enum Stories {
         },
         Story("settings.machine-signed-out", window: .settings) {
             SettingsScreen(state: .ready(machineSettings), account: SettingsAccount(profile: work))
+        },
+        Story("settings.experiment-applying", window: .settings) {
+            // Scrolled to the experiments, at the end of the form.
+            SettingsScreen(state: .ready(applyingSettings), account: SettingsAccount(profile: signedIn))
+                .defaultScrollAnchor(.bottom)
         },
     ]
 }

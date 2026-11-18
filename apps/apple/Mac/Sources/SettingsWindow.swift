@@ -18,7 +18,17 @@ struct SettingsWindow: View {
             // Changed beside the app (`amux config`, the terminal's settings),
             // so read again whenever the window is opened.
             .task { await model.loadSettings() }
+            // While amux restarts to apply an experiment switch, read again
+            // until it runs what the switch says.
+            .task(id: applying) {
+                while applying, !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(1))
+                    await model.loadSettings()
+                }
+            }
     }
+
+    private var applying: Bool { model.settings?.applyingExperiments ?? false }
 
     private var state: SettingsState {
         if let settings = model.settings { return .ready(settings) }

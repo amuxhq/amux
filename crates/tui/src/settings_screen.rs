@@ -171,6 +171,11 @@ impl SettingsScreen {
         rows[self.focus.min(rows.len() - 1)]
     }
 
+    /// The settings as the daemon last answered them.
+    pub fn settings(&self) -> &wire::Settings {
+        &self.settings
+    }
+
     pub fn settings_changed(&mut self, settings: wire::Settings) {
         self.settings = settings;
         self.error = None;
@@ -428,6 +433,9 @@ impl SettingsScreen {
             Row::CopyOnSelect => on_off(self.copy_on_select).to_owned(),
             Row::Telemetry => on_off(settings.telemetry).to_owned(),
             Row::AutoReports => on_off(settings.auto_reports).to_owned(),
+            // What the daemon runs: while it restarts to run what the
+            // switch now says, neither on nor off is true yet.
+            Row::Experiment(at) if settings.experiments[at].applying => "applying…".to_owned(),
             Row::Experiment(at) => on_off(settings.experiments[at].enabled).to_owned(),
             Row::Account => match &self.profile {
                 Some(profile) if signed_in(profile) => plan_words(profile),
@@ -586,12 +594,13 @@ impl SettingsScreen {
                 )],
                 Row::Telemetry => vec![("Never your code or chats.".to_owned(), theme.faint())],
                 Row::Experiment(at) => {
-                    let mut said = vec![(
-                        self.settings.experiments[at].description.clone(),
-                        theme.faint(),
-                    )];
-                    if at + 1 == self.settings.experiments.len() {
-                        said.push(("Takes effect when amux restarts.".to_owned(), theme.faint()));
+                    let experiment = &self.settings.experiments[at];
+                    let mut said = vec![(experiment.description.clone(), theme.faint())];
+                    if experiment.applying {
+                        said.push((
+                            "amux restarts to apply it. Agents keep running.".to_owned(),
+                            theme.muted(),
+                        ));
                     }
                     said
                 }

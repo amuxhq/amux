@@ -2926,12 +2926,16 @@ public struct ExperimentView: Codable, Hashable, Sendable {
     public var description: String
     /// Whether the machine's settings switch it on.
     public var enabled: Bool
+    /// amux runs it otherwise than `enabled` says, and is restarting to
+    /// apply the switch: show it as being applied, neither on nor off.
+    public var applying: Bool
 
-    public init(name: String, version: String, description: String, enabled: Bool) {
+    public init(name: String, version: String, description: String, enabled: Bool, applying: Bool) {
         self.name = name
         self.version = version
         self.description = description
         self.enabled = enabled
+        self.applying = applying
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -2939,6 +2943,7 @@ public struct ExperimentView: Codable, Hashable, Sendable {
         case version
         case description
         case enabled
+        case applying
     }
 }
 
@@ -4413,7 +4418,8 @@ public struct MachineSettings: Codable, Hashable, Sendable {
     /// A report is sent on its own when something goes wrong.
     public var autoReports: Bool
     /// Every experiment the machine's build implements, in the order they
-    /// are listed. A switch takes effect when amux next starts.
+    /// are listed. amux restarts itself to apply a switch, and says it is
+    /// being applied until it has.
     public var experiments: [ExperimentView]
     /// Whether amux starts at login; None on an install without a
     /// supervisor, which has nothing to start.

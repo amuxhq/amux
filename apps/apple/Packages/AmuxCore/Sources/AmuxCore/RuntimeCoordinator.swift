@@ -130,6 +130,9 @@ public final class RuntimeCoordinator {
     @ObservationIgnored private var starting: Task<Void, Never>?
     /// Which start a started runtime answers; one a stop overtook is stopped.
     @ObservationIgnored private var launch = 0
+    /// The last moment of the app's life handed to the runtime, which the
+    /// next one waits for.
+    @ObservationIgnored private var lastFed: Task<Void, Never>?
 
     public init(
         registry: AccountRegistry, support: URL, deviceName: String,
@@ -253,10 +256,25 @@ public final class RuntimeCoordinator {
         }
     }
 
-    /// Tells the runtime of a moment of the app's life, without waiting.
-    private func feed(_ runtime: Runtime, _ input: Lifecycle) {
+    /// Tells the runtime of a moment of the app's life, without waiting; the
+    /// task it answers is done once the runtime has carried it out.
+    ///
+    /// Each moment waits for the one before it, so the runtime carries them
+    /// out in the order they were decided here. Every feed leaves the main
+    /// actor before it reaches the runtime's queue, and unordered, a coming
+    /// to the front decided just after a suspend could reach the runtime
+    /// first and be undone by it, leaving the app in front with every link
+    /// closed.
+    @discardableResult
+    private func feed(_ runtime: Runtime, _ input: Lifecycle) -> Task<Void, Never> {
         remember(input)
-        Task { await runtime.feed(input) }
+        let before = lastFed
+        let fed = Task {
+            await before?.value
+            _ = await runtime.feed(input)
+        }
+        lastFed = fed
+        return fed
     }
 
     private func remember(_ input: Lifecycle) {
@@ -464,8 +482,22 @@ public final class RuntimeCoordinator {
     /// returns, should the system end the app while it is suspended.
     public func suspending() async {
         guard let runtime else { return }
-        remember(.suspending)
-        await runtime.feed(.suspending)
+        await feed(runtime, .suspending).value
+    }
+
+    /// A push's handler is done, and the system suspends an app it woke in
+    /// the background once that returns: the runtime is suspended with it,
+    /// unless somebody has brought the app to the front since. Waiting for a
+    /// push's chat can take many seconds, and a person who opens the app
+    /// meanwhile finds its links already up, so coming to the front changes
+    /// nothing; suspending after that would leave the app in front with
+    /// every link closed and nothing to dial them again.
+    ///
+    /// A coming to the front decided after this one's suspend still resumes:
+    /// the runtime takes the two in order (see `feed`).
+    public func pushFinished() async {
+        guard !active else { return }
+        await suspending()
     }
 
     /// Records what only the app sees, on the account on screen.
@@ -505,10 +537,7 @@ public final class RuntimeCoordinator {
         if inBackground {
             setActive(false)
             // Suspended, the runtime holds no link; the push needs one.
-            if let runtime {
-                remember(.woken)
-                await runtime.feed(.woken)
-            }
+            if let runtime { await feed(runtime, .woken).value }
         }
         start()
         guard let host = agent.hostId else { return .unknownHost }

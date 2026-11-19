@@ -229,7 +229,10 @@ Your comments go into the message box as one review, ready to send to the
 agent with anything else you want to say.
 
 The header can count either your uncommitted changes, or everything since the
-branch left its base. Ctrl+A then `c` switches between the two.
+branch left its base. Ctrl+A then `c` switches between the two. The count is of
+the agent's whole folder, so agents sharing one checkout count the same
+changes: it updates when any of them finishes a turn, and opening the review
+corrects it if the folder changed in between, say because you committed.
 
 ## Chatting in each agent's own interface
 

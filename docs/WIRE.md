@@ -631,7 +631,9 @@ branch (absent on a detached head, and from hosts before it, which a client
 reads as not known). Only `with_patch` builds the patch and stores it as one of
 that agent's blobs (`text/x-diff`), named in `patch`; without it the host writes
 nothing. An exited agent's folder is compared as it is now; another host's
-agent's diff is made on that host and forwarded.
+agent's diff is made on that host and forwarded. A diff against HEAD or the
+row's base branch whose totals differ from the row's corrects the row before
+it is answered, so a client's changes marker agrees with the diff it opens.
 
 What an agent offers to pick from (the models, commands, permissions and modes)
 is a `Catalogue` its agent process writes as a blob of its directory, before
@@ -688,7 +690,9 @@ own interface; copied from the snapshot envelope and cleared by a rename),
 `cwd`, `parent` (a host and an id, since families cross hosts), `lifecycle`
 with `exit_cause` and `exit_detail`, `phase`, `working_on`, `phase_since_ms`
 (on the origin host's clock; the row's creation time until its first
-snapshot) and `git` copied from the agent's newest snapshot envelope,
+snapshot) and `git` copied from the agent's newest snapshot envelope (or,
+on its own host, the totals of a diff that just showed it out of date; see
+[git facts](AGENT_PROCESS.md#git-facts)),
 `incarnation`, and two counts of what a stop or delete would cut:
 `background_jobs`, copied from the snapshot envelope, and `descendants`, the
 live agents below it. The agent's own host counts `descendants` over the rows

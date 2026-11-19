@@ -133,7 +133,7 @@
       "clients": ["terminal", "phone"],
       "topology": "journeys/topologies/terminal-flows.json",
       "phone_topology": "journeys/topologies/phone-flows.json",
-      "claim": "At a usage limit the composer names the window and when it resets, and a prompt still goes and is answered. Refused its credential, headless Claude's chat puts signing in on the composer's box, naming the host to sign in on; the host holds each prompt once."
+      "claim": "At a usage limit the composer names the window and when it resets, and a prompt still goes and is answered. Refused its credential, headless Claude's chat puts a sign-in notice, naming the host to sign in on, over a composer that still sends; signed in again, a message sent from it is answered and the answer takes the notice away. The host holds each prompt once."
     },
     {
       "id": "new-agent-terminal",

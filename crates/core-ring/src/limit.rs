@@ -7,7 +7,10 @@
 //! asks again at once. Every dump past the first in a burst says nothing
 //! the first did not, and each costs a bundle on the drive and a read of
 //! the store between steps. A different invariant, or an overrun beside a
-//! violation, is news, so each kind keeps its own window.
+//! violation, is news, so each kind keeps its own window. Overruns can be
+//! given a longer window than violations: a step over its budget is as
+//! much the machine's load as the code's, and the first of a kind already
+//! says which input was slow.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -19,8 +22,29 @@ pub enum DumpKind {
     /// driver limiting what another process asked for has the id that
     /// process sent.
     Violation(Cow<'static, str>),
-    /// A step took longer than its budget, however far over.
-    OverBudget,
+    /// A step took longer than its budget, however far over: the kind of
+    /// input it took, when its core names them, so a slow input of one
+    /// kind does not hide a slow one of another.
+    OverBudget(Option<&'static str>),
+}
+
+impl DumpKind {
+    /// The kind of dump `reason` is.
+    pub fn of(reason: &crate::DumpReason) -> Self {
+        match reason {
+            crate::DumpReason::Violation(broken) => Self::Violation(broken.invariant.id.into()),
+            crate::DumpReason::OverBudget { input, .. } => Self::OverBudget(*input),
+        }
+    }
+
+    /// The check `reason` broke, as a kind: an overrun of any input is one
+    /// check, the core's step budget.
+    pub fn check(reason: &crate::DumpReason) -> Self {
+        match Self::of(reason) {
+            Self::OverBudget(_) => Self::OverBudget(None),
+            kind => kind,
+        }
+    }
 }
 
 impl DumpLimit {
@@ -34,11 +58,7 @@ impl DumpLimit {
         reason: &crate::DumpReason,
         now_ms: u64,
     ) -> Option<Admitted> {
-        let kind = match reason {
-            crate::DumpReason::Violation(broken) => DumpKind::Violation(broken.invariant.id.into()),
-            crate::DumpReason::OverBudget { .. } => DumpKind::OverBudget,
-        };
-        let held_back = self.admit(kind, now_ms)?;
+        let held_back = self.admit(DumpKind::of(reason), now_ms)?;
         Some(Admitted {
             reason: with_suppressed(format!("{whose}{reason}"), held_back),
             held_back,
@@ -59,6 +79,8 @@ pub struct Admitted {
 #[derive(Debug)]
 pub struct DumpLimit {
     interval_ms: u64,
+    /// The window of a step over its budget.
+    over_budget_ms: u64,
     kinds: HashMap<DumpKind, Window>,
 }
 
@@ -77,10 +99,26 @@ impl DumpLimit {
     /// at most instead of one a second.
     pub const INTERVAL_MS: u64 = 10 * 60_000;
 
+    /// A day, for a driver whose dumps of an overrun are worth less than
+    /// what they cost: whether a kind of input is slow again is one bundle a
+    /// day, where a busy machine would otherwise send the same bundle six
+    /// times an hour.
+    pub const OVER_BUDGET_DAILY_MS: u64 = 24 * 60 * 60_000;
+
+    /// One window of `interval_ms` for every kind.
     pub fn new(interval_ms: u64) -> Self {
         Self {
             interval_ms,
+            over_budget_ms: interval_ms,
             kinds: HashMap::new(),
+        }
+    }
+
+    /// The limit with a window of its own for steps over their budget.
+    pub fn with_over_budget(self, over_budget_ms: u64) -> Self {
+        Self {
+            over_budget_ms,
+            ..self
         }
     }
 
@@ -88,6 +126,10 @@ impl DumpLimit {
     /// with how many of the kind were held back since the last one
     /// written, or `None` when it is held back itself.
     pub fn admit(&mut self, kind: DumpKind, now_ms: u64) -> Option<u64> {
+        let interval_ms = match kind {
+            DumpKind::OverBudget(_) => self.over_budget_ms,
+            DumpKind::Violation(_) => self.interval_ms,
+        };
         let Some(window) = self.kinds.get_mut(&kind) else {
             self.kinds.insert(
                 kind,
@@ -98,7 +140,7 @@ impl DumpLimit {
             );
             return Some(0);
         };
-        if now_ms.saturating_sub(window.dumped_ms) < self.interval_ms {
+        if now_ms.saturating_sub(window.dumped_ms) < interval_ms {
             window.suppressed += 1;
             return None;
         }
@@ -135,7 +177,7 @@ mod tests {
         assert_eq!(limit.admit(BROKE, 6), None);
         assert_eq!(limit.admit(BROKE, 1_004), None);
         // Another kind has a window of its own.
-        assert_eq!(limit.admit(DumpKind::OverBudget, 7), Some(0));
+        assert_eq!(limit.admit(DumpKind::OverBudget(None), 7), Some(0));
         assert_eq!(
             limit.admit(DumpKind::Violation("another".into()), 8),
             Some(0)
@@ -143,6 +185,38 @@ mod tests {
         assert_eq!(limit.admit(BROKE, 1_005), Some(2));
         assert_eq!(limit.admit(BROKE, 1_006), None);
         assert_eq!(limit.admit(BROKE, 2_005), Some(1));
+    }
+
+    #[test]
+    fn overruns_have_their_own_window_and_one_per_kind_of_input() {
+        let mut limit = DumpLimit::new(1_000).with_over_budget(10_000);
+        let retain = DumpKind::OverBudget(Some("Retain"));
+        assert_eq!(limit.admit(retain.clone(), 0), Some(0));
+        // Another input's overrun is news.
+        assert_eq!(limit.admit(DumpKind::OverBudget(Some("Tick")), 1), Some(0));
+        assert_eq!(limit.admit(retain.clone(), 5_000), None);
+        assert_eq!(limit.admit(retain.clone(), 9_999), None);
+        assert_eq!(limit.admit(retain, 10_000), Some(2));
+        // A violation keeps the shorter window.
+        assert_eq!(limit.admit(BROKE, 0), Some(0));
+        assert_eq!(limit.admit(BROKE, 1_000), Some(0));
+    }
+
+    #[test]
+    fn a_check_is_one_kind_whichever_input_ran_over() {
+        let over = |input| crate::DumpReason::OverBudget {
+            micros: 2,
+            budget: crate::StepBudget { micros: 1 },
+            input,
+        };
+        assert_eq!(
+            DumpKind::of(&over(Some("Retain"))),
+            DumpKind::OverBudget(Some("Retain"))
+        );
+        assert_eq!(
+            DumpKind::check(&over(Some("Retain"))),
+            DumpKind::check(&over(None))
+        );
     }
 
     #[test]

@@ -174,6 +174,9 @@ impl Daemon {
                 // A turn end may have written an outbox row.
                 self.deliveries_due();
                 report.kind = self.store.agent(&key)?.map_or(0, |row| row.kind);
+                // It may have committed or reverted what other agents in
+                // its checkout count as their changes.
+                self.turn_ended_beside(agent, out);
             }
             // Only now, with the transaction committed: a subscriber never
             // sees a revision the store could not serve it.

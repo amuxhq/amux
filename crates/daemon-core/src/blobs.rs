@@ -61,10 +61,15 @@ enum Writing {
     /// A replica's blob the origin sent, kept for the next reader.
     Keep { call: CallId },
     /// A diff's comparison, its patch written under `name` once made.
+    /// `agent` is whose folder it compares, against HEAD or `branch`.
     Compare {
         call: CallId,
         dir: PathBuf,
         name: String,
+        #[serde(default)]
+        agent: Vec<u8>,
+        #[serde(default)]
+        branch: Option<String>,
     },
     /// A diff's patch, the diff answered with it once written.
     Patch {
@@ -217,11 +222,22 @@ impl Daemon {
             diff_base::Base::Head(_) => "working-tree.diff".to_owned(),
             diff_base::Base::Branch(branch) => format!("{branch}.diff"),
         };
+        let branch = match &base {
+            diff_base::Base::Head(_) => None,
+            diff_base::Base::Branch(branch) => Some(branch.clone()),
+        };
         let job = self.pending.mint();
         let dir = self.files_of(&row).join(BLOBS);
-        self.blobs
-            .writing
-            .insert(job, Writing::Compare { call, dir, name });
+        self.blobs.writing.insert(
+            job,
+            Writing::Compare {
+                call,
+                dir,
+                name,
+                agent: request.agent_id,
+                branch,
+            },
+        );
         out.push(Output::Job {
             id: job,
             op: Job::Compare {
@@ -251,7 +267,17 @@ impl Daemon {
             | Writing::Patch { call, .. } => *call,
         };
         match (writing, result) {
-            (Writing::Compare { dir, name, .. }, JobResult::Compared { diff, patch }) => {
+            (
+                Writing::Compare {
+                    dir,
+                    name,
+                    agent,
+                    branch,
+                    ..
+                },
+                JobResult::Compared { diff, patch },
+            ) => {
+                self.diff_compared(&agent, branch.as_deref(), diff, out);
                 match patch {
                     None => answered(
                         call,

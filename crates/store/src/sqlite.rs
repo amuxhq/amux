@@ -172,6 +172,9 @@ impl Sqlite {
         // kept prepared, a commit skips parsing them again for each frame.
         conn.set_prepared_statement_cache_capacity(64);
         migrate(&mut conn, name, MIGRATIONS)?;
+        let tx = conn.transaction()?;
+        rows::keep_pool_totals(&tx)?;
+        tx.commit()?;
         Ok(Self {
             conn,
             own_host,
@@ -662,6 +665,29 @@ impl Sqlite {
             row.phase = phase as i32;
             row.phase_since_ms = Some(since_ms);
             rows.upsert_agent(&row, &rows::update_of(&["phase", "phase_since_ms"]))?;
+            Ok(true)
+        })
+    }
+
+    /// Writes an own row's git facts, which otherwise only a committed
+    /// snapshot sets: the daemon's word when a diff it made of the folder
+    /// shows the agent's last read is out of date. The snapshot the row
+    /// holds is left as the agent wrote it. False when there is no such
+    /// row.
+    pub fn set_git(
+        &mut self,
+        agent: &AgentKey,
+        git: Option<wire::Git>,
+    ) -> Result<bool, StoreError> {
+        if !self.is_own(agent) {
+            return Err(StoreError::NotOwn);
+        }
+        self.write(|rows| {
+            let Some(mut row) = rows.agent(agent)? else {
+                return Ok(false);
+            };
+            row.git = git;
+            rows.upsert_agent(&row, &rows::update_of(&["git"]))?;
             Ok(true)
         })
     }
@@ -1383,5 +1409,271 @@ mod tests {
             indexes,
             ["agents_by_id", "agents_by_name", "agents_by_parent"]
         );
+    }
+
+    const OWN_HOST: &[u8] = b"own-host";
+    const PEER_HOST: &[u8] = b"peer-host";
+
+    /// Each pool's running total, which must be what a full count says.
+    fn pools(store: &Sqlite) -> (u64, u64) {
+        let held = |own| store.read(|rows| rows.pool_bytes(own)).unwrap();
+        let counted = |own| store.read(|rows| rows.pool_bytes_counted(own)).unwrap();
+        assert_eq!(
+            held(true),
+            counted(true),
+            "the own pool's total is its count"
+        );
+        assert_eq!(
+            held(false),
+            counted(false),
+            "the replica pool's total is its count"
+        );
+        (held(true), held(false))
+    }
+
+    fn item(key: &str, text: usize, body: usize) -> Item {
+        Item {
+            key: key.into(),
+            text: "x".repeat(text),
+            body: vec![7; body],
+            kind: wire::Kind::Codex as i32,
+            ..Item::default()
+        }
+    }
+
+    fn step(items: Vec<Item>, appends: Vec<crate::Append>) -> Step {
+        Step {
+            items,
+            appends,
+            ..Step::default()
+        }
+    }
+
+    const CLOCK: CommitClock = CommitClock {
+        now_ms: 0,
+        notify_delay_ms: 0,
+    };
+
+    /// The pools' totals follow every kind of write to `items`, own and
+    /// replica, a write that rolls back included, and a store opened again
+    /// counts them afresh.
+    #[test]
+    fn the_pools_totals_follow_every_write_and_are_counted_again_at_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("store.sqlite");
+        let mut store = Sqlite::open(&path, OWN_HOST).unwrap();
+        assert_eq!(pools(&store), (0, 0), "a fresh store holds nothing");
+
+        let a = AgentKey::new(OWN_HOST, b"a".as_slice());
+        let b = AgentKey::new(OWN_HOST, b"b".as_slice());
+        for agent in [&a, &b] {
+            store
+                .put_agent(&AgentRow::new(agent.clone(), wire::Kind::Codex, "/src"))
+                .unwrap();
+        }
+        // New keys: the upsert inserts.
+        let fresh = (0..6)
+            .map(|n| item(&format!("{n:02}"), 100 * (n + 1), 50))
+            .collect();
+        store
+            .commit(&a, &[(1, step(fresh, vec![]))], CLOCK)
+            .unwrap();
+        let fresh = (0..30).map(|n| item(&format!("{n:02}"), 500, 10)).collect();
+        store
+            .commit(&b, &[(1, step(fresh, vec![]))], CLOCK)
+            .unwrap();
+        let (own, replica) = pools(&store);
+        assert!(own > 0);
+        assert_eq!(replica, 0);
+
+        // Held keys rewritten larger and smaller, with an input id and
+        // attachments: the upsert updates. Then text appended to one.
+        let mut larger = item("00", 4000, 900);
+        larger.input_id = b"input".to_vec();
+        larger.attachments = vec![wire::Attachment::default()];
+        let rewritten = vec![larger, item("01", 1, 0)];
+        store
+            .commit(&a, &[(2, step(rewritten, vec![]))], CLOCK)
+            .unwrap();
+        let grown = pools(&store).0;
+        assert_ne!(grown, own, "the rewrites moved the total");
+        let append = crate::Append {
+            key: "02".into(),
+            text: "y".repeat(777),
+            ..crate::Append::default()
+        };
+        store
+            .commit(&a, &[(3, step(vec![], vec![append]))], CLOCK)
+            .unwrap();
+        assert_eq!(pools(&store).0, grown + 777, "the append's bytes count");
+
+        // Replica rows: a reset's tail, then live records, one too old to
+        // be written, one newer and smaller.
+        let r = AgentKey::new(PEER_HOST, b"r".as_slice());
+        store
+            .put_agent(&AgentRow::new(r.clone(), wire::Kind::Codex, "/src"))
+            .unwrap();
+        let tail = (1..=8)
+            .map(|order| Item {
+                order,
+                revision: order,
+                ..item(&format!("{order:02}"), 300, 20)
+            })
+            .collect();
+        let snapshot = Snapshot {
+            revision: 9,
+            ..Snapshot::default()
+        };
+        store
+            .absorb(
+                &r,
+                crate::Absorb::Reset {
+                    tail,
+                    snapshot,
+                    generation: 1,
+                },
+            )
+            .unwrap();
+        let (_, replica) = pools(&store);
+        assert!(replica > 0);
+        let events = vec![
+            crate::Record::Item(Item {
+                order: 1,
+                revision: 1,
+                ..item("01", 9000, 0)
+            }),
+            crate::Record::Item(Item {
+                order: 2,
+                revision: 10,
+                ..item("02", 5, 0)
+            }),
+            crate::Record::Item(Item {
+                order: 9,
+                revision: 11,
+                ..item("09", 40, 40)
+            }),
+        ];
+        store
+            .absorb(&r, crate::Absorb::Delta { events, live: true })
+            .unwrap();
+        let (_, absorbed) = pools(&store);
+        assert_ne!(absorbed, replica);
+
+        // A commit that fails after it rewrote a held row: the whole
+        // transaction rolls back, and the total with it.
+        let before = pools(&store);
+        store
+            .connection()
+            .execute_batch(
+                "CREATE TEMP TRIGGER refuse BEFORE INSERT ON items WHEN NEW.key = 'refused' \
+                 BEGIN SELECT RAISE(ABORT, 'refused'); END;",
+            )
+            .unwrap();
+        let failing = step(vec![item("03", 6000, 600), item("refused", 1, 1)], vec![]);
+        assert!(store.commit(&a, &[(4, failing)], CLOCK).is_err());
+        store
+            .connection()
+            .execute_batch("DROP TRIGGER temp.refuse")
+            .unwrap();
+        assert_eq!(
+            pools(&store),
+            before,
+            "the failed commit left no bytes behind"
+        );
+
+        // Trimming deletes: own rows past their budget, the largest agent
+        // trimmed a chunk at a time, and replica rows trimmed to their tail.
+        let sweep = store.sweep_own(own / 2, 2000, 4).unwrap();
+        assert!(
+            sweep
+                .steps
+                .iter()
+                .any(|step| matches!(step, crate::SweepStep::Trimmed { .. })),
+            "{sweep:?}"
+        );
+        assert_eq!(pools(&store).0, sweep.pool_after);
+        let sourced = HashSet::from([r.clone()]);
+        let sweep = store
+            .sweep_replicas(1, 2, &sourced, &HashMap::new())
+            .unwrap();
+        assert!(!sweep.steps.is_empty(), "{sweep:?}");
+        assert_eq!(pools(&store).1, sweep.pool_after);
+        // And an unsourced replica evicted whole.
+        let sweep = store
+            .sweep_replicas(0, 2, &HashSet::new(), &HashMap::new())
+            .unwrap();
+        assert_eq!(sweep.removed, vec![r.clone()]);
+        assert_eq!(pools(&store).1, 0);
+
+        // An agent deleted with its rows.
+        store.delete_agent(&b).unwrap();
+        let (own, _) = pools(&store);
+        assert!(own > 0, "a's rows are still counted");
+
+        // A store opened again counts its totals afresh, by the host it is
+        // opened for.
+        let more = (1..=3)
+            .map(|order| Item {
+                order,
+                revision: order,
+                ..item(&format!("{order:02}"), 70, 7)
+            })
+            .collect();
+        store
+            .absorb(
+                &r,
+                crate::Absorb::Reset {
+                    tail: more,
+                    snapshot: Snapshot {
+                        revision: 20,
+                        ..Snapshot::default()
+                    },
+                    generation: 1,
+                },
+            )
+            .unwrap();
+        let held = pools(&store);
+        drop(store);
+        let store = Sqlite::open(&path, OWN_HOST).unwrap();
+        assert_eq!(pools(&store), held);
+        drop(store);
+        let store = Sqlite::open(&path, Vec::new()).unwrap();
+        assert_eq!(
+            pools(&store),
+            (0, held.0 + held.1),
+            "every row is a replica's"
+        );
+    }
+
+    /// An explored store that loads a dump takes the dump's host as its
+    /// own, and its pools split by that host.
+    #[cfg(feature = "explore")]
+    #[test]
+    fn a_loaded_dump_splits_the_pools_by_its_host() {
+        let mut origin = Sqlite::open_in_memory(OWN_HOST).unwrap();
+        let a = AgentKey::new(OWN_HOST, b"a".as_slice());
+        origin
+            .put_agent(&AgentRow::new(a.clone(), wire::Kind::Codex, "/src"))
+            .unwrap();
+        let items = (0..4).map(|n| item(&format!("{n:02}"), 300, 30)).collect();
+        origin
+            .commit(&a, &[(1, step(items, vec![]))], CLOCK)
+            .unwrap();
+        let held = pools(&origin);
+        assert!(held.0 > 0);
+
+        let mut other = Sqlite::open_in_memory(PEER_HOST).unwrap();
+        let p = AgentKey::new(PEER_HOST, b"p".as_slice());
+        other
+            .put_agent(&AgentRow::new(p.clone(), wire::Kind::Codex, "/src"))
+            .unwrap();
+        let items = (0..9).map(|n| item(&format!("{n:02}"), 50, 5)).collect();
+        other
+            .commit(&p, &[(1, step(items, vec![]))], CLOCK)
+            .unwrap();
+        assert!(pools(&other).0 > 0);
+
+        other.load(&origin.dump().unwrap()).unwrap();
+        assert_eq!(pools(&other), held);
     }
 }

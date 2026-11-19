@@ -881,7 +881,7 @@ command again.
 | `SendMessage` | A message to an agent, whose sender the daemon stamps from the caller; see [agent tools](AGENT_TOOLS.md). |
 | `PutBlob`, `GetBlob`, `GetDiff` | Bytes in an agent's directory; see [attachments](ATTACHMENTS.md). |
 | `GetCatalogue` | What a provider on a host offers with no agent running, from the host's own copy. What an agent offers is a blob its snapshot names, read with `GetBlob`; see [the wire](WIRE.md). |
-| `ListRepositories` | Where a host offers to start an agent: recent working directories and repositories under its configured roots. |
+| `ListRepositories` | Where a host offers to start an agent: recent working directories and repositories under its configured roots, each with its origin remote when it has one, so a client names and tints a folder as it does an agent working in it. |
 
 `SessionService` is one agent's conversation:
 

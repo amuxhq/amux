@@ -40,7 +40,7 @@ final class HostsWordingTests: XCTestCase {
         let direct = host()
         XCTAssertEqual(tab([direct]).0.status(direct), "macOS · direct")
         let relayed = host(reach: .online(.relay), platform: nil)
-        XCTAssertEqual(tab([relayed]).0.status(relayed), "via relay")
+        XCTAssertEqual(tab([relayed]).0.status(relayed), "over the internet")
         let away = host(reach: .away)
         XCTAssertEqual(tab([away]).0.status(away), "macOS · away on the free plan")
     }
@@ -53,7 +53,7 @@ final class HostsWordingTests: XCTestCase {
         XCTAssertEqual(HostPage.reach(away), "Away on the free plan")
         XCTAssertEqual(
             page([away]).meaning(away),
-            "The relay can see it. The free plan does not relay between hosts, so reaching it needs a subscription.")
+            "It’s online, but the free plan doesn’t connect computers to each other over the internet, so reaching it needs Pro.")
         XCTAssertEqual(
             ChatSubject(name: "a", host: "studio", directory: "~/src", reach: .away).place,
             "studio · away on the free plan")
@@ -63,7 +63,7 @@ final class HostsWordingTests: XCTestCase {
     func testAnOfflineRowSaysTheCauseThisPhoneKnows() {
         let revoked = host(reach: .offline(.revoked), addrs: ["10.0.0.2:7"])
         XCTAssertEqual(
-            tab([revoked]).0.status(revoked), "macOS · no longer trusts this phone")
+            tab([revoked]).0.status(revoked), "macOS · unpaired this phone")
         let found = host(reach: .offline(.plain), addrs: ["10.0.0.2:7"])
         XCTAssertEqual(tab([found]).0.status(found), "macOS · found, not answering")
         let signedOut = host(reach: .offline(.signedOut))

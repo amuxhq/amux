@@ -1,12 +1,12 @@
 ---
 title: Terminal app
-description: Run, watch and talk to every agent on every machine from one terminal, and the amux commands worth knowing.
+description: Run, watch and talk to every agent on every computer from one terminal, and the amux commands worth knowing.
 sidebar:
   order: 1
 ---
 
 Run `amux` with nothing after it and the terminal app opens: every agent on
-every machine you've paired, and a chat with any of them. If amux isn't
+every computer you've paired, and a chat with any of them. If amux isn't
 running yet, the app starts it first.
 
 ```sh
@@ -29,7 +29,7 @@ in four sections:
 - **Settled**: agents you're done with. This section starts folded.
 
 Each row shows the agent's name, its branch, which agent it is (Claude or
-Codex), its folder and, when it isn't this machine, its host. The line under
+Codex), its folder and, when it isn't this computer, its computer. The line under
 the name says what's going on: the question it's asking, the step it's
 running, what it last said, or why it can't carry on. A stopped or settled
 agent keeps the last thing it said there, unless it failed, when the line
@@ -48,11 +48,11 @@ On home:
 | ↑ ↓ or `k` `j` | Move |
 | Enter | Open the agent's chat |
 | `n` | Start a new agent |
-| `/` | Filter by name, branch, folder or host |
+| `/` | Filter by name, branch, folder or computer |
 | `r` | Rename the agent. Its new name replaces any title. |
 | `x` | Settle the agent, asking first if that would cut work short; on a settled agent, delete it, asking first |
 | `p` | Pin or unpin the agent |
-| `h` | Your hosts, and how each one is reached |
+| `h` | Your computers, and how each one is reached |
 | `,` | Settings |
 | `b` | Report a problem |
 | `q` | Leave for the shell. Your agents keep running. |
@@ -63,7 +63,7 @@ Press `n`. Type what the agent should work on, and press Enter to start it and
 open its chat, or Ctrl+Enter to start it and stay on home.
 
 The bottom edge of the box shows what the agent will start with: its name,
-which agent and model, the folder and the host. Press `ctrl+s` and then a
+which agent and model, the folder and the computer. Press `ctrl+s` and then a
 letter to change one:
 
 | Key | Changes |
@@ -71,17 +71,17 @@ letter to change one:
 | `a` | Claude or Codex |
 | `m`, `e`, `p` | The model, the reasoning effort, and the permission |
 | `d` | The folder. Your repositories come first, then folders your agents used lately, or type a path. |
-| `h` | The host, to start the agent on another of your machines |
+| `h` | The computer, to start the agent on another of your computers |
 | `w` | A new worktree of the folder's repository, so the agent works without touching your checkout |
 | `n` | The name, which is optional. Leave it and the agent goes by the title Claude or Codex gives the conversation. |
 
-The models and permissions on offer are whatever that agent offers on the host
+The models and permissions on offer are whatever that agent offers on the computer
 you picked. If Claude or Codex isn't signed in there, the picker says so.
 
 A new agent starts on the model, effort and permission Claude or Codex is
-already set to on that host, so amux and Claude's own terminal app agree until
+already set to on that computer, so amux and Claude's own terminal app agree until
 you choose otherwise. When you pick a model or effort in amux, for a new agent
-or in a chat, later agents on that host start on it too. Permissions never stick: a
+or in a chat, later agents on that computer start on it too. Permissions never stick: a
 permission you pick applies to that agent only. An agent you use in Claude's
 own terminal app always follows Claude's settings.
 
@@ -100,7 +100,7 @@ worktree is.
 ## Chatting
 
 Press Enter on an agent to open its chat. The header shows the agent's name,
-its folder and host, how much of its context it has used, and
+its folder and computer, how much of its context it has used, and
 `[Diff +42 −7]`: the lines it has changed.
 
 - **Enter** sends your message. While the agent is working, it waits in a
@@ -181,9 +181,9 @@ and pause, and the keys it offers appear above the key line.
 | Keys | What they do |
 |---|---|
 | Ctrl+A, then `s` | Back to home |
-| Ctrl+A, then `n` | A new agent in the same folder, on the same host |
+| Ctrl+A, then `n` | A new agent in the same folder, on the same computer |
 | Ctrl+A, then `r` | Review the agent's changes |
-| Ctrl+A, then `a` | Switch to the agent's own interface, for an agent on this machine |
+| Ctrl+A, then `a` | Switch to the agent's own interface, for an agent on this computer |
 | Ctrl+A, then `x` | Settle the agent and go home, asking first if that would cut work short |
 | Ctrl+A, then `o` | Open or close the focused line: a step, a run of steps, or a group of subagents |
 | Ctrl+A, then Enter | Open the chat of the subagent the focused line started |
@@ -243,24 +243,24 @@ New agents then start in their own interface, and opening one hands your
 terminal to it. Inside it, Ctrl+A then `d` leaves for the shell, and Ctrl+A then
 `s` brings home up over it. Everything else you type goes to the agent.
 
-An agent's own interface only opens on the machine it runs on. Agents on your
-other machines, and agents started from your phone, open in amux's chat
+An agent's own interface only opens on the computer it runs on. Agents on your
+other computers, and agents started from your phone, open in amux's chat
 wherever you are.
 
 ## Settings
 
 Press `,` on home for settings:
 
-- this machine's name, as your other devices see it
+- this computer's name, as your other devices see it
 - whether amux starts when you log in
-- whether amux keeps this machine awake while it's plugged in
+- whether amux keeps this computer awake while it's plugged in
 - your repositories, the folders offered first when you start an agent
 - where you chat with agents
 - whether selecting text copies it; turned off, press **C** to copy
 - usage counts and automatic reports ([What amux sends](../understand/what-amux-sends.md))
 - your account: who's signed in, and on which plan
 - experiments: features still taking shape, which you can try before they
-  settle. Each is on or off for the whole machine, and a change takes effect
+  settle. Each is on or off for the whole computer, and a change takes effect
   when amux restarts (`amux server stop`, then `amux server start`). An
   experiment may change or go in any release, and what it keeps may be lost
   when amux updates.
@@ -275,7 +275,7 @@ Press `,` on home for settings:
   ([Settling and deleting](agents-working-together.md#settling-and-deleting)).
 
   With `suspension` on, an agent you started yourself that has sat idle
-  for 30 minutes closes its Claude or Codex to free the machine. It still
+  for 30 minutes closes its Claude or Codex to free the computer. It still
   shows as idle, and starts again on its own when a message reaches it,
   including a report from an agent it started, or when you open its
   terminal. It doesn't suspend while it's working, waiting for agents it
@@ -287,14 +287,14 @@ Press `,` on home for settings:
   the provider still has it cached, so it isn't read again in full when you
   come back: with the 30-minute delay, a Codex agent compacts after 25
   minutes and still suspends at 30, and a headless Claude agent compacts
-  after 55 minutes and suspends right after. After the machine restarts, agents that were idle
+  after 55 minutes and suspends right after. After the computer restarts, agents that were idle
   stay that way until something reaches them, and one that was working
   carries on where it left off; its chat marks where with "Resumed · after
-  the machine restarted".
+  the computer restarted".
 
-These settings belong to the machine, so your phone and every other terminal
+These settings belong to the computer, so your phone and every other terminal
 see a change at once. Copying when you select is the exception: it applies to
-every terminal on this machine and doesn't affect your phone.
+every terminal on this computer and doesn't affect your phone.
 
 A few more live only in the config file, `~/.config/amux/config.toml`.
 `amux config edit` opens it.
@@ -322,7 +322,7 @@ remembered value: `amux config unset new_agent.claude.model`, and likewise
 ## Commands
 
 Everything the app does is also a command. Name an agent by its name, by
-`name@host` when agents on two hosts share a name, or by the short id
+`name@host` when agents on two computers share a name, or by the short id
 `amux ls` prints.
 
 | Command | What it does |
@@ -335,15 +335,15 @@ Everything the app does is also a command. Name an agent by its name, by
 | `amux resume <agent> [message]` | Start a stopped or settled agent again |
 | `amux rename <agent> <name>` | Rename an agent |
 | `amux rm <agent>` | Delete an agent, its history and its subagents; `--discard-changes` also removes a worktree that goes with it when it has uncommitted changes |
-| `amux pair [target]` | Pair with another machine, or open this one for pairing ([Add another computer](../get-started/add-another-computer.md)) |
-| `amux hosts` | List your paired machines, and ones you could pair |
-| `amux unpair <host>` | Stop trusting a machine |
-| `amux login`, `amux logout` | Sign this machine in or out of your amux account |
+| `amux pair [target]` | Pair with another computer, or open this one for pairing ([Add another computer](../get-started/add-another-computer.md)) |
+| `amux devices` | List your paired devices, and computers you could pair |
+| `amux unpair <device>` | Unpair a computer or phone |
+| `amux login`, `amux logout` | Sign this computer in or out of your amux account |
 | `amux status` | Whether amux is running, its version, and each account |
 | `amux update` | Install the latest release now ([Updates and channels](updates.md)) |
 | `amux config get`, `set`, `unset`, `edit` | Read and change settings |
 | `amux server start`, `amux server stop` | Start or stop amux. Stopping it leaves your agents running. |
 | `amux dump` | Save a report for troubleshooting ([Troubleshooting](troubleshooting.md)) |
-| `amux uninstall` | Remove amux from this machine |
+| `amux uninstall` | Remove amux from this computer |
 
 `amux --help`, or `--help` after any command, lists the rest.

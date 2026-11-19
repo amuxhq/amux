@@ -60,14 +60,26 @@ public struct SettingsScreen: View {
             case .ready(let settings):
                 SettingsForm(settings: settings, account: account, actions: actions)
             case .failed(let reason):
-                ContentUnavailableView(
-                    "amux is not running", systemImage: "exclamationmark.triangle",
-                    description: Text(reason))
+                VStack(spacing: 8) {
+                    Text("amux isn’t running").font(.ui(.title, weight: .semibold))
+                    Text(LaunchScreen.marked(reason))
+                        .foregroundStyle(Palette.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .textSelection(.enabled)
+                }
+                .padding(Metrics.gutter)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .connecting:
-                ProgressView("Connecting to amux")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                HStack(spacing: 8) {
+                    Working(size: 12)
+                    Text("Connecting…").foregroundStyle(Palette.textSecondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .font(.ui(.body))
+        .textTiers()
+        .background(Palette.content)
         .frame(width: 540)
         .frame(minHeight: 680)
     }
@@ -82,90 +94,90 @@ private struct SettingsForm: View {
     @FocusState private var naming: Bool
 
     var body: some View {
-        Form {
-            Section {
-                TextField("Name", text: $name)
-                    .focused($naming)
-                    .onSubmit(rename)
-                    .onChange(of: naming) { _, focused in if !focused { rename() } }
-                if let startAtLogin = settings.startAtLogin {
-                    Toggle("Start amux when you log in", isOn: change(startAtLogin) { .with(startAtLogin: $0) })
-                }
-                Toggle(isOn: change(settings.keepAwake) { .with(keepAwake: $0) }) {
-                    Text("Keep this Mac awake while it’s plugged in")
-                    Text("On battery it stays awake only while an agent works.")
-                }
-            } header: {
-                Text("This Mac")
-            } footer: {
-                Text("Paired devices see this Mac by its name.")
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                if settings.repositories.isEmpty {
-                    Text("No repositories yet.").foregroundStyle(.secondary)
-                }
-                ForEach(settings.repositories, id: \.self) { path in
-                    HStack {
-                        Image(systemName: "folder").foregroundStyle(.secondary)
-                        Text(tilde(path)).lineLimit(1).truncationMode(.middle).help(path)
-                        Spacer()
-                        Button {
-                            apply(.with(repositories: settings.repositories.filter { $0 != path }))
-                        } label: {
-                            Image(systemName: "minus.circle")
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Remove \(tilde(path))")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                SettingsGroup("This Mac") {
+                    SettingRow("Name", note: "How this Mac appears on your other devices.") {
+                        TextField("Name", text: $name, prompt: Text("Name"))
+                            .labelsHidden()
+                            .textFieldStyle(.plain)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 200)
+                            .focused($naming)
+                            .onSubmit(rename)
+                            .onChange(of: naming) { _, focused in if !focused { rename() } }
                     }
-                }
-                Button("Add a Folder…", action: addFolder)
-            } header: {
-                Text("Repositories")
-            } footer: {
-                Text("New agents start in a repository, here and from your phone.")
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Help improve amux") {
-                Toggle(isOn: change(settings.telemetry) { .with(telemetry: $0) }) {
-                    Text("Send usage counts")
-                    Text("Never your code or chats.")
-                }
-                Toggle(
-                    "Send a report automatically when something goes wrong",
-                    isOn: change(settings.autoReports) { .with(autoReports: $0) })
-            }
-
-            Section("Account") {
-                Account(account: account, actions: actions)
-            }
-
-            if !settings.experiments.isEmpty {
-                Section {
-                    ForEach(settings.experiments, id: \.name) { experiment in
-                        Toggle(isOn: change(experiment.enabled) { on in
-                            .with(experiments: settings.switching(experiment.name, on: on))
-                        }) {
-                            Text(experiment.name.capitalized)
-                            Text(experiment.description)
+                    if let startAtLogin = settings.startAtLogin {
+                        SettingRow("Start amux when you log in") {
+                            Toggle("Start amux when you log in", isOn: change(startAtLogin) { .with(startAtLogin: $0) })
                         }
                     }
-                } header: {
-                    Text("Experiments")
-                } footer: {
-                    Text("Takes effect when amux restarts.")
-                        .foregroundStyle(.secondary)
+                    SettingRow(
+                        "Keep this Mac awake while it’s plugged in",
+                        note: "On battery, only while an agent is working."
+                    ) {
+                        Toggle("Keep this Mac awake", isOn: change(settings.keepAwake) { .with(keepAwake: $0) })
+                    }
+                }
+
+                SettingsGroup(
+                    "Repositories", footer: "Agents work in these, whether you start them here or from your phone.",
+                    trailing: { Button("Add repository…", action: addFolder) }
+                ) {
+                    if settings.repositories.isEmpty {
+                        SettingRow("No repositories yet") { EmptyView() }
+                    }
+                    ForEach(settings.repositories, id: \.self) { path in
+                        RepositoryLine(path: path) { remove(path) }
+                    }
+                }
+
+                SettingsGroup("Help improve amux") {
+                    SettingRow("Send usage counts", note: "Never includes your code or chats.") {
+                        Toggle("Send usage counts", isOn: change(settings.telemetry) { .with(telemetry: $0) })
+                    }
+                    SettingRow(
+                        "Send a report automatically when something goes wrong",
+                        note: "Never includes your chats, code or file names."
+                    ) {
+                        Toggle("Send reports", isOn: change(settings.autoReports) { .with(autoReports: $0) })
+                    }
+                }
+
+                SettingsGroup("Account") {
+                    Account(account: account, actions: actions)
+                }
+
+                if !settings.experiments.isEmpty {
+                    SettingsGroup("Experiments", footer: "Takes effect when amux restarts.") {
+                        ForEach(settings.experiments, id: \.name) { experiment in
+                            SettingRow(experiment.name.capitalizedFirst, note: experiment.description) {
+                                Toggle(experiment.name.capitalizedFirst, isOn: change(experiment.enabled) { on in
+                                    .with(experiments: settings.switching(experiment.name, on: on))
+                                })
+                            }
+                        }
+                    }
+                }
+
+                if let problem {
+                    Text(problem).foregroundStyle(Palette.failure).textSelection(.enabled)
                 }
             }
-
-            if let problem {
-                Text(problem).foregroundStyle(Palette.failure).textSelection(.enabled)
-            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 24)
         }
-        .formStyle(.grouped)
-        .onAppear { name = settings.hostName }
+        // The main window's ground and controls, so Settings reads as the
+        // same app: black, with blue switches and the window's pills.
+        .background(Palette.content)
+        .toggleStyle(AccentSwitch())
+        .buttonStyle(PillButtonStyle(small: true))
+        .onAppear {
+            name = settings.hostName
+            // The window opens with nothing in hand: the name field would
+            // otherwise take the focus and show its words selected.
+            Task { @MainActor in naming = false }
+        }
         .onChange(of: settings.hostName) { _, now in if !naming { name = now } }
     }
 
@@ -199,6 +211,10 @@ private struct SettingsForm: View {
         }
         apply(.with(repositories: paths))
     }
+
+    private func remove(_ path: String) {
+        apply(.with(repositories: settings.repositories.filter { $0 != path }))
+    }
 }
 
 /// The profile on screen's account: who it is signed in as, and Sign In or
@@ -209,34 +225,145 @@ private struct Account: View {
 
     var body: some View {
         if let profile = account.profile {
-            HStack {
+            HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     switch profile.account.binding {
                     case .signedIn:
                         Text(profile.account.name.isEmpty ? profile.account.email : profile.account.name)
                         if !profile.account.name.isEmpty {
-                            Text(profile.account.email).font(.caption).foregroundStyle(.secondary)
+                            Text(profile.account.email).font(.ui(.meta)).foregroundStyle(Palette.textSecondary)
                         }
                     case .signedOut:
                         Text("Signed out of \(profile.account.email)")
                     case .unbound:
                         Text("Not signed in")
-                        Text("Sign in to reach this Mac from your phone anywhere.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Text("Sign in to reach this Mac from your phone on any network.")
+                            .font(.ui(.meta))
+                            .foregroundStyle(Palette.textSecondary)
                     }
                 }
                 Spacer()
                 if profile.account.binding == .signedIn {
-                    Button("Sign Out") { actions.signOut() }
+                    Button("Sign out") { actions.signOut() }
                 } else {
-                    Button("Sign In…") { actions.signIn() }
+                    Button("Sign in…") { actions.signIn() }
                         .disabled(account.signingIn)
                 }
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(minHeight: 44)
         } else {
-            Text("No profile open").foregroundStyle(.secondary)
+            // No profile yet: amux is starting, or not running at all.
+            SettingRow("Waiting for amux…") { EmptyView() }
         }
+    }
+}
+
+/// A titled group of settings on one card, split by hairlines, as the
+/// host page groups its facts; a footnote and an action may follow it.
+private struct SettingsGroup<Content: View, Trailing: View>: View {
+    let title: String
+    var footer: String?
+    @ViewBuilder let trailing: Trailing
+    @ViewBuilder let content: Content
+
+    init(
+        _ title: String, footer: String? = nil, @ViewBuilder trailing: () -> Trailing = { EmptyView() },
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.footer = footer
+        self.trailing = trailing()
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.ui(.meta, weight: .medium)).foregroundStyle(Palette.textSecondary).padding(.leading, 2)
+            Separated { content }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).fill(Palette.card))
+                .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(Palette.line))
+            HStack(alignment: .firstTextBaseline) {
+                if let footer {
+                    Text(footer).font(.ui(.meta)).foregroundStyle(Palette.textSecondary)
+                }
+                Spacer(minLength: 12)
+                trailing
+            }
+            .padding(.horizontal, 2)
+        }
+    }
+}
+
+/// One setting: its title over a quiet note on the left, its control on
+/// the right, centred against both.
+private struct SettingRow<Control: View>: View {
+    let title: String
+    var note: String?
+    @ViewBuilder let control: Control
+
+    init(_ title: String, note: String? = nil, @ViewBuilder control: () -> Control) {
+        self.title = title
+        self.note = note
+        self.control = control()
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).foregroundStyle(Palette.text)
+                if let note {
+                    Text(note).font(.ui(.meta)).foregroundStyle(Palette.textSecondary)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 12)
+            control
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(minHeight: 44)
+    }
+}
+
+/// A repository new agents start in: its name over where it is, and a
+/// remove button while the pointer is on it.
+private struct RepositoryLine: View {
+    let path: String
+    let remove: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Icon("folder", size: 14, optical: false).foregroundStyle(Palette.textSecondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text((path as NSString).lastPathComponent).foregroundStyle(Palette.text).lineLimit(1)
+                Text(tilde((path as NSString).deletingLastPathComponent))
+                    .font(.ui(.meta))
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .help(path)
+            Spacer(minLength: 12)
+            Button(action: remove) {
+                Icon("x", size: 12)
+                    .foregroundStyle(Palette.textSecondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(HoverButtonStyle())
+            .help("Remove \(tilde(path))")
+            .accessibilityLabel("Remove \(tilde(path))")
+            .opacity(hovering ? 1 : 0)
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 8)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 }
 
@@ -267,4 +394,27 @@ func tilde(_ path: String) -> String {
     let home = FileManager.default.homeDirectoryForCurrentUser.path
     guard path == home || path.hasPrefix(home + "/") else { return path }
     return "~" + path.dropFirst(home.count)
+}
+
+/// A switch in the accent whether or not the window is in front, as the
+/// main window's controls are; the system's goes grey in a background
+/// window. It draws the switch alone: the row says what it switches, and
+/// the label stays as its accessible name.
+struct AccentSwitch: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack {
+            Capsule()
+                .fill(configuration.isOn ? Palette.accent : Color.primary.opacity(0.16))
+                .frame(width: 34, height: 20)
+                .overlay(alignment: configuration.isOn ? .trailing : .leading) {
+                    Circle().fill(.white).frame(width: 16, height: 16).padding(2)
+                        .shadow(color: .black.opacity(0.2), radius: 1, y: 0.5)
+                }
+                .animation(.snappy(duration: 0.15), value: configuration.isOn)
+                .onTapGesture { configuration.isOn.toggle() }
+        }
+        .accessibilityRepresentation {
+            Toggle(isOn: configuration.$isOn) { configuration.label }
+        }
+    }
 }

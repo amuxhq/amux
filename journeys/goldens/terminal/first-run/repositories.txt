@@ -4,7 +4,7 @@
   New agents start in a repository. These are where Claude Code and Codex ran lately:
 
   › [x] /tmp/journey/aj-xxxxxxxx/net/desk/repositories/amux
-    + Add a folder…
+    + Add a repository…
 
 
 

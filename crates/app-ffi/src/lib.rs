@@ -1919,6 +1919,7 @@ pub unsafe extern "C" fn amux_runtime_suggest_repositories(runtime: *const AmuxR
                 suggested
                     .into_iter()
                     .map(|entry| RepositorySuggestion {
+                        repository: ui_view::Repository::of(entry.remote.as_deref(), &entry.path),
                         path: entry.path,
                         name: entry.name,
                     })

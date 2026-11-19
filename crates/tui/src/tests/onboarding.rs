@@ -75,7 +75,7 @@ fn a_first_run_opens_the_pairing_window() {
     );
     let mut scene = scenes::pair();
     let drawn = screen(&mut scene, 110, 34);
-    assert!(drawn.contains("This machine is called desk."), "{drawn}");
+    assert!(drawn.contains("This computer is called desk."), "{drawn}");
     assert!(
         drawn.contains("Scan with your iPhone's camera to pair."),
         "{drawn}"
@@ -186,13 +186,16 @@ fn a_pairing_made_before_the_window_opened_is_not_this_one() {
 fn the_machine_is_renamed_from_the_pairing_screen() {
     let mut scene = scenes::pair_rename();
     let drawn = screen(&mut scene, 110, 34);
-    assert!(drawn.contains("This machine is called ▎ studio"), "{drawn}");
+    assert!(
+        drawn.contains("This computer is called ▎ studio"),
+        "{drawn}"
+    );
     assert!(drawn.contains("enter save"), "{drawn}");
     assert_eq!(
         press(&mut scene, KeyCode::Enter),
         [SetupEffect::Rename("studio".into())]
     );
-    assert!(screen(&mut scene, 110, 34).contains("This machine is called studio."));
+    assert!(screen(&mut scene, 110, 34).contains("This computer is called studio."));
 }
 
 #[test]
@@ -386,7 +389,7 @@ fn repositories_keep_the_ticked_folders_and_the_ones_typed_with_those_chosen_bef
     let mut scene = scenes::repositories();
     let drawn = screen(&mut scene, 110, 34);
     assert!(drawn.contains("[ ] "), "one is unticked: {drawn}");
-    assert!(drawn.contains("+ Add a folder…"), "{drawn}");
+    assert!(drawn.contains("+ Add a repository…"), "{drawn}");
     let mut chosen = scenes::settings();
     chosen.repositories = vec!["/srv/kept".into()];
     scene.onboarding.settings_changed(chosen);
@@ -532,11 +535,11 @@ fn every_setting_changes_at_once() {
     let mut page = scenes::settings_page(true).screen;
     let drawn = settings_text(&mut page, 110, 40);
     for words in [
-        "This machine's name",
+        "This computer's name",
         "desk",
         "Start amux when you log in",
         "Keep this Mac awake while it's plugged in",
-        "+ Add a folder…",
+        "+ Add a repository…",
         "amux's chat",
         "Send usage counts",
         "Send reports automatically",

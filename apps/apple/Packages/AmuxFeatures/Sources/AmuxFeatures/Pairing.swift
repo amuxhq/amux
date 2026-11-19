@@ -37,7 +37,7 @@ public struct PairingHint: View {
     public init() {}
 
     public var body: some View {
-        Text("Open amux on a host on this network to pair it, or scan the code it shows with the Camera app.")
+        Text("Open amux on a computer on this network to pair it, or scan the code it shows with the Camera app.")
             .designFont(.detail, design)
             .foregroundStyle(design.inkMuted.color)
             .fixedSize(horizontal: false, vertical: true)
@@ -119,7 +119,7 @@ func pairingRoute(_ machine: HostView?) -> String? {
     }
     switch machine.reach {
     case .online(.direct): return String(localized: "On this network")
-    case .online(.relay): return String(localized: "Through the relay")
+    case .online(.relay): return String(localized: "Over the internet")
     case .online(.ssh): return String(localized: "Over SSH")
     case .online(.unspecified), .away, .offline: return nil
     }
@@ -147,8 +147,8 @@ public struct PairNeedsAnAccount: View {
 
     public var body: some View {
         PairingPanel(
-            title: String(localized: "That host is not on this network"),
-            detail: String(localized: "Its invitation names no address here, so it can only be reached through the relay. Sign in and this phone can take it up."),
+            title: String(localized: "That computer is not on this network"),
+            detail: String(localized: "Its invitation names no address here, so it can only be reached over the internet. Sign in and this phone can take it up."),
             identifier: "pair-needs-account.title"
         ) {
             if signingIn {
@@ -171,7 +171,7 @@ public struct PairNeedsAnAccount: View {
             Explain(String(localized: "The invitation is kept until then."))
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .pairingChrome(String(localized: "Pair a Host")) { actions(.cancel) }
+        .pairingChrome(String(localized: "Pair a Computer")) { actions(.cancel) }
         .accessibilityElement(children: .contain)
         .identified("pair-needs-account", value: "not on this network")
     }
@@ -268,7 +268,7 @@ public struct PairByCode: View {
     }
 
     private var title: String {
-        guard let machine = model.machine else { return String(localized: "Pair a Host") }
+        guard let machine = model.machine else { return String(localized: "Pair a Computer") }
         return String(localized: "Pair \(machine.name)")
     }
 
@@ -302,7 +302,7 @@ public struct PairByCode: View {
     /// as a wrong code.
     private var instruction: Text {
         let command = Text(verbatim: "amux pair").font(design.font(.monoSmall))
-        guard let machine = model.machine else { return Text("Run \(command) on the host to get one.") }
+        guard let machine = model.machine else { return Text("Run \(command) on the computer to get one.") }
         if machine.windowOpen { return Text("Enter the code amux shows on \(machine.name).") }
         return Text("Run \(command) on \(machine.name) to get one.")
     }
@@ -413,13 +413,13 @@ public struct PairByCode: View {
 
     private var refused: String {
         guard let machine = model.machine else {
-            return String(localized: "That code didn’t work. Get a new one from the host.")
+            return String(localized: "That code didn’t work. Get a new one from the computer.")
         }
         return String(localized: "That code didn’t work. Get a new one from \(machine.name).")
     }
 
     private var expiry: String {
-        let host = model.machine?.name ?? String(localized: "the host")
+        let host = model.machine?.name ?? String(localized: "the computer")
         return String(localized: "The code expires \(PairingStore.offerWindow) after \(host) prints it.")
     }
 
@@ -489,7 +489,7 @@ public struct PairConfirmation: View {
     }
 
     private var title: String {
-        guard let name else { return String(localized: "Pair a Host") }
+        guard let name else { return String(localized: "Pair a Computer") }
         return String(localized: "Pair \(name)")
     }
 
@@ -501,7 +501,7 @@ public struct PairConfirmation: View {
     static func route(_ via: RouteKind) -> String? {
         switch via {
         case .direct: String(localized: "On this network")
-        case .relay: String(localized: "Through the relay")
+        case .relay: String(localized: "Over the internet")
         case .ssh: String(localized: "Over SSH")
         case .unspecified: nil
         }
@@ -555,7 +555,7 @@ public struct PairConfirmation: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 6)
                     .identified("pair-confirm.name", value: peer.name)
-                Explain(String(localized: "You’ll see its agents here and can start new ones, which run on that machine as you. Pair only with your own machines. This invitation expires \(expiry(peer))."))
+                Explain(String(localized: "You’ll see its agents here and can start new ones, which run on that computer as you. Pair only with your own computers. This invitation expires \(expiry(peer))."))
                     .padding(.top, 14)
                     .identified("pair-confirm.expiry", value: expiry(peer))
                 Spacer(minLength: 22)
@@ -607,7 +607,7 @@ public struct PairConfirmation: View {
         }
         switch peer.via {
         case .direct: parts.append(String(localized: "on this network"))
-        case .relay: parts.append(String(localized: "through the relay"))
+        case .relay: parts.append(String(localized: "over the internet"))
         case .ssh: parts.append(String(localized: "over SSH"))
         case .unspecified: break
         }
@@ -620,7 +620,7 @@ public struct PairConfirmation: View {
     private var checking: some View {
         PairingPanel(
             title: String(localized: "Checking the invitation…"),
-            detail: String(localized: "Nothing is trusted yet."), waiting: true,
+            detail: String(localized: "Nothing is paired yet."), waiting: true,
             identifier: "pair-confirm.checking"
         ) { EmptyView() }
     }
@@ -631,7 +631,7 @@ public struct PairConfirmation: View {
         PairingPanel(
             title: model.told == nil
                 ? String(localized: "That invitation didn’t work") : String(localized: "Not paired"),
-            detail: model.told ?? String(localized: "Get a new one from the host."),
+            detail: model.told ?? String(localized: "Get a new one from the computer."),
             identifier: "pair-confirm.refused"
         ) {
             Button { actions(.cancel) } label: {

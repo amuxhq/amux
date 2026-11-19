@@ -4,13 +4,13 @@
 //! repository on another machine — because they share a remote.
 
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// How many tints a repository's tile can take. Each client draws them in
 /// its own palette; the index is what they agree on.
 pub const REPOSITORY_TINTS: u8 = 8;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct Repository {
     /// What its checkouts share: the remote, else the folder's path.
     pub key: String,

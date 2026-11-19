@@ -1,5 +1,6 @@
 import AmuxValues
 import AmuxWords
+import AppKit
 import SwiftUI
 
 /// One machine, opened from the hosts sidebar: how this Mac reaches it,
@@ -7,53 +8,44 @@ import SwiftUI
 /// trusting it.
 public struct HostPage: View {
     let host: HostView
-    /// Its agents, as the fleet lists them.
+    /// Its threads of work, as the sidebar lists them: a family's head
+    /// stands for its members.
     let agents: [FleetRow]
     let now: Date
     let openAgent: @MainActor (AgentKey) -> Void
-    let toggleFamily: @MainActor (AgentKey) -> Void
     let revoke: @MainActor ([UInt8]) -> Void
     @State private var confirming = false
 
     public init(
         host: HostView, agents: [FleetRow], now: Date = Date(),
         openAgent: @escaping @MainActor (AgentKey) -> Void = { _ in },
-        toggleFamily: @escaping @MainActor (AgentKey) -> Void = { _ in },
         revoke: @escaping @MainActor ([UInt8]) -> Void = { _ in }
     ) {
         self.host = host
-        self.agents = agents
+        self.agents = agents.filter { $0.depth == 0 }
         self.now = now
         self.openAgent = openAgent
-        self.toggleFamily = toggleFamily
         self.revoke = revoke
     }
 
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
-                HStack(spacing: 14) {
-                    HostTile(host: host, size: 52)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(PlaceNames.host(host.name)).font(.ui(.heading, weight: .semibold))
-                        Text(HostWords.reach(host)).foregroundStyle(.secondary)
+                // The window's bar names the host: the page opens on what
+                // it is and how it is reached, in one line.
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Icon(HostWords.symbol(host), size: 14)
+                        Text(summary).textSelection(.enabled)
                     }
-                }
-                if let meaning = HostWords.meaning(host) {
-                    Text(meaning).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-                group("Machine") {
-                    if let platform = HostWords.platform(host) { fact("Platform", platform) }
-                    if let version = host.version { fact("amux", version) }
-                    if !HostWords.online(host), !host.local, host.reach != .offline(.revoked),
-                        let error = host.lastDialError, !error.isEmpty
-                    {
-                        fact("Last try", "Could not connect")
+                    .foregroundStyle(Palette.textSecondary)
+                    if let meaning = HostWords.meaning(host) {
+                        Text(meaning).foregroundStyle(Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 let providers = host.providers.filter { $0.provider != .unspecified }
                 if !providers.isEmpty {
-                    group("Providers") {
+                    group("Coding tools") {
                         ForEach(Array(providers.enumerated()), id: \.offset) { _, signIn in
                             fact(signIn.provider == .codex ? "Codex" : "Claude", signIn.signedIn ? "Signed in" : "Not signed in",
                                  quiet: !signIn.signedIn)
@@ -61,26 +53,20 @@ public struct HostPage: View {
                     }
                 }
                 if !host.addrs.isEmpty {
-                    group("Network") {
+                    group(host.addrs.count == 1 ? "Address" : "Addresses") {
                         ForEach(host.addrs, id: \.self) { address in
-                            Text(address)
-                                .font(.mono(.callout))
-                                .textSelection(.enabled)
-                                .padding(.horizontal, 14)
-                                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+                            AddressLine(address: address)
                         }
                     }
                 }
                 group(agents.isEmpty ? "Agents" : "Agents · \(agents.count)") {
                     if agents.isEmpty {
-                        Text("No agents on it").foregroundStyle(.secondary)
+                        Text("No agents yet").foregroundStyle(Palette.textSecondary)
                             .padding(.horizontal, 14)
                             .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
                     } else {
                         ForEach(agents) { row in
-                            FleetRowView(row: row, now: now, selected: false, local: host.local, ground: Palette.well) {
-                                toggleFamily(row.card.agent)
-                            }
+                            FleetRowView(row: row, now: now, selected: false, hostShown: true, ground: Palette.card)
                             .padding(.horizontal, 4)
                             .onTapGesture { openAgent(row.card.agent) }
                         }
@@ -88,30 +74,42 @@ public struct HostPage: View {
                     }
                 }
                 if !host.local {
-                    Button("Stop Trusting \(PlaceNames.host(host.name))…") { confirming = true }
+                    Button("Unpair \(PlaceNames.host(host.name))…") { confirming = true }
                         .buttonStyle(PillButtonStyle(destructive: true))
                         .confirmationDialog(
-                            "Stop trusting \(PlaceNames.host(host.name))?", isPresented: $confirming
+                            "Unpair \(PlaceNames.host(host.name))?", isPresented: $confirming
                         ) {
-                            Button("Stop Trusting", role: .destructive) { revoke(host.hostId) }
+                            Button("Unpair", role: .destructive) { revoke(host.hostId) }
                         } message: {
-                            Text("This Mac stops reaching it and its agents leave the list. Only pairing again brings it back.")
+                            Text("This Mac won’t connect to it anymore, and its agents leave your list. To undo this, pair again.")
                         }
                 }
             }
             .font(.ui(.body))
             .frame(maxWidth: 620, alignment: .leading)
             .padding(.horizontal, Metrics.gutter)
-            .padding(.vertical, 28)
+            .padding(.vertical, 24)
             .frame(maxWidth: .infinity)
         }
+    }
+
+    /// "Connected on this network · Linux · amux 0.9.0".
+    private var summary: String {
+        var reach = HostWords.reach(host)
+        if !HostWords.online(host), !host.local, host.reach != .offline(.revoked),
+            let error = host.lastDialError, !error.isEmpty
+        {
+            reach += " · last try failed"
+        }
+        let version = host.version.map { "amux \($0)" }
+        return [reach, HostWords.platform(host), version].compactMap { $0 }.joined(separator: " · ")
     }
 
     private func fact(_ label: String, _ value: String, quiet: Bool = false) -> some View {
         HStack {
             Text(label)
             Spacer(minLength: 12)
-            Text(value).foregroundStyle(quiet ? .tertiary : .secondary).textSelection(.enabled)
+            Text(value).foregroundStyle(quiet ? Palette.textTertiary : Palette.textSecondary).textSelection(.enabled)
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 36)
@@ -121,17 +119,75 @@ public struct HostPage: View {
     /// desktop settings pane groups them.
     private func group(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.ui(.meta, weight: .medium)).foregroundStyle(.secondary).padding(.leading, 2)
+            Text(title).font(.ui(.meta, weight: .medium)).foregroundStyle(Palette.textSecondary).padding(.leading, 2)
             Separated { content() }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).fill(Palette.well))
+                .background(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).fill(Palette.card))
                 .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(Palette.line))
         }
     }
 }
 
+/// One of a host's addresses: what kind it is, the address, and a copy
+/// button while the pointer is on the line.
+private struct AddressLine: View {
+    let address: String
+    @State private var hovering = false
+    @State private var copied = false
+
+    var body: some View {
+        // The copy button stands before the address while the pointer is
+        // on the line, so the address ends where every other value does.
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(kind)
+            Spacer(minLength: 12)
+            if hovering || copied {
+                Button(action: copy) {
+                    Icon(copied ? "check" : "copy", size: 14)
+                        .foregroundStyle(Palette.textSecondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(HoverButtonStyle())
+                .help(copied ? "Copied" : "Copy address")
+                .accessibilityLabel("Copy \(address)")
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4.5 }
+            }
+            Text(address)
+                .font(.mono(.callout))
+                .foregroundStyle(Palette.textSecondary)
+                .textSelection(.enabled)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 36)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+    }
+
+    /// IPv6 when it is bracketed or has more than one colon, IPv4 when it
+    /// is dotted digits, a hostname otherwise.
+    private var kind: String {
+        if address.hasPrefix("[") || address.split(separator: ":").count > 2 { return "IPv6" }
+        let dotted = (address.split(separator: ":").first ?? "").split(separator: ".")
+        if dotted.count == 4, dotted.allSatisfy({ UInt8($0) != nil }) { return "IPv4" }
+        return "Hostname"
+    }
+
+    private func copy() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(address, forType: .string)
+        copied = true
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            copied = false
+        }
+    }
+}
+
 /// Lines with a hairline between each.
-private struct Separated<Content: View>: View {
+struct Separated<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -164,9 +220,9 @@ extension HostWords {
         switch host.reach {
         case .online: nil
         case .away:
-            "The relay can see it. The free plan does not relay between hosts, so reaching it needs a subscription."
-        case .offline(.revoked): "It no longer trusts this Mac. Pair again to reach it."
-        case .offline: host.local ? nil : "Its agents report their state as unknown until it is back."
+            "It’s online, but the free plan doesn’t connect computers to each other over the internet. Reaching it from here needs Pro."
+        case .offline(.revoked): "It unpaired this Mac. Pair again to reach it."
+        case .offline: host.local ? nil : "Its agents’ status updates when it’s back online."
         }
     }
 }

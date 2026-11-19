@@ -156,8 +156,8 @@ public final class FleetStore {
     /// that: the rows' rings say a machine is out of reach meanwhile.
     public var relayTrouble: String? {
         switch relay {
-        case .signInAgain: return "Sign in again to reach your hosts through the relay"
-        case .versionMismatch: return "Update amux to reach your hosts through the relay"
+        case .signInAgain: return "Sign in again to reach your computers from anywhere"
+        case .versionMismatch: return "Update amux to reach your computers from anywhere"
         case .off, .connecting, .retrying, .connected: return nil
         }
     }

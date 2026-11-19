@@ -2,99 +2,35 @@ import AmuxValues
 import AmuxWords
 import SwiftUI
 
-/// An open agent: its chat down the reading width, the ask it waits on and
-/// the composer under it, and while the right-hand pane is closed, a card at
-/// the top right that says where it works and opens that pane.
+/// An open agent: its chat down the reading width, and under it the ask it
+/// waits on or the composer. Where it works, its relatives and the tools
+/// that open its folder sit in the window's bar above, not over the chat.
 public struct ChatPane: View {
     let chat: any ChatSurface
     /// The agent's row in the fleet: its name, host and place.
     let row: FleetRow?
-    let family: FamilyHeader?
-    let changesOpen: Bool
     let actions: AgentActions
 
-    public init(
-        chat: any ChatSurface, row: FleetRow?, family: FamilyHeader? = nil, changesOpen: Bool,
-        actions: AgentActions = AgentActions()
-    ) {
+    public init(chat: any ChatSurface, row: FleetRow?, actions: AgentActions = AgentActions()) {
         self.chat = chat
         self.row = row
-        self.family = family
-        self.changesOpen = changesOpen
         self.actions = actions
     }
 
     public var body: some View {
-        GeometryReader { pane in
-            let placing = CardPlacement(width: pane.size.width, shown: !changesOpen && row != nil)
-            let beside = placing != .pill
-            VStack(spacing: 0) {
-                Feed(
-                    chat: chat, host: host, roomAbove: placing == .pill, trailing: placing.trailing,
-                    openChanges: actions.openChanges, openAgent: actions.openAgent
-                )
-                .overlay(alignment: .topTrailing) {
-                    if !changesOpen, let row {
-                        Group {
-                            if beside {
-                                FloatingCard(
-                                    row: row, branch: chat.frame?.git?.branch ?? row.branch,
-                                    changes: chat.changes, family: family, actions: actions)
-                            } else if let changes = chat.changes, changes.files > 0 {
-                                FloatingPill(changes: changes, open: actions.openChanges)
-                            }
-                        }
-                        .padding(.top, 10)
-                        .padding(.trailing, 14)
-                        .transition(.opacity.combined(with: .move(edge: .trailing)))
-                    }
-                }
-                Footer(chat: chat, row: row, host: host, trailing: placing.trailing)
-            }
-        }
-        .animation(.snappy(duration: 0.18), value: changesOpen)
-    }
-
-    private var host: String { row.map { PlaceNames.host($0.hostName) } ?? "its host" }
-}
-
-/// Where the card goes: beside a centred column where the margin holds it,
-/// as the references' does; beside a column moved left to make room while
-/// the column stays readable; otherwise folded to a pill above the column.
-/// It never covers what is being read.
-enum CardPlacement: Equatable {
-    case none
-    case margin
-    case moved
-    case pill
-
-    static let room = FloatingCard.width + 28
-    static let narrowest: CGFloat = 520
-
-    init(width: CGFloat, shown: Bool) {
-        if !shown {
-            self = .none
-        } else if (width - Metrics.reading) / 2 >= Self.room {
-            self = .margin
-        } else if width - Self.room - 28 >= Self.narrowest {
-            self = .moved
-        } else {
-            self = .pill
+        VStack(spacing: 0) {
+            Feed(chat: chat, host: host, openChanges: actions.openChanges, openAgent: actions.openAgent)
+            Footer(chat: chat, row: row, host: host)
         }
     }
 
-    /// What the column keeps clear on its right for the card.
-    var trailing: CGFloat { self == .moved ? Self.room : 0 }
+    private var host: String { row.map { PlaceNames.host($0.hostName) } ?? "its computer" }
 }
 
 /// The rows, oldest first, following the newest while the reader is there.
 private struct Feed: View {
     let chat: any ChatSurface
     let host: String
-    /// Leave room above the first row for the pill.
-    let roomAbove: Bool
-    /// Kept clear on the right for the card.
-    let trailing: CGFloat
     let openChanges: @MainActor () -> Void
     let openAgent: @MainActor (AgentKey) -> Void
     @State private var position = ScrollPosition(edge: .bottom)
@@ -103,18 +39,22 @@ private struct Feed: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if let older = chat.olderNotice {
-                    Text(older).font(.ui(.meta)).foregroundStyle(.tertiary)
+                    Text(older).font(.ui(.meta)).foregroundStyle(Palette.textTertiary)
                         .frame(maxWidth: .infinity)
                         .padding(.bottom, 12)
                 }
                 if chat.empty {
                     emptyNotice
                 }
+                let working = workingPrompt
                 ForEach(chat.ids, id: \.self) { id in
                     // The step the ask card is about is shown by the card
                     // under the feed, in full; it comes back once answered.
                     if id != chat.ask?.itemKey {
                         RowCell(chat: chat, id: id, openChanges: openChanges, openAgent: openAgent)
+                    }
+                    if id == working, let activity = chat.frame?.composer.activity {
+                        WorkingLine(activity: activity)
                     }
                 }
                 ForEach(Array(chat.landing.enumerated()), id: \.offset) { _, prompt in
@@ -122,7 +62,7 @@ private struct Feed: View {
                         PromptBubble(text: ChatWords.text(of: prompt.text), steered: false)
                         Text(ChatWords.underway(prompt.underway, host: host))
                             .font(.ui(.caption))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Palette.textTertiary)
                     }
                     .padding(.bottom, 12)
                 }
@@ -130,13 +70,18 @@ private struct Feed: View {
             }
             .frame(maxWidth: Metrics.reading)
             .padding(.horizontal, Metrics.gutter)
-            .padding(.top, roomAbove ? 52 : 24)
+            .padding(.top, 24)
             .padding(.bottom, 12)
             .frame(maxWidth: .infinity)
-            .padding(.trailing, trailing)
         }
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
+        // What scrolls under the panel's top fades rather than being cut.
+        .overlay(alignment: .top) {
+            LinearGradient(colors: [Palette.content, Palette.content.opacity(0)], startPoint: .top, endPoint: .bottom)
+                .frame(height: 16)
+                .allowsHitTesting(false)
+        }
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 24
         } action: { _, atNewest in
@@ -172,11 +117,21 @@ private struct Feed: View {
         }
     }
 
+    /// The prompt the turn at work answers: the newest, while the agent
+    /// works. "Working for" goes under it, where "Worked for" will.
+    private var workingPrompt: String? {
+        guard case .working? = chat.frame?.phase else { return nil }
+        return chat.ids.last { id in
+            if case .prompt? = chat.row(id)?.kind { return true }
+            return false
+        }
+    }
+
     @ViewBuilder private var emptyNotice: some View {
         if chat.loadingHint {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("Loading this chat from \(host)…").foregroundStyle(.secondary)
+                Text("Loading chat from \(host)…").foregroundStyle(Palette.textSecondary)
             }
             .font(.ui(.body))
             .frame(maxWidth: .infinity)
@@ -206,7 +161,7 @@ private struct RowCell: View {
                     }
                 }
             case .end(let answer, let files)?:
-                AnswerFoot(answer: answer, files: files, chat: chat, openChanges: openChanges)
+                AnswerFoot(answer: answer, files: files, atMs: row.atMs, chat: chat, openChanges: openChanges)
             case .kept? where row.turn?.open == false:
                 chatRow(row, placement: .own)
             default:
@@ -215,6 +170,14 @@ private struct RowCell: View {
                     counts: { row.run.flatMap(chat.counts(of:)) }))
             }
         }
+    }
+
+    /// The activity, when it is this row at work: the row then carries
+    /// the working dot and the time, and the activity line stands aside.
+    private func live(_ row: Row) -> Activity? {
+        guard let activity = chat.frame?.composer.activity, case .running(let key) = activity.kind, key == row.id
+        else { return nil }
+        return activity
     }
 
     private func chatRow(_ row: Row, placement: RunPlacement) -> some View {
@@ -229,6 +192,38 @@ private struct RowCell: View {
             toggleRun: { if let run = row.run { chat.toggleRun(run) } },
             toggleGroup: { if let group = row.group { chat.toggleGroup(group) } },
             openAgent: { openAgent($0) })
+        .environment(\.liveStep, live(row))
+    }
+}
+
+extension ActivityKind {
+    var isRunningStep: Bool {
+        if case .running = self { return true }
+        return false
+    }
+
+    var isSubagents: Bool {
+        if case .subagents = self { return true }
+        return false
+    }
+}
+
+extension EnvironmentValues {
+    /// The activity, for the one row it names as at work.
+    @Entry var liveStep: Activity?
+}
+
+/// The time a step has been at work, counting.
+struct LiveTime: View {
+    let activity: Activity
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let elapsed = activity.sinceMs > 0
+                ? activity.elapsedMs + Int64(max(0, context.date.timeIntervalSince1970 * 1000 - Double(activity.sinceMs)))
+                : activity.elapsedMs
+            Text(ChatWords.duration(elapsed / 1_000 * 1_000)).monospacedDigit()
+        }
     }
 }
 
@@ -237,24 +232,33 @@ private struct ActivityLine: View {
     let chat: any ChatSurface
 
     var body: some View {
-        if let activity = chat.frame?.composer.activity {
+        // A step at work says so itself, with its time.
+        if let activity = chat.frame?.composer.activity, !activity.kind.isRunningStep {
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                let elapsed = activity.elapsedMs
-                    + Int64(max(0, context.date.timeIntervalSince1970 * 1000 - Double(activity.sinceMs)))
+                // With no start time the elapsed time stands as given.
+                let elapsed = activity.sinceMs > 0
+                    ? activity.elapsedMs
+                        + Int64(max(0, context.date.timeIntervalSince1970 * 1000 - Double(activity.sinceMs)))
+                    : activity.elapsedMs
                 let parts = ChatWords.activityParts(
-                    activity.kind, elapsedMs: activity.sinceMs > 0 ? elapsed : activity.elapsedMs, subject: nil,
+                    activity.kind, elapsedMs: elapsed, subject: nil,
                     sinceMs: activity.sinceMs, subagents: chat.liveSubagents)
-                HStack(spacing: 7) {
-                    Working(size: 11)
-                    Text(parts.words).foregroundStyle(.secondary)
+                // The subagents' group row above says how they stand; this
+                // line only says the agent waits on them, and how long.
+                let words = activity.kind.isSubagents ? "Waiting on subagents" : parts.words
+                let time = activity.kind.isSubagents
+                    ? (elapsed > 0 ? ChatWords.duration(elapsed / 1_000 * 1_000) : nil) : parts.time
+                HStack(spacing: 10) {
+                    Working(size: GridLine.cell).offset(y: 1.5)
+                    Text(words).foregroundStyle(Palette.textSecondary)
                     if let subject = parts.subject {
-                        Text(subject).font(.mono(.meta)).foregroundStyle(.secondary)
+                        Text(subject).font(.mono(.meta)).foregroundStyle(Palette.textSecondary)
                     }
-                    if let time = parts.time {
-                        Text(time).foregroundStyle(.tertiary).monospacedDigit()
+                    if let time {
+                        Text(time).foregroundStyle(Palette.textTertiary).monospacedDigit()
                     }
                 }
-                .font(.ui(.callout))
+                .font(.ui(.body))
                 .padding(.top, 2)
                 .padding(.bottom, 8)
             }
@@ -271,7 +275,6 @@ private struct Footer: View {
     let chat: any ChatSurface
     let row: FleetRow?
     let host: String
-    let trailing: CGFloat
 
     var body: some View {
         VStack(spacing: 8) {
@@ -284,7 +287,7 @@ private struct Footer: View {
                 if let ask = chat.ask {
                     AskCardView(card: ask, chat: chat)
                 }
-                Text(ended).font(.ui(.callout)).foregroundStyle(.secondary)
+                Text(ended).font(.ui(.meta)).foregroundStyle(Palette.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 8)
             } else if let ask = chat.ask, ask.state != .dismissed {
@@ -307,7 +310,6 @@ private struct Footer: View {
         .padding(.horizontal, Metrics.gutter)
         .padding(.bottom, 18)
         .frame(maxWidth: .infinity)
-        .padding(.trailing, trailing)
     }
 }
 
@@ -323,10 +325,10 @@ private struct NativeBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
-                Icon("bot", size: 15).foregroundStyle(.secondary)
+                Icon("bot", size: 15).foregroundStyle(Palette.textSecondary)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(ChatWords.nativeRunner(chat.frame?.kind)).foregroundStyle(.primary)
-                    Text(ended ?? ChatWords.nativeTakesNoMessages).font(.ui(.meta)).foregroundStyle(.secondary)
+                    Text(ended ?? ChatWords.nativeTakesNoMessages).font(.ui(.meta)).foregroundStyle(Palette.textSecondary)
                 }
                 Spacer(minLength: 12)
                 control
@@ -354,11 +356,11 @@ private struct NativeBar: View {
         switch stop {
         case .offered(let key), .refused(let key, _):
             Button("Stop") { chat.stopJob(key) }
-                .controlSize(.regular)
+                .buttonStyle(PillButtonStyle())
                 .keyboardShortcut(".", modifiers: .command)
                 .help("Stop this subagent (⌘.)")
         case .stopping:
-            Text("Stopping…").foregroundStyle(.secondary)
+            Text("Stopping…").foregroundStyle(Palette.textSecondary)
         case .unavailable:
             EmptyView()
         }
@@ -374,15 +376,15 @@ private struct QueueList: View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(Array(queue.enumerated()), id: \.offset) { _, queued in
                 HStack(spacing: 8) {
-                    Icon("clock", size: 12).foregroundStyle(.tertiary)
+                    Icon("clock", size: 12).foregroundStyle(Palette.textTertiary)
                     Text(ChatWords.text(of: queued.text)).lineLimit(1)
-                    Text(ChatWords.queued(queued)).foregroundStyle(.tertiary)
+                    Text(ChatWords.queued(queued)).foregroundStyle(Palette.textTertiary)
                     Spacer()
                     if queued.canSendNow {
-                        Button("Send Now") { chat.sendNow(queued) }.buttonStyle(.link)
+                        Button("Send now") { chat.sendNow(queued) }.buttonStyle(.link)
                     }
                     if queued.canWithdraw {
-                        Button("Take Back") { chat.withdraw(queued) }.buttonStyle(.link)
+                        Button("Take back") { chat.withdraw(queued) }.buttonStyle(.link)
                     }
                 }
                 .font(.ui(.meta))
@@ -407,71 +409,169 @@ private struct WorkedLine: View {
             Button(action: toggle) {
                 HStack(spacing: 4) {
                     Text(ChatWords.turnEnd(durationMs: worked.durationMs, failed: worked.failed))
-                        .foregroundStyle(worked.failed ? AnyShapeStyle(Palette.failure) : AnyShapeStyle(.secondary))
-                    Icon(open ? "chevron-down" : "chevron-right", size: 12)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(worked.failed ? AnyShapeStyle(Palette.failure) : AnyShapeStyle(Palette.textSecondary))
+                    Icon("chevron-right", size: 12)
+                        .foregroundStyle(Palette.textTertiary)
+                        .rotationEffect(.degrees(open ? 90 : 0))
                 }
-                .font(.ui(.body))
+                .font(.ui(.prose))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(open ? "Hide the work" : "Show the work")
+            .help(open ? "Hide steps" : "Show steps")
             Rectangle().fill(Palette.line).frame(height: 1)
         }
-        .padding(.bottom, 14)
+        .padding(.top, 24)
+        .padding(.bottom, 12)
     }
 }
 
-/// Under a finished turn's answer: copying what it said, and the files it
-/// changed, opening the changes.
+/// "Working for 21s" under the prompt of the turn at work, ticking, over a
+/// rule: where the turn's "Worked for" line will stand once it ends.
+private struct WorkingLine: View {
+    let activity: Activity
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let elapsed = activity.sinceMs > 0
+                    ? activity.turnElapsedMs
+                        + Int64(max(0, context.date.timeIntervalSince1970 * 1000 - Double(activity.sinceMs)))
+                    : activity.turnElapsedMs
+                Text("Working for \(ChatWords.duration(elapsed / 1_000 * 1_000))")
+                    .font(.ui(.prose))
+                    .foregroundStyle(Palette.textSecondary)
+                    .monospacedDigit()
+            }
+            Rectangle().fill(Palette.line).frame(height: 1)
+        }
+        .padding(.top, 24)
+        .padding(.bottom, 12)
+    }
+}
+
+/// Under a finished turn's answer: the files it changed, as a card that
+/// opens them in Review, then copying what it said.
 private struct AnswerFoot: View {
     let answer: [String]
     let files: [FileRow]
+    /// When the turn ended.
+    let atMs: Int64
     let chat: any ChatSurface
     let openChanges: @MainActor () -> Void
     @State private var copied = false
 
+    /// The most files the card lists before it counts the rest.
+    private static let listed = 6
+
     var body: some View {
         if !files.isEmpty || !answer.isEmpty {
-            HStack(spacing: 6) {
-                if !answer.isEmpty {
-                    Button {
-                        let parts: [String] = answer.compactMap { chat.row($0)?.proseText }
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(parts.joined(separator: "\n\n"), forType: .string)
-                        copied = true
-                    } label: {
-                        Icon(copied ? "check" : "copy", size: 13)
-                            .foregroundStyle(.tertiary)
-                            .frame(width: 24, height: 22)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(HoverButtonStyle())
-                    .help(copied ? "Copied" : "Copy")
-                }
+            VStack(alignment: .leading, spacing: 8) {
                 if !files.isEmpty {
-                    Button(action: openChanges) {
-                        HStack(spacing: 6) {
-                            Icon("diff", size: 13).foregroundStyle(.tertiary)
-                            Text(files.count == 1 ? "Changed \(files[0].path.split(separator: "/").last ?? "")"
-                                : "Changed \(files.count) files")
-                            Text("+\(files.reduce(0) { $0 + $1.added })").foregroundStyle(Palette.added)
-                            Text("−\(files.reduce(0) { $0 + $1.removed })").foregroundStyle(Palette.removed)
+                    changed
+                }
+                HStack(spacing: 8) {
+                    if !answer.isEmpty {
+                        Button(action: copy) {
+                            Icon(copied ? "check" : "copy", size: 14, optical: false)
+                                .foregroundStyle(Palette.textTertiary)
+                                .frame(width: 24, height: 24)
+                                .contentShape(Rectangle())
                         }
-                        .font(.ui(.meta))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .padding(.horizontal, 6)
-                        .frame(height: 22)
-                        .contentShape(Rectangle())
+                        .buttonStyle(HoverButtonStyle())
+                        .help(copied ? "Copied" : "Copy")
                     }
-                    .buttonStyle(HoverButtonStyle())
-                    .help("Show the changes (⌥⌘I)")
+                    if atMs > 0 {
+                        Text(Date(timeIntervalSince1970: Double(atMs) / 1000), format: .dateTime.hour().minute())
+                            .font(.ui(.meta))
+                            .foregroundStyle(Palette.textTertiary)
+                    }
                 }
             }
-            .padding(.top, -6)
-            .padding(.bottom, 18)
+            .padding(.top, 2)
+            .padding(.bottom, 20)
         }
+    }
+
+    private var changed: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(files.count == 1 ? "1 changed file" : "\(files.count) changed files")
+                    .font(.ui(.body, weight: .medium))
+                Text("+\(files.reduce(0) { $0 + $1.added })").foregroundStyle(Palette.added)
+                    + Text(" −\(files.reduce(0) { $0 + $1.removed })").foregroundStyle(Palette.removed)
+                Spacer(minLength: 8)
+                Button(action: openChanges) {
+                    HStack(spacing: 5) {
+                        Icon("file-diff", size: 12)
+                        Text("Open in Review").font(.ui(.meta))
+                    }
+                    .foregroundStyle(Palette.textSecondary)
+                    .padding(.horizontal, 6)
+                    .frame(height: 24)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(HoverButtonStyle())
+                .help("Open the changes in Review (⌥⌘I)")
+            }
+            .font(.ui(.body))
+            .monospacedDigit()
+            .padding(.leading, 12)
+            .padding(.trailing, 6)
+            .frame(height: 40)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(files.prefix(Self.listed).enumerated()), id: \.offset) { _, file in
+                    FileLine(file: file)
+                }
+                if files.count > Self.listed {
+                    Text("\(files.count - Self.listed) more")
+                        .font(.ui(.meta))
+                        .foregroundStyle(Palette.textTertiary)
+                        .frame(height: 24)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+        }
+        .background(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).fill(Palette.inset))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(Palette.line))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: openChanges)
+    }
+
+    private func copy() {
+        let parts: [String] = answer.compactMap { chat.row($0)?.proseText }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(parts.joined(separator: "\n\n"), forType: .string)
+        copied = true
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            copied = false
+        }
+    }
+}
+
+/// One changed file: its folder quiet and its name plain, its counts at
+/// the right.
+private struct FileLine: View {
+    let file: FileRow
+
+    var body: some View {
+        let parts = file.path.split(separator: "/", omittingEmptySubsequences: false)
+        let name = parts.last.map(String.init) ?? file.path
+        let folder = parts.count > 1 ? parts.dropLast().joined(separator: "/") + "/" : ""
+        HStack(spacing: 8) {
+            (Text(folder).foregroundStyle(Palette.textTertiary) + Text(name))
+                .font(.mono(.small))
+                .lineLimit(1)
+                .truncationMode(.head)
+            Spacer(minLength: 8)
+            Text("+\(file.added)").foregroundStyle(Palette.added)
+            Text("−\(file.removed)").foregroundStyle(Palette.removed)
+        }
+        .font(.mono(.small))
+        .monospacedDigit()
+        .frame(height: 24)
     }
 }
 

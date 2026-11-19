@@ -1,71 +1,131 @@
 import AppKit
 import SwiftUI
 
-/// The sizes the main window is laid out with, in one place so the columns
-/// and their top bars line up.
+/// The sizes the main window is laid out with, in one place so the frame,
+/// the windows on it and their bars line up.
+///
+/// The window is a frame the system's buttons sit on, with the app's
+/// content on it as rounded windows: the workspace (agents and chat) and,
+/// beside it, the tools. Everything on the title row is centred on the
+/// system buttons' centre line, and nothing moves them.
 enum Metrics {
-    /// The rail's width: one column of icons.
-    static let rail: CGFloat = 58
-    static let sidebar: CGFloat = 272
+    /// The frame's left column, from the window's edge to the panel: an
+    /// 8-point margin each side of a 36-point button.
+    static let rail: CGFloat = 52
+    /// A rail button's side.
+    static let railButton: CGFloat = 36
+    /// The frame showing at the panel's right and bottom edges.
+    static let gap: CGFloat = 6
+    /// Where the title row's own buttons start: past the window's buttons,
+    /// which end 72 points in.
+    static let windowButtons: CGFloat = 80
+    /// A bar across the top of a column inside the panel: the sidebar's
+    /// search, a tool's own toolbar.
+    static let bar: CGFloat = 44
+    static let sidebar: CGFloat = 256
     static let sidebarRange: ClosedRange<CGFloat> = 220...420
-    static let inspector: CGFloat = 380
-    static let inspectorRange: ClosedRange<CGFloat> = 300...640
-    /// Room left at a top bar's leading edge for the window's buttons.
-    static let windowButtons: CGFloat = 78
-    /// The chat and composer's widest line, as the references read.
-    static let reading: CGFloat = 760
+    static let inspector: CGFloat = 520
+    static let inspectorRange: ClosedRange<CGFloat> = 340...900
+    /// The chat and composer's widest line: about 90 characters of body text,
+    /// the most that still reads comfortably.
+    static let reading: CGFloat = 736
     /// The room either side of a page's column.
     static let gutter: CGFloat = 32
-    /// A round button's side: send, stop, attach.
+    /// A small button's side: attach, a chip's height.
     static let control: CGFloat = 28
+    /// The send and stop button's side: a chip's height, as desktop controls are
+    /// sized for a pointer rather than a finger.
+    static let send: CGFloat = 28
 }
 
-/// The window's colours, one philosophy taken from amux's icon: its
-/// blue-black ground, its blue end and its warm end.
+/// The window's colours: true black in dark (white in light), the way the
+/// developer tools this app sits beside are drawn. No hue in the ground:
+/// colour is kept for meaning.
 ///
-/// - The ground is cool blue-black (light: cool white) in three steps that
-///   lighten toward what the person reads: the rail, then the sidebar,
-///   then the content. Surfaces are told apart by those steps and by
-///   hairlines, not by grey slabs.
-/// - Blue is amux itself: what is selected, the action to take, a link,
-///   an agent at work.
-/// - Coral is the person: anything that needs them, everywhere, and only
-///   that.
-/// - Red is failure only; amber a setting that acts without asking. Green
-///   and red otherwise appear only in diffs, muted.
-/// - A repository's tile takes one of eight tints that none of these
+/// - The frame (title row, rail, gutters) is a step off black; the panel on
+///   it is black, its sidebar a step lighter than the chat and tools.
+/// - What is lifted off the panel (the composer, cards, menus) is a dark
+///   grey; what is set into it (code, a command's output) barely lighter
+///   than black. The person's prompt sits on a lighter grey.
+/// - Text has four tiers of our own, set at the window's root as the
+///   primary, secondary and tertiary styles.
+/// - Blue is amux at work and the send button. Amber is the person: an
+///   approval or anything else that needs them. Indigo is a question. Red
+///   is failure; orange a setting that acts without asking; green a turn
+///   done and not yet seen. Green and red otherwise appear only in diffs.
+/// - A repository's monogram takes one of eight tints that none of these
 ///   states use, so identity never reads as state.
 enum Palette {
-    static let rail = Color(nsColor: dynamic(light: 0xE8EAF0, dark: 0x101116))
-    static let sidebar = Color(nsColor: dynamic(light: 0xF3F4F8, dark: 0x16171D))
-    static let content = Color(nsColor: dynamic(light: 0xFFFFFF, dark: 0x1B1C23))
-    /// The floating card, the composer, menus: lifted off the content.
-    static let raised = Color(nsColor: dynamic(light: 0xFFFFFF, dark: 0x23242C))
-    /// A code block, a bubble, a field: set into the surface it sits on.
-    static let well = Color(nsColor: dynamic(light: 0xF2F3F7, dark: 0x22232B))
-    static let line = Color(nsColor: dynamic(light: 0xE2E4EB, dark: 0x2A2B34))
-    /// A row under the pointer, and one selected.
-    static let hover = Color(nsColor: dynamic(light: 0x0B1230, dark: 0xFFFFFF, alpha: (0.045, 0.045)))
-    static let pressed = Color(nsColor: dynamic(light: 0x0B1230, dark: 0xFFFFFF, alpha: (0.09, 0.09)))
-    static let selection = Color(nsColor: dynamic(light: 0x2F6BFF, dark: 0x4D8BFF, alpha: (0.11, 0.17)))
+    /// The frame: the title row, the rail and the gutters.
+    static let frame = Color(nsColor: dynamic(light: 0xF0F0F1, dark: 0x0E0E0E))
+    /// The panel on the frame: the chat and the tools.
+    static let content = Color(nsColor: dynamic(light: 0xFCFCFC, dark: 0x000000))
+    /// The sidebar's ground, inside the panel.
+    static let sidebar = Color(nsColor: dynamic(light: 0xF8F8F9, dark: 0x060606))
+    /// The panel's edge against the frame, and a raised surface's.
+    static let edge = Color(nsColor: dynamic(light: 0x000000, dark: 0xFFFFFF, alpha: (0.08, 0.07)))
+    /// The composer and menus: lifted off the panel.
+    static let raised = Color(nsColor: dynamic(light: 0xFFFFFF, dark: 0x0E0E0E))
+    /// A card over the panel: an ask, a floating summary.
+    static let card = Color(nsColor: dynamic(light: 0xFFFFFF, dark: 0x131313))
+    /// A fill on the panel: the prompt, a chip, a field.
+    static let well = Color(nsColor: dynamic(light: 0xEBEBED, dark: 0x1E1E1E))
+    /// Set into the panel: code, a command and its output, changed files.
+    static let inset = Color(nsColor: dynamic(light: 0xF5F5F6, dark: 0x0A0A0A))
+    /// The pill behind inline code in prose.
+    static let codePill = Color(nsColor: dynamic(light: 0x000000, dark: 0xFFFFFF, alpha: (0.06, 0.1)))
+    /// A hairline inside the panel.
+    static let line = Color(nsColor: dynamic(light: 0x000000, dark: 0xFFFFFF, alpha: (0.08, 0.08)))
+    /// A row or button under the pointer, pressed, and a row selected:
+    /// neutral, so blue keeps meaning work.
+    static let hover = Color(nsColor: dynamic(light: 0x000000, dark: 0xFFFFFF, alpha: (0.045, 0.07)))
+    static let pressed = Color(nsColor: dynamic(light: 0x000000, dark: 0xFFFFFF, alpha: (0.08, 0.1)))
+    /// A selected row: lifted in dark, a white card in light, which takes
+    /// `selectionRing` round it.
+    static let selection = Color(nsColor: dynamic(light: 0xFFFFFF, dark: 0xFFFFFF, alpha: (1, 0.1)))
+    static let selectionRing = Color(nsColor: dynamic(light: 0x000000, dark: 0xFFFFFF, alpha: (0.08, 0)))
 
-    /// amux: selection, the action to take, links, work under way.
-    static let accent = Color(nsColor: dynamic(light: 0x2563EB, dark: 0x5B95FF))
-    /// The person: whatever needs them.
-    static let you = Color(nsColor: dynamic(light: 0xE0582E, dark: 0xFF8A5C))
-    static let failure = Color(nsColor: dynamic(light: 0xD23B3B, dark: 0xF26464))
+    /// Text, from what is read to what is barely there.
+    static let text = Color(nsColor: dynamic(light: 0x18181B, dark: 0xF5F5F5))
+    static let textSecondary = Color(nsColor: dynamic(light: 0x71717B, dark: 0xA1A1A1))
+    static let textTertiary = Color(nsColor: dynamic(light: 0xA1A1AA, dark: 0x737373))
+    static let textQuaternary = Color(nsColor: dynamic(light: 0xC4C4CA, dark: 0x4A4A4A))
+    /// The agent's prose: a touch under the text, so the person's own
+    /// words and the headings stand out of it.
+    /// Claude's own terracotta, for its mark only.
+    static let claude = Color(nsColor: dynamic(light: 0xD97757, dark: 0xD97757))
+    static let prose = Color(nsColor: dynamic(light: 0x18181B, dark: 0xF5F5F5, alpha: (0.9, 0.9)))
+
+    // One hue carries attention: blue is the person's turn (send, the
+    // expected answer, an agent that needs them, the rail's count). Work
+    // in progress is not news and stays neutral; red is for failure only,
+    // orange for a permission that never asks. The tones are softened
+    // from full saturation so they sit on the near-black ground without
+    // glowing.
+    /// The send button, the expected answer, focus, links.
+    static let accent = Color(nsColor: dynamic(light: 0x2563EB, dark: 0x3E7BEE))
+    /// An agent at work: neutral, since work going on is not news.
+    static let working = textSecondary
+    /// The person: whatever needs them, as words and marks.
+    static let you = Color(nsColor: dynamic(light: 0x2563EB, dark: 0x6EA8FE))
+    /// A question waiting on the person: the person's colour, told apart
+    /// by its glyph.
+    static let question = you
+    /// A turn finished and not yet looked at.
+    static let done = Color(nsColor: dynamic(light: 0x15803D, dark: 0x4ADE80))
+    static let failure = Color(nsColor: dynamic(light: 0xDC2626, dark: 0xF26B6B))
     /// A setting that acts without asking.
-    static let caution = Color(nsColor: dynamic(light: 0xB7791F, dark: 0xF0B44C))
-    static let added = Color(nsColor: dynamic(light: 0x1F8A4C, dark: 0x5CC98A))
-    static let removed = Color(nsColor: dynamic(light: 0xC23B3B, dark: 0xF07878))
+    static let caution = Color(nsColor: dynamic(light: 0xC2410C, dark: 0xF08A4B))
+    static let added = Color(nsColor: dynamic(light: 0x1A7F37, dark: 0x07C480))
+    static let removed = Color(nsColor: dynamic(light: 0xCF222E, dark: 0xFB414A))
 
     /// The repository tints, by the index every client agrees on: indigo,
-    /// violet, magenta, gold, green, teal, sky, lime. No grey: a grey tile
-    /// reads as disabled.
+    /// violet, magenta, sand, jade, teal, steel, lime. None is a state's
+    /// colour, and none is grey: a grey swatch reads as disabled.
     static func tint(_ index: UInt8) -> Color {
         let tints: [(Int, Int)] = [
-            (0x4F46E5, 0x8B8CFF), (0x8B3FD9, 0xB98CFF), (0xC0399A, 0xF07BCB), (0xA87410, 0xE8B54A),
-            (0x1E8A4F, 0x62CC8E), (0x0F8A8A, 0x4FD0CC), (0x1C7FC4, 0x63B7F2), (0x5E8A12, 0xA9D46B),
+            (0x4F46E5, 0x8E8CFF), (0x7C3AED, 0xB98CFF), (0xBE185D, 0xF07BCB), (0x8C6A2F, 0xD9B77E),
+            (0x0F7A5C, 0x4FC7A0), (0x0E7C8A, 0x46C6D6), (0x4A5A7A, 0x94A9D6), (0x5E8A12, 0xA9D46B),
         ]
         let (light, dark) = tints[Int(index) % tints.count]
         return Color(nsColor: dynamic(light: light, dark: dark))
@@ -84,7 +144,7 @@ enum Palette {
 
 extension View {
     /// Draws the window's content up into a title bar with no title or
-    /// background of its own, the way the references draw theirs: the
+    /// background of its own, as Mac apps with a sidebar draw theirs: the
     /// window's buttons sit on the sidebar, and each column's top bar is
     /// the title bar's height.
     func windowChrome() -> some View {
@@ -105,7 +165,7 @@ private struct WindowChrome: NSViewRepresentable {
             window.titlebarSeparatorStyle = .none
             window.styleMask.insert(.fullSizeContentView)
             // An empty compact toolbar makes the title bar the height of the
-            // references' top bars and centres the window's buttons in it.
+            // columns' top bars and centres the window's buttons in it.
             if window.toolbar == nil {
                 let toolbar = NSToolbar(identifier: "sh.amux.main")
                 toolbar.showsBaselineSeparator = false
@@ -116,43 +176,67 @@ private struct WindowChrome: NSViewRepresentable {
     }
 }
 
-/// A column's top bar: the title bar's height, its content centred in it,
-/// and dragging the window from anywhere a control is not.
-struct TopBar<Content: View>: View {
-    let height: CGFloat
-    var leading: CGFloat = 0
+/// A window's bar across its top: one height in every window, its content
+/// centred in it, a hairline under it. The window is not dragged from it:
+/// the frame around the windows is the window's to drag.
+struct WindowBar<Content: View>: View {
+    var leading: CGFloat = 12
+    var rule = true
     @ViewBuilder let content: Content
 
     var body: some View {
         HStack(spacing: 6) { content }
-            .padding(.leading, 12 + leading)
-            .padding(.trailing, 10)
-            .frame(height: height)
+            .padding(.leading, leading)
+            .padding(.trailing, 8)
+            .frame(height: Metrics.bar)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .gesture(WindowDragGesture())
+            .overlay(alignment: .bottom) {
+                if rule { Rectangle().fill(Palette.line).frame(height: 1) }
+            }
     }
 }
 
-/// A borderless icon button in a top bar or the rail.
+extension View {
+    /// Sets what it holds on the frame as one of the window's rounded
+    /// windows: its own ground, clipped to the window's corner, with an
+    /// edge where it meets the frame.
+    func onFrame() -> some View {
+        background(Palette.content)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.window, style: .continuous))
+            .overlay(
+                // Straddling the edge, so it reads on the frame's side too.
+                RoundedRectangle(cornerRadius: Radius.window, style: .continuous)
+                    .stroke(Palette.edge, lineWidth: 1))
+    }
+
+    /// The window's text tiers as the primary, secondary and tertiary
+    /// styles, so `.secondary` and `.tertiary` below read at our contrast.
+    func textTiers() -> some View {
+        foregroundStyle(Palette.text, Palette.textSecondary, Palette.textTertiary)
+    }
+}
+
+/// A borderless icon button in a bar: 28 points wide, its glyph drawn at
+/// `size`. One that is on shows it in the glyph's colour, not with a fill
+/// that would read as the pointer resting on it.
 struct BarButton: View {
     let symbol: String
     let help: String
     var active = false
-    var size: CGFloat = 13.5
+    var size: CGFloat = 16
     var disabled = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Icon(symbol, size: size + 2)
-                .foregroundStyle(active ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+            Icon(symbol, size: size, optical: false)
+                .foregroundStyle(active ? AnyShapeStyle(.primary) : AnyShapeStyle(Palette.textSecondary))
                 .opacity(disabled ? 0.4 : 1)
                 .frame(width: 28, height: 26)
                 .contentShape(Rectangle())
         }
         .disabled(disabled)
-        .buttonStyle(HoverButtonStyle(active: active))
+        .buttonStyle(HoverButtonStyle())
         .help(help)
         .accessibilityLabel(help)
     }
@@ -174,18 +258,21 @@ struct HoverButtonStyle: ButtonStyle {
     }
 }
 
-/// A draggable edge between two columns, changing `width` by the drag.
+/// A draggable edge between two columns, changing `width` by the drag:
+/// a hairline inside a window, or the frame's gap between two windows.
 struct ColumnEdge: View {
     @Binding var width: CGFloat
     let range: ClosedRange<CGFloat>
     /// The column grows when the edge moves left: it is on the right.
     var trailing = false
+    /// The frame's gap between two windows rather than a hairline.
+    var gap = false
     @State private var start: CGFloat?
 
     var body: some View {
         Rectangle()
-            .fill(Palette.line)
-            .frame(width: 1)
+            .fill(gap ? Color.clear : Palette.line)
+            .frame(width: gap ? Metrics.gap : 1)
             .overlay {
                 Color.clear
                     .frame(width: 8)
@@ -205,127 +292,319 @@ struct ColumnEdge: View {
 }
 
 /// A plain row in a sidebar: an icon and words, lit under the pointer,
-/// as the references' "New chat" and "Search" are.
+/// as a Mac sidebar's commands are. Its icon centres on the
+/// rows' status column and its words start where their names do.
 struct SidebarAction: View {
     let symbol: String
     let title: String
     var shortcut: String?
+    var count: Int?
     let action: () -> Void
+    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Icon(symbol, size: 15)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 18)
+            HStack(spacing: 6) {
+                Icon(symbol, size: 16)
+                    .foregroundStyle(Palette.textSecondary)
+                    .frame(width: 14)
                 Text(title).font(.ui(.body))
                 Spacer(minLength: 4)
-                if let shortcut {
-                    Text(shortcut).font(.ui(.small)).foregroundStyle(.tertiary)
+                if let count {
+                    Text("\(count)").font(.ui(.caption)).foregroundStyle(Palette.textTertiary).monospacedDigit()
+                }
+                if let shortcut, hovering {
+                    Text(shortcut).font(.ui(.caption)).foregroundStyle(Palette.textTertiary)
                 }
             }
-            .padding(.horizontal, 8)
-            .frame(height: 28)
+            .padding(.leading, 6)
+            .padding(.trailing, 8)
+            .frame(height: 30)
             .contentShape(Rectangle())
         }
         .buttonStyle(HoverButtonStyle())
+        .onHover { hovering = $0 }
     }
 }
 
-/// A heading over a group of rows in a sidebar.
+/// A heading over a group of rows in a sidebar: small and quiet, so it
+/// reads as a label for the rows rather than as one of them, starting on
+/// the rows' status column.
 struct SectionTitle: View {
     let text: String
+    var first = false
 
     var body: some View {
         Text(text)
-            .font(.ui(.meta))
-            .foregroundStyle(.secondary)
-            .padding(.leading, 8)
-            .padding(.top, 14)
+            .font(.ui(.caption, weight: .semibold))
+            .foregroundStyle(Palette.textTertiary)
+            .padding(.leading, 6)
+            .padding(.top, first ? 8 : 16)
             .padding(.bottom, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// Work under way, the size of a glyph in a row: a blue arc turning.
-/// Drawn rather than the system's spinner, whose grey dust reads as
-/// nothing at this size.
+/// Work under way: a blue dot that breathes, in a slot the size of a
+/// glyph. Every one on screen breathes from one clock, so a list of working
+/// rows pulses together rather than out of step, and the frames are
+/// stepped (15 a second) rather than redrawn at the display's rate. Under
+/// Reduce Motion it holds still.
 struct Working: View {
-    var size: CGFloat = 12
-    @State private var turning = false
+    var size: CGFloat = 14
+    @Environment(\.accessibilityReduceMotion) private var still
 
     var body: some View {
+        Group {
+            if still {
+                dot(1)
+            } else {
+                TimelineView(.periodic(from: .distantPast, by: 1.0 / 15)) { context in
+                    dot(Self.level(at: context.date))
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityLabel("Working")
+    }
+
+    private func dot(_ level: Double) -> some View {
         Circle()
-            .trim(from: 0.12, to: 0.82)
-            .stroke(Palette.accent, style: StrokeStyle(lineWidth: max(1.5, size / 7), lineCap: .round))
-            .frame(width: size, height: size)
-            .rotationEffect(.degrees(turning ? 360 : 0))
-            .animation(.linear(duration: 0.9).repeatForever(autoreverses: false), value: turning)
-            .onAppear { turning = true }
-            .accessibilityLabel("Working")
+            .fill(Palette.working)
+            .frame(width: 6, height: 6)
+            .opacity(0.35 + 0.65 * level)
+            .scaleEffect(0.85 + 0.15 * level)
+    }
+
+    /// Where the breath is, from 0 to 1, on a 1.4-second cycle every dot
+    /// shares.
+    static func level(at date: Date) -> Double {
+        let phase = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
+        return 0.5 + 0.5 * cos(phase * 2 * .pi)
     }
 }
 
 /// One of the app's icons: Lucide's line drawings, which the system draws
 /// from their SVG and tints like text. Named as Lucide names them.
+///
+/// Every icon draws its lines 1.25 points wide whatever its size, so a
+/// chevron beside a rail icon is not a hairline beside a marker: the SVG's
+/// stroke is set for the size it is drawn at.
 struct Icon: View {
     let name: String
     var size: CGFloat = 14
+    /// A provider's mark in its own colour, where the provider is being
+    /// chosen or named; elsewhere it takes the text's.
+    var brand = false
+    /// Drawn beside words, so set a little low. Centring a glyph on a line
+    /// puts it on the capitals' middle, which reads high beside lowercase
+    /// words; it sits halfway down to the lowercase middle instead. An
+    /// icon alone in a button is centred in it.
+    var optical = true
 
-    init(_ name: String, size: CGFloat = 14) {
+    init(_ name: String, size: CGFloat = 14, brand: Bool = false, optical: Bool = true) {
         self.name = name
         self.size = size
+        self.brand = brand
+        self.optical = optical
+    }
+
+    /// Half the distance from the capitals' middle to the lowercase
+    /// middle at the text size an icon of `size` sits beside.
+    private var drop: CGFloat {
+        guard optical else { return 0 }
+        if size <= 14 { return max(0, (size - 10) * 0.25) }
+        return size <= 16 ? 1 : 0
     }
 
     var body: some View {
-        Image(nsImage: Icons.image(name))
-            .renderingMode(.template)
-            .resizable()
-            .interpolation(.high)
-            .frame(width: size, height: size)
-            .accessibilityHidden(true)
+        if let symbol = Icons.symbols[name] {
+            // The system's own symbols, drawn in the text's weight so a
+            // glyph sits with the words beside it; a size is the square it
+            // fills, as the line icons' was.
+            Image(systemName: symbol)
+                .font(.system(size: size * 0.86, weight: size <= 12 ? .medium : .regular))
+                .imageScale(.medium)
+                .frame(width: size, height: size)
+                .offset(y: drop)
+                .accessibilityHidden(true)
+        } else {
+            // Claude's mark keeps its own colour where it is branded, as the
+            // providers' pickers draw it; Codex's is drawn in ink.
+            Image(nsImage: Icons.image(name, size: size))
+                .renderingMode(.template)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: size, height: size)
+                .offset(y: drop)
+                .foregroundStyle(brand && name == "provider-claude" ? AnyShapeStyle(Palette.claude) : AnyShapeStyle(.foreground))
+                .accessibilityHidden(true)
+        }
     }
 }
 
-/// The icons, read once each from the package's resources.
+/// The icons, read once each per drawn size from the package's resources.
 @MainActor
 enum Icons {
-    private static var loaded: [String: NSImage] = [:]
+    /// The SF Symbol drawn for each of the app's icon names. A name not
+    /// here is one of the app's own drawings in `Icons/`: the providers'
+    /// marks.
+    static let symbols: [String: String] = [
+        "agents": "sparkles.rectangle.stack",
+        "archive-restore": "tray.and.arrow.up",
+        "arrow-down": "arrow.down",
+        "arrow-left": "arrow.left",
+        "arrow-left-right": "arrow.left.arrow.right",
+        "arrow-right": "arrow.right",
+        "arrow-up": "arrow.up",
+        "at-sign": "at",
+        "ban": "nosign",
+        "book-open": "book",
+        "bot": "cpu",
+        "brain": "brain",
+        "check": "checkmark",
+        "chevron-down": "chevron.down",
+        "chevron-left": "chevron.left",
+        "chevron-right": "chevron.right",
+        "chevron-up": "chevron.up",
+        "circle": "circle",
+        "circle-alert": "exclamationmark.circle",
+        "circle-check": "checkmark.circle",
+        "circle-dashed": "circle.dashed",
+        "circle-dot": "record.circle",
+        "circle-help": "questionmark.circle",
+        "circle-stop": "stop.circle",
+        "clock": "clock",
+        "cloud": "cloud",
+        "cloud-off": "icloud.slash",
+        "code": "chevron.left.forwardslash.chevron.right",
+        "copy": "doc.on.doc",
+        "corner-down-left": "arrow.turn.down.left",
+        "corner-down-right": "arrow.turn.down.right",
+        "corner-left-up": "arrow.turn.left.up",
+        "corner-up-right": "arrow.turn.up.right",
+        "diff": "plus.forwardslash.minus",
+        "ellipsis": "ellipsis",
+        "ellipsis-vertical": "ellipsis",
+        "file-diff": "plus.forwardslash.minus",
+        "file-minus": "trash",
+        "file-pen": "doc.badge.ellipsis",
+        "file-plus": "doc.badge.plus",
+        "file-question": "doc.questionmark",
+        "file-symlink": "doc.badge.arrow.up",
+        "file-text": "doc.text",
+        "file-x": "xmark.square",
+        "folder": "folder",
+        "folder-git-2": "folder",
+        "folder-open": "folder",
+        "git-branch": "arrow.triangle.branch",
+        "globe": "globe",
+        "hand": "hand.raised",
+        "image": "photo",
+        "laptop": "laptopcomputer",
+        "layers": "square.stack",
+        "lightbulb": "lightbulb",
+        "link": "link",
+        "list-checks": "checklist",
+        "lock": "lock",
+        "lock-open": "lock.open",
+        "message-circle-question": "questionmark.bubble",
+        "message-square-text": "text.bubble",
+        "messages-square": "bubble.left.and.bubble.right",
+        "monitor": "display",
+        "monitor-off": "display.trianglebadge.exclamationmark",
+        "panel-left": "sidebar.left",
+        "panel-left-close": "sidebar.left",
+        "panel-left-open": "sidebar.left",
+        "panel-right": "sidebar.right",
+        "panel-right-close": "sidebar.right",
+        "panel-right-open": "sidebar.right",
+        "paperclip": "paperclip",
+        "pencil": "pencil",
+        "pin": "pin",
+        "pin-off": "pin.slash",
+        "play": "play",
+        "plus": "plus",
+        "refresh-cw": "arrow.clockwise",
+        "search": "magnifyingglass",
+        "server": "server.rack",
+        "settings": "gearshape",
+        "shield": "hand.raised",
+        "shield-alert": "exclamationmark.shield",
+        "shield-check": "checkmark.shield",
+        "slash": "line.diagonal",
+        "smartphone": "iphone",
+        "sparkles": "sparkles",
+        "square": "square",
+        "square-check": "checkmark.square",
+        "square-pen": "square.and.pencil",
+        "square-terminal": "apple.terminal",
+        "terminal": "terminal",
+        "trash": "trash",
+        "trash-2": "trash",
+        "triangle-alert": "exclamationmark.triangle",
+        "user-minus": "person.badge.minus",
+        "user-plus": "person.badge.plus",
+        "wrench": "wrench.adjustable",
+        "x": "xmark"
+    ]
 
-    static func image(_ name: String) -> NSImage {
+    private static var loaded: [String: NSImage] = [:]
+    private static var sources: [String: String] = [:]
+
+    /// One of the app's own drawings, as a template image.
+    static func image(_ name: String, size: CGFloat) -> NSImage {
         if let image = loaded[name] { return image }
-        let url = Bundle.module.url(forResource: name, withExtension: "svg", subdirectory: "Icons")
-        let image = url.flatMap { NSImage(contentsOf: $0) } ?? NSImage()
+        let image = source(name).flatMap { NSImage(data: Data($0.utf8)) } ?? NSImage()
         image.isTemplate = true
         loaded[name] = image
         return image
     }
+
+    private static func source(_ name: String) -> String? {
+        if let svg = sources[name] { return svg }
+        let url = Bundle.module.url(forResource: name, withExtension: "svg", subdirectory: "Icons")
+        let svg = url.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+        sources[name] = svg
+        return svg
+    }
 }
 
-/// The window's one button: a pill, the action expected drawn solid in the
-/// text colour as the send button is, whether or not the window is in
-/// front (the system's prominent style goes grey there); the others quiet
-/// fills; a destructive one red words on the quiet fill.
+/// The window's one button: a pill, the action expected filled in the
+/// accent as the send button is, whether or not the window is in front
+/// (the system's prominent style goes grey there); the others quiet fills;
+/// a destructive one red words on the quiet fill, or filled red when it is
+/// the expected one.
 struct PillButtonStyle: ButtonStyle {
     var prominent = false
     var destructive = false
     var small = false
+    /// Its trailing corners square, for a menu joined on its right.
+    var joined = false
     @Environment(\.isEnabled) private var enabled
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
+        let radius = small ? Radius.row : Radius.control
+        let shape = UnevenRoundedRectangle(
+            topLeadingRadius: radius, bottomLeadingRadius: radius, bottomTrailingRadius: joined ? 0 : radius,
+            topTrailingRadius: joined ? 0 : radius, style: .continuous)
         configuration.label
             .font(.ui(small ? .meta : .body, weight: prominent ? .medium : .regular))
             .lineLimit(1)
-            .foregroundStyle(
-                prominent ? Color(nsColor: .textBackgroundColor) : (destructive ? Palette.failure : Color.primary))
+            .foregroundStyle(prominent ? Color.white : (destructive ? Palette.failure : Color.primary))
             .padding(.horizontal, small ? 10 : 12)
             .frame(height: small ? 24 : 28)
-            .background(
-                RoundedRectangle(cornerRadius: small ? Radius.row : Radius.control, style: .continuous)
-                    .fill(prominent ? Color.primary : Color.primary.opacity(hovering ? 0.1 : 0.065)))
+            .background(shape.fill(fill))
             .opacity(configuration.isPressed ? 0.75 : (enabled ? 1 : 0.45))
-            .contentShape(RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+            .contentShape(shape)
             .onHover { hovering = $0 }
+    }
+
+    private var fill: Color {
+        if prominent {
+            return (destructive ? Palette.failure : Palette.accent).opacity(hovering && enabled ? 0.88 : 1)
+        }
+        return Color.primary.opacity(hovering && enabled ? 0.1 : 0.065)
     }
 }

@@ -165,9 +165,9 @@ a chat starts from that chat's agent, folder and host instead.
 
 ### Hosts
 
-`h`, or the leader then `h` from a chat, opens the hosts window over home: every trusted host whatever its
-presence, with `this machine`, how it is reached (`direct`, `relay`) or why not (`offline · not signed in`, `offline ·
-this machine is signed out`, `offline · no longer trusts this machine`, `away` and the free plan's words when the relay
+`h`, or the leader then `h` from a chat, opens the devices window over home: every trusted host whatever its
+presence, with `this computer`, how it is reached (`direct`, `over the internet`) or why not (`offline · not signed in`, `offline ·
+this computer is signed out`, `offline · unpaired this computer`, `away` and the free plan's words when the relay
 refused the host for the plan). Hosts not yet trusted are listed faint, with where they were found and the command
 that pairs them: `found nearby · amux pair desk` for one local-network discovery sees, `through studio · amux pair
 desk` for one a paired host announces, and `on your account · Pro pairs it through the relay · amux pair desk` for
@@ -189,7 +189,7 @@ Enter on a row opens its chat. From top to bottom:
   with its layout, and the branch comparison needs a base branch to count against. The
   header says where the chat stands only when that is a problem: `exited` with its cause, `catching up` before the
   first CaughtUp, `reconnecting`, `refreshing` while a rebuilt history is on its way, or why the host is away (not
-  current, this machine signed out, or the host no longer trusts this machine).
+  current, this computer signed out, or the host unpaired this computer).
 - **The family line**, for an agent with a parent or children: the parent, the number of subagents and how many
   others in the whole family need you, grandchildren and the parent's side included.
 - **The feed**, read one turn at a time, laid out upward from the newest or from wherever the reader scrolled:
@@ -647,7 +647,7 @@ these; the entries amux and service managers run are hidden from it and listed a
 | `amux rm <agent>` | Deletes an agent and its history; its children follow on their own hosts, a host that is away once it is back. |
 | `amux dump` | Writes this host's debug report, with an optional `--reason`, and prints its path; `--send` also sends it to the profile's amux account. See [DEBUGGING.md](DEBUGGING.md). |
 | `amux pair [target]` | Pairs with another host by name (one found nearby or announced by the relay or a paired host), an address, or `user@host` over SSH; on the free plan it refuses a host only the relay reaches before asking for the PIN, and says Pro pairs it. With no target this host opens pairing mode and shows a PIN with what the phone and another computer do with it, or with `--qr` a QR code for the phone's camera: a link to amux.sh's pairing page, which opens the app, or the App Store when the app is not installed yet. It says when a device has proved the code and is confirming, and which one paired, as it happens. |
-| `amux hosts` | Lists the paired hosts and the hosts that could be paired: found nearby, through a paired host, or on the account through the relay, which on the free plan says Pro pairs it. |
+| `amux devices` (or `amux hosts`) | Lists the paired hosts and the hosts that could be paired: found nearby, through a paired host, or on the account through the relay, which on the free plan says Pro pairs it. |
 | `amux unpair <host>` | Stops trusting a paired host, asking first unless `--force`. |
 | `amux login` | Signs the profile in to an amux account so its hosts reach each other through the relay. |
 | `amux logout` | Signs the profile out; its agents and paired hosts stay. |

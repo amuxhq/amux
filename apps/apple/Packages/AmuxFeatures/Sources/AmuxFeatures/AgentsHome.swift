@@ -961,10 +961,10 @@ public struct AgentsHome: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.xl) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Pair your first host")
+                    Text("Pair your first computer")
                         .designFont(.screenTitle, design)
                         .foregroundStyle(design.ink.color)
-                        .identified("home.empty.firstRun", value: "Pair your first host")
+                        .identified("home.empty.firstRun", value: "Pair your first computer")
                     Explain("amux runs agents on your computers. Pair one and its agents appear here.")
                         .identified("home.empty.explain")
                 }
@@ -1124,7 +1124,7 @@ public struct AgentsHome: View {
                     Text("No agents yet")
                         .designFont(.screenTitle, design)
                         .foregroundStyle(design.ink.color)
-                    Explain("Start an agent on a host and it appears here.")
+                    Explain("Start an agent on a computer and it appears here.")
                         .identified("home.empty.noAgents")
                 }
                 if offersNewAgent {

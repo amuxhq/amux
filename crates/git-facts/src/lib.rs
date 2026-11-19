@@ -261,6 +261,25 @@ pub async fn facts(cwd: &Path, recorded_base: Option<&str>) -> Result<Option<Git
     }))
 }
 
+/// Where the origin of the repository at `cwd` points, as
+/// [`remote_identity`] writes it; None outside a repository or without an
+/// origin. Blocks on git: call it off the async workers.
+pub fn origin(cwd: &Path) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .args(["config", "--get", "remote.origin.url"])
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| remote_identity(&text(&output.stdout)))
+        .filter(|remote| !remote.is_empty())
+}
+
 /// A remote's URL as the repository it names, the same for every way of
 /// writing it: `host/owner/name`, with no scheme, credentials, port or
 /// trailing `.git`, the host in lower case. `git@github.com:amuxhq/amux.git`

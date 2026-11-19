@@ -84,6 +84,7 @@ fn suggest_outside(home: &Path, now: SystemTime, temporary: &[PathBuf]) -> Vec<R
                 .duration_since(UNIX_EPOCH)
                 .ok()
                 .and_then(|since| i64::try_from(since.as_millis()).ok()),
+            remote: git_facts::origin(&root),
         });
     }
     offered

@@ -7902,6 +7902,12 @@ pub struct RepositoryEntry {
     pub name: ::prost::alloc::string::String,
     #[prost(int64, optional, tag = "3")]
     pub last_used_ms: ::core::option::Option<i64>,
+    /// Where the folder's origin points, written as Git.remote writes it, so a
+    /// client marks the folder as it marks the agents working in any checkout
+    /// of the same repository. Absent without an origin, and from hosts built
+    /// before it was added: the folder's path then names it, as before.
+    #[prost(string, optional, tag = "4")]
+    pub remote: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for RepositoryEntry {
     const NAME: &'static str = "RepositoryEntry";

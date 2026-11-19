@@ -281,6 +281,7 @@ fn entry(path: &str) -> wire::RepositoryEntry {
         path: path.to_owned(),
         name: path.rsplit('/').next().unwrap_or(path).to_owned(),
         last_used_ms: Some(NOW),
+        remote: None,
     }
 }
 

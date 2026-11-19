@@ -11,14 +11,14 @@ struct ProseView: View {
 
     var body: some View {
         let document = Parsed.document(source)
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(document.blocks.enumerated()), id: \.offset) { _, block in
                 Block(block: block)
             }
         }
         .font(.ui(.prose))
-        .lineSpacing(4.5)
-        .foregroundStyle(quiet ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+        .lineSpacing(6)
+        .foregroundStyle(quiet ? AnyShapeStyle(Palette.textSecondary) : AnyShapeStyle(Palette.prose))
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -47,19 +47,20 @@ private struct Block: View {
     var body: some View {
         switch block {
         case .heading(let level, let text):
-            Text(Inline.styled(text))
+            Inline.text((text))
                 .font(.ui(level <= 1 ? .proseHeading : level == 2 ? .proseSubheading : .prose, weight: .semibold))
-                .padding(.top, 4)
+                .foregroundStyle(Palette.text)
+                .padding(.top, 6)
         case .paragraph(let text):
-            Text(Inline.styled(text)).fixedSize(horizontal: false, vertical: true)
+            Inline.text((text)).fixedSize(horizontal: false, vertical: true)
         case .list(_, let items):
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(items) { item in
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(item.marker)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Palette.textSecondary)
                             .frame(minWidth: 14, alignment: .trailing)
-                        Text(Inline.styled(item.text)).fixedSize(horizontal: false, vertical: true)
+                        Inline.text((item.text)).fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.leading, CGFloat(item.depth) * 18)
                 }
@@ -70,87 +71,86 @@ private struct Block: View {
             HStack(spacing: 10) {
                 Rectangle().fill(Palette.line).frame(width: 3)
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in Text(Inline.styled(line)) }
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in Inline.text((line)) }
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.textSecondary)
             }
         case .table(let header, let rows):
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                 GridRow {
                     ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                        Text(Inline.styled(cell)).fontWeight(.semibold)
+                        Inline.text((cell)).fontWeight(.semibold)
                     }
                 }
                 Divider()
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
-                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in Text(Inline.styled(cell)) }
+                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in Inline.text((cell)) }
                     }
                 }
             }
-            .font(.ui(.callout))
+            .font(.ui(.meta))
         case .rule:
             Divider()
         }
     }
 }
 
-/// Inline code a size smaller than the prose around it, on a light chip, so
-/// a name reads as code without shouting over the sentence.
+/// Inline code in the monospaced face a half step smaller than the prose
+/// around it, on a faint chip. A rounded pill would need a custom text
+/// renderer, and SwiftUI skips custom renderers on selectable text;
+/// copying from an answer matters more than the chip's corners. Strong
+/// emphasis is semibold, which reads as emphasis on a dark ground where
+/// bold reads as shouting.
 @MainActor
 enum Inline {
+    static func text(_ source: AttributedString) -> Text { Text(styled(source)) }
+
     static func styled(_ text: AttributedString) -> AttributedString {
         var text = text
-        for run in text.runs where run.inlinePresentationIntent?.contains(.code) == true {
-            text[run.range].font = .mono(.callout)
-            text[run.range].backgroundColor = Palette.well
+        for run in text.runs {
+            guard let intent = run.inlinePresentationIntent else { continue }
+            if intent.contains(.code) {
+                text[run.range].font = .mono(.callout)
+                text[run.range].backgroundColor = Palette.codePill
+            } else if intent.contains(.stronglyEmphasized) {
+                text[run.range].font = .ui(.prose, weight: .semibold)
+            }
         }
         return text
     }
 }
 
-/// Code that keeps its whitespace, in a well, with its language and a copy
-/// button showing under the pointer.
+/// Code that keeps its whitespace, set into the window: its language and
+/// copy on a quiet header, the code under it.
 private struct CodeBlock: View {
     let language: String?
     let text: String
-    @State private var hovering = false
     @State private var copied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let language, !language.isEmpty {
-                HStack {
-                    Text(language).font(.ui(.small)).foregroundStyle(.tertiary)
-                    Spacer()
-                    copy.opacity(hovering ? 1 : 0)
-                }
-                .padding(.leading, 14)
-                .padding(.trailing, 6)
-                .frame(height: 30)
-                Rectangle().fill(Palette.line).frame(height: 1)
+            HStack {
+                Text(language ?? "").font(.ui(.meta)).foregroundStyle(Palette.textTertiary)
+                Spacer()
+                copy
             }
+            .padding(.leading, 12)
+            .padding(.trailing, 4)
+            .frame(height: 26)
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(text)
                     .font(.mono(.callout))
-                    .lineSpacing(3)
+                    .lineSpacing(5)
                     .fixedSize()
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-            }
-            .overlay(alignment: .topTrailing) {
-                if language?.isEmpty ?? true, hovering {
-                    copy.padding(6)
-                }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 2)
+                    .padding(.bottom, 10)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).fill(Palette.well))
-        .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(Palette.line))
-        .onHover { inside in
-            hovering = inside
-            if !inside { copied = false }
-        }
+        .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.inset))
+        .overlay(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).strokeBorder(Palette.line))
     }
 
     private var copy: some View {
@@ -158,13 +158,21 @@ private struct CodeBlock: View {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
             copied = true
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                copied = false
+            }
         } label: {
-            Icon(copied ? "check" : "copy", size: 13)
-                .foregroundStyle(.secondary)
-                .frame(width: 24, height: 22)
-                .contentShape(Rectangle())
+            HStack(spacing: 4) {
+                Icon(copied ? "check" : "copy", size: 12)
+                if copied { Text("Copied").font(.ui(.caption)) }
+            }
+            .foregroundStyle(Palette.textTertiary)
+            .padding(.horizontal, 6)
+            .frame(height: 22)
+            .contentShape(Rectangle())
         }
         .buttonStyle(HoverButtonStyle())
-        .help(copied ? "Copied" : "Copy")
+        .help("Copy")
     }
 }

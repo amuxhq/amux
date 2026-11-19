@@ -27,6 +27,6 @@ final class PaywallWordingTests: XCTestCase {
             XCTAssertFalse(said.contains("amux.sh"))
             XCTAssertFalse(said.contains("Manage"))
         }
-        XCTAssertEqual(explanation, "Relay access is included with this account.")
+        XCTAssertEqual(explanation, "Pro is included with this account.")
     }
 }

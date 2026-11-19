@@ -58,7 +58,7 @@ until you do it or dismiss it.
    amux relay, which is part of [Pro](https://amux.sh/docs/account/plans-and-billing/).
    Skip it if you only use amux at home.
 4. **Repositories.** The folders Claude Code and Codex worked in lately, ticked.
-   New agents offer these first. **+ Add a folder…** adds another.
+   New agents offer these first. **+ Add a repository…** adds another.
 5. **Help improve amux.** Whether to send a report automatically when
    something goes wrong (off unless you turn it on), and a line saying amux
    sends usage counts, which you can turn off in Settings. Neither ever

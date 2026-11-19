@@ -803,7 +803,7 @@ fn an_answer_refused_because_its_host_is_away_opens_the_card_again() {
     let (buffer, _) = draw(&mut view, &state, at, 80, 24, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("Not sent: its host is away"),
+        screen.contains("Not sent: its computer is away"),
         "the card does not say why its answer did not go:\n{screen}"
     );
 }
@@ -1082,18 +1082,18 @@ fn a_host_out_of_reach_while_this_machine_is_signed_out_names_this_machines_sign
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("desk away · this machine is signed out"),
+        screen.contains("desk away · this computer is signed out"),
         "{screen}"
     );
     assert!(
-        screen.contains("desk is away · this machine is signed out"),
+        screen.contains("desk is away · this computer is signed out"),
         "{screen}"
     );
     typed(&mut view, &state, "still there?");
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("can't send until this machine signs in"),
+        screen.contains("can't send until this computer signs in"),
         "{screen}"
     );
 
@@ -1108,7 +1108,7 @@ fn a_host_out_of_reach_while_this_machine_is_signed_out_names_this_machines_sign
         .collect();
     let screen = screen.join("\n");
     assert!(
-        screen.contains("offline · this machine is signed out"),
+        screen.contains("offline · this computer is signed out"),
         "{screen}"
     );
     assert!(!screen.contains("not signed in"), "{screen}");
@@ -1155,11 +1155,11 @@ fn a_host_away_on_the_free_plan_names_the_plan() {
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("desk away · the free plan does not relay between hosts"),
+        screen.contains("desk away · reaching it from another network needs Pro"),
         "{screen}"
     );
     assert!(
-        screen.contains("desk is away · the free plan does not relay between hosts"),
+        screen.contains("desk is away · reaching it from another network needs Pro"),
         "{screen}"
     );
 
@@ -1174,7 +1174,7 @@ fn a_host_away_on_the_free_plan_names_the_plan() {
         .collect();
     let rows = rows.join("\n");
     assert!(
-        rows.contains("away · the free plan does not relay between hosts"),
+        rows.contains("away · reaching it from another network needs Pro"),
         "{rows}"
     );
 }
@@ -1189,12 +1189,12 @@ fn an_empty_caught_up_chat_is_not_away_by_a_lagging_fleet() {
     view.reach = ui_view::Reach::Offline(ui_view::Offline::Plain);
     let screen = text(&draw(&mut view, &state, 0, W, H, theme()).0);
     assert!(screen.contains("Nothing here yet."), "{screen}");
-    assert!(!screen.contains("host is away"), "{screen}");
+    assert!(!screen.contains("computer is away"), "{screen}");
 
     state.update(event(session_event::Of::Detached(wire::Detached {})));
     let screen = text(&draw(&mut view, &state, 0, W, H, theme()).0);
     assert!(
-        screen.contains("Its host is away, and nothing of this chat is held here yet."),
+        screen.contains("Its computer is away, and nothing of this chat is held here yet."),
         "{screen}"
     );
 }
@@ -1229,7 +1229,7 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
         .collect();
     let screen = screen.join("\n");
     assert!(
-        screen.contains("offline · no longer trusts this machine"),
+        screen.contains("offline · unpaired this computer"),
         "{screen}"
     );
     assert!(!screen.contains("not signed in"), "{screen}");
@@ -1241,10 +1241,7 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
     view.reach = ui_view::reach(&fleet, b"laptop", b"host");
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
-    assert!(
-        screen.contains("desk no longer trusts this machine"),
-        "{screen}"
-    );
+    assert!(screen.contains("desk unpaired this computer"), "{screen}");
     assert!(
         screen.contains("can't send until you pair again"),
         "{screen}"
@@ -1257,7 +1254,7 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
     });
     let screen = fleet_screen(&mut fleet_view, &fleet);
     assert!(
-        screen.contains("desk no longer trusts this machine · amux pair desk"),
+        screen.contains("desk unpaired this computer · amux pair desk"),
         "{screen}"
     );
     assert!(!screen.contains("away"), "{screen}");
@@ -1384,13 +1381,13 @@ fn the_hosts_overlay_draws_trusted_hosts_and_candidates() {
             .to_owned()
     };
     assert!(row("laptop").ends_with("offline"), "{screen}");
-    assert!(row("studio").ends_with("this machine"), "{screen}");
+    assert!(row("studio").ends_with("this computer"), "{screen}");
     assert!(
         row("den mac").ends_with("found nearby · amux pair 'den mac'"),
         "{screen}"
     );
     assert!(
-        row("nova").ends_with("on your account · Pro pairs it through the relay · amux pair nova"),
+        row("nova").ends_with("on your account · Pro pairs it over the internet · amux pair nova"),
         "{screen}"
     );
     assert!(
@@ -1489,7 +1486,7 @@ fn raw_attach_is_only_for_terminals_on_this_machine() {
     for kind in [Kind::ClaudePty, Kind::Codex, Kind::ClaudeSdk] {
         assert_eq!(
             refusal(&agent(b"b", kind)),
-            Some("its terminal is on another machine"),
+            Some("its terminal is on another computer"),
         );
     }
 }
@@ -1935,7 +1932,7 @@ fn an_exited_agent_on_an_away_host_names_why_it_is_away() {
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("stopped · desk away · this machine is signed out"),
+        screen.contains("stopped · desk away · this computer is signed out"),
         "{screen}"
     );
     assert!(screen.contains("Enter resumes"), "{screen}");
@@ -1966,7 +1963,7 @@ fn an_agent_that_exited_while_the_daemon_was_away_says_exited_once() {
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("stopped · while the daemon was away"),
+        screen.contains("stopped · while amux was stopped"),
         "{screen}"
     );
     assert!(!screen.contains("stopped · exited"), "{screen}");
@@ -1989,7 +1986,7 @@ fn an_agent_that_exited_while_the_daemon_was_away_says_exited_once() {
         .take(2)
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(rows.contains("while the daemon was away"), "{screen}");
+    assert!(rows.contains("while amux was stopped"), "{screen}");
     assert!(!rows.contains("stopped · exited"), "{screen}");
 }
 

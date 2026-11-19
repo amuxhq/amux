@@ -152,10 +152,11 @@ final class StillReview: ReviewSurface {
     private var head: ReviewSpot?
     private(set) var count = 0
 
-    init(doc: ReviewDoc, selected: ReviewSpot? = nil) {
+    init(doc: ReviewDoc, selected: ReviewSpot? = nil, folded: Set<Int> = []) {
         self.doc = doc
         anchor = selected
         head = selected
+        shut = folded
     }
 
     func folded(_ file: Int) -> Bool { shut.contains(file) }

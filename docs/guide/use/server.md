@@ -1,11 +1,11 @@
 ---
 title: Running amux on a server
-description: Put amux on an always-on machine, such as a Linux box or a Mac mini, so your agents keep working while your laptop sleeps.
+description: Put amux on an always-on computer, such as a Linux box or a Mac mini, so your agents keep working while your laptop sleeps.
 sidebar:
   order: 5
 ---
 
-amux runs just as well on a machine you never sit at: a Linux server, a cloud
+amux runs just as well on a computer you never sit at: a Linux server, a cloud
 VM, or a Mac mini in a cupboard. Your agents run there, and you start them,
 talk to them and review their work from your laptop and your phone. Your laptop
 can sleep, or leave the house, and the agents carry on.
@@ -21,7 +21,7 @@ curl -fsSL https://amux.sh/install | sh
 
 Your agents run Claude Code and Codex on the server itself, so install
 whichever you use there and sign in to it, with `claude` then `/login`, or
-`codex login`. amux uses what's on that machine, the same as you would.
+`codex login`. amux uses what's on that computer, the same as you would.
 
 Then give the server a name your other devices will show, and tell it which
 folders to offer when you start an agent there:
@@ -74,9 +74,9 @@ login.
 
 ### Sleep
 
-On a Mac, amux keeps the machine awake while it's plugged in, as long as the
+On a Mac, amux keeps the computer awake while it's plugged in, as long as the
 lid is open. Turn that off with `amux config set keep_awake false`. On Linux,
-amux leaves power settings to you, so make sure the machine doesn't suspend on
+amux leaves power settings to you, so make sure the computer doesn't suspend on
 its own.
 
 ## Running amux under your own service manager

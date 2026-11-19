@@ -139,7 +139,7 @@ impl Walk {
     /// own name and key before anything is trusted.
     fn pairing(&mut self) -> Result<(), String> {
         let desk = self.journey.host_id("desk");
-        self.journey.tab("Hosts")?;
+        self.journey.tab("Computers")?;
         self.journey.wait_for(&[&format!("hosts.found.{desk}")])?;
         let mut process = self.journey.amux("desk", &["pair"])?;
         let pin = printed_pin(&mut process)?;
@@ -162,7 +162,7 @@ impl Walk {
 
     fn hosts(&mut self) -> Result<(), String> {
         let row = format!("hosts.row.{}", self.journey.host_id("desk"));
-        self.journey.tab("Hosts")?;
+        self.journey.tab("Computers")?;
         self.journey.wait(
             |drawn| labelled(drawn, "desk") && drawn.has(&row),
             "the hosts",

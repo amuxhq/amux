@@ -1,12 +1,12 @@
 ---
 title: iPhone app
-description: Start agents, answer them, review their work and keep an eye on every machine from your iPhone.
+description: Start agents, answer them, review their work and keep an eye on every computer from your iPhone.
 sidebar:
   order: 2
 ---
 
 The amux iPhone app is your fleet in your pocket. It shows every agent on every
-machine you've paired. You can start new agents from it, answer their
+computer you've paired. You can start new agents from it, answer their
 questions, review what they changed and keep the conversation going. Your
 agents run on your computers, never on the phone, so they keep working when
 you put it away.
@@ -25,17 +25,17 @@ you're done with. Each agent goes by the name you gave it or, if you left the
 optional Name field empty when you started it, the title Claude or Codex gives
 the conversation. The line under it says what the agent is doing or what it's
 waiting for. A settled agent keeps the last thing it said, unless it failed,
-when the line says why. Pull down for search, by name, title, folder or host.
+when the line says why. Pull down for search, by name, title, folder or computer.
 
 Swipe a row right to pin it, or left to settle it: it stops if it's running,
 and asks first if that would cut work short. A settled agent can be un-settled
 or deleted the same way, and sending it a message starts it again.
 
-Tap **+** to start an agent. Pick the host and the folder (your repositories
+Tap **+** to start an agent. Pick the computer and the folder (your repositories
 come first, then folders your agents used lately, or type a path), then the
 agent, its model, effort and permission. Turn on **New worktree** to give the
 agent a worktree of its own, made from the folder's repository, so it can work
-without touching your checkout. The host says which agents are signed in there,
+without touching your checkout. The computer says which agents are signed in there,
 and the app tells you before you start one that isn't.
 
 ## Chats
@@ -83,23 +83,22 @@ Open an agent's changes from its chat to read every file it touched. Select a
 line, or a range of lines, and comment on it with **Add to Review**. Your
 comments go back into the composer as one review, ready to send to the agent.
 
-## Hosts
+## Computers
 
-The Hosts tab lists your paired machines, and says how the phone reaches each
+The Computers tab lists your paired computers, and says how the phone reaches each
 one:
 
-- **On this network** or **direct**: the phone and the machine are on the same
-  network.
-- **Through the relay**: they're apart, and your account's relay connects
+- **On this network**: the phone and the computer are on the same network.
+- **Over the internet**: they're apart, and your account's relay connects
   them. The relay is part of [Pro](https://amux.sh/docs/account/plans-and-billing/).
-- **Away**: the machine is only reachable through the relay, and your account
+- **Away**: the computer is only reachable through the relay, and your account
   is on the free plan.
-- **Offline**: nothing reaches the machine right now. Its agents stay in your
+- **Offline**: nothing reaches the computer right now. Its agents stay in your
   list as they last were, and catch up when it's back.
 
-Machines found on your network that you haven't paired yet appear as cards
-above the list. Tap a host to see its details, including the fingerprint of
-its key. **Revoke This Host** stops the phone reaching it until you pair again.
+Computers found on your network that you haven't paired yet appear as cards
+above the list. Tap a computer to see its details, including the fingerprint of
+its key. **Unpair This Computer** stops the phone reaching it until you pair again.
 
 The first time the app looks for computers, iOS asks for permission to use
 your local network. If you said no, turn it back on in the iPhone's
@@ -109,8 +108,8 @@ your local network. If you said no, turn it back on in the iPhone's
 
 Tap the account picture at the top left of the Agents list to switch account,
 add another account, or open Settings. Each account keeps its own paired
-machines and agents. **Remove from This Phone** takes an account off the phone
-and leaves it on amux.sh. Adding it back means pairing its machines again.
+computers and agents. **Remove from This Phone** takes an account off the phone
+and leaves it on amux.sh. Adding it back means pairing its computers again.
 
 If one of your computers is already signed in, the phone offers to sign in as
 the same account when you pair, so there's no need to go through the browser
@@ -131,7 +130,7 @@ A notification names the agent and says what it needs:
   use a tool, and how many more requests are waiting.
 - It has a question, or a plan for you to decide.
 - It can't go on: it reached a usage limit, with the time it resets, it needs
-  signing in on its host, or its turn failed.
+  signing in on its computer, or its turn failed.
 - It stopped unexpectedly.
 
 Tap one to open the chat. You won't get one for the chat you're reading.

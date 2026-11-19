@@ -33,12 +33,9 @@ struct AppWindow: View {
     /// The centre: the open agent's chat, the new-agent page, or a host.
     @ViewBuilder private var detail: some View {
         if model.place.surface == .agents, let chat = model.chat, let agent = model.place.agent {
-            let row = model.stores?.fleet.row(agent)
-            ChatPane(
-                chat: chat, row: row, family: model.family(agent),
-                changesOpen: model.place.showsChanges(native: row?.native == true), actions: agentActions(agent)
-            )
-            .id(agent)
+            let row = model.row(agent)
+            ChatPane(chat: chat, row: row, actions: agentActions(agent))
+                .id(agent)
         } else if model.place.surface == .agents, model.place.agent == nil {
             newAgentPage
         } else if model.place.surface == .hosts, let id = model.place.host, let host = host(id) {
@@ -62,7 +59,6 @@ struct AppWindow: View {
             agents: model.stores?.fleet.rows.filter { $0.card.agent.host == id } ?? [],
             now: model.stores?.fleet.orderedAt ?? Date(),
             openAgent: { model.openChat($0) },
-            toggleFamily: { model.stores?.toggleFamily($0) },
             revoke: { model.revoke($0) }
         )
         .id(id)
@@ -70,7 +66,7 @@ struct AppWindow: View {
 
     @ViewBuilder private var changes: some View {
         if let chat = model.chat, model.changesShown {
-            ChangesPane(chat: chat) { model.place.changes = false }
+            ChangesPane(chat: chat)
         }
     }
 
@@ -110,7 +106,18 @@ struct AppWindow: View {
                 now: stores?.fleet.orderedAt ?? Date()),
             hosts: stores?.hosts.hosts ?? [], thisMac: stores?.hosts.local,
             toFinish: model.setup?.toFinish ?? 0, problem: model.problem, note: model.note,
-            signingIn: model.signingIn, updateReady: model.update != nil)
+            signingIn: model.signingIn, updateReady: model.update != nil,
+            member: { model.member($0) }, head: { model.head(of: $0) },
+            opened: opened)
+    }
+
+    /// The open agent's branch, changes, relatives and actions, for the
+    /// bars around its chat.
+    private var opened: OpenAgentBar? {
+        guard model.place.surface == .agents, let agent = model.place.agent else { return nil }
+        return OpenAgentBar(
+            branch: model.chat?.frame?.git?.branch, changes: model.chat?.changes, family: model.family(agent),
+            actions: agentActions(agent))
     }
 
     private var actions: MainActions {
@@ -123,10 +130,9 @@ struct AppWindow: View {
             restartToUpdate: model.restartToUpdate,
             newAgent: { model.newAgent() },
             search: { model.stores?.filterFleet(FleetFilter(words: $0, only: nil)) },
-            toggleFamily: { model.stores?.toggleFamily($0) },
             act: { act, agent in Task { await model.act(act, on: agent) } },
             deleteWarning: { agent in
-                guard let stores = model.stores else { return .failure(RuntimeFailure("nothing is running")) }
+                guard let stores = model.stores else { return .failure(RuntimeFailure("amux isn’t running")) }
                 return await stores.deleteWarning(agent).mapError { $0 }
             },
             dismissProblem: { model.dismissProblem() },

@@ -3,37 +3,40 @@ import SwiftUI
 /// The window's type scale. Every text size the screens use is one of
 /// these, so a change to how a kind of text reads is made once.
 ///
-/// Monospaced text takes the half steps (`small`, `callout`): at the same
-/// size it reads larger than the system face beside it.
-enum TextSize: CGFloat {
+/// The system face takes whole points only; monospaced text takes the
+/// half steps (`small`, `callout`) as well, since at the same size it
+/// reads larger than the system face beside it.
+struct TextSize: Sendable {
+    let rawValue: CGFloat
+
     /// A count on a badge.
-    case badge = 10
+    static let badge = TextSize(rawValue: 10)
     /// A rule's words, a timestamp under a bubble, a shortcut hint.
-    case caption = 11
-    /// A command's output.
-    case small = 11.5
+    static let caption = TextSize(rawValue: 11)
+    /// A command's output. Monospaced only.
+    static let small = TextSize(rawValue: 11.5)
     /// Meta beside a row's words, section heads, notes under a row.
-    case meta = 12
-    /// Code in prose, the activity line, a chat's ending.
-    case callout = 12.5
+    static let meta = TextSize(rawValue: 12)
+    /// Code in prose and in a step. Monospaced only.
+    static let callout = TextSize(rawValue: 12.5)
     /// Rows, controls and the work in a turn.
-    case body = 13
-    /// The person's prompt.
-    case bubble = 13.5
+    static let body = TextSize(rawValue: 13)
+    /// The person's prompt: the agent's size, so neither reads louder.
+    static let bubble = TextSize(rawValue: 14)
     /// The agent's prose.
-    case prose = 14
+    static let prose = TextSize(rawValue: 14)
     /// A card's title.
-    case title = 15
+    static let title = TextSize(rawValue: 15)
     /// A second-level heading in prose.
-    case proseSubheading = 15.5
+    static let proseSubheading = TextSize(rawValue: 16)
     /// A first-level heading in prose.
-    case proseHeading = 18
+    static let proseHeading = TextSize(rawValue: 18)
     /// A page's heading.
-    case heading = 22
+    static let heading = TextSize(rawValue: 22)
     /// Setting up's heading.
-    case display = 26
+    static let display = TextSize(rawValue: 26)
     /// The one large mark on an empty page.
-    case hero = 46
+    static let hero = TextSize(rawValue: 46)
 }
 
 extension Font {
@@ -50,22 +53,26 @@ extension Font {
 
 /// Corner radii, from the smallest control to the composer.
 enum Radius {
+    /// A rail button.
+    static let rail: CGFloat = 10
     /// A sidebar row, a small button's hover fill.
-    static let row: CGFloat = 6
-    /// A hover button's fill.
-    static let control: CGFloat = 7
-    /// The rail's tiles.
-    static let tile: CGFloat = 7.5
-    /// Wells inside a card: output, code, a field.
+    static let row: CGFloat = 8
+    /// A hover button's fill, a tab.
+    static let control: CGFloat = 8
+    /// Wells inside a card: output, code, a field; the rail's tiles.
     static let well: CGFloat = 8
     /// Cards in the feed and lists of hosts.
-    static let card: CGFloat = 10
+    static let card: CGFloat = 12
     /// What floats over the feed: the ask, the floating card.
-    static let panel: CGFloat = 12
+    static let panel: CGFloat = 16
     /// Setting up's cards.
     static let sheet: CGFloat = 14
     /// The composer and the prompt's bubble.
     static let composer: CGFloat = 16
+    /// A window on the frame. Concentric with the system's window corner
+    /// (20 points on macOS 26) at the frame's gap, so the bottom corners
+    /// run parallel to the window's own.
+    static let window: CGFloat = 12
 }
 
 /// How far a surface stands off what is under it.

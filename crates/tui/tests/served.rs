@@ -673,7 +673,7 @@ async fn raw_attach_from_a_far_agents_chat_does_not_say_enter_opens_its_chat() {
     terminal.draw(|frame| app.draw(frame)).unwrap();
     let screen = screen_text(terminal.backend().buffer());
     assert!(
-        screen.contains("another machine"),
+        screen.contains("another computer"),
         "the chat says the terminal is elsewhere:\n{screen}"
     );
     assert!(

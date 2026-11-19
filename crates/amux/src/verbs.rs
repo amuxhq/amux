@@ -95,7 +95,7 @@ fn exit_words(agent: &Agent) -> Option<String> {
         ExitCause::Killed => "killed",
         ExitCause::Quit => "quit",
         ExitCause::ProviderExited => "the provider exited",
-        ExitCause::DaemonLost | ExitCause::EndedWhileAway => "while the daemon was away",
+        ExitCause::DaemonLost | ExitCause::EndedWhileAway => "while amux was stopped",
         ExitCause::Orphaned => "orphaned while waiting for you",
         ExitCause::CouldNotStart => "could not start",
         ExitCause::DirectoryFailed => "its directory failed",

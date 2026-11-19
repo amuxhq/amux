@@ -62,6 +62,7 @@ fn entry(path: PathBuf, last_used_ms: Option<i64>) -> Option<RepositoryEntry> {
         .file_name()
         .map_or_else(|| text.clone(), |name| name.to_string_lossy().into_owned());
     Some(RepositoryEntry {
+        remote: git_facts::origin(&path),
         path: text,
         name,
         last_used_ms,

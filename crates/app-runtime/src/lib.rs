@@ -31,7 +31,7 @@ use tokio::task::JoinHandle;
 pub use ui_runtime::OpenError;
 use ui_runtime::{Fleet, Window};
 use ui_state::AgentKey;
-use ui_view::{FamilyHeader, FleetCard, FleetView};
+use ui_view::{FamilyHeader, FleetCard, FleetView, Repository};
 use values::{AgentAct, Directories, Directory, Draft, NewAgent, ProviderSignIn};
 pub use values::{FleetDelta, HostView};
 /// The provider whose catalogue `host_catalogue` reads, named here so the
@@ -367,6 +367,7 @@ impl AppRuntime {
             })
             .await?;
         let directory = |entry: RepositoryEntry| Directory {
+            repository: Repository::of(entry.remote.as_deref(), &entry.path),
             path: entry.path,
             name: entry.name,
         };

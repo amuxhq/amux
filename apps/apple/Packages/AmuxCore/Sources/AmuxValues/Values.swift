@@ -2604,15 +2604,21 @@ public struct Directories: Codable, Hashable, Sendable {
 public struct Directory: Codable, Hashable, Sendable {
     public var path: String
     public var name: String
+    /// The repository it is a checkout of, marked as the agents in any
+    /// checkout of it are: by its remote where the host says it, else by
+    /// its path.
+    public var repository: Repository?
 
-    public init(path: String, name: String) {
+    public init(path: String, name: String, repository: Repository?) {
         self.path = path
         self.name = name
+        self.repository = repository
     }
 
     private enum CodingKeys: String, CodingKey {
         case path
         case name
+        case repository
     }
 }
 
@@ -5897,15 +5903,19 @@ public struct Repository: Codable, Hashable, Sendable {
 public struct RepositorySuggestion: Codable, Hashable, Sendable {
     public var path: String
     public var name: String
+    /// Marked as [`Directory::repository`] is.
+    public var repository: Repository?
 
-    public init(path: String, name: String) {
+    public init(path: String, name: String, repository: Repository?) {
         self.path = path
         self.name = name
+        self.repository = repository
     }
 
     private enum CodingKeys: String, CodingKey {
         case path
         case name
+        case repository
     }
 }
 

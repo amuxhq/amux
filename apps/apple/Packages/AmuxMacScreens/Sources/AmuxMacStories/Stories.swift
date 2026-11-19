@@ -31,7 +31,7 @@ public struct Story: Identifiable, Sendable {
         self.window = window
         self.build = {
             switch window {
-            case .main: AnyView(build().frame(minWidth: 680, minHeight: 560))
+            case .main: AnyView(build().frame(minWidth: MainWindowSize.least.width, minHeight: MainWindowSize.least.height))
             case .settings, .sheet: AnyView(build())
             }
         }
@@ -131,9 +131,9 @@ public enum Stories {
             SetupStory(
                 SetupContent(step: .repositories, machineName: machine),
                 choices: SetupChoices(repositories: [
-                    SetupRepository(path: home("/src/website"), ticked: true),
-                    SetupRepository(path: home("/src/amux"), ticked: true),
-                    SetupRepository(path: home("/scratch/notes"), ticked: false),
+                    SetupRepository(path: home("/src/website"), ticked: true, repository: repository(home("/src/website"))),
+                    SetupRepository(path: home("/src/amux"), ticked: true, repository: repository(home("/src/amux"))),
+                    SetupRepository(path: home("/scratch/notes"), ticked: false, repository: repository(home("/scratch/notes"))),
                 ]))
         },
         Story("onboarding.improve") { SetupStory(SetupContent(step: .improve, machineName: machine)) },
@@ -156,15 +156,16 @@ public enum Stories {
 
     private static func card(
         _ number: UInt8, _ name: String, on host: String, _ attention: Attention, cwd: String = "/src/amux",
-        filing: Filing = .open, children: UInt32 = 0, ago: Int64 = 0, exit: ExitCause? = nil
+        filing: Filing = .open, children: UInt32 = 0, ago: Int64 = 0, exit: ExitCause? = nil,
+        branch: String = "main", reach: Reach = .online(.direct)
     ) -> FleetCard {
         FleetCard(
             agent: AgentKey(host: host == machine ? Array(repeating: 1, count: 16) : elsewhere, agent: Array(repeating: number, count: 16)),
             name: name, handle: name, kind: .claudeSdk, attention: attention, cwd: home(cwd),
             phaseSinceMs: Int64(Date.now.timeIntervalSince1970 * 1000) - ago * 1000,
-            host: host, hostReach: .online(.direct), children: children, familyAttention: attention,
+            host: host, hostReach: reach, children: children, familyAttention: attention,
             members: children + 1, descendants: children, backgroundJobs: 0, closeHeld: false, filing: filing,
-            topLevel: true, native: false, branch: "main", exitCause: exit, repository: repository(cwd), workspaceGoes: nil)
+            topLevel: true, native: false, branch: branch, exitCause: exit, repository: repository(cwd), workspaceGoes: nil)
     }
 
     /// The repository the runtime would name for a folder under /src, as if
@@ -203,23 +204,21 @@ public enum Stories {
     private static let needsYou = FleetSection(
         kind: .needsYou, families: 1, foldedByDefault: false,
         rows: [
-            row(card(1, "Fix the flaky relay test", on: machine, .needsYou, ago: 40),
+            row(card(1, "Fix the flaky relay test", on: machine, .needsYou, ago: 40, branch: "relay-flake"),
                 .said(.ask(key: "a", wants: .run(command: "cargo test -p relay"), why: "", more: 0))),
         ])
 
     private static let live = FleetSection(
-        kind: .live, families: 4, foldedByDefault: false,
+        kind: .live, families: 5, foldedByDefault: false,
         rows: [
-            row(card(2, "Write the release notes", on: machine, .working, cwd: "/src/website", ago: 12),
-                step("Reading CHANGELOG.md")),
-            row(card(3, "Tidy the settings page", on: "build-box", .working, cwd: "/src/console", children: 2, ago: 95),
-                step("cargo build -p amux-ui"), expanded: true),
-            row(card(7, "Check the toggles", on: "build-box", .working, cwd: "/src/console", ago: 30), step("Searching for “Toggle(”"),
-                depth: 1),
-            row(card(8, "Check the copy", on: "build-box", .idle, cwd: "/src/console", ago: 200), .lastSaid("Two labels say “Enabled”."),
-                depth: 1),
+            row(card(2, "Write the release notes", on: machine, .working, cwd: "/src/website", ago: 12, branch: "release-notes"),
+                step("git log --oneline v0.8.7..HEAD")),
+            row(card(3, "Tidy the settings page", on: "build-box", .working, cwd: "/src/console", children: 2, ago: 95, branch: "settings-tidy"),
+                step("cargo build -p amux-ui")),
             row(card(4, "Review the store migration", on: "build-box", .idle, cwd: "/src/amuxcloud", ago: 7_200),
                 .lastSaid("The migration is safe; two nits inside.")),
+            row(card(7, "Profile the phone build", on: "studio", .working, cwd: "/src/amux", ago: 1_800, branch: "phone-profile", reach: .away),
+                step("Recording a trace")),
             row(card(5, "Bump the toolchain", on: machine, .exited, ago: 86_400, exit: .failed("rustup was not found")),
                 .exited(.failed("rustup was not found"))),
         ])
@@ -270,6 +269,9 @@ public enum Stories {
                     fleet: FleetContent(sections: [needsYou, FleetSection(
                         kind: .live, families: 1, foldedByDefault: false, rows: [live.rows[0]])]),
                     thisMac: thisMac, toFinish: 3))
+        },
+        Story("fleet.working") {
+            MainStory(MainContent(profiles: [signedIn, work], fleet: busy, thisMac: thisMac), place: Place(working: true))
         },
         Story("fleet.settled") {
             MainStory(MainContent(profiles: [signedIn, work], fleet: busy, thisMac: thisMac), place: Place(settled: true))
@@ -322,13 +324,13 @@ public enum Stories {
         StillNewAgent(
             hosts: [thisMac, buildBox] + paired.dropFirst(), machine: thisMac.hostId,
             repositories: [
-                Directory(path: home("/src/amux"), name: "amux"),
-                Directory(path: home("/src/website"), name: "website"),
-                Directory(path: home("/src/skills"), name: "skills"),
+                Directory(path: home("/src/amux"), name: "amux", repository: repository(home("/src/amux"))),
+                Directory(path: home("/src/website"), name: "website", repository: repository(home("/src/website"))),
+                Directory(path: home("/src/skills"), name: "skills", repository: repository(home("/src/skills"))),
             ],
             recent: [
-                Directory(path: home("/src/amux-a2a"), name: "amux-a2a"),
-                Directory(path: home("/Desktop/notes"), name: "notes"),
+                Directory(path: home("/src/amux-a2a"), name: "amux-a2a", repository: repository(home("/src/amux-a2a"))),
+                Directory(path: home("/Desktop/notes"), name: "notes", repository: repository(home("/Desktop/notes"))),
             ],
             directory: home("/src/amux"))
     }
@@ -339,6 +341,10 @@ public enum Stories {
     private static let newAgent = [
         Story("new-agent.claude") {
             MainStory(MainContent(profiles: [signedIn], fleet: busy, hosts: paired, thisMac: thisMac))
+        },
+        Story("new-agent.picker", window: .sheet) {
+            AgentPicker(surface: starting())
+                .background(Color(nsColor: .windowBackgroundColor))
         },
         Story("new-agent.browsing", window: .sheet) {
             DirectoryChooser(surface: starting())
@@ -380,14 +386,19 @@ public enum Stories {
             agent: card.agent, name: card.name, kind: card.kind, phase: phase,
             composer: ComposerView(
                 mode: mode, switchedAway: false,
+                // The turn started when the agent went to work, so the chat's
+                // clock and the list's agree; the step at work began 4s ago.
                 activity: activity.map {
-                    Activity(kind: $0, sinceMs: 0, elapsedMs: 42_000, turnElapsedMs: 42_000)
+                    let now = Int64(Date.now.timeIntervalSince1970 * 1000)
+                    return Activity(
+                        kind: $0, sinceMs: now - 4_000, elapsedMs: 0,
+                        turnElapsedMs: max(0, now - 4_000 - card.phaseSinceMs))
                 }),
             controls: ControlsSummary(effort: "High", mode: nil, model: "Opus 5.5", permission: nil),
             connection: .live, caughtUp: true, hasOlder: false, arrivalsHeld: false, queue: [], underway: [],
             refused: [], askInput: nil, context: nil, ended: nil,
             git: Git(
-                baseBranch: "main", branch: "relay-flake",
+                baseBranch: "main", branch: card.branch ?? "main",
                 onBranch: ChangeTotals(files: 3, added: 48, removed: 12), remote: "github.com/amuxhq/amux",
                 uncommitted: ChangeTotals(files: 2, added: 30, removed: 4)),
             signIn: nil)
@@ -506,19 +517,67 @@ public enum Stories {
         ],
         added: 9, removed: 3)
 
+    private static func line(_ kind: LineKind, _ text: String, old: UInt32?, new: UInt32?, comments: [String] = []) -> DiffLine {
+        DiffLine(kind: kind, text: text, comments: comments, newLine: new, oldLine: old)
+    }
+
+    /// A review of every kind of file a diff holds: changed in two places
+    /// with a comment and a line too long for the column, added, renamed
+    /// with an edit, deleted (folded), and binary.
+    private static let wideReview = ReviewDoc(
+        base: "main", head: "relay-flake",
+        files: review.files + [
+            ReviewFile(
+                path: "crates/relay/src/backoff.rs", status: .added, added: 9, removed: 0, binary: false,
+                hunks: [
+                    Hunk(skips: false, scope: "", lines: [
+                        line(.added, "//! How long a dial waits before it tries again.", old: nil, new: 1),
+                        line(.added, "", old: nil, new: 2),
+                        line(.added, "use std::time::Duration;", old: nil, new: 3),
+                        line(.added, "", old: nil, new: 4),
+                        line(.added, "/// Doubles from 50 ms, capped at 2 s, so a cut link is redialled quickly at first and politely after.", old: nil, new: 5),
+                        line(.added, "pub fn backoff(attempt: u32) -> Duration {", old: nil, new: 6),
+                        line(.added, "    let ms = 50u64.saturating_mul(1 << attempt.min(6));", old: nil, new: 7),
+                        line(.added, "    Duration::from_millis(ms.min(2_000))", old: nil, new: 8),
+                        line(.added, "}", old: nil, new: 9),
+                    ]),
+                ],
+                comments: [], oldPath: nil),
+            ReviewFile(
+                path: "crates/relay/src/dial.rs", status: .renamed, added: 2, removed: 2, binary: false,
+                hunks: [
+                    Hunk(skips: true, scope: "pub async fn dial(&self, host: &Host) -> Result<Link> {", lines: [
+                        line(.context, "    let mut attempt = 0;", old: 31, new: 31),
+                        line(.removed, "    tokio::time::sleep(Duration::from_millis(100)).await;", old: 32, new: nil),
+                        line(.removed, "    attempt += 1;", old: 33, new: nil),
+                        line(.added, "    tokio::time::sleep(backoff(attempt)).await;", old: nil, new: 32,
+                             comments: ["Should the first try wait at all?"]),
+                        line(.added, "    attempt = attempt.saturating_add(1);", old: nil, new: 33),
+                        line(.context, "    self.connect(host).await", old: 34, new: 34),
+                    ]),
+                ],
+                comments: [], oldPath: "crates/relay/src/connect.rs"),
+            ReviewFile(
+                path: "crates/relay/src/legacy_retry.rs", status: .deleted, added: 0, removed: 24, binary: false,
+                hunks: [], comments: [], oldPath: nil),
+            ReviewFile(
+                path: "docs/images/relay-reconnect.png", status: .modified, added: 0, removed: 0, binary: true,
+                hunks: [], comments: [], oldPath: nil),
+        ],
+        added: 20, removed: 29)
+
     // MARK: - Subagents
 
     /// An agent that handed its audit to four of Claude's subagents.
+    /// One of them waits on the person, which the head's row says.
     private static var auditor: FleetRow {
-        row(card(12, "Audit the pairing code", on: machine, .working, children: 4, ago: 50),
-            .step(ActivityLine(
-                activity: Activity(kind: .subagents(count: 3), sinceMs: 0, elapsedMs: 0, turnElapsedMs: 0),
-                step: nil, subagents: nil)),
-            expanded: true)
+        var head = card(12, "Audit the pairing code", on: machine, .working, children: 4, ago: 50, branch: "pairing-audit")
+        head.familyAttention = .needsYou
+        return row(head, .said(.ask(key: "a", wants: .run(command: "cargo check --target x86_64-pc-windows-msvc"), why: "", more: 0)))
     }
 
     /// Its subagents, by the titles Claude gave them: each its own agent,
-    /// with no folder, listed under the parent that runs it.
+    /// with no folder, reached from the parent's chat rather than listed.
     private static let delegated: [(UInt8, String, Attention, String)] = [
         (21, "Survey the relay's retry path", .working, "sub-3f9a01c2"),
         (22, "Check the Windows build", .needsYou, "sub-81c4d2e7"),
@@ -545,8 +604,18 @@ public enum Stories {
     private static var delegatingFleet: FleetContent {
         FleetContent(sections: [
             needsYou,
-            FleetSection(kind: .live, families: 2, foldedByDefault: false, rows: [auditor] + subagents + [live.rows[0]]),
+            FleetSection(kind: .live, families: 2, foldedByDefault: false, rows: [auditor, live.rows[0]]),
         ])
+    }
+
+    /// The delegating fleet, with the subagents its head stands for.
+    private static var delegating: MainContent {
+        let members = subagents
+        let head = auditor.card.agent
+        return MainContent(
+            profiles: [signedIn], fleet: delegatingFleet, hosts: paired, thisMac: thisMac,
+            member: { agent in members.first { $0.card.agent == agent } },
+            head: { agent in members.contains { $0.card.agent == agent } ? head : nil })
     }
 
     private static func call(_ id: String, _ title: String, _ agent: UInt8, group: SubagentGroup?) -> Row {
@@ -642,7 +711,7 @@ public enum Stories {
         },
         Story("chat.subagents") {
             MainStory(
-                MainContent(profiles: [signedIn], fleet: delegatingFleet, hosts: paired, thisMac: thisMac),
+                delegating,
                 place: Place(agent: auditor.card.agent),
                 chat: StillChat(
                     rows: delegatingRows,
@@ -651,7 +720,7 @@ public enum Stories {
         },
         Story("chat.subagent") {
             MainStory(
-                MainContent(profiles: [signedIn], fleet: delegatingFleet, hosts: paired, thisMac: thisMac),
+                delegating,
                 place: Place(agent: subagents[0].card.agent),
                 chat: {
                     var native = frame(
@@ -695,6 +764,27 @@ public enum Stories {
         startAtLogin: true)
 
     private static let settings = [
+        Story("review.page") {
+            MainStory(
+                MainContent(profiles: [signedIn], fleet: busy, hosts: paired, thisMac: thisMac),
+                place: Place(agent: flaky.card.agent, changes: true),
+                chat: {
+                    let chat = StillChat(
+                        rows: conversationRows, frame: frame(flaky.card, .idle),
+                        changes: ChangeTotals(files: 6, added: 20, removed: 29), settings: claude)
+                    chat.reviewing = StillReview(doc: wideReview, folded: [0, 1, 4])
+                    return chat
+                }())
+        },
+        Story("review.no-changes") {
+            MainStory(
+                MainContent(profiles: [signedIn], fleet: busy, hosts: paired, thisMac: thisMac),
+                place: Place(agent: flaky.card.agent, changes: true),
+                chat: {
+                    let chat = StillChat(rows: conversationRows, frame: frame(flaky.card, .idle), settings: claude)
+                    return chat
+                }())
+        },
         Story("settings.machine", window: .settings) {
             SettingsScreen(state: .ready(machineSettings), account: SettingsAccount(profile: signedIn))
         },
@@ -720,6 +810,24 @@ private struct SetupStory: View {
 /// The main window with its first profile open, somewhere the storybook
 /// can move around, and a still chat for the agent it opens.
 private struct MainStory: View {
+    /// The content, with the open agent's branch, changes and relatives
+    /// for the bars, as the app reads them off its chat.
+    private var opened: MainContent {
+        var opened = content
+        if place.surface == .agents, place.agent != nil {
+            opened.opened = OpenAgentBar(
+                branch: chat?.frame?.git?.branch, changes: chat?.changes, family: family, actions: actions)
+        }
+        return opened
+    }
+
+    private var actions: AgentActions {
+        AgentActions(
+            openChanges: { place.changes = true }, reveal: {}, openEditor: {}, editor: "VS Code",
+            editorIcon: appIcon("com.microsoft.VSCode"), terminalIcon: appIcon("com.apple.Terminal"),
+            finderIcon: appIcon("com.apple.finder"))
+    }
+
     let content: MainContent
     let chat: StillChat?
     let family: FamilyHeader?
@@ -734,16 +842,9 @@ private struct MainStory: View {
     }
 
     var body: some View {
-        MainScreen(content: content, place: $place) {
+        MainScreen(content: opened, place: $place) {
             if place.surface == .agents, let chat, let agent = place.agent {
-                let row = content.fleet.sections.flatMap(\.rows).first { $0.card.agent == agent }
-                ChatPane(
-                    chat: chat, row: row,
-                    family: family, changesOpen: place.showsChanges(native: row?.native == true),
-                    actions: AgentActions(
-                        openChanges: { place.changes = true }, reveal: {}, openEditor: {}, editor: "VS Code",
-                        editorIcon: appIcon("com.microsoft.VSCode"), terminalIcon: appIcon("com.apple.Terminal"),
-                        finderIcon: appIcon("com.apple.finder")))
+                ChatPane(chat: chat, row: content.row(agent), actions: actions)
             } else if place.surface == .agents, place.agent == nil {
                 NewAgentPage(surface: starting)
             } else if place.surface == .hosts, let id = place.host,
@@ -757,12 +858,8 @@ private struct MainStory: View {
                 EmptyCentre(surface: place.surface)
             }
         } inspector: {
-            if let chat, place.showsChanges(
-                native: place.agent.flatMap { agent in
-                    content.fleet.sections.flatMap(\.rows).first { $0.card.agent == agent }
-                }?.native == true)
-            {
-                ChangesPane(chat: chat) { place.changes = false }
+            if let chat, content.showsChanges(place) {
+                ChangesPane(chat: chat)
             }
         }
     }

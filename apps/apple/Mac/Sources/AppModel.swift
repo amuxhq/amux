@@ -232,7 +232,7 @@ final class AppModel {
         guard let agent, let stores else { return }
         do {
             let model = try stores.chat(agent)
-            let host = stores.fleet.row(agent).map { PlaceNames.host($0.hostName) } ?? "its host"
+            let host = self.row(agent).map { PlaceNames.host($0.hostName) } ?? "its computer"
             chat = MacChat(model: model, host: host)
         } catch {
             problem = error.description
@@ -243,6 +243,31 @@ final class AppModel {
     func family(_ agent: AgentKey) -> FamilyHeader? {
         _ = stores?.applied
         return profile?.family(agent)
+    }
+
+    /// An agent's row: the sidebar's, or for a family's member, which the
+    /// sidebar leaves to its head, one made from its card.
+    func row(_ agent: AgentKey) -> FleetRow? {
+        stores?.fleet.row(agent) ?? member(agent)
+    }
+
+    /// A member of a family, as a row: the runtime lists only heads.
+    func member(_ agent: AgentKey) -> FleetRow? {
+        _ = stores?.applied
+        guard let card = profile?.card(agent) else { return nil }
+        return FleetRow(card: card, depth: 1, expanded: false, secondLine: .blank, loud: nil)
+    }
+
+    /// The head of the family an agent is in: its eldest ancestor this Mac
+    /// knows, whose row stands for it in the sidebar.
+    func head(of agent: AgentKey) -> AgentKey? {
+        _ = stores?.applied
+        var at = agent
+        var seen: Set<AgentKey> = [agent]
+        while let parent = profile?.family(at)?.parent?.agent, seen.insert(parent).inserted {
+            at = parent
+        }
+        return at == agent ? nil : at
     }
 
     /// Opens the new-agent page, on this Mac to begin with.
@@ -263,7 +288,7 @@ final class AppModel {
     /// Whether the changes pane shows for the agent open now: a provider
     /// subagent has none of its own.
     var changesShown: Bool {
-        place.showsChanges(native: place.agent.flatMap { stores?.fleet.row($0) }?.native == true)
+        place.showsChanges(native: place.agent.flatMap { row($0) }?.native == true)
     }
 
     /// Opens an agent's chat from elsewhere: the host page, a relative on
@@ -299,7 +324,7 @@ final class AppModel {
     /// `amux attach` there, opened as Terminal opens any `.command` file.
     func openTerminal(_ agent: AgentKey) {
         // A provider subagent has no interface of its own to attach to.
-        guard let row = stores?.fleet.row(agent), !row.native else { return }
+        guard let row = self.row(agent), !row.native else { return }
         var script = "#!/bin/zsh -l\n"
         if let config = Self.config { script += "export AMUX_CONFIG=\(Self.quoted(config))\n" }
         script += "exec amux attach \(Self.quoted(row.card.handle)) --in native\n"
@@ -309,7 +334,7 @@ final class AppModel {
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
             NSWorkspace.shared.open(url)
         } catch {
-            problem = "Terminal could not be opened: \(error.localizedDescription)"
+            problem = "Couldn’t open Terminal: \(error.localizedDescription)"
         }
     }
 
@@ -340,7 +365,7 @@ final class AppModel {
     /// and in the editor. An agent elsewhere has neither here.
     func local(_ agent: AgentKey) -> String? {
         guard let local = stores?.hosts.local?.hostId, agent.host == local,
-            let row = stores?.fleet.row(agent), !row.workingDirectory.isEmpty
+            let row = self.row(agent), !row.workingDirectory.isEmpty
         else { return nil }
         return row.workingDirectory
     }
@@ -400,7 +425,7 @@ final class AppModel {
     /// why it did not, or nil once it did.
     @discardableResult
     func apply(_ change: SettingsChange) async -> String? {
-        guard let runtime else { return "amux is not running" }
+        guard let runtime else { return "amux isn’t running" }
         switch await runtime.updateSettings(change) {
         case .success(let settings):
             self.settings = settings
@@ -445,7 +470,7 @@ final class AppModel {
         do {
             let account = try await cloud.signIn(.adding, presenting: WebSignIn())
             guard let handover = await cloud.handOver(account.id) else {
-                return .failed("amux.sh signed in without a token to keep")
+                return .failed("Sign-in didn’t finish. Try again.")
             }
             await cloud.forgetSession(account.id)
             switch await runtime.bind(

@@ -5,7 +5,7 @@ use std::process::Command;
 
 use git_facts::{
     Change, ChangeTotals, Comparison, FileChange, GitError, GitFacts, Worktree, WorktreeError,
-    add_worktree, compare, facts, own_commits, repository as repository_of,
+    add_worktree, compare, facts, origin, own_commits, repository as repository_of,
 };
 
 fn git(cwd: &Path, args: &[&str]) -> String {
@@ -466,4 +466,20 @@ async fn a_branch_counts_the_commits_no_other_ref_holds() {
     assert_eq!(own_commits(dir).await.unwrap(), Some(0), "tagged");
     git(dir, &["switch", "-q", "--detach"]);
     assert_eq!(own_commits(dir).await.unwrap(), None, "detached");
+}
+
+#[test]
+fn a_folders_origin_names_its_repository_as_facts_do() {
+    let dir = repository();
+    assert_eq!(origin(dir.path()), None);
+    git(
+        dir.path(),
+        &["remote", "add", "origin", "git@github.com:amuxhq/amux.git"],
+    );
+    assert_eq!(
+        origin(dir.path()).as_deref(),
+        Some("github.com/amuxhq/amux")
+    );
+    let outside = tempfile::tempdir().unwrap();
+    assert_eq!(origin(outside.path()), None);
 }

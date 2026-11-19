@@ -200,7 +200,7 @@ public final class NewAgentStore {
             guard !path.isEmpty, !(places[host] ?? []).contains(where: { $0.path == path })
             else { continue }
             let name = path.split(separator: "/").last.map(String.init) ?? path
-            places[host, default: []].append(Directory(path: path, name: name))
+            places[host, default: []].append(Directory(path: path, name: name, repository: nil))
         }
         worked = places
     }

@@ -98,7 +98,7 @@
       }
     },
     "%@ (deleted)" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -110,7 +110,7 @@
       }
     },
     "%@ (new file)" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -141,6 +141,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ B"
+          }
+        }
+      }
+    },
+    "%@ could not say what %@ offers. The agent starts with the computer’s defaults." : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ could not say what %@ offers. The agent starts with the computer’s defaults."
+          }
+        }
+      }
+    },
+    "%@ is away because reaching it from another network needs Pro. This chat fills in once it can be reached." : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is away because reaching it from another network needs Pro. This chat fills in once it can be reached."
           }
         }
       }
@@ -182,7 +206,7 @@
       }
     },
     "%@ background jobs" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -205,20 +229,8 @@
         }
       }
     },
-    "%@ could not say what %@ offers. The agent starts with the host’s defaults." : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ could not say what %@ offers. The agent starts with the host’s defaults."
-          }
-        }
-      }
-    },
     "%@ does not run %@ here." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -230,7 +242,7 @@
       }
     },
     "%@ does not run %@ here. It runs %@." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -290,25 +302,13 @@
       }
     },
     "%@ is away" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ is away"
-          }
-        }
-      }
-    },
-    "%@ is away because the free plan does not relay between hosts. This chat fills in once it can be reached." : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ is away because the free plan does not relay between hosts. This chat fills in once it can be reached."
           }
         }
       }
@@ -350,7 +350,7 @@
       }
     },
     "%@ is not attached because it is over the %@ MB limit for attachments." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -362,7 +362,7 @@
       }
     },
     "%@ is not attached: %@" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -398,7 +398,7 @@
       }
     },
     "%@ is out of reach" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -410,7 +410,7 @@
       }
     },
     "%@ is out of reach · your draft is kept" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -529,30 +529,6 @@
         }
       }
     },
-    "%@ no longer trusts this phone · your draft is kept" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ no longer trusts this phone · your draft is kept"
-          }
-        }
-      }
-    },
-    "%@ no longer trusts this phone. Pair again to see this chat." : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ no longer trusts this phone. Pair again to see this chat."
-          }
-        }
-      }
-    },
     "%@ of %@" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
@@ -578,7 +554,7 @@
       }
     },
     "%@ of %@ tokens" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -674,7 +650,7 @@
       }
     },
     "%@ subagents" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -710,13 +686,49 @@
       }
     },
     "%@ tokens" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ tokens"
+          }
+        }
+      }
+    },
+    "%@ unpaired this Mac · your draft is kept" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ unpaired this Mac · your draft is kept"
+          }
+        }
+      }
+    },
+    "%@ unpaired this phone · your draft is kept" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ unpaired this phone · your draft is kept"
+          }
+        }
+      }
+    },
+    "%@ unpaired this phone. Pair again to see this chat." : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ unpaired this phone. Pair again to see this chat."
           }
         }
       }
@@ -793,18 +805,6 @@
         }
       }
     },
-    "%@ · no longer trusts this phone" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ · no longer trusts this phone"
-          }
-        }
-      }
-    },
     "%@ · out of reach" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
       "extractionState" : "manual",
@@ -837,6 +837,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · this phone is signed out"
+          }
+        }
+      }
+    },
+    "%@ · unpaired this phone" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · unpaired this phone"
           }
         }
       }
@@ -1225,6 +1237,42 @@
         }
       }
     },
+    "Add repositories in amux on this computer, or type a path." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add repositories in amux on this computer, or type a path."
+          }
+        }
+      }
+    },
+    "amux stopped" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "amux stopped"
+          }
+        }
+      }
+    },
+    "An account lets this phone reach your computers from anywhere, and a subscription bought on %@ carries over." : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An account lets this phone reach your computers from anywhere, and a subscription bought on %@ carries over."
+          }
+        }
+      }
+    },
     "Can’t load. Tap to try again." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Attachments.swift.",
       "extractionState" : "manual",
@@ -1233,6 +1281,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Can’t load. Tap to try again."
+          }
+        }
+      }
+    },
+    "Computer" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer"
+          }
+        }
+      }
+    },
+    "Computer, %@" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer, %@"
+          }
+        }
+      }
+    },
+    "Computers" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxShell/Sources/AmuxShell/Route.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computers"
+          }
+        }
+      }
+    },
+    "Get a new one from the computer." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get a new one from the computer."
+          }
+        }
+      }
+    },
+    "it unpaired this phone, pair again to reach it" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "it unpaired this phone, pair again to reach it"
           }
         }
       }
@@ -1257,6 +1365,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Its chat is deleted on every device."
+          }
+        }
+      }
+    },
+    "Its invitation names no address here, so it can only be reached over the internet. Sign in and this phone can take it up." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its invitation names no address here, so it can only be reached over the internet. Sign in and this phone can take it up."
           }
         }
       }
@@ -1341,6 +1461,306 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Its worktree is removed too."
+          }
+        }
+      }
+    },
+    "It’s online, but the free plan doesn’t connect computers to each other over the internet, so reaching it needs Pro." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It’s online, but the free plan doesn’t connect computers to each other over the internet, so reaching it needs Pro."
+          }
+        }
+      }
+    },
+    "Look for Computers" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FirstRun.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Look for Computers"
+          }
+        }
+      }
+    },
+    "No computers yet" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No computers yet"
+          }
+        }
+      }
+    },
+    "No matching folders on this computer." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No matching folders on this computer."
+          }
+        }
+      }
+    },
+    "Nothing is paired yet." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing is paired yet."
+          }
+        }
+      }
+    },
+    "Offline · it unpaired this phone" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline · it unpaired this phone"
+          }
+        }
+      }
+    },
+    "Open amux on a computer on this network to pair it, or scan the code it shows with the Camera app." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open amux on a computer on this network to pair it, or scan the code it shows with the Camera app."
+          }
+        }
+      }
+    },
+    "Over the internet" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Over the internet"
+          }
+        }
+      }
+    },
+    "over the internet" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "over the internet"
+          }
+        }
+      }
+    },
+    "Pair a Computer" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pair a Computer"
+          }
+        }
+      }
+    },
+    "Pair a computer before starting an agent." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pair a computer before starting an agent."
+          }
+        }
+      }
+    },
+    "Pair your first computer" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pair your first computer"
+          }
+        }
+      }
+    },
+    "Pro" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro"
+          }
+        }
+      }
+    },
+    "Pro is included with this account." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Paywall.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro is included with this account."
+          }
+        }
+      }
+    },
+    "Pro reaches your computers from anywhere. Computers on this network work without it." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Paywall.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro reaches your computers from anywhere. Computers on this network work without it."
+          }
+        }
+      }
+    },
+    "Reachable over the internet" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reachable over the internet"
+          }
+        }
+      }
+    },
+    "reachable over the internet" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "reachable over the internet"
+          }
+        }
+      }
+    },
+    "reaching it from another network needs Pro" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "reaching it from another network needs Pro"
+          }
+        }
+      }
+    },
+    "Reading this computer’s repositories…" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading this computer’s repositories…"
+          }
+        }
+      }
+    },
+    "Run %@ on the computer to get one." : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run %@ on the computer to get one."
+          }
+        }
+      }
+    },
+    "Sign in again to reach your computers from anywhere" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/FleetStore.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in again to reach your computers from anywhere"
+          }
+        }
+      }
+    },
+    "Start an agent on a computer and it appears here." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start an agent on a computer and it appears here."
+          }
+        }
+      }
+    },
+    "That code didn’t work. Get a new one from the computer." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That code didn’t work. Get a new one from the computer."
+          }
+        }
+      }
+    },
+    "That computer is not on this network" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That computer is not on this network"
+          }
+        }
+      }
+    },
+    "That computer is offline. Open amux on it, then try again." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That computer is offline. Open amux on it, then try again."
           }
         }
       }
@@ -1437,18 +1857,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "a subagent"
-          }
-        }
-      }
-    },
-    "A subscription reaches your hosts from anywhere. Hosts on this network work without one." : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Paywall.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A subscription reaches your hosts from anywhere. Hosts on this network work without one."
           }
         }
       }
@@ -3481,18 +3889,6 @@
         }
       }
     },
-    "Host" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Host"
-          }
-        }
-      }
-    },
     "Hosts" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift, ios/Packages/AmuxShell/Sources/AmuxShell/Route.swift.",
       "extractionState" : "manual",
@@ -3673,30 +4069,6 @@
         }
       }
     },
-    "Its host no longer trusts this phone · pair again to reach it" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FleetWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Its host no longer trusts this phone · pair again to reach it"
-          }
-        }
-      }
-    },
-    "Its invitation names no address here, so it can only be reached through the relay. Sign in and this phone can take it up." : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Its invitation names no address here, so it can only be reached through the relay. Sign in and this phone can take it up."
-          }
-        }
-      }
-    },
     "Its turn failed" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
       "extractionState" : "manual",
@@ -3861,18 +4233,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Loading this chat from %@…"
-          }
-        }
-      }
-    },
-    "Lost its daemon" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lost its daemon"
           }
         }
       }
@@ -4130,7 +4490,7 @@
       }
     },
     "No effort level named %@." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -4142,7 +4502,7 @@
       }
     },
     "No effort level named %@. It offers %@." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -4153,20 +4513,8 @@
         }
       }
     },
-    "No hosts yet" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No hosts yet"
-          }
-        }
-      }
-    },
     "No model named %@." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -4178,7 +4526,7 @@
       }
     },
     "No model named %@. It offers %@." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -4297,18 +4645,6 @@
         }
       }
     },
-    "Nothing is trusted yet." : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nothing is trusted yet."
-          }
-        }
-      }
-    },
     "Nothing needs you · %@ working" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/FleetStore.swift.",
       "extractionState" : "manual",
@@ -4377,18 +4713,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Offline while this phone is signed out"
-          }
-        }
-      }
-    },
-    "Offline · it no longer trusts this phone" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Offline · it no longer trusts this phone"
           }
         }
       }
@@ -4593,18 +4917,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pair Again with %@"
-          }
-        }
-      }
-    },
-    "Pair a host before starting an agent." : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pair a host before starting an agent."
           }
         }
       }
@@ -4957,18 +5269,6 @@
         }
       }
     },
-    "Reachable through the relay" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reachable through the relay"
-          }
-        }
-      }
-    },
     "Read" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift, apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift, apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
@@ -4989,18 +5289,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Read only"
-          }
-        }
-      }
-    },
-    "Reading this host’s repositories…" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reading this host’s repositories…"
           }
         }
       }
@@ -5037,30 +5325,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Relaunch"
-          }
-        }
-      }
-    },
-    "Relay" : {
-      "comment" : "Label of the row on the You screen that says what the relay will carry for this account. Used in Accounts.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Relay"
-          }
-        }
-      }
-    },
-    "Relay access is included with this account." : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Paywall.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Relay access is included with this account."
           }
         }
       }
@@ -5245,18 +5509,6 @@
         }
       }
     },
-    "Add repositories in amux on this host, or type a path." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add repositories in amux on this host, or type a path."
-          }
-        }
-      }
-    },
     "Required" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
@@ -5385,42 +5637,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Review changes"
-          }
-        }
-      }
-    },
-    "Revoke" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Revoke"
-          }
-        }
-      }
-    },
-    "Revoke %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Revoke %@"
-          }
-        }
-      }
-    },
-    "Revoke %@?" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Revoke %@?"
           }
         }
       }
@@ -5773,18 +5989,6 @@
         }
       }
     },
-    "Sign in again to reach your hosts through the relay" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/FleetStore.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sign in again to reach your hosts through the relay"
-          }
-        }
-      }
-    },
     "Sign in to reach it from anywhere" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState" : "manual",
@@ -5929,18 +6133,6 @@
         }
       }
     },
-    "Start an agent on a host and it appears here." : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start an agent on a host and it appears here."
-          }
-        }
-      }
-    },
     "Start in %@" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
@@ -6050,7 +6242,7 @@
       }
     },
     "Stop %@?" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -6349,18 +6541,6 @@
         }
       }
     },
-    "That host is not on this network" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "That host is not on this network"
-          }
-        }
-      }
-    },
     "The agent exited with this open. Resume it to carry on." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift.",
       "extractionState" : "manual",
@@ -6393,6 +6573,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The chat is deleted on every device."
+          }
+        }
+      }
+    },
+    "the computer" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the computer"
           }
         }
       }
@@ -6541,26 +6733,50 @@
         }
       }
     },
-    "This host is no longer paired with this phone." : {
+    "This computer could not list its repositories." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This computer could not list its repositories."
+          }
+        }
+      }
+    },
+    "This computer is no longer paired with this phone." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This host is no longer paired with this phone."
+            "value" : "This computer is no longer paired with this phone."
           }
         }
       }
     },
-    "This page is on the agent’s machine. Open the link in a browser there." : {
+    "This Mac is signed out · your draft is kept" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac is signed out · your draft is kept"
+          }
+        }
+      }
+    },
+    "This page is on the agent’s computer. Open the link in a browser there." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This page is on the agent’s machine. Open the link in a browser there."
+            "value" : "This page is on the agent’s computer. Open the link in a browser there."
           }
         }
       }
@@ -6657,18 +6873,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Thought for %@"
-          }
-        }
-      }
-    },
-    "Through the relay" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Through the relay"
           }
         }
       }
@@ -6829,6 +7033,78 @@
         }
       }
     },
+    "Unpair" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unpair"
+          }
+        }
+      }
+    },
+    "Unpair %@" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unpair %@"
+          }
+        }
+      }
+    },
+    "Unpair %@?" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unpair %@?"
+          }
+        }
+      }
+    },
+    "Unpair This Computer" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unpair This Computer"
+          }
+        }
+      }
+    },
+    "Unpaired by its computer · pair again to reach it" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/FleetWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unpaired by its computer · pair again to reach it"
+          }
+        }
+      }
+    },
+    "unpaired this phone" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "unpaired this phone"
+          }
+        }
+      }
+    },
     "Unreadable" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Transcript.swift.",
       "extractionState" : "manual",
@@ -6841,14 +7117,14 @@
         }
       }
     },
-    "Update amux to reach your hosts through the relay" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/FleetStore.swift.",
+    "Update amux to reach your computers from anywhere" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/FleetStore.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Update amux to reach your hosts through the relay"
+            "value" : "Update amux to reach your computers from anywhere"
           }
         }
       }
@@ -7249,14 +7525,14 @@
         }
       }
     },
-    "Worked %@" : {
+    "Worked for %@" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Worked %@"
+            "value" : "Worked for %@"
           }
         }
       }
@@ -7333,14 +7609,26 @@
         }
       }
     },
-    "Your agents and files stay on your hosts." : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/DeleteAccount.swift.",
+    "Your agents and files stay on your computers." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/DeleteAccount.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your agents and files stay on your hosts."
+            "value" : "Your agents and files stay on your computers."
+          }
+        }
+      }
+    },
+    "Your amux.sh account, its subscription, and your agents and files on your computers stay as they are. This phone signs out and forgets the computers it paired for this account." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your amux.sh account, its subscription, and your agents and files on your computers stay as they are. This phone signs out and forgets the computers it paired for this account."
           }
         }
       }
@@ -8221,18 +8509,6 @@
         }
       }
     },
-    "it no longer trusts this phone, pair again to reach it" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "it no longer trusts this phone, pair again to reach it"
-          }
-        }
-      }
-    },
     "it was exiting" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
@@ -8421,18 +8697,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "no browser could be opened"
-          }
-        }
-      }
-    },
-    "no longer trusts this phone" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "no longer trusts this phone"
           }
         }
       }
@@ -8685,18 +8949,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "reachable on this network"
-          }
-        }
-      }
-    },
-    "reachable through the relay" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "reachable through the relay"
           }
         }
       }
@@ -9157,30 +9409,6 @@
         }
       }
     },
-    "the free plan does not relay between hosts" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "the free plan does not relay between hosts"
-          }
-        }
-      }
-    },
-    "the host" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "the host"
-          }
-        }
-      }
-    },
     "the installer answered something unreadable" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/Runtime.swift.",
       "extractionState" : "manual",
@@ -9421,18 +9649,6 @@
         }
       }
     },
-    "via relay" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "via relay"
-          }
-        }
-      }
-    },
     "vs %@" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
@@ -9501,6 +9717,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "xmark"
+          }
+        }
+      }
+    },
+    "You’ll see its agents here and can start new ones, which run on that computer as you. Pair only with your own computers. This invitation expires %@." : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You’ll see its agents here and can start new ones, which run on that computer as you. Pair only with your own computers. This invitation expires %@."
           }
         }
       }
@@ -9649,20 +9877,8 @@
         }
       }
     },
-    "Host, %@" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Host, %@"
-          }
-        }
-      }
-    },
     "Not signed in on %@" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -9674,7 +9890,7 @@
       }
     },
     "Agent, %@" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -9693,30 +9909,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This phone stops reaching it and its agents leave this phone’s list. Only pairing again brings it back."
-          }
-        }
-      }
-    },
-    "Revoke This Host" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Revoke This Host"
-          }
-        }
-      }
-    },
-    "The relay can see it. The free plan does not relay between hosts, so reaching it needs a subscription." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The relay can see it. The free plan does not relay between hosts, so reaching it needs a subscription."
           }
         }
       }
@@ -9770,7 +9962,7 @@
       }
     },
     "%@ can be paired" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -9793,20 +9985,8 @@
         }
       }
     },
-    "Pair a Host" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pair a Host"
-          }
-        }
-      }
-    },
     "Pair %@" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -9817,20 +9997,8 @@
         }
       }
     },
-    "Run %@ on the host to get one." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Run %@ on the host to get one."
-          }
-        }
-      }
-    },
     "Run %@ on %@ to get one." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -9841,20 +10009,8 @@
         }
       }
     },
-    "That code didn’t work. Get a new one from the host." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "That code didn’t work. Get a new one from the host."
-          }
-        }
-      }
-    },
     "That code didn’t work. Get a new one from %@." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -9866,25 +10022,13 @@
       }
     },
     "The code expires %@ after %@ prints it." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "The code expires %@ after %@ prints it."
-          }
-        }
-      }
-    },
-    "You’ll see its agents here and can start new ones, which run on that machine as you. Pair only with your own machines. This invitation expires %@." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You’ll see its agents here and can start new ones, which run on that machine as you. Pair only with your own machines. This invitation expires %@."
           }
         }
       }
@@ -9897,18 +10041,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "on this network"
-          }
-        }
-      }
-    },
-    "through the relay" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "through the relay"
           }
         }
       }
@@ -9933,18 +10065,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "That invitation didn’t work"
-          }
-        }
-      }
-    },
-    "Get a new one from the host." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Get a new one from the host."
           }
         }
       }
@@ -9974,25 +10094,13 @@
       }
     },
     "Remove %@ from this phone?" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remove %@ from this phone?"
-          }
-        }
-      }
-    },
-    "Your amux.sh account, its subscription, and your agents and files on your hosts stay as they are. This phone signs out and forgets the hosts it paired for this account." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your amux.sh account, its subscription, and your agents and files on your hosts stay as they are. This phone signs out and forgets the hosts it paired for this account."
           }
         }
       }
@@ -10005,18 +10113,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Manage Subscription"
-          }
-        }
-      }
-    },
-    "An account lets this phone reach your hosts from anywhere, and a subscription bought on %@ carries over." : {
-      "comment" : "Caption under the first Sign In in Settings; %@ is the account service's host. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "An account lets this phone reach your hosts from anywhere, and a subscription bought on %@ carries over."
           }
         }
       }
@@ -10094,7 +10190,7 @@
       }
     },
     "%@ could not list its repositories. Choose where its agents work, or type a path." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10117,44 +10213,8 @@
         }
       }
     },
-    "No matching folders on this host." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No matching folders on this host."
-          }
-        }
-      }
-    },
-    "This host could not list its repositories." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This host could not list its repositories."
-          }
-        }
-      }
-    },
-    "Open amux on a host on this network to pair it, or scan the code it shows with the Camera app." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open amux on a host on this network to pair it, or scan the code it shows with the Camera app."
-          }
-        }
-      }
-    },
     "Enter the code amux shows on %@." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10166,7 +10226,7 @@
       }
     },
     "Sign in as %@?" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10178,7 +10238,7 @@
       }
     },
     "Sign in %@ as %@ too?" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10190,7 +10250,7 @@
       }
     },
     "%@ offers its account, so this phone reaches it from anywhere." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10202,7 +10262,7 @@
       }
     },
     "Then this phone reaches %@ from anywhere." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10214,25 +10274,13 @@
       }
     },
     "%@ is offline. Open amux on %@, then try again." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ is offline. Open amux on %@, then try again."
-          }
-        }
-      }
-    },
-    "That host is offline. Open amux on it, then try again." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "That host is offline. Open amux on it, then try again."
           }
         }
       }
@@ -10245,18 +10293,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Signing in didn’t work. Sign in from Settings instead."
-          }
-        }
-      }
-    },
-    "Pair your first host" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pair your first host"
           }
         }
       }
@@ -10358,7 +10394,7 @@
       }
     },
     "Quote %@ if you write to us about it." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Report.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Report.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10370,7 +10406,7 @@
       }
     },
     "%@ takes a skill as a mention: type %@." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10430,7 +10466,7 @@
       }
     },
     "Pair it through %@" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10442,7 +10478,7 @@
       }
     },
     "%@ is online" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10537,18 +10573,6 @@
         }
       }
     },
-    "Look for Hosts" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FirstRun.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Look for Hosts"
-          }
-        }
-      }
-    },
     "Enter the code amux shows there" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState" : "manual",
@@ -10562,7 +10586,7 @@
       }
     },
     "Open amux on %@ to pair" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10574,7 +10598,7 @@
       }
     },
     "%@ Settling stops it now. Its chat and edits stay, and a message resumes it." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10586,7 +10610,7 @@
       }
     },
     "%@ has %@." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10598,7 +10622,7 @@
       }
     },
     "%@ is working and has %@." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10610,7 +10634,7 @@
       }
     },
     "%@ is working." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10622,7 +10646,7 @@
       }
     },
     "%@ needs you mid-turn and has %@." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10634,7 +10658,7 @@
       }
     },
     "%@ needs you mid-turn." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10766,7 +10790,7 @@
       }
     },
     "Settle %@?" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10778,7 +10802,7 @@
       }
     },
     "Settle held · sends when %@ is back" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -10826,7 +10850,7 @@
       }
     },
     "Subscribe to reach %@" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {

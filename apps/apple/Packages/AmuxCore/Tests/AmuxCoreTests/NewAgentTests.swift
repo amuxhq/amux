@@ -6,10 +6,10 @@ import XCTest
 @MainActor
 final class NewAgentTests: XCTestCase {
     private let listed = Directories(
-        recent: [Directory(path: "/src/amux", name: "amux")],
+        recent: [Directory(path: "/src/amux", name: "amux", repository: nil)],
         repositories: [
-            Directory(path: "/src/web", name: "web"),
-            Directory(path: "/src/relay", name: "relay"),
+            Directory(path: "/src/web", name: "web", repository: nil),
+            Directory(path: "/src/relay", name: "relay", repository: nil),
         ])
 
     func testTheMostRecentDirectoryIsPrefilledAndTheNameLeftToTheHost() {
@@ -93,12 +93,12 @@ final class NewAgentTests: XCTestCase {
         store.open(on: Cards.desk)
         store.listed(.success(Directories(
             recent: [
-                Directory(path: "/src/relay", name: "relay"),
-                Directory(path: "/src/scratch", name: "scratch"),
+                Directory(path: "/src/relay", name: "relay", repository: nil),
+                Directory(path: "/src/scratch", name: "scratch", repository: nil),
             ],
             repositories: [
-                Directory(path: "/src/web", name: "web"),
-                Directory(path: "/src/relay", name: "relay"),
+                Directory(path: "/src/web", name: "web", repository: nil),
+                Directory(path: "/src/relay", name: "relay", repository: nil),
             ])), asked: store.asking())
         XCTAssertEqual(store.repositories.map(\.name), ["web", "relay"])
         XCTAssertEqual(store.recent.map(\.name), ["scratch"])
@@ -115,7 +115,7 @@ final class NewAgentTests: XCTestCase {
         let store = NewAgentStore()
         store.open(on: Cards.desk)
         store.listed(.success(Directories(
-            recent: [], repositories: [Directory(path: "/src/web", name: "web")])),
+            recent: [], repositories: [Directory(path: "/src/web", name: "web", repository: nil)])),
             asked: store.asking())
         XCTAssertEqual(store.directory, "/src/web")
     }

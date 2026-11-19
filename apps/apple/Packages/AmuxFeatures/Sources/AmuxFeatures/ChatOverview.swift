@@ -68,7 +68,7 @@ public struct ChatOverview: View {
                 .designFont(.screenTitle, design)
                 .foregroundStyle(design.ink.color)
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: Space.m, verticalSpacing: Space.s) {
-                if !subject.host.isEmpty { fact(String(localized: "Host"), subject.host) }
+                if !subject.host.isEmpty { fact(String(localized: "Computer"), subject.host) }
                 if !subject.directory.isEmpty { fact(String(localized: "Directory"), subject.directory) }
                 if let branch = subject.branch, !branch.isEmpty {
                     fact(String(localized: "Branch"), branch, identifier: "chat.overview.branch")

@@ -1,63 +1,45 @@
 import AmuxValues
 import SwiftUI
 
-/// The column of surfaces down the window's left edge: amux's mark, then
-/// the surfaces as tiles, the one open filled, with Settings and the
-/// profile at its foot. It sits a step darker than the sidebar, as chrome
-/// does, so it reads as the window's frame rather than as padding.
+/// The frame's left column: the surfaces as tiles, the one open drawn as
+/// a small window of the same stuff as the windows beside it, with
+/// Settings and the profile at its foot. It has no ground of its own: it is
+/// the frame, and the window drags from its empty part.
 struct Rail: View {
     let content: MainContent
     @Binding var surface: Surface
     let actions: MainActions
 
     var body: some View {
-        VStack(spacing: 6) {
-            Mark()
-                .padding(.top, 10)
-                .padding(.bottom, 8)
+        VStack(spacing: 8) {
             ForEach(Surface.allCases) { each in
                 RailButton(surface: each, selected: surface == each, badge: badge(each)) { surface = each }
             }
             Spacer()
             SettingsLink {
                 Icon("settings", size: 18)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 36, height: 36)
+                    .foregroundStyle(Palette.textSecondary)
+                    .frame(width: Metrics.railButton, height: Metrics.railButton)
                     .contentShape(Rectangle())
             }
             .buttonStyle(HoverButtonStyle())
             .help("Settings (⌘,)")
             ProfileMenu(content: content, actions: actions)
-                .padding(.bottom, 12)
+                .frame(width: Metrics.railButton, height: Metrics.railButton)
+                .padding(.bottom, Metrics.gap)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.rail)
-        .overlay(alignment: .trailing) { Rectangle().fill(Palette.line).frame(width: 1) }
+        // The first button centres on the sidebar's search row.
+        .padding(.top, (Metrics.bar - Metrics.railButton) / 2)
+        .frame(width: Metrics.railButton)
+        .frame(maxHeight: .infinity)
+        .frame(width: Metrics.rail)
     }
 
     /// The rail counts the agents that need the person, wherever they are.
     private func badge(_ surface: Surface) -> Int {
         guard surface == .agents else { return 0 }
-        return content.fleet.live.flatMap(\.rows).filter { $0.card.familyAttention == .needsYou }.count
+        return content.fleet.live.flatMap(\.rows).filter { $0.depth == 0 && $0.card.familyAttention == .needsYou }.count
     }
-}
-
-/// amux's icon, small, at the top of the rail.
-private struct Mark: View {
-    var body: some View {
-        Image(nsImage: Self.image)
-            .resizable()
-            .interpolation(.high)
-            .frame(width: Metrics.control, height: Metrics.control)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous).strokeBorder(Color.white.opacity(0.08)))
-            .accessibilityHidden(true)
-    }
-
-    @MainActor static let image: NSImage = {
-        let url = Bundle.module.url(forResource: "mark", withExtension: "png", subdirectory: "Brand")
-        return url.flatMap { NSImage(contentsOf: $0) } ?? NSImage()
-    }()
 }
 
 private struct RailButton: View {
@@ -69,35 +51,30 @@ private struct RailButton: View {
 
     var body: some View {
         Button(action: action) {
-            Icon(surface.symbol, size: 19)
-                .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                .frame(width: 38, height: 38)
+            Icon(surface.symbol, size: 18).offset(y: surface == .agents ? 0.75 : 0)
+                .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(Palette.textTertiary))
+                .frame(width: Metrics.railButton, height: Metrics.railButton)
                 .background(
-                    RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
-                        .fill(selected ? Palette.raised : (hovering ? Palette.hover : .clear))
-                        .shadow(color: .black.opacity(selected ? 0.18 : 0), radius: 2, y: 1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
-                        .strokeBorder(selected ? Palette.line : .clear))
+                    RoundedRectangle(cornerRadius: Radius.rail, style: .continuous)
+                        .fill(selected || hovering ? Palette.hover : .clear))
                 .contentShape(Rectangle())
                 .overlay(alignment: .topTrailing) {
                     if badge > 0 {
                         Text("\(badge)")
-                            .font(.ui(.badge, weight: .bold))
-                            .monospacedDigit()
+                            .font(.system(size: 9, weight: .bold).monospacedDigit())
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 4.5)
-                            .frame(minWidth: 16, minHeight: 16)
-                            .background(Capsule().fill(Palette.you))
-                            .overlay(Capsule().strokeBorder(Palette.rail, lineWidth: 2))
-                            .offset(x: 6, y: -5)
+                            .padding(.horizontal, 3.5)
+                            .frame(minWidth: 14, minHeight: 14)
+                            .background(Capsule().fill(Palette.accent))
+                            .overlay(Capsule().stroke(Palette.frame, lineWidth: 1.5))
+                            .offset(x: -3, y: 3)
                     }
                 }
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(surface.title)
-        .accessibilityLabel(badge > 0 ? "\(surface.title), \(badge) need you" : surface.title)
+        .accessibilityLabel(badge > 0 ? "\(surface.title), \(badge) waiting for you" : surface.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -112,9 +89,9 @@ private struct ProfileMenu: View {
             if let current = content.current {
                 Section(current.account.email.isEmpty ? Words.profileName(current) : current.account.email) {
                     if current.account.binding == .signedIn {
-                        Button("Sign Out") { actions.signOut() }
+                        Button("Sign out") { actions.signOut() }
                     } else {
-                        Button("Sign In…") { actions.signIn() }
+                        Button("Sign in…") { actions.signIn() }
                             .disabled(content.signingIn)
                     }
                 }
@@ -131,7 +108,7 @@ private struct ProfileMenu: View {
                 }
             }
         } label: {
-            Picture(profile: content.current)
+            Picture(profile: content.current, size: 24)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -144,7 +121,7 @@ private struct ProfileMenu: View {
 /// The account's picture, or its initial while there is none.
 struct Picture: View {
     let profile: ProfileView?
-    var size: CGFloat = 30
+    var size: CGFloat = 28
 
     var body: some View {
         AsyncImage(url: profile.flatMap { URL(string: $0.account.picture) }) { image in
@@ -153,6 +130,8 @@ struct Picture: View {
             Text(initial)
                 .font(.system(size: size * 0.42, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
+                // Rounded capitals centred by their line sit high.
+                .offset(y: size * 0.04)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Palette.raised)
         }

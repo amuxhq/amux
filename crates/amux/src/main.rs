@@ -64,8 +64,8 @@ enum Command {
     ///
     /// It opens in the interface `ui.chat_in` names: amux's chat, or the
     /// agent's own (Claude Code's or Codex's) where it has one here. An agent
-    /// with no interface of its own on this machine, such as one on another
-    /// host or one started from the phone, opens in amux's chat.
+    /// with no interface of its own on this computer, such as one on another
+    /// computer or one started from the phone, opens in amux's chat.
     ///
     /// In an agent's own interface, <leader> d leaves it for the shell and
     /// <leader> s opens the fleet over it.
@@ -98,10 +98,10 @@ enum Command {
         /// Chat with it in this interface instead of the configured one.
         #[arg(long = "in", value_name = "INTERFACE")]
         interface: Option<settings::ChatInSetting>,
-        /// Its model; the host's default otherwise.
+        /// Its model; the computer's default otherwise.
         #[arg(long)]
         model: Option<String>,
-        /// Its reasoning effort; the host's default otherwise.
+        /// Its reasoning effort; the computer's default otherwise.
         #[arg(long)]
         effort: Option<String>,
         /// Its permission; the provider's own default otherwise.
@@ -140,8 +140,8 @@ enum Command {
         #[arg(long)]
         discard_changes: bool,
     },
-    /// Save a report of this host into one directory: the records of its
-    /// daemon core, its agents and the chats on screen, and our own logs,
+    /// Save a report of this computer into one directory: the records of
+    /// amux's core, its agents and the chats on screen, and our own logs,
     /// with nothing anybody wrote.
     Dump {
         /// What looks wrong, kept with the report.
@@ -151,10 +151,10 @@ enum Command {
         #[arg(long)]
         send: bool,
     },
-    /// Pair with another host, or open this one for pairing.
+    /// Pair with another computer, or open this one for pairing.
     ///
-    /// With a target — a host found nearby by name, an address, or
-    /// user@host over SSH — this host pairs with it. With none, this host
+    /// With a target — a computer found nearby by name, an address, or
+    /// user@host over SSH — this computer pairs with it. With none, this computer
     /// opens pairing mode and shows a PIN, or a QR code for the phone.
     Pair {
         target: Option<String>,
@@ -164,7 +164,7 @@ enum Command {
         /// With --qr, print the QR code's link too, to paste into a simulator.
         #[arg(long = "print-link", requires = "qr", hide = true)]
         print_link: bool,
-        /// Close this host's pairing mode.
+        /// Close this computer's pairing mode.
         #[arg(long, conflicts_with = "target", hide = true)]
         cancel: bool,
         /// Hold a PIN you choose open for an unattended demo, such as an app
@@ -192,23 +192,24 @@ enum Command {
         )]
         r#for: Option<std::time::Duration>,
     },
-    /// List the paired hosts and the hosts found nearby.
+    /// List the paired devices and the computers found nearby.
+    #[command(name = "devices", alias = "hosts")]
     Hosts,
-    /// Stop trusting a paired host, by name or id.
+    /// Unpair a paired device, by name or id.
     Unpair {
         host: String,
         /// Unpair without asking.
         #[arg(long)]
         force: bool,
     },
-    /// Sign the profile in to an amux account, so its hosts reach each
-    /// other through the relay.
+    /// Sign the profile in to an amux account, so its computers reach each
+    /// other from anywhere.
     Login {
         /// The account service.
         #[arg(long, default_value = settings::DEFAULT_CLOUD_URL, hide = true)]
         cloud_url: String,
     },
-    /// Sign the profile out; its agents and paired hosts stay.
+    /// Sign the profile out; its agents and paired devices stay.
     Logout,
     /// List or change the installation's profiles.
     Profile {
@@ -224,7 +225,7 @@ enum Command {
         #[arg(long)]
         retry: bool,
     },
-    /// Stop amux and remove it from this machine.
+    /// Stop amux and remove it from this computer.
     Uninstall {
         /// Stop running agents without asking.
         #[arg(long)]
@@ -238,7 +239,7 @@ enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
-    /// Start or stop amux on this machine.
+    /// Start or stop amux on this computer.
     Server {
         #[command(subcommand)]
         command: ServerCommand,
@@ -303,7 +304,7 @@ enum ConfigCommand {
 enum Internal {
     /// Host one agent: the directory holds its lock, specs and sockets.
     Agent { dir: PathBuf },
-    /// Ask a provider what it offers on this host and whether it is signed
+    /// Ask a provider what it offers on this computer and whether it is signed
     /// in, and write the answer to a file.
     Catalogue {
         /// The provider: claude or codex.
@@ -791,7 +792,7 @@ mod tests {
                 "rm",
                 "dump",
                 "pair",
-                "hosts",
+                "devices",
                 "unpair",
                 "login",
                 "logout",

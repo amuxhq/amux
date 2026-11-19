@@ -822,7 +822,7 @@ impl Onboarding {
             }
             SetupStep::SignIn => vec![("enter", "sign in", key(KeyCode::Enter)), later],
             SetupStep::Repositories if self.focus == self.repositories.rows.len() => vec![
-                ("enter", "add a folder", key(KeyCode::Enter)),
+                ("enter", "add a repository", key(KeyCode::Enter)),
                 ("↑↓", "move", key(KeyCode::Up)),
                 later,
             ],
@@ -948,13 +948,13 @@ impl Onboarding {
         let mut cursor = None;
         match &self.rename {
             Some(editor) => {
-                let (line, at) = Self::field(editor, "This machine is called ", width, theme);
+                let (line, at) = Self::field(editor, "This computer is called ", width, theme);
                 cursor = Some((at, screen.lines.len()));
                 screen.line(line);
             }
             None => {
                 let mut line = Line::from(Span::raw(" ".repeat(MARGIN)));
-                push(&mut line, "This machine is called ", theme.text(), width);
+                push(&mut line, "This computer is called ", theme.text(), width);
                 push(&mut line, &self.settings.host_name, theme.bright(), width);
                 push(&mut line, ".", theme.text(), width);
                 screen.line(line);
@@ -1000,7 +1000,7 @@ impl Onboarding {
                     "1. Scan to get amux on your iPhone",
                     "2. Enter ",
                     " in the app",
-                    "Whoever enters this code can run agents on this machine as you.",
+                    "Whoever enters this code can run agents on this computer as you.",
                 )
             };
             let mut steps: Vec<Line<'static>> = vec![words(scan, theme.text()), Line::default()];
@@ -1230,11 +1230,11 @@ impl Onboarding {
         );
         screen.blank();
         if !self.repositories.loaded {
-            screen.words("Looking for recent folders…", theme.faint());
+            screen.words("Looking for recent repositories…", theme.faint());
             return None;
         }
         if self.repositories.rows.is_empty() {
-            screen.words("No recent folders found.", theme.faint());
+            screen.words("No recent repositories found.", theme.faint());
             screen.blank();
         }
         for (row, (_, shown, ticked)) in self.repositories.rows.iter().enumerate() {
@@ -1266,7 +1266,7 @@ impl Onboarding {
                 );
                 push(
                     &mut line,
-                    "+ Add a folder…",
+                    "+ Add a repository…",
                     if focused {
                         theme.bright()
                     } else {

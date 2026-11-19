@@ -93,7 +93,7 @@ public struct Paywall: View {
     }
 
     private var explanation: String {
-        "A subscription reaches your hosts from anywhere. Hosts on this network work without one."
+        "Pro reaches your computers from anywhere. Computers on this network work without it."
     }
 
     private var plans: some View {
@@ -239,7 +239,7 @@ public struct Paywall: View {
         case .purchased(.web):
             "Manage your subscription on amux.sh."
         case .granted:
-            "Relay access is included with this account."
+            "Pro is included with this account."
         }
     }
 

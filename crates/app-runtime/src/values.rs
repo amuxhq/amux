@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use ui_state::{AgentKey, Connection, InputState, Key, PhaseView, Refusal};
 use ui_view::{
     AskCard, ChatAgents, ComposerView, ContextView, ControlsSummary, FleetView, FormValue,
-    OnboardingView, Overview, PLACEHOLDER, QuestionResponse, QueuedRow, Reach, RefusedPrompt, Row,
-    SentPrompt, SettingChange, SettingsView, SetupStep, SignInView,
+    OnboardingView, Overview, PLACEHOLDER, QuestionResponse, QueuedRow, Reach, RefusedPrompt,
+    Repository, Row, SentPrompt, SettingChange, SettingsView, SetupStep, SignInView,
 };
 use wire::{BlobRef, Kind, Platform, RouteKind};
 
@@ -539,6 +539,10 @@ pub struct NewAgent {
 pub struct Directory {
     pub path: String,
     pub name: String,
+    /// The repository it is a checkout of, marked as the agents in any
+    /// checkout of it are: by its remote where the host says it, else by
+    /// its path.
+    pub repository: Option<Repository>,
 }
 
 /// What a host offers to start an agent in: where agents ran lately and the
@@ -815,6 +819,8 @@ impl From<SettingsChange> for wire::UpdateSettingsRequest {
 pub struct RepositorySuggestion {
     pub path: String,
     pub name: String,
+    /// Marked as [`Directory::repository`] is.
+    pub repository: Option<Repository>,
 }
 
 /// Where one step of setting up stands, as the daemon keeps it.

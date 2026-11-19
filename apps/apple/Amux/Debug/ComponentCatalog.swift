@@ -1159,13 +1159,11 @@ enum CatalogFixtures {
     /// uncommitted changes.
     static let worktreeSubject = ChatSubject(
         name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
-        reach: .online(.direct), filing: .closed,
-        workspaceGoes: WorkspaceGoes(
-            branch: closedSubject.branch, branchCommits: nil, uncommitted: ChangeTotals(files: 3, added: 42, removed: 7)))
-    /// The host's count of what that worktree holds.
+        reach: .online(.direct), filing: .closed)
+    /// The host's preview of what deleting it takes with it.
     static let counted = DeleteWarning.goes(
         WorkspaceGoes(branch: closedSubject.branch, branchCommits: nil, uncommitted: ChangeTotals(files: 3, added: 42, removed: 7)))
-    /// A host asked what a worktree holds that has not answered yet.
+    /// A host asked what a delete takes that has not answered yet.
     static func unanswered() async -> Result<DeleteWarning?, RuntimeFailure> {
         try? await Task.sleep(for: .seconds(86_400))
         return .success(nil)
@@ -1436,18 +1434,18 @@ enum CatalogFixtures {
         agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 5, count: 16)),
         name: "docs-sweep", handle: "docs-sweep", kind: .claudeSdk, attention: .exited, cwd: "", phaseSinceMs: 0,
         host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .exited,
-        members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: .finished, repository: nil, workspaceGoes: nil)
+        members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: .finished, repository: nil)
 
     static let family = FamilyHeader(
         children: [
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 3, count: 16)),
                       name: "worker-2", handle: "worker-2", kind: .claudeSdk, attention: .needsYou, cwd: "", phaseSinceMs: 0,
                       host: "Laptop", hostReach: .online(.direct), children: 0, familyAttention: .needsYou,
-                      members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: nil, repository: nil, workspaceGoes: nil),
+                      members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: nil, repository: nil),
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 4, count: 16)),
                       name: "worker-3", handle: "worker-3", kind: .codex, attention: .working, cwd: "", phaseSinceMs: 0,
                       host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .working,
-                      members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: nil, repository: nil, workspaceGoes: nil),
+                      members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: nil, repository: nil),
         ],
         attention: .needsYou, needYou: 1, parent: nil)
 }
@@ -2193,5 +2191,5 @@ extension CatalogFixtures {
             cwd: "/Users/ada/src/amux", phaseSinceMs: 0, host: "Studio", hostReach: .online(.direct),
             children: 4, familyAttention: .needsYou, members: 5, descendants: 4, backgroundJobs: 0,
             closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: nil,
-            repository: nil, workspaceGoes: nil))
+            repository: nil))
 }

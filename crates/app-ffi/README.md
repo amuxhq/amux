@@ -250,7 +250,7 @@ device's identity in the profile and the machines it trusts),
 `amux_profile_create_agent`, `amux_profile_directories`,
 `amux_profile_agent_act` (rename, stop, delete),
 `amux_profile_delete_warning` (what a delete does to the agent's workspace,
-asking its host when the agent has no process), `amux_profile_dump` (the one dump, saved or sent) and
+as its host previews it), `amux_profile_dump` (the one dump, saved or sent) and
 `amux_profile_submit_report` (writes the report around that dump and sends
 it, answering a `ReportSent`).
 `amux_session_discard` forgets a not-confirmed input at once, and

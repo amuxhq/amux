@@ -589,7 +589,6 @@ private struct ChatPage: View {
             closeHeld: card?.closeHeld ?? false,
             filing: card?.filing ?? .open,
             topLevel: card?.topLevel ?? true,
-            workspaceGoes: card?.workspaceGoes,
             native: card?.native ?? false)
         return Standing(subject: subject, family: stores.profile?.family(agent), listed: row != nil)
     }

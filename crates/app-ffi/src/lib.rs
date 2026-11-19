@@ -2629,9 +2629,9 @@ pub unsafe extern "C" fn amux_profile_agent_act(
 }
 
 /// What deleting an agent, named by its `AgentKey` as JSON, does to its
-/// workspace, once current: the ticket answers `{"Ok": DeleteWarning}`,
-/// `{"Ok": null}` when the workspace stays, or `{"Err": ..}`. For an agent
-/// with no process it asks the agent's host first.
+/// workspace, as the agent's host previews it: the ticket answers
+/// `{"Ok": DeleteWarning}` (`Unknown` when the host could not be asked),
+/// or `{"Ok": null}` when the workspace stays.
 ///
 /// # Safety
 /// `profile` is from `amux_profile_open`; the string is NUL-terminated.

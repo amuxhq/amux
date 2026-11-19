@@ -1309,26 +1309,26 @@
         }
       }
     },
-    "Checking its worktree for uncommitted changes…" : {
+    "Checking whether its worktree is removed too…" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Checking its worktree for uncommitted changes…"
+            "value" : "Checking whether its worktree is removed too…"
           }
         }
       }
     },
-    "Its worktree is removed too, but stays on disk if it has uncommitted changes, which couldn’t be checked." : {
+    "Its worktree couldn’t be checked. If it’s removed too, it stays on disk while it has uncommitted changes." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Its worktree is removed too, but stays on disk if it has uncommitted changes, which couldn’t be checked."
+            "value" : "Its worktree couldn’t be checked. If it’s removed too, it stays on disk while it has uncommitted changes."
           }
         }
       }

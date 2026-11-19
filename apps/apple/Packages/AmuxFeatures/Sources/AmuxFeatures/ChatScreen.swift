@@ -31,9 +31,6 @@ public struct ChatSubject: Equatable, Sendable {
     public let filing: Filing
     /// It has no parent, so it may be pinned.
     public let topLevel: Bool
-    /// The workspace that deleting it removes, as its fleet row says; nil
-    /// when the workspace stays.
-    public let workspaceGoes: WorkspaceGoes?
     /// A subagent its parent's provider runs: it goes with its parent, has
     /// no folder and cannot be messaged, so it is never deleted on its own
     /// and has no address to copy.
@@ -42,8 +39,7 @@ public struct ChatSubject: Equatable, Sendable {
     public init(
         name: String, host: String, directory: String, branch: String? = nil, reach: Reach,
         connecting: Bool = false, descendants: Int = 0, backgroundJobs: Int = 0, closeHeld: Bool = false,
-        filing: Filing = .open, topLevel: Bool = true, workspaceGoes: WorkspaceGoes? = nil,
-        native: Bool = false
+        filing: Filing = .open, topLevel: Bool = true, native: Bool = false
     ) {
         self.name = name
         self.host = host
@@ -56,7 +52,6 @@ public struct ChatSubject: Equatable, Sendable {
         self.closeHeld = closeHeld
         self.filing = filing
         self.topLevel = topLevel
-        self.workspaceGoes = workspaceGoes
         self.native = native
     }
 
@@ -722,8 +717,8 @@ public struct ChatStanding: View {
                 }
             case .delete?:
                 DeleteCard(
-                    name: subject.name, descendants: descendants, workspaceGoes: subject.workspaceGoes,
-                    ask: deleteWarning, cancel: { showing = nil }
+                    name: subject.name, descendants: descendants, ask: deleteWarning,
+                    cancel: { showing = nil }
                 ) { shown in
                     showing = nil
                     actions(.deleting(shown))
@@ -1037,24 +1032,23 @@ private struct DeleteCard: View {
     @Environment(\.design) private var design
     let name: String
     let descendants: Int
-    /// What the card says goes with the workspace, when one goes: what the
-    /// row said while the host is asked, then the host's answer. State keeps
-    /// it for as long as the card stays up, so a fleet change while it is
-    /// open changes neither what it says nor what confirming agrees to; only
-    /// the answer to the card's own question does.
-    @State private var warning: DeleteWarning?
+    /// What the card says goes with the workspace: checking while the
+    /// agent's host is asked, then the host's answer, nil when the workspace
+    /// stays. State keeps it for as long as the card stays up, so only the
+    /// answer to the card's own question changes what it says and what
+    /// confirming agrees to.
+    @State private var warning: DeleteWarning? = .checking
     let ask: DeleteWarningAsk
     let cancel: () -> Void
     /// Handed the warning the card drew, to delete exactly as it said.
     let confirm: (DeleteWarning?) -> Void
 
     init(
-        name: String, descendants: Int, workspaceGoes: WorkspaceGoes?, ask: @escaping DeleteWarningAsk,
+        name: String, descendants: Int, ask: @escaping DeleteWarningAsk,
         cancel: @escaping () -> Void, confirm: @escaping (DeleteWarning?) -> Void
     ) {
         self.name = name
         self.descendants = descendants
-        _warning = State(initialValue: DeleteWords.asking(workspaceGoes))
         self.ask = ask
         self.cancel = cancel
         self.confirm = confirm
@@ -1076,8 +1070,8 @@ private struct DeleteCard: View {
                 Consequence("xmark", kept: false, String(localized: "Its \(descendants) subagents are deleted too."))
             }
             if let lines {
-                // Until the host answers nothing is said to go but what
-                // certainly does, so the line is not marked as a loss.
+                // Until the host answers, and when it could not be asked,
+                // nothing is said to go, so the line is not marked as a loss.
                 Consequence(lines.settled ? "xmark" : "ellipsis", kept: !lines.settled, lines.workspace)
                     .identified("chat.delete.workspace", label: lines.workspace)
                 if let branch = lines.branch {

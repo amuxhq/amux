@@ -194,15 +194,13 @@ final class PhoneDecisionsTests: XCTestCase {
             "the settle confirm names the turn, its 2 background jobs and its subagent: \(said)")
     }
 
-    /// A settled agent with no process, in a worktree that goes with it: its
-    /// row knows the branch but not what is uncommitted, which only its host
-    /// can say.
+    /// A settled agent in a worktree amux made: only its host can say
+    /// whether the worktree goes with it and what it holds.
     private let suspendedInWorktree = ChatSubject(
         name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
-        reach: .online(.direct), filing: .closed,
-        workspaceGoes: WorkspaceGoes(branch: "ada/refactor-auth", branchCommits: nil, uncommitted: nil))
+        reach: .online(.direct), filing: .closed)
 
-    /// The host's count of what the suspended agent's worktree holds.
+    /// The host's preview: the worktree goes, with what it holds.
     private let counted = DeleteWarning.goes(
         WorkspaceGoes(branch: "ada/refactor-auth", branchCommits: nil, uncommitted: ChangeTotals(files: 3, added: 42, removed: 7)))
 
@@ -230,7 +228,7 @@ final class PhoneDecisionsTests: XCTestCase {
             asked += 1
             return await withCheckedContinuation { answer = $0 }
         }
-        try await deleteCardSays("Checking its worktree for uncommitted changes\u{2026}")
+        try await deleteCardSays("Checking whether its worktree is removed too\u{2026}")
         XCTAssertEqual(asked, 1, "the card did not ask its host once")
         try activate("chat.delete.confirm")
         await spin()
@@ -251,12 +249,12 @@ final class PhoneDecisionsTests: XCTestCase {
     }
 
     /// A host that cannot be asked leaves a worktree with changes on disk,
-    /// and the card says so instead of promising it goes.
+    /// and the card says it couldn't check instead of promising anything.
     func testADeleteWhoseHostCannotSayKeepsChanges() async throws {
         try await deleteCard { .failure(RuntimeFailure("Studio cannot be reached")) }
         try await deleteCardSays(
-            "Its worktree is removed too, but stays on disk if it has uncommitted changes, "
-                + "which couldn\u{2019}t be checked.")
+            "Its worktree couldn\u{2019}t be checked. If it\u{2019}s removed too, it stays on disk while it "
+                + "has uncommitted changes.")
         try activate("chat.delete.confirm")
         await spin()
         XCTAssertEqual(acted, [.delete], "a card that could not check agreed to lose changes")
@@ -553,7 +551,7 @@ final class PhoneDecisionsTests: XCTestCase {
             agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 9, count: 16)),
             name: "cx", handle: "cx", kind: .codex, attention: .idle, cwd: "~/src", phaseSinceMs: 0,
             host: "desk", hostReach: .online(.direct), children: 0, familyAttention: .idle,
-            members: 1, descendants: 0, backgroundJobs: 2, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: nil, repository: nil, workspaceGoes: nil)
+            members: 1, descendants: 0, backgroundJobs: 2, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: nil, repository: nil)
         let fleet = FleetStore()
         fleet.show(
             FleetView(

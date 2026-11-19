@@ -573,14 +573,11 @@ async fn a_phone_keeps_the_workspace_a_desks_row_says() {
     let workspace = made(&app).unwrap();
     assert_eq!(workspace.kind(), wire::experimental::WorkspaceKind::Git);
     assert!(workspace.made_by_amux);
+    let warning = app.delete_warning(&agent).await;
     assert!(
-        app.fleet()
-            .state()
-            .delete_removes_workspace(&agent)
-            .is_some(),
-        "the phone warns that the worktree goes"
+        matches!(warning, Some(ui_state::DeleteWarning::Goes(_))),
+        "the desk tells the phone the worktree goes: {warning:?}"
     );
-    assert!(app.delete_warning(&agent).await.is_some());
 
     drop(app);
     embedded.shutdown().await.unwrap();

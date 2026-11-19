@@ -269,7 +269,7 @@ enum StoryFleet {
                 host: host.name, hostReach: reach, children: children, familyAttention: attention,
                 members: children + 1, descendants: children, backgroundJobs: 0, closeHeld: false, filing: filing,
                 topLevel: !native, native: native,
-                branch: branch, exitCause: exit, repository: nil, workspaceGoes: nil),
+                branch: branch, exitCause: exit, repository: nil),
             depth: native ? 1 : 0, expanded: expanded, secondLine: second, loud: nil)
     }
 }

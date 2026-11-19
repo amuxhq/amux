@@ -164,7 +164,7 @@ public enum Stories {
             phaseSinceMs: Int64(Date.now.timeIntervalSince1970 * 1000) - ago * 1000,
             host: host, hostReach: .online(.direct), children: children, familyAttention: attention,
             members: children + 1, descendants: children, backgroundJobs: 0, closeHeld: false, filing: filing,
-            topLevel: true, native: false, branch: "main", exitCause: exit, repository: repository(cwd), workspaceGoes: nil)
+            topLevel: true, native: false, branch: "main", exitCause: exit, repository: repository(cwd))
     }
 
     /// The repository the runtime would name for a folder under /src, as if
@@ -240,8 +240,7 @@ public enum Stories {
     /// Deleting an agent whose worktree goes, once its host answers with
     /// `answer`; a host that never answers when nil.
     @MainActor private static func deleting(answer: DeleteWarning?) -> some View {
-        var agent = card(12, "Fix the scroll jump", on: machine, .idle, ago: 600)
-        agent.workspaceGoes = WorkspaceGoes(branch: "fix-scroll", branchCommits: nil, uncommitted: nil)
+        let agent = card(12, "Fix the scroll jump", on: machine, .idle, ago: 600)
         return DeleteSheet(card: agent, ask: { _ in
             guard let answer else {
                 try? await Task.sleep(for: .seconds(86_400))

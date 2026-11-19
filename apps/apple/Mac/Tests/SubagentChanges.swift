@@ -39,7 +39,7 @@ final class SubagentChanges: XCTestCase {
                 phaseSinceMs: 0, host: "this Mac", hostReach: .online(.direct), children: native ? 0 : 1,
                 familyAttention: .working, members: native ? 1 : 2, descendants: native ? 0 : 1,
                 backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: !native, native: native,
-                branch: nil, exitCause: nil, repository: nil, workspaceGoes: nil),
+                branch: nil, exitCause: nil, repository: nil),
             depth: native ? 1 : 0, expanded: true, secondLine: .blank, loud: nil)
     }
 }

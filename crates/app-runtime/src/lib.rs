@@ -369,28 +369,13 @@ impl AppRuntime {
     }
 
     /// What a delete's confirmation says of the workspace that goes with
-    /// the agent, once current: none when it stays. An agent with a running
-    /// process answers what is uncommitted from its row; for one without,
-    /// which cannot keep its row's facts current, the host is asked what
-    /// the workspace holds against HEAD, and a failure answers `Unknown`.
-    /// Either way the host counts the branch's own commits when the warning
-    /// names a branch. The confirmation says it is checking until this
-    /// answers, and its consent is the [`ui_state::DeleteWarning::discards`]
-    /// of what it drew.
+    /// the agent, as the agent's host previews it: none when the workspace
+    /// stays, `Unknown` when the host could not be asked. The confirmation
+    /// says it is checking until this answers, and its consent is the
+    /// [`ui_state::DeleteWarning::discards`] of what it drew.
     pub async fn delete_warning(&self, agent: &AgentKey) -> Option<ui_state::DeleteWarning> {
-        let warning = self.fleet.state().delete_warning(agent)?;
-        if !warning.asks_host() {
-            return Some(warning);
-        }
-        let head = wire::DiffBase {
-            base: Some(wire::diff_base::Base::Head(wire::Empty {})),
-        };
-        let compared = self
-            .client
-            .agent(&address(agent))
-            .get_diff(head, false)
-            .await;
-        Some(warning.answered(compared.as_ref()))
+        let preview = self.client.agent(&address(agent)).preview_delete().await;
+        ui_state::DeleteWarning::previewed(preview.as_ref())
     }
 
     /// Renames, files or deletes an agent.

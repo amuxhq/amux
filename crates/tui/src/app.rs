@@ -256,11 +256,11 @@ pub enum AppEvent {
         key: crate::chat::FetchKey,
         diff: Diff,
     },
-    /// What an agent's workspace holds against HEAD, or why its host could
-    /// not say, for home's delete confirmation.
-    DeleteChecked {
+    /// What deleting an agent takes with it, as its host previewed it, or
+    /// why it could not be asked, for home's delete confirmation.
+    DeletePreviewed {
         agent: AgentKey,
-        compared: Result<Diff, String>,
+        preview: Result<wire::amux::staging::PreviewDeleteResponse, String>,
     },
     /// Onboarding's and the settings screen's calls came back.
     Desk(desk::DeskEvent),
@@ -757,9 +757,8 @@ impl App {
                 }
             }
             AppEvent::Notice(words, tone) => self.notice(words, tone),
-            AppEvent::DeleteChecked { agent, compared } => {
-                self.home
-                    .changes_checked(&agent, compared.as_ref().map_err(Clone::clone));
+            AppEvent::DeletePreviewed { agent, preview } => {
+                self.home.delete_previewed(&agent, preview.as_ref());
             }
             AppEvent::Desk(event) => self.desk_event(event),
             AppEvent::Folders { host, answer } => {
@@ -1442,16 +1441,13 @@ impl App {
             }
             FleetEffect::Pin(agent) => self.file(agent, wire::Filing::Pinned, "pin"),
             FleetEffect::Unpin(agent) => self.file(agent, wire::Filing::Open, "unpin"),
-            FleetEffect::CheckChanges(agent) => self.spawn(async move {
-                let head = wire::DiffBase {
-                    base: Some(wire::diff_base::Base::Head(wire::Empty {})),
-                };
-                let compared = client
+            FleetEffect::PreviewDelete(agent) => self.spawn(async move {
+                let preview = client
                     .agent(&agent_ref(&agent))
-                    .get_diff(head, false)
+                    .preview_delete()
                     .await
                     .map_err(|error| error.to_string());
-                Some(AppEvent::DeleteChecked { agent, compared })
+                Some(AppEvent::DeletePreviewed { agent, preview })
             }),
             FleetEffect::Delete(agent, discard) => self.spawn(async move {
                 let deleted = client.agent(&agent_ref(&agent)).delete(discard).await;

@@ -282,7 +282,7 @@ public enum AgentAct: Codable, Hashable, Sendable {
     /// with it: such a workspace stays on disk, no longer amux's.
     case delete
     /// Deletes it, agreeing to lose the uncommitted changes of the workspace
-    /// that goes with it, which its card's `workspace_goes` names. Sent only
+    /// that goes with it, which its delete warning names. Sent only
     /// after the person read those and confirmed.
     case deleteDiscardingChanges
 
@@ -2445,30 +2445,39 @@ public enum DecisionView: String, Codable, Hashable, Sendable, CaseIterable {
     case dismissed = "Dismissed"
 }
 
-/// What a delete's confirmation says about the workspace that goes with the
-/// agent, and so what confirming it agrees to. The row's git facts are kept
-/// current only by the agent's process: for an agent without one,
-/// suspended or exited, the confirmation asks the agent's host for the
-/// workspace's changes against HEAD and says so until it answers. Whether
-/// the branch has commits of its own the host is always asked, since a
-/// merge made anywhere else can take them away
-/// ([`DeleteWarning::asks_host`]).
+/// What a delete's confirmation says about the agent's workspace, and so
+/// what confirming it agrees to. Only the agent's host knows whether its
+/// workspace goes, which other agents work there, and what it holds now,
+/// so the confirmation asks it and says it is checking until it answers.
+/// A confirmation whose answer is that the workspace stays holds no
+/// warning at all.
 public enum DeleteWarning: Codable, Hashable, Sendable {
-    /// What goes, from facts that are current: the row's while a process
-    /// keeps them so, else the host's answer.
+    /// Asking the agent's host what the delete takes with it.
+    case checking
+    /// The host answered: the workspace goes, with this.
     case goes(WorkspaceGoes)
-    /// Asking the host what is uncommitted; the branch is the row's.
-    case checking(WorkspaceGoes)
-    /// The host could not say: a worktree with changes stays on disk.
-    case unknown(WorkspaceGoes)
+    /// The host could not be asked: a worktree that goes with the agent
+    /// still stays on disk while it has uncommitted changes, since the
+    /// delete carries no consent to lose them.
+    case unknown
 
     private enum Tag: String, CodingKey {
         case goes = "Goes"
-        case checking = "Checking"
-        case unknown = "Unknown"
     }
 
     public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "Checking": self = .checking
+            case "Unknown": self = .unknown
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no DeleteWarning is named \(_name)")
+            }
+            return
+        }
         let _container = try decoder.container(keyedBy: Tag.self)
         guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
             throw DecodingError.dataCorrupted(
@@ -2479,24 +2488,20 @@ public enum DeleteWarning: Codable, Hashable, Sendable {
         switch _tag {
         case .goes:
             self = .goes(try _container.decode(WorkspaceGoes.self, forKey: .goes))
-        case .checking:
-            self = .checking(try _container.decode(WorkspaceGoes.self, forKey: .checking))
-        case .unknown:
-            self = .unknown(try _container.decode(WorkspaceGoes.self, forKey: .unknown))
         }
     }
 
     public func encode(to encoder: any Encoder) throws {
         switch self {
+        case .checking:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Checking")
         case .goes(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .goes)
-        case .checking(let _value):
-            var _container = encoder.container(keyedBy: Tag.self)
-            try _container.encode(_value, forKey: .checking)
-        case .unknown(let _value):
-            var _container = encoder.container(keyedBy: Tag.self)
-            try _container.encode(_value, forKey: .unknown)
+        case .unknown:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Unknown")
         }
     }
 }
@@ -3272,11 +3277,8 @@ public struct FleetCard: Codable, Hashable, Sendable {
     public var exitCause: ExitCause?
     /// The repository it works in, by its remote, else its folder.
     public var repository: Repository?
-    /// Deleting it removes its workspace, and what goes with that: a
-    /// delete's confirmation says so. None when the workspace stays.
-    public var workspaceGoes: WorkspaceGoes?
 
-    public init(agent: AgentKey, name: String, handle: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, closeHeld: Bool, filing: Filing, topLevel: Bool, native: Bool, branch: String?, exitCause: ExitCause?, repository: Repository?, workspaceGoes: WorkspaceGoes?) {
+    public init(agent: AgentKey, name: String, handle: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, closeHeld: Bool, filing: Filing, topLevel: Bool, native: Bool, branch: String?, exitCause: ExitCause?, repository: Repository?) {
         self.agent = agent
         self.name = name
         self.handle = handle
@@ -3298,7 +3300,6 @@ public struct FleetCard: Codable, Hashable, Sendable {
         self.branch = branch
         self.exitCause = exitCause
         self.repository = repository
-        self.workspaceGoes = workspaceGoes
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -3323,7 +3324,6 @@ public struct FleetCard: Codable, Hashable, Sendable {
         case branch
         case exitCause = "exit_cause"
         case repository
-        case workspaceGoes = "workspace_goes"
     }
 }
 
@@ -7895,17 +7895,15 @@ public struct Worked: Codable, Hashable, Sendable {
     }
 }
 
-/// What a delete removes with the agent: its workspace, and with it the
-/// uncommitted changes the row last reported. A client says so before
-/// confirming, and sends the delete with consent to discard them.
+/// What a delete removes with the agent when its workspace goes too, as the
+/// agent's host answered: a client says so before confirming, and sends the
+/// delete with consent to discard the uncommitted changes it named.
 public struct WorkspaceGoes: Codable, Hashable, Sendable {
-    /// The workspace's branch; none on a detached head or before the row's
-    /// git facts were read.
+    /// The workspace's branch; none on a detached head.
     public var branch: String?
-    /// The commits on the branch that no other branch, tag or remote holds,
-    /// as the host counted them when asked: the branch keeps them, and with
-    /// none it goes with the workspace. None until the host answers, or
-    /// when it could not say.
+    /// The commits on the branch that no other branch, tag or remote holds:
+    /// the branch keeps them, and with none it goes with the workspace.
+    /// None when the host could not count them.
     public var branchCommits: UInt32?
     /// Its uncommitted changes, when it has any.
     public var uncommitted: ChangeTotals?

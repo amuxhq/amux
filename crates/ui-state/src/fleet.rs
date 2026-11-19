@@ -5,53 +5,42 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use wire::experimental::{AgentWorkspace, WorkspaceKind};
 use wire::{Agent, ChangeTotals, HostEntry, InventoryEvent, inventory_event};
 
 pub use crate::model::{AgentKey, Attention, ExitCause, HostId};
 use crate::session::Connection;
 
-/// The workspace entry a host running the workspaces experiment puts on
-/// its rows. A client reads it whatever its own node runs: the node stores
-/// and passes on its peers' entries as they came.
-fn workspace_of(agent: &Agent) -> Option<AgentWorkspace> {
-    wire::experimental::WORKSPACE.get(&agent.experimental)
-}
-
-/// What a delete removes with the agent: its workspace, and with it the
-/// uncommitted changes the row last reported. A client says so before
-/// confirming, and sends the delete with consent to discard them.
+/// What a delete removes with the agent when its workspace goes too, as the
+/// agent's host answered: a client says so before confirming, and sends the
+/// delete with consent to discard the uncommitted changes it named.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct WorkspaceGoes {
     /// Its uncommitted changes, when it has any.
     pub uncommitted: Option<ChangeTotals>,
-    /// The workspace's branch; none on a detached head or before the row's
-    /// git facts were read.
+    /// The workspace's branch; none on a detached head.
     pub branch: Option<String>,
-    /// The commits on the branch that no other branch, tag or remote holds,
-    /// as the host counted them when asked: the branch keeps them, and with
-    /// none it goes with the workspace. None until the host answers, or
-    /// when it could not say.
+    /// The commits on the branch that no other branch, tag or remote holds:
+    /// the branch keeps them, and with none it goes with the workspace.
+    /// None when the host could not count them.
     pub branch_commits: Option<u32>,
 }
 
-/// What a delete's confirmation says about the workspace that goes with the
-/// agent, and so what confirming it agrees to. The row's git facts are kept
-/// current only by the agent's process: for an agent without one,
-/// suspended or exited, the confirmation asks the agent's host for the
-/// workspace's changes against HEAD and says so until it answers. Whether
-/// the branch has commits of its own the host is always asked, since a
-/// merge made anywhere else can take them away
-/// ([`DeleteWarning::asks_host`]).
+/// What a delete's confirmation says about the agent's workspace, and so
+/// what confirming it agrees to. Only the agent's host knows whether its
+/// workspace goes, which other agents work there, and what it holds now,
+/// so the confirmation asks it and says it is checking until it answers.
+/// A confirmation whose answer is that the workspace stays holds no
+/// warning at all.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum DeleteWarning {
-    /// What goes, from facts that are current: the row's while a process
-    /// keeps them so, else the host's answer.
+    /// Asking the agent's host what the delete takes with it.
+    Checking,
+    /// The host answered: the workspace goes, with this.
     Goes(WorkspaceGoes),
-    /// Asking the host what is uncommitted; the branch is the row's.
-    Checking(WorkspaceGoes),
-    /// The host could not say: a worktree with changes stays on disk.
-    Unknown(WorkspaceGoes),
+    /// The host could not be asked: a worktree that goes with the agent
+    /// still stays on disk while it has uncommitted changes, since the
+    /// delete carries no consent to lose them.
+    Unknown,
 }
 
 impl DeleteWarning {
@@ -61,52 +50,22 @@ impl DeleteWarning {
         matches!(self, DeleteWarning::Goes(goes) if goes.uncommitted.is_some())
     }
 
-    /// Whether the client asks the agent's host before the warning is
-    /// settled: when it is still checking what is uncommitted, or when it
-    /// names a branch whose own commits are not counted yet.
-    pub fn asks_host(&self) -> bool {
-        match self {
-            DeleteWarning::Checking(_) => true,
-            DeleteWarning::Goes(goes) => goes.branch.is_some() && goes.branch_commits.is_none(),
-            DeleteWarning::Unknown(_) => false,
-        }
-    }
-
-    /// The warning once the host answered with the workspace's changes
-    /// against HEAD, or failed to. A `Checking` one then says what is
-    /// uncommitted, or that the host could not say; any that names a branch
-    /// takes the host's count of its own commits. A failure leaves the
-    /// branch uncounted, which the warning says in words true either way.
-    pub fn answered<E>(self, compared: Result<&wire::Diff, E>) -> DeleteWarning {
-        let counted = |goes: WorkspaceGoes, diff: &wire::Diff| WorkspaceGoes {
-            branch_commits: goes.branch.as_ref().and(diff.own_commits),
-            ..goes
+    /// The warning once the host answered what deleting the agent takes
+    /// with it, or failed to: none when the workspace stays.
+    pub fn previewed<E>(
+        preview: Result<&wire::amux::staging::PreviewDeleteResponse, E>,
+    ) -> Option<DeleteWarning> {
+        let Ok(preview) = preview else {
+            return Some(DeleteWarning::Unknown);
         };
-        match (self, compared) {
-            (DeleteWarning::Checking(goes), Ok(diff)) => {
-                let totals = ChangeTotals {
-                    files: diff.files.len() as u32,
-                    added: diff.files.iter().map(|file| file.added).sum(),
-                    removed: diff.files.iter().map(|file| file.removed).sum(),
-                };
-                DeleteWarning::Goes(WorkspaceGoes {
-                    uncommitted: (totals.files > 0).then_some(totals),
-                    ..counted(goes, diff)
-                })
-            }
-            (DeleteWarning::Checking(goes), Err(_)) => DeleteWarning::Unknown(goes),
-            // What is uncommitted stays the row's: it is what the warning
-            // already drew, and so what confirming it agrees to.
-            (DeleteWarning::Goes(goes), Ok(diff)) => DeleteWarning::Goes(counted(goes, diff)),
-            (warning, _) => warning,
-        }
+        preview.removes_workspace.then(|| {
+            DeleteWarning::Goes(WorkspaceGoes {
+                uncommitted: preview.uncommitted.filter(|totals| totals.files > 0),
+                branch: preview.branch.clone(),
+                branch_commits: preview.branch.as_ref().and(preview.own_commits),
+            })
+        })
     }
-}
-
-/// Whether the agent has a process running, which keeps its row's git facts
-/// current: not exited, and not suspended.
-pub fn has_process(agent: &Agent) -> bool {
-    agent.lifecycle() == wire::Lifecycle::Live && agent.exit_cause() != wire::ExitCause::Suspended
 }
 
 /// The key naming an agent's row.
@@ -340,61 +299,6 @@ impl FleetState {
             stack.extend(self.families.children(&at).rev().cloned());
         }
         out
-    }
-
-    /// Whether deleting the agent removes its workspace, and what it loses
-    /// with it: none when the workspace stays. It goes with its last member
-    /// when its host made it. The agent's own descendants go with it, so a
-    /// member among them does not keep the workspace; any other member does.
-    /// What it reports is the row's last reading; the host checks again
-    /// when it removes the workspace.
-    pub fn delete_removes_workspace(&self, agent: &AgentKey) -> Option<WorkspaceGoes> {
-        let row = self.agents.get(agent)?;
-        let entry = workspace_of(row)?;
-        if !entry.made_by_amux || entry.kind() == WorkspaceKind::Folder {
-            return None;
-        }
-        let going: BTreeSet<AgentKey> = self.family(agent).into_iter().map(agent_key).collect();
-        let shared = self.agents.iter().any(|(key, other)| {
-            key.host == agent.host
-                && !going.contains(key)
-                && workspace_of(other)
-                    .is_some_and(|theirs| theirs.kind == entry.kind && theirs.id == entry.id)
-        });
-        if shared {
-            return None;
-        }
-        let git = row.git.as_ref();
-        let uncommitted = git
-            .and_then(|git| git.uncommitted)
-            .filter(|totals| totals.files > 0);
-        // Named whenever the row has one: equal totals on the branch and
-        // uncommitted do not prove it has no commits of its own (a line
-        // committed, then changed again uncommitted), and the row carries
-        // no count of commits; the host's answer says how many.
-        let branch = git.and_then(|git| git.branch.clone());
-        Some(WorkspaceGoes {
-            uncommitted,
-            branch,
-            branch_commits: None,
-        })
-    }
-
-    /// What a delete's confirmation starts by saying about the agent's
-    /// workspace: none when it stays; `Checking` when the agent has no
-    /// process to keep its row's facts current, so the client must ask the
-    /// host ([`DeleteWarning::answered`]).
-    pub fn delete_warning(&self, agent: &AgentKey) -> Option<DeleteWarning> {
-        let goes = self.delete_removes_workspace(agent)?;
-        let row = self.agents.get(agent)?;
-        Some(if has_process(row) {
-            DeleteWarning::Goes(goes)
-        } else {
-            DeleteWarning::Checking(WorkspaceGoes {
-                uncommitted: None,
-                ..goes
-            })
-        })
     }
 
     /// The agent's children as a fleet lists them. A closed child is done

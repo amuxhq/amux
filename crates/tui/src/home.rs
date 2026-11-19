@@ -76,9 +76,9 @@ pub enum FleetEffect {
     /// Deletes it; `true` when the person confirmed losing the uncommitted
     /// changes of the workspace that goes with it.
     Delete(AgentKey, bool),
-    /// Asks the agent's host what its workspace holds against HEAD, for a
-    /// delete's confirmation ([`Home::changes_checked`]).
-    CheckChanges(AgentKey),
+    /// Asks the agent's host what deleting it takes with it, for a
+    /// delete's confirmation ([`Home::delete_previewed`]).
+    PreviewDelete(AgentKey),
     /// Leave amux.
     Quit,
     /// Show the key help.
@@ -223,8 +223,9 @@ enum Overlay {
         name: String,
         delete: bool,
         /// What a delete says of the workspace that goes with the agent:
-        /// read once as the confirmation opens, then the host's answer when
-        /// it had to be asked. The fleet changing meanwhile changes nothing.
+        /// checking as the confirmation opens, then the host's answer, none
+        /// when the workspace stays. The fleet changing meanwhile changes
+        /// nothing.
         warning: Option<DeleteWarning>,
         /// The warning as last drawn: what confirming agrees to, even when
         /// an answer landed after the last frame.
@@ -700,35 +701,36 @@ impl Home {
         if !delete && close_cuts(fleet, &agent).is_none() {
             return vec![FleetEffect::Close(agent)];
         }
-        let warning = delete.then(|| fleet.delete_warning(&agent)).flatten();
-        // The host is asked what the workspace holds now when no process
-        // keeps the row's facts current, and always how many commits its
-        // branch has of its own.
-        let check = warning.as_ref().is_some_and(DeleteWarning::asks_host);
+        // Only the agent's host knows whether its workspace goes with it
+        // and what that holds now, so every delete asks it first.
         self.overlay = Some(Overlay::Confirm {
             name: entry.name.clone(),
             delete,
-            warning,
+            warning: delete.then_some(DeleteWarning::Checking),
             shown: None,
             agent: agent.clone(),
             focus: Confirmed::Yes,
         });
-        if check {
-            vec![FleetEffect::CheckChanges(agent)]
+        if delete {
+            vec![FleetEffect::PreviewDelete(agent)]
         } else {
             vec![]
         }
     }
 
-    /// The agent's host answered what its workspace holds against HEAD, or
-    /// failed to: the delete's confirmation, if still asking about it, says
-    /// so from the next frame.
-    pub fn changes_checked(&mut self, of: &AgentKey, compared: Result<&wire::Diff, String>) {
+    /// The agent's host answered what deleting it takes with it, or could
+    /// not be asked: the delete's confirmation, if still checking, says so
+    /// from the next frame.
+    pub fn delete_previewed(
+        &mut self,
+        of: &AgentKey,
+        preview: Result<&wire::amux::staging::PreviewDeleteResponse, &String>,
+    ) {
         if let Some(Overlay::Confirm { agent, warning, .. }) = &mut self.overlay
             && agent == of
-            && let Some(asked) = warning.take()
+            && *warning == Some(DeleteWarning::Checking)
         {
-            *warning = Some(asked.answered(compared));
+            *warning = DeleteWarning::previewed(preview);
         }
     }
 
@@ -2162,25 +2164,26 @@ fn close_cuts(fleet: &FleetState, agent: &AgentKey) -> Option<String> {
     }
 }
 
-/// What asking before a delete says: the delete, then, when the agent's
-/// workspace goes with it, that the worktree goes with its uncommitted
-/// changes, while asking its host what they are, or that one with changes
-/// stays when the host could not say; and what becomes of its branch.
+/// What asking before a delete says: the delete, then, while its host is
+/// asked, that it is checking; when the agent's workspace goes with it,
+/// that the worktree goes with its uncommitted changes and what becomes of
+/// its branch; and when the host could not be asked, that a worktree with
+/// changes stays.
 fn delete_sentences(name: &str, warning: Option<&DeleteWarning>) -> Vec<String> {
     let mut sentences = vec![format!("Delete {name} and its history?")];
     let goes = match warning {
         None => return sentences,
-        Some(DeleteWarning::Checking(goes)) => {
-            sentences.push("Checking its worktree for uncommitted changes\u{2026}".to_owned());
-            goes
+        Some(DeleteWarning::Checking) => {
+            sentences.push("Checking whether its worktree goes too\u{2026}".to_owned());
+            return sentences;
         }
-        Some(DeleteWarning::Unknown(goes)) => {
+        Some(DeleteWarning::Unknown) => {
             sentences.push(
-                "Its worktree goes too, but stays on disk if it has uncommitted changes: \
-                 they could not be checked."
+                "Its worktree could not be checked: if one goes too, it stays on disk \
+                 while it has uncommitted changes."
                     .to_owned(),
             );
-            goes
+            return sentences;
         }
         Some(DeleteWarning::Goes(goes)) => {
             sentences.push(match goes.uncommitted {
@@ -2203,7 +2206,7 @@ fn delete_sentences(name: &str, warning: Option<&DeleteWarning>) -> Vec<String> 
 }
 
 /// What a delete does to the workspace's branch: the host deletes one with
-/// no commits of its own and keeps any other. Until the host has counted
+/// no commits of its own and keeps any other. When the host could not count
 /// them, words true either way.
 fn branch_sentence(goes: &ui_state::WorkspaceGoes) -> Option<String> {
     let branch = goes.branch.as_ref()?;

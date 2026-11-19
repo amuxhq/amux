@@ -773,6 +773,30 @@ async fn opening_the_overview_lists_the_changed_files_by_folder() {
     net.shutdown().await.unwrap();
 }
 
+/// A delete's warning is the agent's host's preview: an agent in a folder
+/// of its own takes no workspace with it, and one whose host cannot be
+/// asked gets a warning that says so.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_delete_warning_is_the_hosts_preview() {
+    let net = Net::start(topology()).await.unwrap();
+    let (runtime, _host) = open(&net).await;
+    assert_eq!(
+        runtime.delete_warning(&worker(&net)).await,
+        None,
+        "a folder of its own stays"
+    );
+    let elsewhere = AgentKey {
+        host: vec![7; 16],
+        agent: worker(&net).agent,
+    };
+    assert_eq!(
+        runtime.delete_warning(&elsewhere).await,
+        Some(ui_state::DeleteWarning::Unknown),
+        "a host that cannot be asked"
+    );
+    net.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_chat_catches_up_after_the_app_returns_to_the_foreground() {
     let net = Net::start(topology()).await.unwrap();

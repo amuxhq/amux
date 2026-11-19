@@ -629,7 +629,7 @@ pub enum AgentAct {
     /// with it: such a workspace stays on disk, no longer amux's.
     Delete,
     /// Deletes it, agreeing to lose the uncommitted changes of the workspace
-    /// that goes with it, which its card's `workspace_goes` names. Sent only
+    /// that goes with it, which its delete warning names. Sent only
     /// after the person read those and confirmed.
     DeleteDiscardingChanges,
 }

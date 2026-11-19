@@ -176,8 +176,8 @@ async fn a_new_worktree_from_another_host_is_answered_first_and_replicated_with_
 }
 
 /// The desk runs the experiment and the laptop does not: the laptop still
-/// keeps and serves the workspace the desk's row says, so a client of the
-/// laptop warns that deleting the agent takes its worktree.
+/// keeps and serves the workspace the desk's row says, and a client of the
+/// laptop asking the desk what a delete takes is told the worktree goes.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_host_without_the_experiment_keeps_a_replicas_workspace_for_its_clients() {
     let homes = tempfile::tempdir().unwrap();
@@ -213,15 +213,20 @@ async fn a_host_without_the_experiment_keeps_a_replicas_workspace_for_its_client
     assert_eq!(on_laptop.experimental, on_desk.experimental);
     assert_eq!(entry(&on_laptop).unwrap().kind(), WorkspaceKind::Git);
 
-    let mut fleet = ui_state::FleetState::new();
-    fleet.update(ui_state::FleetMsg::Event(Box::new(wire::InventoryEvent {
-        of: Some(inventory_event::Of::Agent(on_laptop.clone())),
-    })));
+    let preview = net
+        .person("laptop")
+        .await
+        .unwrap()
+        .agent(&wire::AgentRef {
+            host_id: on_laptop.host_id.clone(),
+            agent_id: on_laptop.agent_id.clone(),
+        })
+        .preview_delete()
+        .await
+        .expect("the desk previews the delete for the laptop's client");
     assert!(
-        fleet
-            .delete_removes_workspace(&ui_state::agent_key(&on_laptop))
-            .is_some(),
-        "the laptop's client warns that the worktree goes"
+        preview.removes_workspace,
+        "the laptop's client is told the worktree goes: {preview:?}"
     );
 
     net.shutdown().await.unwrap();

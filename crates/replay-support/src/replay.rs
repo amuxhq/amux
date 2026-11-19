@@ -134,15 +134,29 @@ impl Bundle {
     /// Every stage in order. The first with a failing property is the
     /// culprit.
     pub fn replay_all(&self) -> Result<Vec<StageVerdict>, BundleError> {
-        let core = match self.replay_core()? {
-            None => match &self.core {
+        let core = match self.replay_core() {
+            // The checkpoint is the daemon core's own state, serialized as
+            // the build that wrote it laid it out; it is promised to no
+            // other build. One this build cannot decode leaves the core
+            // unjudged, and the agents' and chats' records, which are
+            // promised, still replay.
+            Err(BundleError::Decode {
+                what: "checkpoint",
+                error,
+                ..
+            }) => Verdict::Unreadable(format!(
+                "the core's checkpoint does not decode with this build; a checkpoint is \
+                 read only by the build that wrote it: {error}"
+            )),
+            Err(error) => return Err(error),
+            Ok(None) => match &self.core {
                 Some(core) => Verdict::Holds(format!(
                     "{} inputs from the checkpoint, each step judged",
                     inputs(core).count()
                 )),
                 None => Verdict::Absent("the bundle carries no record of the core".to_owned()),
             },
-            Some(failing) => Verdict::Fails(failing),
+            Ok(Some(failing)) => Verdict::Fails(failing),
         };
         Ok(vec![
             StageVerdict {

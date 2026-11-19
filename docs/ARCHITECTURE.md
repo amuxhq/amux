@@ -612,6 +612,7 @@ every message a provider sends or is sent.
 | [`log-file`](../crates/log-file/src/lib.rs) | The capped log file every process writes, rotated to one `.1`, and the tail a dump reads. |
 | [`release`](../crates/release/src/lib.rs) | A release channel's signed manifest: signing, verification and the build a host installs, shared by the daemon, the installer and the release tool; the keys a build trusts and the target it was built for; and the version stamp in a built binary, with re-stamping a copy ([`version_stamp`](../crates/release/src/version_stamp.rs)). |
 | [`installer`](../crates/installer/src/lib.rs) | What every client calls first: finds amux at the front door, downloads the channel's build and checks it against the signed manifest when it is missing, and starts it. Does not link the daemon. |
+| [`highlight`](../crates/highlight/src/lib.rs) | Syntax highlighting over tree-sitter's grammars: code and its language in, lines of runs tagged with a kind of token out, which each client maps to its own palette. Grammars are built in the background on first use, and a block still streaming is passed over at a bounded rate. The same grammars give a file's definitions, from which a diff says where a hunk sits and what a change touches. The view layer colours chat code and edit cards through it. |
 | [`analytics`](../crates/analytics/src/lib.rs) | The usage events a device may send, typed so nothing but enums, numbers and ids fits; the per-profile handle and the installation's uploader. See [what amux sends](guide/understand/what-amux-sends.md). |
 
 **The agent side** — everything that reads a provider.
@@ -654,7 +655,7 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 |---|---|
 | [`client`](../crates/client/src/lib.rs) | The one seam both clients call the local runtime through: gRPC over the profile socket, or in process on the phone. |
 | [`ui-state`](../crates/ui-state/src/lib.rs) | The pure session and fleet model clients reduce their streams into, with the thin per-kind layer that decodes snapshot bodies, and the plain values the views and the phone bridge share ([`model.rs`](../crates/ui-state/src/model.rs)), from which the Swift mirrors are generated. |
-| [`ui-view`](../crates/ui-view/src/lib.rs) | Pure content values: chat rows, ask cards, the overview, the fleet, the review document. |
+| [`ui-view`](../crates/ui-view/src/lib.rs) | Pure content values: chat rows, ask cards, the overview, the fleet, the review document, and code coloured by kind of token for the code each client draws itself. |
 | [`ui-runtime`](../crates/ui-runtime/src/lib.rs) | The session and fleet drivers: the only place a chat does I/O. |
 
 **Clients and binaries.**
@@ -666,6 +667,7 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`app-runtime`](../crates/app-runtime/src/lib.rs) | The phone's chats and fleet over the local runtime, with changes gathered for the host's next turn. |
 | [`app-embedded`](../crates/app-embedded/src/lib.rs) | The daemon's profile runtime hosted in the phone's process. |
 | [`app-ffi`](../crates/app-ffi/README.md) | The C ABI the iPhone app calls, with view values as JSON. See [embedding](EMBEDDED.md). |
+| [`browser-core`](../crates/browser-core/src/lib.rs) | The client crates the browser extension runs, compiled to WebAssembly: the fleet model, the rows its agent picker draws, and the `amux.v1` messages it sends and reads, behind one JSON entry point. |
 
 **Verification and tools** — never linked by production code.
 
@@ -718,7 +720,7 @@ The allowed sets encode the layering above:
 
 | Crate | May depend on | Why |
 |---|---|---|
-| `wire`, `settings`, `redaction`, `log-file`, `release`, `analytics`, `git-facts`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code |
+| `wire`, `settings`, `redaction`, `log-file`, `release`, `analytics`, `git-facts`, `highlight`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code; `highlight` is one engine for every client's code |
 | `journal`, `store`, `agent-dir`, `attachments` | `wire` | |
 | `preview` | `attachments`, `wire` | |
 | `core-ring` | `journal` | a core's input ring, in segments named as the journal's are |
@@ -733,11 +735,12 @@ The allowed sets encode the layering above:
 | `agent` | `agent-core`, `agent-dir`, `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `log-file`, `pty-host`, `wire` | the agent core's driver with each provider's host inside it, and the only production crate that reads a provider |
 | `node` | `agent-dir`, `analytics`, `core-ring`, `daemon-core`, `git-facts`, `interpret`, `journal`, `log-file`, `path-core`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the walker that writes a report's core record as its structure |
 | `client` | `agent-dir`, `wire` | the local socket and the clock come from the contract crate |
-| `ui-state` → `wire`; `ui-view` → `attachments`, `preview`, `ui-state`, `wire`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library |
-| `tui` | `attachments`, `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |
+| `ui-state` → `wire`; `ui-view` → `attachments`, `highlight`, `preview`, `ui-state`, `wire`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library; each client colours the code it parses out of a chat through the view layer's highlighting |
+| `tui` | `attachments`, `client`, `settings`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |
 | `app-runtime` | `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | the phone's chats with no `node` |
 | `app-embedded` | `analytics`, `app-runtime`, `client`, `log-file`, `node`, `wire` | the daemon in the phone's process |
-| `app-ffi` | `app-embedded`, `app-runtime`, `client`, `node`, `ui-state`, `ui-view` | the C ABI over both |
+| `app-ffi` | `app-embedded`, `app-runtime`, `client`, `installer`, `node`, `ui-state`, `ui-view`, `wire` | the C ABI over both; the installer only off the phone, for a desktop app's first call |
+| `browser-core` | `attachments`, `ui-state`, `ui-view`, `wire` | the pure client crates, with no runtime, socket or driver, since the extension does its own I/O |
 | `amux` | `agent`, `agent-dir`, `analytics`, `client`, `log-file`, `node`, `settings`, `tui`, `wire` | the one binary |
 | `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `socket-core`, `store`, `supervisor-core`, `ui-state`, `wire`, `workspace-core` | the properties, explored over the real cores, store and session state |
 | `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `provider-fakes`, `relay-core`, `store`, `supervisor-core`, `ui-state`, `wire` | replays the core's and the sessions' records, judging the models' properties; an agent's record carries no provider's words, so it replays as a stream made up from it through the real interpreter, held to the provider's types by the fakes' conformance; an installation's facts rings replay through the interpreter as they are, and the relay's and supervisor's reports through their cores; `just repro`, a debugging tool nothing links |

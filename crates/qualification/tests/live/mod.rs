@@ -52,11 +52,11 @@ use interpret::Replayed;
 use tokio::process::{Child, Command};
 use tonic::transport::{Channel, Endpoint};
 use ui_state::{AgentState, ItemBody, OpenAsk};
-use wire::installation_service_client::InstallationServiceClient;
 use wire::amux::staging;
+use wire::installation_service_client::InstallationServiceClient;
 use wire::{
-    ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput, Input, Item,
-    Kind, Phase, Snapshot, claude_answer, claude_pty_input, claude_sdk_input, codex_input,
+    ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput, Input, Item, Kind,
+    Phase, Snapshot, claude_answer, claude_pty_input, claude_sdk_input, codex_input,
     permission_answer, send_input_response, session_event,
 };
 

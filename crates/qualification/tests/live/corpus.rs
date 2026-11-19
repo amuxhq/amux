@@ -14,8 +14,7 @@
 use ui_state::{ItemBody, OpenAsk};
 use wire::claude_item::Kind as Claude;
 use wire::{
-    ClaudeSdkInput, Input, Kind, PromptInput, claude_answer, claude_sdk_input,
-    send_input_response,
+    ClaudeSdkInput, Input, Kind, PromptInput, claude_answer, claude_sdk_input, send_input_response,
 };
 
 use super::asks::{Answer, questions, settled};

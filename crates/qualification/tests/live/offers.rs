@@ -6,9 +6,7 @@
 //! through the probe and replayed through the interpreter.
 
 use prost::Message as _;
-use wire::{
-    CodexCreateConfig, CodexInput, Kind, codex_input, inventory_event,
-};
+use wire::{CodexCreateConfig, CodexInput, Kind, codex_input, inventory_event};
 
 use super::asks::settled;
 use super::{Install, Log, READY, SETTLE, Scenario, Verdict, expect_outcome, judge};

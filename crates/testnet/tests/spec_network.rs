@@ -3066,7 +3066,11 @@ async fn a_call_to_a_host_only_a_lapsed_account_reached_names_the_lapse_at_once(
     )
     .await;
 
-    let w = net.person("desk").await.unwrap().agent(net.agent("w").unwrap());
+    let w = net
+        .person("desk")
+        .await
+        .unwrap()
+        .agent(net.agent("w").unwrap());
     let started = std::time::Instant::now();
     let answer = tokio::time::timeout(
         Duration::from_secs(5),

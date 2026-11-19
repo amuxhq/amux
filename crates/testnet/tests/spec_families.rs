@@ -539,8 +539,14 @@ async fn stop_and_send_are_lineage_checked_across_hosts() {
         .expect("the parent's send resumes its child");
     let resumed = row(&net, "server", "helper").await.unwrap();
     assert_eq!(resumed.incarnation, 2);
-    assert_eq!(with_input(&net, "helper", &message_id("from-lead")).await, 1);
-    assert_eq!(with_input(&net, "helper", &message_id("from-other")).await, 0);
+    assert_eq!(
+        with_input(&net, "helper", &message_id("from-lead")).await,
+        1
+    );
+    assert_eq!(
+        with_input(&net, "helper", &message_id("from-other")).await,
+        0
+    );
     println!("lead sends to exited helper: resumed as incarnation 2 with the message");
     net.shutdown().await.unwrap();
 }
@@ -633,8 +639,16 @@ async fn concurrent_duplicate_sends_across_hosts_yield_one_item() {
     let to = net.agent("reviewer").unwrap().parent();
     let reviewer = net.tools("lead").await.unwrap().agent(&to);
     let (first, second) = tokio::join!(
-        reviewer.send_message(message_id("twice"), None, words("Please review the survey.")),
-        reviewer.send_message(message_id("twice"), None, words("Please review the survey.")),
+        reviewer.send_message(
+            message_id("twice"),
+            None,
+            words("Please review the survey.")
+        ),
+        reviewer.send_message(
+            message_id("twice"),
+            None,
+            words("Please review the survey.")
+        ),
     );
     first.expect("the first send");
     second.expect("the duplicate is answered as sent");

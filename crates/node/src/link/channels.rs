@@ -400,6 +400,7 @@ impl ChannelPool {
                     let ended = Arc::new(Ending::default());
                     let lifetime = Arc::new(CancellationToken::new());
                     let channel = channel_on(
+                        peer,
                         Watched::new(stream, ended.clone()),
                         &ended,
                         lifetime.clone(),
@@ -680,7 +681,7 @@ impl ChannelPool {
     ) -> Channel {
         let lifetime = Arc::new(CancellationToken::new());
         self.track(key, &lifetime);
-        channel_on(stream, ended, lifetime)
+        channel_on(key.peer, stream, ended, lifetime)
     }
 
     /// Cancels `lifetime` when the channels `key` names are forgotten.
@@ -904,8 +905,12 @@ pub(crate) fn peer_client(channel: Channel) -> PeerClient {
     }
 }
 
-/// A channel over `stream`, ending when `lifetime` is cancelled.
+/// A channel to `peer` over `stream`, ending when `lifetime` is cancelled.
+/// Its calls name `peer` as their authority, as a call carried there for a
+/// client does, so a capture reads the same at both ends; nothing on a link
+/// routes on it.
 fn channel_on(
+    peer: HostId,
     stream: Watched<ByteStream>,
     ended: &Arc<Ending>,
     lifetime: Arc<CancellationToken>,
@@ -913,8 +918,9 @@ fn channel_on(
     let stream = crate::transport::ShutdownIo::new_shared(stream, lifetime);
     // The acceptor wraps its end the same way (`TunnelDispatcher`).
     let io = Compressed::new(TrustAnswer::new(stream, ended.clone()));
+    let origin = format!("https://{}", wire::authority(&peer));
     channel_from_single_io(
-        Endpoint::from_static("https://peer"),
+        Endpoint::from_shared(origin).expect("a host id is a valid authority"),
         "native link channel",
         io,
     )

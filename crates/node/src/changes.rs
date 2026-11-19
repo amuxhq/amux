@@ -135,7 +135,7 @@ impl ProfileRuntime {
             changes
                 .files
                 .into_iter()
-                .map(|file| changed_file(&cwd, file))
+                .map(|file| changed_file(&changes.root, file))
                 .collect()
         })
         .await
@@ -255,7 +255,7 @@ fn family(rows: &[AgentRow], agent: &AgentKey) -> BTreeSet<AgentKey> {
 
 /// One file as the wire says it, its language picked by the one rule every
 /// client colours code by.
-fn changed_file(cwd: &Path, file: git_facts::ChangedFile) -> ChangedFile {
+fn changed_file(root: &Path, file: git_facts::ChangedFile) -> ChangedFile {
     let status = match file.status {
         git_facts::Status::Changed => FileStatus::Changed,
         git_facts::Status::Created => FileStatus::Created,
@@ -266,7 +266,7 @@ fn changed_file(cwd: &Path, file: git_facts::ChangedFile) -> ChangedFile {
     let language = Language::from_path(&file.path)
         .or_else(|| {
             readable
-                .then(|| first_line(&cwd.join(&file.path)))
+                .then(|| first_line(&root.join(&file.path)))
                 .flatten()
                 .and_then(|line| Language::from_file(&file.path, &line))
         })

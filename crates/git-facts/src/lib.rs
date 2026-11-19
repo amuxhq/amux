@@ -170,6 +170,10 @@ pub struct ChangedFile {
 /// What changed in an agent's folder against a base.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Changes {
+    /// The repository's top folder. git names every file from here, not
+    /// from the folder it was asked in, so a file is read at
+    /// `root.join(path)` even when the agent works in a subfolder.
+    pub root: PathBuf,
     pub base: UsedBase,
     /// The commit checked out; None before the first commit.
     pub head: Option<String>,
@@ -502,14 +506,23 @@ pub async fn compare(
     })
 }
 
-/// What changed in the working tree of `cwd` against `base`, untracked
-/// files included, renames found, and the base it ran from. The person's
+/// What changed in the whole working tree of the repository `cwd` is in,
+/// against `base`, untracked files included, renames found, and the base it
+/// ran from. The person's
 /// index is not touched and nothing is stored.
 pub async fn changes(cwd: &Path, base: &Base) -> Result<Changes, GitError> {
     let inside = run(cwd, None, &["rev-parse", "--is-inside-work-tree"], None).await?;
     if !inside.status.success() || text(&inside.stdout) != "true" {
         return Err(GitError::NotARepository);
     }
+    let root = answer(cwd, &["rev-parse", "--show-toplevel"])
+        .await?
+        .map(PathBuf::from)
+        .ok_or(GitError::NotARepository)?;
+    // Everything from here runs at the top: git names files from there,
+    // and listing untracked files from a subfolder would see only that
+    // subfolder, so an agent working in one would get a partial answer.
+    let cwd = root.as_path();
     let head = answer(cwd, &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).await?;
     let used = match base {
         Base::Head => UsedBase {
@@ -554,6 +567,7 @@ pub async fn changes(cwd: &Path, base: &Base) -> Result<Changes, GitError> {
     let raw = scratch.diff(&against, true).await?;
     let files = flagged(cwd, raw).await?;
     Ok(Changes {
+        root,
         base: used,
         head,
         files,
@@ -996,13 +1010,13 @@ fn raw_files(output: &[u8]) -> Vec<RawFile> {
     files
 }
 
-/// `files` with their flags.
-async fn flagged(cwd: &Path, files: Vec<RawFile>) -> Result<Vec<ChangedFile>, GitError> {
+/// `files` with their flags, read from the repository's top folder.
+async fn flagged(root: &Path, files: Vec<RawFile>) -> Result<Vec<ChangedFile>, GitError> {
     if files.is_empty() {
         return Ok(Vec::new());
     }
-    let attributes = attributes(cwd, &files).await?;
-    let base_sizes = base_sizes(cwd, &files).await?;
+    let attributes = attributes(root, &files).await?;
+    let base_sizes = base_sizes(root, &files).await?;
     let regular = |mode: &str| mode.starts_with("100");
     let mut flagged = Vec::with_capacity(files.len());
     // The base side of deleted files, read for their headers in one go.
@@ -1012,7 +1026,7 @@ async fn flagged(cwd: &Path, files: Vec<RawFile>) -> Result<Vec<ChangedFile>, Gi
         let base_size = base_sizes.get(&file.old_id).copied();
         let tree_size = match file.status {
             Status::Deleted => None,
-            _ => std::fs::symlink_metadata(cwd.join(&file.path))
+            _ => std::fs::symlink_metadata(root.join(&file.path))
                 .ok()
                 .filter(std::fs::Metadata::is_file)
                 .map(|meta| meta.len()),
@@ -1030,7 +1044,7 @@ async fn flagged(cwd: &Path, files: Vec<RawFile>) -> Result<Vec<ChangedFile>, Gi
                 }
                 false
             }
-            None => regular(&file.new_mode) && generated_header(&read_head(&cwd.join(&file.path))),
+            None => regular(&file.new_mode) && generated_header(&read_head(&root.join(&file.path))),
         };
         flagged.push(ChangedFile {
             flags: Flags {
@@ -1049,7 +1063,7 @@ async fn flagged(cwd: &Path, files: Vec<RawFile>) -> Result<Vec<ChangedFile>, Gi
     }
     if !deleted_heads.is_empty() {
         let ids: Vec<&str> = deleted_heads.iter().map(|(_, id)| id.as_str()).collect();
-        let contents = objects(cwd, &ids).await?;
+        let contents = objects(root, &ids).await?;
         for ((at, _), content) in deleted_heads.iter().zip(contents) {
             flagged[*at].flags.generated = generated_header(&content);
         }

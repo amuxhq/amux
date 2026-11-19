@@ -3653,8 +3653,9 @@ impl ::prost::Name for GetChangesRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetChangesResponse {
-    /// The branch the comparison was made against; empty when it ran from
-    /// HEAD.
+    /// The branch the comparison was made against: the one asked for, the
+    /// upstream when the default rule ran from it, or the base branch. Empty
+    /// only when HEAD was asked for, or when no base branch was found.
     #[prost(string, tag = "1")]
     pub base_branch: ::prost::alloc::string::String,
     /// The commit the comparison ran from: the merge base with base_branch,

@@ -39,8 +39,9 @@ message GetChangesRequest {
 }
 
 message GetChangesResponse {
-  // The branch the comparison was made against; empty when it ran from
-  // HEAD.
+  // The branch the comparison was made against: the one asked for, the
+  // upstream when the default rule ran from it, or the base branch. Empty
+  // only when HEAD was asked for, or when no base branch was found.
   string base_branch = 1;
   // The commit the comparison ran from: the merge base with base_branch,
   // or HEAD. Empty in a repository with no commits, where every file is

@@ -702,6 +702,16 @@ async fn changes_flag_lockfiles_vendored_generated_and_large_files() {
     );
     assert_eq!(flags("src/plain.rs"), Flags::default());
 
+    // Asked from a subfolder, git still names every file from the top of
+    // the repository, and each is read from there: the same files, the
+    // same flags.
+    let from_src = changes(&dir.join("src"), &Base::Head).await.unwrap();
+    assert_eq!(from_src.files, found.files);
+    assert_eq!(
+        from_src.root.canonicalize().unwrap(),
+        dir.canonicalize().unwrap()
+    );
+
     // A large file stays large when it is deleted, from its base side.
     git(dir, &["add", "big.txt"]);
     git(dir, &["commit", "-q", "-m", "big"]);

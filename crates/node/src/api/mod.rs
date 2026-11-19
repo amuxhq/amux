@@ -14,3 +14,33 @@
     )
 )]
 mod caller;
+mod entry;
+mod host {
+    pub(super) mod agents;
+    pub(super) mod changes;
+    pub(super) mod offers;
+}
+mod local;
+mod peer;
+
+use std::sync::Weak;
+
+pub(crate) use entry::Entry;
+use tonic::service::RoutesBuilder;
+
+use crate::runtime::ProfileRuntime;
+
+/// The services `entry` serves, for the profile `runtime` runs.
+pub(crate) fn routes(runtime: &Weak<ProfileRuntime>, entry: Entry) -> RoutesBuilder {
+    let mut routes = RoutesBuilder::default();
+    if entry != Entry::Link {
+        local::mount(&mut routes, runtime, entry);
+    }
+    host::agents::mount(&mut routes, runtime, entry);
+    host::offers::mount(&mut routes, runtime, entry);
+    host::changes::mount(&mut routes, runtime, entry);
+    if entry == Entry::Link {
+        peer::mount(&mut routes, runtime);
+    }
+    routes
+}

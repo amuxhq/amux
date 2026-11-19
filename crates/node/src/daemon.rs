@@ -22,7 +22,7 @@ use tokio::task::JoinHandle;
 use crate::activation::{ActivationError, ActivationPipe};
 use crate::edge::EdgeOptions;
 use crate::generation::{self, Generation};
-use crate::grpc::{self, ClientApi};
+use crate::grpc;
 use crate::install::{InstallationLock, LockError, REPORTS, STORE, private_dir};
 use crate::outbox::PushSender;
 use crate::profiles::{self, PROFILE_SOCKET, ProfileEntry, ProfileId};
@@ -325,7 +325,8 @@ impl Installation {
         })?;
         Ok(Some(grpc::serve_client(
             listener,
-            ClientApi::new(runtime, None).opened_as(analytics::Client::Terminal),
+            Arc::downgrade(runtime),
+            crate::api::Entry::Profile,
             Some(
                 crate::ProfileAdmin::new(
                     crate::Registry::new(Arc::downgrade(self)),

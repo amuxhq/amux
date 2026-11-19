@@ -41,7 +41,6 @@ use wire::{
 };
 
 use crate::driver::{Ask, Delivered};
-use crate::grpc::ClientApi;
 use crate::install::{AGENTS, private_dir};
 use crate::outbox::PushSender;
 use crate::profiles::ProfileId;
@@ -1572,7 +1571,8 @@ impl ProfileRuntime {
         let listener = LocalListener::bind(&dir.join(agent_dir::TOOLS_SOCK))?;
         Ok(crate::grpc::serve_client(
             listener,
-            ClientApi::weak(self.me.clone(), Some(id)),
+            self.me.clone(),
+            crate::api::Entry::Tools(id),
             None,
         ))
     }

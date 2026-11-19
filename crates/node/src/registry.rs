@@ -223,6 +223,14 @@ impl Registry {
         ))
     }
 
+    /// The services a hosted profile serves the phone in memory: what an
+    /// embedder that serves no sockets calls its node through, with the
+    /// same stubs a socket's client uses.
+    pub fn routes(&self, id: ProfileId) -> Result<tonic::service::Routes, ProfileRefusal> {
+        let runtime = self.runtime(id)?;
+        Ok(crate::api::routes(&Arc::downgrade(&runtime), crate::api::Entry::Phone).routes())
+    }
+
     /// A hosted profile's network edge.
     pub fn edge(&self, id: ProfileId) -> Result<Arc<Edge>, ProfileRefusal> {
         Self::edge_of(&*self.installation()?, id)

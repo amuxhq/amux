@@ -89,6 +89,17 @@ impl ClientApi {
         }
     }
 
+    /// The client services as `entry` serves them: an agent's tools socket
+    /// answers as that agent, and the profile's socket counts the terminal
+    /// opened.
+    pub(crate) fn for_entry(runtime: Weak<ProfileRuntime>, entry: crate::api::Entry) -> Self {
+        let api = Self::weak(runtime, entry.agent());
+        match entry {
+            crate::api::Entry::Profile => api.opened_as(analytics::Client::Terminal),
+            _ => api,
+        }
+    }
+
     /// Counts a client opened each time a caller lists the agents, at most
     /// once an hour: the terminal client lists them when it starts.
     pub fn opened_as(mut self, client: analytics::Client) -> Self {
@@ -852,15 +863,21 @@ pub(crate) fn incoming(
     })
 }
 
-/// Serves the client services on a listener, with the profile's
+/// Serves the services `entry` is served on a listener, with the profile's
 /// administration on the profile's own socket, until the task is aborted,
 /// which drops the listener and removes its socket, and closes every
 /// connection it accepted.
 pub(crate) fn serve_client(
     listener: LocalListener,
-    api: ClientApi,
+    runtime: Weak<ProfileRuntime>,
+    entry: crate::api::Entry,
     admin: Option<ProfileAdminServiceServer<crate::ProfileAdmin>>,
 ) -> JoinHandle<()> {
+    let api = ClientApi::for_entry(runtime.clone(), entry);
+    let mut routes = crate::api::routes(&runtime, entry);
+    routes
+        .add_service(wire::agent_service_server(api.clone()))
+        .add_service(wire::session_service_server(api));
     tokio::spawn(async move {
         // The signal never fires; asking for graceful shutdown at all is
         // what ties each accepted connection to this future. Without it a
@@ -868,8 +885,7 @@ pub(crate) fn serve_client(
         // "no longer running" by a dead runtime instead of redialling the
         // socket, where a restarted runtime may already be listening.
         let served = tonic::transport::Server::builder()
-            .add_service(wire::agent_service_server(api.clone()))
-            .add_service(wire::session_service_server(api))
+            .add_routes(routes.routes())
             .add_optional_service(admin)
             .serve_with_incoming_shutdown(incoming(listener), std::future::pending::<()>())
             .await;

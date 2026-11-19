@@ -1,5 +1,6 @@
 import AmuxValues
 import Foundation
+import Observation
 import Synchronization
 import XCTest
 @testable import AmuxCore
@@ -42,37 +43,74 @@ final class CodeHighlightingTests: XCTestCase {
         let scripted = Scripted(settleAt: 3)
         let highlighting = scripted.highlighting
         let request = CodeHighlighting.Request.block(code: "fn", info: "rust", streaming: false)
-        var drawn: [HighlightedCode] = []
+        var drawn: [HighlightedCode?] = []
         await highlighting.follow(request) { drawn.append($0) }
-        XCTAssertEqual(drawn.map(\.settled), [false, false, true])
-        XCTAssertEqual(drawn.last?.lines, [[piece("fn", .keyword)]])
+        XCTAssertEqual(drawn.map { $0?.settled }, [false, false, true])
+        XCTAssertEqual(drawn.last??.lines, [[piece("fn", .keyword)]])
         XCTAssertEqual(highlighting.kept(request)?.settled, true)
     }
 
-    func testASettledAnswerIsKeptAndNotAskedForAgain() async {
+    /// A kept answer is handed over at once without crossing again, so a
+    /// view holds it too and still draws it once the keeping is let go.
+    func testAKeptAnswerIsHandedWithoutAskingAgain() async {
         let scripted = Scripted(settleAt: 1)
         let highlighting = scripted.highlighting
         let request = CodeHighlighting.Request.block(code: "fn", info: "rust", streaming: false)
         XCTAssertNil(highlighting.kept(request))
-        _ = highlighting.ask(request)
-        _ = highlighting.ask(request)
-        var drawn = 0
-        await highlighting.follow(request) { _ in drawn += 1 }
+        await highlighting.follow(request) { _ in }
+        var drawn: [HighlightedCode?] = []
+        await highlighting.follow(request) { drawn.append($0) }
         XCTAssertEqual(scripted.count, 1, "a kept answer crossed again")
-        XCTAssertEqual(drawn, 0, "the view draws a kept answer itself")
+        XCTAssertEqual(drawn.map { $0?.lines }, [[[piece("fn", .keyword)]]])
     }
 
-    func testAnUnsettledAnswerIsNotKept() {
+    /// Two views show the same code. The first draws it plain, before any
+    /// answer; the second's answer settles. The first is drawn again,
+    /// because what it read is observed, whether or not its own task has
+    /// run yet: nothing it holds has to catch the update.
+    func testAViewThatDrewPlainIsDrawnAgainWhenAnotherSettlesItsCode() async {
+        let highlighting = Scripted(settleAt: 1).highlighting
+        let request = CodeHighlighting.Request.block(code: "fn", info: "rust", streaming: false)
+        let redrawn = Mutex(false)
+        let first = withObservationTracking {
+            highlighting.kept(request)
+        } onChange: {
+            redrawn.withLock { $0 = true }
+        }
+        XCTAssertNil(first, "the first view drew before anything was kept")
+        await highlighting.follow(request) { _ in }
+        XCTAssertTrue(redrawn.withLock { $0 }, "the first view was not told its code settled")
+        XCTAssertEqual(highlighting.kept(request)?.lines, [[piece("fn", .keyword)]])
+    }
+
+    func testAnUnsettledAnswerIsNotKept() async {
         let scripted = Scripted(settleAt: 2)
         let highlighting = scripted.highlighting
         let request = CodeHighlighting.Request.block(code: "fn", info: "rust", streaming: true)
-        XCTAssertEqual(highlighting.ask(request)?.settled, false)
+        // Stopped after its first answer, as a view's task is when the
+        // streaming block grows.
+        let task = Task { @MainActor in
+            await highlighting.follow(request) { _ in withUnsafeCurrentTask { $0?.cancel() } }
+        }
+        await task.value
+        XCTAssertEqual(scripted.count, 1)
         XCTAssertNil(highlighting.kept(request))
+    }
+
+    /// Nothing able to colour the code hands nil, so a view lets go of an
+    /// answer for an earlier text rather than draw it on.
+    func testNoAnswerIsHandedAsNil() async {
+        let nothing = CodeHighlighting { _ in nil }
+        let request = CodeHighlighting.Request.block(code: "fn", info: "rust", streaming: false)
+        var drawn: [HighlightedCode?] = []
+        await nothing.follow(request) { drawn.append($0) }
+        XCTAssertEqual(drawn.count, 1)
+        XCTAssertNil(drawn.first ?? nil)
     }
 
     func testPlainAnswersNothingAndEachHighlightingIsItsOwn() async {
         let request = CodeHighlighting.Request.block(code: "fn", info: "rust", streaming: false)
-        XCTAssertNil(CodeHighlighting.plain.ask(request))
+        XCTAssertNil(CodeHighlighting.plain.kept(request))
         var drawn = 0
         await CodeHighlighting.plain.follow(request) { _ in drawn += 1 }
         XCTAssertEqual(drawn, 0)

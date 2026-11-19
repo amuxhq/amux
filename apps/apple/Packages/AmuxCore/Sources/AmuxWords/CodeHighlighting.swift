@@ -1,7 +1,7 @@
 import AmuxValues
 import Foundation
+import Observation
 import SwiftUI
-import Synchronization
 
 /// How an Apple client gets code coloured: a fenced block in an agent's
 /// markdown, and the patch an edit card shows. The colouring is the shared
@@ -19,6 +19,14 @@ import Synchronization
 /// (``follow(_:_:)``). Settled answers are kept by content, so a block
 /// scrolled back into view draws coloured at once, without crossing the
 /// bridge again.
+///
+/// A view draws `kept(request) ?? the answer follow last handed it`. The
+/// kept answers are observed: a view that drew a block plain is drawn
+/// again the moment any view showing the same code settles it, so no view
+/// can be left plain by having asked a moment before another answered.
+/// What a view holds itself is only what its own ``follow(_:_:)`` handed
+/// it, which covers the unsettled answers that are never kept and the
+/// moment the kept ones are let go.
 public struct CodeHighlighting: Sendable, Equatable {
     /// What colours are asked for.
     public enum Request: Hashable, Sendable {
@@ -63,50 +71,60 @@ public struct CodeHighlighting: Sendable, Equatable {
         lhs.kept === rhs.kept
     }
 
-    /// The settled answer kept for `request`, without asking.
+    /// The settled answer kept for `request`, without asking. Read in a
+    /// view's body, it is observed: the view is drawn again when an answer
+    /// for `request` is kept, by whichever view asked for it.
+    @MainActor
     public func kept(_ request: Request) -> HighlightedCode? {
-        kept?.held.withLock { $0[request] }
-    }
-
-    /// Asks for `request`'s colours on the calling thread, keeping a
-    /// settled answer. Nil when nothing colours code here.
-    public func ask(_ request: Request) -> HighlightedCode? {
-        guard let answer, let kept else { return nil }
-        if let held = self.kept(request) { return held }
-        guard let code = answer(request) else { return nil }
-        if code.settled { kept.keep(code, for: request) }
-        return code
+        kept?.held[request]
     }
 
     /// Asks for `request`'s colours away from the main thread and hands
-    /// each answer to `draw`, asking again shortly while it is unsettled.
-    /// Returns once an answer is settled or the task is cancelled, as a
-    /// view's task is when what it draws changes. An answer already kept
-    /// is not handed over: the view draws it from ``kept(_:)``.
+    /// each answer to `draw`, asking again shortly while it is unsettled,
+    /// and keeps a settled one. An answer already kept is handed at once,
+    /// without crossing the bridge. Returns once an answer is settled or
+    /// the task is cancelled, as a view's task is when what it draws
+    /// changes. Nil is handed when nothing could colour the code, so a
+    /// view stops drawing an earlier answer.
     @MainActor
-    public func follow(_ request: Request, _ draw: (HighlightedCode) -> Void) async {
-        guard answer != nil, kept(request) == nil else { return }
+    public func follow(_ request: Request, _ draw: (HighlightedCode?) -> Void) async {
+        guard let answer, let kept else { return }
         while !Task.isCancelled {
-            let code = await Task.detached(priority: .userInitiated) { ask(request) }.value
-            guard let code, !Task.isCancelled else { return }
+            // Asked before every crossing: another view showing the same
+            // code may have settled it while this one waited.
+            if let held = kept.held[request] {
+                draw(held)
+                return
+            }
+            let code = await Task.detached(priority: .userInitiated) { answer(request) }.value
+            guard !Task.isCancelled else { return }
+            guard let code else {
+                draw(nil)
+                return
+            }
+            if code.settled { kept.keep(code, for: request) }
             draw(code)
             if code.settled { return }
             try? await Task.sleep(for: Self.again)
         }
     }
 
-    /// Settled answers by what they answer. Started again when full, as
-    /// the shared view's own keeping is: what is on screen is asked for
-    /// again within a frame, and nothing here is worth an eviction order.
-    private final class Kept: Sendable {
+    /// Settled answers by what they answer, observed by the views that
+    /// read them. Started again when full, as the shared view's own
+    /// keeping is: what is on screen is asked for again within a frame,
+    /// and nothing here is worth an eviction order. A view whose answer is
+    /// let go draws what its own follow handed it until then.
+    @MainActor
+    @Observable
+    final class Kept {
         static let limit = 256
-        let held = Mutex<[Request: HighlightedCode]>([:])
+        private(set) var held: [Request: HighlightedCode] = [:]
+
+        nonisolated init() {}
 
         func keep(_ code: HighlightedCode, for request: Request) {
-            held.withLock { held in
-                if held.count >= Self.limit { held.removeAll(keepingCapacity: true) }
-                held[request] = code
-            }
+            if held.count >= Self.limit { held.removeAll(keepingCapacity: true) }
+            held[request] = code
         }
     }
 }

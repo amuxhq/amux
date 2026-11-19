@@ -159,4 +159,75 @@ mod tests {
         let plain = crate::chat::rows::patch_lines(&patch, "notes.txt", true, 'b', 80, theme);
         assert_eq!(style_of(&plain[2], "    true"), Some(added));
     }
+
+    /// An edit whose code is still being coloured (here, its grammar still
+    /// building) marks the frame unsettled, so the loop draws again soon;
+    /// once the work is done, the next frame is settled. Both an edit card
+    /// and a landed edit's patch.
+    #[test]
+    fn an_edit_still_being_coloured_asks_for_another_frame() {
+        let held = ui_view::HeldJobs::default();
+        draw_with(held.highlighter());
+        let theme = Theme::default();
+        let line = |number, kind, text: &str| PatchLine {
+            number: Some(number),
+            kind,
+            text: text.into(),
+        };
+        let lines = vec![
+            line(1, LineKind::Context, "fn ready() -> bool {"),
+            line(2, LineKind::Added, "    true"),
+        ];
+        let patch = PatchHead {
+            hunks: vec![lines.clone()],
+            more: 0,
+        };
+        let card = ui_view::AskCard {
+            kind: wire::Kind::ClaudeSdk,
+            key: "ask".into(),
+            item_key: "item".into(),
+            position: 1,
+            count: 1,
+            body: ui_view::AskBody::Edit {
+                path: "src/ready.rs".into(),
+                files: 1,
+                added: 1,
+                removed: 0,
+                lines: lines.into_iter().map(EditLine::Line).collect(),
+                line: Some(2),
+                reason: String::new(),
+                created: Some(false),
+            },
+            choices: Vec::new(),
+            question_note: false,
+            question_skip: false,
+            question_reply: false,
+            stops_turn: true,
+            default_to_no: false,
+            state: ui_view::CardState::Open,
+        };
+        let ask = crate::chat::ask::AskUi::default();
+        let frames: [(&str, &dyn Fn()); 2] = [
+            ("the edit card", &|| {
+                ask.box_lines(&card, 80, theme);
+            }),
+            ("the landed edit", &|| {
+                crate::chat::rows::patch_lines(&patch, "src/ready.rs", true, 'b', 80, theme);
+            }),
+        ];
+        for (what, draw) in frames {
+            begin_frame();
+            draw();
+            assert!(
+                drew_unsettled(),
+                "{what} drawn plain asks to be drawn again"
+            );
+        }
+        held.run();
+        for (what, draw) in frames {
+            begin_frame();
+            draw();
+            assert!(!drew_unsettled(), "{what} coloured is settled");
+        }
+    }
 }

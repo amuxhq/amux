@@ -25,7 +25,12 @@ mod peer;
 
 use std::sync::Weak;
 
-pub(crate) use entry::Entry;
+pub(crate) use caller::Caller;
+#[cfg(test)]
+pub(crate) use caller::Surface;
+#[cfg(test)]
+pub(crate) use entry::client_entrance;
+pub(crate) use entry::{Entrance, Entry, entrance, layer};
 use tonic::service::RoutesBuilder;
 
 use crate::runtime::ProfileRuntime;

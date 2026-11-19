@@ -10,6 +10,7 @@ use tokio::sync::watch;
 use wire::ErrorCode;
 
 use crate::ProfileId;
+use crate::api::Entrance;
 use crate::daemon::{Hosted, Installation};
 use crate::edge::{Cloud, Edge, account};
 use crate::profiles::{self, PROFILE_SOCKET};
@@ -225,10 +226,16 @@ impl Registry {
 
     /// The services a hosted profile serves the phone in memory: what an
     /// embedder that serves no sockets calls its node through, with the
-    /// same stubs a socket's client uses.
-    pub fn routes(&self, id: ProfileId) -> Result<tonic::service::Routes, ProfileRefusal> {
-        let runtime = self.runtime(id)?;
-        Ok(crate::api::routes(&Arc::downgrade(&runtime), crate::api::Entry::Phone).routes())
+    /// same stubs a socket's client uses. A call addressed to another
+    /// host's id is carried to it, as on a socket.
+    pub fn routes(&self, id: ProfileId) -> Result<Entrance, ProfileRefusal> {
+        let runtime = Arc::downgrade(&self.runtime(id)?);
+        let routes = crate::api::routes(&runtime, crate::api::Entry::Phone).routes();
+        Ok(crate::api::entrance(
+            &runtime,
+            crate::api::Entry::Phone,
+            routes,
+        ))
     }
 
     /// A hosted profile's network edge.

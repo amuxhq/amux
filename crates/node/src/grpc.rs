@@ -864,7 +864,8 @@ pub(crate) fn incoming(
 }
 
 /// Serves the services `entry` is served on a listener, with the profile's
-/// administration on the profile's own socket, until the task is aborted,
+/// administration on the profile's own socket, behind the entry's layer
+/// (see [`crate::api::layer`]), until the task is aborted,
 /// which drops the listener and removes its socket, and closes every
 /// connection it accepted.
 pub(crate) fn serve_client(
@@ -885,6 +886,7 @@ pub(crate) fn serve_client(
         // "no longer running" by a dead runtime instead of redialling the
         // socket, where a restarted runtime may already be listening.
         let served = tonic::transport::Server::builder()
+            .layer(crate::api::layer(&runtime, entry))
             .add_routes(routes.routes())
             .add_optional_service(admin)
             .serve_with_incoming_shutdown(incoming(listener), std::future::pending::<()>())

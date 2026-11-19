@@ -2436,6 +2436,7 @@ dependencies = [
  "futures-util",
  "git-facts",
  "hpke",
+ "http-body",
  "hyper-util",
  "if-addrs",
  "interpret",

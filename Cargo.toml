@@ -123,10 +123,13 @@ protoc-bin-vendored = "3"
 tonic = { version = "0.14", features = ["transport"] }
 tonic-prost = "0.14"
 tonic-prost-build = "0.14"
-tower = "0.5"
+# steer: the router in front of a client entry's handlers; util: boxing the
+# services it picks between.
+tower = { version = "0.5", features = ["steer", "util"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 hyper = { version = "1", features = ["http1", "server"] }
 http-body-util = "0.1"
+http-body = "1"
 thiserror = "2"
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
 futures-util = "0.3"

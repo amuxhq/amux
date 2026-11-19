@@ -13,6 +13,7 @@
 //! the peer service through the node it is attached to, with no list of
 //! services anywhere.
 
+use tonic::codegen::http;
 use tonic::{Request, Status};
 use wire::ErrorCode;
 
@@ -132,11 +133,13 @@ impl Caller {
     /// that reached a handler without one was mounted without its entry's
     /// layer, which is a bug in this node, not something a caller did.
     pub(crate) fn of<T>(request: &Request<T>) -> Result<Self, Status> {
-        request
-            .extensions()
-            .get::<Self>()
-            .cloned()
-            .ok_or_else(|| Status::internal("no caller was settled for this call"))
+        Self::settled(request.extensions())
+    }
+
+    /// The caller the entry's layer settled in a request's `extensions`:
+    /// see [`Caller::of`].
+    pub(crate) fn settled(extensions: &http::Extensions) -> Result<Self, Status> {
+        settled(extensions, "no caller was settled for this call")
     }
 }
 
@@ -144,11 +147,10 @@ impl PairedDaemon {
     /// The paired daemon a peer-service call is from, as the link's layer
     /// settled it: see [`Caller::of`].
     pub(crate) fn of<T>(request: &Request<T>) -> Result<Self, Status> {
-        request
-            .extensions()
-            .get::<Self>()
-            .copied()
-            .ok_or_else(|| Status::internal("no paired daemon was settled for this call"))
+        settled(
+            request.extensions(),
+            "no paired daemon was settled for this call",
+        )
     }
 
     /// The paired daemon a peer-service call that arrived on a link from
@@ -171,27 +173,63 @@ impl PairedDaemon {
     }
 }
 
+/// Why the entry's layer could not settle a `T` for a call: the refusal a
+/// handler that asks for one answers with. The layer settles what it can
+/// and refuses nothing itself, so a call no handler is mounted for is still
+/// answered "unimplemented", and only a handler that needs a caller it
+/// could not have refuses.
+#[derive(Clone, Debug)]
+pub(crate) struct Unsettled<T>(pub(crate) Status, std::marker::PhantomData<fn() -> T>);
+
+impl<T> Unsettled<T> {
+    pub(crate) fn new(refusal: Status) -> Self {
+        Self(refusal, std::marker::PhantomData)
+    }
+}
+
+/// The `T` the entry's layer settled in `extensions`, or its refusal. A
+/// call with neither was served without its entry's layer, which is a bug
+/// in this node, not something a caller did.
+fn settled<T: Clone + Send + Sync + 'static>(
+    extensions: &http::Extensions,
+    unlayered: &'static str,
+) -> Result<T, Status> {
+    if let Some(value) = extensions.get::<T>() {
+        return Ok(value.clone());
+    }
+    Err(match extensions.get::<Unsettled<T>>() {
+        Some(Unsettled(refusal, _)) => refusal.clone(),
+        None => Status::internal(unlayered),
+    })
+}
+
 /// The paired host a link call came from, and the caller header it
 /// carries if any. Only a link stream whose handshake presented a trusted
 /// key is served the link's services, so a call without one is refused
 /// rather than answered as nobody.
 fn link_call<T>(request: &Request<T>) -> Result<(HostId, Option<&[u8]>), Status> {
-    let Some(BoxedGrpcConnectInfo {
-        auth: BoxedGrpcAuth::Trusted { peer },
-    }) = request.extensions().get::<BoxedGrpcConnectInfo>()
-    else {
-        return Err(Status::unauthenticated("the caller is not a trusted host"));
-    };
+    let peer = link_peer(request.extensions())?;
     let header = request
         .metadata()
         .get_bin(wire::CALLER_HEADER)
         .map(|value| value.as_encoded_bytes());
-    Ok((*peer, header))
+    Ok((peer, header))
+}
+
+/// The paired host a link call came from, from the request's extensions:
+/// see [`link_call`].
+pub(in crate::api) fn link_peer(extensions: &http::Extensions) -> Result<HostId, Status> {
+    match extensions.get::<BoxedGrpcConnectInfo>() {
+        Some(BoxedGrpcConnectInfo {
+            auth: BoxedGrpcAuth::Trusted { peer },
+        }) => Ok(*peer),
+        _ => Err(Status::unauthenticated("the caller is not a trusted host")),
+    }
 }
 
 /// The client a person's surface word names. A word this build does not
 /// know reads as the terminal, the client that names itself with none.
-fn surface_named(word: &str) -> Surface {
+pub(in crate::api) fn surface_named(word: &str) -> Surface {
     match word {
         "phone" => Surface::Phone,
         "mac" => Surface::Mac,
@@ -356,6 +394,22 @@ mod tests {
         request.extensions_mut().insert(person.clone());
         request.extensions_mut().insert(PairedDaemon(host(7)));
         assert_eq!(Caller::of(&request).unwrap(), person);
+        assert_eq!(PairedDaemon::of(&request).unwrap(), PairedDaemon(host(7)));
+    }
+
+    /// What the entry could not settle is refused by the handler that asks
+    /// for it, and only by that one.
+    #[test]
+    fn a_handler_answers_the_refusal_its_entry_settled() {
+        let mut request = Request::new(());
+        request
+            .extensions_mut()
+            .insert(Unsettled::<Caller>::new(refused("no")));
+        request.extensions_mut().insert(PairedDaemon(host(7)));
+        assert_eq!(
+            Caller::of(&request).unwrap_err().code(),
+            tonic::Code::PermissionDenied
+        );
         assert_eq!(PairedDaemon::of(&request).unwrap(), PairedDaemon(host(7)));
     }
 }

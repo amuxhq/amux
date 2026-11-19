@@ -44,12 +44,15 @@ pub(super) fn serve(
             .map(|io| (Ok::<_, std::io::Error>(io), incoming))
     });
     let mut routes = crate::api::routes(&runtime, crate::api::Entry::Link);
-    let service = PeerApi { runtime };
+    let service = PeerApi {
+        runtime: runtime.clone(),
+    };
     routes
         .add_service(wire::agent_service_server(service.clone()))
         .add_service(wire::session_service_server(service));
     tokio::spawn(async move {
         let served = tonic::transport::Server::builder()
+            .layer(crate::api::layer(&runtime, crate::api::Entry::Link))
             .add_routes(routes.routes())
             .serve_with_incoming_shutdown(incoming, super::wait_for(shutdown))
             .await;

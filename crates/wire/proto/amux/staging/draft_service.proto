@@ -1,0 +1,37 @@
+// These files move into amux.v1 once every caller uses them.
+syntax = "proto3";
+
+package amux.staging;
+
+import "amux/v1/session.proto";
+
+// What this machine's person has typed into an agent's composer and not
+// sent, kept by the node for its clients so it outlives a client closing.
+//
+// A local service: a draft stays on the machine it was typed on and is
+// never sent to another host. Served on the profile socket and the
+// phone's entry in memory; on an agent's tools socket, only for the
+// agent's own children. Never on a link.
+
+service DraftService {
+  // Keeps the draft; an empty one forgets it.
+  rpc UpdateDraft(UpdateDraftRequest) returns (UpdateDraftResponse);
+  rpc GetDraft(GetDraftRequest) returns (GetDraftResponse);
+}
+
+message UpdateDraftRequest {
+  bytes agent_id = 1;
+  amux.v1.Draft draft = 2;
+}
+
+message UpdateDraftResponse {
+  amux.v1.Draft draft = 1;
+}
+
+message GetDraftRequest {
+  bytes agent_id = 1;
+}
+
+message GetDraftResponse {
+  amux.v1.Draft draft = 1;
+}

@@ -13,6 +13,8 @@ default = ["grpc"]
 grpc = ["dep:tonic", "dep:tonic-prost"]
 
 [dependencies]
+# A carried call's caller header is binary, which gRPC writes in base64.
+base64 = "0.22"
 prost = { workspace = true }
 # Any, which an error status packs its details in.
 prost-types = { workspace = true }
@@ -21,4 +23,6 @@ serde = { workspace = true }
 tonic = { workspace = true, optional = true }
 tonic-prost = { workspace = true, optional = true }
 tracing = { workspace = true }
+# A host id, which a call's authority names.
+uuid = { workspace = true }
 

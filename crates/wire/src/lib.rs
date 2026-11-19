@@ -3,6 +3,54 @@
 //! and control frames, and the client, pairing, profile and installation
 //! services.
 
+/// A sized client and server constructor for each service that carries
+/// attachments: every message may be as large as the largest attachment.
+/// The generic form builds its client on any service from a request to a
+/// response, so a caller in the same process as its node calls the router
+/// with no socket between them.
+macro_rules! sized_service {
+    ($client_fn:ident, $server_fn:ident, $client_mod:ident, $client:ident, $server_mod:ident, $server:ident, $service:ident) => {
+        #[cfg(feature = "grpc")]
+        pub fn $client_fn(
+            channel: tonic::transport::Channel,
+        ) -> $client_mod::$client<tonic::transport::Channel> {
+            $client_mod::$client::new(channel)
+                .max_decoding_message_size($crate::CHANNEL_MESSAGE_SIZE_LIMIT)
+                .max_encoding_message_size($crate::CHANNEL_MESSAGE_SIZE_LIMIT)
+        }
+
+        sized_service!(@server $server_fn, $server_mod, $server, $service);
+    };
+    (generic $client_fn:ident, $server_fn:ident, $client_mod:ident, $client:ident, $server_mod:ident, $server:ident, $service:ident) => {
+        #[cfg(feature = "grpc")]
+        pub fn $client_fn<T>(inner: T) -> $client_mod::$client<T>
+        where
+            T: tonic::client::GrpcService<tonic::body::Body>,
+            T::Error: Into<tonic::codegen::StdError>,
+            T::ResponseBody: tonic::codegen::Body<Data = tonic::codegen::Bytes> + Send + 'static,
+            <T::ResponseBody as tonic::codegen::Body>::Error:
+                Into<tonic::codegen::StdError> + Send,
+        {
+            $client_mod::$client::new(inner)
+                .max_decoding_message_size($crate::CHANNEL_MESSAGE_SIZE_LIMIT)
+                .max_encoding_message_size($crate::CHANNEL_MESSAGE_SIZE_LIMIT)
+        }
+
+        sized_service!(@server $server_fn, $server_mod, $server, $service);
+    };
+    (@server $server_fn:ident, $server_mod:ident, $server:ident, $service:ident) => {
+        #[cfg(feature = "grpc")]
+        pub fn $server_fn<T>(service: T) -> $server_mod::$server<T>
+        where
+            T: $server_mod::$service,
+        {
+            $server_mod::$server::new(service)
+                .max_decoding_message_size($crate::CHANNEL_MESSAGE_SIZE_LIMIT)
+                .max_encoding_message_size($crate::CHANNEL_MESSAGE_SIZE_LIMIT)
+        }
+    };
+}
+
 pub mod amux {
     pub mod v1 {
         #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
@@ -14,6 +62,78 @@ pub mod amux {
     pub mod dump {
         #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
         include!("generated/amux.dump.rs");
+    }
+
+    /// The services that take the place of amux.v1's agent and session
+    /// services, written beside them while callers move over; they become
+    /// amux.v1 once none is left.
+    pub mod staging {
+        #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
+        include!("generated/amux.staging.rs");
+
+        sized_service!(
+            generic inventory_service_client,
+            inventory_service_server,
+            inventory_service_client,
+            InventoryServiceClient,
+            inventory_service_server,
+            InventoryServiceServer,
+            InventoryService
+        );
+        sized_service!(
+            generic session_service_client,
+            session_service_server,
+            session_service_client,
+            SessionServiceClient,
+            session_service_server,
+            SessionServiceServer,
+            SessionService
+        );
+        sized_service!(
+            generic draft_service_client,
+            draft_service_server,
+            draft_service_client,
+            DraftServiceClient,
+            draft_service_server,
+            DraftServiceServer,
+            DraftService
+        );
+        sized_service!(
+            generic agent_service_client,
+            agent_service_server,
+            agent_service_client,
+            AgentServiceClient,
+            agent_service_server,
+            AgentServiceServer,
+            AgentService
+        );
+        sized_service!(
+            generic host_service_client,
+            host_service_server,
+            host_service_client,
+            HostServiceClient,
+            host_service_server,
+            HostServiceServer,
+            HostService
+        );
+        sized_service!(
+            generic review_service_client,
+            review_service_server,
+            review_service_client,
+            ReviewServiceClient,
+            review_service_server,
+            ReviewServiceServer,
+            ReviewService
+        );
+        sized_service!(
+            generic peer_service_client,
+            peer_service_server,
+            peer_service_client,
+            PeerServiceClient,
+            peer_service_server,
+            PeerServiceServer,
+            PeerService
+        );
     }
 
     /// The shapes of experiments, carried as bytes in the `experimental`
@@ -47,6 +167,8 @@ pub mod google {
 
 pub use google::rpc;
 
+mod authority;
+mod caller;
 mod continued;
 mod entry;
 mod error;
@@ -55,6 +177,8 @@ mod host_name;
 mod pinned;
 mod said;
 pub use amux::v1::*;
+pub use authority::{authority, host_of_authority};
+pub use caller::CallerHeaderError;
 pub use continued::{continued_input_id, is_continued_input};
 pub use host_name::{HostName, HostNameError, MAX_HOST_NAME_CHARS};
 /// An error's code, gRPC's own.
@@ -79,31 +203,6 @@ pub const ATTACHMENT_SIZE_LIMIT: usize = 64 * 1024 * 1024;
 /// at the attachment limit still fits in one message.
 pub const CHANNEL_MESSAGE_SIZE_LIMIT: usize = ATTACHMENT_SIZE_LIMIT + 1024 * 1024;
 
-/// A sized client and server constructor for each service that carries
-/// attachments: every message may be as large as the largest attachment.
-macro_rules! sized_service {
-    ($client_fn:ident, $server_fn:ident, $client_mod:ident, $client:ident, $server_mod:ident, $server:ident, $service:ident) => {
-        #[cfg(feature = "grpc")]
-        pub fn $client_fn(
-            channel: tonic::transport::Channel,
-        ) -> $client_mod::$client<tonic::transport::Channel> {
-            $client_mod::$client::new(channel)
-                .max_decoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-                .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-        }
-
-        #[cfg(feature = "grpc")]
-        pub fn $server_fn<T>(service: T) -> $server_mod::$server<T>
-        where
-            T: $server_mod::$service,
-        {
-            $server_mod::$server::new(service)
-                .max_decoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-                .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-        }
-    };
-}
-
 sized_service!(
     agent_service_client,
     agent_service_server,
@@ -127,6 +226,12 @@ sized_service!(
 /// the usage count of clients opened: `mac` for the Mac app. The terminal
 /// sends none.
 pub const SURFACE_HEADER: &str = "amux-surface";
+
+/// The request header a node writes beside a call it carries to another
+/// host, naming the person or agent the call is for: a `Caller`, encoded,
+/// as gRPC writes a binary header. A host reads it only on a link, where
+/// the host it speaks for is the one the link's handshake authenticated.
+pub const CALLER_HEADER: &str = "amux-caller-bin";
 
 /// The detail an incarnation's end gives when its provider died of a signal
 /// the agent did not send: amux's own stops and kills end with causes of
@@ -548,7 +653,7 @@ mod tests {
     fn enums(set: &FileDescriptorSet) -> BTreeMap<String, Vec<(String, i32)>> {
         set.file
             .iter()
-            .filter(|file| file.package.as_deref() == Some("amux.v1"))
+            .filter(|file| matches!(file.package(), "amux.v1" | "amux.staging"))
             .flat_map(|file| file.enum_type.iter())
             .map(|enumeration| {
                 let values = enumeration
@@ -672,11 +777,12 @@ mod tests {
             // A client encodes its session history into DumpRequest.sessions.
             .chain([".amux.dump.ClientSessionHistory".to_owned()])
             // Each experiment's values are encoded into an `experimental`
-            // map entry.
+            // map entry, and a carried call's caller into its header.
             .chain(
                 [
                     ".amux.experimental.AgentWorkspace",
                     ".amux.experimental.SuspensionSpec",
+                    ".amux.staging.Caller",
                 ]
                 .map(str::to_owned),
             )
@@ -785,5 +891,69 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A spawn from an agent's tool server as builds before the reshaped
+    /// create wrote it, which an agent running across the upgrade still
+    /// sends: its first prompt is at field 9, where the reshaped request
+    /// has a boolean, so it fails to decode rather than being misread.
+    #[test]
+    fn an_old_create_does_not_decode_as_the_reshaped_one() {
+        let prompt = Some(PromptSubmission {
+            input_id: vec![1; 16],
+            prompt: Some(PromptInput {
+                text: "look at the tests".into(),
+                attachments: Vec::new(),
+            }),
+        });
+        let spawns = [
+            CreateAgentRequest {
+                agent_id: vec![2; 16],
+                agent: create_agent_request::Agent::defaults(Kind::ClaudeSdk),
+                initial_prompt: prompt.clone(),
+                ..Default::default()
+            },
+            CreateAgentRequest {
+                agent_id: vec![2; 16],
+                host: Some(HostRef::named("desk")),
+                name: Some("helper".into()),
+                cwd: "~/src/app".into(),
+                agent: create_agent_request::Agent::defaults(Kind::Codex),
+                initial_prompt: prompt,
+                ..Default::default()
+            },
+        ];
+        for spawn in spawns {
+            let read = amux::staging::CreateAgentRequest::decode(spawn.encode_to_vec().as_slice());
+            assert!(read.is_err(), "{spawn:?} read as {read:?}");
+        }
+    }
+
+    /// A send as builds before the reshaped one wrote it, its whole
+    /// envelope at field 1, decodes with the envelope as an id of the wrong
+    /// length and no recipient, which the host refuses by the id's length.
+    #[test]
+    fn an_old_send_decodes_with_no_recipient_and_an_id_of_the_wrong_length() {
+        let old = SendMessageRequest {
+            envelope: Some(Envelope {
+                id: vec![3; 16],
+                context: Some(b"build".to_vec()),
+                from: None,
+                to: Some(AgentRef {
+                    host_id: vec![4; 16],
+                    agent_id: vec![5; 16],
+                }),
+                body: Some(envelope::Body::Message(MessageBody {
+                    text: "done".into(),
+                    attachments: Vec::new(),
+                })),
+            }),
+        };
+        let read = amux::staging::SendMessageRequest::decode(old.encode_to_vec().as_slice())
+            .expect("an old send decodes");
+        assert_ne!(read.id.len(), 16);
+        assert!(read.agent_id.is_empty());
+        assert_eq!(read.context, None);
+        assert_eq!(read.message, None);
     }
 }

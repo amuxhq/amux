@@ -79,12 +79,21 @@ const PROTO_FILES: &[&str] = &[
 
 /// The proto files outside the contract's promises, relative to
 /// `crates/wire/proto/`: what a client writes into a dump, read only by the
-/// build that wrote it, and the shapes of experiments, which may change in
-/// any release.
+/// build that wrote it, the shapes of experiments, which may change in any
+/// release, and `amux.staging`, the services written beside the ones they
+/// replace until every caller has moved to them.
 const INTERNAL_PROTO_FILES: &[&str] = &[
     "amux/dump/session.proto",
     "amux/experimental/suspension.proto",
     "amux/experimental/workspaces.proto",
+    "amux/staging/caller.proto",
+    "amux/staging/inventory_service.proto",
+    "amux/staging/session_service.proto",
+    "amux/staging/draft_service.proto",
+    "amux/staging/agent_service.proto",
+    "amux/staging/host_service.proto",
+    "amux/staging/review_service.proto",
+    "amux/staging/peer_service.proto",
 ];
 
 /// Regenerates the committed protobuf code under

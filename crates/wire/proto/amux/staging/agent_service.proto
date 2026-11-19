@@ -1,0 +1,232 @@
+// These files move into amux.v1 once every caller uses them.
+syntax = "proto3";
+
+package amux.staging;
+
+import "amux/v1/claude.proto";
+import "amux/v1/codex.proto";
+import "amux/v1/inventory.proto";
+import "amux/v1/records.proto";
+import "amux/v1/session.proto";
+
+// One host's own agents: making, naming, filing, resuming and deleting
+// them, saying what a delete would take, the input and messages delivered
+// to them, and files put in their directories.
+//
+// A host service: answered by the host the call is addressed to, and only
+// for the agents that host owns. A call is addressed by its authority, the
+// host's id; no request names a host. The node a client is attached to
+// answers a call addressed to itself and passes any other on, unread, to
+// the host it names. A call naming an agent this host holds only a copy of
+// is NOT_FOUND, saying which host owns it.
+//
+// The caller is a person (here, or at a paired host) or an agent (of this
+// host, or of a paired one), known from the connection and never from the
+// request. The answer is the same however the call arrived, apart from
+// these rules, which the owning host applies against its own row for the
+// agent:
+// - A person may make every call.
+// - An agent may message any agent. Every other call naming an agent it
+//   may make only on its own direct children.
+// - An agent makes children with their kind's default settings only, and
+//   files them only as closed.
+
+service AgentService {
+  // Makes an agent on this host. An agent that calls is its parent.
+  rpc CreateAgent(CreateAgentRequest) returns (CreateAgentResponse);
+  rpc RenameAgent(RenameAgentRequest) returns (RenameAgentResponse);
+  // Sets the agent's filing: open, pinned or closed. Closing a live agent
+  // stops it, resumable, and closes its children with it.
+  rpc SetFiling(SetFilingRequest) returns (SetFilingResponse);
+  // Spawns the agent's directory again, filed open when it was closed.
+  rpc ResumeAgent(ResumeAgentRequest) returns (ResumeAgentResponse);
+  // Removes the agent for good, stopping it first when it is live. Its
+  // children, on any host, follow on their own hosts by the family rule.
+  rpc DeleteAgent(DeleteAgentRequest) returns (DeleteAgentResponse);
+  // What deleting the agent now would take with it. Changes nothing. Who
+  // may ask is who may delete.
+  rpc PreviewDelete(PreviewDeleteRequest) returns (PreviewDeleteResponse);
+  // Input for the agent's interpreter, answered with its verdict.
+  rpc SendInput(SendInputRequest) returns (amux.v1.SendInputResponse);
+  // A message to one of this host's agents, from the caller. The files it
+  // names are brought from the sender's host before it is delivered.
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  // Writes a file into the agent's directory, for a prompt or message to
+  // reference. No larger than the attachment limit, 64 MiB.
+  rpc PutBlob(PutBlobRequest) returns (PutBlobResponse);
+  // The changed files against a base; with_patch also builds the patch
+  // and stores it as one of the agent's files.
+  rpc GetDiff(GetDiffRequest) returns (GetDiffResponse);
+}
+
+message CreateAgentRequest {
+  bytes agent_id = 1;
+  // Lowercase letters, digits and hyphens, starting with a letter or digit
+  // (wire::agent_name_problem); the host picks a free one when absent, and
+  // the agent then shows the title its provider gives the conversation.
+  optional string name = 2;
+  // A folder on this host, as the person typed it: the host reads `~` and a
+  // path not from the root as starting at its own home, and keeps the
+  // folder's canonical path as the agent's cwd. Left empty by one of this
+  // host's agents, its child starts where it works itself; an agent of
+  // another host names one.
+  string cwd = 3;
+  // Which interpreter, with that kind's settings. The host refuses a kind
+  // it does not run.
+  oneof agent {
+    amux.v1.ClaudeCreateConfig claude_pty = 4;
+    amux.v1.ClaudeCreateConfig claude_sdk = 5;
+    amux.v1.CodexCreateConfig codex = 6;
+  }
+  // The first prompt, with attachments: the agent's first turn, written to
+  // the provider once it takes input.
+  optional amux.v1.PromptSubmission initial_prompt = 7;
+  // Start the agent in a new workspace of cwd's repository: a wt tree when
+  // wt is configured for it, else a git worktree. Either is on a new branch
+  // named after the agent, made from whatever cwd has checked out. The
+  // host chooses where the workspace lives; the agent's cwd is the
+  // workspace. Fails the call, making no agent, when cwd is not in a
+  // repository. The name is valid as a branch, so it is the branch as
+  // given, unless the host runs the workspaces experiment, which gives a
+  // name whose branch or folder is taken the next free suffix, answers as
+  // soon as the agent's row is written and makes the workspace after.
+  bool new_workspace = 8;
+  // The agent config's model and effort are a person's picks, so the host
+  // starts its later agents of this kind on them too.
+  bool remember_model = 9;
+  bool remember_effort = 10;
+  // No host: the call's address is the host. No parent: an agent that
+  // calls is the parent, a person's agent has none, and a create is
+  // refused when the calling agent has exited or gone.
+}
+
+message CreateAgentResponse {
+  amux.v1.Agent agent = 1;
+}
+
+message RenameAgentRequest {
+  bytes agent_id = 1;
+  // As CreateAgentRequest's name. Clears the agent's title, so this name is
+  // what shows. The agent's branch keeps the name it was made with.
+  string name = 2;
+}
+
+message RenameAgentResponse {
+  amux.v1.Agent agent = 1;
+}
+
+// FILING_CLOSED ends a live agent now: the running turn is cancelled the
+// provider's own way and the agent exits, resumable. Named apart from the
+// Interrupt input, which ends only the turn. FILING_PINNED is refused for an
+// agent with a parent; FILING_OPEN files the agent back without resuming
+// it.
+message SetFilingRequest {
+  bytes agent_id = 1;
+  amux.v1.Filing filing = 2;
+}
+
+message SetFilingResponse {
+  amux.v1.Agent agent = 1;
+}
+
+// The composer of an exited chat sends its draft through initial_prompt.
+message ResumeAgentRequest {
+  bytes agent_id = 1;
+  optional amux.v1.PromptSubmission initial_prompt = 2;
+  // Resume it only if it is suspended (live with no process), as when a
+  // client acts on a row it holds that may be out of date: an agent stopped
+  // since is refused with FAILED_PRECONDITION rather than started again.
+  // Unset, any agent that is not running is resumed.
+  bool if_suspended = 3;
+}
+
+message ResumeAgentResponse {
+  amux.v1.Agent agent = 1;
+}
+
+message DeleteAgentRequest {
+  bytes agent_id = 1;
+  // The person agreed to lose the uncommitted changes in the agent's
+  // workspace when this delete removes it: a client sets it only after
+  // warning them, with what PreviewDelete answered, and their confirming.
+  // A workspace its host made is removed with its last agent; with this
+  // unset, a workspace with changes stays on disk and stops being amux's,
+  // so nothing is lost. The host checks for changes itself when it
+  // removes the workspace. The consent counts when every other agent in
+  // the workspace descends from this one, and then holds until the
+  // workspace is removed or gains an agent, so children going with their
+  // parent are covered. Deletes amux makes itself (retention, children
+  // going with their parent) never set it.
+  bool discard_workspace_changes = 2;
+}
+
+message DeleteAgentResponse {}
+
+message PreviewDeleteRequest {
+  bytes agent_id = 1;
+}
+
+message PreviewDeleteResponse {
+  // Whether this delete removes the agent's workspace: its host made it and
+  // no agent outside this one's family still works in it.
+  bool removes_workspace = 1;
+  // The branch checked out there; absent on a detached head.
+  optional string branch = 2;
+  // Commits on that branch no other branch, tag or remote-tracking ref
+  // holds, its own upstream aside: zero is when the branch goes with the
+  // workspace, by the same rule the removal applies. Absent when it could
+  // not be counted.
+  optional uint32 own_commits = 3;
+  // The working tree against HEAD, untracked files included.
+  amux.v1.ChangeTotals uncommitted = 4;
+}
+
+message SendInputRequest {
+  bytes agent_id = 1;
+  amux.v1.Input input = 2;
+}
+
+// A message to one of the answering host's agents. Who it is from is the
+// caller, never the request, and a child's report to its parent is not a
+// message: it is PeerService.DeliverReport, which only a paired daemon
+// calls.
+message SendMessageRequest {
+  // The caller's id for this message, 16 bytes, so the host can drop a
+  // resend against the recipient's items. A request with an id of any
+  // other length is refused.
+  bytes id = 1;
+  // The recipient.
+  bytes agent_id = 2;
+  // A thread label the recipient sees with the message.
+  optional bytes context = 3;
+  // The words and attachments; an attachment names a file on the
+  // sender's host, which the recipient's host fetches.
+  amux.v1.MessageBody message = 4;
+}
+
+message SendMessageResponse {
+  // The id the message is stored under, the request's own.
+  bytes envelope_id = 1;
+}
+
+message PutBlobRequest {
+  bytes agent_id = 1;
+  string name = 2;
+  string mime = 3;
+  bytes bytes = 4;
+}
+
+message PutBlobResponse {
+  amux.v1.BlobRef blob = 1;
+}
+
+message GetDiffRequest {
+  bytes agent_id = 1;
+  amux.v1.DiffBase base = 2;
+  // Also build the patch and store it as the agent's file.
+  bool with_patch = 3;
+}
+
+message GetDiffResponse {
+  amux.v1.Diff diff = 1;
+}

@@ -1,0 +1,59 @@
+// These files move into amux.v1 once every caller uses them.
+syntax = "proto3";
+
+package amux.staging;
+
+import "amux/v1/inventory.proto";
+
+// The fleet as the node a client is attached to holds it: the hosts it
+// trusts or could pair with and whether they are online, and every agent
+// row it holds, its own and its copies of other hosts'.
+//
+// A local service: answered by the node the connection ends at (a desktop
+// daemon, or the phone's runtime inside the app) from what it holds, so it
+// answers whether or not any other host is reachable. Served on the
+// profile socket, on the phone's entry in memory, and on an agent's tools
+// socket. Never on a link: a paired host learns nothing here of hosts
+// other than itself, and resolves names itself.
+//
+// Names are never addresses. A name a person writes for a host or an
+// agent is resolved here to an id, and the id is what a host service is
+// then addressed by.
+
+service InventoryService {
+  // Every host this node trusts or could pair with, and every agent row it
+  // holds: the current set, CaughtUp, then changes as they happen.
+  rpc SubscribeInventory(SubscribeInventoryRequest) returns (stream SubscribeInventoryResponse);
+  // An agent by name across the fleet this node holds: NOT_FOUND, or
+  // FAILED_PRECONDITION when the name is ambiguous.
+  rpc ResolveAgent(ResolveAgentRequest) returns (ResolveAgentResponse);
+  // A host by the name a person uses for it, among this host and the hosts
+  // it trusts: an exact match first, then one ignoring case. NOT_FOUND
+  // names the hosts it knows; FAILED_PRECONDITION when more than one
+  // answers.
+  rpc ResolveHost(ResolveHostRequest) returns (ResolveHostResponse);
+}
+
+message SubscribeInventoryRequest {}
+
+message SubscribeInventoryResponse {
+  amux.v1.InventoryEvent event = 1;
+}
+
+message ResolveAgentRequest {
+  string name = 1;
+}
+
+message ResolveAgentResponse {
+  amux.v1.Agent agent = 1;
+}
+
+message ResolveHostRequest {
+  string name = 1;
+}
+
+// The host's entry as this node holds it; its id is the address a host
+// service on it is called with.
+message ResolveHostResponse {
+  amux.v1.HostEntry host = 1;
+}

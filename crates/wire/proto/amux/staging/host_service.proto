@@ -1,0 +1,49 @@
+// These files move into amux.v1 once every caller uses them.
+syntax = "proto3";
+
+package amux.staging;
+
+import "amux/v1/inventory.proto";
+
+// What a host offers before any agent exists: each provider's catalogue,
+// and the repositories a new agent may start in.
+//
+// A host service: answered by the host the call is addressed to, about
+// itself. Its node answers a call addressed to itself and passes any
+// other on, unread, to the host it names, so a request never names a
+// host. Any caller may ask.
+
+service HostService {
+  // What a provider offers on this host with no agent running, read from
+  // the host's own copy; an agent's catalogue is a file named by its
+  // snapshot instead.
+  rpc GetCatalogue(GetCatalogueRequest) returns (GetCatalogueResponse);
+  // Repositories on this host, for a new agent's folder: where its agents
+  // worked lately, and the list its person keeps.
+  rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
+}
+
+message GetCatalogueRequest {
+  amux.v1.Provider provider = 1;
+}
+
+// The encoded Catalogue and the SHA-256 of exactly these bytes, which is
+// what HostEntry.providers names.
+message GetCatalogueResponse {
+  bytes hash = 1;
+  bytes bytes = 2;
+}
+
+// The host discovers them; a client never names a folder to search.
+message ListRepositoriesRequest {
+  // Only folders whose name or path holds it, ignoring case.
+  optional string query = 1;
+  uint32 limit = 2;
+}
+
+message ListRepositoriesResponse {
+  // Folders this host's agents ran in lately that still exist.
+  repeated amux.v1.RepositoryEntry recent = 1;
+  // The host's repository list, as its person chose it.
+  repeated amux.v1.RepositoryEntry repositories = 2;
+}

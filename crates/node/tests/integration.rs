@@ -8,6 +8,7 @@ mod agent_names;
 mod analytics;
 mod blobs;
 mod catalogue;
+mod changes;
 mod diff;
 mod dump;
 mod forwarded_send;

@@ -2435,6 +2435,7 @@ dependencies = [
  "daemon-core",
  "futures-util",
  "git-facts",
+ "highlight",
  "hpke",
  "http-body",
  "hyper-util",

@@ -7,17 +7,15 @@ description = "The amux daemon: installation, profile runtimes, the agent regist
 publish = false
 autotests = false
 
-# Modules declared before the code that fills them, so that code lands
-# without touching lib.rs. A file leaves this list when it gains an item.
-[package.metadata.cargo-shear]
-ignored-paths = ["src/changes.rs"]
-
 [dependencies]
 log-file = { workspace = true }
 agent-dir = { workspace = true }
 attachments = { workspace = true }
 analytics = { workspace = true }
 git-facts = { workspace = true }
+# Names each changed file's language by the rule every client colours
+# code by.
+highlight = { workspace = true }
 async-trait = { workspace = true }
 base64 = "0.22"
 bytes = { workspace = true }

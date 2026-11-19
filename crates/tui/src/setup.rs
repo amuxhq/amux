@@ -19,10 +19,8 @@ use ratatui::text::{Line, Span};
 use settings::ChatInSetting;
 use ui_state::FleetState;
 use ui_view::{Changeable, NewAgentChoices, NewAgentPick, Reach, SettingChange, SettingsView};
-use wire::{
-    ClaudeCreateConfig, CodexCreateConfig, CreateAgentRequest, HostEntry, Kind, PromptSubmission,
-    create_agent_request,
-};
+use wire::amux::staging::{CreateAgentRequest, create_agent_request};
+use wire::{ClaudeCreateConfig, CodexCreateConfig, HostEntry, Kind, PromptSubmission};
 
 use crate::editor::Editor;
 use crate::text::{self, push};
@@ -501,7 +499,9 @@ impl Setup {
             .is_none_or(|(host, _)| *host != self.host)
     }
 
-    /// The create request, with the first prompt when there is one.
+    /// The create request, with the first prompt when there is one. It is
+    /// made on the chosen host, [`Setup::host`], which the call is
+    /// addressed to; the request itself names no host.
     pub fn request(
         &self,
         agent_id: Vec<u8>,
@@ -531,7 +531,6 @@ impl Setup {
         };
         CreateAgentRequest {
             agent_id,
-            host: Some(wire::HostRef::id(self.host.clone())),
             name: self.name.clone(),
             cwd: self.folder.clone(),
             initial_prompt: prompt,
@@ -540,7 +539,6 @@ impl Setup {
             // What a chat's sibling merely copied is not the person's pick.
             remember_model: !own && self.model.is_some() && self.model != self.copied.0,
             remember_effort: !own && self.effort.is_some() && self.effort != self.copied.1,
-            ..CreateAgentRequest::default()
         }
     }
 }

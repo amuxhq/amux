@@ -8,10 +8,10 @@
 //! shell; only the passthrough's fleet chord returns to the fleet.
 
 use std::io;
-use std::sync::Arc;
 
 use anyhow::Result;
-use client::{Client, SystemClock};
+use client::SystemClock;
+use client::next::Client;
 use crossterm::event::EventStream;
 use futures_util::StreamExt as _;
 use futures_util::future::BoxFuture;
@@ -42,18 +42,16 @@ enum Leave {
     Attach(Box<Agent>),
 }
 
-/// Runs the terminal client until the person quits. With the
-/// installation's front door, it also runs onboarding and the settings
-/// screen. The fleet and its chats run on `node`, a client of the same
-/// profile as `client`.
+/// Runs the terminal client on `client`'s node until the person quits.
+/// With the installation's front door, it also runs onboarding and the
+/// settings screen.
 pub async fn run(
-    client: Arc<dyn Client>,
-    node: client::next::Client,
+    client: Client,
     config: TuiConfig,
     desk: Option<crate::app::DeskConfig>,
     mut attach: AttachFn,
 ) -> Result<()> {
-    let fleet = Fleet::connect(node, SystemClock).await?;
+    let fleet = Fleet::connect(client.clone(), SystemClock).await?;
     let mut app = App::new(client, fleet, config);
     if let Some(desk) = desk {
         app = app.with_desk(desk);

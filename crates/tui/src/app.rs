@@ -7,7 +7,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use client::{Client, SystemClock};
+use client::SystemClock;
+use client::next::Client;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use prost::Message as _;
 use ratatui::Frame as Paint;
@@ -17,7 +18,7 @@ use tokio::sync::mpsc;
 use ui_runtime::{Fleet, InputError, Session, Window, inputs};
 use ui_state::{AgentKey, Composer, PhaseView};
 use ui_view::family_header;
-use wire::{Agent, Attachment, DeleteAgentRequest, Diff, RenameAgentRequest};
+use wire::{Agent, AgentRef, Attachment, Diff};
 
 mod desk;
 pub use desk::DeskConfig;
@@ -308,7 +309,9 @@ impl OpenChat {
 }
 
 pub struct App {
-    client: Arc<dyn Client>,
+    /// The node the terminal is attached to: its reads, and every act
+    /// addressed through it to the host that owns what it acts on.
+    client: Client,
     pub fleet: Arc<Fleet>,
     pub home: Home,
     pub chat: Option<OpenChat>,
@@ -360,6 +363,14 @@ pub(crate) fn terminal_refusal(agent: &Agent, config: &TuiConfig) -> Option<&'st
         .or_else(|| (agent.lifecycle() == wire::Lifecycle::Exited).then_some("it is stopped"))
 }
 
+/// The agent a fleet key names, as a call to its host is addressed.
+fn agent_ref(key: &AgentKey) -> AgentRef {
+    AgentRef {
+        host_id: key.host.clone(),
+        agent_id: key.agent.clone(),
+    }
+}
+
 /// Why `agent` has no terminal on this machine at all, running or not.
 fn terminal_elsewhere(agent: &Agent, config: &TuiConfig) -> Option<&'static str> {
     if agent.native.is_some() {
@@ -374,38 +385,19 @@ fn terminal_elsewhere(agent: &Agent, config: &TuiConfig) -> Option<&'static str>
     }
 }
 
-/// A composer's words and attachments, as the daemon keeps them.
-/// How long a new agent's first file waits to be taken: an agent on another
-/// host reaches this daemon's list a moment after its create call returns.
-const STORE_TRIES: u32 = 8;
-
-/// Stores a file with its new agent. Refused as an unknown agent, it tries
-/// again while the agent's row is on its way.
+/// Stores a file with its new agent. The call goes to the host that made
+/// the agent, which holds it from the moment its create answered.
 async fn store_file(
-    client: &dyn Client,
-    agent_id: &[u8],
+    client: &Client,
+    agent: &Agent,
     file: crate::home::HeldFile,
 ) -> Result<(), String> {
-    let request = wire::PutBlobRequest {
-        agent_id: agent_id.to_vec(),
-        name: file.blob.name.clone(),
-        mime: file.blob.mime.clone(),
-        bytes: file.bytes,
-    };
-    let mut wait = Duration::from_millis(100);
-    for attempt in 1..=STORE_TRIES {
-        match client.put_blob(request.clone()).await {
-            Ok(_) => return Ok(()),
-            Err(error)
-                if error.code() == Some(wire::ErrorCode::NotFound) && attempt < STORE_TRIES =>
-            {
-                tokio::time::sleep(wait).await;
-                wait *= 2;
-            }
-            Err(error) => return Err(error.to_string()),
-        }
-    }
-    Err("its agent never appeared".to_owned())
+    client
+        .agent(agent)
+        .put_blob(&file.blob.name, &file.blob.mime, file.bytes)
+        .await
+        .map(drop)
+        .map_err(|error| error.to_string())
 }
 
 /// A new agent whose first prompt carries files: created without the
@@ -414,20 +406,22 @@ async fn store_file(
 /// the second value says why and holds the draft for its composer, less any
 /// file that was not stored.
 async fn start_with_files(
-    client: &dyn Client,
+    client: &Client,
     setup: &crate::setup::Setup,
     text: &str,
     attachments: Vec<wire::Attachment>,
     files: Vec<crate::home::HeldFile>,
 ) -> Result<(wire::Agent, Option<(String, wire::Draft)>), String> {
     let agent = client
-        .create_agent(setup.request(inputs::input_id(), None))
+        .host(&setup.host)
+        .agents()
+        .create(setup.request(inputs::input_id(), None))
         .await
         .map_err(|error| error.to_string())?;
     let mut failed: Vec<(Vec<u8>, String, String)> = Vec::new();
     for file in files {
         let (hash, name) = (file.blob.hash.clone(), file.blob.name.clone());
-        if let Err(why) = store_file(client, &agent.agent_id, file).await {
+        if let Err(why) = store_file(client, &agent, file).await {
             failed.push((hash, name, why));
         }
     }
@@ -447,11 +441,8 @@ async fn start_with_files(
         let why = "your first message could not be sent; it is in the composer".to_owned();
         return Ok((agent, Some((why, kept))));
     };
-    let request = wire::SendInputRequest {
-        agent_id: agent.agent_id.clone(),
-        input: Some(input),
-    };
-    let trouble = first_message_trouble(client.send_input(request).await).map(|why| (why, kept));
+    let sent = client.agent(&agent).send_input(input).await;
+    let trouble = first_message_trouble(sent).map(|why| (why, kept));
     Ok((agent, trouble))
 }
 
@@ -531,7 +522,9 @@ fn plain(error: InputError) -> String {
 }
 
 impl App {
-    pub fn new(client: Arc<dyn Client>, fleet: Fleet, config: TuiConfig) -> App {
+    /// The terminal client on `client`'s node, its fleet `fleet` read
+    /// from the same node.
+    pub fn new(client: Client, fleet: Fleet, config: TuiConfig) -> App {
         let (events, receiver) = mpsc::unbounded_channel();
         let home = Home::new(Place {
             version: config.version.clone(),
@@ -1274,6 +1267,7 @@ impl App {
             }
             return;
         }
+        let session = chat.session.clone();
         let state = chat.session.state();
         let writable = matches!(state.composer(), Composer::Send | Composer::Resume);
         let agent_id = chat.view.agent_id.clone();
@@ -1299,26 +1293,22 @@ impl App {
             return;
         };
         {
-            let client = self.client.clone();
             self.notice("reading the changes…", Tone::Info);
             self.spawn(async move {
-                Some(
-                    match ui_runtime::review::review(client.as_ref(), &agent_id, base).await {
-                        Ok((_, patch)) if patch.trim().is_empty() => {
-                            AppEvent::Notice("no changes to review".into(), Tone::Info)
-                        }
-                        Ok((diff, patch)) => AppEvent::Review {
-                            agent_id,
-                            diff,
-                            patch,
-                            at,
-                        },
-                        Err(error) => AppEvent::Notice(
-                            format!("could not read the changes: {error}"),
-                            Tone::Warn,
-                        ),
+                Some(match session.review(base).await {
+                    Ok((_, patch)) if patch.trim().is_empty() => {
+                        AppEvent::Notice("no changes to review".into(), Tone::Info)
+                    }
+                    Ok((diff, patch)) => AppEvent::Review {
+                        agent_id,
+                        diff,
+                        patch,
+                        at,
                     },
-                )
+                    Err(error) => {
+                        AppEvent::Notice(format!("could not read the changes: {error}"), Tone::Warn)
+                    }
+                })
             });
         }
     }
@@ -1384,7 +1374,7 @@ impl App {
                 let events = self.events.clone();
                 self.spawn(async move {
                     let (agent, trouble) =
-                        match start_with_files(&*client, &setup, &text, attachments, files).await {
+                        match start_with_files(&client, &setup, &text, attachments, files).await {
                             Ok(started) => started,
                             Err(error) => return Some(AppEvent::StartFailed(error)),
                         };
@@ -1418,7 +1408,8 @@ impl App {
                         Some(inputs::submission(&text, attachments))
                     };
                     let request = setup.request(inputs::input_id(), prompt);
-                    Some(match client.create_agent(request).await {
+                    let created = client.host(&setup.host).agents().create(request).await;
+                    Some(match created {
                         Ok(agent) => AppEvent::Started {
                             agent: Box::new(agent),
                             open,
@@ -1428,17 +1419,12 @@ impl App {
                     })
                 });
             }
-            FleetEffect::Rename { agent, name } => {
-                self.spawn(async move {
-                    let request = RenameAgentRequest {
-                        agent_id: agent.agent,
-                        name,
-                    };
-                    client.rename_agent(request).await.err().map(|error| {
-                        AppEvent::Notice(format!("could not rename: {error}"), Tone::Warn)
-                    })
-                })
-            }
+            FleetEffect::Rename { agent, name } => self.spawn(async move {
+                let renamed = client.agent(&agent_ref(&agent)).rename(&name).await;
+                renamed
+                    .err()
+                    .map(|error| AppEvent::Notice(format!("could not rename: {error}"), Tone::Warn))
+            }),
             FleetEffect::CancelClose(agent) => self.fleet.cancel_close(&agent),
             FleetEffect::Close(agent) => {
                 let fleet = self.fleet.clone();
@@ -1460,18 +1446,16 @@ impl App {
                 let head = wire::DiffBase {
                     base: Some(wire::diff_base::Base::Head(wire::Empty {})),
                 };
-                let compared =
-                    ui_runtime::review::changed_files(client.as_ref(), &agent.agent, head)
-                        .await
-                        .map_err(|error| error.to_string());
+                let compared = client
+                    .agent(&agent_ref(&agent))
+                    .get_diff(head, false)
+                    .await
+                    .map_err(|error| error.to_string());
                 Some(AppEvent::DeleteChecked { agent, compared })
             }),
             FleetEffect::Delete(agent, discard) => self.spawn(async move {
-                let request = DeleteAgentRequest {
-                    agent_id: agent.agent,
-                    discard_workspace_changes: discard,
-                };
-                Some(match client.delete_agent(request).await {
+                let deleted = client.agent(&agent_ref(&agent)).delete(discard).await;
+                Some(match deleted {
                     Ok(_) => AppEvent::Notice("deleted".into(), Tone::Info),
                     Err(error) => {
                         AppEvent::Notice(format!("could not delete: {error}"), Tone::Warn)
@@ -1605,14 +1589,10 @@ impl App {
             // Refused by the host (the name taken, the host away), the
             // command goes back to the composer to fix, with why.
             ChatEffect::Rename(name) => {
-                let client = self.client.clone();
+                let agent = self.client.agent(&agent_ref(&chat.agent));
                 self.spawn(async move {
-                    let request = RenameAgentRequest {
-                        agent_id: agent_id.clone(),
-                        name: name.clone(),
-                    };
-                    client
-                        .rename_agent(request)
+                    agent
+                        .rename(&name)
                         .await
                         .err()
                         .map(|error| AppEvent::Restore {
@@ -1824,12 +1804,10 @@ impl App {
             self.notice = Some((words, Tone::Warn, Instant::now()));
         }
         if let Some((key, base)) = wanted {
-            let client = self.client.clone();
+            let session = chat.session.clone();
             let agent_id = chat.view.agent_id.clone();
             self.spawn(async move {
-                let diff = ui_runtime::review::changed_files(client.as_ref(), &agent_id, base)
-                    .await
-                    .ok()?;
+                let diff = session.changed_files(base).await.ok()?;
                 Some(AppEvent::Changes {
                     agent_id,
                     key,
@@ -1858,16 +1836,16 @@ impl App {
         if !self.folders_asked.insert(host.clone()) {
             return;
         }
-        let client = self.client.clone();
+        let desk = self.client.host(&host);
         self.spawn(async move {
-            let answer = client
-                .list_repositories(wire::ListRepositoriesRequest {
-                    query: None,
-                    // As many as the host offers; it caps the answer.
-                    limit: u32::MAX,
-                    host_id: Some(host.clone()),
-                })
+            // As many as the host offers; it caps the answer.
+            let answer = desk
+                .repositories(None, u32::MAX)
                 .await
+                .map(|offered| wire::ListRepositoriesResponse {
+                    recent: offered.recent,
+                    repositories: offered.repositories,
+                })
                 // A host that cannot say leaves the folder to be typed.
                 .unwrap_or_default();
             Some(AppEvent::Folders { host, answer })
@@ -1919,16 +1897,12 @@ impl App {
             .unwrap_or_else(|| "this machine".to_owned());
         drop(fleet);
         for (provider, chosen) in asks {
-            let client = self.client.clone();
+            let desk = self.client.host(&host);
             let host = host.clone();
             let host_name = host_name.clone();
             self.spawn(async move {
-                let request = wire::GetCatalogueRequest {
-                    host_id: host.clone(),
-                    provider: provider as i32,
-                };
-                let answer = client
-                    .get_catalogue(request)
+                let answer = desk
+                    .catalogue(provider)
                     .await
                     .map_err(|error| error.to_string());
                 let decoded = answer.and_then(|blob| {
@@ -2078,11 +2052,11 @@ impl App {
     /// chat on screen, started as the screen freezes so it is ready by the
     /// time the note is.
     fn start_dump(&self) -> crate::report::Dump {
-        let client = self.client.clone();
+        let admin = self.client.admin();
         let parts = [self.fleet.dump_part()];
         let sessions = self.fleet.on_screen_records();
         tokio::spawn(async move {
-            let response = client
+            let response = admin
                 .dump(wire::DumpRequest {
                     reason: "report a problem".to_owned(),
                     sessions,
@@ -2107,11 +2081,11 @@ impl App {
         let Some(report) = self.report.take() else {
             return;
         };
-        let client = self.client.clone();
+        let admin = self.client.admin();
         let build = self.config.version.clone();
         self.notice("sending the report…", Tone::Info);
         self.spawn(async move {
-            Some(match report.submit(client, build).await {
+            Some(match report.submit(admin, build).await {
                 Ok(done) if done.not_sent.is_empty() => AppEvent::Notice(
                     format!("report sent; a copy is in {}", done.report_path),
                     Tone::Info,

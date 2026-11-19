@@ -40,11 +40,12 @@ async fn desk(
     cloud_url: &str,
     opens: bool,
 ) -> Option<tui::DeskConfig> {
-    let installation = client::GrpcInstallation::connect(&config.front_door())
-        .await
-        .ok()?;
+    let installation =
+        client::next::Installation::connect(&config.front_door(), client::next::Surface::Terminal)
+            .await
+            .ok()?;
     Some(tui::DeskConfig {
-        installation: Arc::new(installation),
+        installation,
         profile: profile.clone(),
         machine: if cfg!(target_os = "macos") {
             "Mac"
@@ -98,9 +99,6 @@ async fn open(
     desk: Option<tui::DeskConfig>,
 ) -> Result<()> {
     let socket = Path::new(&profile.socket_path);
-    let client = client::GrpcClient::connect(socket)
-        .await
-        .with_context(|| format!("connecting to {}", socket.display()))?;
     let node = client::next::Client::connect(socket, client::next::Surface::Terminal)
         .await
         .with_context(|| format!("connecting to {}", socket.display()))?;
@@ -123,14 +121,7 @@ async fn open(
         system_clipboard: std::env::var_os("SSH_TTY").is_none()
             && std::env::var_os("SSH_CONNECTION").is_none(),
     };
-    tui::run(
-        Arc::new(client),
-        node,
-        tui_config,
-        desk,
-        attach_fn(attacher),
-    )
-    .await
+    tui::run(node, tui_config, desk, attach_fn(attacher)).await
 }
 
 /// The fleet's raw attach. Only the fleet chord comes back to the fleet;

@@ -15,10 +15,8 @@
 //! says so.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use client::Client;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::Frame as Paint;
 use ratatui::buffer::Buffer;
@@ -234,7 +232,7 @@ impl Report {
     /// the profile is signed in, and says where it went.
     pub async fn submit(
         mut self,
-        client: Arc<dyn Client>,
+        admin: client::next::Admin,
         build: String,
     ) -> Result<wire::SubmitReportResponse, String> {
         let dump = match self.dump.take() {
@@ -286,7 +284,7 @@ impl Report {
                 file("frame.json", cells),
             ],
         };
-        client
+        admin
             .submit_report(request)
             .await
             .map_err(|error| format!("the daemon could not take the report: {error}"))

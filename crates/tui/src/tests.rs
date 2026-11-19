@@ -2712,7 +2712,9 @@ fn a_new_claude_runs_the_kind_its_host_publishes() {
     assert_eq!(setup.kind(), Kind::ClaudePty);
     assert!(matches!(
         setup.request(b"id".to_vec(), None).agent,
-        Some(wire::create_agent_request::Agent::ClaudePty(_))
+        Some(wire::amux::staging::create_agent_request::Agent::ClaudePty(
+            _
+        ))
     ));
 }
 
@@ -3015,7 +3017,8 @@ fn a_new_agent_offers_what_its_host_offers() {
         "{screen}"
     );
     let request = home.open_setup().unwrap().request(b"id".to_vec(), None);
-    let Some(wire::create_agent_request::Agent::Codex(config)) = request.agent else {
+    let Some(wire::amux::staging::create_agent_request::Agent::Codex(config)) = request.agent
+    else {
         panic!("a Codex agent: {request:?}");
     };
     // Only what the person picked is sent; the rest is the host's to decide.

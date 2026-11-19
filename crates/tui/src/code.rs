@@ -91,20 +91,10 @@ pub(crate) fn patch(path: &str, patch: &PatchHead) -> Vec<Vec<CodeRun>> {
     noted(ui_view::highlight_patch(&highlighter(), path, patch))
 }
 
-/// A token's style on a diff line: plain text keeps the line's own diff
-/// ink, so the line still reads as added or removed, and the rest take the
-/// syntax colour over the line's tint.
-pub(crate) fn on_diff(line: Style, kind: TokenKind, theme: Theme) -> Style {
-    match kind {
-        TokenKind::Plain => line,
-        kind => line.patch(theme.syntax(kind)),
-    }
-}
-
 /// A diff line's runs in the line's style, each token in its colour.
 pub(crate) fn diff_runs(runs: &[CodeRun], line: Style, theme: Theme) -> Runs {
     runs.iter()
-        .map(|run| (run.text.clone(), on_diff(line, run.kind, theme)))
+        .map(|run| (run.text.clone(), theme.syntax_on_diff(line, run.kind)))
         .collect()
 }
 
@@ -141,29 +131,29 @@ mod tests {
             more: 0,
         };
         let lines = crate::chat::rows::patch_lines(&patch, "src/ready.rs", true, 'b', 80, theme);
-        let keyword = |base: Style| on_diff(base, TokenKind::Keyword, theme);
+        let keyword = |base: Style| theme.syntax_on_diff(base, TokenKind::Keyword);
         assert_eq!(
             style_of(&lines[0], "fn"),
             Some(keyword(theme.diff_context()))
         );
         assert_eq!(
             style_of(&lines[0], "ready"),
-            Some(on_diff(theme.diff_context(), TokenKind::Function, theme))
+            Some(theme.syntax_on_diff(theme.diff_context(), TokenKind::Function))
         );
         let removed = theme.diff_removed();
         assert_eq!(style_of(&lines[1], "-"), Some(removed));
         assert_eq!(
             style_of(&lines[1], "false"),
-            Some(on_diff(removed, TokenKind::Number, theme))
+            Some(theme.syntax_on_diff(removed, TokenKind::Number))
         );
         let added = theme.diff_added();
         assert_eq!(
             style_of(&lines[2], "true"),
-            Some(on_diff(added, TokenKind::Number, theme))
+            Some(theme.syntax_on_diff(added, TokenKind::Number))
         );
         // The token's colour sits on the line's tint.
-        assert_eq!(on_diff(added, TokenKind::Number, theme).bg, added.bg);
-        assert_ne!(on_diff(added, TokenKind::Number, theme).fg, added.fg);
+        assert_eq!(theme.syntax_on_diff(added, TokenKind::Number).bg, added.bg);
+        assert_ne!(theme.syntax_on_diff(added, TokenKind::Number).fg, added.fg);
 
         // A file no grammar reads stays in the diff's own inks.
         let plain = crate::chat::rows::patch_lines(&patch, "notes.txt", true, 'b', 80, theme);

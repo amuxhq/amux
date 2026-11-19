@@ -90,6 +90,43 @@ pub struct Tokens {
     pub diff_meta: Token,
 }
 
+impl Tokens {
+    /// The token a kind of code token is drawn in. Names and punctuation
+    /// stay in the reading ink and comments recede, so the colour is on
+    /// what differs.
+    fn ink_for(&mut self, kind: ui_view::TokenKind) -> &mut Token {
+        use ui_view::TokenKind;
+        match kind {
+            TokenKind::Plain => &mut self.text,
+            TokenKind::Keyword => &mut self.focus,
+            TokenKind::String | TokenKind::Inserted => &mut self.ok,
+            TokenKind::Number => &mut self.warning,
+            TokenKind::Type => &mut self.syntax_type,
+            TokenKind::Function => &mut self.attention,
+            TokenKind::Comment => &mut self.faint,
+            TokenKind::Deleted => &mut self.error,
+        }
+    }
+}
+
+/// Every kind of code token.
+const CODE_KINDS: [ui_view::TokenKind; 9] = {
+    use ui_view::TokenKind::*;
+    [
+        Plain, Keyword, String, Number, Type, Function, Comment, Inserted, Deleted,
+    ]
+};
+
+/// The contrast a kind of code token is held to wherever code is drawn:
+/// a comment recedes as faint words do, and every other kind reads as a
+/// label.
+fn code_floor(kind: ui_view::TokenKind) -> f64 {
+    match kind {
+        ui_view::TokenKind::Comment => READABLE_TRIM,
+        _ => READABLE_LABEL,
+    }
+}
+
 /// What the terminal itself is painting with.
 ///
 /// A terminal will answer three questions about the scheme it is running:
@@ -271,7 +308,7 @@ impl Theme {
                 background: Token::new((15, 18, 22), Color::Black),
                 text: Token::new((223, 227, 232), Color::White),
                 muted: Token::new((138, 144, 160), Color::DarkGray),
-                faint: Token::new((96, 102, 116), Color::DarkGray),
+                faint: Token::new((104, 110, 124), Color::DarkGray),
                 emphasis: Token::new((242, 244, 247), Color::White),
                 // The sixteen conventional blues are too dark to read on
                 // black, so in that face attention takes light cyan.
@@ -308,7 +345,7 @@ impl Theme {
                 background: Token::new((250, 250, 248), Color::White),
                 text: Token::new((42, 46, 56), Color::Black),
                 muted: Token::new((106, 112, 128), Color::Black),
-                faint: Token::new((134, 139, 150), Color::DarkGray),
+                faint: Token::new((126, 131, 142), Color::DarkGray),
                 emphasis: Token::new((21, 24, 31), Color::Black),
                 attention: Token::new((38, 94, 168), Color::Blue),
                 user_surface: Token::new((234, 234, 231), Color::Cyan),
@@ -320,7 +357,7 @@ impl Theme {
                 // faces code shares attention's blue, in a different context.
                 code: Token::new((96, 82, 170), Color::Blue),
                 syntax_type: Token::new((14, 112, 122), Color::Blue),
-                ok: Token::new((47, 122, 68), Color::Green),
+                ok: Token::new((42, 114, 62), Color::Green),
                 warning: Token::new((138, 91, 16), Color::Yellow),
                 error: Token::new((168, 50, 68), Color::Red),
                 diff_added_fg: Token::new((34, 107, 51), Color::Black),
@@ -476,18 +513,24 @@ impl Theme {
     /// lifted to read on the background. Names and punctuation stay in the
     /// reading ink and comments recede, so the colour is on what differs.
     pub(crate) fn syntax(self, kind: ui_view::TokenKind) -> Style {
-        use ui_view::TokenKind;
-        let token = match kind {
-            TokenKind::Plain => self.tokens.text,
-            TokenKind::Keyword => self.tokens.focus,
-            TokenKind::String | TokenKind::Inserted => self.tokens.ok,
-            TokenKind::Number => self.tokens.warning,
-            TokenKind::Type => self.tokens.syntax_type,
-            TokenKind::Function => self.tokens.attention,
-            TokenKind::Comment => self.tokens.faint,
-            TokenKind::Deleted => self.tokens.error,
-        };
-        Style::default().fg(self.color(token))
+        let mut tokens = self.tokens;
+        Style::default().fg(self.color(*tokens.ink_for(kind)))
+    }
+
+    /// A code token's style on a diff line: the token's colour over the
+    /// line's tint, and plain text in the line's own diff ink, so the line
+    /// still reads as added or removed.
+    ///
+    /// In sixteen colours a tint is a saturated face, and a token's face is
+    /// the terminal's own slot, which repair does not swap: the terminal's
+    /// green string on its green tint would not read. There every token on
+    /// a diff line keeps the line's ink.
+    pub(crate) fn syntax_on_diff(self, line: Style, kind: ui_view::TokenKind) -> Style {
+        match kind {
+            ui_view::TokenKind::Plain => line,
+            _ if self.mode == ColorMode::Ansi => line,
+            kind => line.patch(self.syntax(kind)),
+        }
     }
 
     /// Success accents (`✔`).
@@ -714,6 +757,28 @@ fn make_readable(tokens: &mut Tokens, faces: &Faces) {
     lift(&mut tokens.ok, &surfaces, READABLE_LABEL, true);
     lift(&mut tokens.warning, &surfaces, READABLE_LABEL, true);
     lift(&mut tokens.error, &surfaces, READABLE_LABEL, true);
+    // Code is drawn on the same surfaces, and in an edit on the diff tints
+    // as well, so each ink a kind of code token takes also reads on the
+    // tints. Only the colour moves for them: in sixteen colours code on a
+    // tint keeps the line's own ink (see `Theme::syntax_on_diff`), so each
+    // face stays the one chosen for the ground above.
+    let code_surfaces = [
+        tokens.background,
+        tokens.user_surface,
+        tokens.panel,
+        tokens.diff_added_bg,
+        tokens.diff_removed_bg,
+    ];
+    for kind in CODE_KINDS {
+        let token = tokens.ink_for(kind);
+        if !token.inherited {
+            let against: Vec<(Token, f64)> = code_surfaces
+                .iter()
+                .map(|surface| (*surface, code_floor(kind)))
+                .collect();
+            token.rgb = lift_lightness(token.rgb, &against);
+        }
+    }
     lift(&mut tokens.diff_added_fg, &added, READABLE_LABEL, false);
     lift(&mut tokens.diff_removed_fg, &removed, READABLE_LABEL, false);
     lift(&mut tokens.diff_meta, &hunk, READABLE_TRIM, false);
@@ -1507,6 +1572,71 @@ mod tests {
                 READABLE_LABEL,
             );
             check(tokens.diff_meta, "diff notes", &hunk, READABLE_TRIM);
+        }
+    }
+
+    /// Code is drawn on the ground's surfaces (an agent's reply, the
+    /// person's own message, a panel) and, in an edit, over the added and
+    /// removed tints. Every kind of token clears its floor on each of them,
+    /// in every palette amux can draw with, so a palette change that would
+    /// leave a keyword or a comment unreadable on a tint fails here. In
+    /// sixteen colours code on a tint keeps the line's own ink, which the
+    /// diff's own checks hold; on the ground there the faces are the
+    /// terminal's own slots, measured only by their conventional values.
+    #[test]
+    fn code_reads_on_every_surface_it_is_drawn_on() {
+        let mut palettes = vec![
+            ("dark", Theme::dark(ColorMode::TrueColor)),
+            ("light", Theme::light(ColorMode::TrueColor)),
+            ("dark", Theme::dark(ColorMode::Ansi)),
+            ("light", Theme::light(ColorMode::Ansi)),
+        ];
+        for (name, terminal) in terminal_schemes() {
+            palettes.push((name, Theme::from_terminal(terminal, ColorMode::TrueColor)));
+            palettes.push((name, Theme::from_terminal(terminal, ColorMode::Ansi)));
+        }
+        for (name, theme) in palettes {
+            let mode = theme.mode;
+            let painted = |color: Option<Color>, under: (u8, u8, u8)| match color {
+                Some(Color::Rgb(red, green, blue)) => (red, green, blue),
+                None | Some(Color::Reset) => under,
+                Some(face) => ansi_rgb(face),
+            };
+            for kind in CODE_KINDS {
+                let floor = code_floor(kind);
+                for line in [theme.diff_added(), theme.diff_removed()] {
+                    let style = theme.syntax_on_diff(line, kind);
+                    if mode == ColorMode::Ansi {
+                        assert_eq!(style, line, "{name} {mode:?}: {kind:?} on a tint");
+                        continue;
+                    }
+                    let ground = theme.tokens.background.rgb;
+                    let ratio = contrast(painted(style.fg, ground), painted(style.bg, ground));
+                    assert!(
+                        ratio >= floor,
+                        "{name} {mode:?}: {kind:?} on the {:?} tint is only {ratio:.2}:1, floor {floor}",
+                        style.bg
+                    );
+                }
+                let mut tokens = theme.tokens;
+                let ink = *tokens.ink_for(kind);
+                // A derived palette's body text is the terminal's own.
+                if mode == ColorMode::Ansi || ink.inherited {
+                    continue;
+                }
+                for surface in [
+                    theme.tokens.background,
+                    theme.tokens.user_surface,
+                    theme.tokens.panel,
+                ] {
+                    let ratio = contrast(ink.rgb, surface.rgb);
+                    assert!(
+                        ratio >= floor,
+                        "{name}: {kind:?} on {:?} is only {ratio:.2}:1, floor {floor}",
+                        surface.rgb
+                    );
+                }
+            }
         }
     }
 

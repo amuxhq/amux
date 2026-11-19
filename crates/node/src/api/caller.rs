@@ -339,4 +339,23 @@ mod tests {
             assert_eq!(surface_named(analytics::Token::as_str(surface)), surface);
         }
     }
+
+    #[test]
+    fn a_handler_reads_the_caller_its_entry_settled_and_nothing_else() {
+        let mut request = Request::new(());
+        assert_eq!(
+            Caller::of(&request).unwrap_err().code(),
+            tonic::Code::Internal
+        );
+        assert_eq!(
+            PairedDaemon::of(&request).unwrap_err().code(),
+            tonic::Code::Internal
+        );
+
+        let person = Caller::person_here(Surface::Phone);
+        request.extensions_mut().insert(person.clone());
+        request.extensions_mut().insert(PairedDaemon(host(7)));
+        assert_eq!(Caller::of(&request).unwrap(), person);
+        assert_eq!(PairedDaemon::of(&request).unwrap(), PairedDaemon(host(7)));
+    }
 }

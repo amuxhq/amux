@@ -9,8 +9,6 @@
 //! pending set until the owner's reply comes back; the driver makes the
 //! call itself, here.
 
-use std::time::Duration;
-
 use daemon_core::payload::{
     Answer, CallError, PeerFailure, PeerReply, PeerRequest, Response as CoreResponse,
     Status as CoreStatus,
@@ -23,18 +21,9 @@ use wire::{ErrorCode, HostEntry};
 use crate::HostId;
 use crate::driver::Delivered;
 use crate::grpc::wire_error;
+use crate::reach::{ANSWER_PATIENCE, Unreached};
 use crate::routing::core_host;
 use crate::runtime::ProfileRuntime;
-
-/// How long reaching a host may take: finding its link and opening a
-/// channel on it. Past it the call never left, and the host counts as
-/// unreachable.
-const REACH_PATIENCE: Duration = Duration::from_secs(10);
-
-/// How long a call that went out waits for its answer. A spawn waits for
-/// the child's Hello on the far side, so this covers a start as well as a
-/// round trip. Past it the call may or may not have arrived.
-const ANSWER_PATIENCE: Duration = Duration::from_secs(30);
 
 /// Where an agent lives, as this runtime's store knows it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -234,37 +223,20 @@ impl ProfileRuntime {
             .await
     }
 
-    /// A client for `host`, or why no call to it can leave.
+    /// A client for `host`, or why no call to it can leave. A host that
+    /// revoked this one reads as unreachable here, as it always has for a
+    /// forwarded call.
     async fn peer_client(&self, host: HostId) -> Result<crate::PeerClient, ForwardError> {
-        let not_sent = || ForwardError::NotSent {
-            host,
-            name: self.host_name(host),
-        };
-        let edge = self.edge().ok_or_else(not_sent)?;
-        if !edge.is_trusted(host) {
-            return Err(not_sent());
-        }
-        let since = crate::routing::LinkId::next_instance();
-        match tokio::time::timeout(REACH_PATIENCE, edge.peer(host)).await {
-            Ok(Ok(client)) => Ok(client),
-            // On a free account the relay lists the account's hosts and
-            // opens no tunnel between them; the host already reads away.
-            Ok(Err(crate::link::ChannelError::Refused(wire::ForwardRefusal::PaymentRequired))) => {
-                Err(ForwardError::Lapsed {
-                    host,
-                    name: self.host_name(host),
-                })
-            }
-            // A channel that failed on its link closed the link already;
-            // one that found none in time closes the host's links it had
-            // to use, not one that came up while it waited. The
-            // host reads offline once none is up, and a link of its own
-            // coming up again is what releases sends held for it.
-            Ok(Err(_)) => Err(not_sent()),
-            Err(_) => {
-                edge.calls_timed_out(host, since);
-                Err(not_sent())
-            }
+        match self.reach(host).await {
+            Ok(channel) => Ok(crate::link::peer_client(channel)),
+            Err(Unreached::Lapsed) => Err(ForwardError::Lapsed {
+                host,
+                name: self.host_name(host),
+            }),
+            Err(Unreached::Unreachable | Unreached::Revoked) => Err(ForwardError::NotSent {
+                host,
+                name: self.host_name(host),
+            }),
         }
     }
 

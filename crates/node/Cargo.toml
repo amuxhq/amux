@@ -10,7 +10,7 @@ autotests = false
 # Modules declared before the code that fills them, so that code lands
 # without touching lib.rs. A file leaves this list when it gains an item.
 [package.metadata.cargo-shear]
-ignored-paths = ["src/carry.rs", "src/changes.rs", "src/reach.rs"]
+ignored-paths = ["src/carry.rs", "src/changes.rs"]
 
 [dependencies]
 log-file = { workspace = true }

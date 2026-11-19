@@ -308,6 +308,16 @@ impl ProfileRuntime {
     /// A host by the name a person uses for it, among this host and the
     /// hosts this profile trusts: an exact match, else one ignoring case.
     pub fn resolve_host(&self, name: &str) -> Result<HostId, HostNameError> {
+        let host = self.resolve_host_entry(name)?;
+        Uuid::from_slice(host.host_id()).map_err(|_| HostNameError::NotFound {
+            name: name.to_owned(),
+            known: Vec::new(),
+        })
+    }
+
+    /// The entry of the host [`ProfileRuntime::resolve_host`] finds, as
+    /// this host holds it.
+    pub(crate) fn resolve_host_entry(&self, name: &str) -> Result<HostEntry, HostNameError> {
         // Trust as it stands now, not as last published: a host paired a
         // moment ago is a host a spawn may name.
         let published = self.published_hosts();
@@ -337,10 +347,7 @@ impl ProfileRuntime {
                 .collect();
         }
         match matching.as_slice() {
-            [host] => Uuid::from_slice(host.host_id()).map_err(|_| HostNameError::NotFound {
-                name: name.to_owned(),
-                known: Vec::new(),
-            }),
+            [host] => Ok(HostEntry::clone(host)),
             [] => Err(HostNameError::NotFound {
                 name: name.to_owned(),
                 known: hosts.iter().map(|host| host.name().to_owned()).collect(),

@@ -30,8 +30,11 @@ use wire::{
     GetDiffRequest, PutBlobRequest, diff_base,
 };
 
+use crate::HostId;
 use crate::driver::{Ask, Delivered};
+use crate::forward::Owner;
 use crate::install::REPLICAS;
+use crate::reach::{ANSWER_PATIENCE, Unreached};
 use crate::runtime::ProfileRuntime;
 
 #[derive(Debug, thiserror::Error)]
@@ -61,6 +64,14 @@ pub enum BlobError {
     Git(#[from] git_facts::GitError),
     #[error("the bytes a peer sent are not the blob {0}")]
     Mismatch(String),
+    /// A file of another host's agent this node has not fetched yet, and
+    /// that host could not be asked for it: nothing left this host.
+    #[error("{}", .0.message)]
+    Unreached(wire::Error),
+    /// The agent's host was asked for the file and refused, or stopped
+    /// answering: its own words, or the uncertainty.
+    #[error("{}", .0.message)]
+    Owner(wire::Error),
     #[error("the store: {0}")]
     Store(#[from] StoreError),
     #[error("the daemon core: {0}")]
@@ -78,6 +89,7 @@ impl BlobError {
             Self::Write(_) | Self::Read(_) | Self::Mismatch(_) | Self::Store(_) | Self::Core(_) => {
                 ErrorCode::Internal
             }
+            Self::Unreached(error) | Self::Owner(error) => return error.clone(),
         };
         wire::Error {
             code: code as i32,
@@ -102,6 +114,29 @@ pub(crate) fn within_limit(request: &PutBlobRequest) -> Result<(), BlobError> {
         });
     }
     Ok(())
+}
+
+/// Why `name`, the host holding a file, could not be asked for it, as the
+/// wire says it: the reason a client tells apart, in words a person reads.
+fn unreached(name: &str, why: Unreached) -> wire::Error {
+    match why {
+        Unreached::Unreachable => wire::Error::because(
+            wire::ErrorReason::HostUnreachable,
+            format!("{name} holds the file and cannot be reached"),
+        ),
+        Unreached::Lapsed => wire::Error::because(
+            wire::ErrorReason::PaymentRequired,
+            format!(
+                "{name} holds the file and can be reached only through the relay, and this \
+                 account's subscription has lapsed to the free plan, which carries no calls \
+                 between hosts; renew it to reach {name}"
+            ),
+        ),
+        Unreached::Revoked => wire::Error::new(
+            ErrorCode::Unauthenticated,
+            format!("{name} holds the file and no longer trusts this host"),
+        ),
+    }
 }
 
 fn is_full(error: &io::Error) -> bool {
@@ -146,6 +181,88 @@ impl ProfileRuntime {
             },
             other => Err(answered_with(other)),
         }
+    }
+
+    /// A file a conversation this node holds references: read from the
+    /// agent's directory here, own or copy. A file of another host's agent
+    /// that this node has not fetched yet is the copy filling itself: this
+    /// node asks that host's peer service for it as itself, so the reader's
+    /// call is never passed on, checks the bytes against the hash they are
+    /// named by, and keeps them for the next reader.
+    pub(crate) async fn read_through_blob(
+        &self,
+        agent_id: &[u8],
+        hash: &[u8],
+    ) -> Result<Vec<u8>, BlobError> {
+        let request = GetBlobRequest {
+            agent_id: agent_id.to_vec(),
+            hash: hash.to_vec(),
+        };
+        match self.get_blob(request).await {
+            Err(BlobError::NoBlob(_)) => {}
+            read => return read.map(|blob| blob.bytes),
+        }
+        let host = match self.owner(agent_id).await? {
+            Owner::Peer(host) => host,
+            Owner::Here | Owner::Unknown => return Err(BlobError::NoBlob(hex(hash))),
+        };
+        let bytes = self.fetch_blob(host, agent_id, hash).await?;
+        self.keep_replica_blob(agent_id, hash, &bytes).await?;
+        Ok(bytes)
+    }
+
+    /// Asks `host`'s peer service for a file of one of its agents. The call
+    /// carries no caller: it is this daemon asking for its own copy.
+    async fn fetch_blob(
+        &self,
+        host: HostId,
+        agent_id: &[u8],
+        hash: &[u8],
+    ) -> Result<Vec<u8>, BlobError> {
+        let channel = self
+            .reach(host)
+            .await
+            .map_err(|why| BlobError::Unreached(unreached(&self.host_name(host), why)))?;
+        let mut owner = wire::amux::staging::peer_service_client(channel);
+        let asked = owner.get_blob(wire::amux::staging::PeerServiceGetBlobRequest {
+            agent_id: agent_id.to_vec(),
+            hash: hash.to_vec(),
+        });
+        let stopped = || {
+            wire::Error::new(
+                ErrorCode::Aborted,
+                format!(
+                    "{} stopped answering while sending a file",
+                    self.host_name(host)
+                ),
+            )
+        };
+        let answered = match tokio::time::timeout(ANSWER_PATIENCE, asked).await {
+            Ok(answered) => answered,
+            Err(_) => return Err(BlobError::Owner(stopped())),
+        };
+        answered
+            .map(|answer| answer.into_inner().bytes)
+            .map_err(|status| {
+                BlobError::Owner(match crate::net_error::from_status(&status) {
+                    Some(error) => error,
+                    None => match status.code() {
+                        tonic::Code::Unimplemented => {
+                            wire::Error::new(ErrorCode::Unimplemented, wire::HOST_NEEDS_UPDATE)
+                        }
+                        tonic::Code::Unavailable
+                        | tonic::Code::Unknown
+                        | tonic::Code::Cancelled
+                        | tonic::Code::DeadlineExceeded => stopped(),
+                        // A status code is the wire's error code.
+                        code => wire::Error {
+                            code: code as i32,
+                            message: status.message().to_owned(),
+                            details: Vec::new(),
+                        },
+                    },
+                })
+            })
     }
 
     /// Keeps the bytes of a replica's blob its origin sent, once they are

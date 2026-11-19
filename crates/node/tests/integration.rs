@@ -14,6 +14,7 @@ mod forwarded_send;
 mod front_door;
 mod host_catalogue;
 mod hosts;
+mod local_services;
 mod messaging;
 mod onboarding;
 mod peer_server;

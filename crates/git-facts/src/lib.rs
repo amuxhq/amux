@@ -362,38 +362,56 @@ pub async fn compare(
 }
 
 /// How many commits the branch `cwd` has checked out holds that no other
-/// ref does, its own upstream and the stash aside: what deleting the branch
-/// would lose. Zero exactly when its tip is reachable from another ref,
-/// which is when amux deletes a workspace's branch with it. None on a
-/// detached head, or before the first commit.
+/// ref does: [`branch_own_commits`] for that branch. None on a detached
+/// head, or before the first commit.
 pub async fn own_commits(cwd: &Path) -> Result<Option<u32>, GitError> {
     let Some(branch) = answer(cwd, &["symbolic-ref", "--quiet", "--short", "HEAD"]).await? else {
         return Ok(None);
     };
+    let cwd = cwd.to_owned();
+    tokio::task::spawn_blocking(move || branch_own_commits(&cwd, &branch))
+        .await
+        .map_err(|error| GitError::Spawn(std::io::Error::other(error)))?
+}
+
+/// How many commits `branch` of the repository `repository` (any folder in
+/// it) holds that no other ref does, its own upstream and the stash aside:
+/// what deleting the branch would lose. Zero exactly when its tip is
+/// reachable from another ref. None when there is no such branch.
+///
+/// The one statement of the rule: a workspace's removal deletes the branch
+/// by it ([`branch_goes`]) and a delete's warning counts by it, so the
+/// warning cannot promise what the removal does not do. It blocks, since
+/// the removal runs on a thread of its own; [`own_commits`] is its async
+/// face.
+pub fn branch_own_commits(repository: &Path, branch: &str) -> Result<Option<u32>, GitError> {
     let own = format!("refs/heads/{branch}");
-    if answer(cwd, &["rev-parse", "--verify", "--quiet", &own])
-        .await?
-        .is_none()
-    {
+    if blocking::answer(repository, &["rev-parse", "--verify", "--quiet", &own])?.is_none() {
         return Ok(None);
     }
-    let upstream = answer(cwd, &["for-each-ref", "--format=%(upstream)", &own]).await?;
-    let refs = checked(cwd, None, &["for-each-ref", "--format=%(refname)"]).await?;
+    let upstream = blocking::answer(repository, &["for-each-ref", "--format=%(upstream)", &own])?;
+    let refs = blocking::checked(repository, &["for-each-ref", "--format=%(refname)"], None)?;
     // Every other ref, negated, read from standard input: a repository may
-    // have more refs than an argument list holds.
+    // have more refs than an argument list holds. The upstream does not
+    // keep the commits: deleting the branch loses them here all the same.
     let others: String = text(&refs)
         .lines()
         .filter(|name| *name != own && Some(*name) != upstream.as_deref() && *name != "refs/stash")
         .map(|name| format!("^{name}\n"))
         .collect();
-    let count = checked_with_input(
-        cwd,
-        None,
+    let count = blocking::checked(
+        repository,
         &["rev-list", "--count", &own, "--stdin"],
-        others.into_bytes(),
-    )
-    .await?;
+        Some(others.into_bytes()),
+    )?;
     Ok(text(&count).parse().ok())
+}
+
+/// Whether a workspace's removal takes its branch with it, from the
+/// branch's [`branch_own_commits`]: only when it has none, and never when
+/// they could not be counted.
+pub fn branch_goes(own_commits: Option<u32>) -> bool {
+    own_commits == Some(0)
 }
 
 /// The repository's default branch: what `origin/HEAD` names, else the
@@ -709,6 +727,63 @@ async fn run(
     };
     let (_, output) = tokio::join!(write, child.wait_with_output());
     output.map_err(GitError::Spawn)
+}
+
+/// Git run on the calling thread, for the callers that are on a thread of
+/// their own rather than in a runtime.
+mod blocking {
+    use std::io::Write as _;
+    use std::path::Path;
+    use std::process::{Command, Output, Stdio};
+
+    use super::{GitError, succeeded, text};
+
+    /// [`super::answer`], blocking.
+    pub(super) fn answer(cwd: &Path, args: &[&str]) -> Result<Option<String>, GitError> {
+        let output = run(cwd, args, None)?;
+        Ok(output
+            .status
+            .success()
+            .then(|| text(&output.stdout))
+            .filter(|answer| !answer.is_empty()))
+    }
+
+    /// [`super::checked`], blocking, with `input` on standard input.
+    pub(super) fn checked(
+        cwd: &Path,
+        args: &[&str],
+        input: Option<Vec<u8>>,
+    ) -> Result<Vec<u8>, GitError> {
+        succeeded(args, run(cwd, args, input)?)
+    }
+
+    fn run(cwd: &Path, args: &[&str], input: Option<Vec<u8>>) -> Result<Output, GitError> {
+        let mut command = Command::new("git");
+        command
+            .args(args)
+            .current_dir(cwd)
+            .stdin(if input.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .env("GIT_OPTIONAL_LOCKS", "0");
+        let mut child = command.spawn().map_err(GitError::Spawn)?;
+        let Some(input) = input else {
+            return child.wait_with_output().map_err(GitError::Spawn);
+        };
+        let mut stdin = child.stdin.take().expect("standard input is piped");
+        // Written on a thread of its own while the output is read, so
+        // neither side waits on a full pipe.
+        std::thread::scope(|scope| {
+            scope.spawn(move || {
+                let _ = stdin.write_all(&input);
+            });
+            child.wait_with_output().map_err(GitError::Spawn)
+        })
+    }
 }
 
 fn text(bytes: &[u8]) -> String {

@@ -5,7 +5,8 @@ use std::process::Command;
 
 use git_facts::{
     Change, ChangeTotals, Comparison, FileChange, GitError, GitFacts, Worktree, WorktreeError,
-    add_worktree, compare, facts, own_commits, repository as repository_of,
+    add_worktree, branch_goes, branch_own_commits, compare, facts, own_commits,
+    repository as repository_of,
 };
 
 fn git(cwd: &Path, args: &[&str]) -> String {
@@ -464,6 +465,16 @@ async fn a_branch_counts_the_commits_no_other_ref_holds() {
     assert_eq!(own_commits(dir).await.unwrap(), Some(1));
     git(dir, &["tag", "kept"]);
     assert_eq!(own_commits(dir).await.unwrap(), Some(0), "tagged");
+    // The blocking face counts a branch by name, checked out or not.
+    git(dir, &["switch", "-q", "-c", "later"]);
+    write(dir, "later.txt", 1);
+    git(dir, &["add", "later.txt"]);
+    git(dir, &["commit", "-q", "-m", "later"]);
+    git(dir, &["switch", "-q", "fix"]);
+    assert_eq!(branch_own_commits(dir, "later").unwrap(), Some(1));
+    assert_eq!(branch_own_commits(dir, "fix").unwrap(), Some(0));
+    assert_eq!(branch_own_commits(dir, "nowhere").unwrap(), None);
+    assert!(branch_goes(Some(0)) && !branch_goes(Some(1)) && !branch_goes(None));
     git(dir, &["switch", "-q", "--detach"]);
     assert_eq!(own_commits(dir).await.unwrap(), None, "detached");
 }

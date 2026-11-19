@@ -1558,6 +1558,63 @@ fn the_composers_rules_come_from_the_shared_view() {
     assert_eq!(amux_attachment_limit(), wire::ATTACHMENT_SIZE_LIMIT as u64);
 }
 
+#[test]
+fn code_is_coloured_by_the_shared_view() {
+    // Grammars build in the background on first use; built here, every
+    // answer is settled and coloured.
+    ui_view::preload_highlighting();
+    let code = c("fn main() {}\n// done\n");
+    let info = c("rust title=main.rs");
+    // SAFETY: the strings live for the call.
+    let block = take(unsafe { amux_highlight_block(code.as_ptr(), info.as_ptr(), false) });
+    assert_eq!(block["settled"], json!(true));
+    assert_eq!(block["lines"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        block["lines"][0][0],
+        json!({"text": "fn", "kind": "Keyword"})
+    );
+    assert_eq!(
+        block["lines"][1][0],
+        json!({"text": "// done", "kind": "Comment"})
+    );
+    // No language is plain, and settled: nothing will colour it.
+    // SAFETY: the string lives for the call; a null info is allowed.
+    let plain = take(unsafe { amux_highlight_block(code.as_ptr(), std::ptr::null(), true) });
+    assert_eq!(plain["settled"], json!(true));
+    assert_eq!(
+        plain["lines"][0],
+        json!([{"text": "fn main() {}", "kind": "Plain"}])
+    );
+
+    let path = c("src/pair.py");
+    let lines = c(&json!([
+        {"Hunk": {"old_start": 3, "new_start": 3}},
+        {"Line": {"number": 3, "kind": "Removed", "text": "    s = \"\"\""}},
+        {"Line": {"number": 3, "kind": "Added", "text": "    n = 1"}},
+    ])
+    .to_string());
+    // SAFETY: the strings live for the call.
+    let edit = take(unsafe { amux_highlight_edit(path.as_ptr(), lines.as_ptr()) });
+    assert_eq!(edit["settled"], json!(true));
+    assert_eq!(
+        edit["lines"][0],
+        json!([]),
+        "a hunk's start is the client's own words"
+    );
+    // The added line is read as the new file reads, outside the string the
+    // removed line opened.
+    assert!(
+        edit["lines"][2]
+            .as_array()
+            .unwrap()
+            .contains(&json!({"text": "1", "kind": "Number"})),
+        "{edit}"
+    );
+    let broken = c("{");
+    // SAFETY: the strings live for the call.
+    assert!(unsafe { amux_highlight_edit(path.as_ptr(), broken.as_ptr()) }.is_null());
+}
+
 /// An attached daemon restarts under the app (an update, a stop and a
 /// start); the profile list keeps following it afterwards.
 #[test]

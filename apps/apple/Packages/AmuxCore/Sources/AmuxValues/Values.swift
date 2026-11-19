@@ -2061,6 +2061,22 @@ public enum ClientCommand: String, Codable, Hashable, Sendable, CaseIterable {
     case rename = "Rename"
 }
 
+/// A stretch of one line's text that is all one kind.
+public struct CodeRun: Codable, Hashable, Sendable {
+    public var text: String
+    public var kind: TokenKind
+
+    public init(text: String, kind: TokenKind) {
+        self.text = text
+        self.kind = kind
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case text
+        case kind
+    }
+}
+
 /// One of the agent's commands matching the word a draft ends in.
 public struct CommandMatch: Codable, Hashable, Sendable {
     public var command: CommandView
@@ -3918,6 +3934,27 @@ public struct GroupView: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case first
         case state
+    }
+}
+
+/// Code as lines of runs, without their line endings. Neighbouring runs on
+/// a line differ in kind; an empty line has none.
+public struct HighlightedCode: Codable, Hashable, Sendable {
+    public var lines: [[CodeRun]]
+    /// False while work under way would colour more of it: a grammar being
+    /// built, or a block still streaming that has lines not yet passed
+    /// over. A client that draws an unsettled result draws it again soon
+    /// (within a tenth of a second), asking afresh.
+    public var settled: Bool
+
+    public init(lines: [[CodeRun]], settled: Bool) {
+        self.lines = lines
+        self.settled = settled
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case lines
+        case settled
     }
 }
 
@@ -7423,6 +7460,22 @@ public struct TasksView: Codable, Hashable, Sendable {
         case current
         case entries
     }
+}
+
+/// What a run of code is, as far as colouring it goes.
+public enum TokenKind: String, Codable, Hashable, Sendable, CaseIterable {
+    case keyword = "Keyword"
+    case string = "String"
+    case type = "Type"
+    case function = "Function"
+    case comment = "Comment"
+    case deleted = "Deleted"
+    /// Names, operators and punctuation: the reading ink.
+    case plain = "Plain"
+    /// Numbers and other literal constants.
+    case number = "Number"
+    /// A diff's added and removed lines, in a block written as a diff.
+    case inserted = "Inserted"
 }
 
 public enum TurnPart: Codable, Hashable, Sendable {

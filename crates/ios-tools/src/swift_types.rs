@@ -71,6 +71,7 @@ pub fn definitions() -> Map<String, Value> {
         ui_view::NewAgentChoices,
         ui_view::NewAgentPick,
         ui_view::Segment,
+        ui_view::HighlightedCode,
         app_runtime::values::StartConfig,
         app_runtime::values::AttachConfig,
         app_runtime::values::InstallOptions,

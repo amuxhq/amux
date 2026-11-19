@@ -208,6 +208,18 @@ already holds: `amux_agent_name_problem` (why a name cannot name an agent),
 from a host's catalogue), and `amux_form_problems` (each field's
 `FieldProblem` for a form's `FormField`s and the `FormValue`s entered).
 
+Code is coloured the same way, by the shared view's highlighting:
+`amux_highlight_block(code, info, streaming)` for a fenced block of an
+agent's markdown, which the app parses itself, and
+`amux_highlight_edit(path, lines)` for an edit ask's `[EditLine]`. Each
+answers a `HighlightedCode`, lines of `CodeRun`s tagged with a `TokenKind`
+that the app maps to its own palette. Either can be called from any thread.
+A language's grammar is built in the background on first use, and a block
+still streaming is passed over at a bounded rate, so an answer can come back
+not `settled`: the app draws it and asks again within a tenth of a second.
+`streaming` is for the open fence of a message still streaming; every other
+block is finished, and finished code is kept by content in Rust.
+
 ## Acts
 
 Acts that wait on the agent return a ticket at once (0 when the handle is

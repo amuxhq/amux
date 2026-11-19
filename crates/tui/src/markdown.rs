@@ -150,20 +150,25 @@ fn render(source: &str, streaming: bool, width: usize, theme: Theme) -> (Vec<MdL
 /// Follows the parser's events for the fenced code block the source leaves
 /// unclosed: in a message still streaming, the block still being written.
 ///
-/// The parser has already decided where each fence closes (how far a
-/// closing fence may be indented, that it must be as long as the opening,
-/// that a quote's marker is not part of it), so this reads its decision
-/// rather than reading fences again: a block is unclosed when its code
-/// runs to the block's last byte, leaving no closing fence after it, and
-/// the block runs to the end of what has arrived. A block a quote or list
-/// item ends before the source does is finished; nothing more will join
-/// it.
+/// The parser has already decided which lines are code (how far a closing
+/// fence may be indented, that it must be as long as the opening, that a
+/// quote's marker is not part of it), so the only thing read here is what
+/// follows the block's last code: a block is closed when that holds a run
+/// of its opening's fence character at least as long as the opening. Only
+/// a closing fence can put one there. Comparing where the code ends with
+/// where the block ends is not enough: the parser counts a trailing line
+/// of indentation as the block's but emits it as no code.
+///
+/// An unclosed block is the one being written only when it runs to the
+/// end of what has arrived. A block a quote or list item ends before the
+/// source does is finished; nothing more will join it.
 struct Fences<'a> {
     source: &'a str,
     /// Where what has arrived ends, less trailing whitespace.
     end: usize,
-    /// The fenced block open now: where it ends, and where its code ends.
-    block: Option<(usize, usize)>,
+    /// The fenced block open now: its opening fence, where the block ends,
+    /// and where its code ends.
+    block: Option<(&'a str, usize, usize)>,
 }
 
 impl<'a> Fences<'a> {
@@ -181,21 +186,26 @@ impl<'a> Fences<'a> {
         match event {
             // Before any code, the block's code ends with its opening line.
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(_))) => {
-                let opening = self.source[range.clone()]
+                let text = &self.source[range.clone()];
+                let opening = text
                     .find('\n')
                     .map_or(range.end, |at| range.start + at + 1);
-                self.block = Some((range.end, opening));
+                let text = text.trim_start();
+                let mark = text.chars().next().unwrap_or('`');
+                let fence = &text[..text.len() - text.trim_start_matches(mark).len()];
+                self.block = Some((fence, range.end, opening));
                 None
             }
             Event::Text(_) => {
-                if let Some((_, code)) = &mut self.block {
+                if let Some((_, _, code)) = &mut self.block {
                     *code = range.end;
                 }
                 None
             }
             Event::End(TagEnd::CodeBlock) => {
-                let (block, code) = self.block.take()?;
-                Some(code >= block && block >= self.end)
+                let (fence, block, code) = self.block.take()?;
+                let closed = self.source[code..block].contains(fence);
+                Some(!closed && block >= self.end)
             }
             _ => None,
         }
@@ -1211,6 +1221,11 @@ mod tests {
             ("```rust", vec![true]),
             // A list item's fence a dedented paragraph ends is finished.
             ("- ```sh\n  ls\n\nafter", vec![false]),
+            // Indentation alone after the code is not a closing fence,
+            // though the parser counts it as the block's.
+            ("- ~~~rust\n  fn f() {}\n  ", vec![true]),
+            ("- ~~~rust\n  fn f() {}\n  ~~~", vec![false]),
+            ("```rust\nfn f() {}\n   ", vec![true]),
         ] {
             assert_eq!(open_blocks(source), open, "{source:?}");
         }

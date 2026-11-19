@@ -444,11 +444,11 @@ pub struct Shared<A: OpenAsk> {
     /// A turn is running: submitted, or reported by the provider.
     busy: bool,
     queue: Queue,
-    /// No provider has taken input for this agent yet.
+    /// No provider has taken input in this incarnation yet.
     fresh: bool,
-    /// The agent's first prompt, given before the provider could take it
-    /// with nothing ahead of it. It is already the first turn and is drawn
-    /// as sent; only the write to the provider waits.
+    /// The incarnation's first prompt, given before the provider could take
+    /// it with nothing ahead of it. It is already the first turn and is
+    /// drawn as sent; only the write to the provider waits.
     #[serde(with = "serde_pb::opt_msg")]
     opening: Option<QueuedInput>,
     /// The input id of the prompt drawn ahead of its write, so neither the
@@ -577,6 +577,23 @@ pub struct Wakeup {
     pub at_ms: Option<i64>,
 }
 
+/// The start boundary a kind drew above an incarnation's first prompt
+/// before its provider started, which the provider's own start fills in.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub(crate) struct EarlyBoundary {
+    pub key: String,
+    /// The `BoundaryKind` it was drawn as.
+    pub kind: i32,
+}
+
+impl EarlyBoundary {
+    /// The key to write the start's boundary on, when it is not the kind
+    /// already drawn there.
+    pub fn refill(self, kind: wire::BoundaryKind) -> Option<String> {
+        (self.kind != kind as i32).then_some(self.key)
+    }
+}
+
 impl<A: OpenAsk> Shared<A> {
     /// The state an agent starts from: its queue seeded from the spawn's
     /// prompt, working_on from that prompt's first line, the clock at the
@@ -621,20 +638,13 @@ impl<A: OpenAsk> Shared<A> {
             subagents: BTreeMap::new(),
             watch: Watch::default(),
         };
-        if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) {
-            shared.prompted(&entry.text);
-            if shared.opens(&entry) {
-                shared.opening = Some(entry);
-            } else {
-                shared.queue.push(entry);
-            }
-        }
+        shared.bootstrap(spec);
         shared
     }
 
     /// Carries this state into the agent's next incarnation under `spec`:
-    /// the clock moves on, and a prompt the spec brings (a
-    /// resume with a prompt, or a parent's message) joins the queue.
+    /// the clock moves on, and a prompt the spec brings (a resume or wake
+    /// with a prompt, or a parent's message) is taken as a new agent's is.
     pub fn reincarnate(&mut self, spec: &AgentSpec) {
         self.stopping = false;
         self.leaving = false;
@@ -651,15 +661,30 @@ impl<A: OpenAsk> Shared<A> {
         // takes the end of its incarnation, which the journal holds.
         self.subagents.clear();
         self.now_ms = self.now_ms.max(spec.created_at_ms);
-        self.fresh = false;
-        if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap)
-            && !self.queue.contains(&entry.input_id)
-            && self
+        self.fresh = true;
+        self.bootstrap(spec);
+    }
+
+    /// The incarnation's first input, from its spec: a person's prompt with
+    /// nothing ahead of it opens the incarnation, as one typed while it
+    /// starts would; anything else joins the queue. One already held, as a
+    /// spec built again for the same input is, is not taken twice.
+    fn bootstrap(&mut self, spec: &AgentSpec) {
+        let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) else {
+            return;
+        };
+        let held = self.queue.contains(&entry.input_id)
+            || self
                 .opening
                 .as_ref()
-                .is_none_or(|held| held.input_id != entry.input_id)
-        {
-            self.prompted(&entry.text);
+                .is_some_and(|held| held.input_id == entry.input_id);
+        if held {
+            return;
+        }
+        self.prompted(&entry.text);
+        if self.opens(&entry) {
+            self.opening = Some(entry);
+        } else {
             self.queue.push(entry);
         }
     }
@@ -1205,8 +1230,8 @@ impl<A: OpenAsk> Shared<A> {
         }
     }
 
-    /// Whether a prompt is the agent's first turn although its provider
-    /// cannot take it yet: nothing is ahead of it, so it is not waiting
+    /// Whether a prompt is the incarnation's first turn although its
+    /// provider cannot take it yet: nothing is ahead of it, so it is not waiting
     /// behind anything a person would call a queue. A command is left to
     /// queue, as the row it draws is the provider's to say, and so is an
     /// agent's message, whose queue row says who sent it.

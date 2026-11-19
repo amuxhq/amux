@@ -3383,6 +3383,62 @@ fn a_first_prompt_is_drawn_while_codex_starts_and_sent_once() {
     );
 }
 
+/// A prompt that wakes a suspended agent opens its next incarnation as a
+/// new agent's first prompt opens its first: queued behind nothing, drawn
+/// under the resumed rule by the incarnation's first event, sent once its
+/// thread is resumed, and given no second rule when it is.
+#[test]
+fn a_prompt_that_wakes_codex_is_drawn_at_once_and_sent_once() {
+    let mut state = idle_codex();
+    Codex::step(
+        &mut state,
+        Event::Exiting(wire::IncarnationEnd {
+            cause: wire::ExitCause::Suspended as i32,
+            detail: None,
+        }),
+    );
+    let wake = wire::AgentSpec {
+        incarnation: 2,
+        ..first_prompt_spec()
+    };
+    let (mut state, first_frame) = Codex::reincarnate(state, &wake);
+    let drawn = Codex::step(&mut state, Event::Tick { at_ms: 1 });
+    assert_drawn_at_once(&first_frame, &drawn.step);
+    assert_eq!(
+        codex_boundary(&drawn.step.items[0]),
+        Some(wire::BoundaryKind::Resumed as i32)
+    );
+
+    let resumed = Codex::step(
+        &mut state,
+        rpc(
+            json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.162.1", "turns": []}, "model": "m"}}),
+        ),
+    );
+    let turns = writes(&resumed.effects)
+        .into_iter()
+        .filter(|write| write["method"] == "turn/start")
+        .count();
+    assert_eq!(turns, 1, "{:?}", resumed.effects);
+    assert!(
+        resumed
+            .step
+            .items
+            .iter()
+            .all(|item| item.input_id != b"first" && codex_boundary(item).is_none()),
+        "{:?}",
+        resumed.step.items
+    );
+}
+
+fn codex_boundary(item: &wire::Item) -> Option<i32> {
+    use prost::Message as _;
+    match wire::CodexItem::decode(item.body.as_slice()).ok()?.kind? {
+        wire::codex_item::Kind::Boundary(boundary) => Some(boundary.kind),
+        _ => None,
+    }
+}
+
 // --- what Codex holds, for suspension ---------------------------------------
 //
 // Cut from live recordings of codex-cli 0.166.0 (2026-11-15).

@@ -395,16 +395,10 @@ async fn act(host: &Host, who: Who, act: Act, target: uuid::Uuid) -> Result<(), 
 }
 
 /// What an act its caller may make answers: the agent's own answer, which
-/// for a resume of an agent that is not suspended is that it is not, and
-/// for a delete preview anything but the caller rule's refusal.
+/// for a resume of an agent that is not suspended is that it is not.
 fn allowed(act: Act, answer: Result<(), Status>) -> Result<(), String> {
     match (act, answer) {
         (Act::Resume, Err(status)) if status.code() == Code::FailedPrecondition => Ok(()),
-        (Act::PreviewDelete, Err(status))
-            if !matches!(status.code(), Code::PermissionDenied | Code::NotFound) =>
-        {
-            Ok(())
-        }
         (Act::Resume, other) => Err(format!("{other:?}, not 'not suspended'")),
         (_, Ok(())) => Ok(()),
         (_, Err(status)) => Err(format!("{status:?}")),
@@ -855,6 +849,57 @@ async fn a_create_without_a_kind_is_invalid() {
         assert_eq!(refused.code(), Code::InvalidArgument, "{who:?}");
         assert_eq!(refused.message(), "a new agent names its kind");
         assert!(host.row(id).await.is_none(), "{who:?}: no agent was made");
+    }
+    host.stop().await;
+}
+
+/// What a delete would take is answered to whoever may delete: a person,
+/// here or at a paired host, about any agent, and an agent about its own
+/// children only. An agent in a folder no workspace of this host's holds
+/// takes nothing with it but says what is uncommitted there.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_delete_preview_is_answered_to_whoever_may_delete() {
+    let mut setup = Setup::new();
+    repository(&setup.install);
+    std::fs::write(setup.install.work.join("draft.txt"), "one\ntwo\n").unwrap();
+    let mut mine = Vec::new();
+    for who in EVERYONE {
+        let parent = setup.parent_of(who);
+        mine.push(setup.agent(&format!("{who:?}").to_lowercase(), parent, false));
+    }
+    let stranger = setup.agent("stranger", None, false);
+    let host = setup.start().await;
+    let preview = |who: Who, agent: uuid::Uuid| {
+        let mut agents = host.agents(who);
+        async move {
+            agents
+                .preview_delete(staging::PreviewDeleteRequest {
+                    agent_id: agent.as_bytes().to_vec(),
+                })
+                .await
+                .map(tonic::Response::into_inner)
+        }
+    };
+    for (who, agent) in EVERYONE.into_iter().zip(mine) {
+        let answer = preview(who, agent)
+            .await
+            .unwrap_or_else(|status| panic!("{who:?}: {status:?}"));
+        assert!(!answer.removes_workspace, "{who:?}");
+        assert_eq!(answer.branch.as_deref(), Some("main"), "{who:?}");
+        let uncommitted = answer.uncommitted.unwrap_or_default();
+        assert_eq!((uncommitted.files, uncommitted.added), (1, 2), "{who:?}");
+
+        let asked = preview(who, stranger).await;
+        if who.is_agent() {
+            let refused = asked.unwrap_err();
+            assert_eq!(
+                refused.code(),
+                Code::PermissionDenied,
+                "{who:?}: {refused:?}"
+            );
+        } else {
+            asked.unwrap_or_else(|status| panic!("{who:?}: {status:?}"));
+        }
     }
     host.stop().await;
 }

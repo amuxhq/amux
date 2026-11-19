@@ -66,13 +66,6 @@ impl ReviewService for Reviews {
 /// with it, for `caller`. Whoever may delete the agent may ask, by the
 /// same rule as DeleteAgent's, so a warning is shown exactly to those who
 /// could act on it.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "AgentService's handler answers PreviewDelete with it"
-    )
-)]
 pub(in crate::api) async fn preview_delete(
     runtime: &ProfileRuntime,
     request: PreviewDeleteRequest,

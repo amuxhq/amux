@@ -340,19 +340,11 @@ impl AgentService for Agents {
         &self,
         request: Request<PreviewDeleteRequest>,
     ) -> Result<Response<PreviewDeleteResponse>, Status> {
-        // Who may ask is who may delete.
-        self.acting_on(
-            &request,
-            &request.get_ref().agent_id,
-            "an agent asks what a delete takes only of its own children",
-        )
-        .await?;
-        // TODO: answer with `super::changes::preview_delete`, which works
-        // the preview out beside the changes and applies this same rule;
-        // until it is mounted here the call is not served.
-        Err(Status::unimplemented(
-            "this host does not yet say what a delete would take",
-        ))
+        // Worked out beside the changes, where the rule that who may ask
+        // is who may delete is applied too.
+        let caller = Caller::of(&request)?;
+        let runtime = self.runtime()?;
+        super::changes::preview_delete(&runtime, request.into_inner(), &caller).await
     }
 
     async fn send_input(

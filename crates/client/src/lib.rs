@@ -12,12 +12,12 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 mod installation;
+pub mod next;
 pub use agent_dir::{Clock, ManualClock, SystemClock};
 use async_trait::async_trait;
 use futures_util::{Stream, StreamExt as _};
 pub use installation::{GrpcInstallation, InProcessInstallation, Installation, OpenProfile};
-use prost::Message as _;
-use tonic::{Code, Request, Status};
+use tonic::{Request, Status};
 use wire::agent_service_server::AgentService;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::profile_admin_service_server::ProfileAdminService;
@@ -67,36 +67,6 @@ impl RpcError {
 
     pub fn is_transport(&self) -> bool {
         matches!(self, RpcError::Transport(_))
-    }
-}
-
-impl From<Status> for RpcError {
-    /// The runtime puts its whole error in the status details; a status
-    /// without one came from the transport, or from a service that is no
-    /// longer running, and says nothing about whether the call landed.
-    fn from(status: Status) -> RpcError {
-        if let Ok(error) = wire::Error::decode(status.details())
-            && error.code != ErrorCode::Ok as i32
-        {
-            return RpcError::Refused(error);
-        }
-        match status.code() {
-            Code::Unavailable
-            | Code::Unknown
-            | Code::Cancelled
-            | Code::DeadlineExceeded
-            | Code::Internal
-            | Code::Aborted
-            | Code::Ok => RpcError::Transport(status.message().to_owned()),
-            Code::Unimplemented if status.message().is_empty() => RpcError::Refused(
-                wire::Error::new(ErrorCode::Unimplemented, wire::HOST_NEEDS_UPDATE),
-            ),
-            // tonic's codes are gRPC's, as an error's are.
-            code => RpcError::Refused(wire::Error::new(
-                ErrorCode::try_from(code as i32).unwrap_or(ErrorCode::Unknown),
-                status.message(),
-            )),
-        }
     }
 }
 
@@ -543,54 +513,3 @@ macro_rules! in_process_call {
 }
 
 client_impl!(impl[S: AgentService + SessionService] Client for InProcess<S>, in_process_call);
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn status_with(error: &wire::Error, code: Code) -> Status {
-        Status::with_details(code, error.message.clone(), error.encode_to_vec().into())
-    }
-
-    #[test]
-    fn a_status_carrying_the_runtimes_error_is_that_error() {
-        let error = wire::Error::because(
-            wire::ErrorReason::HostUnreachable,
-            "older history is held by the agent's host",
-        );
-        let rpc = RpcError::from(status_with(&error, Code::FailedPrecondition));
-        assert_eq!(rpc, RpcError::Refused(error));
-        assert_eq!(rpc.code(), Some(ErrorCode::FailedPrecondition));
-        assert_eq!(rpc.reason(), Some(wire::ErrorReason::HostUnreachable));
-    }
-
-    /// gRPC answers a method the server does not have with no words at all.
-    #[test]
-    fn an_unknown_method_says_the_host_needs_updating() {
-        let rpc = RpcError::from(Status::unimplemented(""));
-        assert_eq!(rpc.code(), Some(ErrorCode::Unimplemented));
-        assert_eq!(rpc.to_string(), wire::HOST_NEEDS_UPDATE);
-        assert_eq!(
-            RpcError::from(Status::unimplemented("no such thing here")).to_string(),
-            "no such thing here",
-            "a refusal with its own words keeps them"
-        );
-    }
-
-    #[test]
-    fn a_bare_status_is_a_transport_failure_only_when_it_says_nothing_about_the_call() {
-        for code in [
-            Code::Unavailable,
-            Code::Unknown,
-            Code::Cancelled,
-            Code::Internal,
-        ] {
-            assert!(
-                RpcError::from(Status::new(code, "connection reset")).is_transport(),
-                "{code:?}"
-            );
-        }
-        let refused = RpcError::from(Status::not_found("no such agent"));
-        assert_eq!(refused.code(), Some(ErrorCode::NotFound));
-    }
-}

@@ -16,6 +16,7 @@ prost = { workspace = true }
 thiserror = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
+uuid = { workspace = true }
 wire = { workspace = true, features = ["grpc"] }
 
 [dev-dependencies]

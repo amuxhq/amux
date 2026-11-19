@@ -784,6 +784,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tower",
+ "uuid",
  "wire",
 ]
 

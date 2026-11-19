@@ -96,7 +96,11 @@ async fn connect(net: &Net) -> (AppRuntime, Host) {
         let _ = sender.send(wake);
     });
     let local = net.host("desk").unwrap().host_id.as_bytes().to_vec();
-    let runtime = AppRuntime::open(client, Arc::new(SystemClock), local, wake)
+    let node = client::next::Client::in_memory(
+        net.entrance("desk").unwrap(),
+        client::next::Surface::Phone,
+    );
+    let runtime = AppRuntime::open(client, node, Arc::new(SystemClock), local, wake)
         .await
         .unwrap();
     (

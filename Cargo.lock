@@ -4975,7 +4975,6 @@ version = "0.5.0"
 dependencies = [
  "anyhow",
  "arboard",
- "async-trait",
  "attachments",
  "base64 0.22.1",
  "chrono",
@@ -5001,6 +5000,8 @@ dependencies = [
  "tempfile",
  "testnet",
  "tokio",
+ "tonic",
+ "tower",
  "ui-runtime",
  "ui-state",
  "ui-view",
@@ -5037,7 +5038,6 @@ checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 name = "ui-runtime"
 version = "0.5.0"
 dependencies = [
- "async-trait",
  "client",
  "futures-util",
  "installer",
@@ -5048,6 +5048,8 @@ dependencies = [
  "testnet",
  "thiserror 2.0.20",
  "tokio",
+ "tonic",
+ "tower",
  "ui-state",
  "ui-view",
  "uuid",

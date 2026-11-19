@@ -83,14 +83,16 @@ pub struct AppRuntime {
 
 impl AppRuntime {
     /// Opens the fleet and resolves once it has caught up with the local
-    /// runtime. `local_host` is this device's host id.
+    /// runtime. `local_host` is this device's host id. The fleet and its
+    /// chats run on `node`, a client of the same profile as `client`.
     pub async fn open(
         client: Arc<dyn Client>,
+        node: client::next::Client,
         clock: Arc<dyn client::Clock>,
         local_host: Vec<u8>,
         wake: HostWake,
     ) -> Result<AppRuntime, RpcError> {
-        let fleet = Arc::new(Fleet::connect(client.clone(), clock.clone()).await?);
+        let fleet = Arc::new(Fleet::connect(node, clock.clone()).await?);
         let fleet_wake = wake.clone();
         let fleet_changes = Arc::new(Coalescer::new(Arc::new(move || fleet_wake(Wake::Fleet))));
         let fleet_watcher =

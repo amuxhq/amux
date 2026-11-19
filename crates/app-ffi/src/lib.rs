@@ -605,6 +605,7 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
         Some(embedded) => embedded.clock(),
         None => Arc::new(client::SystemClock),
     };
+    let embedded = shared.embedded().cloned();
     let outbox = shared.outbox.clone();
     let fleet = outbox.fleets.fetch_add(1, Ordering::SeqCst) + 1;
     let app = shared
@@ -629,12 +630,23 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
                 .open_profile(described)
                 .await
                 .map_err(|error| error.to_string())?;
+            // The phone calls its hosted node in memory; the Mac dials the
+            // profile's socket, as the Mac app.
+            let node = match embedded {
+                Some(embedded) => embedded.node(profile).map_err(|error| error.to_string())?,
+                None => client::next::Client::connect(
+                    std::path::Path::new(&described.socket_path),
+                    client::next::Surface::Mac,
+                )
+                .await
+                .map_err(|error| error.to_string())?,
+            };
             let host = client
                 .get_device_identity()
                 .await
                 .map_err(|error| error.to_string())?
                 .host_id;
-            AppRuntime::open(client, clock, host, host_wake)
+            AppRuntime::open(client, node, clock, host, host_wake)
                 .await
                 .map_err(|error| error.to_string())
         })

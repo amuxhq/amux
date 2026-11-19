@@ -22,6 +22,12 @@ fn theme() -> Theme {
     Theme::dark(ColorMode::TrueColor)
 }
 
+/// A client of `host`'s node in memory, through its router and carrier, as
+/// the fleet and its chats call it.
+fn node(net: &Net, host: &str) -> client::next::Client {
+    client::next::Client::in_memory(net.entrance(host).unwrap(), client::next::Surface::Terminal)
+}
+
 /// A desk and a laptop that reach each other.
 fn topology() -> Topology {
     Topology::new()
@@ -81,7 +87,7 @@ async fn a_draft_left_in_a_chat_is_in_its_composer_when_the_chat_opens_again() {
     let worker = net.agent("worker").unwrap().id;
     let client: std::sync::Arc<dyn client::Client> =
         std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
-    let fleet = ui_runtime::Fleet::connect(client.clone(), client::SystemClock)
+    let fleet = ui_runtime::Fleet::connect(node(&net, "desk"), client::SystemClock)
         .await
         .unwrap();
     let config = tui::TuiConfig {
@@ -141,7 +147,14 @@ async fn a_draft_left_in_a_chat_is_in_its_composer_when_the_chat_opens_again() {
 // --- the client closing, and a chat closing under the person ----------------
 
 /// A served net of idle headless Claude agents on desk, and a client of desk.
-async fn desk_of(names: &[&str]) -> (Net, std::sync::Arc<dyn client::Client>, tui::TuiConfig) {
+async fn desk_of(
+    names: &[&str],
+) -> (
+    Net,
+    std::sync::Arc<dyn client::Client>,
+    client::next::Client,
+    tui::TuiConfig,
+) {
     let mut topology = Topology::new().host("desk");
     for name in names {
         topology = topology.agent(
@@ -168,16 +181,18 @@ async fn desk_of(names: &[&str]) -> (Net, std::sync::Arc<dyn client::Client>, tu
         chat_in: settings::ChatInSetting::Amux,
         system_clipboard: false,
     };
-    (net, client, config)
+    let node = node(&net, "desk");
+    (net, client, node, config)
 }
 
-/// A client of desk whose fleet lists every one of `ids`.
+/// A client of desk whose fleet, on `node`, lists every one of `ids`.
 async fn app_listing(
     client: std::sync::Arc<dyn client::Client>,
+    node: client::next::Client,
     config: tui::TuiConfig,
     ids: &[&[u8]],
 ) -> tui::App {
-    let fleet = ui_runtime::Fleet::connect(client.clone(), client::SystemClock)
+    let fleet = ui_runtime::Fleet::connect(node, client::SystemClock)
         .await
         .unwrap();
     let app = tui::App::new(client, fleet, config);
@@ -201,9 +216,15 @@ fn press(app: &mut tui::App, code: crossterm::event::KeyCode) {
 /// were held only in the client's memory and lost.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_draft_outlives_the_terminal_client_closing() {
-    let (net, client, config) = desk_of(&["worker"]).await;
+    let (net, client, node, config) = desk_of(&["worker"]).await;
     let worker = net.agent("worker").unwrap().id;
-    let mut app = app_listing(client.clone(), config.clone(), &[worker.as_bytes()]).await;
+    let mut app = app_listing(
+        client.clone(),
+        node.clone(),
+        config.clone(),
+        &[worker.as_bytes()],
+    )
+    .await;
     open_chat(&mut app, worker.as_bytes()).await;
     for c in "important unsent draft".chars() {
         press(&mut app, crossterm::event::KeyCode::Char(c));
@@ -212,7 +233,7 @@ async fn a_draft_outlives_the_terminal_client_closing() {
     app.keep_drafts().await;
     drop(app);
 
-    let mut app = app_listing(client, config, &[worker.as_bytes()]).await;
+    let mut app = app_listing(client, node, config, &[worker.as_bytes()]).await;
     open_chat(&mut app, worker.as_bytes()).await;
     assert_eq!(
         app.chat.as_ref().unwrap().view.editor.text(),
@@ -226,155 +247,86 @@ async fn a_draft_outlives_the_terminal_client_closing() {
         .unwrap();
 }
 
-/// A client of the daemon whose saves of an emptied draft wait while
-/// `hold` is set: the clearing a person did is still on its way. It notes
-/// the agent of every draft saved.
+/// The daemon's drafts as the fleet reaches them, with its saves of an
+/// emptied draft waiting while `hold` is set: the clearing a person did is
+/// still on its way. It notes the agent of every draft saved.
+#[derive(Clone)]
 struct SlowClearing {
-    inner: std::sync::Arc<dyn client::Client>,
-    hold: tokio::sync::watch::Sender<bool>,
-    saved: std::sync::Mutex<Vec<Vec<u8>>>,
+    inner: client::next::Client,
+    hold: std::sync::Arc<tokio::sync::watch::Sender<bool>>,
+    saved: std::sync::Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
 }
 
-#[async_trait::async_trait]
-impl client::Client for SlowClearing {
+impl SlowClearing {
+    fn new(inner: client::next::Client, held: bool) -> SlowClearing {
+        SlowClearing {
+            inner,
+            hold: std::sync::Arc::new(tokio::sync::watch::Sender::new(held)),
+            saved: Default::default(),
+        }
+    }
+
+    /// A client of `net`'s desk whose drafts go through this, and every
+    /// other call to the desk's node as it is.
+    fn client(&self, net: &Net) -> client::next::Client {
+        use tonic::codegen::http;
+        use tower::ServiceExt as _;
+        type Server = wire::amux::staging::draft_service_server::DraftServiceServer<SlowClearing>;
+        let prefix = format!("/{}/", <Server as tonic::server::NamedService>::NAME);
+        let drafts =
+            tonic::service::Routes::new(wire::amux::staging::draft_service_server(self.clone()));
+        let rest = net.entrance("desk").unwrap();
+        let split = tower::service_fn(move |request: http::Request<tonic::body::Body>| {
+            let (drafts, rest) = (drafts.clone(), rest.clone());
+            let ours = request.uri().path().starts_with(&prefix);
+            async move {
+                if ours {
+                    drafts.oneshot(request).await
+                } else {
+                    rest.oneshot(request).await
+                }
+            }
+        });
+        client::next::Client::in_memory(split, client::next::Surface::Terminal)
+    }
+}
+
+#[tonic::async_trait]
+impl wire::amux::staging::draft_service_server::DraftService for SlowClearing {
     async fn update_draft(
         &self,
-        request: wire::UpdateDraftRequest,
-    ) -> Result<wire::Draft, client::RpcError> {
+        request: tonic::Request<wire::amux::staging::UpdateDraftRequest>,
+    ) -> Result<tonic::Response<wire::amux::staging::UpdateDraftResponse>, tonic::Status> {
+        let request = request.into_inner();
         self.saved.lock().unwrap().push(request.agent_id.clone());
-        let empty = request
-            .draft
-            .as_ref()
-            .is_none_or(|draft| draft.text.is_empty() && draft.attachments.is_empty());
-        if empty {
+        let draft = request.draft.unwrap_or_default();
+        if draft.text.is_empty() && draft.attachments.is_empty() {
             let _ = self.hold.subscribe().wait_for(|held| !*held).await;
         }
-        self.inner.update_draft(request).await
+        let kept = self
+            .inner
+            .drafts()
+            .update(&request.agent_id, draft)
+            .await
+            .map_err(client::RpcError::into_status)?;
+        Ok(tonic::Response::new(
+            wire::amux::staging::UpdateDraftResponse { draft: Some(kept) },
+        ))
     }
+
     async fn get_draft(
         &self,
-        request: wire::GetDraftRequest,
-    ) -> Result<wire::Draft, client::RpcError> {
-        self.inner.get_draft(request).await
-    }
-    async fn sign_out(&self) -> Result<(), client::RpcError> {
-        self.inner.sign_out().await
-    }
-    async fn get_device_identity(&self) -> Result<wire::DeviceIdentity, client::RpcError> {
-        self.inner.get_device_identity().await
-    }
-    async fn subscribe_inventory(
-        &self,
-    ) -> Result<client::EventStream<wire::InventoryEvent>, client::RpcError> {
-        self.inner.subscribe_inventory().await
-    }
-    async fn resolve_agent(
-        &self,
-        request: wire::ResolveAgentRequest,
-    ) -> Result<wire::Agent, client::RpcError> {
-        self.inner.resolve_agent(request).await
-    }
-    async fn subscribe_session(
-        &self,
-        request: wire::SubscribeSessionRequest,
-    ) -> Result<client::EventStream<wire::SessionEvent>, client::RpcError> {
-        self.inner.subscribe_session(request).await
-    }
-    async fn list_items(
-        &self,
-        request: wire::ListItemsRequest,
-    ) -> Result<wire::ListItemsResponse, client::RpcError> {
-        self.inner.list_items(request).await
-    }
-    async fn get_item(
-        &self,
-        request: wire::GetItemRequest,
-    ) -> Result<wire::Item, client::RpcError> {
-        self.inner.get_item(request).await
-    }
-    async fn send_input(
-        &self,
-        request: wire::SendInputRequest,
-    ) -> Result<wire::SendInputResponse, client::RpcError> {
-        self.inner.send_input(request).await
-    }
-    async fn create_agent(
-        &self,
-        request: wire::CreateAgentRequest,
-    ) -> Result<wire::Agent, client::RpcError> {
-        self.inner.create_agent(request).await
-    }
-    async fn rename_agent(
-        &self,
-        request: wire::RenameAgentRequest,
-    ) -> Result<wire::Agent, client::RpcError> {
-        self.inner.rename_agent(request).await
-    }
-    async fn file_agent(
-        &self,
-        request: wire::FileAgentRequest,
-    ) -> Result<wire::Agent, client::RpcError> {
-        self.inner.file_agent(request).await
-    }
-    async fn resume_agent(
-        &self,
-        request: wire::ResumeAgentRequest,
-    ) -> Result<wire::Agent, client::RpcError> {
-        self.inner.resume_agent(request).await
-    }
-    async fn delete_agent(
-        &self,
-        request: wire::DeleteAgentRequest,
-    ) -> Result<(), client::RpcError> {
-        self.inner.delete_agent(request).await
-    }
-    async fn send_message(
-        &self,
-        request: wire::Envelope,
-    ) -> Result<wire::SendMessageResponse, client::RpcError> {
-        self.inner.send_message(request).await
-    }
-    async fn put_blob(
-        &self,
-        request: wire::PutBlobRequest,
-    ) -> Result<wire::BlobRef, client::RpcError> {
-        self.inner.put_blob(request).await
-    }
-    async fn get_blob(
-        &self,
-        request: wire::GetBlobRequest,
-    ) -> Result<wire::GetBlobResponse, client::RpcError> {
-        self.inner.get_blob(request).await
-    }
-    async fn get_diff(
-        &self,
-        request: wire::GetDiffRequest,
-    ) -> Result<wire::Diff, client::RpcError> {
-        self.inner.get_diff(request).await
-    }
-    async fn get_catalogue(
-        &self,
-        request: wire::GetCatalogueRequest,
-    ) -> Result<wire::GetCatalogueResponse, client::RpcError> {
-        self.inner.get_catalogue(request).await
-    }
-    async fn list_repositories(
-        &self,
-        request: wire::ListRepositoriesRequest,
-    ) -> Result<wire::ListRepositoriesResponse, client::RpcError> {
-        self.inner.list_repositories(request).await
-    }
-    async fn dump(
-        &self,
-        request: wire::DumpRequest,
-    ) -> Result<wire::DumpResponse, client::RpcError> {
-        self.inner.dump(request).await
-    }
-    async fn submit_report(
-        &self,
-        request: wire::SubmitReportRequest,
-    ) -> Result<wire::SubmitReportResponse, client::RpcError> {
-        self.inner.submit_report(request).await
+        request: tonic::Request<wire::amux::staging::GetDraftRequest>,
+    ) -> Result<tonic::Response<wire::amux::staging::GetDraftResponse>, tonic::Status> {
+        let kept = self
+            .inner
+            .drafts()
+            .get(&request.into_inner().agent_id)
+            .await
+            .map_err(client::RpcError::into_status)?;
+        Ok(tonic::Response::new(
+            wire::amux::staging::GetDraftResponse { draft: Some(kept) },
+        ))
     }
 }
 
@@ -384,7 +336,7 @@ impl client::Client for SlowClearing {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_cleared_draft_stays_cleared_before_the_daemon_hears_of_it() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    let (net, daemon, config) = desk_of(&["worker"]).await;
+    let (net, daemon, node, config) = desk_of(&["worker"]).await;
     let worker = net.agent("worker").unwrap().id;
     let stale = || wire::GetDraftRequest {
         agent_id: worker.as_bytes().to_vec(),
@@ -399,13 +351,14 @@ async fn a_cleared_draft_stays_cleared_before_the_daemon_hears_of_it() {
         })
         .await
         .unwrap();
-    let slow = std::sync::Arc::new(SlowClearing {
-        inner: daemon.clone(),
-        hold: tokio::sync::watch::Sender::new(true),
-        saved: Default::default(),
-    });
-    let client: std::sync::Arc<dyn client::Client> = slow.clone();
-    let mut app = app_listing(client, config, &[worker.as_bytes()]).await;
+    let slow = SlowClearing::new(node, true);
+    let mut app = app_listing(
+        daemon.clone(),
+        slow.client(&net),
+        config,
+        &[worker.as_bytes()],
+    )
+    .await;
     let home = |app: &mut tui::App| {
         app.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
         press(app, KeyCode::Char('s'));
@@ -456,15 +409,16 @@ async fn a_cleared_draft_stays_cleared_before_the_daemon_hears_of_it() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_deleted_agents_chat_keeps_no_draft() {
     use crossterm::event::KeyCode;
-    let (net, daemon, config) = desk_of(&["doomed"]).await;
+    let (net, daemon, node, config) = desk_of(&["doomed"]).await;
     let doomed = net.agent("doomed").unwrap().id;
-    let recording = std::sync::Arc::new(SlowClearing {
-        inner: daemon.clone(),
-        hold: tokio::sync::watch::Sender::new(false),
-        saved: Default::default(),
-    });
-    let client: std::sync::Arc<dyn client::Client> = recording.clone();
-    let mut app = app_listing(client, config, &[doomed.as_bytes()]).await;
+    let recording = SlowClearing::new(node, false);
+    let mut app = app_listing(
+        daemon.clone(),
+        recording.client(&net),
+        config,
+        &[doomed.as_bytes()],
+    )
+    .await;
     open_chat(&mut app, doomed.as_bytes()).await;
     for c in "half a thought".chars() {
         press(&mut app, KeyCode::Char(c));
@@ -518,11 +472,12 @@ async fn a_deleted_agents_chat_keeps_no_draft() {
 #[tokio::test(flavor = "multi_thread")]
 async fn words_typed_into_a_chat_that_closes_under_the_person_end_no_other_agent() {
     use crossterm::event::KeyCode;
-    let (net, client, config) = desk_of(&["doomed", "healthy"]).await;
+    let (net, client, node, config) = desk_of(&["doomed", "healthy"]).await;
     let doomed = net.agent("doomed").unwrap().id;
     let healthy = net.agent("healthy").unwrap().id;
     let mut app = app_listing(
         client.clone(),
+        node,
         config,
         &[doomed.as_bytes(), healthy.as_bytes()],
     )
@@ -593,9 +548,9 @@ async fn words_typed_into_a_chat_that_closes_under_the_person_end_no_other_agent
 #[tokio::test(flavor = "multi_thread")]
 async fn the_leader_then_x_settles_the_chats_agent_and_goes_home() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    let (net, client, config) = desk_of(&["finished"]).await;
+    let (net, client, node, config) = desk_of(&["finished"]).await;
     let finished = net.agent("finished").unwrap().id;
-    let mut app = app_listing(client, config, &[finished.as_bytes()]).await;
+    let mut app = app_listing(client, node, config, &[finished.as_bytes()]).await;
     open_chat(&mut app, finished.as_bytes()).await;
     let mut changed = app.fleet.changed();
     app.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
@@ -662,7 +617,7 @@ async fn raw_attach_from_a_far_agents_chat_does_not_say_enter_opens_its_chat() {
         chat_in: settings::ChatInSetting::Amux,
         system_clipboard: false,
     };
-    let mut app = app_listing(client, config, &[far.as_bytes()]).await;
+    let mut app = app_listing(client, node(&net, "laptop"), config, &[far.as_bytes()]).await;
     open_chat(&mut app, far.as_bytes()).await;
     app.key(crossterm::event::KeyEvent::new(
         crossterm::event::KeyCode::Char('a'),
@@ -690,14 +645,6 @@ async fn raw_attach_from_a_far_agents_chat_does_not_say_enter_opens_its_chat() {
 /// desk's client with `name`'s chat open, `name` a terminal-less agent on
 /// laptop, the two linked.
 async fn far_chat(name: &str) -> (Net, tui::App) {
-    far_chat_via(name, |client| client).await
-}
-
-/// [`far_chat`], its client reaching the daemon through `via`.
-async fn far_chat_via(
-    name: &str,
-    via: impl FnOnce(std::sync::Arc<dyn client::Client>) -> std::sync::Arc<dyn client::Client>,
-) -> (Net, tui::App) {
     let net = Net::start(
         topology().agent(
             AgentDecl::new(name, "laptop")
@@ -712,7 +659,6 @@ async fn far_chat_via(
     let id = net.agent(name).unwrap().id;
     let client: std::sync::Arc<dyn client::Client> =
         std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
-    let client = via(client);
     let config = tui::TuiConfig {
         working_dir: "/".into(),
         leader: 'a',
@@ -724,7 +670,7 @@ async fn far_chat_via(
         chat_in: settings::ChatInSetting::Amux,
         system_clipboard: false,
     };
-    let mut app = app_listing(client, config, &[id.as_bytes()]).await;
+    let mut app = app_listing(client, node(&net, "desk"), config, &[id.as_bytes()]).await;
     open_chat(&mut app, id.as_bytes()).await;
     (net, app)
 }
@@ -871,9 +817,9 @@ async fn a_chat_on_an_agent_deleted_on_its_far_host_never_offers_to_resume_it() 
 async fn a_file_pasted_into_a_new_agents_first_message_reaches_it() {
     use crossterm::event::KeyCode;
 
-    let (net, client, config) = desk_of(&[]).await;
+    let (net, client, node, config) = desk_of(&[]).await;
     let host = config.local_host.clone();
-    let fleet = ui_runtime::Fleet::connect(client.clone(), client::SystemClock)
+    let fleet = ui_runtime::Fleet::connect(node, client::SystemClock)
         .await
         .unwrap();
     let mut app = tui::App::new(client.clone(), fleet, config);
@@ -995,7 +941,7 @@ async fn a_message_typed_to_a_suspended_agent_wakes_it_and_never_reads_stopped()
         chat_in: settings::ChatInSetting::Amux,
         system_clipboard: false,
     };
-    let mut app = app_listing(client, config, &[id.as_bytes()]).await;
+    let mut app = app_listing(client, node(&net, "desk"), config, &[id.as_bytes()]).await;
     open_chat(&mut app, id.as_bytes()).await;
     let suspended = |app: &tui::App| {
         app.fleet

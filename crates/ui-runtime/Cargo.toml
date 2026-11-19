@@ -19,12 +19,13 @@ uuid = { workspace = true }
 wire = { workspace = true }
 
 [dev-dependencies]
-async-trait = { workspace = true }
 installer = { workspace = true }
 provider-fakes = { workspace = true }
 replay-support = { workspace = true }
 serde_json = { workspace = true }
 testnet = { workspace = true }
+tonic = { workspace = true }
+tower = { workspace = true }
 
 [[test]]
 name = "integration"

@@ -60,7 +60,7 @@ is running.
 | Crate | What it does for you |
 | --- | --- |
 | `installer` | Steps 1 and 2. Finds the installation and its front door; `ensure` starts amux, or installs it, checking the download against the release's signed manifest. It touches nothing already running, so a client calls it at every launch. |
-| `client` | Typed calls to the front door (`GrpcInstallation`) and to each profile (`Client`), with every socket detail below handled. |
+| `client` | Typed calls to the front door (`Installation`) and to each profile (`Client`), with every socket detail below handled. A host's own services are reached through the agent or host they act on, so every call goes to the host it is for. |
 | `ui-runtime` | The drivers: `Fleet` follows a profile's agents and `Session` one chat. They hold the streams, reconnect when amux restarts and start over when they fall behind. |
 | `ui-state`, `ui-view` | Optional. `ui-state` is the drivers' model; `ui-view` turns it into what a screen shows (the fleet's sections and rows, a chat's rows and ask cards) as plain values, and leaves wording, layout and theme to the client. The terminal client and the iPhone app draw these. |
 
@@ -104,7 +104,8 @@ change.
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use client::{Clock, GrpcInstallation, Installation, SystemClock};
+use client::next::{Installation, Surface};
+use client::{Clock, SystemClock};
 use ui_runtime::Fleet;
 use ui_view::{FleetView, SecondLine};
 
@@ -124,13 +125,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // 2. Pick a profile and open its services.
-    let installation = GrpcInstallation::connect(&front_door).await?;
+    // Every call names the client making it; this one is a terminal's.
+    let installation = Installation::connect(&front_door, Surface::Terminal).await?;
     let profiles = installation.list_profiles().await?;
     let profile = profiles.first().ok_or("the installation has no profiles")?;
     let client = installation.open_profile(profile).await?;
     // Which host is this machine: the views say whether each agent's host
     // can be reached from here.
-    let local_host = client.get_device_identity().await?.host_id;
+    let local_host = client.admin().get_device_identity().await?.host_id;
 
     // 3. Follow the fleet. The driver keeps the stream open, reconnects
     // when amux restarts and starts over when it falls behind.

@@ -1,41 +1,61 @@
-//! An in-memory runtime for driver tests. Every call the driver makes
-//! arrives here as a [`Call`] the test answers by hand, so a test states
-//! exactly what the runtime said and when; a call the test did not expect
-//! fails it.
+//! An in-memory runtime for driver tests: fake handlers of the node's
+//! services, behind the routes a client calls in memory. Every call the
+//! driver makes arrives here as a [`Call`] the test answers by hand, so a
+//! test states exactly what the runtime said and when; a call the test did
+//! not expect fails it. The driver's calls go through the real client
+//! library and the real gRPC encoding, so what a test answers reads to the
+//! driver as a node's answer would, refusals and transport failures alike.
 
 #![allow(dead_code)]
 
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
-use async_trait::async_trait;
-use client::{Client, EventStream, RpcError};
+use client::next::Surface;
+use client::{EventStream, RpcError};
+use futures_util::StreamExt as _;
 use tokio::sync::{mpsc, oneshot};
+use tonic::body::Body;
+use tonic::codegen::http;
+use tonic::service::Routes;
+use tonic::{Request, Response, Status};
+use wire::amux::staging::agent_service_server::AgentService;
+use wire::amux::staging::draft_service_server::DraftService;
+use wire::amux::staging::inventory_service_server::InventoryService;
+use wire::amux::staging::session_service_server::SessionService;
+use wire::amux::staging::{self};
+use wire::profile_admin_service_server::ProfileAdminService;
 use wire::{
-    Agent, Attachment, BlobRef, CreateAgentRequest, DeleteAgentRequest, Diff, DumpRequest,
-    DumpResponse, FileAgentRequest, GetBlobRequest, GetBlobResponse, GetDiffRequest,
-    GetItemRequest, InventoryEvent, Item, Kind, Lifecycle, ListItemsRequest, ListItemsResponse,
-    ListRepositoriesRequest, ListRepositoriesResponse, Phase, PutBlobRequest, QueuedInput,
-    RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
-    SendInputResponse, SendMessageResponse, SessionEvent, Snapshot, SubscribeSessionRequest,
-    attachment, inventory_event, send_input_response, session_event,
+    Agent, Attachment, BlobRef, DumpRequest, DumpResponse, InventoryEvent, Item, Kind, Lifecycle,
+    ListItemsResponse, Phase, QueuedInput, SendInputResponse, SessionEvent, Snapshot, attachment,
+    inventory_event, send_input_response, session_event,
 };
 
 /// How long a test waits for the driver's next call before failing.
 pub const PATIENCE: Duration = Duration::from_secs(5);
 
+/// The host the authored agents live on: 16 bytes, so it is an id a call
+/// can be addressed to.
+pub const HOST_A: &[u8] = b"host-a\0\0\0\0\0\0\0\0\0\0";
+/// Another host.
+pub const HOST_B: &[u8] = b"host-b\0\0\0\0\0\0\0\0\0\0";
+
 pub type Reply<T> = oneshot::Sender<Result<T, RpcError>>;
 
 pub enum Call {
-    Subscribe(SubscribeSessionRequest, Reply<EventStream<SessionEvent>>),
+    Subscribe(
+        staging::SubscribeSessionRequest,
+        Reply<EventStream<SessionEvent>>,
+    ),
     Inventory(Reply<EventStream<InventoryEvent>>),
-    Fetch(ListItemsRequest, Reply<ListItemsResponse>),
-    Get(GetItemRequest, Reply<Item>),
-    SendInput(SendInputRequest, Reply<SendInputResponse>),
-    Resume(ResumeAgentRequest, Reply<Agent>),
-    GetBlob(GetBlobRequest, Reply<GetBlobResponse>),
-    Close(FileAgentRequest, Reply<Agent>),
+    Fetch(staging::ListItemsRequest, Reply<ListItemsResponse>),
+    Get(staging::GetItemRequest, Reply<Item>),
+    SendInput(staging::SendInputRequest, Reply<SendInputResponse>),
+    Resume(staging::ResumeAgentRequest, Reply<Agent>),
+    GetBlob(staging::GetBlobRequest, Reply<staging::GetBlobResponse>),
+    Close(staging::SetFilingRequest, Reply<Agent>),
     Dump(DumpRequest, Reply<DumpResponse>),
 }
 
@@ -81,135 +101,387 @@ fn stream<T: Send + 'static>() -> (Feed<T>, EventStream<T>) {
     (Feed { tx }, Box::pin(stream))
 }
 
-pub struct FakeRuntime {
+/// The fake node's handlers, one for every service the drivers call.
+#[derive(Clone)]
+struct FakeRuntime {
     calls: mpsc::UnboundedSender<Call>,
 }
 
 /// The test's end: the calls the driver made, in order.
 pub struct Calls {
     rx: mpsc::UnboundedReceiver<Call>,
+    addressed: Addressed,
 }
 
-pub fn runtime() -> (Arc<dyn Client>, Calls) {
+/// Each call's method and the authority it was addressed to, in order.
+type Addressed = Arc<Mutex<Vec<(String, String)>>>;
+
+/// A client of the fake runtime, in memory, and the test's end of it.
+pub fn runtime() -> (client::next::Client, Calls) {
     let (tx, rx) = mpsc::unbounded_channel();
-    (Arc::new(FakeRuntime { calls: tx }), Calls { rx })
+    let fake = FakeRuntime { calls: tx };
+    let routes = Routes::default()
+        .add_service(staging::inventory_service_server(fake.clone()))
+        .add_service(staging::session_service_server(fake.clone()))
+        .add_service(staging::draft_service_server(fake.clone()))
+        .add_service(staging::agent_service_server(fake.clone()))
+        .add_service(wire::profile_admin_service_server::ProfileAdminServiceServer::new(fake));
+    let addressed = Addressed::default();
+    let served = Recorded {
+        routes,
+        addressed: addressed.clone(),
+    };
+    (
+        client::next::Client::in_memory(served, Surface::Terminal),
+        Calls { rx, addressed },
+    )
+}
+
+/// The routes, noting where each call was addressed.
+#[derive(Clone)]
+struct Recorded {
+    routes: Routes,
+    addressed: Addressed,
+}
+
+impl tower::Service<http::Request<Body>> for Recorded {
+    type Response = http::Response<Body>;
+    type Error = std::convert::Infallible;
+    type Future = <Routes as tower::Service<http::Request<Body>>>::Future;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        tower::Service::<http::Request<Body>>::poll_ready(&mut self.routes, cx)
+    }
+
+    fn call(&mut self, request: http::Request<Body>) -> Self::Future {
+        let authority = request
+            .uri()
+            .authority()
+            .map_or_else(String::new, |authority| authority.to_string());
+        self.addressed
+            .lock()
+            .unwrap()
+            .push((request.uri().path().to_owned(), authority));
+        self.routes.call(request)
+    }
 }
 
 impl FakeRuntime {
-    async fn call<T>(&self, make: impl FnOnce(Reply<T>) -> Call) -> Result<T, RpcError> {
+    async fn call<T>(&self, make: impl FnOnce(Reply<T>) -> Call) -> Result<T, Status> {
         let (tx, rx) = oneshot::channel();
         if self.calls.send(make(tx)).is_err() {
-            return Err(RpcError::Transport("the test runtime is gone".into()));
+            return Err(Status::unavailable("the test runtime is gone"));
         }
         rx.await
             .unwrap_or_else(|_| Err(RpcError::Transport("the call was dropped".into())))
+            .map_err(RpcError::into_status)
     }
 }
 
-#[async_trait]
-impl Client for FakeRuntime {
-    async fn subscribe_inventory(&self) -> Result<EventStream<InventoryEvent>, RpcError> {
-        self.call(Call::Inventory).await
+type Streamed<T> = std::pin::Pin<Box<dyn futures_util::Stream<Item = Result<T, Status>> + Send>>;
+
+/// The test's stream of events as the responses a server streams.
+fn served<T: Send + 'static, R: Send + 'static>(
+    events: EventStream<T>,
+    response: fn(T) -> R,
+) -> Response<Streamed<R>> {
+    Response::new(Box::pin(
+        events.map(move |event| event.map(response).map_err(RpcError::into_status)),
+    ))
+}
+
+#[tonic::async_trait]
+impl InventoryService for FakeRuntime {
+    type SubscribeInventoryStream = Streamed<staging::SubscribeInventoryResponse>;
+
+    async fn subscribe_inventory(
+        &self,
+        _: Request<staging::SubscribeInventoryRequest>,
+    ) -> Result<Response<Self::SubscribeInventoryStream>, Status> {
+        let events = self.call(Call::Inventory).await?;
+        Ok(served(events, |event| {
+            staging::SubscribeInventoryResponse { event: Some(event) }
+        }))
     }
 
-    async fn resolve_agent(&self, _: ResolveAgentRequest) -> Result<Agent, RpcError> {
+    async fn resolve_agent(
+        &self,
+        _: Request<staging::ResolveAgentRequest>,
+    ) -> Result<Response<staging::ResolveAgentResponse>, Status> {
         unimplemented!("resolve_agent")
     }
 
+    async fn resolve_host(
+        &self,
+        _: Request<staging::ResolveHostRequest>,
+    ) -> Result<Response<staging::ResolveHostResponse>, Status> {
+        unimplemented!("resolve_host")
+    }
+}
+
+#[tonic::async_trait]
+impl SessionService for FakeRuntime {
+    type SubscribeSessionStream = Streamed<staging::SubscribeSessionResponse>;
+
     async fn subscribe_session(
         &self,
-        request: SubscribeSessionRequest,
-    ) -> Result<EventStream<SessionEvent>, RpcError> {
-        self.call(|reply| Call::Subscribe(request, reply)).await
+        request: Request<staging::SubscribeSessionRequest>,
+    ) -> Result<Response<Self::SubscribeSessionStream>, Status> {
+        let request = request.into_inner();
+        let events = self.call(|reply| Call::Subscribe(request, reply)).await?;
+        Ok(served(events, |event| staging::SubscribeSessionResponse {
+            event: Some(event),
+        }))
     }
 
-    async fn list_items(&self, request: ListItemsRequest) -> Result<ListItemsResponse, RpcError> {
-        self.call(|reply| Call::Fetch(request, reply)).await
+    async fn list_items(
+        &self,
+        request: Request<staging::ListItemsRequest>,
+    ) -> Result<Response<staging::ListItemsResponse>, Status> {
+        let request = request.into_inner();
+        let page = self.call(|reply| Call::Fetch(request, reply)).await?;
+        Ok(Response::new(staging::ListItemsResponse {
+            items: page.items,
+            exhausted: page.exhausted,
+        }))
     }
 
-    async fn get_item(&self, request: GetItemRequest) -> Result<Item, RpcError> {
-        self.call(|reply| Call::Get(request, reply)).await
+    async fn get_item(
+        &self,
+        request: Request<staging::GetItemRequest>,
+    ) -> Result<Response<staging::GetItemResponse>, Status> {
+        let request = request.into_inner();
+        let item = self.call(|reply| Call::Get(request, reply)).await?;
+        Ok(Response::new(staging::GetItemResponse { item: Some(item) }))
     }
 
-    async fn send_input(&self, request: SendInputRequest) -> Result<SendInputResponse, RpcError> {
-        self.call(|reply| Call::SendInput(request, reply)).await
+    async fn get_blob(
+        &self,
+        request: Request<staging::GetBlobRequest>,
+    ) -> Result<Response<staging::GetBlobResponse>, Status> {
+        let request = request.into_inner();
+        Ok(Response::new(
+            self.call(|reply| Call::GetBlob(request, reply)).await?,
+        ))
+    }
+}
+
+#[tonic::async_trait]
+impl DraftService for FakeRuntime {
+    async fn update_draft(
+        &self,
+        _: Request<staging::UpdateDraftRequest>,
+    ) -> Result<Response<staging::UpdateDraftResponse>, Status> {
+        unimplemented!("update_draft")
     }
 
-    async fn create_agent(&self, _: CreateAgentRequest) -> Result<Agent, RpcError> {
+    async fn get_draft(
+        &self,
+        _: Request<staging::GetDraftRequest>,
+    ) -> Result<Response<staging::GetDraftResponse>, Status> {
+        unimplemented!("get_draft")
+    }
+}
+
+#[tonic::async_trait]
+impl AgentService for FakeRuntime {
+    async fn create_agent(
+        &self,
+        _: Request<staging::CreateAgentRequest>,
+    ) -> Result<Response<staging::CreateAgentResponse>, Status> {
         unimplemented!("create_agent")
     }
 
-    async fn rename_agent(&self, _: RenameAgentRequest) -> Result<Agent, RpcError> {
+    async fn rename_agent(
+        &self,
+        _: Request<staging::RenameAgentRequest>,
+    ) -> Result<Response<staging::RenameAgentResponse>, Status> {
         unimplemented!("rename_agent")
     }
 
-    async fn file_agent(&self, request: FileAgentRequest) -> Result<Agent, RpcError> {
-        self.call(|reply| Call::Close(request, reply)).await
+    async fn set_filing(
+        &self,
+        request: Request<staging::SetFilingRequest>,
+    ) -> Result<Response<staging::SetFilingResponse>, Status> {
+        let request = request.into_inner();
+        let agent = self.call(|reply| Call::Close(request, reply)).await?;
+        Ok(Response::new(staging::SetFilingResponse {
+            agent: Some(agent),
+        }))
     }
 
-    async fn resume_agent(&self, request: ResumeAgentRequest) -> Result<Agent, RpcError> {
-        self.call(|reply| Call::Resume(request, reply)).await
+    async fn resume_agent(
+        &self,
+        request: Request<staging::ResumeAgentRequest>,
+    ) -> Result<Response<staging::ResumeAgentResponse>, Status> {
+        let request = request.into_inner();
+        let agent = self.call(|reply| Call::Resume(request, reply)).await?;
+        Ok(Response::new(staging::ResumeAgentResponse {
+            agent: Some(agent),
+        }))
     }
 
-    async fn delete_agent(&self, _: DeleteAgentRequest) -> Result<(), RpcError> {
+    async fn delete_agent(
+        &self,
+        _: Request<staging::DeleteAgentRequest>,
+    ) -> Result<Response<staging::DeleteAgentResponse>, Status> {
         unimplemented!("delete_agent")
     }
 
-    async fn send_message(&self, _: wire::Envelope) -> Result<SendMessageResponse, RpcError> {
+    async fn preview_delete(
+        &self,
+        _: Request<staging::PreviewDeleteRequest>,
+    ) -> Result<Response<staging::PreviewDeleteResponse>, Status> {
+        unimplemented!("preview_delete")
+    }
+
+    async fn send_input(
+        &self,
+        request: Request<staging::SendInputRequest>,
+    ) -> Result<Response<SendInputResponse>, Status> {
+        let request = request.into_inner();
+        Ok(Response::new(
+            self.call(|reply| Call::SendInput(request, reply)).await?,
+        ))
+    }
+
+    async fn send_message(
+        &self,
+        _: Request<staging::SendMessageRequest>,
+    ) -> Result<Response<staging::SendMessageResponse>, Status> {
         unimplemented!("send_message")
     }
 
-    async fn put_blob(&self, _: PutBlobRequest) -> Result<BlobRef, RpcError> {
+    async fn put_blob(
+        &self,
+        _: Request<staging::PutBlobRequest>,
+    ) -> Result<Response<staging::PutBlobResponse>, Status> {
         unimplemented!("put_blob")
     }
 
-    async fn get_blob(&self, request: GetBlobRequest) -> Result<GetBlobResponse, RpcError> {
-        self.call(|reply| Call::GetBlob(request, reply)).await
-    }
-
-    async fn get_diff(&self, _: GetDiffRequest) -> Result<Diff, RpcError> {
-        unimplemented!("diff")
-    }
-
-    async fn get_catalogue(
+    async fn get_diff(
         &self,
-        _: wire::GetCatalogueRequest,
-    ) -> Result<wire::GetCatalogueResponse, RpcError> {
-        unimplemented!("get_catalogue")
+        _: Request<staging::GetDiffRequest>,
+    ) -> Result<Response<staging::GetDiffResponse>, Status> {
+        unimplemented!("get_diff")
+    }
+}
+
+#[tonic::async_trait]
+impl ProfileAdminService for FakeRuntime {
+    type SubscribePairingStream = Streamed<wire::SubscribePairingResponse>;
+    type SubscribeSignInOffersStream = Streamed<wire::SubscribeSignInOffersResponse>;
+
+    async fn dump(&self, request: Request<DumpRequest>) -> Result<Response<DumpResponse>, Status> {
+        let request = request.into_inner();
+        Ok(Response::new(
+            self.call(|reply| Call::Dump(request, reply)).await?,
+        ))
     }
 
-    async fn list_repositories(
+    async fn sign_out(
         &self,
-        _: ListRepositoriesRequest,
-    ) -> Result<ListRepositoriesResponse, RpcError> {
-        unimplemented!("list_repositories")
+        _: Request<wire::SignOutRequest>,
+    ) -> Result<Response<wire::SignOutResponse>, Status> {
+        unimplemented!("sign_out")
     }
 
-    async fn dump(&self, request: DumpRequest) -> Result<DumpResponse, RpcError> {
-        self.call(|reply| Call::Dump(request, reply)).await
+    async fn start_pairing(
+        &self,
+        _: Request<wire::StartPairingRequest>,
+    ) -> Result<Response<wire::StartPairingResponse>, Status> {
+        unimplemented!("start_pairing")
+    }
+
+    async fn subscribe_pairing(
+        &self,
+        _: Request<wire::SubscribePairingRequest>,
+    ) -> Result<Response<Self::SubscribePairingStream>, Status> {
+        unimplemented!("subscribe_pairing")
+    }
+
+    async fn cancel_pairing(
+        &self,
+        _: Request<wire::CancelPairingRequest>,
+    ) -> Result<Response<wire::CancelPairingResponse>, Status> {
+        unimplemented!("cancel_pairing")
+    }
+
+    async fn begin_pair(
+        &self,
+        _: Request<wire::BeginPairRequest>,
+    ) -> Result<Response<wire::BeginPairResponse>, Status> {
+        unimplemented!("begin_pair")
+    }
+
+    async fn confirm_pair(
+        &self,
+        _: Request<wire::ConfirmPairRequest>,
+    ) -> Result<Response<wire::ConfirmPairResponse>, Status> {
+        unimplemented!("confirm_pair")
+    }
+
+    async fn abandon_pair(
+        &self,
+        _: Request<wire::AbandonPairRequest>,
+    ) -> Result<Response<wire::AbandonPairResponse>, Status> {
+        unimplemented!("abandon_pair")
+    }
+
+    async fn get_device_identity(
+        &self,
+        _: Request<wire::GetDeviceIdentityRequest>,
+    ) -> Result<Response<wire::GetDeviceIdentityResponse>, Status> {
+        unimplemented!("get_device_identity")
+    }
+
+    async fn trust_ssh_peer(
+        &self,
+        _: Request<wire::TrustSshPeerRequest>,
+    ) -> Result<Response<wire::TrustSshPeerResponse>, Status> {
+        unimplemented!("trust_ssh_peer")
+    }
+
+    async fn list_peers(
+        &self,
+        _: Request<wire::ListPeersRequest>,
+    ) -> Result<Response<wire::ListPeersResponse>, Status> {
+        unimplemented!("list_peers")
+    }
+
+    async fn unpair(
+        &self,
+        _: Request<wire::UnpairRequest>,
+    ) -> Result<Response<wire::UnpairResponse>, Status> {
+        unimplemented!("unpair")
     }
 
     async fn submit_report(
         &self,
-        _: wire::SubmitReportRequest,
-    ) -> Result<wire::SubmitReportResponse, RpcError> {
+        _: Request<wire::SubmitReportRequest>,
+    ) -> Result<Response<wire::SubmitReportResponse>, Status> {
         unimplemented!("submit_report")
     }
 
-    async fn update_draft(&self, _: wire::UpdateDraftRequest) -> Result<wire::Draft, RpcError> {
-        unimplemented!("update_draft")
+    async fn offer_sign_in(
+        &self,
+        _: Request<wire::OfferSignInRequest>,
+    ) -> Result<Response<wire::OfferSignInResponse>, Status> {
+        unimplemented!("offer_sign_in")
     }
 
-    async fn get_draft(&self, _: wire::GetDraftRequest) -> Result<wire::Draft, RpcError> {
-        unimplemented!("get_draft")
+    async fn subscribe_sign_in_offers(
+        &self,
+        _: Request<wire::SubscribeSignInOffersRequest>,
+    ) -> Result<Response<Self::SubscribeSignInOffersStream>, Status> {
+        unimplemented!("subscribe_sign_in_offers")
     }
 
-    async fn sign_out(&self) -> Result<(), RpcError> {
-        unimplemented!("sign_out")
-    }
-
-    async fn get_device_identity(&self) -> Result<wire::DeviceIdentity, RpcError> {
-        unimplemented!("get_device_identity")
+    async fn answer_sign_in_offer(
+        &self,
+        _: Request<wire::AnswerSignInOfferRequest>,
+    ) -> Result<Response<wire::AnswerSignInOfferResponse>, Status> {
+        unimplemented!("answer_sign_in_offer")
     }
 }
 
@@ -230,8 +502,22 @@ impl Calls {
         }
     }
 
+    /// The authority every call to `method` (its last path segment) was
+    /// addressed to, in order.
+    pub fn addressed(&self, method: &str) -> Vec<String> {
+        self.addressed
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(path, _)| path.rsplit('/').next() == Some(method))
+            .map(|(_, authority)| authority.clone())
+            .collect()
+    }
+
     /// Answers the next call, a Subscribe, with a fresh stream.
-    pub async fn subscribe_session(&mut self) -> (SubscribeSessionRequest, Feed<SessionEvent>) {
+    pub async fn subscribe_session(
+        &mut self,
+    ) -> (staging::SubscribeSessionRequest, Feed<SessionEvent>) {
         match self.next().await {
             Call::Subscribe(request, reply) => {
                 let (feed, stream) = stream();
@@ -263,42 +549,42 @@ impl Calls {
         }
     }
 
-    pub async fn send_input(&mut self) -> (SendInputRequest, Reply<SendInputResponse>) {
+    pub async fn send_input(&mut self) -> (staging::SendInputRequest, Reply<SendInputResponse>) {
         match self.next().await {
             Call::SendInput(request, reply) => (request, reply),
             other => panic!("expected SendInput, got {other:?}"),
         }
     }
 
-    pub async fn list_items(&mut self) -> (ListItemsRequest, Reply<ListItemsResponse>) {
+    pub async fn list_items(&mut self) -> (staging::ListItemsRequest, Reply<ListItemsResponse>) {
         match self.next().await {
             Call::Fetch(request, reply) => (request, reply),
             other => panic!("expected Fetch, got {other:?}"),
         }
     }
 
-    pub async fn get_item(&mut self) -> (GetItemRequest, Reply<Item>) {
+    pub async fn get_item(&mut self) -> (staging::GetItemRequest, Reply<Item>) {
         match self.next().await {
             Call::Get(request, reply) => (request, reply),
             other => panic!("expected Get, got {other:?}"),
         }
     }
 
-    pub async fn get_blob(&mut self) -> (GetBlobRequest, Reply<GetBlobResponse>) {
+    pub async fn get_blob(&mut self) -> (staging::GetBlobRequest, Reply<staging::GetBlobResponse>) {
         match self.next().await {
             Call::GetBlob(request, reply) => (request, reply),
             other => panic!("expected GetBlob, got {other:?}"),
         }
     }
 
-    pub async fn close_agent(&mut self) -> (FileAgentRequest, Reply<Agent>) {
+    pub async fn close_agent(&mut self) -> (staging::SetFilingRequest, Reply<Agent>) {
         match self.next().await {
             Call::Close(request, reply) => (request, reply),
             other => panic!("expected Stop, got {other:?}"),
         }
     }
 
-    pub async fn resume(&mut self) -> (ResumeAgentRequest, Reply<Agent>) {
+    pub async fn resume(&mut self) -> (staging::ResumeAgentRequest, Reply<Agent>) {
         match self.next().await {
             Call::Resume(request, reply) => (request, reply),
             other => panic!("expected Resume, got {other:?}"),
@@ -311,7 +597,7 @@ impl Calls {
 pub fn agent(kind: Kind) -> Agent {
     Agent {
         agent_id: b"agent-1".to_vec(),
-        host_id: b"host-a".to_vec(),
+        host_id: HOST_A.to_vec(),
         kind: kind as i32,
         name: "worker".into(),
         cwd: "/src".into(),
@@ -427,6 +713,33 @@ pub fn unreachable() -> RpcError {
     RpcError::Refused(wire::Error::because(
         wire::ErrorReason::HostUnreachable,
         "older history is held by the agent's host, which cannot be reached",
+    ))
+}
+
+/// A call the node could not carry to the agent's host, which no link
+/// reaches: it never left.
+pub fn host_unreachable() -> RpcError {
+    RpcError::Refused(wire::Error::because(
+        wire::ErrorReason::HostUnreachable,
+        "desk cannot be reached",
+    ))
+}
+
+/// A call the node could not carry to the agent's host because only the
+/// relay reaches it and the plan lapsed: it never left either.
+pub fn lapsed() -> RpcError {
+    RpcError::Refused(wire::Error::because(
+        wire::ErrorReason::PaymentRequired,
+        "desk can be reached only through the relay, and this account's plan has lapsed",
+    ))
+}
+
+/// A call the node carried to the agent's host and lost the answer to: it
+/// may or may not have arrived.
+pub fn aborted() -> RpcError {
+    RpcError::Refused(wire::Error::new(
+        wire::ErrorCode::Aborted,
+        "desk stopped answering; the call may or may not have arrived",
     ))
 }
 

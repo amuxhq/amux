@@ -413,6 +413,17 @@ impl EmbeddedRuntime {
         Ok(in_process(&self.registry, profile)?)
     }
 
+    /// A client of a profile's node called in memory, as the phone's fleet
+    /// and chats call it: the same stubs a socket's client uses, over the
+    /// node's router, so a call addressed to another host is carried there.
+    pub fn node(&self, profile: ProfileId) -> Result<client::next::Client, EmbeddedError> {
+        let entrance = self.registry.routes(profile)?;
+        Ok(client::next::Client::in_memory(
+            entrance,
+            client::next::Surface::Phone,
+        ))
+    }
+
     /// Runs `work` where the profile's core steps, between two of its
     /// steps: how a check finds out which queue that is.
     pub async fn between_steps<T: Send + 'static>(

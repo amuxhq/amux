@@ -7,6 +7,7 @@ mod addresses;
 mod agent_names;
 mod analytics;
 mod blobs;
+mod carried;
 mod catalogue;
 mod changes;
 mod diff;

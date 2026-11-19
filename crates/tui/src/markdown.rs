@@ -129,9 +129,10 @@ fn render(source: &str, streaming: bool, width: usize, theme: Theme) -> (Vec<MdL
     let options =
         Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS | Options::ENABLE_STRIKETHROUGH;
     let mut drawer = Drawer::new(width, theme);
+    let mut fences = Fences::new(source);
     for (event, range) in Parser::new_ext(source, options).into_offset_iter() {
-        if let Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(_))) = &event {
-            drawer.open_block = streaming && still_open(source, range);
+        if let Some(unclosed) = fences.see(&event, range) {
+            drawer.open_block = streaming && unclosed;
         }
         drawer.event(event);
     }
@@ -146,31 +147,59 @@ fn render(source: &str, streaming: bool, width: usize, theme: Theme) -> (Vec<MdL
     (out, drawer.settled)
 }
 
-/// Whether the fenced block at `range` of a message still streaming is the
-/// one still being written: it runs to the end of what has arrived and its
-/// closing fence has not. An unclosed fence that a quote or list item ends
-/// before the source does is finished; nothing more will join it.
-fn still_open(source: &str, range: std::ops::Range<usize>) -> bool {
-    if range.end < source.trim_end().len() {
-        return false;
+/// Follows the parser's events for the fenced code block the source leaves
+/// unclosed: in a message still streaming, the block still being written.
+///
+/// The parser has already decided where each fence closes (how far a
+/// closing fence may be indented, that it must be as long as the opening,
+/// that a quote's marker is not part of it), so this reads its decision
+/// rather than reading fences again: a block is unclosed when its code
+/// runs to the block's last byte, leaving no closing fence after it, and
+/// the block runs to the end of what has arrived. A block a quote or list
+/// item ends before the source does is finished; nothing more will join
+/// it.
+struct Fences<'a> {
+    source: &'a str,
+    /// Where what has arrived ends, less trailing whitespace.
+    end: usize,
+    /// The fenced block open now: where it ends, and where its code ends.
+    block: Option<(usize, usize)>,
+}
+
+impl<'a> Fences<'a> {
+    fn new(source: &'a str) -> Fences<'a> {
+        Fences {
+            source,
+            end: source.trim_end().len(),
+            block: None,
+        }
     }
-    let block = &source[range];
-    let mut lines = block.lines();
-    let Some(opening) = lines.next() else {
-        return false;
-    };
-    let opening = opening.trim_start();
-    let Some(mark) = opening.chars().next().filter(|c| matches!(c, '`' | '~')) else {
-        return false;
-    };
-    let length = opening.chars().take_while(|c| *c == mark).count();
-    let closed = lines.last().is_some_and(|last| {
-        // A fence inside a quote carries the quote's markers.
-        let last = last.trim_start_matches(|c: char| c == '>' || c.is_whitespace());
-        let run = last.chars().take_while(|c| *c == mark).count();
-        run >= length && last[run..].trim().is_empty()
-    });
-    !closed
+
+    /// Takes the next event; at a fenced block's end, says whether the
+    /// block is unclosed.
+    fn see(&mut self, event: &Event, range: std::ops::Range<usize>) -> Option<bool> {
+        match event {
+            // Before any code, the block's code ends with its opening line.
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(_))) => {
+                let opening = self.source[range.clone()]
+                    .find('\n')
+                    .map_or(range.end, |at| range.start + at + 1);
+                self.block = Some((range.end, opening));
+                None
+            }
+            Event::Text(_) => {
+                if let Some((_, code)) = &mut self.block {
+                    *code = range.end;
+                }
+                None
+            }
+            Event::End(TagEnd::CodeBlock) => {
+                let (block, code) = self.block.take()?;
+                Some(code >= block && block >= self.end)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// What encloses the text being drawn, outermost first.
@@ -207,10 +236,10 @@ struct Drawer {
     /// The item's task is done: its words recede.
     done: bool,
     link: Option<String>,
-    /// The code block being gathered: its fence's info string, its code,
-    /// and whether it is the block still being written.
-    code: Option<(String, String, bool)>,
-    /// The next code block to start is the one still being written.
+    /// The code block being gathered: its fence's info string and its
+    /// code.
+    code: Option<(String, String)>,
+    /// The code block ending next is the one still being written.
     open_block: bool,
     /// Every code block drawn so far is coloured as far as it will be.
     settled: bool,
@@ -278,7 +307,7 @@ impl Drawer {
     }
 
     fn event(&mut self, event: Event<'_>) {
-        if let Some((_, code, _)) = &mut self.code {
+        if let Some((_, code)) = &mut self.code {
             match event {
                 Event::Text(text) => {
                     code.push_str(&text);
@@ -362,11 +391,7 @@ impl Drawer {
                     CodeBlockKind::Fenced(language) => language.into_string(),
                     CodeBlockKind::Indented => String::new(),
                 };
-                self.code = Some((
-                    language,
-                    String::new(),
-                    std::mem::take(&mut self.open_block),
-                ));
+                self.code = Some((language, String::new()));
             }
             Tag::List(first) => {
                 self.flush();
@@ -443,7 +468,8 @@ impl Drawer {
                 }
             }
             TagEnd::CodeBlock => {
-                if let Some((language, code, open)) = self.code.take() {
+                let open = std::mem::take(&mut self.open_block);
+                if let Some((language, code)) = self.code.take() {
                     self.code_block(&language, &code, open);
                 }
             }
@@ -1150,14 +1176,10 @@ mod tests {
     fn open_blocks(source: &str) -> Vec<bool> {
         let options =
             Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS | Options::ENABLE_STRIKETHROUGH;
+        let mut fences = Fences::new(source);
         Parser::new_ext(source, options)
             .into_offset_iter()
-            .filter_map(|(event, range)| match event {
-                Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(_))) => {
-                    Some(still_open(source, range))
-                }
-                _ => None,
-            })
+            .filter_map(|(event, range)| fences.see(&event, range))
             .collect()
     }
 
@@ -1178,6 +1200,17 @@ mod tests {
             ("> ```sh\n> ls\n> ```", vec![false]),
             // A quote's fence the quote has ended is finished.
             ("> ```sh\n> ls\n\nafter", vec![false]),
+            // A fence indented four spaces is code, not a closing fence;
+            // three spaces still close.
+            ("```rust\nfn a() {}\n    ```\n", vec![true]),
+            ("```rust\nfn a() {}\n   ```\n", vec![false]),
+            // Outside a quote, a line starting `>` is code.
+            ("```md\n> ```\n", vec![true]),
+            ("```md\n> quoted\n", vec![true]),
+            ("```rust\n```", vec![false]),
+            ("```rust", vec![true]),
+            // A list item's fence a dedented paragraph ends is finished.
+            ("- ```sh\n  ls\n\nafter", vec![false]),
         ] {
             assert_eq!(open_blocks(source), open, "{source:?}");
         }

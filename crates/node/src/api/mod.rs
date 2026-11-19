@@ -22,6 +22,7 @@ mod host {
 }
 mod local;
 mod peer;
+pub(crate) mod testing;
 
 use std::sync::Weak;
 

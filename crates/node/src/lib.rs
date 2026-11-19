@@ -128,6 +128,7 @@ pub use workspaces::WORKTREES;
 pub mod harness {
     pub use agent_dir::SystemClock;
 
+    pub use crate::api::testing::{Calling, InMemory, Served, served_as};
     pub use crate::auth::claims::Tier;
     pub use crate::discovery::{Advertisement, Discovery, DiscoveryEvent, ScriptedDiscovery};
     pub use crate::identity::{device_key_path, load_or_create_device_identity_in};

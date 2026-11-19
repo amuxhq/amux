@@ -58,11 +58,26 @@ impl ProfileRuntime {
             // to use, not one that came up while it waited. The host reads
             // offline once none is up, and a link of its own coming up
             // again is what releases sends held for it.
-            Ok(Err(_)) => Err(Unreached::Unreachable),
+            Ok(Err(_)) => Err(self.unreached(host)),
             Err(_) => {
                 edge.calls_timed_out(host, since);
-                Err(Unreached::Unreachable)
+                Err(self.unreached(host))
             }
+        }
+    }
+
+    /// Why `host` has no channel, when the channel lookup did not say. A
+    /// host that refused this one's certificate closed the link as it did,
+    /// so a later lookup finds no route at all; the refusal stays on the
+    /// host's entry, and is the reason.
+    fn unreached(&self, host: HostId) -> Unreached {
+        if self
+            .host_entry_of(host)
+            .is_some_and(|entry| entry.revoked())
+        {
+            Unreached::Revoked
+        } else {
+            Unreached::Unreachable
         }
     }
 }

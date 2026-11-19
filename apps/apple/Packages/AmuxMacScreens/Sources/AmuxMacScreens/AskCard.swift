@@ -361,10 +361,14 @@ struct PatchText: View {
         }
     }
 
+    /// How strongly a changed line's green or red lies under it: enough to
+    /// read as a change, light enough that its code's colours still read.
+    static let wash = 0.09
+
     private var tint: Color {
         switch kind {
-        case .added: Palette.added.opacity(0.09)
-        case .removed: Palette.removed.opacity(0.09)
+        case .added: Palette.added.opacity(Self.wash)
+        case .removed: Palette.removed.opacity(Self.wash)
         case .context: .clear
         }
     }

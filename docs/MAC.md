@@ -225,7 +225,9 @@ generated values (`AmuxValues`), which build for macOS as well as iOS:
   shared view through the bridge, as the phone's do (`CodeHighlighting` in
   `AmuxWords`), drawn in the palette's `syntax` colours. The app puts the
   bridge's into the window's environment; the storybook, which links no
-  bridge, draws code plain.
+  bridge, draws code plain. `just mac test` holds every syntax colour to
+  4.5:1 on the code well and under an edit's green and red, in light and
+  dark, with the phone's checking code (`SyntaxContrast`).
 
 Screens, navigation and layout are the desktop's own; nothing from
 `AmuxFeatures` or `AmuxShell` is linked. The words are shared: rows and chats

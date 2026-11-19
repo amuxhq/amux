@@ -199,7 +199,9 @@ asked for again 50 ms later; settled answers are kept by content, so a
 block scrolled back into view draws coloured at once, and while a newer
 answer is on its way the last one keeps colouring the lines that still read
 the same. `SyntaxContrastTests` holds every token colour to 4.5:1 on the
-code well and under an edit card's green and red.
+code well and under an edit card's green and red; the Mac's palette is held
+to the same rule, by the same checking code (`CodeContrast`), in the Mac's
+own tests.
 
 ## Accounts and profiles
 

@@ -516,3 +516,32 @@ async fn a_host_being_reached_holds_up_no_call_answered_here() {
     assert!(!waiting.is_finished());
     waiting.abort();
 }
+
+/// A link's entry has no router: a call that arrives from a paired host
+/// addressed to a third host is answered here, never passed on, even with
+/// a carrier able to reach that host.
+#[tokio::test]
+async fn a_call_arriving_on_a_link_for_a_third_host_is_answered_here() {
+    let far = Far::new();
+    let (events, _) = mpsc::unbounded_channel();
+    let handlers = tonic::service::Routes::new(Probe {
+        name: "near",
+        events,
+    });
+    let link = crate::api::entrance(&Weak::new(), Entry::Link, handlers);
+    let mut grpc = client(&link, Some(wire::authority(&far.id))).await;
+    let mut request = tonic::Request::new(Vec::new());
+    request
+        .extensions_mut()
+        .insert(crate::transport::BoxedGrpcConnectInfo {
+            auth: crate::transport::BoxedGrpcAuth::Trusted {
+                peer: HostId::from_u128(9),
+            },
+        });
+    let answer = grpc
+        .unary(request, PathAndQuery::from_static("/probe.Probe/Who"), Raw)
+        .await
+        .unwrap();
+    let answer = String::from_utf8(answer.into_inner()).unwrap();
+    assert!(answer.starts_with("answered-by=near "), "{answer}");
+}

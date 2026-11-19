@@ -165,6 +165,20 @@ impl Daemon {
             };
             let committed = self.store.commit(&key, &batch.frames, clock)?;
             self.committed(agent);
+            // A step that ends the incarnation is the process saying it is
+            // on its way out, committed with the cause it puts on the row,
+            // which a client may read as suspended before the process has
+            // gone. From here a resume, a wake for a person's input among
+            // them, waits for the exit instead of finding the agent live:
+            // the process takes nothing more, and what is handed to it in
+            // its last moments goes unanswered.
+            if batch
+                .frames
+                .iter()
+                .any(|(_, step)| step.incarnation_end.is_some())
+            {
+                self.exiting(agent);
+            }
             report.turn_ends = batch
                 .frames
                 .iter()
@@ -486,6 +500,100 @@ mod tests {
             answered(&again, call),
             vec!["k999"],
             "CaughtUp is answered once per Hello"
+        );
+    }
+
+    /// The step that ends an incarnation as suspended is committed while
+    /// its process is still connected, and the row then reads suspended to
+    /// every client. A person's input typed on that row asks for a wake,
+    /// which must wait for the process to go and then start the next
+    /// incarnation with the input first. Refused as live, it was handed to
+    /// the closing process instead, which exits without answering it.
+    #[test]
+    fn a_wake_after_the_suspension_is_committed_waits_for_the_exit() {
+        let mut rig = rig();
+        let key = AgentKey::new(OWN, AGENT.0);
+        let mut row = rig.daemon.store.agent(&key).unwrap().unwrap();
+        row.incarnation = 1;
+        rig.daemon.store.put_agent(&row).unwrap();
+        step(&mut rig.daemon, Input::Swept);
+        step(&mut rig.daemon, Input::AgentHello { agent: AGENT });
+        rig.journal
+            .append(&Step {
+                incarnation_end: Some(wire::IncarnationEnd {
+                    cause: wire::ExitCause::Suspended as i32,
+                    detail: None,
+                }),
+                ..Step::default()
+            })
+            .expect("the journal takes a step");
+        step(&mut rig.daemon, Input::Nudge { agent: AGENT });
+        let row = rig.daemon.store.agent(&key).unwrap().unwrap();
+        assert_eq!(row.exit_cause, wire::ExitCause::Suspended as i32);
+
+        let call = CallId(1);
+        let wake = crate::families::Resume {
+            agent: AGENT,
+            bootstrap: Some(wire::Bootstrap {
+                of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+                    input_id: b"typed".to_vec(),
+                    prompt: Some(wire::PromptInput {
+                        text: "carry on".into(),
+                        attachments: Vec::new(),
+                    }),
+                })),
+            }),
+            if_suspended: true,
+        };
+        let out = step(
+            &mut rig.daemon,
+            Input::ClientCall {
+                call,
+                request: ClientRequest::ResumeAgent(Box::new(wake)),
+            },
+        );
+        assert!(
+            !out.iter().any(
+                |output| matches!(output, Output::EndCall { call: ended, .. } if *ended == call)
+            ),
+            "the wake waits for the exit rather than finding the agent live: {out:?}"
+        );
+
+        let gone = step(
+            &mut rig.daemon,
+            Input::ControlClosed {
+                agent: AGENT,
+                ended: crate::Ended::Exited,
+            },
+        );
+        let unlock = gone.iter().find_map(|output| match output {
+            Output::Job {
+                id,
+                op: crate::Job::AwaitUnlocked { agent, .. },
+            } if *agent == AGENT => Some(*id),
+            _ => None,
+        });
+        let unlock = unlock.unwrap_or_else(|| panic!("the wake goes on once it is gone: {gone:?}"));
+        let unlocked = step(
+            &mut rig.daemon,
+            Input::JobDone {
+                job: unlock,
+                result: crate::payload::JobResult::Done,
+            },
+        );
+        let asked = unlocked.iter().find_map(|output| match output {
+            Output::Job {
+                op: crate::Job::NextSpec { bootstrap, .. },
+                ..
+            } => Some(bootstrap.clone()),
+            _ => None,
+        });
+        assert!(
+            matches!(
+                asked.flatten().and_then(|bootstrap| bootstrap.of),
+                Some(wire::bootstrap::Of::Prompt(prompt)) if prompt.input_id == b"typed"
+            ),
+            "the next incarnation starts with the input: {unlocked:?}"
         );
     }
 

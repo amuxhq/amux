@@ -291,8 +291,10 @@ impl ProfileRuntime {
     /// prompt is the next incarnation's first input, so the answer is that
     /// it was taken; any other input goes to the new process once it is
     /// connected. The core decides: it waits out an exit the agent chose
-    /// and then wakes it only if the exit left it suspended, else the
-    /// input is refused as exited; an agent the daemon is stopping is
+    /// (one it refused an input for, or whose ending step is committed, so
+    /// a row read as suspended is never one whose process is handed the
+    /// input) and then wakes it only if the exit left it suspended, else
+    /// the input is refused as exited; an agent the daemon is stopping is
     /// answered at once with the refusal the input had.
     async fn wake_with(
         &self,
@@ -319,8 +321,9 @@ impl ProfileRuntime {
                         })),
                     });
                 }
-                // Running: started by something else first, still on its way
-                // out, or woken for an input that is not a prompt.
+                // Running: started by something else first, or woken for an
+                // input that is not a prompt. A process on its way out is
+                // not one: the wake waits for it to go.
                 Ok(_) | Err(RegistryError::Live(_)) => {
                     let verdict = self
                         .relay(

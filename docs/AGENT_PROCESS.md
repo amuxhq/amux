@@ -357,7 +357,11 @@ suspensions:
   agent is leaving of its own accord, as it does when it suspends, and then
   wakes it if the exit left it suspended or is refused as exited; input to
   an agent the daemon is stopping is answered as exiting at once, not
-  after the stop's deadline;
+  after the stop's deadline. The row reads suspended from the commit of
+  the step that ends the incarnation, which can come before the process
+  has gone; from that commit the core counts the process as leaving, so
+  input typed on that row waits for the exit too rather than going to a
+  process that exits without answering it;
 - stopping or closing it marks it exited with cause `STOPPED` (closed, for a
   close), and its children follow as for any exit; deleting it removes it;
 - it is no awake member of its workspace while it has no process, and a

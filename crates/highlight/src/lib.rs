@@ -19,6 +19,10 @@
 //! [`Highlighter::highlight_streaming`] passes over its completed lines in
 //! the background at a bounded rate and fills in the rest plain.
 //!
+//! The same grammars give a file's [`Definitions`]: its modules, types and
+//! functions, from which a diff says where a hunk sits (`impl Store › fn
+//! open`) and which definitions its changes touch.
+//!
 //! ```
 //! use highlight::{Highlighter, Language, TokenKind};
 //!
@@ -30,6 +34,7 @@
 //! assert_eq!(block.lines[0][0].kind, TokenKind::Keyword);
 //! ```
 
+mod definitions;
 mod grammar;
 mod highlighter;
 mod language;
@@ -37,6 +42,7 @@ mod render;
 
 use std::sync::Arc;
 
+pub use definitions::{Definition, DefinitionKind, Definitions, LineRange};
 pub use highlighter::{Highlighter, Job, STREAM_INTERVAL};
 pub use language::Language;
 

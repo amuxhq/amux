@@ -9,9 +9,9 @@
 //! query of the crate's own, under `queries/<language>/`, runs after it and
 //! says why.
 //!
-//! The table holds every query the crate runs over a language's trees, so
-//! a query of another kind (definitions, say) is one more field on
-//! [`Grammar`] and one more file under `queries/<language>/`.
+//! The table holds every query the crate runs over a language's trees:
+//! besides highlighting, the definitions query of each language that has
+//! one, which is the crate's own (`queries/<language>/definitions.scm`).
 
 use tree_sitter_highlight::HighlightConfiguration;
 use tree_sitter_language::LanguageFn;
@@ -94,7 +94,90 @@ pub(crate) struct Grammar {
     pub(crate) injects: &'static [GrammarId],
     /// Capture names this grammar colours otherwise than the rest do.
     pub(crate) kinds: &'static [(&'static str, TokenKind)],
+    /// How to find the definitions in a file, for a language that has a
+    /// definitions query.
+    pub(crate) definitions: Option<&'static DefinitionRules>,
 }
+
+/// A language's definitions query and the node kinds that decide how far
+/// each definition it finds reaches.
+pub(crate) struct DefinitionRules {
+    /// Each pattern captures a definition's node as `@definition.<kind>`
+    /// and its name as `@name` (or, capturing no name, takes the node's
+    /// `name` field), and may set `keyword` (the word before the name in
+    /// its label) and `suffix` (the text after it). A node two patterns
+    /// capture is the first's. A pattern's predicates go inside its
+    /// parentheses, `((x) @definition.y (#set! keyword "z"))`: written
+    /// after the capture at the top level, tree-sitter drops them without
+    /// a word.
+    pub(crate) query: &'static str,
+    /// Nodes that, wrapping a definition and nothing like it, belong to
+    /// it: `export`, decorators, `template <...>`.
+    pub(crate) wrappers: &'static [&'static str],
+    /// Nodes that belong to the definition straight below them: its doc
+    /// comment, attributes and decorators.
+    pub(crate) leading: &'static [&'static str],
+}
+
+static RUST: DefinitionRules = DefinitionRules {
+    query: include_str!("../queries/rust/definitions.scm"),
+    wrappers: &[],
+    leading: &["attribute_item", "line_comment", "block_comment"],
+};
+
+static SWIFT: DefinitionRules = DefinitionRules {
+    query: include_str!("../queries/swift/definitions.scm"),
+    wrappers: &[],
+    leading: &["comment", "multiline_comment"],
+};
+
+/// TypeScript's, which TSX shares: TSX only adds JSX's nodes, and no
+/// definition is one.
+static TYPESCRIPT: DefinitionRules = DefinitionRules {
+    query: include_str!("../queries/typescript/definitions.scm"),
+    wrappers: &[
+        "export_statement",
+        "lexical_declaration",
+        "ambient_declaration",
+    ],
+    leading: &["comment", "decorator"],
+};
+
+static JAVASCRIPT: DefinitionRules = DefinitionRules {
+    query: include_str!("../queries/javascript/definitions.scm"),
+    wrappers: &["export_statement", "lexical_declaration"],
+    leading: &["comment", "decorator"],
+};
+
+static PYTHON: DefinitionRules = DefinitionRules {
+    query: include_str!("../queries/python/definitions.scm"),
+    wrappers: &["decorated_definition"],
+    leading: &["comment"],
+};
+
+static GO: DefinitionRules = DefinitionRules {
+    query: include_str!("../queries/go/definitions.scm"),
+    wrappers: &["type_declaration", "const_declaration", "var_declaration"],
+    leading: &["comment"],
+};
+
+static C: DefinitionRules = DefinitionRules {
+    query: include_str!("../queries/c/definitions.scm"),
+    wrappers: &[],
+    leading: &["comment"],
+};
+
+static CPP: DefinitionRules = DefinitionRules {
+    query: include_str!("../queries/cpp/definitions.scm"),
+    wrappers: &["template_declaration"],
+    leading: &["comment"],
+};
+
+static JAVA: DefinitionRules = DefinitionRules {
+    query: include_str!("../queries/java/definitions.scm"),
+    wrappers: &[],
+    leading: &["line_comment", "block_comment"],
+};
 
 pub(crate) static GRAMMARS: [Grammar; 18] = [
     Grammar {
@@ -111,6 +194,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         locals: &[],
         injects: &[GrammarId::Rust],
         kinds: &[],
+        definitions: Some(&RUST),
     },
     Grammar {
         id: GrammarId::Swift,
@@ -123,6 +207,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         locals: &[tree_sitter_swift::LOCALS_QUERY],
         injects: &[],
         kinds: &[],
+        definitions: Some(&SWIFT),
     },
     Grammar {
         id: GrammarId::TypeScript,
@@ -139,6 +224,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         ],
         injects: &[],
         kinds: &[],
+        definitions: Some(&TYPESCRIPT),
     },
     Grammar {
         id: GrammarId::Tsx,
@@ -156,6 +242,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         ],
         injects: &[],
         kinds: &[],
+        definitions: Some(&TYPESCRIPT),
     },
     Grammar {
         id: GrammarId::JavaScript,
@@ -173,6 +260,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         locals: &[tree_sitter_javascript::LOCALS_QUERY],
         injects: &[],
         kinds: &[],
+        definitions: Some(&JAVASCRIPT),
     },
     Grammar {
         id: GrammarId::Python,
@@ -186,6 +274,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         locals: &[],
         injects: &[],
         kinds: &[],
+        definitions: Some(&PYTHON),
     },
     Grammar {
         id: GrammarId::Go,
@@ -199,6 +288,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         locals: &[],
         injects: &[],
         kinds: &[],
+        definitions: Some(&GO),
     },
     Grammar {
         id: GrammarId::Shell,
@@ -209,6 +299,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         locals: &[],
         injects: &[],
         kinds: &[],
+        definitions: None,
     },
     Grammar {
         id: GrammarId::Json,
@@ -219,6 +310,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         locals: &[],
         injects: &[],
         kinds: &[],
+        definitions: None,
     },
     Grammar {
         id: GrammarId::Yaml,
@@ -231,6 +323,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         // A YAML file is mostly keys: in the reading ink it would be one
         // colour down the left, so they take the keyword's, as tags do.
         kinds: &[("property", TokenKind::Keyword)],
+        definitions: None,
     },
     Grammar {
         id: GrammarId::Toml,
@@ -241,6 +334,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         locals: &[],
         injects: &[],
         kinds: &[("property", TokenKind::Keyword)],
+        definitions: None,
     },
     Grammar {
         id: GrammarId::C,
@@ -254,6 +348,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         locals: &[],
         injects: &[],
         kinds: &[],
+        definitions: Some(&C),
     },
     Grammar {
         id: GrammarId::Cpp,
@@ -270,6 +365,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         locals: &[],
         injects: &[],
         kinds: &[],
+        definitions: Some(&CPP),
     },
     Grammar {
         id: GrammarId::Java,
@@ -280,6 +376,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         locals: &[],
         injects: &[],
         kinds: &[],
+        definitions: Some(&JAVA),
     },
     Grammar {
         id: GrammarId::Html,
@@ -291,6 +388,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         locals: &[],
         injects: &[GrammarId::JavaScript, GrammarId::Css],
         kinds: &[],
+        definitions: None,
     },
     Grammar {
         id: GrammarId::Css,
@@ -302,6 +400,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         injects: &[],
         // Property names, as against the values they are given.
         kinds: &[("property", TokenKind::Type)],
+        definitions: None,
     },
     Grammar {
         id: GrammarId::Markdown,
@@ -315,6 +414,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         locals: &[],
         injects: &[GrammarId::MarkdownInline],
         kinds: &[],
+        definitions: None,
     },
     Grammar {
         id: GrammarId::MarkdownInline,
@@ -325,6 +425,7 @@ pub(crate) static GRAMMARS: [Grammar; 18] = [
         locals: &[],
         injects: &[],
         kinds: &[],
+        definitions: None,
     },
 ];
 

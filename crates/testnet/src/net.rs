@@ -1432,10 +1432,9 @@ impl Net {
 
     /// `parent` spawns `decl` as its own spawn tool does: the request goes
     /// to `parent`'s agent process on its own socket, and that process
-    /// asks its daemon on its tools socket. It names `decl.host` as the
-    /// host: the parent's host resolves the name among the hosts it trusts
-    /// and forwards the create there, where the child plays its script in
-    /// that host's work directory.
+    /// makes the create, addressed to `decl.host` by its id, as the spawn
+    /// tool does after resolving the name: names are never addresses. The
+    /// child plays its script in that host's work directory.
     pub async fn spawn_child(
         &mut self,
         parent: &str,
@@ -1459,7 +1458,7 @@ impl Net {
         let provider = self.provider_of(&decl)?;
         let request = CreateAgentRequest {
             agent_id: id.as_bytes().to_vec(),
-            host: Some(wire::HostRef::named(decl.host.clone())),
+            host: Some(wire::HostRef::id(host.host_id.as_bytes().to_vec())),
             name: Some(decl.name.clone()),
             initial_prompt: decl
                 .prompt

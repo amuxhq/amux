@@ -118,7 +118,7 @@ impl ClientApi {
         &self,
         runtime: &ProfileRuntime,
         shape: Option<InputShape>,
-        on: analytics::On,
+        on: analytics::Origin,
         queued: Option<bool>,
     ) {
         if let (true, Some(shape), Some(queued)) = (self.counts(), &shape, queued) {
@@ -343,13 +343,15 @@ impl AgentService for ClientApi {
                 )
             });
         let on = if host == runtime.host() {
-            analytics::On::ThisHost
+            analytics::Origin::Here
         } else {
-            analytics::On::PairedHost(host)
+            analytics::Origin::PairedHost(host)
         };
         let spawned = match on {
-            analytics::On::ThisHost => runtime.spawn(request, self.caller).await,
-            analytics::On::PairedHost(host) => runtime.spawn_on(host, request, self.caller).await,
+            analytics::Origin::Here => runtime.spawn(request, self.caller).await,
+            analytics::Origin::PairedHost(host) => {
+                runtime.spawn_on(host, request, self.caller).await
+            }
         }
         .map_err(|error| status(error.to_wire()))?;
         if let Some(kind) = kind {
@@ -359,7 +361,7 @@ impl AgentService for ClientApi {
             };
             runtime
                 .analytics()
-                .record(analytics::Event::AgentCreated { kind, on, by });
+                .record(analytics::Event::AgentCreated { kind, from: on, by });
             self.record_input(&runtime, first, on, Some(false));
         }
         Ok(Response::new(CreateAgentResponse {
@@ -469,7 +471,7 @@ impl AgentService for ClientApi {
         };
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             let resumed = forwarded(&runtime, host, request).await?;
-            let on = analytics::On::PairedHost(host);
+            let on = analytics::Origin::PairedHost(host);
             self.record_input(&runtime, first, on, Some(false));
             return Ok(resumed);
         }
@@ -485,7 +487,7 @@ impl AgentService for ClientApi {
             runtime.resume(id, bootstrap).await
         }
         .map_err(|error| status(error.to_wire()))?;
-        self.record_input(&runtime, first, analytics::On::ThisHost, Some(false));
+        self.record_input(&runtime, first, analytics::Origin::Here, Some(false));
         Ok(Response::new(ResumeAgentResponse {
             agent: Some(resumed),
         }))
@@ -745,7 +747,7 @@ impl SessionService for ClientApi {
             let forwarded = runtime.on_peer(host, request).await;
             return match forwarded {
                 Ok(verdict) => {
-                    let on = analytics::On::PairedHost(host);
+                    let on = analytics::Origin::PairedHost(host);
                     self.record_input(&runtime, shape, on, telemetry::accepted(&verdict));
                     Ok(Response::new(verdict))
                 }
@@ -771,7 +773,7 @@ impl SessionService for ClientApi {
             .send_input(&request)
             .await
             .map_err(|error| status(error.to_wire()))?;
-        let on = analytics::On::ThisHost;
+        let on = analytics::Origin::Here;
         self.record_input(&runtime, shape, on, telemetry::accepted(&verdict));
         Ok(Response::new(verdict))
     }

@@ -1131,6 +1131,61 @@ impl ProfileRuntime {
         Ok(created)
     }
 
+    /// Creates an agent on this host for `caller`. The parent is the
+    /// calling agent and a person's agent has none, so no request can name
+    /// another. One of this host's agents that names no folder starts its
+    /// child where it works itself; an agent of another host has no folder
+    /// here to start from, so it must name one. Whether this host runs the
+    /// kind asked for is this host's own word, and a kind it does not run
+    /// is refused. A create for an agent that has already exited, or is
+    /// gone, is refused by the family rule as the row is written.
+    pub(crate) async fn create(
+        &self,
+        request: wire::amux::staging::CreateAgentRequest,
+        caller: &crate::api::Caller,
+    ) -> Result<Agent, RegistryError> {
+        use wire::amux::staging::create_agent_request::Agent as Asked;
+
+        use crate::api::Caller;
+        let (works_here, parent) = match caller {
+            Caller::Person { .. } => (None, None),
+            Caller::Agent { agent, .. } if agent.host == self.host() => (Some(agent.agent), None),
+            Caller::Agent { agent, .. } => {
+                if request.cwd.is_empty() {
+                    let here = self
+                        .edge()
+                        .map_or_else(|| format!("host {}", self.host()), |edge| edge.host_name());
+                    return Err(RegistryError::NoFarCwd(here));
+                }
+                let parent = AgentRef {
+                    host_id: agent.host.as_bytes().to_vec(),
+                    agent_id: agent.agent.as_bytes().to_vec(),
+                };
+                (None, Some(parent))
+            }
+        };
+        let agent = request.agent.map(|asked| match asked {
+            Asked::ClaudePty(config) => wire::create_agent_request::Agent::ClaudePty(config),
+            Asked::ClaudeSdk(config) => wire::create_agent_request::Agent::ClaudeSdk(config),
+            Asked::Codex(config) => wire::create_agent_request::Agent::Codex(config),
+        });
+        // The registry's request has a host and a parent; this host is the
+        // host, and the parent is settled above from the caller alone.
+        let request = CreateAgentRequest {
+            agent_id: request.agent_id,
+            host: None,
+            name: request.name,
+            parent,
+            cwd: request.cwd,
+            agent,
+            initial_prompt: request.initial_prompt,
+            new_workspace: request.new_workspace,
+            remember_model: request.remember_model,
+            remember_effort: request.remember_effort,
+        };
+        self.spawn(request, works_here).await
+    }
+
     /// Keeps a person's model or effort as what this host's later agents
     /// of that kind start with. Failing to keep it costs nothing but the
     /// memory, so it is only logged.

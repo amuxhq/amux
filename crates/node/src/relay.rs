@@ -468,6 +468,46 @@ impl ProfileRuntime {
         self.send_message_from(envelope, from).await
     }
 
+    /// Sends one of this host's agents a message from `caller`, as
+    /// AgentService's SendMessage asks. The stored sender is the caller,
+    /// since the request has nowhere to name one: an agent, of this host or
+    /// of the paired host it called from, or a person. Who the sender is
+    /// also says who may wake the recipient: a person or its parent always,
+    /// another agent unless it is closed. A person reads the same wherever
+    /// they are, so a person at a paired host is stored and woken with as a
+    /// person here is. Answers once the recipient has accepted.
+    pub(crate) async fn send_message_by(
+        &self,
+        request: wire::amux::staging::SendMessageRequest,
+        caller: &crate::api::Caller,
+    ) -> Result<SendMessageResponse, RelayError> {
+        use crate::api::Caller;
+        let from = match caller {
+            Caller::Person { .. } => MessageFrom::Person,
+            Caller::Agent { agent, .. } if agent.host == self.host() => {
+                MessageFrom::Agent(core_agent(agent.agent))
+            }
+            Caller::Agent { agent, name } => MessageFrom::Peer(AgentSender {
+                agent: Some(AgentRef {
+                    host_id: agent.host.as_bytes().to_vec(),
+                    agent_id: agent.agent.as_bytes().to_vec(),
+                }),
+                name: name.clone(),
+            }),
+        };
+        let envelope = Envelope {
+            from: None,
+            id: request.id,
+            to: Some(AgentRef {
+                host_id: self.host().as_bytes().to_vec(),
+                agent_id: request.agent_id,
+            }),
+            body: request.message.map(envelope::Body::Message),
+            context: request.context,
+        };
+        self.send_message_from(envelope, from).await
+    }
+
     async fn send_message_from(
         &self,
         mut envelope: Envelope,

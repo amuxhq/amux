@@ -270,11 +270,14 @@ impl CheckId {
     }
 }
 
-/// Where an act happened: on this host, or on a paired host, which is then
-/// named so a person's hosts can be joined without an account.
+/// Where an act came from, as the host it was done on records it: a person
+/// or an agent here, or one at a paired host, which is then named so a
+/// person's hosts can be joined without an account. Every act is counted by
+/// the host that does it, the only one that sees it, so the counting host
+/// says where it came from rather than where it went.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum On {
-    ThisHost,
+pub enum Origin {
+    Here,
     PairedHost(HostId),
 }
 
@@ -367,17 +370,17 @@ pub enum Event {
     },
     AgentCreated {
         kind: Kind,
-        on: On,
+        from: Origin,
         by: By,
     },
     PromptSent {
         kind: Kind,
-        on: On,
+        from: Origin,
         queued: bool,
     },
     AskAnswered {
         kind: Kind,
-        on: On,
+        from: Origin,
         ask: Ask,
     },
     PairingStarted {
@@ -543,19 +546,19 @@ impl Event {
                 }
             }
             Event::ClientOpened { client } => put("surface", token(*client)),
-            Event::AgentCreated { kind, on, by } => {
+            Event::AgentCreated { kind, from, by } => {
                 put("kind", token(*kind));
-                where_(&mut put, *on);
+                origin(&mut put, *from);
                 put("by", token(*by));
             }
-            Event::PromptSent { kind, on, queued } => {
+            Event::PromptSent { kind, from, queued } => {
                 put("kind", token(*kind));
-                where_(&mut put, *on);
+                origin(&mut put, *from);
                 put("queued", json!(queued));
             }
-            Event::AskAnswered { kind, on, ask } => {
+            Event::AskAnswered { kind, from, ask } => {
                 put("kind", token(*kind));
-                where_(&mut put, *on);
+                origin(&mut put, *from);
                 put("ask", token(*ask));
             }
             Event::PairingStarted { role, method } => {
@@ -660,17 +663,17 @@ impl Event {
             },
             Event::AgentCreated {
                 kind: Kind::ClaudeSdk,
-                on: On::ThisHost,
+                from: Origin::Here,
                 by: By::Person,
             },
             Event::PromptSent {
                 kind: Kind::Codex,
-                on: On::PairedHost(host),
+                from: Origin::PairedHost(host),
                 queued: false,
             },
             Event::AskAnswered {
                 kind: Kind::ClaudePty,
-                on: On::PairedHost(host),
+                from: Origin::PairedHost(host),
                 ask: Ask::Permission,
             },
             Event::PairingStarted {
@@ -733,11 +736,11 @@ fn token<T: Token>(value: T) -> Value {
     json!(value.as_str())
 }
 
-fn where_(put: &mut impl FnMut(&str, Value), on: On) {
-    match on {
-        On::ThisHost => put("on", json!("this_host")),
-        On::PairedHost(host) => {
-            put("on", json!("paired_host"));
+fn origin(put: &mut impl FnMut(&str, Value), from: Origin) {
+    match from {
+        Origin::Here => put("from", json!("here")),
+        Origin::PairedHost(host) => {
+            put("from", json!("paired_host"));
             put("remote_host", json!(host.to_string()));
         }
     }

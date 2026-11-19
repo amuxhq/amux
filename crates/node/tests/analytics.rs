@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use analytics::{Ask, Client, Event, Kind, On, Recording};
+use analytics::{Ask, Client, Event, Kind, Origin, Recording};
 use node::{ClientApi, Daemon, Generation, ProfileRuntime, StartOptions, Telemetry};
 use support::synthetic::*;
 use support::*;
@@ -198,7 +198,7 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
                 host,
                 Event::PromptSent {
                     kind: Kind::ClaudeSdk,
-                    on: On::ThisHost,
+                    from: Origin::Here,
                     queued: true
                 }
             ),
@@ -206,7 +206,7 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
                 host,
                 Event::AskAnswered {
                     kind: Kind::ClaudeSdk,
-                    on: On::ThisHost,
+                    from: Origin::Here,
                     ask: Ask::Question
                 }
             ),

@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use analytics::{Ask, CheckIn, Counts, Event, Kind, On, Route};
+use analytics::{Ask, CheckIn, Counts, Event, Kind, Origin, Route};
 
 use crate::HostId;
 use crate::daemon::Installation;
@@ -153,10 +153,10 @@ impl InputShape {
     }
 
     /// The event once the input was accepted.
-    pub(crate) fn event(&self, on: On, queued: bool) -> Event {
+    pub(crate) fn event(&self, from: Origin, queued: bool) -> Event {
         match *self {
-            Self::Prompt(kind, _) => Event::PromptSent { kind, on, queued },
-            Self::Answer(kind, ask) => Event::AskAnswered { kind, on, ask },
+            Self::Prompt(kind, _) => Event::PromptSent { kind, from, queued },
+            Self::Answer(kind, ask) => Event::AskAnswered { kind, from, ask },
         }
     }
 
@@ -381,10 +381,10 @@ mod tests {
             of: Some(wire::codex_input::Of::Prompt(wire::PromptInput::default())),
         });
         assert_eq!(
-            InputShape::of(&prompt).map(|shape| shape.event(On::ThisHost, true)),
+            InputShape::of(&prompt).map(|shape| shape.event(Origin::Here, true)),
             Some(Event::PromptSent {
                 kind: Kind::Codex,
-                on: On::ThisHost,
+                from: Origin::Here,
                 queued: true
             })
         );
@@ -396,10 +396,10 @@ mod tests {
         });
         let peer = HostId::from_u128(3);
         assert_eq!(
-            InputShape::of(&answer).map(|shape| shape.event(On::PairedHost(peer), false)),
+            InputShape::of(&answer).map(|shape| shape.event(Origin::PairedHost(peer), false)),
             Some(Event::AskAnswered {
                 kind: Kind::ClaudeSdk,
-                on: On::PairedHost(peer),
+                from: Origin::PairedHost(peer),
                 ask: Ask::Plan
             })
         );

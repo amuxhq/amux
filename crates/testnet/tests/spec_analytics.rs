@@ -2,7 +2,7 @@
 //! in its own role, and a prompt to a paired host's agent is counted once,
 //! on the host where the person sent it, naming the host it went to.
 
-use analytics::{CheckCause, Event, Kind, Method, On, PairingFailure, Recording, Role};
+use analytics::{CheckCause, Event, Kind, Method, Origin, PairingFailure, Recording, Role};
 use node::harness::LiveRoute;
 use provider_fakes::script::Step;
 use support::*;
@@ -141,11 +141,11 @@ async fn pairing_counts_on_both_sides_and_a_prompt_counts_where_it_was_sent() {
     let prompts: Vec<_> = laptop_events
         .iter()
         .filter_map(|event| match event {
-            Event::PromptSent { kind, on, .. } => Some((*kind, *on)),
+            Event::PromptSent { kind, from, .. } => Some((*kind, *from)),
             _ => None,
         })
         .collect();
-    assert_eq!(prompts, [(Kind::ClaudeSdk, On::PairedHost(desk))]);
+    assert_eq!(prompts, [(Kind::ClaudeSdk, Origin::PairedHost(desk))]);
 
     let desk_events = of(&recording, desk);
     println!("desk: {desk_events:?}");

@@ -59,13 +59,17 @@ Nothing is written to disk to be sent later.
 |---|---|
 | `installation_id` | A random id made the first time amux starts on a machine (or the app on a phone) and kept in the installation's directory. It counts installs. |
 | `host_id` | The random id of one profile on that machine, the same one its paired machines know it by. Every event is filed under it. |
-| `remote_host` | The host id of *another* machine: the one a prompt, an answer or a new agent went to, or the one this machine just paired with. |
+| `remote_host` | The host id of *another* machine: the one a prompt, an answer or a new agent came from, or the one this machine just paired with. |
+
+A prompt, an answer or a new agent is counted once, by the machine the
+agent runs on, under that machine's setting for usage counts. When you use
+your laptop or your phone to send a prompt to an agent on your desktop, the
+desktop counts it and the laptop or phone does not.
 
 `remote_host` is how we tell that two machines belong to the same person
-without an account: when your laptop sends a prompt to your desktop, the
-laptop's event names the desktop's host id. That is a map of which of your
-machines talk to each other, by random ids only. It never includes a
-machine's name or address.
+without an account: in that case the desktop's event names the laptop's or
+the phone's host id. That is a map of which of your machines talk to each
+other, by random ids only. It never includes a machine's name or address.
 
 A reinstall makes new ids. Deleting the installation's directory, or the
 app, forgets them.
@@ -95,9 +99,9 @@ a field for free text.
 | `update_rolled_back` | amux starts on an older version than last time, because the newer one was put back. | `from_version`, `to_version` |
 | `daemon_crashed` | amux starts and finds that its last run stopped without shutting down, with the machine still up. | `crashed_version`: the version that stopped. |
 | `client_opened` | The terminal client starts, the Mac app opens, the iPhone app comes to the front, or the browser extension connects; at most once an hour. | `surface`: `terminal`, `mac`, `phone` or `browser`. |
-| `agent_created` | A new agent is started. | `kind`; `on`: `this_host` or `paired_host`, with `remote_host` for a paired one; `by`: `person` or `agent` (an agent starting a helper). |
-| `prompt_sent` | A prompt you sent is accepted. | `kind`; `on` and `remote_host` as above; `queued`: whether it waits behind a turn already running. |
-| `ask_answered` | Your answer to an agent's question or request is accepted. | `kind`; `on` and `remote_host` as above; `ask`: `question`, `permission`, `plan`, `form`, `link` or `grant`. |
+| `agent_created` | A new agent is started on this machine. | `kind`; `from`: `here` (asked for on this machine) or `paired_host` (asked for from a paired machine or phone), with `remote_host` for a paired one; `by`: `person` or `agent` (an agent starting a helper). |
+| `prompt_sent` | A prompt you sent to one of this machine's agents is accepted. | `kind`; `from` and `remote_host` as above; `queued`: whether it waits behind a turn already running. |
+| `ask_answered` | Your answer to a question or request from one of this machine's agents is accepted. | `kind`; `from` and `remote_host` as above; `ask`: `question`, `permission`, `plan`, `form`, `link` or `grant`. |
 | `pairing_started` | This machine shows a pairing code, or enters one. | `role`: `offerer` (showed the code) or `joiner` (entered it); `method`: `pin`, `qr` or `ssh` (a window showing both a PIN and a QR code counts as `pin`; the pairing's success or failure says which was used). |
 | `pairing_succeeded` | A pairing finished and each machine trusts the other. | `role`, `method`, and `remote_host`: the machine paired with. |
 | `pairing_failed` | A pairing did not finish. | `role`, `method`, and `reason`: `wrong_secret`, `no_window`, `unreachable`, `timed_out`, `abandoned`, `self_pairing` or `other`. |

@@ -26,8 +26,8 @@ pub use context::{
 };
 pub use event::{
     Ask, By, CheckCause, CheckCore, CheckId, CheckIn, Client, Counts, Event, Interval, Kind,
-    Method, OfferOutcome, OfferRole, On, PairingFailure, PaywallFrom, Recorded, RelayCarrier, Role,
-    Route, SignInFailure, SignInVia, Step, StepOutcome, Tier, Token,
+    Method, OfferOutcome, OfferRole, Origin, PairingFailure, PaywallFrom, Recorded, RelayCarrier,
+    Role, Route, SignInFailure, SignInVia, Step, StepOutcome, Tier, Token,
 };
 pub use upload::{
     Accounts, Flusher, Gate, Http, MAX_EVENTS_PER_REQUEST, Params, Posted, Transport, Upload,
@@ -204,15 +204,15 @@ mod tests {
             ("client_opened", json!({"surface": "terminal"})),
             (
                 "agent_created",
-                json!({"kind": "claude_sdk", "on": "this_host", "by": "person"}),
+                json!({"kind": "claude_sdk", "from": "here", "by": "person"}),
             ),
             (
                 "prompt_sent",
-                json!({"kind": "codex", "on": "paired_host", "remote_host": host, "queued": false}),
+                json!({"kind": "codex", "from": "paired_host", "remote_host": host, "queued": false}),
             ),
             (
                 "ask_answered",
-                json!({"kind": "claude_pty", "on": "paired_host", "remote_host": host, "ask": "permission"}),
+                json!({"kind": "claude_pty", "from": "paired_host", "remote_host": host, "ask": "permission"}),
             ),
             ("pairing_started", json!({"role": "joiner", "method": "qr"})),
             (

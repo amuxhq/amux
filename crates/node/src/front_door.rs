@@ -316,7 +316,7 @@ impl InstallationService for FrontDoor {
         .await
         .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
         Ok(Response::new(wire::SuggestRepositoriesResponse {
-            suggestions,
+            folders: suggestions,
         }))
     }
 

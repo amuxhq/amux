@@ -20,7 +20,7 @@ async fn desk_with_file(install: &Install, text: &str) -> (node::Daemon, std::pa
         file: Some(file.clone()),
         initial: settings::InstallationConfig::from_file(&file).unwrap(),
         login: None,
-        home: None,
+        home: options.settings.home.take(),
     };
     options.edge.host_name = "desk".to_owned();
     (node::start(options, None).await.unwrap(), file)
@@ -81,17 +81,12 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
     let entry = runtime.host_entry();
     assert_eq!(entry.claude_kind(), wire::Kind::ClaudePty);
     assert_eq!(entry.host.unwrap().name, "study");
-    let listed = node::ClientApi::new(&runtime, None)
-        .list_repositories(Request::new(wire::ListRepositoriesRequest {
-            query: None,
-            limit: 10,
-            host_id: None,
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-    assert_eq!(listed.repositories.len(), 1);
-    assert_eq!(listed.repositories[0].name, "app");
+    until(
+        "the desk's entry to offer its repository",
+        pinned_app(&runtime),
+    )
+    .await
+    .unwrap();
 
     // A profile opened after the change starts with it too.
     let created = door
@@ -107,16 +102,12 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
         .profile(uuid::Uuid::from_slice(&created.id).unwrap())
         .expect("the new profile runs");
     assert_eq!(spare.host_entry().claude_kind(), wire::Kind::ClaudePty);
-    let listed = node::ClientApi::new(&spare, None)
-        .list_repositories(Request::new(wire::ListRepositoriesRequest {
-            query: None,
-            limit: 10,
-            host_id: None,
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-    assert_eq!(listed.repositories.len(), 1, "{listed:?}");
+    until(
+        "the new profile's entry to offer it too",
+        pinned_app(&spare),
+    )
+    .await
+    .unwrap();
     drop(spare);
 
     let refused = door
@@ -166,7 +157,7 @@ async fn an_experiment_switched_takes_effect_at_the_next_start() {
             file: Some(file.clone()),
             initial: config,
             login: None,
-            home: None,
+            home: options.settings.home.take(),
         };
         async move { node::start(options, None).await.unwrap() }
     };
@@ -387,7 +378,7 @@ async fn the_daemon_keeps_the_machine_awake_while_an_agent_works() {
         file: Some(file.clone()),
         initial: settings::InstallationConfig::from_file(&file).unwrap(),
         login: None,
-        home: None,
+        home: options.settings.home.take(),
     };
     let daemon = node::start(options, None).await.unwrap();
     let runtime = runtime(&daemon, &install);
@@ -439,4 +430,24 @@ async fn the_daemon_keeps_the_machine_awake_while_an_agent_works() {
     let _ = runtime.kill_agent(id).await;
     drop(runtime);
     daemon.shutdown().await.unwrap();
+}
+
+/// Waits on the runtime's own entry to offer one pinned folder, "app".
+fn pinned_app(
+    runtime: &std::sync::Arc<node::ProfileRuntime>,
+) -> impl Fn() -> std::future::Ready<Result<(), String>> + '_ {
+    move || {
+        let pinned: Vec<String> = runtime
+            .host_entry()
+            .folders
+            .into_iter()
+            .filter(|folder| folder.kind() == wire::FolderKind::Pinned)
+            .map(|folder| folder.name)
+            .collect();
+        std::future::ready(if pinned == ["app"] {
+            Ok(())
+        } else {
+            Err(format!("{pinned:?}"))
+        })
+    }
 }

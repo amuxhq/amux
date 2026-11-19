@@ -15,12 +15,11 @@ use wire::{
     CreateAgentRequest, CreateAgentResponse, DeleteAgentRequest, DeleteAgentResponse, ErrorCode,
     FileAgentRequest, FileAgentResponse, GetBlobRequest, GetBlobResponse, GetDiffRequest,
     GetDiffResponse, GetItemRequest, GetItemResponse, InventoryEvent, ListItemsRequest,
-    ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse, PinFolderRequest,
-    PinFolderResponse, PutBlobRequest, PutBlobResponse, RenameAgentRequest, RenameAgentResponse,
-    ResolveAgentRequest, ResolveAgentResponse, ResumeAgentRequest, ResumeAgentResponse,
-    SendInputRequest, SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent,
-    SubscribeInventoryRequest, SubscribeInventoryResponse, SubscribeSessionRequest,
-    SubscribeSessionResponse,
+    ListItemsResponse, PinFolderRequest, PinFolderResponse, PutBlobRequest, PutBlobResponse,
+    RenameAgentRequest, RenameAgentResponse, ResolveAgentRequest, ResolveAgentResponse,
+    ResumeAgentRequest, ResumeAgentResponse, SendInputRequest, SendInputResponse,
+    SendMessageRequest, SendMessageResponse, SessionEvent, SubscribeInventoryRequest,
+    SubscribeInventoryResponse, SubscribeSessionRequest, SubscribeSessionResponse,
 };
 
 use crate::grpc::{
@@ -316,27 +315,6 @@ impl AgentService for PeerApi {
             "a paired host answers only for its own providers",
         )?;
         own_catalogue(&runtime, request.provider).await
-    }
-
-    async fn list_repositories(
-        &self,
-        request: Request<ListRepositoriesRequest>,
-    ) -> Result<Response<ListRepositoriesResponse>, Status> {
-        Self::caller(&request)?;
-        let request = request.into_inner();
-        let runtime = self.runtime()?;
-        if let Some(host) = request.host_id.as_deref().map(host_id).transpose()? {
-            this_host(
-                &runtime,
-                host,
-                "a paired host lists only its own repositories",
-            )?;
-        }
-        Ok(Response::new(
-            runtime
-                .list_repositories(request.query, request.limit)
-                .await,
-        ))
     }
 
     /// A paired host pins on this host's list as a person here would: the

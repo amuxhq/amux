@@ -7,12 +7,7 @@
 //! deleted.
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
-
-use wire::{ListRepositoriesResponse, RepositoryEntry};
-
-/// The most directories one answer carries, whatever limit it asks for.
-const MAX_DIRECTORIES: usize = store::RECENT_DIRECTORIES;
+use std::path::{Path, PathBuf};
 
 /// What a profile's runtime asks of the installation about its folders:
 /// the person's home, where Claude Code and Codex keep their sessions, and
@@ -77,109 +72,57 @@ pub(crate) const MOST_FOLDERS: usize = 50;
 pub(crate) fn folders(
     pinned: &[PathBuf],
     recent: &[(String, i64)],
-    history: &[RepositoryEntry],
+    history: &[wire::Folder],
 ) -> Vec<wire::Folder> {
-    let listed = list(pinned, recent, None, MOST_FOLDERS as u32);
-    let mut seen = BTreeSet::new();
-    let mut folders = Vec::new();
-    let offered = listed
-        .repositories
-        .into_iter()
-        .map(|entry| (entry, wire::FolderKind::Pinned))
-        .chain(
-            listed
-                .recent
-                .into_iter()
-                .map(|entry| (entry, wire::FolderKind::Recent)),
-        )
-        .chain(
-            history
-                .iter()
-                .cloned()
-                .map(|entry| (entry, wire::FolderKind::History)),
-        );
-    for (entry, kind) in offered {
-        if folders.len() == MOST_FOLDERS {
-            break;
-        }
-        if !seen.insert(entry.path.clone()) {
-            continue;
-        }
-        folders.push(wire::Folder {
-            checkout: git_facts::checkout(std::path::Path::new(&entry.path)).map(to_wire),
-            path: entry.path,
-            name: entry.name,
-            kind: kind as i32,
-            last_used_ms: entry.last_used_ms,
-        });
-    }
-    folders
-}
-
-/// A checkout as the wire says it.
-pub(crate) fn to_wire(checkout: git_facts::Checkout) -> wire::Checkout {
-    let text = |path: std::path::PathBuf| path.to_string_lossy().into_owned();
-    wire::Checkout {
-        root: text(checkout.root),
-        main: checkout.main.map(text),
-        remote: checkout.remote,
-    }
-}
-
-/// What a host answers: its repositories that still exist, in the order they
-/// were chosen, then its recent directories that still exist and are not
-/// repositories, newest first; both matching `query` (case-insensitively, by
-/// name or path) and at most `limit` in all, repositories first. Reads the file
-/// system: call it off the async workers.
-pub(crate) fn list(
-    repositories: &[PathBuf],
-    recent: &[(String, i64)],
-    query: Option<&str>,
-    limit: u32,
-) -> ListRepositoriesResponse {
-    let limit = (limit as usize).min(MAX_DIRECTORIES);
-    let query = query.unwrap_or_default().to_lowercase();
-    let matches = |entry: &RepositoryEntry| {
-        entry.name.to_lowercase().contains(&query) || entry.path.to_lowercase().contains(&query)
-    };
-    let mut seen = BTreeSet::new();
-    let repositories: Vec<RepositoryEntry> = repositories
+    let pinned = pinned
         .iter()
         .filter_map(|path| path.canonicalize().ok())
         .filter(|path| path.is_dir())
-        .filter_map(|path| entry(path, None))
-        .filter(|entry| matches(entry) && seen.insert(entry.path.clone()))
-        .take(limit)
-        .collect();
-    let recent: Vec<RepositoryEntry> = recent
+        .filter_map(|path| folder(&path, wire::FolderKind::Pinned, None));
+    let recent = recent
         .iter()
         .map(|(path, at)| (PathBuf::from(path), *at))
         // A directory since replaced by a symlink is not the one that was
         // used, and gone is gone.
         .filter(|(path, _)| path.canonicalize().ok().as_ref() == Some(path) && path.is_dir())
-        .filter_map(|(path, at)| entry(path, Some(at)))
-        .filter(|entry| matches(entry) && seen.insert(entry.path.clone()))
-        .take(limit - repositories.len())
-        .collect();
-    ListRepositoriesResponse {
-        recent,
-        repositories,
-    }
+        .filter_map(|(path, at)| folder(&path, wire::FolderKind::Recent, Some(at)));
+    let mut seen = BTreeSet::new();
+    pinned
+        .chain(recent)
+        .chain(history.iter().cloned())
+        .filter(|folder| seen.insert(folder.path.clone()))
+        .take(MOST_FOLDERS)
+        .collect()
 }
 
-/// A directory as a listing names it; `None` for a path that is not UTF-8,
-/// which no client could send back.
-fn entry(path: PathBuf, last_used_ms: Option<i64>) -> Option<RepositoryEntry> {
+/// A directory as a host's entry offers it; `None` for a path that is not
+/// UTF-8, which no client could send back.
+pub(crate) fn folder(
+    path: &Path,
+    kind: wire::FolderKind,
+    last_used_ms: Option<i64>,
+) -> Option<wire::Folder> {
     let text = path.to_str()?.to_owned();
     let name = path
         .file_name()
         .map_or_else(|| text.clone(), |name| name.to_string_lossy().into_owned());
-    Some(RepositoryEntry {
-        remote: git_facts::origin(&path),
+    Some(wire::Folder {
+        checkout: git_facts::checkout(path).map(to_wire),
         path: text,
         name,
+        kind: kind as i32,
         last_used_ms,
     })
+}
+
+/// A checkout as the wire says it.
+pub(crate) fn to_wire(checkout: git_facts::Checkout) -> wire::Checkout {
+    let text = |path: PathBuf| path.to_string_lossy().into_owned();
+    wire::Checkout {
+        root: text(checkout.root),
+        main: checkout.main.map(text),
+        remote: checkout.remote,
+    }
 }
 
 #[cfg(test)]
@@ -214,19 +157,9 @@ mod tests {
         std::fs::create_dir(app.join(".git")).unwrap();
         let recent = recorded(&[(&scratch, 3_000), (&app, 2_000)]);
         let history = [
-            RepositoryEntry {
-                path: dotfiles.to_str().unwrap().into(),
-                name: "dotfiles".into(),
-                last_used_ms: Some(1_000),
-                remote: None,
-            },
+            folder(&dotfiles, wire::FolderKind::History, Some(1_000)).unwrap(),
             // Already pinned: offered once, as pinned.
-            RepositoryEntry {
-                path: notes.to_str().unwrap().into(),
-                name: "notes".into(),
-                last_used_ms: Some(900),
-                remote: None,
-            },
+            folder(&notes, wire::FolderKind::History, Some(900)).unwrap(),
         ];
         let folders = folders(&[notes.clone(), app.clone()], &recent, &history);
         let listed: Vec<(&str, wire::FolderKind)> = folders
@@ -253,6 +186,13 @@ mod tests {
         assert_eq!(folders[0].checkout, None, "a plain folder has none");
     }
 
+    fn named(folders: &[wire::Folder]) -> Vec<(&str, wire::FolderKind)> {
+        folders
+            .iter()
+            .map(|folder| (folder.name.as_str(), folder.kind()))
+            .collect()
+    }
+
     #[test]
     fn recent_lists_the_latest_use_of_directories_that_are_still_there() {
         let temp = tempfile::tempdir().unwrap();
@@ -261,26 +201,30 @@ mod tests {
         std::fs::create_dir(&second).unwrap();
         // An older use of the same directory cannot move it back.
         let recent = recorded(&[(&first, 2_000), (&second, 1_000), (&first, 500)]);
-        let listed = list(&[], &recent, None, 10);
-        let paths: Vec<_> = listed.recent.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(paths, ["first", "second"]);
-        assert_eq!(listed.recent[0].last_used_ms, Some(2_000));
+        let listed = folders(&[], &recent, &[]);
+        assert_eq!(
+            named(&listed),
+            [
+                ("first", wire::FolderKind::Recent),
+                ("second", wire::FolderKind::Recent)
+            ]
+        );
+        assert_eq!(listed[0].last_used_ms, Some(2_000));
 
         std::fs::remove_dir(&first).unwrap();
         #[cfg(unix)]
         std::os::unix::fs::symlink(&second, &first).unwrap();
-        let listed = list(&[], &recent, None, 10);
-        let paths: Vec<_> = listed.recent.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(paths, ["second"]);
+        let listed = folders(&[], &recent, &[]);
+        assert_eq!(named(&listed), [("second", wire::FolderKind::Recent)]);
     }
 
     #[test]
-    fn repositories_come_first_and_the_limit_caps_both_lists_together() {
+    fn pinned_folders_that_are_gone_or_spelled_twice_are_offered_once_or_not_at_all() {
         let temp = tempfile::tempdir().unwrap();
         for name in ["app", "site", "notes"] {
             std::fs::create_dir(temp.path().join(name)).unwrap();
         }
-        let repositories = [
+        let pinned = [
             temp.path().join("site"),
             temp.path().join("missing"),
             temp.path().join("app"),
@@ -291,23 +235,16 @@ mod tests {
             (&temp.path().join("notes"), 2),
             (&temp.path().join("app"), 1),
         ]);
-        let listed = list(&repositories, &recent, None, 10);
-        let names = |entries: &[RepositoryEntry]| -> Vec<String> {
-            entries.iter().map(|e| e.name.clone()).collect()
-        };
-        assert_eq!(names(&listed.repositories), ["site", "app"]);
-        assert!(listed.repositories.iter().all(|e| e.last_used_ms.is_none()));
+        let listed = folders(&pinned, &recent, &[]);
         assert_eq!(
-            names(&listed.recent),
-            ["notes"],
-            "a repository is not recent too"
+            named(&listed),
+            [
+                ("site", wire::FolderKind::Pinned),
+                ("app", wire::FolderKind::Pinned),
+                ("notes", wire::FolderKind::Recent),
+            ],
+            "a pinned folder is not recent too"
         );
-
-        let capped = list(&repositories, &recent, None, 2);
-        assert_eq!(names(&capped.repositories), ["site", "app"]);
-        assert!(capped.recent.is_empty(), "the limit counts both lists");
-        let found = list(&repositories, &recent, Some("NOT"), 10);
-        assert!(found.repositories.is_empty());
-        assert_eq!(names(&found.recent), ["notes"]);
+        assert!(listed[..2].iter().all(|f| f.last_used_ms.is_none()));
     }
 }

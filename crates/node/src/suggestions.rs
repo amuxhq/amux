@@ -15,8 +15,6 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use wire::RepositoryEntry;
-
 /// How far back a session counts.
 pub(crate) const WITHIN: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
@@ -31,12 +29,12 @@ const LINES_READ: usize = 64;
 /// The Git repositories sessions ran in within [`WITHIN`] of `now`, newest
 /// first, at most [`MOST`]. Reads the file system: call it off the async
 /// workers.
-pub(crate) fn suggest(home: &Path, now: SystemTime) -> Vec<RepositoryEntry> {
+pub(crate) fn suggest(home: &Path, now: SystemTime) -> Vec<wire::Folder> {
     suggest_outside(home, now, &temporary_dirs())
 }
 
 /// [`suggest`], leaving out repositories under `temporary`.
-fn suggest_outside(home: &Path, now: SystemTime, temporary: &[PathBuf]) -> Vec<RepositoryEntry> {
+fn suggest_outside(home: &Path, now: SystemTime, temporary: &[PathBuf]) -> Vec<wire::Folder> {
     let since = now.checked_sub(WITHIN).unwrap_or(UNIX_EPOCH);
     let mut ran: Vec<(SystemTime, PathBuf)> = Vec::new();
     claude_sessions(&home.join(".claude").join("projects"), since, &mut ran);
@@ -51,7 +49,7 @@ fn suggest_outside(home: &Path, now: SystemTime, temporary: &[PathBuf]) -> Vec<R
         .filter(|dir| !home.starts_with(dir))
         .collect();
     let mut repositories: HashMap<PathBuf, Option<PathBuf>> = HashMap::new();
-    let mut offered: Vec<RepositoryEntry> = Vec::new();
+    let mut offered: Vec<wire::Folder> = Vec::new();
     for (at, cwd) in ran {
         if offered.len() == MOST {
             break;
@@ -68,24 +66,21 @@ fn suggest_outside(home: &Path, now: SystemTime, temporary: &[PathBuf]) -> Vec<R
         if root == home || temporary.iter().any(|dir| root.starts_with(dir)) {
             continue;
         }
-        let Some(path) = root.to_str() else {
-            continue;
-        };
-        if offered.iter().any(|entry| entry.path == path) {
+        if offered
+            .iter()
+            .any(|folder| Some(folder.path.as_str()) == root.to_str())
+        {
             continue;
         }
-        offered.push(RepositoryEntry {
-            path: path.to_owned(),
-            name: root.file_name().map_or_else(
-                || path.to_owned(),
-                |name| name.to_string_lossy().into_owned(),
-            ),
-            last_used_ms: at
-                .duration_since(UNIX_EPOCH)
-                .ok()
-                .and_then(|since| i64::try_from(since.as_millis()).ok()),
-            remote: git_facts::origin(&root),
-        });
+        let at = at
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .and_then(|since| i64::try_from(since.as_millis()).ok());
+        offered.extend(crate::repositories::folder(
+            &root,
+            wire::FolderKind::History,
+            at,
+        ));
     }
     offered
 }

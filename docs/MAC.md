@@ -195,8 +195,8 @@ tint one of eight picked by a hash of the remote. Checkouts of one
 repository — worktrees, and the same repository on another machine — share
 a tile because they share a remote; a fork has its own. Agents carry it on
 their fleet card; folders a host lists for New Agent and setting up carry
-it too, from the folder's origin remote (`RepositoryEntry.remote`; a host
-built before that field names the repository from the folder's path). The
+it too, from the folder's checkout (`Folder.checkout`; outside Git, the
+folder's path names it). The
 Mac draws it as a small rounded square with the mark in the tint on a
 wash of it.
 

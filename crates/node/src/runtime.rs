@@ -1245,32 +1245,6 @@ impl ProfileRuntime {
             .map_err(|error| crate::host_settings::SettingsError::Invalid(error.to_string()))?
     }
 
-    /// Where this host offers to start an agent: see
-    /// [`crate::repositories::list`].
-    pub async fn list_repositories(
-        &self,
-        query: Option<String>,
-        limit: u32,
-    ) -> wire::ListRepositoriesResponse {
-        let repositories = self.launch().repositories;
-        let recent = self
-            .driver()
-            .read(|store| store.recent_directories())
-            .await
-            .and_then(|read| {
-                read.inspect_err(
-                    |error| tracing::warn!(%error, "cannot read the recent directories"),
-                )
-                .ok()
-            })
-            .unwrap_or_default();
-        tokio::task::spawn_blocking(move || {
-            crate::repositories::list(&repositories, &recent, query.as_deref(), limit)
-        })
-        .await
-        .expect("listing repositories does not panic")
-    }
-
     /// An agent's unsent draft, as this machine's clients last saved it.
     pub async fn draft(&self, agent_id: &[u8]) -> wire::Draft {
         let request = ClientRequest::GetDraft {

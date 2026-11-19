@@ -358,12 +358,6 @@ impl client::Client for SlowClearing {
     ) -> Result<wire::GetCatalogueResponse, client::RpcError> {
         self.inner.get_catalogue(request).await
     }
-    async fn list_repositories(
-        &self,
-        request: wire::ListRepositoriesRequest,
-    ) -> Result<wire::ListRepositoriesResponse, client::RpcError> {
-        self.inner.list_repositories(request).await
-    }
     async fn pin_folder(
         &self,
         request: wire::PinFolderRequest,

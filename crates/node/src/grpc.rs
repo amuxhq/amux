@@ -26,12 +26,12 @@ use wire::{
     CreateAgentRequest, CreateAgentResponse, DeleteAgentRequest, DeleteAgentResponse, ErrorCode,
     FileAgentRequest, FileAgentResponse, GetBlobRequest, GetBlobResponse, GetDiffRequest,
     GetDiffResponse, GetItemRequest, GetItemResponse, InventoryEvent, ListItemsRequest,
-    ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse, PinFolderRequest,
-    PinFolderResponse, PutBlobRequest, PutBlobResponse, RenameAgentRequest, RenameAgentResponse,
-    ResolveAgentRequest, ResolveAgentResponse, ResumeAgentRequest, ResumeAgentResponse,
-    SendInputRequest, SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent,
-    SubscribeInventoryRequest, SubscribeInventoryResponse, SubscribeSessionRequest,
-    SubscribeSessionResponse, subscribe_session_request,
+    ListItemsResponse, PinFolderRequest, PinFolderResponse, PutBlobRequest, PutBlobResponse,
+    RenameAgentRequest, RenameAgentResponse, ResolveAgentRequest, ResolveAgentResponse,
+    ResumeAgentRequest, ResumeAgentResponse, SendInputRequest, SendInputResponse,
+    SendMessageRequest, SendMessageResponse, SessionEvent, SubscribeInventoryRequest,
+    SubscribeInventoryResponse, SubscribeSessionRequest, SubscribeSessionResponse,
+    subscribe_session_request,
 };
 
 use crate::blobs::BlobError;
@@ -624,23 +624,6 @@ impl AgentService for ClientApi {
             return forwarded(&runtime, host, request).await;
         }
         own_catalogue(&runtime, request.provider).await
-    }
-
-    async fn list_repositories(
-        &self,
-        request: Request<ListRepositoriesRequest>,
-    ) -> Result<Response<ListRepositoriesResponse>, Status> {
-        let request = request.into_inner();
-        let runtime = self.runtime()?;
-        let named = request.host_id.as_deref().map(host_id).transpose()?;
-        if let Some(host) = named.filter(|host| *host != runtime.host()) {
-            return forwarded(&runtime, host, request).await;
-        }
-        Ok(Response::new(
-            runtime
-                .list_repositories(request.query, request.limit)
-                .await,
-        ))
     }
 
     async fn pin_folder(

@@ -1873,7 +1873,10 @@ public struct Checkout: Codable, Hashable, Sendable {
     public var root: String
     /// The main clone's top directory, when this is a linked worktree of it.
     public var main: String?
-    /// Where origin points, as Git.remote writes it; absent without an origin.
+    /// Where origin points, as host/owner/name: no scheme, credentials, port
+    /// or ".git" ("github.com/amuxhq/amux"); a local remote is its path.
+    /// Clients group checkouts of one repository by it, worktrees and other
+    /// machines' checkouts included. Absent without an origin.
     public var remote: String?
 
     public init(root: String, main: String?, remote: String?) {
@@ -3855,21 +3858,14 @@ public struct Git: Codable, Hashable, Sendable {
     /// From where the branch left its base to the working tree, so uncommitted
     /// work counts.
     public var onBranch: ChangeTotals?
-    /// Where origin points, as host/owner/name: no scheme, credentials, port
-    /// or ".git" ("github.com/amuxhq/amux"); a local remote is its path.
-    /// Clients group checkouts of one repository by it, worktrees and other
-    /// machines' checkouts included. Absent without an origin. The same as
-    /// checkout.remote, which replaces it.
-    public var remote: String?
     /// Working tree against HEAD.
     public var uncommitted: ChangeTotals?
 
-    public init(baseBranch: String?, branch: String?, checkout: Checkout?, onBranch: ChangeTotals?, remote: String?, uncommitted: ChangeTotals?) {
+    public init(baseBranch: String?, branch: String?, checkout: Checkout?, onBranch: ChangeTotals?, uncommitted: ChangeTotals?) {
         self.baseBranch = baseBranch
         self.branch = branch
         self.checkout = checkout
         self.onBranch = onBranch
-        self.remote = remote
         self.uncommitted = uncommitted
     }
 
@@ -3878,7 +3874,6 @@ public struct Git: Codable, Hashable, Sendable {
         case branch
         case checkout
         case onBranch = "on_branch"
-        case remote
         case uncommitted
     }
 }

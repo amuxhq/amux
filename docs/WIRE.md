@@ -109,7 +109,6 @@ holds one event. The tables name what a response holds.
 | `GetBlob` | the bytes | Bytes out |
 | `GetDiff` | `Diff` | The changed files on the owning host; the patch, stored as a blob, only when asked |
 | `GetCatalogue` | a catalogue and its hash | What a provider on a host offers with no agent running: the encoded `Catalogue` and its hash. An agent's catalogue is a blob, read with `GetBlob` |
-| `ListRepositories` | the repositories | Superseded by `HostEntry.folders`; still answered |
 | `PinFolder` | nothing | Pins a folder among a host's repositories, or unpins it |
 
 `service SessionService` in [`session_service.proto`](../proto/amux/v1/session_service.proto):

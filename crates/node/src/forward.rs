@@ -156,8 +156,6 @@ peer_rpc! {
         => PeerReply::Diff(diff) => wire::GetDiffResponse { diff: Some(diff) };
     wire::GetCatalogueRequest => GetCatalogue, wire::GetCatalogueResponse
         => PeerReply::Catalogue(catalogue) => catalogue;
-    wire::ListRepositoriesRequest => ListRepositories, wire::ListRepositoriesResponse
-        => PeerReply::Repositories(repositories) => repositories;
     wire::PinFolderRequest => PinFolder, wire::PinFolderResponse
         => PeerReply::Done => wire::PinFolderResponse {};
     wire::ListItemsRequest => ListItems, wire::ListItemsResponse => PeerReply::Fetched(page) => page;
@@ -468,10 +466,6 @@ async fn dispatch(
         PeerRequest::GetCatalogue(request) => unary(
             client.agents.get_catalogue(request).await,
             PeerReply::Catalogue,
-        ),
-        PeerRequest::ListRepositories(request) => unary(
-            client.agents.list_repositories(request).await,
-            PeerReply::Repositories,
         ),
         PeerRequest::PinFolder(request) => {
             unary(client.agents.pin_folder(request).await, |_| PeerReply::Done)

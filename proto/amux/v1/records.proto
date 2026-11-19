@@ -402,12 +402,9 @@ message Git {
   // From where the branch left its base to the working tree, so uncommitted
   // work counts.
   optional ChangeTotals on_branch = 4;
-  // Where origin points, as host/owner/name: no scheme, credentials, port
-  // or ".git" ("github.com/amuxhq/amux"); a local remote is its path.
-  // Clients group checkouts of one repository by it, worktrees and other
-  // machines' checkouts included. Absent without an origin. The same as
-  // checkout.remote, which replaces it.
-  optional string remote = 5;
+  // Where origin points; now Checkout.remote.
+  reserved 5;
+  reserved "remote";
   // The working tree the agent's directory is in.
   optional Checkout checkout = 6;
 }
@@ -420,7 +417,10 @@ message Checkout {
   string root = 1;
   // The main clone's top directory, when this is a linked worktree of it.
   optional string main = 2;
-  // Where origin points, as Git.remote writes it; absent without an origin.
+  // Where origin points, as host/owner/name: no scheme, credentials, port
+  // or ".git" ("github.com/amuxhq/amux"); a local remote is its path.
+  // Clients group checkouts of one repository by it, worktrees and other
+  // machines' checkouts included. Absent without an origin.
   optional string remote = 3;
 }
 

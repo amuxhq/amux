@@ -276,12 +276,13 @@ fn later_steps() -> wire::Onboarding {
     ])
 }
 
-fn entry(path: &str) -> wire::RepositoryEntry {
-    wire::RepositoryEntry {
+fn entry(path: &str) -> wire::Folder {
+    wire::Folder {
         path: path.to_owned(),
         name: path.rsplit('/').next().unwrap_or(path).to_owned(),
+        kind: wire::FolderKind::History as i32,
         last_used_ms: Some(NOW),
-        remote: None,
+        checkout: None,
     }
 }
 

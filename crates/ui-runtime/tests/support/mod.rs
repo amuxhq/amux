@@ -16,10 +16,10 @@ use wire::{
     Agent, Attachment, BlobRef, CreateAgentRequest, DeleteAgentRequest, Diff, DumpRequest,
     DumpResponse, FileAgentRequest, GetBlobRequest, GetBlobResponse, GetDiffRequest,
     GetItemRequest, InventoryEvent, Item, Kind, Lifecycle, ListItemsRequest, ListItemsResponse,
-    ListRepositoriesRequest, ListRepositoriesResponse, Phase, PutBlobRequest, QueuedInput,
-    RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
-    SendInputResponse, SendMessageResponse, SessionEvent, Snapshot, SubscribeSessionRequest,
-    attachment, inventory_event, send_input_response, session_event,
+    Phase, PutBlobRequest, QueuedInput, RenameAgentRequest, ResolveAgentRequest,
+    ResumeAgentRequest, SendInputRequest, SendInputResponse, SendMessageResponse, SessionEvent,
+    Snapshot, SubscribeSessionRequest, attachment, inventory_event, send_input_response,
+    session_event,
 };
 
 /// How long a test waits for the driver's next call before failing.
@@ -176,13 +176,6 @@ impl Client for FakeRuntime {
         _: wire::GetCatalogueRequest,
     ) -> Result<wire::GetCatalogueResponse, RpcError> {
         unimplemented!("get_catalogue")
-    }
-
-    async fn list_repositories(
-        &self,
-        _: ListRepositoriesRequest,
-    ) -> Result<ListRepositoriesResponse, RpcError> {
-        unimplemented!("list_repositories")
     }
 
     async fn pin_folder(

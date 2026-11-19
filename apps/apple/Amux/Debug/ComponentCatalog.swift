@@ -1075,7 +1075,7 @@ enum CatalogFixtures {
     static let git = Git(
         baseBranch: "main", branch: "refactor-auth",
         checkout: nil,
-        onBranch: ChangeTotals(files: 6, added: 120, removed: 30), remote: nil,
+        onBranch: ChangeTotals(files: 6, added: 120, removed: 30),
         uncommitted: ChangeTotals(files: 5, added: 56, removed: 20))
 
     static let changes = Changes(

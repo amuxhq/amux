@@ -566,7 +566,7 @@ impl Onboarding {
         effects
     }
 
-    pub fn suggestions(&mut self, suggested: Vec<wire::RepositoryEntry>) {
+    pub fn suggestions(&mut self, suggested: Vec<wire::Folder>) {
         self.repositories.loaded = true;
         let mut rows: Vec<(String, String, bool)> = suggested
             .into_iter()

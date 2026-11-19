@@ -377,14 +377,10 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
         exit_cause: (attention == Attention::Exited).then(|| ui_state::exit_cause(agent)),
         branch: agent.git.as_ref().and_then(|git| git.branch.clone()),
         cwd: agent.cwd.clone(),
-        repository: match agent.git.as_ref() {
-            Some(git) if git.checkout.is_some() => {
-                Repository::of_checkout(git.checkout.as_deref(), &agent.cwd)
-            }
-            // An agent whose host says no checkout: by its remote, else its
-            // folder.
-            git => Repository::of(git.and_then(|git| git.remote.as_deref()), &agent.cwd),
-        },
+        repository: Repository::of_checkout(
+            agent.git.as_ref().and_then(|git| git.checkout.as_deref()),
+            &agent.cwd,
+        ),
         phase_since_ms: agent.phase_since_ms,
         host: fleet
             .host(&agent.host_id)

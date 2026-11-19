@@ -741,8 +741,6 @@ struct FixtureGit {
     base_branch: Option<String>,
     uncommitted: Option<FixtureTotals>,
     on_branch: Option<FixtureTotals>,
-    #[serde(default)]
-    remote: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -772,7 +770,6 @@ fn git_of(body: &Value) -> Result<Option<wire::Git>, String> {
         base_branch: git.base_branch,
         uncommitted: totals(git.uncommitted),
         on_branch: totals(git.on_branch),
-        remote: git.remote,
     }))
 }
 

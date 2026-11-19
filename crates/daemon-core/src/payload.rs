@@ -297,7 +297,6 @@ pub enum PeerRequest {
     GetBlob(#[serde(with = "codec::message")] wire::GetBlobRequest),
     GetDiff(#[serde(with = "codec::message")] wire::GetDiffRequest),
     GetCatalogue(#[serde(with = "codec::message")] wire::GetCatalogueRequest),
-    ListRepositories(#[serde(with = "codec::message")] wire::ListRepositoriesRequest),
     PinFolder(#[serde(with = "codec::message")] wire::PinFolderRequest),
 }
 
@@ -314,14 +313,13 @@ pub enum PeerReply {
     /// CreateAgent, RenameAgent, FileAgent and ResumeAgent answer with the
     /// agent.
     Agent(#[serde(with = "codec::message")] wire::Agent),
-    /// DeleteAgent answers with nothing.
+    /// DeleteAgent and PinFolder answer with nothing.
     Done,
     SendMessage(#[serde(with = "codec::message")] wire::SendMessageResponse),
     Blob(#[serde(with = "codec::message")] wire::BlobRef),
     GetBlob(#[serde(with = "codec::message")] wire::GetBlobResponse),
     Diff(#[serde(with = "codec::message")] wire::Diff),
     Catalogue(#[serde(with = "codec::message")] wire::GetCatalogueResponse),
-    Repositories(#[serde(with = "codec::message")] wire::ListRepositoriesResponse),
 }
 
 /// How a call this host made of a peer came back: its whole reply, one

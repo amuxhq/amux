@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package amux.v1;
 
-import "amux/v1/agent_service.proto";
+import "amux/v1/inventory.proto";
 import "amux/v1/records.proto";
 
 // The installation's front door: the installation itself and its profiles.
@@ -217,7 +217,11 @@ enum OfferRole {
 message SuggestRepositoriesRequest {}
 
 message SuggestRepositoriesResponse {
-  repeated RepositoryEntry suggestions = 1;
+  // Was a list of an older entry shape.
+  reserved 1;
+  reserved "suggestions";
+  // Each of kind FOLDER_KIND_HISTORY, newest first.
+  repeated Folder folders = 2;
 }
 
 message WebSignInLinkRequest {

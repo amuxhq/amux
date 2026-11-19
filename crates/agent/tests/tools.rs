@@ -255,13 +255,6 @@ impl AgentService for Fleet {
         Err(Status::unimplemented("get_catalogue"))
     }
 
-    async fn list_repositories(
-        &self,
-        _: Request<wire::ListRepositoriesRequest>,
-    ) -> Result<Response<wire::ListRepositoriesResponse>, Status> {
-        Err(Status::unimplemented("list_repositories"))
-    }
-
     async fn pin_folder(
         &self,
         _: Request<wire::PinFolderRequest>,

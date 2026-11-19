@@ -25,11 +25,10 @@ use wire::session_service_server::SessionService;
 use wire::{
     Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, Diff, DumpRequest, DumpResponse,
     Envelope, ErrorCode, FileAgentRequest, GetBlobRequest, GetBlobResponse, GetDiffRequest,
-    GetItemRequest, InventoryEvent, Item, ListItemsRequest, ListItemsResponse,
-    ListRepositoriesRequest, ListRepositoriesResponse, PutBlobRequest, RenameAgentRequest,
-    ResolveAgentRequest, ResumeAgentRequest, SendInputRequest, SendInputResponse,
-    SendMessageRequest, SendMessageResponse, SessionEvent, SubscribeInventoryRequest,
-    SubscribeSessionRequest,
+    GetItemRequest, InventoryEvent, Item, ListItemsRequest, ListItemsResponse, PutBlobRequest,
+    RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
+    SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent,
+    SubscribeInventoryRequest, SubscribeSessionRequest,
 };
 
 /// A server stream. An `Err` item or the end of the stream both mean the
@@ -126,10 +125,6 @@ pub trait Client: Send + Sync + 'static {
         &self,
         request: wire::GetCatalogueRequest,
     ) -> Result<wire::GetCatalogueResponse, RpcError>;
-    async fn list_repositories(
-        &self,
-        request: ListRepositoriesRequest,
-    ) -> Result<ListRepositoriesResponse, RpcError>;
     async fn pin_folder(
         &self,
         request: wire::PinFolderRequest,
@@ -291,13 +286,6 @@ macro_rules! client_impl {
                 request: wire::GetCatalogueRequest,
             ) -> Result<wire::GetCatalogueResponse, RpcError> {
                 Ok($call!(self, agents, get_catalogue, request).await?.into_inner())
-            }
-
-            async fn list_repositories(
-                &self,
-                request: ListRepositoriesRequest,
-            ) -> Result<ListRepositoriesResponse, RpcError> {
-                Ok($call!(self, agents, list_repositories, request).await?.into_inner())
             }
 
             async fn pin_folder(

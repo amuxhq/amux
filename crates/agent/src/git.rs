@@ -32,7 +32,7 @@ fn to_wire(cwd: &Path, facts: git_facts::GitFacts) -> wire::Git {
     let checkout = git_facts::working_tree(cwd).map(|(root, main)| wire::Checkout {
         root: text(root),
         main: main.map(text),
-        remote: facts.remote.clone(),
+        remote: facts.remote,
     });
     wire::Git {
         checkout: checkout.map(Box::new),
@@ -40,6 +40,5 @@ fn to_wire(cwd: &Path, facts: git_facts::GitFacts) -> wire::Git {
         base_branch: facts.base_branch,
         uncommitted: totals(facts.uncommitted),
         on_branch: totals(facts.on_branch),
-        remote: facts.remote,
     }
 }
